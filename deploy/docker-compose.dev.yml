@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aicser
+      POSTGRES_PASSWORD: aicser
+      POSTGRES_DB: aicser
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aicser"]
+      interval: 5s
+      retries: 5
+
+  server:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ../server:/app                        # live source code
+      - server_venv:/app/.venv               # cached pip deps
+    command: >
+      bash -c "pip install -q -r requirements.txt &&
+               uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      EDITION: ${EDITION:-CE}
+      DATABASE_URL: postgresql://aicser:aicser@db:5432/aicser
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ../client:/app                        # live source code
+      - client_node_modules:/app/node_modules # cached npm deps
+    command: >
+      sh -c "npm install --silent && npm run dev"
+    environment:
+      NEXT_PUBLIC_EDITION: ${EDITION:-CE}
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
+  server_venv:
+  client_node_modules:

@@ -1,0 +1,9 @@
+[submodule "server/ee"]
+	path = server/ee
+	url = https://github.com/Aicser-Platform/aicser-ee-server.git
+	branch = main
+
+[submodule "client/ee"]
+	path = client/ee
+	url = https://github.com/Aicser-Platform/aicser-ee-client.git
+	branch = main

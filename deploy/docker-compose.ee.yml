@@ -1,0 +1,42 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aicser
+      POSTGRES_PASSWORD: aicser
+      POSTGRES_DB: aicser
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  server:
+    build:
+      context: ../server
+      args:
+        EDITION: EE
+    environment:
+      EDITION: EE
+      DATABASE_URL: postgresql://aicser:aicser@db:5432/aicser
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  client:
+    build:
+      context: ../client
+      args:
+        EDITION: EE
+    environment:
+      NEXT_PUBLIC_EDITION: EE
+      NEXT_PUBLIC_API_URL: http://server:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+
+volumes:
+  postgres_data:
