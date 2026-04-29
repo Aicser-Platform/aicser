@@ -11,7 +11,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -42,6 +46,7 @@ services:
       POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}

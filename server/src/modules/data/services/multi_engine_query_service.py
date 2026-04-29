@@ -516,7 +516,7 @@ class MultiEngineQueryService:
     ) -> Dict[str, Any]:
         """Run PromQL via Prometheus HTTP API; tabular result for charts/SQL consumers."""
         from src.core.cache import cache
-        from src.modules.data.services.enterprise_connectors_service import (
+        from ee.modules.data.services.enterprise_connectors_service import (
             ConnectionConfig,
             ConnectorType,
             EnterpriseConnectorsService,
@@ -987,7 +987,7 @@ class DuckDBEngine(BaseQueryEngine):
             )
         if object_key and user_id:
             try:
-                from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+                from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
                 storage_service = AzureBlobStorageService()
                 file_content = await storage_service.get_file(object_key, user_id)
                 import tempfile
@@ -1930,7 +1930,7 @@ class PandasEngine(BaseQueryEngine):
 
             if object_key and user_id:
                 try:
-                    from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+                    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
                     storage_service = AzureBlobStorageService()
                     file_content = await storage_service.get_file(object_key, user_id)
                     import tempfile

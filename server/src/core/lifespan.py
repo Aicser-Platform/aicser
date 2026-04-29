@@ -28,7 +28,7 @@ def _check_ai_capabilities() -> dict:
     """Lightweight check of AI-related capabilities for /health endpoint."""
     caps = {}
     try:
-        from src.modules.data.services.semantic_schema_service import SemanticSchemaService  # noqa: F401
+        from ee.modules.data.services.semantic_schema_service import SemanticSchemaService  # noqa: F401
         caps["semantic_schema"] = True
     except ImportError:
         caps["semantic_schema"] = False

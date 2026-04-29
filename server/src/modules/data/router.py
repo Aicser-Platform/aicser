@@ -17,12 +17,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
-from src.modules.authentication.rbac.rbac_service import RBACService
 from src.db.session import get_async_session
-# DataSourceRBACService removed - organization/RBAC context removed
-# from .services.rbac_service import DataSourceRBACService
 from .services.data_connectivity_service import DataConnectivityService
-from .services.intelligent_data_modeling_service import IntelligentDataModelingService
 from .services.database_connector_service import DatabaseConnectorService
 from .services.data_retention_service import DataRetentionService
 from src.modules.data.services.multi_engine_query_service import (
@@ -30,8 +26,29 @@ from src.modules.data.services.multi_engine_query_service import (
     QueryEngine,
     invalidate_api_response_cache,
 )
-from src.modules.data.services.enterprise_connectors_service import EnterpriseConnectorsService, ConnectionConfig, ConnectorType
-from src.modules.data.services.delta_iceberg_connector import DeltaIcebergConnector
+
+# EE-only — lazy imports used inside endpoint handlers
+try:
+    from ee.modules.authentication.rbac.rbac_service import RBACService
+except ImportError:
+    RBACService = None  # type: ignore
+
+try:
+    from ee.modules.data.services.intelligent_data_modeling_service import IntelligentDataModelingService
+except ImportError:
+    IntelligentDataModelingService = None  # type: ignore
+
+try:
+    from ee.modules.data.services.enterprise_connectors_service import EnterpriseConnectorsService, ConnectionConfig, ConnectorType
+except ImportError:
+    EnterpriseConnectorsService = None  # type: ignore
+    ConnectionConfig = None  # type: ignore
+    ConnectorType = None  # type: ignore
+
+try:
+    from ee.modules.data.services.delta_iceberg_connector import DeltaIcebergConnector
+except ImportError:
+    DeltaIcebergConnector = None  # type: ignore
 import sqlalchemy as sa
 
 try:
@@ -1922,7 +1939,7 @@ async def get_data_source_data(
             object_key = data_source.get('file_path')  # Now it's object_key
             if object_key:
                 try:
-                    from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+                    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
                     storage_service = AzureBlobStorageService()
                     
                     # Load file from Azure Blob Storage
@@ -3916,7 +3933,7 @@ async def create_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Create a ClickHouse Kafka engine stream into a MergeTree landing table (org-scoped)."""
-    from src.modules.data.services.streaming_ingestion_service import (
+    from ee.modules.data.services.streaming_ingestion_service import (
         StreamDefinition,
         ColumnDef,
         StreamingIngestionService,
@@ -3965,7 +3982,7 @@ async def list_streams(
     db: AsyncSession = Depends(get_async_session),
 ):
     """List stream definitions for the organisation."""
-    from src.modules.data.services.streaming_ingestion_service import StreamingIngestionService
+    from ee.modules.data.services.streaming_ingestion_service import StreamingIngestionService
 
     try:
         _uid, org_id = await _streams_user_org(current_token, db)
@@ -3988,7 +4005,7 @@ async def get_stream_status(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Get consumer lag and throughput for a stream."""
-    from src.modules.data.services.streaming_ingestion_service import StreamingIngestionService
+    from ee.modules.data.services.streaming_ingestion_service import StreamingIngestionService
 
     try:
         _uid, org_id = await _streams_user_org(current_token, db)
@@ -4014,7 +4031,7 @@ async def test_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Peek at rows from the Kafka engine table (debug)."""
-    from src.modules.data.services.streaming_ingestion_service import StreamingIngestionService
+    from ee.modules.data.services.streaming_ingestion_service import StreamingIngestionService
 
     try:
         _uid, org_id = await _streams_user_org(current_token, db)
@@ -4040,7 +4057,7 @@ async def delete_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Drop Kafka engine table + MV and remove the stream record (landing MergeTree kept)."""
-    from src.modules.data.services.streaming_ingestion_service import StreamingIngestionService
+    from ee.modules.data.services.streaming_ingestion_service import StreamingIngestionService
 
     try:
         _uid, org_id = await _streams_user_org(current_token, db)

@@ -11,7 +11,10 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.pricing.plans import get_plan_limits
-from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+try:
+    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+except ImportError:
+    AzureBlobStorageService = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 

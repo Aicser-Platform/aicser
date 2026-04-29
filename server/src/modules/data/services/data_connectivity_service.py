@@ -17,7 +17,10 @@ import tempfile
 import time
 from pathlib import Path
 from .database_connector_service import DatabaseConnectorService
-from src.modules.data.services.ai_schema_service import AISchemaService
+try:
+    from ee.modules.data.services.ai_schema_service import AISchemaService
+except ImportError:
+    AISchemaService = None  # type: ignore
 from src.db.session import async_operation_lock
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
 from src.shared.query_limits import (
@@ -192,7 +195,7 @@ class DataConnectivityService:
     async def _test_timeseries_connection(self, db_type: str, request: Dict[str, Any]) -> Dict[str, Any]:
         """Test IoT / time-series connection via EnterpriseConnectorsService (plan-gated in product; not AISER_EDITION)."""
         try:
-            from src.modules.data.services.enterprise_connectors_service import (
+            from ee.modules.data.services.enterprise_connectors_service import (
                 EnterpriseConnectorsService, ConnectionConfig, ConnectorType,
             )
             svc = EnterpriseConnectorsService()
@@ -1419,7 +1422,7 @@ class DataConnectivityService:
             source_id = str(_uuid.uuid4())
 
             # Store compressed parquet in Azure Blob Storage
-            from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+            from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
             storage_service = AzureBlobStorageService()
             parquet_filename = f"{Path(filename).stem}.parquet"
             object_key = await storage_service.store_file(
@@ -1510,7 +1513,7 @@ class DataConnectivityService:
         import uuid as _uuid
         source_id = str(_uuid.uuid4())
 
-        from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+        from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
         storage_service = AzureBlobStorageService()
         parquet_filename = f"{Path(filename).stem}.parquet"
         object_key = await storage_service.store_file(
@@ -2705,7 +2708,7 @@ class DataConnectivityService:
                                     )
                                     if is_blob_key:
                                         try:
-                                            from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+                                            from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
                                             storage_service = AzureBlobStorageService()
                                             project_id_str = str(db_source.project_id) if db_source.project_id else ""
                                             await storage_service.delete_file(file_path, project_id_str)
@@ -2756,7 +2759,7 @@ class DataConnectivityService:
                         if user_id:
                             try:
                                 import asyncio
-                                from src.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+                                from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
                                 storage_service = AzureBlobStorageService()
                                 
                                 async def _delete_from_azure():
