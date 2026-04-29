@@ -1,0 +1,17 @@
+{
+  "include": ["app"],
+  "exclude": ["**/__pycache__", "tests", "alembic", "scripts"],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportOptionalMemberAccess": "warning",
+  "reportOptionalSubscript": "warning",
+  "reportGeneralTypeIssues": "warning",
+  "reportOptionalCall": "warning",
+  "reportOptionalIterable": "warning",
+  "reportTypedDictNotRequiredAccess": "none",
+  "reportPrivateImportUsage": "none",
+  "pythonVersion": "3.11",
+  "venvPath": ".",
+  "venv": ".venv"
+}

@@ -1,42 +1,98 @@
-version: '3.9'
-
 services:
-  db:
+  postgres:
     image: postgres:16-alpine
+    container_name: aiser-postgres-ce
     environment:
-      POSTGRES_USER: aicser
-      POSTGRES_PASSWORD: aicser
-      POSTGRES_DB: aicser
+      POSTGRES_DB: ${POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_ce_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiser-redis-ce
+    volumes:
+      - redis_ce_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   server:
     build:
       context: ../server
-      args:
-        EDITION: CE
+      dockerfile: Dockerfile.prod
+    container_name: aiser-server-ce
     environment:
-      EDITION: CE
-      DATABASE_URL: postgresql://aicser:aicser@db:5432/aicser
+      AISER_EDITION: CE
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENVIRONMENT: production
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "Running migrations..."
+        alembic -c alembic.ini upgrade head
+        echo "Starting server..."
+        exec uvicorn src.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
-  client:
-    build:
-      context: ../client
-      args:
-        EDITION: CE
-    environment:
-      NEXT_PUBLIC_EDITION: CE
-      NEXT_PUBLIC_API_URL: http://server:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - server
+  # client:
+  #   build:
+  #     context: ../client
+  #     args:
+  #       EDITION: CE
+  #   container_name: aiser-client-ce
+  #   environment:
+  #     NEXT_PUBLIC_EDITION: CE
+  #     NEXT_PUBLIC_API_URL: http://server:8000
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     server:
+  #       condition: service_healthy
+  #   restart: unless-stopped
 
 volumes:
-  postgres_data:
+  postgres_ce_data:
+  redis_ce_data:
+
+networks:
+  default:
+    name: aiser-ce-network
+    driver: bridge

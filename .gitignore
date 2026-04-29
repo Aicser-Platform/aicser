@@ -38,3 +38,5 @@ Thumbs.db
 
 # Misc
 /docs
+/server/docs/
+.claude/

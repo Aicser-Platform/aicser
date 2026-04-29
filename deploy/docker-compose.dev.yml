@@ -1,59 +1,211 @@
-version: '3.9'
-
+# Dev stack: postgres, redis, chat2chart-server, chat2chart-client.
+# - No DuckDB container: sample data is a file (sample_data.duckdb) mounted into
+#   chat2chart-server at /app/sample-data/duckdb; set SAMPLE_DATA_DUCKDB_PATH there for sample_duckdb sources.
+# - ClickHouse is optional: start with --profile enterprise-sample if needed.
+# - Required: .env with POSTGRES_*, REDIS, SECRET_KEY; optional: Azure/OpenAI keys for AI.
 services:
-  db:
-    image: postgres:16-alpine
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiser-postgres-dev
+    env_file: .env # Moved here
     environment:
-      POSTGRES_USER: aicser
-      POSTGRES_PASSWORD: aicser
-      POSTGRES_DB: aicser
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aicser"]
-      interval: 5s
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser_world}",
+        ]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
-  server:
-    image: python:3.12-slim
-    working_dir: /app
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: aiser-redis-dev
+    env_file: .env # Moved here
+    ports:
+      - "6379:6379"
     volumes:
-      - ../server:/app                        # live source code
-      - server_venv:/app/.venv               # cached pip deps
-    command: >
-      bash -c "pip install -q -r requirements.txt &&
-               uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ClickHouse Data Warehouse (optional: use profile "enterprise-sample" to start)
+  # Sample data for demos/onboarding uses DuckDB (scripts/sample-data) instead.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: aiser-clickhouse-dev
+    profiles:
+      - enterprise-sample
+    ports:
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native interface
     environment:
-      EDITION: ${EDITION:-CE}
-      DATABASE_URL: postgresql://aicser:aicser@db:5432/aicser
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
-      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
-      CORS_ORIGINS: http://localhost:3000
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_HOST: 0.0.0.0
+      CLICKHOUSE_PORT: 8123
+    volumes:
+      - clickhouse_dev_data:/var/lib/clickhouse
+      - ./scripts/clickhouse-init:/docker-entrypoint-initdb.d
+      - ./clickhouse-config/users.xml:/etc/clickhouse-server/users.d/custom-users.xml:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        /entrypoint.sh &
+        sleep 5
+        /docker-entrypoint-initdb.d/02-insert-data.sh || true
+        wait
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:8123/ping",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks:
+      - default
+
+  # Chat2Chart Server
+  chat2chart-server:
+    image: aiser-chat2chart-server:dev
+    build:
+      context: ../server
+      dockerfile: Dockerfile.dev
+    container_name: aiser-chat2chart-server-dev
+    working_dir: /app
+    env_file:
+      - .env
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  client:
-    image: node:20-alpine
-    working_dir: /app
+      - "5678:5678" # Debugpy port for remote debugging
     volumes:
-      - ../client:/app                        # live source code
-      - client_node_modules:/app/node_modules # cached npm deps
-    command: >
-      sh -c "npm install --silent && npm run dev"
+      - ../server:/app
+      - pip_cache:/root/.cache/pip
+      # Sample data: mount full tree so ensure_sample_data can run generators; DuckDB written under duckdb/
+      - ./scripts/sample-data:/app/scripts/sample-data
     environment:
-      NEXT_PUBLIC_EDITION: ${EDITION:-CE}
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-    ports:
-      - "3000:3000"
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-aiser_world} # Unified database
+      - POSTGRES_USER=${POSTGRES_USER:-aiser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aiser_password}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-aiser_world}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${APP_DEBUG:-true}
+      - ALLOW_UNVERIFIED_JWT_IN_DEV=${ALLOW_UNVERIFIED_JWT_IN_DEV:-true}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5-mini}
+      - AZURE_OPENAI_GPT41_API_KEY=${AZURE_OPENAI_GPT41_API_KEY}
+      - AZURE_OPENAI_GPT41_ENDPOINT=${AZURE_OPENAI_GPT41_ENDPOINT}
+      - AZURE_OPENAI_GPT41_API_VERSION=${AZURE_OPENAI_GPT41_API_VERSION}
+      - AZURE_OPENAI_GPT41_DEPLOYMENT_NAME=${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      - AZURE_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_API_BASE=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-aiser}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
+      - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-aiser_warehouse}
+      # JWT_SECRET: from Supabase Dashboard → Project Settings → API → JWT Secret (enables token verification; avoids "JWK Set did not contain any keys")
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-here}
+      # ENCRYPTION_KEY: generate with python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" (encrypts data source credentials at rest)
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - AZURE_STORAGE_ACCOUNT_URL=${AZURE_STORAGE_ACCOUNT_URL}
+      - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME}
+      # Sample data: path to DuckDB file (ensure_sample_data writes here on first start)
+      - SAMPLE_DATA_DUCKDB_PATH=${SAMPLE_DATA_DUCKDB_PATH:-/app/scripts/sample-data/duckdb/sample_data.duckdb}
+      - GENERATORS_BASE=/app/scripts/sample-data
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
+      - TELEGRAM_WEBHOOK_URL=${TELEGRAM_WEBHOOK_URL}
+    networks:
+      - default
     depends_on:
-      - server
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Overwrite the default command with our entrypoint script for migrations
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -ex;
+        cd /app;
+        echo "Waiting for PostgreSQL to be ready...";
+        until nc -z postgres 5432; do
+            echo "PostgreSQL is unavailable - sleeping";
+            sleep 2;
+        done;
+
+        echo "PostgreSQL is up - running migrations...";
+        /venv/bin/python -m alembic -c alembic.ini upgrade heads || exit 1;
+        echo "Ensuring sample data (DuckDB)...";
+        if [ -f /app/scripts/ensure_sample_data.py ]; then /venv/bin/python /app/scripts/ensure_sample_data.py || true; else echo "  (ensure_sample_data.py not found, skipping)"; fi;
+        echo "Starting chat2chart-server...";
+        /venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload;
+        # Uncomment this to use debugpy
+        # python -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m uvicorn src.main:app --host 0.0.0.0 --port 8000;
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
-  server_venv:
+  postgres_dev_data:
+  redis_dev_data:
+  clickhouse_dev_data:
+  sqlserver_dev_data:
+  pip_cache:
   client_node_modules:
+
+networks:
+  default:
+    name: aiser-dev-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1

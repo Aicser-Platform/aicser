@@ -1,0 +1,96 @@
+# =========================
+# Builder Stage
+# =========================
+FROM python:3.11-slim-bookworm AS builder
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install build dependencies + Microsoft ODBC driver
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    libsnappy-dev \
+    unixodbc-dev \
+    curl \
+    gnupg \
+    libgssapi-krb5-2 \
+ && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
+ && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
+    > /etc/apt/sources.list.d/mssql-release.list \
+ && apt-get update \
+ && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Install Python dependencies
+COPY requirements.txt .
+
+RUN pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r requirements.txt \
+ && python -c "import telegram.ext; print('python-telegram-bot OK')" \
+ && playwright install chromium --with-deps \
+ && find /app/.venv -name "*.pyc" -delete \
+ && find /app/.venv -name "__pycache__" -type d -exec rm -rf {} +
+
+# =========================
+# Runtime Stage
+# =========================
+FROM python:3.11-slim-bookworm AS runner
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH="/app/.venv/bin:$PATH"
+
+# Install runtime dependencies + Microsoft ODBC + Chromium system libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libsnappy1v5 \
+    unixodbc \
+    curl \
+    gnupg \
+    libgssapi-krb5-2 \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+ && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
+ && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
+    > /etc/apt/sources.list.d/mssql-release.list \
+ && apt-get update \
+ && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
+ && apt-get purge -y gnupg \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python environment and Playwright browsers
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
+
+# Copy application files
+COPY alembic.ini .
+COPY alembic ./alembic
+COPY src ./src
+COPY ee ./ee
+COPY scripts ./scripts
+
+# Remove Python cache
+RUN find . -name "__pycache__" -type d -exec rm -rf {} + || true
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+node_modules
+notebooks
+data
+tests
+.cache
+dist
+build
