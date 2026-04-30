@@ -1,3 +1,5 @@
+name: aiser-ee
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,9 +11,13 @@ services:
     volumes:
       - postgres_ee_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +47,15 @@ services:
       - "8123:8123"
       - "9000:9000"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:8123/ping",
+        ]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -66,6 +80,8 @@ services:
       POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "8123"
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
@@ -76,8 +92,10 @@ services:
       ENVIRONMENT: production
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../server/alembic/versions:/app/alembic/versions
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       postgres:
         condition: service_healthy

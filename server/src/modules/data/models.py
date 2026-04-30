@@ -12,7 +12,8 @@ from sqlalchemy.sql import func, text
 from src.core.edition import is_ee_enabled
 from src.db.base import Base
 
-_project_fk = [ForeignKey("projects.id")] if is_ee_enabled() else []
+def _project_fk():
+    return [ForeignKey("projects.id")] if is_ee_enabled() else []
 
 
 class DataSource(Base):
@@ -54,7 +55,7 @@ class DataSource(Base):
 
     # User ownership — tracks who uploaded/created this data source (nullable for backward compat)
     user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
 
     # Tenant isolation (nullable; DB default 'default' so INSERTs without it succeed)
     tenant_id = Column(String, nullable=True, server_default=text("'default'"))
@@ -73,7 +74,7 @@ class ProjectDataSource(Base):
     __tablename__ = "project_data_source"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid(), index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
     data_source_id = Column(String, nullable=False, index=True)
     data_source_type = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=True, server_default=text("true"))
@@ -103,7 +104,7 @@ class FileStorage(Base):
 
     # Ownership (UUID, NOT NULL in DB)
     # user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     # Timestamps (TIMESTAMP WITH TIME ZONE)
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now(), onupdate=func.now())
@@ -120,7 +121,7 @@ class ConnectorRuntimeJob(Base):
     __tablename__ = "connector_runtime_jobs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid(), index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
     connector_mode = Column(String(32), nullable=False, index=True)
     status = Column(String(32), nullable=False, server_default=text("'pending'"))
     config = Column(JSONB, nullable=True)

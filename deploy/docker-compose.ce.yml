@@ -1,3 +1,5 @@
+name: aiser-ce
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -53,6 +55,8 @@ services:
       ENVIRONMENT: production
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../server/alembic/versions:/app/alembic/versions
     ports:
       - "8000:8000"
     depends_on:

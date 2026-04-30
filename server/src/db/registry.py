@@ -23,55 +23,57 @@ from src.modules.feed.models import (
 )
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────
+# NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)
+# so Python's module cache deduplicates across all import sites.
 if is_ee_enabled():
     try:
-        from ee.modules.billing.models import (
+        from src.modules.billing.models import (
             SubscriptionPlan, OrganizationSubscription, OrganizationUsage, PaymentHistory
         )
     except ImportError:
         pass
 
     try:
-        from ee.modules.organizations.models import Organization, OrganizationKpiDefinition
+        from src.modules.organizations.models import Organization, OrganizationKpiDefinition
     except ImportError:
         pass
 
     try:
-        from ee.modules.project.models import Project
+        from src.modules.project.models import Project
     except ImportError:
         pass
 
     try:
-        from ee.modules.authentication.rbac.models import Role, Permission, RolePermission, UserRole
+        from src.modules.authentication.rbac.models import Role, Permission, RolePermission, UserRole
     except ImportError:
         pass
 
     try:
-        from ee.modules.invitations.models import OrganizationInvitation
+        from src.modules.invitations.models import OrganizationInvitation
     except ImportError:
         pass
 
     try:
-        from ee.modules.chats.models import Conversation, Message
+        from src.modules.chats.models import Conversation, Message
     except ImportError:
         pass
 
     try:
-        from ee.modules.ai.models import LlmAuditLog, LlmRequestSummary
+        from src.modules.ai.models import LlmAuditLog, LlmRequestSummary
     except ImportError:
         pass
 
     try:
-        from ee.modules.catalog.models import CatalogAsset
+        from src.modules.catalog.models import CatalogAsset
     except ImportError:
         pass
 
     try:
-        from ee.modules.platform.models import PlatformLineageEvent, PlatformPolicyRule
+        from src.modules.platform.models import PlatformLineageEvent, PlatformPolicyRule
     except ImportError:
         pass
 
     try:
-        from ee.modules.schedule_email.models import Scheduled_emails
+        from src.modules.schedule_email.models import Scheduled_emails
     except ImportError:
         pass

@@ -9,8 +9,10 @@ from sqlalchemy.sql import func, text
 from src.core.edition import is_ee_enabled
 from src.db.base import Base
 
-_org_fk = [ForeignKey("organizations.id")] if is_ee_enabled() else []
-_project_fk = [ForeignKey("projects.id")] if is_ee_enabled() else []
+def _org_fk():
+    return [ForeignKey("organizations.id")] if is_ee_enabled() else []
+def _project_fk():
+    return [ForeignKey("projects.id")] if is_ee_enabled() else []
 
 
 # ============================================================================
@@ -33,8 +35,8 @@ class FeedPost(Base):
     )
     asset_id = Column(UUID(as_uuid=True), nullable=False)
 
-    organization_id = Column(UUID(as_uuid=True), *_org_fk, nullable=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     visibility = Column(
@@ -176,8 +178,8 @@ class FeedEvent(Base):
     __tablename__ = "feed_events"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
-    organization_id = Column(UUID(as_uuid=True), *_org_fk, nullable=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id"), nullable=False)
     actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -231,8 +233,8 @@ class FeedCollection(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    organization_id = Column(UUID(as_uuid=True), *_org_fk, nullable=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_public = Column(Boolean, nullable=False, server_default=text("false"))

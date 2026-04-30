@@ -7,8 +7,10 @@ from sqlalchemy.sql import func, text
 import uuid
 from src.core.edition import is_ee_enabled
 
-_project_fk = [ForeignKey("projects.id")] if is_ee_enabled() else []
-_conversation_fk = [ForeignKey("conversation.id")] if is_ee_enabled() else []
+def _project_fk():
+    return [ForeignKey("projects.id")] if is_ee_enabled() else []
+def _conversation_fk():
+    return [ForeignKey("conversation.id")] if is_ee_enabled() else []
 
 
 class Chart(Base):
@@ -43,7 +45,7 @@ class Chart(Base):
 
     # Ownership
     dashboard_id = Column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk, nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -115,7 +117,7 @@ class ChatVisualization(BaseModel):
     
     # User ownership
     user_id = Column(UUID(as_uuid=True), nullable=True)
-    conversation_id = Column(UUID, *_conversation_fk, nullable=True)
+    conversation_id = Column(UUID, *_conversation_fk(), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())

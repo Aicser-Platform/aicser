@@ -15,7 +15,8 @@ from sqlalchemy.sql import text
 import uuid
 from src.core.edition import is_ee_enabled
 
-_org_fk = [ForeignKey("organizations.id")] if is_ee_enabled() else []
+def _org_fk():
+    return [ForeignKey("organizations.id")] if is_ee_enabled() else []
 
 
 class DashboardChart(Base):
@@ -127,7 +128,7 @@ class DashboardShare(BaseModel):
     dashboard_id = Column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=False)
     shared_by = Column(PG_UUID(as_uuid=True), nullable=False)
     shared_with = Column(PG_UUID(as_uuid=True), nullable=True)
-    organization_id = Column(UUID(as_uuid=True), *_org_fk, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True)
     
     # Share settings
     permission = Column(String(20), default="view")  # view, edit, admin
