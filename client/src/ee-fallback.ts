@@ -49,6 +49,8 @@ export function useOnboardingStore() {
     isLoading: false,
     fetchStatus: async () => {},
     markComplete: async () => {},
+    startOnboarding: () => {},
+    onboardingCompleted: false,
   };
 }
 export function useOnboarding() {
