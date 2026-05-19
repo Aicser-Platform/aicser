@@ -1,0 +1,492 @@
+/* Chart Designer Additional Refinements */
+
+.designer-theme {
+  --studio-sidebar-width: 320px;
+}
+
+.studio-wrapper {
+  height: calc(100vh - 64px);
+  width: 100%;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: var(--studio-bg);
+}
+
+.studio-body {
+  display: flex !important;
+  flex: 1 !important;
+  position: relative !important;
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+.designer-simplified.studio-wrapper {
+  height: calc(100vh - 64px) !important;
+  min-height: calc(100vh - 64px) !important;
+  max-height: calc(100vh - 64px) !important;
+  overflow: hidden !important;
+}
+
+.designer-simplified .studio-body {
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.designer-breadcrumb {
+  font-size: 14px;
+  color: var(--studio-text-secondary);
+}
+
+.designer-breadcrumb .ant-typography {
+  color: var(--studio-text-main);
+  font-weight: 600;
+}
+
+.breadcrumb-current {
+  color: var(--studio-text-main);
+  font-weight: 600;
+}
+
+.chart-count-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding: 4px 10px;
+  background: var(--ant-color-fill-quaternary, #f2f4f7);
+  border-radius: 100px;
+}
+
+.count-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--studio-text-secondary);
+}
+
+.type-selector-btn {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--studio-text-main);
+  font-weight: 600;
+}
+
+.type-selector-btn:hover {
+  background: var(--studio-card-bg) !important;
+}
+
+.type-label {
+  text-transform: capitalize;
+}
+
+.header-btn-premium {
+  height: 40px !important;
+  border-radius: 12px !important;
+  font-weight: 700 !important;
+  padding: 0 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  background: var(--studio-primary) !important;
+  border: none !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(0, 194, 203, 0.25) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.header-btn-premium:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 194, 203, 0.35) !important;
+  background: var(--studio-primary-hover) !important;
+}
+
+.header-btn-premium:active {
+  transform: translateY(0);
+}
+
+/* Sidebar Toggle Improvements */
+.properties-collapsed-bar {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 160px;
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  border-right: none;
+  border-radius: 12px 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.04);
+}
+
+.properties-collapsed-bar:hover {
+  width: 52px;
+  background: var(--studio-primary-light);
+  border-color: var(--studio-primary);
+}
+
+.properties-label-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--studio-text-main);
+  font-weight: 800;
+  letter-spacing: 2px;
+  font-size: 11px;
+}
+
+.properties-label-vertical span {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+
+.properties-label-vertical .anticon {
+  font-size: 16px;
+  color: var(--studio-primary);
+}
+
+.toggle-icon {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--studio-text-secondary);
+}
+
+/* Canvas Area Refinements */
+.designer-canvas {
+  background-color: #ffffff !important;
+  position: relative;
+  z-index: 1;
+}
+
+.designer-canvas::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.designer-canvas-container {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  overflow: hidden;
+}
+
+.designer-fullscreen-canvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Simplified chart-first mode */
+.designer-simplified .chart-designer-sidebar {
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  flex: 0 0 200px;
+  min-height: 100%;
+  height: 100%;
+  background: #f8fafc;
+  border-right: 1px solid var(--studio-border);
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+.designer-simplified .chart-designer-sidebar .sidebar-header {
+  padding: 12px;
+}
+
+.designer-simplified .chart-designer-sidebar .sidebar-nav {
+  padding: 8px;
+  gap: 8px;
+}
+
+.designer-simplified .chart-designer-sidebar .sidebar-section-title {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.designer-simplified .chart-designer-sidebar .nav-item {
+  padding: 8px 10px;
+  gap: 10px;
+  border-radius: 6px;
+}
+
+.designer-simplified .properties-panel {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+  height: 100%;
+  min-height: 100%;
+  background: #f8fafc;
+  border-left: 1px solid var(--studio-border);
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+.designer-simplified .properties-panel .panel-header {
+  height: 44px;
+  padding: 12px 12px 6px;
+}
+
+.designer-simplified .properties-panel .panel-header h3 {
+  font-size: 13px;
+}
+
+.designer-simplified .properties-panel .properties-tabs .ant-tabs-nav {
+  padding: 0 12px;
+}
+
+.designer-simplified .properties-panel .tab-pane-content {
+  padding: 10px;
+}
+
+.designer-simplified .properties-panel.collapsed {
+  display: none;
+}
+
+.designer-simplified .sidebar-toggle-btn {
+  display: none !important;
+}
+
+.designer-simplified .designer-canvas {
+  background-image: none !important;
+  background-color: var(--studio-bg) !important;
+  overflow: hidden !important;
+}
+
+.designer-simplified .studio-canvas-area {
+  margin-right: 300px;
+  min-width: 0;
+}
+
+.designer-simplified .designer-fullscreen-canvas {
+  padding: 12px;
+  overflow: hidden;
+}
+
+.designer-simplified .designer-canvas-container {
+  height: 100%;
+  padding: 0 40px;
+}
+
+.designer-simplified .widget-card {
+  border-radius: 12px;
+  box-shadow: none;
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-bg);
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.designer-simplified .dashboard-container {
+  min-height: 0;
+  height: 100% !important;
+  padding: 0 !important;
+}
+
+.designer-simplified .layout {
+  min-height: 0;
+}
+
+.designer-simplified .widget-card-body {
+  padding: 20px 24px;
+  height: 100% !important;
+  overflow: hidden !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Keep chart renderer strictly inside widget bounds */
+.designer-simplified .widget-card-body > * {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.designer-simplified .widget-card-body svg,
+.designer-simplified .widget-card-body canvas {
+  max-width: 100%;
+}
+
+.designer-simplified .widget-card-header {
+  display: flex !important;
+  height: 48px;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-card-bg);
+}
+
+.designer-simplified .widget-card:hover,
+.designer-simplified .widget-card.selected {
+  box-shadow: 0 0 0 1px rgba(0, 194, 203, 0.2);
+}
+
+/* Empty State Refinements */
+.empty-designer-state {
+  padding: 80px 20px;
+  text-align: center;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.empty-state-hero {
+  margin-bottom: 64px;
+}
+
+.hero-badge {
+  display: inline-block;
+  background: var(--studio-primary-light);
+  color: var(--studio-primary);
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.hero-title {
+  font-size: 36px !important;
+  font-weight: 800 !important;
+  color: var(--studio-text-main);
+  letter-spacing: -0.01em;
+  margin-bottom: 12px !important;
+}
+
+.hero-subtitle {
+  font-size: 16px !important;
+  color: var(--studio-text-secondary) !important;
+  max-width: 500px;
+  margin: 0 auto !important;
+  line-height: 1.5;
+}
+
+.empty-state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
+  perspective: 1000px;
+}
+
+.empty-state-card {
+  position: relative;
+  padding: 32px;
+  border-radius: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  background: var(--studio-card-bg);
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.card-glass-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.empty-state-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+  border-color: var(--studio-primary);
+}
+
+.empty-state-card:hover .card-glass-bg {
+  opacity: 1;
+}
+
+.card-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  background: var(--ant-color-fill-quaternary, #f8fafb);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--studio-primary);
+  transition: all 0.4s;
+  flex-shrink: 0;
+}
+
+.empty-state-card:hover .card-icon-wrapper {
+  background: var(--studio-primary);
+  color: #fff;
+  transform: rotate(-5deg);
+}
+
+.card-content {
+  flex: 1;
+}
+
+.card-name {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--studio-text-main);
+  margin-bottom: 4px;
+}
+
+.card-desc {
+  font-size: 13px;
+  color: var(--studio-text-secondary);
+  line-height: 1.5;
+}
+
+.card-arrow {
+  font-size: 16px;
+  color: var(--studio-border);
+  transition: all 0.4s;
+  transform: translateX(-10px);
+  opacity: 0;
+}
+
+.empty-state-card:hover .card-arrow {
+  transform: translateX(0);
+  opacity: 1;
+  color: var(--studio-primary);
+}
+
+.animate-in {
+  animation: slideUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

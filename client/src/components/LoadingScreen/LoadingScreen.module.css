@@ -1,0 +1,81 @@
+.spinnerContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: inherit;
+    z-index: 1000;
+}
+
+.spinnerWrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.spinner {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+.spinnerDot {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background-color: #1890ff;
+    border-radius: 50%;
+    animation: spinnerDot 1.2s linear infinite;
+}
+
+.spinnerDot:nth-child(1) {
+    width: 12px;
+    height: 12px;
+    top: 0;
+    left: 0;
+    animation-delay: 0s;
+}
+
+.spinnerDot:nth-child(2) {
+    width: 14px;
+    height: 14px;
+    top: 0;
+    right: 0;
+    animation-delay: 0.3s;
+}
+
+.spinnerDot:nth-child(3) {
+    width: 16px;
+    height: 16px;
+    bottom: 0;
+    right: 0;
+    animation-delay: 0.6s;
+}
+
+.spinnerDot:nth-child(4) {
+    width: 14px;
+    height: 14px;
+    bottom: 0;
+    left: 0;
+    animation-delay: 0.9s;
+}
+@keyframes spin {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes spinnerDot {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}

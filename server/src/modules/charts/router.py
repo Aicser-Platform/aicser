@@ -26,6 +26,7 @@ from sqlalchemy import select
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.core.config import settings
+from src.core.edition import is_ee_enabled
 from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Request, status
 from typing import Union
 import asyncio
@@ -636,7 +637,10 @@ def _normalize_user_payload(current_token: Union[str, dict]) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-async def _resolve_project_for_template(user_id: str, requested_project_id: Optional[str]) -> str:
+async def _resolve_project_for_template(user_id: str, requested_project_id: Optional[str]) -> Optional[str]:
+    if not requested_project_id and not is_ee_enabled():
+        return None
+
     from src.modules.project.service import ProjectService
 
     normalized_user_id = user_id
@@ -688,7 +692,9 @@ async def _resolve_project_for_template(user_id: str, requested_project_id: Opti
 
     projects, _ = await ProjectService.get_user_projects(normalized_user_id)
     if not projects:
-        raise HTTPException(status_code=400, detail="No project found for this user")
+        if requested_project_id:
+            raise HTTPException(status_code=403, detail="No access to requested project")
+        return None
 
     allowed_project_ids = {str(project.id) for project in projects}
     if requested_project_id:
@@ -702,7 +708,7 @@ async def _resolve_project_for_template(user_id: str, requested_project_id: Opti
 async def _ensure_sample_domain_data_source(
     db: AsyncSession,
     user_id: str,
-    project_id: str,
+    project_id: Optional[str],
     domain: str,
     primary_table: str,
 ) -> Dict[str, Any]:
@@ -710,11 +716,13 @@ async def _ensure_sample_domain_data_source(
     from src.modules.data.services.data_connectivity_service import DataConnectivityService
     from src.modules.data.utils.credentials import decrypt_credentials
 
-    try:
-        import uuid as _uuid
-        project_uuid = _uuid.UUID(project_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid project_id")
+    project_uuid = None
+    if project_id:
+        try:
+            import uuid as _uuid
+            project_uuid = _uuid.UUID(project_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid project_id")
 
     result = await db.execute(
         select(DataSource).where(
@@ -2646,11 +2654,13 @@ async def create_dashboard_from_template(
             project_id,
         )
 
-        try:
-            import uuid as _uuid
-            project_uuid = _uuid.UUID(project_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid project_id")
+        project_uuid = None
+        if project_id:
+            try:
+                import uuid as _uuid
+                project_uuid = _uuid.UUID(project_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid project_id")
 
         # Collect unique (domain, table) pairs so we provision one data source per table.
         unique_tables = list(dict.fromkeys(
@@ -2750,7 +2760,7 @@ async def create_dashboard_from_template(
             "message": "Dashboard created from template successfully",
             "dashboard": {
                 "id": str(dashboard.id),
-                "project_id": str(dashboard.project_id),
+                "project_id": str(dashboard.project_id) if dashboard.project_id else None,
                 "title": dashboard.title,
                 "config": dashboard.config,
                 "created_at": dashboard.created_at.isoformat() if dashboard.created_at else None,

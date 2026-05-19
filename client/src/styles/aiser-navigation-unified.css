@@ -1,0 +1,332 @@
+/**
+ * Aiser Platform - Unified Navigation System
+ * SINGLE SOURCE OF TRUTH for header, sidebar, and menu backgrounds
+ * OVERRIDES ALL ANT DESIGN DEFAULTS with custom Aiser brand colors
+ * Ensures consistent brand-aligned colors across all navigation elements
+ * 
+ * Custom Colors (NOT Ant Design defaults):
+ * - Dark Mode: #0f1b3d (brand blue)
+ * - Light Mode: #fafafa (subtle off-white)
+ */
+
+/* ========================================
+   AISER BRAND COLOR SYSTEM
+   ======================================== */
+
+/**
+ * Aiser Navigation System - Uses Theme Tokens
+ * Navigation (header/sidebar/menu) uses brand blue
+ * Content areas use grey-ish colors from theme
+ */
+
+/* Navigation colors use simplified 5-color system */
+/* --color-bg-navigation: Header/Sidebar/Menu background (Color 4 - Navigation) */
+/* --color-bg-elevated: Navigation hover states (Color 3 - Elevated) */
+/* --color-bg-container: Content areas, panels, cards (Color 2 - Container) */
+/* --color-bg-elevated: Elevated surfaces, modals, dropdowns (Color 3 - Elevated) */
+
+/* ========================================
+   UNIFIED NAVIGATION BACKGROUND
+   All navigation elements use the same background
+   ======================================== */
+
+/* Header - Uses navigation color (4. Navigation) */
+.ant-layout-header,
+header.ant-layout-header,
+[class*="ant-layout-header"],
+[class*="LayoutHeader"],
+[class*="layout-header"],
+div[class*="ant-layout-header"] {
+  background: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+/* Sidebar - Uses CUSTOM navigation color (NOT Ant Design defaults) */
+/* Overrides ALL Ant Design default sidebar colors */
+.ant-layout-sider,
+aside.ant-layout-sider,
+[class*="ant-layout-sider"],
+.ant-layout-sider-dark,
+.ant-layout-sider-light,
+.ant-layout-sider-collapsed,
+body .ant-layout-sider,
+html body .ant-layout-sider,
+#__next .ant-layout-sider,
+div[class*="ant-layout-sider"],
+html[data-theme="light"] .ant-layout-sider,
+html[data-theme="light"] .ant-layout-sider *,
+html[data-theme="dark"] .ant-layout-sider,
+html[data-theme="dark"] .ant-layout-sider *,
+html[data-theme="light"] body .ant-layout-sider,
+html[data-theme="dark"] body .ant-layout-sider {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+
+/* Sidebar header (logo area) - Same navigation color (from logo to bottom) */
+.ant-layout-sider > div:first-child,
+.ant-layout-sider > div[style*="height: 64px"],
+.ant-layout-sider > div[style*="minHeight: 64px"],
+.ant-layout-sider > div[style*="padding"],
+.ant-layout-sider .ant-layout-sider-children > div:first-child,
+.ant-layout-sider .ant-layout-sider-children {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* Sidebar children container - Extends navigation color to bottom */
+.ant-layout-sider .ant-layout-sider-children {
+  background: var(--color-bg-navigation) !important;
+  background-color: var(--color-bg-navigation) !important;
+  height: 100% !important;
+}
+
+/* Menu container - Uses CUSTOM navigation color (NOT Ant Design defaults) */
+/* Overrides ALL Ant Design default menu colors */
+.ant-menu,
+.ant-menu-root,
+.ant-menu-inline,
+.ant-menu-vertical,
+.ant-menu-dark,
+.ant-menu-light,
+ul.ant-menu,
+ul.ant-menu-root,
+ul.ant-menu-inline,
+html[data-theme="light"] .ant-menu,
+html[data-theme="light"] .ant-menu *,
+html[data-theme="dark"] .ant-menu,
+html[data-theme="dark"] .ant-menu * {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* ========================================
+   MENU ITEMS - SAME BACKGROUND AS NAVIGATION
+   ======================================== */
+
+/* Base menu items - Use navigation token (brand blue) */
+li.ant-menu-item,
+li.ant-menu-item:not(:hover):not(.ant-menu-item-selected):not(.ant-menu-item-active),
+li.ant-menu-submenu,
+li.ant-menu-submenu:not(:hover):not(.ant-menu-submenu-open),
+.ant-menu-item,
+.ant-menu-item:not(:hover):not(.ant-menu-item-selected):not(.ant-menu-item-active),
+.ant-menu-submenu-title,
+.ant-menu-submenu-title:not(:hover):not(.ant-menu-submenu-open),
+.ant-menu-item-only-child {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* Override Ant Design dark/light theme classes - Use navigation token */
+.ant-menu-dark li.ant-menu-item,
+.ant-menu-dark li.ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-dark .ant-menu-item,
+.ant-menu-dark .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-dark .ant-menu-submenu-title,
+.ant-menu-dark .ant-menu-submenu-title:not(:hover),
+.ant-menu-dark li.ant-menu-submenu,
+.ant-menu-light li.ant-menu-item,
+.ant-menu-light li.ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-light .ant-menu-item,
+.ant-menu-light .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-light .ant-menu-submenu-title,
+.ant-menu-light .ant-menu-submenu-title:not(:hover),
+.ant-menu-light li.ant-menu-submenu {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* Nested submenu items (children) - Transparent to inherit gradient */
+.ant-menu-submenu .ant-menu-item,
+.ant-menu-submenu .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-submenu-inline .ant-menu-item,
+.ant-menu-submenu-inline .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-submenu-inline .ant-menu,
+.ant-menu-submenu-inline .ant-menu-sub,
+.ant-menu-submenu-inline,
+.ant-menu-submenu-inline > .ant-menu,
+.ant-menu-submenu-inline > .ant-menu-sub,
+.ant-menu-dark .ant-menu-submenu .ant-menu-item,
+.ant-menu-dark .ant-menu-submenu .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+.ant-menu-light .ant-menu-submenu .ant-menu-item,
+.ant-menu-light .ant-menu-submenu .ant-menu-item:not(:hover):not(.ant-menu-item-selected) {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Ensure submenu container also inherits gradient */
+.ant-menu-submenu-inline > .ant-menu,
+.ant-menu-submenu-inline > .ant-menu-sub {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* ========================================
+   MENU ITEM HOVER STATES
+   ======================================== */
+
+/* Menu item hover - Use navigation hover token */
+.ant-menu-item:hover,
+.ant-menu-submenu-title:hover,
+.ant-menu-item-only-child:hover,
+li.ant-menu-item:hover,
+li.ant-menu-submenu:hover,
+.ant-menu-dark .ant-menu-item:hover,
+.ant-menu-dark .ant-menu-submenu-title:hover,
+.ant-menu-light .ant-menu-item:hover,
+.ant-menu-light .ant-menu-submenu-title:hover {
+  background: var(--color-bg-elevated) !important;
+  background-color: var(--color-bg-elevated) !important;
+}
+
+/* ========================================
+   MENU ITEM SELECTED STATE
+   ======================================== */
+
+.ant-menu-item-selected,
+.ant-menu-item-selected:hover,
+.ant-menu-item-active,
+.ant-menu-item-active:hover {
+  background: var(--ant-color-primary) !important;
+  background-color: var(--ant-color-primary) !important;
+  color: #ffffff !important;
+}
+
+/* ========================================
+   SUBMENU DROPDOWNS (POPUP)
+   ======================================== */
+
+/* Submenu popups - Enhanced styling to match sidebar */
+.ant-menu-submenu-popup,
+.ant-menu-submenu-popup .ant-menu,
+.ant-menu-submenu-popup .ant-menu-item,
+.ant-menu-submenu-popup .ant-menu-item:not(:hover):not(.ant-menu-item-selected) {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 8px !important;
+}
+
+.ant-menu-submenu-popup .ant-menu-item:hover {
+  background: var(--color-bg-elevated) !important;
+  background-color: var(--color-bg-elevated) !important;
+}
+
+.ant-menu-submenu-popup .ant-menu-item-selected {
+  background: var(--color-primary) !important;
+  background-color: var(--color-primary) !important;
+  color: #ffffff !important;
+}
+
+/* ========================================
+   FORCE OVERRIDE ALL ANT DESIGN INTERNAL STYLES
+   ======================================== */
+
+/* Override any remaining Ant Design defaults - Use navigation token */
+.ant-layout-sider-dark,
+.ant-menu-dark,
+.ant-menu-dark .ant-menu,
+.ant-menu-dark .ant-menu-inline,
+.ant-layout-sider-light,
+.ant-menu-light,
+.ant-menu-light .ant-menu,
+.ant-menu-light .ant-menu-inline {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* Ensure all child elements inherit the background - but keep menu items visible */
+.ant-menu-item > *,
+.ant-menu-item > a,
+.ant-menu-item > span,
+.ant-menu-submenu-title > *,
+.ant-menu-submenu-title > span,
+.ant-menu-submenu-title > div {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* CRITICAL: Ensure menu items themselves use navigation color (not transparent) */
+/* This overrides ANY conflicting rules from design-system.css or other files */
+.ant-menu-item,
+.ant-menu-submenu-title,
+.ant-menu-item-only-child,
+li.ant-menu-item,
+li.ant-menu-submenu-title,
+.ant-menu-item:not(:hover):not(.ant-menu-item-selected):not(.ant-menu-item-active),
+.ant-menu-submenu-title:not(:hover):not(.ant-menu-submenu-open) {
+  background: var(--color-bg-navigation) !important;
+  background-color: var(--color-bg-navigation) !important;
+}
+
+/* Override any dark/light theme specific rules that might set transparent or container color */
+.ant-menu-dark .ant-menu-item,
+.ant-menu-dark .ant-menu-submenu-title,
+.ant-menu-light .ant-menu-item,
+.ant-menu-light .ant-menu-submenu-title,
+[data-theme="dark"] .ant-menu-item,
+[data-theme="dark"] .ant-menu-submenu-title,
+[data-theme="dark"] .ant-menu-item:not(:hover):not(.ant-menu-item-selected),
+[data-theme="light"] .ant-menu-item,
+[data-theme="light"] .ant-menu-submenu-title,
+[data-theme="light"] .ant-menu-item:not(:hover):not(.ant-menu-item-selected) {
+  background: var(--color-bg-navigation) !important;
+  background-color: var(--color-bg-navigation) !important;
+}
+
+/* ========================================
+   SMOOTH TRANSITIONS FOR BETTER UX
+   ======================================== */
+
+/* Smooth background transitions for menu items */
+.ant-menu-item,
+.ant-menu-submenu-title,
+.ant-menu-item-only-child {
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Smooth transitions for header and sidebar */
+.ant-layout-header,
+.ant-layout-sider {
+  transition: background-color 0.3s ease,
+              border-color 0.3s ease !important;
+}
+
+/* ========================================
+   VISUAL POLISH & REFINEMENTS
+   ======================================== */
+
+/* Ensure menu items have consistent spacing and alignment */
+.ant-menu-item,
+.ant-menu-submenu-title {
+  margin: 1px 6px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+}
+
+/* Subtle elevation on hover for better feedback */
+.ant-menu-item:hover,
+.ant-menu-submenu-title:hover {
+  transform: translateX(2px) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-theme="dark"] .ant-menu-item:hover,
+[data-theme="dark"] .ant-menu-submenu-title:hover {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Selected state with enhanced visibility */
+.ant-menu-item-selected,
+.ant-menu-item-selected:hover {
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3),
+              0 1px 2px rgba(37, 99, 235, 0.2) !important;
+  font-weight: 500 !important;
+}
+

@@ -37,6 +37,8 @@ Thumbs.db
 *.swo
 
 # Misc
-/docs
+/docs/
+.cursor/
 /server/docs/
 .claude/
+CLAUDE.md

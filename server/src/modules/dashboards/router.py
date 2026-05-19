@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 from uuid import UUID
 
 from src.db.session import get_async_session
@@ -21,34 +22,15 @@ router = APIRouter()
     response_model=DashboardListResponse,
 )
 async def list_dashboards(
-    project_id: UUID,
+    project_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_session),
 ):
-
     service = DashboardService(db)
-    dashboards = await service.list_by_project(project_id)
-
+    if project_id:
+        dashboards = await service.list_by_project(project_id)
+    else:
+        dashboards = await service.list_all()
     return {"dashboards": dashboards}
-    
-@router.get(
-    "/{dashboard_id}",
-    response_model=DashboardResponse,
-)
-async def get_dashboard(
-    dashboard_id: UUID,
-    db: AsyncSession = Depends(get_async_session),
-):
-    """
-    Get a specific dashboard by ID.
-    Accessible without authentication for shared/public viewing.
-    """
-    service = DashboardService(db)
-    dashboard = await service.get_by_id(dashboard_id)
-
-    if not dashboard:
-        raise HTTPException(status_code=404, detail="Dashboard not found")
-
-    return dashboard
 
 
 @router.post(
@@ -57,8 +39,8 @@ async def get_dashboard(
     status_code=201,
 )
 async def create_dashboard(
-    project_id: UUID,
     payload: DashboardCreateRequest,
+    project_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_session),
     current_user: dict = Depends(JWTCookieBearer()),
 ):

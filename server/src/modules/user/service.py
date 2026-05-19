@@ -52,12 +52,20 @@ class UserService:
     # ── read ─────────────────────────────────────────────────────────────────
 
     async def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Return profile data for *user_id* from the users table."""
+        """Return profile data for *user_id* from the users table.
+
+        Matches either the ``user_id`` column (Supabase/EE users) or the ``id``
+        primary key (CE-registered users whose JWT ``sub`` equals their PK).
+        """
         u_id = self._to_uuid(user_id)
         cols = ", ".join(_PROFILE_COLUMNS)
         result = await self.db.execute(
-            text(f"SELECT id, user_id, {cols} FROM users WHERE user_id = :user_id"),
-            {"user_id": u_id},
+            text(
+                f"SELECT id, user_id, {cols} FROM users"
+                " WHERE user_id = :uid OR id = :uid"
+                " LIMIT 1"
+            ),
+            {"uid": u_id},
         )
         row = result.fetchone()
         if not row:
@@ -116,7 +124,7 @@ class UserService:
                 UPDATE users
                 SET {set_clause},
                     updated_at = NOW()
-                WHERE user_id = :user_id
+                WHERE user_id = :user_id OR id = :user_id
             """),
             params,
         )

@@ -1,0 +1,282 @@
+/**
+ * Aiser Platform - Simplified Color System
+ * 3-5 colors per mode for clear hierarchy and consistency
+ * 
+ * Color Hierarchy (Dark Mode):
+ * 1. Background (darkest) - #0d1117
+ * 2. Container (medium) - #161b22
+ * 3. Elevated (lighter) - #1c2128
+ * 4. Navigation (brand blue) - #0f1b3d
+ * 5. Border/Divider - #30363d
+ * 
+ * Color Hierarchy (Light Mode):
+ * 1. Background (lightest) - #ffffff
+ * 2. Container (slightly grey) - #f8f9fa
+ * 3. Elevated (grey) - #f1f3f5
+ * 4. Navigation (off-white) - #fafafa
+ * 5. Border/Divider - #e1e4e8
+ */
+
+/* ========================================
+   SIMPLIFIED COLOR TOKENS
+   ======================================== */
+
+:root {
+  /* Light Mode - 5 Colors Only (Default) */
+  --color-bg-base: #ffffff;           /* 1. Page background (lightest) */
+  --color-bg-container: #f8f9fa;       /* 2. Cards, panels, containers */
+  --color-bg-elevated: #f1f3f5;        /* 3. Modals, dropdowns, elevated */
+  --color-bg-navigation: #fafafa;      /* Legacy fallback */
+  --color-bg-navigation-sider: #eef1f5; /* Sidebar/menu tone */
+  --color-bg-navigation-header: #ffffff; /* Header tone */
+  --color-bg-navigation-header-glow: #dfe4ec; /* Header gradient accent */
+  --color-border: #e1e4e8;             /* 5. Borders, dividers */
+  
+  /* Text Colors - Derived from backgrounds */
+  --color-text-primary: #24292f;       /* Primary text on light */
+  --color-text-secondary: #57606a;    /* Secondary text */
+  --color-text-tertiary: #8b949e;     /* Tertiary text */
+  
+  /* Accent Colors - Minimal */
+  --color-primary: #00c2cb;             /* Primary action */
+  --color-primary-hover: #058990;
+  --color-primary-active: #1e777c;
+}
+
+/* Dark mode - when html has class "dark" or data-theme="dark" */
+html.dark,
+html[data-theme="dark"],
+[data-theme="dark"] {
+  /* Dark Mode - 5 Colors Only */
+  --color-bg-base: #0d1117;           /* 1. Page background (darkest) */
+  --color-bg-container: #161b22;       /* 2. Cards, panels, containers */
+  --color-bg-elevated: #1c2128;        /* 3. Modals, dropdowns, elevated */
+  --color-bg-navigation: #030712;       /* Legacy fallback */
+  --color-bg-navigation-sider: #030712; /* Sidebar/menu tone */
+  --color-bg-navigation-header: #10131c; /* Header tone */
+  --color-bg-navigation-header-glow: #1c2432; /* Header gradient accent */
+  --color-border: #30363d;             /* 5. Borders, dividers */
+  
+  /* Text Colors - Derived from backgrounds */
+  --color-text-primary: #e6edf3;      /* Primary text on dark */
+  --color-text-secondary: #8b949e;     /* Secondary text */
+  --color-text-tertiary: #6e7681;      /* Tertiary text */
+}
+
+/* ========================================
+   COMPONENT-SPECIFIC COLOR MAPPING
+   ======================================== */
+
+/* Page Background - Base Color */
+html,
+body,
+#__next,
+.ant-layout,
+.ant-layout-content,
+.page-wrapper,
+.page-content {
+  background: var(--color-bg-base) !important;
+}
+
+/* Navigation - Brand Color */
+.ant-layout-header,
+header.ant-layout-header,
+[class*="ant-layout-header"],
+[class*="LayoutHeader"],
+[class*="layout-header"],
+div[class*="ant-layout-header"] {
+  background: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-layout-sider,
+aside.ant-layout-sider,
+[class*="ant-layout-sider"],
+.ant-layout-sider-dark,
+.ant-layout-sider-light,
+.ant-layout-sider-collapsed,
+div[class*="ant-layout-sider"] {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  border-right: 1px solid var(--color-border) !important;
+}
+
+.ant-menu,
+.ant-menu-root,
+.ant-menu-inline,
+.ant-menu-vertical,
+.ant-menu-dark,
+.ant-menu-light,
+ul.ant-menu,
+ul.ant-menu-root,
+ul.ant-menu-inline {
+  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+}
+
+/* Cards & Panels - Container Color */
+.ant-card,
+.content-card,
+.stat-card,
+.summary-card,
+.enhanced-chat-panel,
+.enhanced-data-panel,
+.chat-history-panel,
+.query-editor-panel,
+.chart-preview-panel,
+.chart-config-panel,
+.dashboard-canvas,
+.unified-design-panel,
+.ant-panel,
+.panel-container,
+.dashboard-widget,
+.chart-widget {
+  background: var(--color-bg-container) !important;
+  border: 1px solid var(--color-border) !important;
+}
+
+/* Tables - Container Color */
+.ant-table,
+.ant-table-container,
+.ant-table-wrapper {
+  background: var(--color-bg-container) !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--color-bg-elevated) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--color-bg-elevated) !important;
+}
+
+/* Forms - Container Color */
+.ant-form,
+.ant-form-item,
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker,
+textarea.ant-input {
+  background: var(--color-bg-container) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector {
+  border-color: var(--color-primary) !important;
+}
+
+/* Modals & Dropdowns - Elevated Color */
+.ant-modal-content,
+.ant-modal-header,
+.ant-drawer-content,
+.ant-drawer-header,
+.ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-picker-dropdown {
+  background: var(--color-bg-elevated) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* Buttons - Clear Hierarchy */
+.ant-btn-default {
+  background: var(--color-bg-container) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.ant-btn-default:hover {
+  background: var(--color-bg-elevated) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--color-primary) !important;
+}
+
+.ant-btn-primary {
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: #ffffff !important;
+}
+
+.ant-btn-primary:hover {
+  background: var(--color-primary-hover) !important;
+  border-color: var(--color-primary-hover) !important;
+}
+
+/* Tabs - Container Color */
+.ant-tabs {
+  background: var(--color-bg-container) !important;
+}
+
+.ant-tabs-tab {
+  color: var(--color-text-secondary) !important;
+}
+
+.ant-tabs-tab-active {
+  color: var(--color-primary) !important;
+}
+
+.ant-tabs-ink-bar {
+  background: var(--color-primary) !important;
+}
+
+/* Dividers - Border Color */
+.ant-divider {
+  border-color: var(--color-border) !important;
+}
+
+/* Text Colors - Consistent Hierarchy */
+.ant-typography,
+.ant-typography-title,
+.ant-typography-text,
+.ant-typography-paragraph,
+h1, h2, h3, h4, h5, h6,
+.page-title,
+.page-description {
+  color: var(--color-text-primary) !important;
+}
+
+.ant-typography-secondary,
+.text-secondary,
+.page-description {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Menu Items - Navigation Colors */
+.ant-menu-item,
+.ant-menu-submenu-title {
+  color: var(--color-text-primary) !important;
+}
+
+.ant-menu-item:hover,
+.ant-menu-submenu-title:hover {
+  background: var(--color-bg-elevated) !important;
+  color: var(--color-primary) !important;
+}
+
+.ant-menu-item-selected {
+  background: var(--color-primary) !important;
+  color: #ffffff !important;
+}
+
+/* Scrollbars - Subtle */
+::-webkit-scrollbar-track {
+  background: var(--color-bg-base) !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border) !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary) !important;
+}
+

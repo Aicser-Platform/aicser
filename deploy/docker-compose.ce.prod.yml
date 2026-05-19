@@ -1,0 +1,118 @@
+name: aiser-ce-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aiser-postgres-ce-prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_ce_prod_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiser-redis-ce-prod
+    volumes:
+      - redis_ce_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ../server
+      dockerfile: Dockerfile.prod
+    container_name: aiser-server-ce-prod
+    environment:
+      AISER_EDITION: CE
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRY_SECONDS: "604800"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENVIRONMENT: production
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ../server/alembic/versions:/app/alembic/versions
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "Running CE migrations..."
+        alembic -c alembic.ini upgrade ce@head
+        echo "Starting server..."
+        exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  client:
+    build:
+      context: ../client
+      dockerfile: Dockerfile.prod
+      args:
+        EDITION: community
+        NEXT_PUBLIC_EDITION: community
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (browser-accessible server URL e.g. http://YOUR_HOST:8000)}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    container_name: aiser-client-ce-prod
+    environment:
+      # Server-side proxy target (Next.js Route Handlers → FastAPI, internal Docker DNS)
+      API_TARGET: http://server:8000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_ce_prod_data:
+  redis_ce_prod_data:
+
+networks:
+  default:
+    name: aiser-ce-prod-network
+    driver: bridge

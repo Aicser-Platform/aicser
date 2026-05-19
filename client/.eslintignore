@@ -1,0 +1,16 @@
+node_modules/
+scripts/patch-antd-ellipsis.js
+.next/
+.next-dev/
+.next.broken/
+tmp/
+tmp/**
+**/test-*.js
+**/temp-*.js
+**/*.pack.gz
+*.nft.json
+
+# ignore generated types and caches
+*.tsbuildinfo
+
+

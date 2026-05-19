@@ -56,3 +56,5 @@ tmp/next-dev-cache/
 .next/**/hot-update.js
 tmp/**
 .superpowers/*
+# EE submodule content — populated by postinstall symlink
+src/ee/

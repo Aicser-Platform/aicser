@@ -1,45 +1,62 @@
+from dataclasses import dataclass
 from typing import Optional, Dict
 from sqlalchemy import select
 
-from src.shared.repository import BaseRepository
-from src.modules.user.models_user_setting import UserSetting
+from src.modules.user.models import User
 from src.db.session import async_session
 
 
+@dataclass
+class _SettingEntry:
+    """Lightweight stand-in for UserSetting rows; keeps caller API identical."""
+    key: str
+    value: Optional[str]
+
+
 class UserSettingRepository:
-    def __init__(self):
-        self.model = UserSetting
+    """Stores per-user key/value settings inside the ``users.settings`` JSONB column."""
 
-    async def get_setting(self, user_id: str, key: str) -> Optional[UserSetting]:
+    async def get_setting(self, user_id: str, key: str) -> Optional[_SettingEntry]:
         async with async_session() as session:
-            query = select(self.model).where(self.model.user_id == user_id).where(self.model.key == key)
-            result = await session.execute(query)
-            return result.scalars().first()
+            row = await self._get_user(session, user_id)
+            if row is None:
+                return None
+            blob: dict = row.settings or {}
+            if key not in blob:
+                return None
+            return _SettingEntry(key=key, value=blob.get(key))
 
-    async def set_setting(self, user_id: str, key: str, value: str) -> UserSetting:
+    async def set_setting(self, user_id: str, key: str, value: str) -> _SettingEntry:
         async with async_session() as session:
-            # Try update existing
-            query = select(self.model).where(self.model.user_id == user_id).where(self.model.key == key)
-            result = await session.execute(query)
-            existing = result.scalars().first()
-            
-            if existing:
-                existing.value = value
-                await session.commit()
-                await session.refresh(existing)
-                return existing
-
-            # Create new
-            obj = self.model(user_id=user_id, key=key, value=value)
-            session.add(obj)
+            row = await self._get_user(session, user_id)
+            if row is None:
+                raise ValueError(f"User {user_id} not found")
+            blob: dict = dict(row.settings or {})
+            blob[key] = value
+            row.settings = blob
             await session.commit()
-            await session.refresh(obj)
-            return obj
+            return _SettingEntry(key=key, value=value)
 
     async def get_all_settings(self, user_id: str) -> Dict[str, str]:
-        """Return all settings for a user as key -> value (value as string)."""
         async with async_session() as session:
-            query = select(self.model).where(self.model.user_id == user_id)
-            result = await session.execute(query)
-            rows = result.scalars().all()
-            return {r.key: (r.value or "") for r in rows} if rows else {}
+            row = await self._get_user(session, user_id)
+            if row is None:
+                return {}
+            blob: dict = row.settings or {}
+            return {k: (v or "") for k, v in blob.items() if isinstance(v, str)}
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    async def _get_user(self, session, user_id: str):
+        """Return the User row by id or user_id (UUID string)."""
+        import uuid as _uuid
+        try:
+            uid = _uuid.UUID(str(user_id))
+        except ValueError:
+            return None
+        result = await session.execute(
+            select(User).where(
+                (User.id == uid) | (User.user_id == uid)
+            ).limit(1)
+        )
+        return result.scalars().first()

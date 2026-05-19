@@ -16,11 +16,18 @@ class DashboardService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, data: Mapping[str, Any]) -> Dashboard:
-        if "project_id" not in data or not data["project_id"]:
-            raise ValueError("project_id is required to create a dashboard.")
+    @staticmethod
+    def _normalize_data(data: Mapping[str, Any], *, default_name: bool = False) -> dict[str, Any]:
+        normalized = dict(data)
+        title = normalized.pop("title", None)
+        if title is not None and normalized.get("name") is None:
+            normalized["name"] = title
+        if default_name and not normalized.get("name"):
+            normalized["name"] = "Untitled Dashboard"
+        return normalized
 
-        dashboard = Dashboard(**data)
+    async def create(self, data: Mapping[str, Any]) -> Dashboard:
+        dashboard = Dashboard(**self._normalize_data(data, default_name=True))
         self.db.add(dashboard)
         await self.db.commit()
         await self.db.refresh(dashboard)
@@ -37,6 +44,11 @@ class DashboardService:
 
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_all(self) -> List[Dashboard]:
+        stmt = select(Dashboard).order_by(Dashboard.created_at.desc())
+        result = await self.db.execute(stmt)
+        return list(result.scalars())
 
     async def list_by_project(
         self,
@@ -56,7 +68,7 @@ class DashboardService:
         dashboard: Dashboard,
         data: Mapping[str, Any],
     ) -> Dashboard:
-        for key, value in data.items():
+        for key, value in self._normalize_data(data).items():
             if value is not None:
                 setattr(dashboard, key, value)
 

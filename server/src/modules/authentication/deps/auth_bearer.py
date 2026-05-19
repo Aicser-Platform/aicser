@@ -31,6 +31,40 @@ _auth_fallback_log_time: list = [0.0]
 AUTH_FALLBACK_LOG_INTERVAL = 300.0  # seconds
 
 
+async def get_current_user(request: Request) -> dict:
+    """Resolve CE session JWT from Authorization Bearer or auth_token cookie."""
+    from src.modules.authentication.service import decode_access_token
+    from jose import JWTError
+
+    token = None
+    auth_h = request.headers.get("Authorization") or request.headers.get("authorization") or ""
+    ah = auth_h.strip()
+    if ah.lower().startswith("bearer "):
+        parts = ah.split(None, 1)
+        if len(parts) > 1:
+            cand = parts[1].strip()
+            if cand and cand != "null":
+                token = cand
+    if not token:
+        token = request.cookies.get("auth_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    try:
+        payload = decode_access_token(token)
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session. Please log in again.",
+        )
+
+
+CurrentUserDep = Depends(get_current_user)
+
+
 def fetch_jwks(supabase_url: str) -> Dict:
     """Fetch JWKS from Supabase and cache it (synchronous)."""
     global _jwks_cache, _jwks_cache_time
@@ -443,6 +477,11 @@ class JWTCookieBearer(HTTPBearer):
             return {'id': '1', 'user_id': '1', 'sub': '1'}
 
         if not token:
+            ce_cookie = request.cookies.get("auth_token")
+            if ce_cookie and str(ce_cookie).strip() not in ("", "null"):
+                token = str(ce_cookie).strip()
+
+        if not token:
             token = _jwt_from_supabase_auth_cookies(request)
 
         # No token means no authentication
@@ -452,7 +491,23 @@ class JWTCookieBearer(HTTPBearer):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication required. Please log in."
             )
-        
+
+        # CE httpOnly session (HS256 + SECRET_KEY) — same as /auth/me get_current_user
+        try:
+            from src.modules.authentication.service import decode_access_token
+
+            ce_payload = decode_access_token(token)
+            uid = str(ce_payload.get("sub") or "")
+            if uid:
+                return {
+                    "id": uid,
+                    "user_id": uid,
+                    "sub": uid,
+                    "email": ce_payload.get("email"),
+                }
+        except Exception:
+            pass
+
         # Extract payload from token
         payload = extract_user_id_from_token(token)
         if payload:
