@@ -1,26 +1,35 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+from uuid import UUID
+from typing import Optional, Literal
 
 
-class SignInRequest(BaseModel):
-    # Backwards-compatible: accept either `account` or `email` as identifier
-    account: str | None = None
-    email: str | None = None
-    password: str = Field(..., min_length=1)
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
 
-class SignInResponse(BaseModel):
-    # Compatibility: some callers expect access_token + token_type
-    access_token: str | None = None
-    token_type: str | None = "bearer"
-    # Legacy fields
-    expires_in: int | None = None
-    refresh_token: str | None = None
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8)
 
 
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
 
 
-class RefreshTokenResponse(BaseModel):
-    access_token: str
-    expires_in: int
+class ChangePasswordRequest(BaseModel):
+    password: str = Field(min_length=8)
+
+class UserResponse(BaseModel):
+    id: UUID
+    email: Optional[str]
+    username: Optional[str]
+    is_verified: Optional[bool]
+    # Same JWT as httpOnly auth_token; CE clients may send Authorization: Bearer.
+    access_token: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class TokenExchangeRequest(BaseModel):
+    provider: Literal["supabase", "keycloak"]
+    token: str

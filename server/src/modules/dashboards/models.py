@@ -18,6 +18,9 @@ from src.core.edition import is_ee_enabled
 def _org_fk():
     return [ForeignKey("organizations.id")] if is_ee_enabled() else []
 
+def _project_fk():
+    return [ForeignKey("projects.id")] if is_ee_enabled() else []
+
 
 class DashboardChart(Base):
     """
@@ -58,6 +61,15 @@ class Dashboard(BaseModel):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     config = Column(JSON, nullable=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+
+    @property
+    def title(self):
+        return self.name
+
+    @title.setter
+    def title(self, value):
+        self.name = value
     
     # Relationships — use simple class names for registry lookup
     embeds = relationship("DashboardEmbed", back_populates="dashboard", lazy='select')

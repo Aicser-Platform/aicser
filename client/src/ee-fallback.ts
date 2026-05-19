@@ -2,20 +2,44 @@
 // Webpack aliases @/ee to this file when ee/src/index.ts is absent.
 // Every name here must match exactly what ee/src/index.ts exports.
 import type { AuthActions, SignupResult } from '@/auth/types';
+import type { ReactNode } from 'react';
+export { default as EnhancedDataPanel } from '@/components/data/SQLEditor/QueryEditorDataPanel';
+
+type ProviderProps = { children: ReactNode };
+type ProjectSelectorModalProps = {
+  open?: boolean;
+  onClose?: () => void;
+  onProjectChange?: (projectId: string | number) => void;
+  onCreateNew?: () => void;
+};
+type ThemeCustomizerProps = {
+  open?: boolean;
+  onClose?: () => void;
+};
 
 // ── Component stubs ──────────────────────────────────────────────────────────
 export const BillingSuccessHandler   = (): null => null;
 export const TrialExpiryBanner       = (): null => null;
-export const ProjectSelectorModal    = (): null => null;
+export const ProjectSelectorModal    = (_props: ProjectSelectorModalProps): null => null;
 export const PricingModalEE          = (): null => null;
-export const EnhancedDataPanel       = (): null => null;
 export const AnimatedAIAvatar        = (): null => null;
+export const ActivityInboxBell       = (): null => null;
+export const OrganizationSettingsTab = (): null => null;
+export const TeamSettingsTab         = (): null => null;
+export const IntegrationSettingsTab  = (): null => null;
+export const SubscriptionSettingsTab = (): null => null;
+export const ThemeCustomizer         = (_props: ThemeCustomizerProps): null => null;
+export function BrandThemeProvider({ children }: ProviderProps) {
+  return children;
+}
 
 // ── Page stubs ───────────────────────────────────────────────────────────────
 export const AlertsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
 export const DataPlatformPage        = (): null => null;
+export const InviteAcceptPageEE      = (): null => null;
+export const InviteSetPasswordPageEE = (): null => null;
 
 // ── Auth stubs ───────────────────────────────────────────────────────────────
 export const eeAuthActions: AuthActions = {
@@ -37,9 +61,9 @@ export function useConversationStore() {
     messages: new Map<string, unknown[]>(),
     isLoading: false,
     loadConversations: async () => {},
-    createConversation: async () => null,
-    setCurrentConversationId: () => {},
-    sendMessage: async () => {},
+    createConversation: async (_payload?: unknown) => null,
+    setCurrentConversationId: (_id?: string | null) => {},
+    sendMessage: async (..._args: unknown[]) => {},
     resetStore: () => {},
   };
 }

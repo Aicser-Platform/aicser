@@ -25,10 +25,14 @@ class User(BaseModel):
     - bio : textx
     - created_at : timestamp
     - updated_at : timestamp
+    - hashed_password : varchar(255)
+    - is_verified : boolean
+    - provider : varchar(20)
+    - provider_user_id : varchar(255)
     """
     __tablename__ = "users"
 
-    user_id = Column(UUID(as_uuid=True), nullable=False, unique=True, index=True)
+    user_id = Column(UUID(as_uuid=True), nullable=True, unique=True, index=True)
     username = Column(String(100), nullable=True, index=True)
     email = Column(String(255), nullable=True, index=True)
     first_name = Column(String(100), nullable=True)
@@ -75,3 +79,12 @@ class User(BaseModel):
     # Persisted bot session context (org/project/data-source/conversation selection).
     # Restored automatically when the bot restarts so users don't lose their setup.
     telegram_context = Column(JSONB, nullable=True)
+
+    # Auth columns
+    hashed_password = Column(String(255), nullable=True)
+    is_verified = Column(Boolean, nullable=True, server_default=text("false"), default=False)
+    provider = Column(String(20), nullable=True)         # 'ce' | 'supabase' | 'keycloak'
+    provider_user_id = Column(String(255), nullable=True)
+
+    # Key-value settings store (replaces user_settings table)
+    settings = Column(JSONB, nullable=True)

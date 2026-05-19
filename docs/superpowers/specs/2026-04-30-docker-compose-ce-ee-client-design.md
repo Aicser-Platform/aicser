@@ -19,9 +19,9 @@
 ## Port Allocation
 
 | Edition | Client (host) | Server (host) | Server (container-internal) |
-|---------|--------------|---------------|----------------------------|
-| CE      | `3000:3000`  | `8000:8000`   | `http://server:8000`        |
-| EE      | `3000:3000`  | `8001:8000`   | `http://server:8000`        |
+| ------- | ------------- | ------------- | --------------------------- |
+| CE      | `3000:3000`   | `8000:8000`   | `http://server:8000`        |
+| EE      | `3000:3000`   | `8001:8000`   | `http://server:8000`        |
 
 CE and EE are not meant to run simultaneously — both use client port 3000.
 
@@ -49,6 +49,7 @@ RUN if [ "$EDITION" = "enterprise" ] && [ -d "ee/src/ee" ]; then \
 - **CE:** `ee/src/ee/` absent (or condition skipped) → `src/ee/` stubs remain → EE code never compiled
 
 The `builder` stage also needs `ARG` declarations for `NEXT_PUBLIC_*` build args (already present in current Dockerfile):
+
 - `NEXT_PUBLIC_API_URL` — browser-visible API URL
 - `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key
@@ -110,17 +111,18 @@ No secrets block — EE files are already in the build context.
 
 ## Key Files Changed
 
-| File | Change |
-|------|--------|
-| `client/Dockerfile.prod` | Add `ARG EDITION=community`; pass `NEXT_PUBLIC_EDITION` build arg; ensure `ee/` is copied in builder stage |
-| `deploy/docker-compose.ce.yml` | Uncomment and wire client service |
-| `deploy/docker-compose.ee.yml` | Uncomment and wire client service |
+| File                           | Change                                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `client/Dockerfile.prod`       | Add `ARG EDITION=community`; pass `NEXT_PUBLIC_EDITION` build arg; ensure `ee/` is copied in builder stage |
+| `deploy/docker-compose.ce.yml` | Uncomment and wire client service                                                                          |
+| `deploy/docker-compose.ee.yml` | Uncomment and wire client service                                                                          |
 
 ---
 
 ## How to Run
 
 **CE:**
+
 ```bash
 cd deploy
 SECRET_KEY=your-secret docker compose -f docker-compose.ce.yml up --build
@@ -128,6 +130,7 @@ SECRET_KEY=your-secret docker compose -f docker-compose.ce.yml up --build
 ```
 
 **EE:**
+
 ```bash
 cd deploy
 SECRET_KEY=your-secret docker compose -f docker-compose.ee.yml up --build

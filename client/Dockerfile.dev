@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache netcat-openbsd curl
+
+COPY package*.json ./
+COPY scripts ./scripts
+RUN npm install --no-audit --no-fund
+
+ARG EDITION=community
+ENV EDITION=${EDITION}
+
+# Source code is mounted via docker-compose volume (../client:/app).
+# node_modules is preserved by a named volume so the npm install above
+# initialises it only on the first run; no COPY . . needed.
+# setup-ee.js generates src/ee/index.ts so @/ee resolves for both webpack and Turbopack.
+CMD ["sh", "-c", "node scripts/setup-ee.js && npm run dev:light"]

@@ -711,15 +711,6 @@ async def create_data_source(
         description = body.get("description")
         config = body.get("config") or body.get("connection_config") or {}
         project_id = body.get("project_id")
-        if not project_id:
-            user_projects, _ = await ProjectService.get_user_projects(user_id)
-            if user_projects:
-                project_id = str(user_projects[0].id)
-        if not project_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="project_id is required. Select a project in the app or create one first.",
-            )
         format_val = body.get("format") or (ds_type if ds_type != "file" else "api" if ds_type == "api" else "file")
         from src.modules.data.services.data_sources_crud import DataSourceCreate as CRUDDataSourceCreate
         from src.db.session import async_session
@@ -812,16 +803,6 @@ async def upload_file(
         if not upload_org_id:
             upload_org_id = f"user-{user_id}"
         upload_org_id = await enforce_data_source_limit(user_id, upload_org_id) or upload_org_id
-
-        # Validate project_id is provided
-        if not project_id:
-            logger.error("❌ project_id is required for file upload")
-            raise HTTPException(status_code=400, detail="project_id is required")
-
-        # Validate project_id is provided
-        if not project_id:
-            logger.error("❌ project_id is required for file upload")
-            raise HTTPException(status_code=400, detail="project_id is required")
 
         # DEBUG: Log file object details
         logger.info(f"📁 File upload request received")

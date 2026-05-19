@@ -1,0 +1,219 @@
+@import 'react-grid-layout/css/styles.css';
+@import 'react-resizable/css/styles.css';
+
+.shared-dashboard-container {
+  min-height: 100vh;
+  background-color: #f3f4f6;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-sans);
+}
+
+.shared-dashboard-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  height: 48px;
+  background: #f3f4f6;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+
+.shared-dashboard-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shared-dashboard-logo-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: #24292f;
+}
+
+.shared-dashboard-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shared-dashboard-go-to-base-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #24292f;
+  background: white;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.shared-dashboard-go-to-base-btn:hover {
+  border-color: #00c2cb;
+  color: #00c2cb;
+  background: rgba(0, 194, 203, 0.08);
+}
+
+.shared-dashboard-content {
+  flex: 1;
+  padding: 24px;
+  max-width: 100%;
+}
+
+.dashboard-meta {
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+}
+
+.dashboard-title-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-icon {
+  font-size: 18px;
+  color: #8b949e;
+}
+
+.dashboard-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #24292f;
+}
+
+.shared-grid-item {
+  height: 100%;
+}
+
+.shared-grid-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  border-color: rgba(51, 112, 255, 0.2);
+}
+
+/* Loading & Error States */
+.shared-dashboard-loading,
+.shared-dashboard-error {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f7f9;
+  text-align: center;
+  padding: 24px;
+}
+
+.shared-dashboard-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(51, 112, 255, 0.1);
+  border-left-color: #3370ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.shared-dashboard-error-icon {
+  font-size: 48px;
+  color: #ff4d4f;
+  margin-bottom: 16px;
+}
+
+.shared-dashboard-error-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.shared-dashboard-error-message {
+  color: #8f959e;
+  margin-bottom: 24px;
+  max-width: 400px;
+}
+
+.shared-dashboard-back-btn {
+  padding: 10px 24px;
+  background: #3370ff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.shared-dashboard-back-btn:hover {
+  background: #2b5edb;
+  box-shadow: 0 4px 12px rgba(51, 112, 255, 0.3);
+}
+
+/* Ensure the scrollable dashboard canvas matches studio background */
+.shared-dashboard-container {
+  background-color: #f3f4f6; /* Exact studio background */
+  background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  min-height: 100vh;
+}
+
+.shared-dashboard-content {
+  padding: 0 16px 48px 16px !important; /* Perfect side margins matching studio canvas area */
+}
+
+.dashboard-canvas-wrapper {
+  margin-top: 8px;
+}
+
+/* Fix Table Header White Blocks - Critical for Parity */
+.shared-dashboard-container .ant-table-thead > tr > th {
+  background: #eef2ff !important; /* Force the TableWidget's intended color over the global gradient */
+  position: relative;
+}
+
+.shared-dashboard-container .ant-table-column-sorters,
+.shared-dashboard-container .ant-table-filter-column,
+.shared-dashboard-container .ant-table-cell-content {
+  background: transparent !important; /* Prevent internal AntD containers from showing white */
+}
+
+.shared-dashboard-container .ant-table-column-title {
+  position: relative;
+  z-index: 1;
+}
+
+/* Shadow Parity - Remove !important to allow inline style overrides for transparency */
+.shared-dashboard-container .widget-card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background-color: #ffffff; /* Default background */
+  transition: all 0.2s ease;
+}
+
+.shared-grid-item:hover .widget-card {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 194, 203, 0.2);
+}

@@ -285,7 +285,8 @@ const { selectedId, select } = useDataSourceStore();
 
 | Current content | Destination |
 |---|---|
-| `listRoles()`, `fetchProjectRoles()` | `src/api/projects.ts` + `src/hooks/useProjectRoles.ts` |
+| `listRoles()`, `fetchProjectRoles()` | `src/api/projects.ts` + `                                                                                                                   
+● I'm src/hooks/useProjectRoles.ts` |
 | `roles[]`, `projectRoles[]`, `loading` | deleted — SWR owns this |
 | No UI-only state remains | delete store entirely |
 

@@ -1,0 +1,315 @@
+/**
+ * Aiser Platform - Global Styles
+ * ✅ CRITICAL: Tailwind MUST come first
+ */
+
+/* ========================================
+   TAILWIND CSS - MUST BE FIRST
+   ======================================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+  
+/* ========================================
+   THIRD-PARTY IMPORTS
+   ======================================== */
+@import 'antd/dist/reset.css';
+
+/* ========================================
+   DESIGN SYSTEM IMPORTS
+   ======================================== */
+@import '../styles/layout-system.css';
+@import '../styles/aiser-color-system.css';
+@import '../styles/aiser-navigation-unified.css';
+@import '../styles/aiser-component-separation.css';
+@import '../styles/aiser-unified-design-system.css';
+@import '../styles/aiser-aesthetic-enhancements.css';
+
+/* ========================================
+   GLOBAL RESET AND BASE STYLES
+   ======================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --ant-color-bg-layout: var(--color-bg-base, #ffffff);
+}
+
+html.dark,
+html[data-theme='dark'] {
+  --ant-color-bg-layout: var(--color-bg-base, #0d1117);
+}
+
+/* CRITICAL: Root elements must have no margins/padding and proper background */
+html {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  background: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  background-color: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  box-sizing: border-box !important;
+}
+
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  background: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  background-color: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  color: var(--ant-color-text) !important;
+  box-sizing: border-box !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: "Inter", "Noto Sans", "Noto Sans Khmer", "Siemreap", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+#__next {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100vh !important;
+  overflow-x: hidden !important;
+  background: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  background-color: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
+  color: var(--ant-color-text) !important;
+  box-sizing: border-box !important;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ========================================
+   Ant Design Token Bridge → Color System
+   ======================================== */
+:root {
+  --ant-color-bg-layout: var(--color-bg-base);
+  --ant-color-bg-container: var(--color-bg-container);
+  --ant-color-bg-elevated: var(--color-bg-elevated);
+  --ant-color-bg-base: var(--color-bg-base);
+  --ant-color-border: var(--color-border);
+  --ant-color-text: var(--color-text-primary);
+  --ant-color-text-secondary: var(--color-text-secondary);
+}
+
+[data-theme='dark'],
+html.dark {
+  --ant-color-bg-layout: var(--color-bg-base);
+  --ant-color-bg-container: var(--color-bg-container);
+  --ant-color-bg-elevated: var(--color-bg-elevated);
+  --ant-color-bg-base: var(--color-bg-base);
+  --ant-color-border: var(--color-border);
+  --ant-color-text: var(--color-text-primary);
+  --ant-color-text-secondary: var(--color-text-secondary);
+}
+
+/* ========================================
+   Legacy Token Aliases (Design Architecture)
+   Components use these; they derive from runtime tokens.
+   See DESIGN_ARCHITECTURE.md for token flow.
+   ======================================== */
+:root {
+  --color-brand-primary: var(--ant-primary-color, var(--color-primary, #00c2cb));
+  --color-brand-primary-hover: var(--ant-primary-color-hover, var(--color-primary-hover, #00a5af));
+  --color-brand-primary-active: var(--ant-primary-color-active, var(--color-primary-active, #008b95));
+  --color-brand-primary-light: rgba(0, 194, 203, 0.14);
+  --color-brand-primary-dark: #006b74;
+  --color-brand-primary-foreground: #ffffff;
+  --layout-background: var(--ant-color-bg-layout, var(--color-bg-base, #f8f9fa));
+  --color-border-primary: var(--ant-color-border, var(--color-border, #e1e4e8));
+  --color-border-primary-strong: var(--ant-color-border, var(--color-border, #d9d9d9));
+  --font-sans: var(--ant-font-family, "Inter", "Noto Sans", "Noto Sans Khmer", "Siemreap", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+  /* Functional colors - map to Ant Design semantic tokens */
+  --color-functional-success: var(--ant-color-success, #16a34a);
+  --color-functional-success-light: #dcfce7;
+  --color-functional-warning: var(--ant-color-warning, #f97316);
+  --color-functional-warning-light: #fed7aa;
+  --color-functional-danger: var(--ant-color-error, #dc2626);
+  --color-functional-danger-light: #fecaca;
+  --color-functional-info: var(--ant-color-info, #0891b2);
+  --color-functional-info-light: #cffafe;
+}
+
+[data-theme='dark'],
+html.dark {
+  --color-brand-primary-light: rgba(0, 194, 203, 0.22);
+  --color-brand-primary-dark: #00a5af;
+  --layout-background: var(--ant-color-bg-layout, var(--color-bg-base, #0d1117));
+  --color-border-primary: var(--ant-color-border, var(--color-border, #30363d));
+  --color-border-primary-strong: var(--ant-color-border, var(--color-border, #404040));
+  --color-functional-success-light: #166534;
+  --color-functional-warning-light: #c2410c;
+  --color-functional-danger-light: #991b1b;
+  --color-functional-info-light: #0c4a6e;
+}
+
+/* ========================================
+   THEME-ADAPTIVE SCROLLBARS (Ant tokens + report page)
+   Add class "aiser-themed-scrollbar" to any overflow:auto container.
+   ======================================== */
+
+.aiser-themed-scrollbar,
+.session-history-scroll,
+.onboarding-step-content {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border-secondary, var(--ant-color-border))
+    var(--ant-color-fill-quaternary, var(--ant-color-bg-layout));
+}
+
+.aiser-themed-scrollbar::-webkit-scrollbar,
+.session-history-scroll::-webkit-scrollbar,
+.onboarding-step-content::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.aiser-themed-scrollbar::-webkit-scrollbar-track,
+.session-history-scroll::-webkit-scrollbar-track,
+.onboarding-step-content::-webkit-scrollbar-track {
+  background: var(--ant-color-fill-quaternary, var(--ant-color-bg-layout));
+  border-radius: 6px;
+}
+
+.aiser-themed-scrollbar::-webkit-scrollbar-thumb,
+.session-history-scroll::-webkit-scrollbar-thumb,
+.onboarding-step-content::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border-secondary, var(--ant-color-border));
+  border-radius: 6px;
+  min-height: 36px;
+}
+
+.aiser-themed-scrollbar::-webkit-scrollbar-thumb:hover,
+.session-history-scroll::-webkit-scrollbar-thumb:hover,
+.onboarding-step-content::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-primary);
+}
+
+.aiser-themed-scrollbar::-webkit-scrollbar-corner,
+.session-history-scroll::-webkit-scrollbar-corner,
+.onboarding-step-content::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Nested Ant Design table body inside wizard / panels */
+.aiser-themed-scrollbar .ant-table-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border-secondary, var(--ant-color-border))
+    var(--ant-color-fill-quaternary, var(--ant-color-bg-layout));
+}
+
+.aiser-themed-scrollbar .ant-table-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.aiser-themed-scrollbar .ant-table-body::-webkit-scrollbar-track {
+  background: var(--ant-color-fill-quaternary, var(--ant-color-bg-layout));
+  border-radius: 4px;
+}
+
+.aiser-themed-scrollbar .ant-table-body::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border-secondary, var(--ant-color-border));
+  border-radius: 4px;
+}
+
+.aiser-themed-scrollbar .ant-table-body::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-primary);
+}
+
+/* Executive report route: viewport scrollbar matches report CSS variables */
+html:has(.executive-report-fullpage),
+body:has(.executive-report-fullpage) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--report-border) var(--report-bg);
+}
+
+html:has(.executive-report-fullpage)::-webkit-scrollbar,
+body:has(.executive-report-fullpage)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html:has(.executive-report-fullpage)::-webkit-scrollbar-track,
+body:has(.executive-report-fullpage)::-webkit-scrollbar-track {
+  background: var(--report-bg);
+}
+
+html:has(.executive-report-fullpage)::-webkit-scrollbar-thumb,
+body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb {
+  background: var(--report-border);
+  border-radius: 6px;
+}
+
+html:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover,
+body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
+  background: var(--report-accent);
+}
+
+/* ========================================
+   FOCUS AND ACCESSIBILITY
+   ======================================== */
+
+*:focus {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ========================================
+   MODEL SELECTOR
+   ======================================== */
+
+/* Composer toolbar pill uses content width; keep min width for settings/other compact rows only. */
+.model-selector-compact:not(.model-selector-composer-embed) .ant-select-selector {
+  min-width: 220px !important;
+}
+
+/* ========================================
+   TAILWIND LAYER CUSTOMIZATIONS
+   ======================================== */
+
+@layer components {
+  /* Add custom component classes here */
+  .btn-primary {
+    @apply bg-brand text-white px-4 py-2 rounded-md hover:bg-brand-hover transition-colors;
+  }
+  
+  .card {
+    @apply bg-bg-container border border-border rounded-lg p-6 shadow-md;
+  }
+}
+
+@layer utilities {
+  /* Add custom utility classes here */
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}

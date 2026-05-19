@@ -1,0 +1,163 @@
+/**
+ * Aiser Platform - Component Separation & Color Fixes
+ * Ensures clear separation between components and fixes color overlaps
+ */
+
+/* ========================================
+   PANEL HEADERS vs PANEL CONTENT
+   ======================================== */
+
+/* Panel Headers - Use Elevated (Color 3) for distinction */
+.panel-header,
+.ant-panel-header,
+.chat-header,
+.data-header,
+.history-panel-header,
+.query-editor-header {
+  background: var(--color-bg-elevated) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+
+/* Panel Content - Use Container (Color 2) */
+.panel-content,
+.ant-panel-content,
+.chat-messages,
+.data-content,
+.history-panel-content,
+.query-editor-content {
+  background: var(--color-bg-container) !important;
+}
+
+/* ========================================
+   AI MESSAGE vs INPUT BOX SEPARATION
+   ======================================== */
+
+/* AI Message Boxes - Use Elevated (Color 3) - NEVER affected by panel color changes */
+.ai-message .message-bubble,
+.ai-message-bubble,
+.message-bubble.ai,
+.ai-message .message-content-wrapper .message-bubble,
+.modern-message.ai-message .message-bubble,
+.message-container.ai-message .message-bubble {
+  background: var(--color-bg-elevated) !important;
+  background-color: var(--color-bg-elevated) !important;
+  border: 1px solid var(--color-border) !important;
+  /* Explicitly prevent panel color from affecting message boxes */
+  color: var(--ant-color-text) !important;
+}
+
+/* User Message Boxes - Use Primary Color (never affected by panel color) */
+.user-message .message-bubble,
+.user-message-bubble,
+.message-bubble.user,
+.modern-message.user-message .message-bubble {
+  background: linear-gradient(135deg, var(--ant-color-primary) 0%, var(--ant-color-primary-hover, #40a9ff) 100%) !important;
+  background-color: var(--ant-color-primary) !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+/* Input Boxes - Use Container (Color 2) - Separate from message boxes */
+.input-container,
+.chat-input,
+.message-input-area,
+.input-container .ant-input,
+.input-container textarea,
+.chat-input-section,
+.chat-input-section .ant-input,
+.chat-input-section textarea {
+  background: var(--color-bg-container) !important;
+  background-color: var(--color-bg-container) !important;
+  border-color: var(--color-border) !important;
+  /* Explicitly prevent elevated color from affecting input boxes */
+  color: var(--ant-color-text) !important;
+}
+
+/* ========================================
+   QUERY EDITOR PAGE BACKGROUND
+   ======================================== */
+
+/* Query Editor Page - Use Base (Color 1) */
+.query-editor-page,
+[class*="query-editor-page"],
+.query-editor-wrapper {
+  background: var(--color-bg-base) !important;
+}
+
+/* Query Editor Panels - Use Container (Color 2) */
+.query-editor-panel,
+.query-editor-panel .ant-card,
+.query-editor-panel .ant-tree {
+  background: var(--color-bg-container) !important;
+  border-color: var(--color-border) !important;
+}
+
+/* ========================================
+   DATA SOURCE PANEL FIXES
+   ======================================== */
+
+/* Data Source Panel - Full Container Color */
+.data-panel,
+.enhanced-data-panel,
+[class*="data-panel"] {
+  background: var(--color-bg-container) !important;
+}
+
+.data-panel .data-header {
+  background: var(--color-bg-elevated) !important;
+}
+
+.data-panel .data-content {
+  background: var(--color-bg-container) !important;
+}
+
+/* ========================================
+   MENU DROPDOWN FIXES
+   ======================================== */
+
+/* Menu Dropdowns - Match Navigation (Color 4) */
+.ant-menu-submenu-popup,
+.ant-menu-submenu-popup .ant-menu {
+  background: var(--color-bg-navigation) !important;
+}
+
+.ant-menu-submenu-popup .ant-menu-item:hover {
+  background: var(--color-bg-elevated) !important;
+}
+
+/* ========================================
+   TABLE DEFAULT STYLING
+   ======================================== */
+
+/* Remove all custom table styling - use Ant Design defaults */
+/* Tables will inherit from Ant Design theme automatically */
+
+/* ========================================
+   COLOR OVERLAP PREVENTION
+   ======================================== */
+
+/* Ensure no component uses the same color as its parent incorrectly */
+/* Navigation components should never use container colors */
+.ant-layout-header,
+.ant-layout-sider,
+.ant-menu {
+  /* Already handled by aiser-navigation-unified.css */
+}
+
+/* Content components should never use navigation colors */
+.ant-card,
+.ant-table,
+.ant-form,
+.ant-panel {
+  /* Already handled by aiser-color-system.css */
+}
+
+/* Input areas should be distinct from message areas */
+.input-container {
+  background: var(--color-bg-container) !important;
+}
+
+.ai-message .message-bubble {
+  background: var(--color-bg-elevated) !important;
+}
+

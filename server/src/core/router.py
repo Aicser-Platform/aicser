@@ -99,6 +99,12 @@ if is_ee_enabled():
         logger.warning("Alerts router not loaded: %s", _err)
 
     try:
+        from ee.modules.authentication.router import router as ee_auth_router
+        api_router.include_router(ee_auth_router, prefix="", tags=["auth"])
+    except Exception as _err:
+        logger.warning("EE auth token exchange not loaded: %s", _err)
+
+    try:
         from ee.modules.authentication.rbac.router import router as rbac_router
         api_router.include_router(rbac_router, prefix="/api/rbac", tags=["RBAC"])
     except Exception as _err:

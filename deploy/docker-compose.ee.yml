@@ -74,21 +74,45 @@ services:
       AISER_EDITION_LICENSE_KEY: ${LICENSE_KEY:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
       POSTGRES_SERVER: postgres
-      POSTGRES_DB: ${POSTGRES_DB:-aiser}
-      POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
       POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_URL: redis://redis:6379
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5-mini}
+      AZURE_OPENAI_GPT41_API_KEY: ${AZURE_OPENAI_GPT41_API_KEY}
+      AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT}
+      AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION}
+      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      AZURE_API_KEY: ${AZURE_OPENAI_API_KEY}
+      AZURE_API_BASE: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET:-}
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "8123"
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRY_SECONDS: "604800"
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      KEYCLOAK_URL: ${KEYCLOAK_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ENVIRONMENT: production
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
@@ -109,7 +133,7 @@ services:
       - |
         set -e
         echo "Running migrations..."
-        alembic -c alembic.ini upgrade head
+        alembic -c alembic.ini upgrade heads
         echo "Starting server..."
         exec uvicorn src.main:app --host 0.0.0.0 --port 8000
     healthcheck:
@@ -120,21 +144,38 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # client:
-  #   build:
-  #     context: ../client
-  #     args:
-  #       EDITION: EE
-  #   container_name: aiser-client-ee
-  #   environment:
-  #     NEXT_PUBLIC_EDITION: EE
-  #     NEXT_PUBLIC_API_URL: http://server:8000
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     server:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  client:
+    build:
+      context: ../client
+      dockerfile: Dockerfile.prod
+      args:
+        EDITION: enterprise
+        NEXT_PUBLIC_EDITION: enterprise
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    container_name: aiser-client-ee
+    environment:
+      API_TARGET: ${API_TARGET:-http://server:8000}
+      NODE_ENV: production
+      STRIPE_ENABLED: "true"
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
+      STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
+      STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
+      STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+    ports:
+      - "3001:3000"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_ee_data:

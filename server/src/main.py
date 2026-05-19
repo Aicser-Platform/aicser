@@ -79,10 +79,10 @@ app.include_router(api_router)
 
 # Optional feature routers — guarded so missing deps don't crash startup
 for _module_path, _attr, _prefix, _label in [
-    ("app.modules.ai.semantic_router", "router", "/api", "Semantic layer"),
-    ("app.modules.lakehouse.router", "router", "/api", "Lakehouse"),
-    ("app.modules.catalog.router", "router", "/api", "Catalog bridge"),
-    ("app.modules.bi_sync.router", "router", "/api", "BI Sync"),
+    ("src.modules.ai.semantic_router", "router", "/api", "Semantic layer"),
+    ("src.modules.lakehouse.router", "router", "/api", "Lakehouse"),
+    ("src.modules.catalog.router", "router", "/api", "Catalog bridge"),
+    ("src.modules.bi_sync.router", "router", "/api", "BI Sync"),
 ]:
     try:
         import importlib
