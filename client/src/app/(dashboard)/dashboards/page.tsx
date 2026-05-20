@@ -182,6 +182,7 @@ export default function NewDashboardStudio() {
   const addDashboard = useDashboardStore((s) => s.addDashboard);
   const deleteChart = useDashboardStore((s) => s.deleteChart);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const updateWidgetFromStore = useDashboardStore((s) => s.updateWidget);
   const updateChartLayout = useDashboardStore((s) => s.updateChartLayout);
   const updateChartAndFetchData = useDashboardStore((s) => s.updateChartAndFetchData);
@@ -374,11 +375,16 @@ export default function NewDashboardStudio() {
     try {
       const response = await chartService.createDashboardFromTemplate({
         templateId: template.id,
-        projectId: currentProjectId,
+        projectId: isEnterpriseEdition ? currentProjectId : undefined,
         dashboardName: template.default_dashboard_name,
       });
 
       await fetchDashboards();
+      const createdId = response?.dashboard?.id;
+      if (createdId) {
+        setActiveDashboardId(String(createdId));
+      }
+
       const title = response?.dashboard?.title || template.default_dashboard_name || template.name;
       message.success(`Created ${title}`);
     } catch (error) {

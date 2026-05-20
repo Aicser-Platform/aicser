@@ -81,12 +81,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
 
-# Copy application files
-COPY alembic.ini .
-COPY alembic ./alembic
-COPY src ./src
-COPY ee ./ee
-COPY scripts ./scripts
+# Copy application files. Use a single context copy so CE-only checkouts that
+# do not include optional ee/ or scripts/ directories still build.
+COPY . .
+RUN mkdir -p ee scripts
 
 # Remove Python cache
 RUN find . -name "__pycache__" -type d -exec rm -rf {} + || true

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.db.session import get_async_session
+from src.core.edition import is_ee_enabled
 from .services.data_connectivity_service import DataConnectivityService
 from .services.database_connector_service import DatabaseConnectorService
 from .services.data_retention_service import DataRetentionService
@@ -27,27 +28,36 @@ from src.modules.data.services.multi_engine_query_service import (
     invalidate_api_response_cache,
 )
 
-# EE-only — lazy imports used inside endpoint handlers
-try:
-    from ee.modules.authentication.rbac.rbac_service import RBACService
-except ImportError:
+# EE-only services. Keep these out of the CE import path because several of
+# them pull in large AI/connector stacks during module import.
+if is_ee_enabled():
+    try:
+        from ee.modules.authentication.rbac.rbac_service import RBACService
+    except ImportError:
+        RBACService = None  # type: ignore
+
+    try:
+        from ee.modules.data.services.intelligent_data_modeling_service import IntelligentDataModelingService
+    except ImportError:
+        IntelligentDataModelingService = None  # type: ignore
+
+    try:
+        from ee.modules.data.services.enterprise_connectors_service import EnterpriseConnectorsService, ConnectionConfig, ConnectorType
+    except ImportError:
+        EnterpriseConnectorsService = None  # type: ignore
+        ConnectionConfig = None  # type: ignore
+        ConnectorType = None  # type: ignore
+
+    try:
+        from ee.modules.data.services.delta_iceberg_connector import DeltaIcebergConnector
+    except ImportError:
+        DeltaIcebergConnector = None  # type: ignore
+else:
     RBACService = None  # type: ignore
-
-try:
-    from ee.modules.data.services.intelligent_data_modeling_service import IntelligentDataModelingService
-except ImportError:
     IntelligentDataModelingService = None  # type: ignore
-
-try:
-    from ee.modules.data.services.enterprise_connectors_service import EnterpriseConnectorsService, ConnectionConfig, ConnectorType
-except ImportError:
     EnterpriseConnectorsService = None  # type: ignore
     ConnectionConfig = None  # type: ignore
     ConnectorType = None  # type: ignore
-
-try:
-    from ee.modules.data.services.delta_iceberg_connector import DeltaIcebergConnector
-except ImportError:
     DeltaIcebergConnector = None  # type: ignore
 import sqlalchemy as sa
 
@@ -101,10 +111,14 @@ data_crud_service = DataSourcesCRUD()
 # ProjectService uses static methods - no instantiation needed
 # organization_service removed - organization context removed
 database_connector = DatabaseConnectorService()
-intelligent_data_modeling_service = IntelligentDataModelingService()
+intelligent_data_modeling_service = (
+    IntelligentDataModelingService() if IntelligentDataModelingService else None
+)
 multi_engine_service = MultiEngineQueryService()
-enterprise_connectors_service = EnterpriseConnectorsService()
-delta_iceberg_connector = DeltaIcebergConnector()
+enterprise_connectors_service = (
+    EnterpriseConnectorsService() if EnterpriseConnectorsService else None
+)
+delta_iceberg_connector = DeltaIcebergConnector() if DeltaIcebergConnector else None
 
 
 async def enforce_data_source_limit(user_id: str, organization_id: Optional[str] = None) -> str:
@@ -528,9 +542,75 @@ async def get_data_sources(
 
         from src.db.session import async_session
         from src.modules.data.models import DataSource
-        from sqlalchemy import select
+        from sqlalchemy import select, or_
         
         async with async_session() as db:
+            if not is_ee_enabled():
+                from uuid import UUID, uuid5, NAMESPACE_DNS
+                from src.modules.data.services.data_sources_crud import DataSourceResponse
+
+                try:
+                    user_uuid = UUID(user_id)
+                except (TypeError, ValueError):
+                    user_uuid = uuid5(NAMESPACE_DNS, f"test-user-{user_id}")
+
+                query = select(DataSource).where(
+                    DataSource.is_active == True,
+                    or_(
+                        DataSource.user_id == user_uuid,
+                        DataSource.user_id.is_(None),
+                    ),
+                )
+                if project_id:
+                    try:
+                        project_uuid = UUID(project_id)
+                        query = query.where(
+                            or_(
+                                DataSource.project_id == project_uuid,
+                                DataSource.project_id.is_(None),
+                            )
+                        )
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Invalid project_id format: {project_id}",
+                        )
+
+                result = await db.execute(query.order_by(DataSource.created_at.desc()))
+                data_sources = result.scalars().all()
+                accessible_sources = [
+                    DataSourceResponse(
+                        id=ds.id,
+                        name=ds.name,
+                        type=ds.type,
+                        format=ds.format,
+                        db_type=ds.db_type,
+                        description=ds.description,
+                        connection_config=ds.connection_config,
+                        project_id=str(ds.project_id) if ds.project_id else None,
+                        is_active=ds.is_active,
+                        created_at=ds.created_at.isoformat() if ds.created_at else None,
+                        updated_at=ds.updated_at.isoformat() if ds.updated_at else None,
+                        last_accessed=ds.last_accessed.isoformat() if ds.last_accessed else None,
+                        connection_status="active" if ds.is_active else "inactive",
+                        metadata={},
+                        schema=ds.schema,
+                        row_count=ds.row_count,
+                        size=ds.size,
+                        file_path=ds.file_path,
+                        original_filename=ds.original_filename,
+                        sample_data=ds.sample_data,
+                        user_id=str(ds.user_id) if ds.user_id else None,
+                    )
+                    for ds in data_sources
+                ]
+
+                logger.info(f"✅ Found {len(accessible_sources)} CE data sources")
+                return {
+                    "success": True,
+                    "data_sources": accessible_sources,
+                }
+
             # Get user's projects
             user_projects, _ = await ProjectService.get_user_projects(user_id)
             project_ids = [str(p.id) for p in user_projects]
@@ -1074,11 +1154,17 @@ async def query_data_source(
                     detail="Data source not found"
                 )
             
-            # Verify user has access to the project
-            user_projects, _ = await ProjectService.get_user_projects(user_id)
-            project_ids = [str(p.id) for p in user_projects]
-            
-            if str(data_source.project_id) not in project_ids:
+            if is_ee_enabled():
+                # Verify user has access to the project
+                user_projects, _ = await ProjectService.get_user_projects(user_id)
+                project_ids = [str(p.id) for p in user_projects]
+                
+                if str(data_source.project_id) not in project_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to query this data source"
+                    )
+            elif data_source.user_id is not None and str(data_source.user_id) != user_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to query this data source"
@@ -2629,6 +2715,15 @@ async def get_data_source_schema(
                     return {
                         "success": True,
                         "schema": schema_result['schema'],
+                        "data_source": schema_result.get('data_source'),
+                    }
+                # Live fetch failed — return stored schema if it has tables so the UI
+                # stays usable even when the connection is temporarily broken.
+                stored = schema_result.get('schema') or {}
+                if stored.get('tables'):
+                    return {
+                        "success": True,
+                        "schema": stored,
                         "data_source": schema_result.get('data_source'),
                     }
                 err = schema_result.get('error') or 'Failed to fetch schema'

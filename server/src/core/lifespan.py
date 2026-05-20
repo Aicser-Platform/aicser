@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 def _check_predictive_deps() -> dict:
     """Check availability of prophet, pmdarima, statsmodels."""
+    if not is_ee_enabled():
+        return {}
+
     out = {}
     for name in ("prophet", "pmdarima", "statsmodels"):
         try:
@@ -26,6 +29,9 @@ def _check_predictive_deps() -> dict:
 
 def _check_ai_capabilities() -> dict:
     """Lightweight check of AI-related capabilities for /health endpoint."""
+    if not is_ee_enabled():
+        return {}
+
     caps = {}
     try:
         from ee.modules.data.services.semantic_schema_service import SemanticSchemaService  # noqa: F401

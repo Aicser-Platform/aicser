@@ -269,7 +269,7 @@ def upgrade() -> None:
 
     # -- charts --
     op.create_table('charts',
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
     sa.Column('data_source_id', sa.String(), nullable=True),
     sa.Column('title', sa.String(length=255), nullable=True),
     sa.Column('chart_type', sa.String(length=100), nullable=True),

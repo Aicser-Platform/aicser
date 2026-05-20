@@ -34,6 +34,7 @@ EXAMPLES:
 
 import uuid
 import json
+import hashlib
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy import select, text
@@ -535,6 +536,8 @@ class ChartService:
         multi = MultiEngineQueryService()
         exec_res = await multi.execute_query(sample_sql, ds_dict)
         if not exec_res.get("success"):
+            if data_source.type == "sample_duckdb":
+                return self._sample_template_fallback_result(chart)
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
@@ -551,6 +554,41 @@ class ChartService:
             "x": x_vals,
             "y": y_vals,
             "series": [{"name": "Value", "data": y_vals}],
+        }
+
+    def _sample_template_fallback_result(self, chart: Chart) -> Dict[str, Any]:
+        """
+        Return deterministic demo data when optional sample DuckDB files are not
+        present. This keeps CE-only/new-dev template dashboards renderable.
+        """
+        seed_text = f"{chart.title}|{chart.chart_type}|{chart.chart_query}"
+        seed = int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16)
+
+        def value(offset: int, minimum: int = 20, spread: int = 180) -> int:
+            return minimum + ((seed >> (offset % 16)) % spread)
+
+        if chart.chart_type == "stat":
+            return {"value": value(3, minimum=8, spread=950)}
+
+        chart_query = chart.chart_query or {}
+        x_field = str(chart_query.get("x") or "").lower()
+
+        if "date" in x_field or chart.chart_type in {"line", "area"}:
+            labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
+        elif "status" in x_field:
+            labels = ["Active", "Pending", "Closed", "Overdue"]
+        elif "type" in x_field:
+            labels = ["Type A", "Type B", "Type C", "Type D"]
+        elif "branch" in x_field:
+            labels = ["Branch 1", "Branch 2", "Branch 3", "Branch 4"]
+        else:
+            labels = ["Segment A", "Segment B", "Segment C", "Segment D"]
+
+        y_vals = [value(i * 3, minimum=10, spread=240) for i, _ in enumerate(labels)]
+        return {
+            "x": labels,
+            "y": y_vals,
+            "series": [{"name": chart.title or "Value", "data": y_vals}],
         }
 
     # =========================================================
@@ -1254,6 +1292,5 @@ class ChartService:
             if grain == "day": return f"strftime('%Y-%m-%d', {field})"
             return field
         return field
-
 
 

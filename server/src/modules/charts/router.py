@@ -638,7 +638,7 @@ def _normalize_user_payload(current_token: Union[str, dict]) -> Dict[str, Any]:
 
 
 async def _resolve_project_for_template(user_id: str, requested_project_id: Optional[str]) -> Optional[str]:
-    if not requested_project_id and not is_ee_enabled():
+    if not is_ee_enabled():
         return None
 
     from src.modules.project.service import ProjectService
@@ -2740,6 +2740,7 @@ async def create_dashboard_from_template(
             created_charts.append(
                 {
                     "id": str(chart.id),
+                    "dashboardId": str(dashboard.id),
                     "title": chart.title,
                     "chartType": chart.chart_type,
                     "dataSourceId": chart.data_source_id,
@@ -2760,6 +2761,7 @@ async def create_dashboard_from_template(
             "message": "Dashboard created from template successfully",
             "dashboard": {
                 "id": str(dashboard.id),
+                "name": dashboard.title,
                 "project_id": str(dashboard.project_id) if dashboard.project_id else None,
                 "title": dashboard.title,
                 "config": dashboard.config,

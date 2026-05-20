@@ -130,7 +130,10 @@ rsa==4.9.1 ; python_version >= "3.11" and python_version < "4.0"
 s3transfer==0.14.0 ; python_version >= "3.11" and python_version < "4.0"
 scramp==1.4.6 ; python_version >= "3.11" and python_version < "4.0"
 scipy>=1.11.0 ; python_version >= "3.11" and python_version < "4.0"
-sentence-transformers>=2.2.0 ; python_version >= "3.11" and python_version < "4.0"
+# Optional semantic embeddings. Do not install by default because it pulls
+# torch/CUDA wheels and makes CE Docker builds too large for new dev machines.
+# Install manually when local embedding search is required:
+# sentence-transformers>=2.2.0 ; python_version >= "3.11" and python_version < "4.0"
 setuptools==80.9.0 ; python_version >= "3.11" and python_version < "4.0"
 shap>=0.42.0 ; python_version >= "3.11" and python_version < "4.0"
 simple-websocket==1.1.0 ; python_version >= "3.11" and python_version < "4.0"
