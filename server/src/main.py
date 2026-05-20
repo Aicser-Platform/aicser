@@ -77,19 +77,20 @@ if is_ee_enabled():
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)
 
-# Optional feature routers — guarded so missing deps don't crash startup
-for _module_path, _attr, _prefix, _label in [
-    ("src.modules.ai.semantic_router", "router", "/api", "Semantic layer"),
-    ("src.modules.lakehouse.router", "router", "/api", "Lakehouse"),
-    ("src.modules.catalog.router", "router", "/api", "Catalog bridge"),
-    ("src.modules.bi_sync.router", "router", "/api", "BI Sync"),
-]:
-    try:
-        import importlib
-        _mod = importlib.import_module(_module_path)
-        app.include_router(getattr(_mod, _attr), prefix=_prefix)
-    except Exception as _err:
-        logger.warning("%s router not loaded: %s", _label, _err)
+if is_ee_enabled():
+    # Optional EE feature routers — guarded so missing deps don't crash startup.
+    for _module_path, _attr, _prefix, _label in [
+        ("src.modules.ai.semantic_router", "router", "/api", "Semantic layer"),
+        ("src.modules.lakehouse.router", "router", "/api", "Lakehouse"),
+        ("src.modules.catalog.router", "router", "/api", "Catalog bridge"),
+        ("src.modules.bi_sync.router", "router", "/api", "BI Sync"),
+    ]:
+        try:
+            import importlib
+            _mod = importlib.import_module(_module_path)
+            app.include_router(getattr(_mod, _attr), prefix=_prefix)
+        except Exception as _err:
+            logger.warning("%s router not loaded: %s", _label, _err)
 
 # Jobs status/enqueue router
 try:

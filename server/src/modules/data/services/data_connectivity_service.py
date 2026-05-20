@@ -3477,13 +3477,15 @@ class DataConnectivityService:
             # Real schema should be fetched via get_database_schema which uses SQLAlchemy
             logger.warning(f"⚠️ Fallback schema called for {db_type} - returning empty schema. Real schema should be fetched via database connection.")
             
-            # Return empty schema - let the real connection path handle schema fetching
+            # Return failure — callers must not treat an unreachable DB as an empty schema.
+            # Returning success:True here caused get_database_schema to overwrite the stored
+            # schema with empty tables, permanently destroying it on every failed connection.
             return {
-                'success': True,
+                'success': False,
+                'error': 'Schema could not be fetched. Please ensure the database connection is valid and try again.',
                 'tables': [],
                 'schemas': [],
                 'total_rows': 0,
-                'warning': 'Schema could not be fetched. Please ensure database connection is valid and try again.'
             }
             
         except Exception as e:

@@ -228,7 +228,7 @@ export const DashboardTabs: React.FC = () => {
     try {
       const result = await chartService.createDashboardFromTemplate({
         templateId: template.id,
-        projectId: resolvedProjectId,
+        projectId: isEnterpriseEdition ? resolvedProjectId : undefined,
         dashboardName: template.default_dashboard_name,
       });
 

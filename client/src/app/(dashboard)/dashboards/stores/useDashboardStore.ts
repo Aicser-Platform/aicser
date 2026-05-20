@@ -3,6 +3,10 @@ import type React from 'react';
 import { chartService, type Chart, type ChartData } from '../services/chartService';
 import { useProjectStore } from '@/stores/useProjectStore';
 
+const isEnterpriseEdition = ['enterprise', 'ee'].includes(
+  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
+);
+
 export type WidgetType = 'pie' | 'line' | 'area' | 'bar' | 'table' | 'scatter' | 'funnel' | 'heatmap' | 'stat' | 'text';
 
 export type LayoutItem = {
@@ -251,10 +255,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   fetchDashboards: async () => {
     const { currentProjectId } = useProjectStore.getState();
+    const projectId = isEnterpriseEdition ? currentProjectId : undefined;
 
     set({ isLoadingDashboards: true, dashboardError: null });
     try {
-      const dashboardsResponse = await chartService.listDashboards(currentProjectId ?? undefined);
+      const dashboardsResponse = await chartService.listDashboards(projectId ?? undefined);
 
       // Load dashboards with their charts
       const dashboards: Dashboard[] = await Promise.all(
@@ -350,13 +355,14 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   addDashboard: async (name) => {
     const { currentProjectId } = useProjectStore.getState();
+    const projectId = isEnterpriseEdition ? currentProjectId : undefined;
 
     try {
       const dashboard = await chartService.createDashboard(
         {
           title: name || `Dashboard ${get().dashboards.length + 1}`,
         },
-        currentProjectId ?? undefined
+        projectId ?? undefined
       );
 
       const newDash: Dashboard = { id: dashboard.id, name: dashboard.title, widgets: [], layout: [] };

@@ -4,6 +4,7 @@ from typing import Optional
 from uuid import UUID
 
 from src.db.session import get_async_session
+from src.core.edition import is_ee_enabled
 from src.modules.charts.services.v2.dashboard_service import DashboardService
 from src.modules.dashboards.dashboard_schema import (
     DashboardCreateRequest,
@@ -26,7 +27,7 @@ async def list_dashboards(
     db: AsyncSession = Depends(get_async_session),
 ):
     service = DashboardService(db)
-    if project_id:
+    if is_ee_enabled() and project_id:
         dashboards = await service.list_by_project(project_id)
     else:
         dashboards = await service.list_all()
@@ -46,7 +47,7 @@ async def create_dashboard(
 ):
     service = DashboardService(db)
     dashboard = await service.create({
-        "project_id": project_id,
+        "project_id": project_id if is_ee_enabled() else None,
         "title": payload.title,
         "config": payload.config,
     })

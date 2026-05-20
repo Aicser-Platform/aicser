@@ -23,6 +23,7 @@ from src.modules.project.models import Project
 from src.core.real_data_sources import real_data_source_manager
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
 from src.core.metrics import DS_CREATE_COUNTER, DS_UPDATE_COUNTER, DS_DELETE_COUNTER, CONNECTION_TEST_COUNTER
+from src.core.edition import is_ee_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ class DataSourcesCRUD:
                         project_id_val = projects[0].id
                 except Exception:
                     pass
-            if project_id_val is None:
+            if project_id_val is None and is_ee_enabled():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="project_id is required. Select a project or create one first.",
