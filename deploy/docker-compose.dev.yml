@@ -10,9 +10,9 @@ services:
     container_name: aiser-postgres-dev
     env_file: .env # Moved here
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-aiser_world}
-      POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
     ports:
       - "5432:5432"
     volumes:
@@ -21,7 +21,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser_world}",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aiser_world_db}",
         ]
       interval: 10s
       timeout: 5s
@@ -110,17 +110,20 @@ services:
       - ./scripts/sample-data:/app/scripts/sample-data
     environment:
       - POSTGRES_SERVER=postgres
-      - POSTGRES_DB=${POSTGRES_DB:-aiser_world} # Unified database
-      - POSTGRES_USER=${POSTGRES_USER:-aiser}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-aiser_password}
+      - POSTGRES_DB=${POSTGRES_DB:-aiser_world_db} # Unified database
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-123}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-aiser_world}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-aiser_world_db}
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - AISER_EDITION=${AISER_EDITION:-community}
+      - AISER_EDITION_LICENSE_KEY=${AISER_EDITION_LICENSE_KEY:-}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DEBUG=${APP_DEBUG:-true}
       - ALLOW_UNVERIFIED_JWT_IN_DEV=${ALLOW_UNVERIFIED_JWT_IN_DEV:-true}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
@@ -193,6 +196,80 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Community Edition client with hot reload.
+  # Start with: docker compose -f deploy/docker-compose.dev.yml --profile ce up client-ce
+  client-ce:
+    image: aiser-client:dev-ce
+    build:
+      context: ../client
+      dockerfile: Dockerfile.dev
+      args:
+        EDITION: community
+    container_name: aiser-client-ce-dev
+    working_dir: /app
+    profiles:
+      - ce
+    environment:
+      - EDITION=community
+      - NEXT_PUBLIC_EDITION=community
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - API_TARGET=http://chat2chart-server:8000
+      - PORT=3000
+      - NEXT_DEV_TURBO=${NEXT_DEV_TURBO:-false}
+      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
+      - WATCHPACK_POLLING=${WATCHPACK_POLLING:-false}
+      - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../client:/app
+      - client_ce_node_modules:/app/node_modules
+      - client_ce_ee_shim:/app/src/ee
+      - client_ce_next:/app/.next
+    networks:
+      - default
+    depends_on:
+      chat2chart-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Enterprise Edition client with hot reload.
+  # Start with: AISER_EDITION=enterprise docker compose -f deploy/docker-compose.dev.yml --profile ee up client-ee
+  client-ee:
+    image: aiser-client:dev-ee
+    build:
+      context: ../client
+      dockerfile: Dockerfile.dev
+      args:
+        EDITION: enterprise
+    container_name: aiser-client-ee-dev
+    working_dir: /app
+    profiles:
+      - ee
+    environment:
+      - EDITION=enterprise
+      - NEXT_PUBLIC_EDITION=enterprise
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - API_TARGET=http://chat2chart-server:8000
+      - PORT=3001
+      - NEXT_DEV_TURBO=${NEXT_DEV_TURBO:-false}
+      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
+      - WATCHPACK_POLLING=${WATCHPACK_POLLING:-false}
+      - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ../client:/app
+      - client_ee_node_modules:/app/node_modules
+      - client_ee_ee_shim:/app/src/ee
+      - client_ee_next:/app/.next
+    networks:
+      - default
+    depends_on:
+      chat2chart-server:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_dev_data:
   redis_dev_data:
@@ -200,6 +277,12 @@ volumes:
   sqlserver_dev_data:
   pip_cache:
   client_node_modules:
+  client_ce_node_modules:
+  client_ee_node_modules:
+  client_ce_ee_shim:
+  client_ee_ee_shim:
+  client_ce_next:
+  client_ee_next:
 
 networks:
   default:

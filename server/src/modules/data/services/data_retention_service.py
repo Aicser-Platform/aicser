@@ -10,11 +10,8 @@ from typing import Optional
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
 from src.modules.pricing.plans import get_plan_limits
-try:
-    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-except ImportError:
-    AzureBlobStorageService = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +21,7 @@ class DataRetentionService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.storage = AzureBlobStorageService()
+        self.storage = UploadDatasourceStorageService()
 
     async def cleanup_expired_file_sources(self, organization_id: Optional[int] = None) -> int:
         """
@@ -58,11 +55,10 @@ class DataRetentionService:
 
                 cutoff = datetime.utcnow() - timedelta(days=days)
 
-                # Find expired file data sources for this organization
-                # Include user_id since AzureBlobStorageService.delete_file requires it
+                # Find expired file data sources for this organization.
                 ds_query = sa.text(
                     """
-                    SELECT id, file_path, user_id
+                    SELECT id, file_path, project_id
                     FROM data_sources
                     WHERE type = 'file'
                       AND is_active = TRUE
@@ -87,16 +83,16 @@ class DataRetentionService:
                 for ds in ds_rows:
                     file_path = ds.file_path  # This is the object_key
                     ds_id = ds.id
-                    user_id = str(ds.user_id) if ds.user_id else None
+                    project_id = str(ds.project_id) if ds.project_id else None
 
                     if file_path:
-                        if not user_id:
+                        if not project_id:
                             logger.warning(
-                                f"⚠️ Cannot delete file for data_source {ds_id}: user_id is missing"
+                                f"⚠️ Cannot delete file for data_source {ds_id}: project_id is missing"
                             )
                         else:
                             try:
-                                await self.storage.delete_file(file_path, user_id)
+                                await self.storage.delete_file(file_path, project_id)
                             except Exception as e:
                                 logger.warning(
                                     f"⚠️ Failed to delete file for data_source {ds_id}: {e}"
@@ -125,7 +121,6 @@ class DataRetentionService:
             except Exception:
                 pass
             return 0
-
 
 
 

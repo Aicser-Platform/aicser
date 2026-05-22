@@ -483,15 +483,7 @@ class EnhancedDataService {
      */
     async listDataSources(): Promise<{ success: boolean; data_sources?: DataSource[]; error?: string }> {
         try {
-            const response = await fetchApi('data/sources');
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to list data sources: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            return result;
+            return await fetchApi('data/sources');
         } catch (error) {
             return {
                 success: false,
@@ -505,15 +497,7 @@ class EnhancedDataService {
      */
     async getDataSource(dataSourceId: string): Promise<{ success: boolean; data_source?: DataSource; error?: string }> {
         try {
-            const response = await fetchApi(`data/sources/${dataSourceId}`);
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to get data source: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            return result;
+            return await fetchApi(`data/sources/${dataSourceId}`);
         } catch (error) {
             return {
                 success: false,
@@ -527,17 +511,9 @@ class EnhancedDataService {
      */
     async deleteDataSource(dataSourceId: string): Promise<{ success: boolean; message?: string; error?: string }> {
         try {
-            const response = await fetchApi(`data/sources/${dataSourceId}`, {
+            return await fetchApi(`data/sources/${dataSourceId}`, {
                 method: 'DELETE',
             });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to delete data source: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            return result;
         } catch (error) {
             return {
                 success: false,
@@ -551,15 +527,7 @@ class EnhancedDataService {
      */
     async getDataSourceSchema(dataSourceId: string): Promise<{ success: boolean; schema?: any; error?: string }> {
         try {
-            const response = await fetchApi(`data/sources/${dataSourceId}/schema`);
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `Failed to get schema: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            return result;
+            return await fetchApi(`data/sources/${dataSourceId}/schema`);
         } catch (error) {
             return {
                 success: false,
@@ -720,4 +688,3 @@ class EnhancedDataService {
 // Export singleton instance
 export const enhancedDataService = new EnhancedDataService();
 export default enhancedDataService;
-

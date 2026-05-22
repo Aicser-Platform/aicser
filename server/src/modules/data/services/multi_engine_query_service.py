@@ -977,19 +977,20 @@ class DuckDBEngine(BaseQueryEngine):
 
         # Excel multi-sheet: at execution we use a NEW DuckDB connection, so we must (re)load the file.
         # Schema.duckdb_tables from upload is only for table names; tables do not exist in this conn.
-        # Prefer full file from Azure so SQL runs against entire dataset, not just sample
-        object_key = data_source.get("file_path")  # object_key for Azure Blob (e.g. user_files/{user_id}/...)
-        user_id = data_source.get("user_id")
-        if object_key and not user_id:
+        # Prefer full file from object storage so SQL runs against entire dataset, not just sample
+        object_key = data_source.get("file_path")
+        project_id = data_source.get("project_id") or data_source.get("user_id")
+        if object_key and not project_id:
             logger.warning(
-                "⚠️ file_path present but user_id missing — cannot load from Azure Blob. "
-                "Ensure data_source has user_id (owner who uploaded). Falling back to sample_data."
+                "⚠️ file_path present but project_id missing — cannot load from datasource storage. "
+                "Ensure data_source has project_id. Falling back to sample_data."
             )
-        if object_key and user_id:
+        if object_key and project_id:
             try:
-                from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-                storage_service = AzureBlobStorageService()
-                file_content = await storage_service.get_file(object_key, user_id)
+                from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+
+                storage_service = UploadDatasourceStorageService()
+                file_content = await storage_service.get_file(object_key, project_id)
                 import tempfile
                 with tempfile.NamedTemporaryFile(delete=False, suffix=f".{blob_file_format}") as tmp:
                     tmp.write(file_content)
@@ -1004,14 +1005,14 @@ class DuckDBEngine(BaseQueryEngine):
                         conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{safe_path}')")
                     elif blob_file_format in ("xlsx", "xls"):
                         await self._load_excel_all_sheets_into_duckdb(conn, tmp_path, schema)
-                    logger.info(f"✅ Loaded full file from Azure Blob Storage into DuckDB")
+                    logger.info("✅ Loaded full file from datasource storage into DuckDB")
                     data_source["analysis_based_on_sample_only"] = False
                     return
                 finally:
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
             except Exception as e:
-                logger.error(f"❌ Failed to load full file from Azure Blob Storage, falling back to sample: {e}")
+                logger.error(f"❌ Failed to load full file from datasource storage, falling back to sample: {e}")
 
         # Fallback: use inline/sample data only when full file is unavailable
         data_source["analysis_based_on_sample_only"] = True
@@ -1914,7 +1915,7 @@ class PandasEngine(BaseQueryEngine):
                 logger.exception("Failed to load API data source")
                 return (None, f"API data source error: {str(e)}")
         
-        # File-based sources: prefer full file from Azure, then fall back to sample data
+        # File-based sources: prefer full file from object storage, then fall back to sample data
         _pd_is_file = uses_duckdb_for_execution(_pd_ds_type, (data_source.get("db_type") or ""))
         if _pd_is_file:
             object_key = data_source.get("file_path")
@@ -1926,13 +1927,14 @@ class PandasEngine(BaseQueryEngine):
                 else None
             )
             blob_file_format = (storage_format or file_format or "csv").lower()
-            user_id = data_source.get("user_id")
+            project_id = data_source.get("project_id") or data_source.get("user_id")
 
-            if object_key and user_id:
+            if object_key and project_id:
                 try:
-                    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-                    storage_service = AzureBlobStorageService()
-                    file_content = await storage_service.get_file(object_key, user_id)
+                    from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+
+                    storage_service = UploadDatasourceStorageService()
+                    file_content = await storage_service.get_file(object_key, project_id)
                     import tempfile
                     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{blob_file_format}") as tmp:
                         tmp.write(file_content)
@@ -1952,7 +1954,7 @@ class PandasEngine(BaseQueryEngine):
                         if os.path.exists(tmp_path):
                             os.unlink(tmp_path)
                 except Exception as e:
-                    logger.warning(f"Failed to load full file from Azure Blob Storage, falling back to sample: {e}")
+                    logger.warning(f"Failed to load full file from datasource storage, falling back to sample: {e}")
 
             # Fallback: inline/sample data only when full file unavailable
             inline_data = data_source.get("data") or data_source.get("sample_data")

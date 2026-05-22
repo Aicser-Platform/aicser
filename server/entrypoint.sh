@@ -5,7 +5,7 @@ until nc -z postgres 5432; do
   sleep 1
 done
 echo "PostgreSQL is up - running chat2chart-server migrations"
-cd /app && /venv/bin/python -m alembic -c alembic.ini upgrade head
+cd /app && /venv/bin/python -m alembic -c alembic.ini upgrade heads
 echo "chat2chart-server migrations complete - starting server"
 
 # Source environment variables from .env file explicitly
@@ -16,5 +16,4 @@ fi
 # Print environment variables for debugging purposes (optional)
 # env
 
-# Start Uvicorn server
-/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+exec "$@"

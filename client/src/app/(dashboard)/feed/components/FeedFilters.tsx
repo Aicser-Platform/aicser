@@ -6,6 +6,10 @@ import { DownOutlined, SearchOutlined, UpOutlined } from '@ant-design/icons';
 import type { AssetType, FeedFilterOptions, FeedScope, FeedSort } from '@/services/socialFeedService';
 import { useTranslations } from 'next-intl';
 
+const isEnterpriseEdition = ['enterprise', 'ee'].includes(
+  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
+);
+
 export interface FeedFiltersValue {
   scope: FeedScope;
   assetType: 'all' | AssetType;
@@ -37,12 +41,17 @@ type FilterMenuKey = 'assetType' | 'tags';
 
 const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) => {
   const t = useTranslations('feed_filters');
-  const scopeOptions: { label: string; value: FeedScope }[] = [
-    { label: t('scope_private'), value: 'private' },
-    { label: t('scope_following'), value: 'following' },
-    { label: t('scope_organization'), value: 'organization' },
-    { label: t('scope_project'), value: 'project' },
-  ];
+  const scopeOptions: { label: string; value: FeedScope }[] = isEnterpriseEdition
+    ? [
+        { label: t('scope_private'), value: 'private' },
+        { label: t('scope_following'), value: 'following' },
+        { label: t('scope_organization'), value: 'organization' },
+        { label: t('scope_project'), value: 'project' },
+      ]
+    : [
+        { label: t('scope_private'), value: 'private' },
+        { label: t('scope_public'), value: 'public' },
+      ];
   const [openState, setOpenState] = useState<Record<FilterMenuKey, boolean>>({
     assetType: false,
     tags: false,

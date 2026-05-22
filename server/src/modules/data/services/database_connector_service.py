@@ -31,7 +31,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from sqlalchemy import create_engine, inspect, text, MetaData
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 from sqlalchemy.engine import URL
 
 # Database drivers
@@ -518,7 +518,7 @@ class DatabaseConnectorService:
                 # Create async engine with connection pooling (user config or defaults)
                 engine = create_async_engine(
                     connection_string,
-                    poolclass=QueuePool,
+                    poolclass=AsyncAdaptedQueuePool,
                     pool_size=int(pool_size) if pool_size is not None else 5,
                     max_overflow=int(max_overflow),
                     pool_pre_ping=True,
@@ -635,8 +635,9 @@ class DatabaseConnectorService:
             # DuckDB: file-based, use native library for schema
             if db_type == 'duckdb':
                 return await self._get_duckdb_schema(config)
-            # Use SQLAlchemy Inspector for other databases
-            return await self._get_schema_sqlalchemy(config)
+            # Use SQLAlchemy Inspector for other databases (sync — run in thread pool)
+            import asyncio
+            return await asyncio.to_thread(self._get_schema_sqlalchemy_sync, config)
             
         except Exception as e:
             logger.error(f"❌ Schema retrieval failed: {str(e)}")
@@ -748,8 +749,8 @@ class DatabaseConnectorService:
                 'error': f"ClickHouse schema retrieval failed: {str(e)}"
             }
     
-    async def _get_schema_sqlalchemy(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Get database schema using SQLAlchemy Inspector"""
+    def _get_schema_sqlalchemy_sync(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get database schema using SQLAlchemy Inspector (sync, runs in thread pool)"""
         try:
             db_type = config.get('type', '').lower()
             

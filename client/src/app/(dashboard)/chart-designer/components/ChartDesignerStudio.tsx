@@ -72,9 +72,9 @@ export default function ChartDesignerStudio() {
   const clearStore = useChartDesignerStore((state) => state.clearStore);
 
   useEffect(() => {
-    if (isAuthenticated && user?.id && currentProjectId) {
+    if (isAuthenticated && user?.id) {
       clearStore(); // Clear previous project's charts to avoid flicker
-      fetchCharts(user.id, String(currentProjectId));
+      fetchCharts(user.id, currentProjectId != null ? String(currentProjectId) : undefined);
     }
     // Use `user?.id` (string) instead of `user` (object) to avoid re-running when
     // the user object reference changes but the underlying ID hasn't.

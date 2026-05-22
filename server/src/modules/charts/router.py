@@ -2897,7 +2897,9 @@ def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
         "chart_type": payload.get("chartType"),
         "title": payload.get("title"),
         "chart_query": {
+            "tableName": chart_query.get("tableName"),
             "x": chart_query.get("x") or chart_query.get("xField"),
+            "xGrain": chart_query.get("xGrain"),
             "aggregate": chart_query.get("aggregate", "count"),
             "yMetric": chart_query.get("yMetric"),
             "xMetrics": chart_query.get("xMetrics", []),
@@ -2905,13 +2907,30 @@ def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "yMetricsSecondary": chart_query.get("yMetricsSecondary", []),
             "y": chart_query.get("y"),
             "legend": chart_query.get("legend"),
+            "groupBy": chart_query.get("groupBy"),
+            "groupField": chart_query.get("groupField"),
+            "groupSortBy": chart_query.get("groupSortBy"),
+            "groupOrder": chart_query.get("groupOrder"),
             "sortBy": chart_query.get("sortBy"),
             "sortOrder": chart_query.get("sortOrder"),
+            "filters": chart_query.get("filters", []),
+            "metricFilters": chart_query.get("metricFilters", []),
+            "limit": chart_query.get("limit"),
+            "seriesLimit": chart_query.get("seriesLimit"),
         },
         "chart_options": chart_options,
     }
 
     return chart_payload, layout
+
+
+def _parse_optional_uuid(value: Optional[str], field_name: str) -> Optional[UUID]:
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
 
 
 def _serialize_standalone_chart(chart) -> dict:
@@ -2932,7 +2951,7 @@ standalone_chart_router = APIRouter()
 
 @standalone_chart_router.post("", status_code=status.HTTP_201_CREATED)
 async def standalone_create_chart(
-    project_id: UUID,
+    project_id: Optional[str] = None,
     payload: dict = Body(...),
     db: AsyncSession = Depends(get_async_session),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
@@ -2941,12 +2960,17 @@ async def standalone_create_chart(
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if not project_id:
+    user_uuid = _parse_optional_uuid(str(user_id), "user_id")
+
+    project_uuid = _parse_optional_uuid(project_id, "project_id")
+    if not is_ee_enabled():
+        project_uuid = None
+    if is_ee_enabled() and not project_uuid:
         raise HTTPException(status_code=400, detail="Project ID is required")
 
-    chart_payload, layout = _normalize_chart_payload(payload)
-    chart_payload["user_id"] = user_id
-    chart_payload["project_id"] = project_id
+    chart_payload, _layout = _normalize_chart_payload(payload)
+    chart_payload["user_id"] = user_uuid
+    chart_payload["project_id"] = project_uuid
     if payload.get("dashboardId"):
         chart_payload["dashboard_id"] = payload.get("dashboardId")
 
@@ -2957,7 +2981,7 @@ async def standalone_create_chart(
 
 @standalone_chart_router.get("")
 async def standalone_list_charts(
-    project_id: UUID,
+    project_id: Optional[str] = None,
     db: AsyncSession = Depends(get_async_session),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
@@ -2965,11 +2989,20 @@ async def standalone_list_charts(
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if not project_id:
+    user_uuid = _parse_optional_uuid(str(user_id), "user_id")
+
+    project_uuid = _parse_optional_uuid(project_id, "project_id")
+    if not is_ee_enabled():
+        project_uuid = None
+    if is_ee_enabled() and not project_uuid:
         raise HTTPException(status_code=400, detail="Project ID is required")
 
     service = ChartService(db)
-    charts = await service.list_by_user_id_and_project_id(user_id, project_id)
+    charts = (
+        await service.list_by_user_id_and_project_id(user_uuid, project_uuid)
+        if project_uuid
+        else await service.list_by_user_id(user_uuid)
+    )
     return {
         "success": True,
         "charts": [_serialize_standalone_chart(c) for c in charts],

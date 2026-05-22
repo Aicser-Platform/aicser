@@ -359,6 +359,7 @@ const SQLEditor: React.FC<SQLEditorProps> = ({
                     </Space>
                 }
                 style={{ marginBottom: 16 }}
+                
             >
                 <div style={{ height: '300px', border: '1px solid #d9d9d9', borderRadius: '6px' }}>
                     <TextArea

@@ -17,12 +17,14 @@ import tempfile
 import time
 from pathlib import Path
 from .database_connector_service import DatabaseConnectorService
+from .upload_datasource_storage_service import UploadDatasourceStorageService
 try:
     from ee.modules.data.services.ai_schema_service import AISchemaService
 except ImportError:
     AISchemaService = None  # type: ignore
 from src.db.session import async_operation_lock
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
+from src.core.edition import is_ee_enabled
 from src.shared.query_limits import (
     DEFAULT_PAGE_LIMIT,
     DEFAULT_FILE_QUERY_LIMIT,
@@ -133,10 +135,14 @@ class DataConnectivityService:
         self._initialize_demo_data()
         self.database_connector = DatabaseConnectorService()
         self.ai_schema_service = AISchemaService()
+        # Schema cache: {data_source_id: (schema_dict, fetched_at_timestamp)}
+        self._schema_cache: Dict[str, tuple] = {}
+        self._schema_cache_ttl = 300  # 5 minutes
 
     def invalidate_data_source_cache(self, data_source_id: str) -> None:
         """Remove a data source from in-memory cache so next read gets fresh config (e.g. after update)."""
         self.data_sources.pop(data_source_id, None)
+        self._schema_cache.pop(data_source_id, None)
         logger.debug("Invalidated in-memory cache for data source: %s", data_source_id)
 
     async def _test_nosql_connection(self, db_type: str, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -464,42 +470,10 @@ class DataConnectivityService:
         """
         if not user_id:
             raise ValueError("user_id is required for database connections")
-        if not project_id:
-            raise ValueError("project_id is required for database connections")
-        
-        # Get or create project_id if not provided
-        if not project_id:
-            from src.modules.project.service import ProjectService
-            # get_user_projects returns (List[Project], total_count)
-            projects_list, _ = await ProjectService.get_user_projects(user_id)
-            
-            if projects_list and len(projects_list) > 0:
-                project_id = str(projects_list[0].id)
-                logger.info(f"Using first available project: {project_id}")
-            else:
-                # Create a default project — look up the user's org from user_roles
-                from sqlalchemy import select as sa_select
-                from src.modules.authentication.rbac.models import UserRole as _UserRole
-                from src.db.session import async_session as _async_session
-                async with _async_session() as _db:
-                    _result = await _db.execute(
-                        sa_select(_UserRole.organization_id)
-                        .where(
-                            _UserRole.user_id == user_id,
-                            _UserRole.is_active == True,
-                            _UserRole.organization_id.isnot(None),
-                        )
-                        .limit(1)
-                    )
-                    org_id = _result.scalar_one_or_none()
 
-                new_project = await ProjectService.create_project(
-                    name="My Workspace",
-                    organization_id=str(org_id) if org_id else None,
-                    creator_user_id=user_id,
-                )
-                project_id = str(new_project.id)
-                logger.info(f"Created default project: {project_id}")
+        # EE requires an explicit project_id; CE stores by user_id with no project
+        if is_ee_enabled() and not project_id:
+            raise ValueError("project_id is required for database connections")
         
         try:
             db_type = str(connection_request.get('type', '')).lower()
@@ -564,30 +538,40 @@ class DataConnectivityService:
                         logger.error(f"❌ Failed to encrypt credentials: {encrypt_error}")
                         safe_config = connection_request
                     
-                    # Convert project_id to UUID
+                    # Convert project_id to UUID (nullable)
                     from uuid import UUID
-                    if isinstance(project_id, str):
-                        try:
-                            project_id_uuid = UUID(project_id)
-                        except ValueError:
-                            raise ValueError(f"Invalid project_id format: {project_id}. Must be a valid UUID.")
-                    else:
-                        project_id_uuid = project_id
+                    project_id_uuid = None
+                    if project_id:
+                        if isinstance(project_id, str):
+                            try:
+                                project_id_uuid = UUID(project_id)
+                            except ValueError:
+                                logger.warning(f"Invalid project_id format: {project_id}, storing without project")
+                        else:
+                            project_id_uuid = project_id
                     
+                    # Resolve user_id UUID so CE list endpoint can find this record by owner
+                    user_id_uuid = None
+                    try:
+                        from uuid import UUID as _UUID
+                        user_id_uuid = _UUID(user_id)
+                    except (TypeError, ValueError):
+                        pass
+
                     new_source = DataSource(
                         id=connection_id,
                         name=connection_request.get('name') or f"{connection_request.get('type')}_connection",
                         type='database',
                         format=connection_request.get('type'),
                         db_type=connection_request.get('type'),
-                        size=0,  # Database connections don't have file size
-                        row_count=0,  # Will be populated when schema is fetched
+                        size=0,
+                        row_count=0,
                         schema=json.dumps({
-                    'type': connection_request.get('type'),
-                    'host': connection_request.get('host'),
-                    'port': connection_request.get('port'),
-                    'database': connection_request.get('database'),
-                    'username': connection_request.get('username'),
+                            'type': connection_request.get('type'),
+                            'host': connection_request.get('host'),
+                            'port': connection_request.get('port'),
+                            'database': connection_request.get('database'),
+                            'username': connection_request.get('username'),
                             'ssl_mode': connection_request.get('ssl_mode', 'prefer'),
                             'connection_string': connection_request.get('uri'),
                             'encrypt': connection_request.get('encrypt', False)
@@ -598,7 +582,8 @@ class DataConnectivityService:
                             'status': 'connected',
                             'created_at': datetime.now().isoformat()
                         }),
-                        project_id=project_id_uuid,  # Required - converted to UUID above
+                        user_id=user_id_uuid,
+                        project_id=project_id_uuid if project_id else None,
                         is_active=True,
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
@@ -1010,7 +995,8 @@ class DataConnectivityService:
                         'size': source.size,
                         'row_count': source.row_count,
                         'schema': source.schema,
-                        'user_id': getattr(source, 'user_id', None),
+                        'user_id': str(source.user_id) if getattr(source, 'user_id', None) else None,
+                        'project_id': str(source.project_id) if getattr(source, 'project_id', None) else None,
                         'created_at': source.created_at.isoformat() if source.created_at else None,
                         'updated_at': source.updated_at.isoformat() if source.updated_at else None,
                         'is_active': source.is_active,
@@ -1232,7 +1218,7 @@ class DataConnectivityService:
         file_path: str,  # Temp file path for processing
         original_filename: str, 
         options: Optional[Dict[str, Any]] = None,
-        object_key: Optional[str] = None  # NEW: Object key from PostgreSQL storage
+        object_key: Optional[str] = None  # Object key from datasource storage
     ) -> Dict[str, Any]:
         """Process uploaded file and extract data"""
         try:
@@ -1317,7 +1303,7 @@ class DataConnectivityService:
                 # Add fields expected by frontend
                 'uuid_filename': f"file_{int(datetime.now().timestamp())}_{original_filename}",
                 'content_type': f"application/{file_extension}",
-                'storage_type': 'postgresql',  # Updated: now using PostgreSQL storage
+                'storage_type': options.get('storage_type', 'postgresql'),
                 'user_id': user_id,  # Pass user_id from options for audit
                 'project_id': project_id  # Pass project_id from options (REQUIRED)
             }
@@ -1327,6 +1313,7 @@ class DataConnectivityService:
                 data_source["schema"] = data_source.get("schema") or {}
                 if isinstance(data_source["schema"], dict):
                     data_source["schema"]["storage"] = {
+                        "backend": storage_meta.get("backend", options.get("storage_type", "postgresql")),
                         "format": storage_meta.get("storage_format", "parquet"),
                         "uploaded_size_bytes": storage_meta.get("uploaded_size_bytes", file_size),
                         "stored_size_bytes": storage_meta.get("compressed_size_bytes", file_size),
@@ -1421,9 +1408,8 @@ class DataConnectivityService:
             import uuid as _uuid
             source_id = str(_uuid.uuid4())
 
-            # Store compressed parquet in Azure Blob Storage
-            from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-            storage_service = AzureBlobStorageService()
+            # Store compressed parquet in the edition-specific datasource storage.
+            storage_service = UploadDatasourceStorageService()
             parquet_filename = f"{Path(filename).stem}.parquet"
             object_key = await storage_service.store_file(
                 file_content=parquet_payload["content"],
@@ -1435,7 +1421,8 @@ class DataConnectivityService:
                 user_id=options.get("user_id"),
             )
             logger.info(
-                "💾 Stored compressed parquet in Azure Blob Storage: %s (uploaded=%s bytes, stored=%s bytes)",
+                "💾 Stored compressed parquet in %s: %s (uploaded=%s bytes, stored=%s bytes)",
+                storage_service.storage_type,
                 object_key,
                 len(file_content),
                 parquet_payload["compressed_size_bytes"],
@@ -1444,7 +1431,9 @@ class DataConnectivityService:
             options_with_storage = {
                 **options,
                 "source_id": source_id,
+                "storage_type": storage_service.storage_type,
                 "storage_meta": {
+                    "backend": storage_service.storage_type,
                     "storage_format": "parquet",
                     "compression": "zstd",
                     "uploaded_size_bytes": len(file_content),
@@ -1513,8 +1502,7 @@ class DataConnectivityService:
         import uuid as _uuid
         source_id = str(_uuid.uuid4())
 
-        from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-        storage_service = AzureBlobStorageService()
+        storage_service = UploadDatasourceStorageService()
         parquet_filename = f"{Path(filename).stem}.parquet"
         object_key = await storage_service.store_file(
             file_content=parquet_payload["content"],
@@ -1526,7 +1514,8 @@ class DataConnectivityService:
             user_id=options.get("user_id"),
         )
         logger.info(
-            "💾 Stored compressed parquet: %s (original=%d bytes, stored=%d bytes)",
+            "💾 Stored compressed parquet in %s: %s (original=%d bytes, stored=%d bytes)",
+            storage_service.storage_type,
             object_key,
             file_size,
             parquet_payload["compressed_size_bytes"],
@@ -1535,7 +1524,9 @@ class DataConnectivityService:
         options_with_storage = {
             **options,
             "source_id": source_id,
+            "storage_type": storage_service.storage_type,
             "storage_meta": {
+                "backend": storage_service.storage_type,
                 "storage_format": "parquet",
                 "compression": "zstd",
                 "uploaded_size_bytes": file_size,
@@ -2311,20 +2302,22 @@ class DataConnectivityService:
         # CRITICAL: Check if data is in memory first
         data = data_source.get('data', [])
         
-        # If no in-memory data, try to load from Azure Blob Storage
+        # If no in-memory data, try to load from edition-specific object storage.
         if not data or len(data) == 0:
             object_key = data_source.get('file_path')  # Now it's object_key
             if object_key:
                 try:
-                    from src.modules.data.services.postgres_storage_service import PostgresStorageService
-                    storage_service = PostgresStorageService()
+                    storage_service = UploadDatasourceStorageService()
                     project_id = data_source.get('project_id')
                     
                     if not project_id:
-                        logger.warning("⚠️ project_id not found in data_source, cannot load from PostgreSQL storage")
+                        logger.warning("⚠️ project_id not found in data_source, cannot load from datasource storage")
                     else:
-                        # Load file from PostgreSQL
-                        logger.info(f"📊 Loading file data from PostgreSQL storage: {object_key}")
+                        logger.info(
+                            "📊 Loading file data from %s storage: %s",
+                            storage_service.storage_type,
+                            object_key,
+                        )
                         file_content = await storage_service.get_file(object_key, project_id)
                         
                         # Write to temp file for processing
@@ -2339,13 +2332,13 @@ class DataConnectivityService:
                         try:
                             # Process file
                             data = await self._read_file_data(tmp_path, blob_format, limit=query.get('limit', DEFAULT_FILE_QUERY_LIMIT))
-                            logger.info(f"✅ Loaded {len(data)} rows from Azure Blob Storage")
+                            logger.info("✅ Loaded %d rows from datasource storage", len(data))
                         finally:
                             # Clean up temp file
                             if os.path.exists(tmp_path):
                                 os.unlink(tmp_path)
                 except Exception as e:
-                    logger.error(f"❌ Failed to load from PostgreSQL storage: {str(e)}")
+                    logger.error(f"❌ Failed to load from datasource storage: {str(e)}")
                     data = []
         
         # Fallback to sample_data
@@ -2683,38 +2676,36 @@ class DataConnectivityService:
                     async with async_session() as db:
                         from sqlalchemy import delete, select
                         
-                        # First, fetch the data source to get file_path and user_id for Azure Blob Storage deletion
+                        # First, fetch the data source to get file_path/project_id for object storage deletion
                         try:
                             result = await db.execute(
                                 select(DataSource).where(DataSource.id == data_source_id)
                             )
                             db_source = result.scalar_one_or_none()
                             
-                            # Delete file from Azure Blob Storage if it's a file source
+                            # Delete stored file if it's a file source
                             if db_source:
                                 ds_type = getattr(db_source, 'type', None)
                                 ds_file_path = getattr(db_source, 'file_path', None)
                                 
                                 if ds_type == 'file' and ds_file_path:
                                     file_path = str(ds_file_path)
-                                    user_id = str(db_source.user_id) if db_source.user_id else None
-                                    
-                                    # Check if file_path is a blob object_key (new or legacy paths)
+                                    # Check if file_path is an object_key (new or legacy paths)
                                     is_blob_key = (
                                         file_path.startswith("orgs/")
                                         or file_path.startswith("projects/")
                                         or file_path.startswith("org_files/")
                                         or file_path.startswith("project_files/")
+                                        or file_path.startswith("user_files/")
                                     )
                                     if is_blob_key:
                                         try:
-                                            from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-                                            storage_service = AzureBlobStorageService()
+                                            storage_service = UploadDatasourceStorageService()
                                             project_id_str = str(db_source.project_id) if db_source.project_id else ""
                                             await storage_service.delete_file(file_path, project_id_str)
-                                            logger.info(f"✅ Deleted file from Azure Blob Storage during data source deletion: {file_path}")
+                                            logger.info(f"✅ Deleted file from datasource storage during data source deletion: {file_path}")
                                         except Exception as e:
-                                            logger.warning(f"⚠️ Failed to delete file from Azure Blob Storage for data_source {data_source_id}: {e}")
+                                            logger.warning(f"⚠️ Failed to delete file from datasource storage for data_source {data_source_id}: {e}")
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to fetch data source for file deletion: {e}")
                         
@@ -2747,38 +2738,38 @@ class DataConnectivityService:
                     file_path = data_source['file_path']
                     user_id = data_source.get('user_id')
                     
-                    # Check if file_path is a blob object_key (new or legacy paths)
+                    # Check if file_path is an object_key (new or legacy paths)
                     is_blob_key = file_path and (
                         file_path.startswith("orgs/")
                         or file_path.startswith("projects/")
                         or file_path.startswith("org_files/")
                         or file_path.startswith("project_files/")
+                        or file_path.startswith("user_files/")
                     )
                     if is_blob_key:
-                        # Delete from Azure Blob Storage
-                        if user_id:
+                        project_id = data_source.get('project_id') or user_id
+                        if project_id:
                             try:
                                 import asyncio
-                                from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-                                storage_service = AzureBlobStorageService()
+                                storage_service = UploadDatasourceStorageService()
                                 
-                                async def _delete_from_azure():
-                                    await storage_service.delete_file(file_path, str(user_id))
+                                async def _delete_from_storage():
+                                    await storage_service.delete_file(file_path, str(project_id))
                                 
                                 # Run async deletion
                                 try:
                                     loop = asyncio.get_event_loop()
                                     if loop.is_running():
-                                        asyncio.ensure_future(_delete_from_azure())
+                                        asyncio.ensure_future(_delete_from_storage())
                                     else:
-                                        loop.run_until_complete(_delete_from_azure())
+                                        loop.run_until_complete(_delete_from_storage())
                                 except RuntimeError:
-                                    asyncio.run(_delete_from_azure())
-                                logger.info(f"✅ Deleted file from Azure Blob Storage (in-memory cleanup): {file_path}")
+                                    asyncio.run(_delete_from_storage())
+                                logger.info(f"✅ Deleted file from datasource storage (in-memory cleanup): {file_path}")
                             except Exception as e:
-                                logger.warning(f"⚠️ Failed to delete file from Azure Blob Storage (in-memory): {e}")
+                                logger.warning(f"⚠️ Failed to delete file from datasource storage (in-memory): {e}")
                         else:
-                            logger.warning(f"⚠️ Cannot delete file from Azure Blob Storage: user_id missing in data_source {data_source_id}")
+                            logger.warning(f"⚠️ Cannot delete file from datasource storage: project_id missing in data_source {data_source_id}")
                     elif file_path and os.path.exists(file_path):
                         # Legacy: local file path (shouldn't happen with new uploads, but handle for backwards compatibility)
                         try:
@@ -3218,7 +3209,7 @@ class DataConnectivityService:
             logger.warning("get_google_sheets_data failed: %s", e)
             return {"success": False, "error": str(e), "data": [], "row_count": 0}
 
-    async def get_database_schema(self, data_source_id: str) -> Dict[str, Any]:
+    async def get_database_schema(self, data_source_id: str, force_refresh: bool = False) -> Dict[str, Any]:
         """Get database schema information for a connected database"""
         try:
             logger.info(f"🔍 Fetching database schema for: {data_source_id}")
@@ -3298,10 +3289,48 @@ class DataConnectivityService:
                             'error': 'Stored connection has no password. Please re-save this data source with the correct SQL Server password (Data sources → Edit → Save).'
                         }
 
+                # Return in-memory cached schema if still fresh
+                import time as _time
+                _cached = self._schema_cache.get(data_source_id)
+                if not force_refresh and _cached:
+                    _cached_schema, _cached_at = _cached
+                    if _time.monotonic() - _cached_at < self._schema_cache_ttl:
+                        logger.info("✅ Returning cached schema for %s", data_source_id)
+                        return {
+                            'success': True,
+                            'schema': _cached_schema,
+                            'data_source': {
+                                'id': data_source.id,
+                                'name': data_source.name,
+                                'type': data_source.type,
+                                'db_type': data_source.db_type,
+                                'row_count': data_source.row_count,
+                            },
+                        }
+
+                # Return stored schema immediately if it has tables and no forced refresh
+                if not force_refresh and schema_info and isinstance(schema_info, dict) and schema_info.get('tables'):
+                    logger.info("✅ Returning stored schema for %s (%d tables)", data_source_id, len(schema_info['tables']))
+                    self._schema_cache[data_source_id] = (schema_info, _time.monotonic())
+                    return {
+                        'success': True,
+                        'schema': schema_info,
+                        'data_source': {
+                            'id': data_source.id,
+                            'name': data_source.name,
+                            'type': data_source.type,
+                            'db_type': data_source.db_type,
+                            'row_count': data_source.row_count,
+                        },
+                    }
+
                 # Try to get live schema from the database
                 try:
                     logger.info(f"🔍 Fetching live schema for {data_source_id}, db_type: {data_source.db_type}, type: {data_source.type}")
-                    live_schema = await self._fetch_live_database_schema(config)
+                    live_schema = await asyncio.wait_for(
+                        self._fetch_live_database_schema(config),
+                        timeout=25.0,
+                    )
                     logger.info(f"📊 Live schema result: success={live_schema.get('success')}, tables_count={len(live_schema.get('tables', []))}, schemas_count={len(live_schema.get('schemas', []))}")
                     
                     if live_schema['success']:
@@ -3317,7 +3346,10 @@ class DataConnectivityService:
                         }
                         
                         logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
-                        
+
+                        # Cache in memory
+                        self._schema_cache[data_source_id] = (updated_schema, _time.monotonic())
+
                         # Update the database record
                         data_source.schema = json.dumps(updated_schema)
                         data_source.row_count = live_schema.get('total_rows', 0)
@@ -3362,6 +3394,20 @@ class DataConnectivityService:
                             }
                         }
 
+                except asyncio.TimeoutError:
+                    logger.warning("Live schema fetch timed out after 25s for %s", data_source_id)
+                    return {
+                        'success': False,
+                        'error': 'Schema fetch timed out. The database may be slow or unreachable.',
+                        'schema': schema_info,
+                        'data_source': {
+                            'id': data_source.id,
+                            'name': data_source.name,
+                            'type': data_source.type,
+                            'db_type': data_source.db_type,
+                            'row_count': data_source.row_count
+                        }
+                    }
                 except Exception as live_error:
                     logger.warning("Live schema fetch failed: %s", str(live_error))
                     return {

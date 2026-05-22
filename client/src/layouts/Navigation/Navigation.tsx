@@ -67,6 +67,11 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
                 label: t('chart_designer'),
             },
             {
+                key: 'feed',
+                icon: <AppstoreOutlined />,
+                label: t('feed'),
+            },
+            {
                 key: 'query-editor',
                 icon: <CodeOutlined />,
                 label: t('query_editor'),

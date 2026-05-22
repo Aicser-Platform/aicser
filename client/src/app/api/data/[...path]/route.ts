@@ -72,49 +72,24 @@ async function handleDataRequest(
     const cookie = request.headers.get('Cookie');
     if (cookie) headers['Cookie'] = cookie;
     
-    // Prepare request options
+    // Prepare request options — 35 s timeout so schema fetches don't hang the proxy
     const requestOptions: RequestInit = {
       method,
       headers,
       credentials: 'include',
+      signal: AbortSignal.timeout(35_000),
     };
     
-    // Add body for POST/PUT/PATCH requests
+    // Add body for POST/PUT/PATCH requests. Stream it through so uploads do not
+    // get fully buffered by the Next.js proxy before FastAPI sees them.
     if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-      // Check if this is a file upload (multipart/form-data)
       const contentType = request.headers.get('content-type') || '';
-      if (contentType.includes('multipart/form-data')) {
-        // For multipart/form-data, clone the request to get a fresh body stream
-        // Then read as blob to preserve the multipart structure
-        try {
-          const clonedRequest = request.clone();
-          const blob = await clonedRequest.blob();
-          requestOptions.body = blob;
-          // Preserve the original Content-Type header with boundary - CRITICAL for multipart
-          headers['Content-Type'] = contentType;
-        } catch (e) {
-          console.error('[api/data] Failed to handle multipart body:', e);
-          // If blob fails, try arrayBuffer as fallback
-          try {
-            const clonedRequest = request.clone();
-            const arrayBuffer = await clonedRequest.arrayBuffer();
-            requestOptions.body = arrayBuffer;
-            headers['Content-Type'] = contentType;
-          } catch (e2) {
-            console.error('[api/data] Failed to read body:', e2);
-          }
-        }
-      } else {
-        // For other content types (e.g., application/json), read as text
-        try {
-          const body = await request.text();
-          if (body) {
-            requestOptions.body = body;
-            headers['Content-Type'] = contentType || 'application/json';
-          }
-        } catch (e) {
-          // Body already consumed or not available
-        }
+      if (contentType) {
+        headers['Content-Type'] = contentType;
+      }
+      if (request.body) {
+        requestOptions.body = request.body as any;
+        (requestOptions as any).duplex = 'half';
       }
     }
     
@@ -167,4 +142,3 @@ async function handleDataRequest(
     );
   }
 }
-

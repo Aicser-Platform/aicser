@@ -35,6 +35,7 @@ EXAMPLES:
 import uuid
 import json
 import hashlib
+import os
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy import select, text
@@ -48,6 +49,21 @@ from src.modules.data.services.multi_engine_query_service import MultiEngineQuer
 class ChartService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @staticmethod
+    def _sample_duckdb_file_available() -> bool:
+        candidates = [
+            os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip(),
+            "/app/scripts/sample-data/duckdb/sample_data.duckdb",
+            os.path.join(
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")),
+                "scripts",
+                "sample-data",
+                "duckdb",
+                "sample_data.duckdb",
+            ),
+        ]
+        return any(path and os.path.isfile(path) for path in candidates)
 
     # =========================================================
     # CRUD
@@ -87,7 +103,18 @@ class ChartService:
         await self.db.commit()
 
     async def list_by_user_id_and_project_id(self, user_id: uuid.UUID, project_id: uuid.UUID) -> List[Chart]:
+        if not isinstance(user_id, uuid.UUID):
+            user_id = uuid.UUID(str(user_id))
+        if not isinstance(project_id, uuid.UUID):
+            project_id = uuid.UUID(str(project_id))
         stmt = select(Chart).where(Chart.user_id == user_id, Chart.project_id == project_id)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+
+    async def list_by_user_id(self, user_id: uuid.UUID) -> List[Chart]:
+        if not isinstance(user_id, uuid.UUID):
+            user_id = uuid.UUID(str(user_id))
+        stmt = select(Chart).where(Chart.user_id == user_id, Chart.project_id.is_(None))
         res = await self.db.execute(stmt)
         return res.scalars().all()
 
@@ -283,13 +310,21 @@ class ChartService:
             if not data_source:
                 raise ValueError("Data source not found")
 
+            if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
+                return self._sample_template_fallback_result(chart)
+
             # Lazily fetch schema for databases/sample_duckdb if missing
             await self._ensure_data_source_schema(data_source)
 
             if data_source.type == "file":
                 return self._execute_scatter_file(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
             else:
-                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
+                try:
+                    return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
+                except Exception:
+                    if data_source.type == "sample_duckdb":
+                        return self._sample_template_fallback_result(chart)
+                    raise
 
         # -------------------------
         # 4. Execute Standard Charts
@@ -300,6 +335,9 @@ class ChartService:
 
         if not data_source:
             raise ValueError("Data source not found")
+
+        if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
+            return self._sample_template_fallback_result(chart)
 
         # Lazily fetch schema for databases/sample_duckdb if missing
         await self._ensure_data_source_schema(data_source)
@@ -314,14 +352,19 @@ class ChartService:
                 series_limit=series_limit
             )
         else:
-            result = await self._execute_db_source(
-                data_source, x_field, aggregate, y_metric, y_metrics_list,
-                has_y_metrics_defined, group_field, order_clause,
-                n_primary=n_primary, x_grain=x_grain,
-                filters=filters, metric_filters=metric_filters,
-                limit=limit,
-                series_limit=series_limit
-            )
+            try:
+                result = await self._execute_db_source(
+                    data_source, x_field, aggregate, y_metric, y_metrics_list,
+                    has_y_metrics_defined, group_field, order_clause,
+                    n_primary=n_primary, x_grain=x_grain,
+                    filters=filters, metric_filters=metric_filters,
+                    limit=limit,
+                    series_limit=series_limit
+                )
+            except Exception:
+                if data_source.type == "sample_duckdb":
+                    return self._sample_template_fallback_result(chart)
+                raise
 
         # Stat charts must return {"value": N}. Normalize if the execution path
         # returned the generic {"x": [...], "y": [...]} shape instead.
@@ -569,6 +612,17 @@ class ChartService:
 
         if chart.chart_type == "stat":
             return {"value": value(3, minimum=8, spread=950)}
+
+        if chart.chart_type == "scatter":
+            points = [
+                [value(i * 2, minimum=5, spread=120), value(i * 3, minimum=10, spread=180), "Sample"]
+                for i in range(12)
+            ]
+            return {
+                "series": [{"name": chart.title or "Sample", "data": points}],
+                "xAxisLabel": "Sample X",
+                "yAxisLabel": "Sample Y",
+            }
 
         chart_query = chart.chart_query or {}
         x_field = str(chart_query.get("x") or "").lower()
@@ -1292,5 +1346,3 @@ class ChartService:
             if grain == "day": return f"strftime('%Y-%m-%d', {field})"
             return field
         return field
-
-

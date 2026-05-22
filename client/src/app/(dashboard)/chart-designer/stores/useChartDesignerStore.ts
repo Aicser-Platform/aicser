@@ -2,6 +2,22 @@ import { create } from 'zustand';
 import { fetchApi } from '@/utils/api';
 import { useProjectStore } from '@/stores/useProjectStore';
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const IS_ENTERPRISE_EDITION =
+  process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
+
+const normalizeProjectId = (projectId?: string | number | null) => {
+  if (!IS_ENTERPRISE_EDITION) return null;
+  if (projectId == null) return null;
+  const value = String(projectId);
+  return UUID_PATTERN.test(value) ? value : null;
+};
+
+const standaloneChartEndpoint = (projectId?: string | number | null) => {
+  const normalizedProjectId = normalizeProjectId(projectId);
+  return normalizedProjectId ? `chart?project_id=${encodeURIComponent(normalizedProjectId)}` : 'chart';
+};
+
 export interface ChartDesignerWidget {
   id: string;
   title: string;
@@ -15,6 +31,7 @@ export interface ChartDesignerWidget {
   dataSourceId?: string;
   userId?: string;
   dashboardId?: string;
+  lastFetchedQueryHash?: string;
 }
 
 export type LayoutItem = {
@@ -195,18 +212,14 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
   },
 
   fetchCharts: async (userId: string, projectId?: string) => {
-    const activeProjectId = projectId || useProjectStore.getState().currentProjectId;
-    if (!activeProjectId) {
-      set({ widgets: [], layout: [], isLoading: false });
-      return;
-    }
+    const activeProjectId = normalizeProjectId(projectId || useProjectStore.getState().currentProjectId);
 
     set({ isLoading: true });
     try {
-      const data = await fetchApi(`api/chart?project_id=${activeProjectId}`);
+      const data = await fetchApi(`api/${standaloneChartEndpoint(activeProjectId)}`);
 
       // Safety check: if project changed while we were fetching, don't update state
-      if (useProjectStore.getState().currentProjectId !== activeProjectId) {
+      if (normalizeProjectId(useProjectStore.getState().currentProjectId) !== activeProjectId) {
         return;
       }
 
@@ -273,7 +286,7 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       console.error('Failed to fetch charts:', error);
     } finally {
       // Small check again just in case
-      if (useProjectStore.getState().currentProjectId === activeProjectId) {
+      if (normalizeProjectId(useProjectStore.getState().currentProjectId) === activeProjectId) {
         set({ isLoading: false });
       }
     }
@@ -296,17 +309,13 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       }
 
       const projectId = useProjectStore.getState().currentProjectId;
-      if (!widget.chartId && !projectId) {
-        console.error('No project ID to save chart');
-        return;
-      }
 
       const updateEndpoint =
         widget.chartId && widget.dashboardId
           ? `dashboards/${widget.dashboardId}/charts/${widget.chartId}`
           : widget.chartId
             ? `chart/${widget.chartId}`
-            : `chart?project_id=${projectId}`;
+            : standaloneChartEndpoint(projectId);
 
       const response = await fetchApi(updateEndpoint, {
         method: widget.chartId ? 'PUT' : 'POST',
@@ -335,23 +344,28 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       };
 
       const projectId = useProjectStore.getState().currentProjectId;
-      if (!projectId) {
-        throw new Error('No project selected');
-      }
 
-      const response = await fetchApi(`chart?project_id=${projectId}`, {
+      const response = await fetchApi(standaloneChartEndpoint(projectId), {
         method: 'POST',
         body: JSON.stringify(payload),
       });
 
       if (response && response.id) {
-        get().updateWidget(widget.id, { chartId: response.id, isLoading: false });
+        get().updateWidget(widget.id, {
+          chartId: response.id,
+          isLoading: false,
+          lastFetchedQueryHash: widget.lastFetchedQueryHash,
+        });
         // Now fetch actual data using the new chart ID or the execute endpoint
         await get().fetchChartData(widget.id);
       }
     } catch (error) {
       console.error('Failed to create chart:', error);
-      get().updateWidget(widget.id, { isLoading: false, error: 'Failed to create chart' });
+      get().updateWidget(widget.id, {
+        isLoading: false,
+        error: 'Failed to create chart',
+        lastFetchedQueryHash: widget.lastFetchedQueryHash,
+      });
     }
   },
 
@@ -406,12 +420,25 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       }
 
       if (response && response.data) {
-        get().updateWidget(widgetId, { chartData: response.data, isLoading: false });
+        get().updateWidget(widgetId, {
+          chartData: response.data,
+          isLoading: false,
+          error: null,
+          lastFetchedQueryHash: widget.lastFetchedQueryHash,
+        });
       } else if (response && response.error) {
-        get().updateWidget(widgetId, { isLoading: false, error: response.error });
+        get().updateWidget(widgetId, {
+          isLoading: false,
+          error: response.error,
+          lastFetchedQueryHash: widget.lastFetchedQueryHash,
+        });
       }
     } catch (error) {
-      get().updateWidget(widgetId, { isLoading: false, error: 'Failed to fetch data' });
+      get().updateWidget(widgetId, {
+        isLoading: false,
+        error: 'Failed to fetch data',
+        lastFetchedQueryHash: widget.lastFetchedQueryHash,
+      });
     } finally {
       get().updateWidget(widgetId, { isLoading: false });
     }
@@ -451,7 +478,7 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
     }
 
     // 3. Fetch fresh data if needed (if query or data source changed)
-    const nonDataKeys = ['chartOptions', 'title', 'chartId', 'dashboardId', 'userId'];
+    const nonDataKeys = ['chartOptions', 'title', 'chartId', 'dashboardId', 'userId', 'lastFetchedQueryHash'];
     const skipDataFetch = Object.keys(updates).every((key) => nonDataKeys.includes(key));
     
     if (updatedWidget.dataSourceId && !skipDataFetch) {

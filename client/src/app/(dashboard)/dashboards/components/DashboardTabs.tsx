@@ -304,17 +304,15 @@ export const DashboardTabs: React.FC = () => {
       message.warning(t('title_required'));
       return;
     }
-    const needsOrganization = publishForm.visibility === 'organization' || publishForm.visibility === 'public';
-    const needsProject = publishForm.visibility === 'project';
-
-    if (needsOrganization && !resolvedOrganizationId) {
-      message.error(t('organization_context_required'));
-      return;
-    }
-
-    if (needsProject && !resolvedProjectId) {
-      message.error(t('project_context_required'));
-      return;
+    if (isEnterpriseEdition) {
+      if (publishForm.visibility === 'organization' && !resolvedOrganizationId) {
+        message.error(t('organization_context_required'));
+        return;
+      }
+      if (publishForm.visibility === 'project' && !resolvedProjectId) {
+        message.error(t('project_context_required'));
+        return;
+      }
     }
 
     setIsPublishing(true);
@@ -322,8 +320,8 @@ export const DashboardTabs: React.FC = () => {
       const result = await socialFeedService.publishAsset({
         asset_type: 'dashboard',
         asset_id: activeDashboardId,
-        organization_id: resolvedOrganizationId || undefined,
-        project_id: resolvedProjectId || undefined,
+        organization_id: isEnterpriseEdition ? (resolvedOrganizationId || undefined) : undefined,
+        project_id: isEnterpriseEdition ? (resolvedProjectId || undefined) : undefined,
         title: publishForm.title.trim(),
         description: publishForm.description.trim() || undefined,
         tags: publishForm.tags.map((t) => t.trim()).filter(Boolean),
@@ -374,11 +372,13 @@ export const DashboardTabs: React.FC = () => {
       return;
     }
 
-    const defaultVisibility: FeedVisibility = resolvedProjectId
-      ? 'project'
-      : resolvedOrganizationId
-        ? 'organization'
-        : 'private';
+    const defaultVisibility: FeedVisibility = !isEnterpriseEdition
+      ? 'public'
+      : resolvedProjectId
+        ? 'project'
+        : resolvedOrganizationId
+          ? 'organization'
+          : 'private';
 
     setPublishForm({
       title: activeDashboard.name || 'Dashboard',
@@ -652,12 +652,19 @@ export const DashboardTabs: React.FC = () => {
               style={{ width: '100%' }}
               value={publishForm.visibility}
               onChange={(value) => setPublishForm((prev) => ({ ...prev, visibility: value as FeedVisibility }))}
-              options={[
-                { value: 'private', label: t('private') },
-                { value: 'project', label: t('project'), disabled: !resolvedProjectId },
-                { value: 'organization', label: t('organization') },
-                { value: 'public', label: t('public'), disabled: !resolvedOrganizationId },
-              ]}
+              options={
+                isEnterpriseEdition
+                  ? [
+                      { value: 'private', label: t('private') },
+                      { value: 'project', label: t('project'), disabled: !resolvedProjectId },
+                      { value: 'organization', label: t('organization'), disabled: !resolvedOrganizationId },
+                      { value: 'public', label: t('public') },
+                    ]
+                  : [
+                      { value: 'private', label: t('private') },
+                      { value: 'public', label: t('public') },
+                    ]
+              }
             />
           </div>
         </Space>
