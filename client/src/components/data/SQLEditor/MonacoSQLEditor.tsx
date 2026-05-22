@@ -188,7 +188,7 @@ type QueryLanguage = 'sql' | 'python';
 const resolveLanguage = (language?: string | null): QueryLanguage => (language === 'python' ? 'python' : 'sql');
 
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
-import { useDataSources } from '@/hooks/useDataSources';
+import { useDataSourceSchema, useDataSources } from '@/hooks/useDataSources';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -236,12 +236,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // DataSourceStore integration
   const { selectedId: selectedDataSourceId, select: selectDataSource } = useDataSourceStore();
-  const { dataSources: contextDataSources, isLoading: dataSourcesLoading } = useDataSources(projectId || undefined);
+  const { dataSources: contextDataSources, isLoading: dataSourcesLoading } = useDataSources();
+  const { schema: selectedDataSourceSchema } = useDataSourceSchema(selectedDataSourceId);
   const qcSql = useQueryClient();
   const refreshDataSources = () => qcSql.invalidateQueries({ queryKey: ['data-sources'] });
   const contextDataSourceRaw = contextDataSources.find((ds) => ds.id === selectedDataSourceId) ?? null;
-
-  const dataSourceSchemas = new Map<string, any>();
 
   // Derive selectedDataSource from store
   const contextDataSource = contextDataSourceRaw ?? null;
@@ -269,7 +268,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     : null;
 
   // Get schema from context
-  const schema = selectedDataSourceId ? dataSourceSchemas.get(selectedDataSourceId) : null;
+  const schema = selectedDataSourceSchema;
   const schemaRef = useRef(schema);
   useEffect(() => {
     schemaRef.current = schema;
@@ -2903,7 +2902,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     size="middle"
                     loading={isExecuting}
                     onClick={() => runHandlerRef.current?.()}
-                    disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSource}
+                    disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSourceId}
                   >
                     {editorLanguage === 'python'
                       ? t('run_python')

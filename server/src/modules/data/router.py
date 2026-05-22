@@ -27,6 +27,7 @@ from src.modules.data.services.multi_engine_query_service import (
     QueryEngine,
     invalidate_api_response_cache,
 )
+from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
 
 # EE-only services. Keep these out of the CE import path because several of
 # them pull in large AI/connector stacks during module import.
@@ -121,6 +122,202 @@ enterprise_connectors_service = (
 delta_iceberg_connector = DeltaIcebergConnector() if DeltaIcebergConnector else None
 
 
+async def _resolve_upload_project_id(user_id: str, requested_project_id: Optional[str]) -> str:
+    """Resolve a real project id for upload storage.
+
+    CE can reach upload before onboarding has provisioned org/project rows, while
+    file_storage still has a projects FK in many dev databases. Create the same
+    default org/project shape the onboarding flow would create.
+    """
+    import uuid
+    from src.db.session import async_session
+
+    if requested_project_id:
+        try:
+            requested_project_uuid = uuid.UUID(str(requested_project_id))
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid project_id format",
+            )
+        async with async_session() as db:
+            existing_project = await db.execute(
+                sa.text(
+                    """
+                    SELECT id
+                    FROM projects
+                    WHERE id = :project_id
+                      AND is_active = true
+                      AND is_deleted = false
+                    LIMIT 1
+                    """
+                ),
+                {"project_id": requested_project_uuid},
+            )
+            row = existing_project.fetchone()
+            if row and row.id:
+                return str(row.id)
+        logger.warning(
+            "Requested upload project_id %s does not exist; resolving a default project",
+            requested_project_id,
+        )
+
+    try:
+        user_projects, _ = await ProjectService.get_user_projects(user_id)
+        if user_projects:
+            project_id = str(user_projects[0].id)
+            logger.info("📁 Resolved upload project_id from first user project: %s", project_id)
+            return project_id
+    except Exception as project_err:
+        logger.warning("Could not resolve user project through ProjectService: %s", project_err)
+
+    user_uuid = uuid.UUID(user_id)
+    async with async_session() as db:
+        existing = await db.execute(
+            sa.text(
+                """
+                SELECT p.id
+                FROM projects p
+                JOIN user_roles ur ON ur.organization_id = p.organization_id
+                WHERE ur.user_id = :user_id
+                  AND ur.is_active = true
+                  AND ur.is_deleted = false
+                  AND p.is_active = true
+                  AND p.is_deleted = false
+                ORDER BY p.created_at ASC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_uuid},
+        )
+        row = existing.fetchone()
+        if row and row.id:
+            project_id = str(row.id)
+            logger.info("📁 Resolved upload project_id from existing membership: %s", project_id)
+            return project_id
+
+        existing_source_project = await db.execute(
+            sa.text(
+                """
+                SELECT project_id
+                FROM data_sources
+                WHERE user_id = :user_id
+                  AND project_id IS NOT NULL
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_uuid},
+        )
+        row = existing_source_project.fetchone()
+        if row and row.project_id:
+            project_id = str(row.project_id)
+            logger.info("📁 Reusing upload project_id from existing user data source: %s", project_id)
+            return project_id
+
+    async with async_session() as db:
+        org_result = await db.execute(
+            sa.text(
+                """
+                INSERT INTO organizations (name, description, is_active, is_deleted)
+                VALUES (:name, :description, true, false)
+                RETURNING id
+                """
+            ),
+            {"name": "My Workspace", "description": "Default workspace"},
+        )
+        org_row = org_result.fetchone()
+        organization_id = org_row.id
+
+        project_result = await db.execute(
+            sa.text(
+                """
+                INSERT INTO projects (organization_id, name, is_private, is_active, is_deleted)
+                VALUES (:organization_id, :name, true, true, false)
+                RETURNING id
+                """
+            ),
+            {"organization_id": organization_id, "name": "My Project"},
+        )
+        project_row = project_result.fetchone()
+        project_id = str(project_row.id)
+
+        try:
+            org_role = await db.execute(
+                sa.text(
+                    """
+                    SELECT id FROM roles
+                    WHERE name = 'org_owner'
+                      AND scope = 'organization'
+                      AND is_active = true
+                      AND is_deleted = false
+                    LIMIT 1
+                    """
+                )
+            )
+            org_role_row = org_role.fetchone()
+            if org_role_row:
+                await db.execute(
+                    sa.text(
+                        """
+                        INSERT INTO user_roles
+                            (user_id, role_id, organization_id, assigned_by, is_active, is_deleted)
+                        VALUES (:user_id, :role_id, :organization_id, :assigned_by, true, false)
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "user_id": user_uuid,
+                        "role_id": org_role_row.id,
+                        "organization_id": organization_id,
+                        "assigned_by": user_uuid,
+                    },
+                )
+
+            project_role = await db.execute(
+                sa.text(
+                    """
+                    SELECT id FROM roles
+                    WHERE name = 'project_owner'
+                      AND scope = 'project'
+                      AND is_active = true
+                      AND is_deleted = false
+                    LIMIT 1
+                    """
+                )
+            )
+            project_role_row = project_role.fetchone()
+            if project_role_row:
+                await db.execute(
+                    sa.text(
+                        """
+                        INSERT INTO user_roles
+                            (user_id, role_id, organization_id, project_id, assigned_by, is_active, is_deleted)
+                        VALUES (:user_id, :role_id, :organization_id, :project_id, :assigned_by, true, false)
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "user_id": user_uuid,
+                        "role_id": project_role_row.id,
+                        "organization_id": organization_id,
+                        "project_id": project_id,
+                        "assigned_by": user_uuid,
+                    },
+                )
+        except Exception as role_err:
+            logger.warning("Default upload project created without role assignment: %s", role_err)
+
+        await db.commit()
+        logger.info("📁 Provisioned default upload project_id: %s", project_id)
+        return project_id
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="project_id is required for file upload. Select or create a project first.",
+    )
+
+
 async def enforce_data_source_limit(user_id: str, organization_id: Optional[str] = None) -> str:
     """
     Enforce data source creation limit based on the organization's subscription plan.
@@ -132,6 +329,10 @@ async def enforce_data_source_limit(user_id: str, organization_id: Optional[str]
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Authentication required",
         )
+
+    # CE has no subscription limits — skip plan checks entirely
+    if not is_ee_enabled():
+        return organization_id
 
     org_id = organization_id
 
@@ -482,13 +683,14 @@ async def connect_database(request: DatabaseConnectionRequest, current_token: Un
         test_result = await data_service.test_database_connection(connection_config)
         if not test_result['success']:
             raise HTTPException(status_code=400, detail=f"Connection failed: {test_result.get('error')}")
-        
-        # In simplified mode, do not attach organization/tenant information – user_id is sufficient ownership
+
+        # CE has no project system — store by user_id only; EE requires an explicit project_id
+        resolved_project_id = None if not is_ee_enabled() else connection_config.get('project_id')
 
         # Store the connection via service with user ownership
         # NOTE: Pass plain credentials - store_database_connection will validate and encrypt them
         connection_result = await data_service.store_database_connection(
-            connection_config, user_id=user_id, project_id=connection_config.get('project_id')
+            connection_config, user_id=user_id, project_id=resolved_project_id
         )
         if not connection_result or not connection_result.get('success'):
             err = (connection_result or {}).get('error') if isinstance(connection_result, dict) else 'Unknown error'
@@ -892,6 +1094,9 @@ async def upload_file(
         logger.info(f"📁 File filename: {file.filename if file else 'None'}")
         logger.info(f"📁 File size: {file.size if file and hasattr(file, 'size') else 'Unknown'}")
         logger.info(f"📁 User ID: {user_id}")
+
+        # CE has no project system — store uploads by user_id only
+        project_id = None if not is_ee_enabled() else await _resolve_upload_project_id(user_id, project_id)
         
         # Validate file - check if file is None or missing
         if file is None:
@@ -1074,8 +1279,14 @@ async def get_data_source(
             )
             if creator_ok:
                 logger.info(f"✅ Access granted for data source {data_source_id} (creator)")
+            elif not is_ee_enabled():
+                # CE: only the creator may access; no project role system
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to access this data source",
+                )
             else:
-                # Verify user has access via project membership
+                # EE: verify user has access via project membership
                 user_projects, _ = await ProjectService.get_user_projects(user_id)
                 project_ids = [str(p.id) for p in user_projects]
                 logger.info(f"👤 User {user_id} has access to {len(user_projects)} projects: {project_ids[:3]}...")
@@ -1091,7 +1302,7 @@ async def get_data_source(
                     )
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Not authorized to access this data source"
+                        detail="Not authorized to access this data source",
                     )
                 logger.info(f"✅ Access granted for data source {data_source_id} (project member)")
         
@@ -1281,6 +1492,13 @@ async def update_data_source(
                 and str(row.user_id) == user_id
             )
             if not creator_ok:
+                if not is_ee_enabled():
+                    # CE: no project role system — only the creator may update
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to update this data source",
+                    )
+                # EE: allow any project member to update
                 user_projects, _ = await ProjectService.get_user_projects(user_id)
                 project_ids = [str(p.id) for p in user_projects]
                 if not (row.project_id is not None and str(row.project_id) in project_ids):
@@ -1566,17 +1784,24 @@ async def delete_data_source(data_source_id: str, current_token: Union[str, dict
                     detail="Data source not found"
                 )
 
-            # Verify user has access to the project
-            user_projects, _ = await ProjectService.get_user_projects(user_id)
-            project_ids = [str(p.id) for p in user_projects]
+            # CE: owner-only check (no org/project roles exist)
+            if not is_ee_enabled():
+                if getattr(data_source, "user_id", None) is None or str(data_source.user_id) != user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to delete this data source",
+                    )
+            else:
+                # EE: verify user has access via project membership
+                user_projects, _ = await ProjectService.get_user_projects(user_id)
+                project_ids = [str(p.id) for p in user_projects]
+                if str(data_source.project_id) not in project_ids:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to delete this data source",
+                    )
 
-            if str(data_source.project_id) not in project_ids:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not authorized to delete this data source"
-                )
-
-            # Soft-delete (any project member can delete); list filters is_active == True so it disappears
+            # Soft-delete; list filters is_active == True so it disappears
             data_source.is_active = False
             data_source.updated_at = datetime.now(timezone.utc)
             await db.commit()
@@ -2002,38 +2227,50 @@ async def get_data_source_data(
                     }
                 }
             
-            # Try to load from Azure Blob Storage
+            # Try to load from edition-specific datasource storage.
             object_key = data_source.get('file_path')  # Now it's object_key
             if object_key:
                 try:
-                    from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
-                    storage_service = AzureBlobStorageService()
+                    storage_service = UploadDatasourceStorageService()
                     
-                    # Load file from Azure Blob Storage
-                    file_content = await storage_service.get_file(object_key, user_id)
+                    project_id_for_storage = (
+                        data_source.get('project_id')
+                        or (str(data_source_db.project_id) if data_source_db and data_source_db.project_id else None)
+                    )
+                    if not project_id_for_storage:
+                        raise ValueError("project_id missing for datasource file retrieval")
+
+                    file_content = await storage_service.get_file(object_key, project_id_for_storage)
                     
                     # Process based on format
                     import tempfile
                     file_format = data_source.get('format', 'csv')
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_format}") as tmp:
+                    schema_obj = data_source.get('schema') if isinstance(data_source.get('schema'), dict) else {}
+                    storage_format = ((schema_obj.get('storage') or {}).get('format') if isinstance(schema_obj, dict) else None)
+                    blob_file_format = (storage_format or file_format or 'csv').lower()
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{blob_file_format}") as tmp:
                         tmp.write(file_content)
                         tmp_path = tmp.name
                     
                     try:
-                        if file_format == 'csv':
+                        if blob_file_format == 'csv':
                             import pandas as pd
                             df = pd.read_csv(tmp_path)
                             data = df.to_dict('records')
-                        elif file_format in ['xlsx', 'xls']:
+                        elif blob_file_format in ['xlsx', 'xls']:
                             import pandas as pd
                             df = pd.read_excel(tmp_path)
                             data = df.to_dict('records')
-                        elif file_format == 'json':
+                        elif blob_file_format == 'json':
                             import json
                             with open(tmp_path, 'r') as f:
                                 data = json.load(f)
+                        elif blob_file_format == 'parquet':
+                            import pandas as pd
+                            df = pd.read_parquet(tmp_path)
+                            data = df.to_dict('records')
                         else:
-                            raise HTTPException(status_code=400, detail=f"Unsupported format: {file_format}")
+                            raise HTTPException(status_code=400, detail=f"Unsupported format: {blob_file_format}")
                         
                         return {
                             "success": True,
@@ -2051,7 +2288,7 @@ async def get_data_source_data(
                         if os.path.exists(tmp_path):
                             os.unlink(tmp_path)
                 except Exception as e:
-                    logger.error(f"Failed to load from Azure Blob Storage: {e}")
+                    logger.error(f"Failed to load from datasource storage: {e}")
                     # Fall through to sample_data fallback
             
             # Fallback to sample_data
@@ -2670,6 +2907,7 @@ async def create_data_source_snapshot(data_source_id: str, request: Dict[str, An
 @router.get("/sources/{data_source_id}/schema")
 async def get_data_source_schema(
     data_source_id: str,
+    refresh: bool = False,
     current_token: Union[str, dict] = Depends(JWTCookieBearer())
 ):
     """Get schema information for a specific data source. Requires authentication and ownership (creator or project member)."""
@@ -2699,6 +2937,11 @@ async def get_data_source_schema(
                 and str(row.user_id) == user_id
             )
             if not creator_ok:
+                if not is_ee_enabled():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to access this data source",
+                    )
                 user_projects, _ = await ProjectService.get_user_projects(user_id)
                 project_ids = [str(p.id) for p in user_projects]
                 if not (row.project_id is not None and str(row.project_id) in project_ids):
@@ -2710,7 +2953,7 @@ async def get_data_source_schema(
 
             # If it's a database or warehouse, get live schema (uses stored connection_config for this data source)
             if data_source.type == 'database' or data_source.type == 'warehouse':
-                schema_result = await data_service.get_database_schema(data_source_id)
+                schema_result = await data_service.get_database_schema(data_source_id, force_refresh=refresh)
                 if schema_result.get('success'):
                     return {
                         "success": True,

@@ -346,13 +346,13 @@ class FeedServiceActionMixin:
         visibility_value = request.visibility.value
 
         if visibility_value == "organization":
-            if not (is_org_owner or is_org_admin or is_org_member):
+            if organization_id and not (is_org_owner or is_org_admin or is_org_member):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient organization role")
         elif visibility_value == "project":
-            if not (is_project_owner or is_project_editor):
+            if project_id and not (is_project_owner or is_project_editor):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient project role")
         elif visibility_value == "public":
-            if not (is_org_owner or is_org_admin or is_org_member):
+            if organization_id and not (is_org_owner or is_org_admin or is_org_member):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient organization role")
 
         post = await self.db.scalar(
@@ -379,14 +379,14 @@ class FeedServiceActionMixin:
             status_value = PublicationStatus.rejected.value
         else:
             if visibility_value == "public":
-                if is_org_owner:
+                if not organization_id or is_org_owner:
                     status_value = PublicationStatus.approved.value
                 else:
                     status_value = PublicationStatus.pending.value
             elif visibility_value == "organization":
-                status_value = PublicationStatus.approved.value if (is_org_owner or is_org_admin) else PublicationStatus.pending.value
+                status_value = PublicationStatus.approved.value if (not organization_id or is_org_owner or is_org_admin) else PublicationStatus.pending.value
             elif visibility_value == "project":
-                status_value = PublicationStatus.approved.value if (is_project_owner or is_project_editor) else PublicationStatus.pending.value
+                status_value = PublicationStatus.approved.value if (not project_id or is_project_owner or is_project_editor) else PublicationStatus.pending.value
             else:
                 status_value = PublicationStatus.approved.value
 

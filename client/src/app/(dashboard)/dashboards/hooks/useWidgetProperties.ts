@@ -96,11 +96,15 @@ export const useWidgetProperties = ({
       !selectedWidget?.isLoading &&
       !selectedWidget?.error &&
       selectedWidget?.lastFetchedQueryHash === currentQueryHash;
+    const hasFailedCurrentQuery =
+      !!selectedWidget?.error &&
+      !selectedWidget?.isLoading &&
+      selectedWidget?.lastFetchedQueryHash === currentQueryHash;
 
     const isTextWidget = selectedWidget?.chartType === 'text';
     const canSync = isTextWidget || (selectedWidget?.dataSourceId && hasX && (!isScatter || hasY));
 
-    if (!selectedWidgetId || !canSync || hasValidData) {
+    if (!selectedWidgetId || !canSync || hasValidData || hasFailedCurrentQuery) {
       return;
     }
 

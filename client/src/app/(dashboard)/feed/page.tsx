@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
+
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import FeedFilters, { FeedFiltersValue } from './components/FeedFilters';
 import FeedCard from './components/FeedCard';
@@ -104,13 +105,6 @@ const SocialFeedPage: React.FC = () => {
   const router = useRouter();
   const { user } = useAuth();
 
-  useEffect(() => {
-    if (!isEnterpriseEdition) {
-      router.replace('/dashboards');
-    }
-  }, [router]);
-
-  if (!isEnterpriseEdition) return null;
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -133,7 +127,7 @@ const SocialFeedPage: React.FC = () => {
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
 
   const [filters, setFilters] = useState<FeedFiltersValue>({
-    scope: 'organization',
+    scope: isEnterpriseEdition ? 'organization' : 'public',
     assetType: 'all',
     sort: 'recommended',
     tags: [],

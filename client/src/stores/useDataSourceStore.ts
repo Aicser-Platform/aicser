@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import * as api from '@/api/dataSources';
 
 // ── Types (kept here so api/ and hooks/ can import them) ──────────────────────
@@ -120,6 +120,8 @@ const DS_KEYS = {
 export function useDataSources() {
   const store = useDataSourceStore();
   const qc = useQueryClient();
+  const selectedId = store.selectedId;
+  const schemaCache = store.schemaCache;
 
   const { data, isLoading } = useQuery({
     queryKey: DS_KEYS.list(),
@@ -148,6 +150,34 @@ export function useDataSources() {
     [store.setSchemaLoading, store.setSchemaCache]
   );
 
+  useEffect(() => {
+    if (!selectedId || schemaCache[selectedId]) return;
+    fetchDataSourceSchema(selectedId).catch((error) => {
+      console.error('Failed to load data source schema:', error);
+    });
+  }, [selectedId, schemaCache, fetchDataSourceSchema]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleDataSourceCreated = (event: Event) => {
+      const detail = (event as CustomEvent<DataSource>).detail;
+      qc.invalidateQueries({ queryKey: DS_KEYS.all });
+      if (!detail?.id) return;
+
+      store.select(detail.id);
+      if (detail.schema) {
+        store.setSchemaCache(detail.id, detail.schema as SchemaInfo);
+      }
+      fetchDataSourceSchema(detail.id).catch((error) => {
+        console.error('Failed to load created data source schema:', error);
+      });
+    };
+
+    window.addEventListener('datasource-created', handleDataSourceCreated);
+    return () => window.removeEventListener('datasource-created', handleDataSourceCreated);
+  }, [qc, store, fetchDataSourceSchema]);
+
   const dataSourceSchemas = new Map<string, SchemaInfo>(
     Object.entries(store.schemaCache)
   );
@@ -164,10 +194,15 @@ export function useDataSources() {
 
   return {
     dataSources,
-    selectedDataSourceId: store.selectedId,
+    selectedDataSourceId: selectedId,
     dataSourceSchemas,
     getSelectedDataSource,
-    selectDataSource: (id: string | null) => { store.select(id); return Promise.resolve(); },
+    selectDataSource: async (id: string | null) => {
+      store.select(id);
+      if (id && !store.schemaCache[id]) {
+        await fetchDataSourceSchema(id);
+      }
+    },
     deleteDataSource: (id: string) => deleteMutation.mutateAsync(id),
     fetchDataSourceSchema,
     refreshDataSources,
