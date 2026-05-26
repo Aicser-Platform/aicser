@@ -85,6 +85,8 @@ async def seed_organization_subscriptions(session: AsyncSession) -> int:
             organization_id=org.id,
             plan_id=free_plan.id,
             status="active",
+            provider="internal",
+            provider_metadata={"created_by": "seed_organization_subscriptions"},
         ))
 
     await session.commit()

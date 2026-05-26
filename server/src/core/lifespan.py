@@ -83,6 +83,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("Failed to start retention cleanup: %s", e)
 
         if is_ee_enabled():
+            # Auto-seed RBAC roles/permissions if table is empty
+            try:
+                from sqlalchemy import select, func
+                from src.db.session import async_session
+                from src.modules.authentication.rbac.models import Role
+                async with async_session() as _db:
+                    count = (await _db.execute(select(func.count()).select_from(Role))).scalar() or 0
+                if count == 0:
+                    logger.info("RBAC roles table is empty — running seed_rbac...")
+                    from ee.scripts.seed_rbac import seed_permissions, seed_roles
+                    await seed_permissions()
+                    await seed_roles()
+                    logger.info("RBAC seed complete")
+                else:
+                    logger.info("RBAC roles already seeded (%d roles)", count)
+            except Exception as e:
+                logger.warning("RBAC auto-seed failed: %s", e)
+
+            # Auto-seed subscription plans if table is empty
+            try:
+                from sqlalchemy import select, func
+                from src.db.session import async_session
+                from src.modules.billing.models import SubscriptionPlan
+
+                async with async_session() as _db:
+                    plan_count = (
+                        await _db.execute(select(func.count()).select_from(SubscriptionPlan))
+                    ).scalar() or 0
+
+                if plan_count == 0:
+                    logger.info("Subscription plans table is empty — running seed_subscription_plans...")
+                    from ee.scripts.seed_subscription_plans import seed_plans
+
+                    await seed_plans()
+                    logger.info("Subscription plans seed complete")
+                else:
+                    logger.info("Subscription plans already seeded (%d plans)", plan_count)
+            except Exception as e:
+                logger.warning("Subscription plans auto-seed failed: %s", e)
+
+            # Assign the free plan to existing organizations that do not yet have a subscription.
+            try:
+                from src.db.session import async_session
+                from src.db.seeder import seed_organization_subscriptions
+
+                async with async_session() as _db:
+                    inserted = await seed_organization_subscriptions(_db)
+
+                if inserted:
+                    logger.info("Seeded free subscriptions for %d organization(s)", inserted)
+            except Exception as e:
+                logger.warning("Organization subscription auto-seed failed: %s", e)
+
             # Trial lifecycle jobs (EE)
             try:
                 from src.shared.tasks.trial_jobs import revert_expired_trials, notify_expiring_trials

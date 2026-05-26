@@ -1,11 +1,9 @@
-import { supabase, useSupabaseForApiAuth } from '@/auth/authClient'
 import { getCeBearerToken } from '@/auth/ce/bearerToken'
+import { updateEeUserPassword } from '@/ee'
 
 /** Set password for the current session: Supabase when opted in, else FastAPI JWT cookie. */
 export async function updateUserPassword(password: string): Promise<void> {
-  if (useSupabaseForApiAuth() && supabase) {
-    const { error } = await supabase.auth.updateUser({ password })
-    if (error) throw error
+  if (await updateEeUserPassword(password)) {
     return
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }

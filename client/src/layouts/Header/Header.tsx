@@ -35,7 +35,7 @@ import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useProjects, useCreateProject } from '@/hooks/useProjects';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
-import { useOrganizations, useCreateOrganization } from '@/hooks/useOrganizations';
+import { useOrganizations, useCreateOrganization } from '@/ee';
 import { useHeaderStore } from '@/stores/useHeaderStore';
 import { useConversationStore } from '@/stores/useConversationStore';
 import { Divider } from 'antd';
@@ -127,7 +127,7 @@ export const LayoutHeader: React.FC<Props> = ({
     if (!userWithId?.id || orgLoading) return;
     if (organizations.length === 0) {
       setCreateOrgModalOpen(true);
-    } else if (!currentOrganization) {
+    } else if (!currentOrganization || !organizations.find((o) => o.id === currentOrganization.id)) {
       setCurrentOrganization(organizations[0]);
     }
   }, [userWithId?.id, orgLoading, organizations, currentOrganization, setCurrentOrganization]);

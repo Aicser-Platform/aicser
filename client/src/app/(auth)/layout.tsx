@@ -3,6 +3,7 @@
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useRouter } from 'next/navigation';
 import React, { useEffect } from 'react';
+import { AUTH_SUCCESS_PATH } from '@/auth/routes';
 
 function RedirectAuthenticated({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, authLoading } = useAuthStore();
@@ -10,7 +11,7 @@ function RedirectAuthenticated({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      router.replace('/');
+      router.replace(AUTH_SUCCESS_PATH);
     }
   }, [authLoading, isAuthenticated, router]);
 

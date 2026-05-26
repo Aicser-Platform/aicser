@@ -40,13 +40,16 @@ ce-reset:
 
 # EE DEV
 dev-ee:
-	$(DEV) --profile ee up -d
+	AISER_EDITION=enterprise $(DEV) --profile ee up -d
+
+dev-ee-build:
+	AISER_EDITION=enterprise $(DEV) --profile ee up -d --build
 
 dev-ee-down:
-	$(DEV) --profile ee down
+	AISER_EDITION=enterprise $(DEV) --profile ee down
 
 dev-ee-logs:
-	$(DEV) --profile ee logs -f
+	AISER_EDITION=enterprise $(DEV) --profile ee logs -f
 
 # -- EE build
 ee:
@@ -62,4 +65,14 @@ ee-recreate:
 ee-reset:
 	$(EE) down -v
 
-.PHONY: dev dev-ce dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset
+# ── RBAC seed ─────────────────────────────────────────────────────────────────
+# Run inside the already-running EE container (prod build)
+seed-rbac-ee:
+	$(EE) exec server python -m ee.scripts.seed_rbac
+
+# Run inside the already-running dev container
+seed-rbac-dev:
+	$(DEV) exec chat2chart-server python -m ee.scripts.seed_rbac
+
+.PHONY: dev dev-ce dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset \
+        seed-rbac-ee seed-rbac-dev

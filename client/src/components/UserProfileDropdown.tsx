@@ -41,10 +41,16 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
 
-  // Fetch profile once on mount to get avatar_url and full name
+  // Fetch profile and subscription/usage on mount
   React.useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  const { init: initSubscription } = useSubscriptionStore();
+  React.useEffect(() => {
+    void initSubscription();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Derive display name: prefer first+last name from profile, fallback to email prefix
   const displayName = profile?.first_name

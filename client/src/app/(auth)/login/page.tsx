@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { AUTH_SUCCESS_PATH } from '@/auth/routes';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export default function LoginPage() {
             try {
                 await mod.handleKeycloakCallback(code);
                 message.success(t('login_success'));
-                router.push('/chat');
+                router.push(AUTH_SUCCESS_PATH);
             } catch (err: unknown) {
                 message.error(err instanceof Error ? err.message : t('login_failed'));
             } finally {
@@ -66,7 +67,7 @@ export default function LoginPage() {
                     // User is verified - auto-login and redirect to chat
                     message.success(t('account_created'));
                     // await verifyAuth();
-                    router.push('/chat');
+                    router.push(AUTH_SUCCESS_PATH);
                 } else {
                     // User needs email verification - redirect to login with message
                     message.success(signupResult?.message || t('account_created_verify'));
@@ -82,7 +83,7 @@ export default function LoginPage() {
                     message.success(t('login_success'));
                     // Small delay to ensure state is updated
                     await new Promise(resolve => setTimeout(resolve, 100));
-                    router.push('/chat');
+                    router.push(AUTH_SUCCESS_PATH);
                 } catch (error) {
                     // Error is already handled in login() function and setLoginError
                     // Don't show success message if login failed
