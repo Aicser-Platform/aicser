@@ -16,8 +16,8 @@ import {
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { usePlanRestrictions } from '@/hooks/usePlanRestrictions';
 import { useSettingsStore } from '@/stores/useSettingsStore';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import nextDynamic from 'next/dynamic';
@@ -61,15 +61,6 @@ const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
 
-type PlanKey = 'free' | 'pro' | 'team' | 'enterprise';
-
-const PLAN_SUMMARY_META: Record<PlanKey, { tagColor: string; dataHistoryDays: number; includedSeats: number }> = {
-  free: { tagColor: 'default', dataHistoryDays: 7, includedSeats: 1 },
-  pro: { tagColor: 'blue', dataHistoryDays: 180, includedSeats: 1 },
-  team: { tagColor: 'purple', dataHistoryDays: 365, includedSeats: 5 },
-  enterprise: { tagColor: 'gold', dataHistoryDays: -1, includedSeats: -1 },
-};
-
 export const dynamic = 'force-dynamic';
 
 // Tab order: General → Profile → Security → Notifications → API Keys → Data Sources, plus EE workspace tabs.
@@ -88,9 +79,9 @@ const SettingsPage: React.FC = () => {
   const t = useTranslations('settings');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { planType } = usePlanRestrictions();
   const { currentProject } = useProjectStore();
   const { currentOrganization } = useOrganizationStore();
+  const { planType, init: initSubscription } = useSubscriptionStore();
 
   const [pricingModalVisible, setPricingModalVisible] = useState(false); // kept as no-op; EE modal renders null
 
@@ -115,11 +106,13 @@ const SettingsPage: React.FC = () => {
     }
   }, [activeTab, searchParams, setActiveTab]);
 
-  // Load overview data (counts) when settings page mounts; use current project for data sources to match /data page
+  // Load overview data and subscription on mount
   useEffect(() => {
     loadApiKeys();
     loadTeamMembers(currentOrganization?.id);
     loadDataSources(currentProject?.id as string | undefined);
+    void initSubscription();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id]);
 
   useEffect(() => {
@@ -141,34 +134,6 @@ const SettingsPage: React.FC = () => {
     }),
     [teamMembers, dataSources, apiKeys]
   );
-
-  const planUsage = useMemo(() => {
-    const aiLimit = 0;
-    const storageLimitMb = 0;
-    const storageLimitGb = storageLimitMb > 0 ? storageLimitMb / 1024 : storageLimitMb;
-    const projectLimit = 0;
-
-    const aiUsed = 0;
-    const storageUsedGb = 0;
-    const projectsUsed = 0;
-
-    const aiPercent = aiLimit > 0 ? Math.min(100, (aiUsed / aiLimit) * 100) : 0;
-    const storagePercent = storageLimitGb > 0 ? Math.min(100, (storageUsedGb / storageLimitGb) * 100) : 0;
-    const projectPercent = projectLimit > 0 ? Math.min(100, (projectsUsed / projectLimit) * 100) : 0;
-
-    return {
-      planLabel: (planType || 'free').toUpperCase(),
-      ai: { used: aiUsed, limit: aiLimit, percent: aiPercent },
-      storage: { used: storageUsedGb, limit: storageLimitGb, percent: storagePercent },
-      projects: { used: projectsUsed, limit: projectLimit, percent: projectPercent },
-    };
-  }, [planType]);
-
-  const planKey: PlanKey = ['free', 'pro', 'team', 'enterprise'].includes(planType || '')
-    ? (planType as PlanKey)
-    : 'free';
-  const planMeta = PLAN_SUMMARY_META[planKey];
-  const planTagColor = planMeta.tagColor;
 
   const tabContentStyle = { paddingTop: 24, paddingBottom: 24 };
 

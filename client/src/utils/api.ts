@@ -1,6 +1,6 @@
 import { getBackendUrl } from './backendUrl';
-import { supabase, useSupabaseForApiAuth } from '@/auth/authClient';
 import { getCeBearerToken } from '@/auth/ce/bearerToken';
+import { getEeApiAuthToken } from '@/ee';
 
 /**
  * Structured API error with status code and parsed detail.
@@ -121,23 +121,15 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}): Pro
     const ce = getCeBearerToken();
     if (ce) {
       defaultHeaders['Authorization'] = `Bearer ${ce}`;
-    } else if (useSupabaseForApiAuth() && supabase) {
+    } else {
       // EE fallback: use raw Supabase session (pre-exchange or Keycloak flow).
       try {
-        let {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          const { data: refreshed, error } = await supabase.auth.refreshSession();
-          if (!error && refreshed?.session?.access_token) {
-            session = refreshed.session;
-          }
-        }
-        if (session?.access_token) {
-          defaultHeaders['Authorization'] = `Bearer ${session.access_token}`;
+        const eeToken = await getEeApiAuthToken();
+        if (eeToken) {
+          defaultHeaders['Authorization'] = `Bearer ${eeToken}`;
         }
       } catch (error) {
-        console.warn('Failed to get Supabase session:', error);
+        console.warn('Failed to get EE auth session:', error);
       }
     }
   }

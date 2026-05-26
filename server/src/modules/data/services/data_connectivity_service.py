@@ -1165,7 +1165,7 @@ class DataConnectivityService:
                     # Use project_id from data_source dict (passed from options)
                     project_id = data_source.get('project_id')
                     
-                    if not project_id:
+                    if not project_id and is_ee_enabled():
                         raise ValueError(f"project_id is required when creating data source {data_source.get('id')}. Ensure project_id is passed in options.")
                     
                     # Convert project_id to UUID if it's a string
@@ -1389,7 +1389,7 @@ class DataConnectivityService:
             
             # Get project_id from options
             project_id = options.get('project_id')
-            if not project_id:
+            if not project_id and is_ee_enabled():
                 raise ValueError("project_id is required for file upload")
             
             # Create temp file for processing (will be deleted after processing)
@@ -1490,7 +1490,7 @@ class DataConnectivityService:
             raise ValueError(f"Unsupported file format: {file_extension}")
 
         project_id = options.get("project_id")
-        if not project_id:
+        if not project_id and is_ee_enabled():
             raise ValueError("project_id is required for file upload")
 
         parquet_payload = await self._convert_upload_to_compressed_parquet(

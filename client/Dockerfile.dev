@@ -21,4 +21,4 @@ ENV NODE_MAX_OLD_SPACE_SIZE=2048
 # node_modules is preserved by a named volume so the npm install above
 # initialises it only on the first run; no COPY . . needed.
 # setup-ee.js generates src/ee/index.ts so @/ee resolves for both webpack and Turbopack.
-CMD ["sh", "-c", "export NEXT_PUBLIC_EDITION=\"${NEXT_PUBLIC_EDITION:-$EDITION}\"; node scripts/setup-ee.js && if [ \"${NEXT_DEV_TURBO}\" = \"true\" ]; then npm run dev:turbo -- -H 0.0.0.0 -p ${PORT:-3000}; else NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev -H 0.0.0.0 -p ${PORT:-3000}; fi"]
+CMD ["sh", "-c", "export NEXT_PUBLIC_EDITION=\"${NEXT_PUBLIC_EDITION:-$EDITION}\"; if [ ! -x ./node_modules/.bin/next ]; then echo \"[dev] node_modules volume is empty; installing dependencies...\"; npm install --no-audit --no-fund; fi; node scripts/setup-ee.js && if [ \"${NEXT_DEV_TURBO}\" = \"true\" ]; then npm run dev:turbo -- -H 0.0.0.0 -p ${PORT:-3000}; else NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev -H 0.0.0.0 -p ${PORT:-3000}; fi"]

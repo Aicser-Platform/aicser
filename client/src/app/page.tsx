@@ -2,16 +2,20 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/stores/useAuthStore';
+import { AUTH_SUCCESS_PATH } from '@/auth/routes';
 
 export const dynamic = 'force-dynamic';
 
 export default function HomePage() {
     const router = useRouter();
+    const { isAuthenticated, authLoading } = useAuthStore();
 
     useEffect(() => {
-        // Immediately redirect to login page
-        router.replace('/login');
-    }, [router]);
+        if (!authLoading) {
+            router.replace(isAuthenticated ? AUTH_SUCCESS_PATH : '/login');
+        }
+    }, [router, isAuthenticated, authLoading]);
 
     return (
         <div
@@ -26,7 +30,7 @@ export default function HomePage() {
                 background: 'var(--ant-color-bg-layout, #ffffff)',
             }}
         >
-            Redirecting to login...
+            Redirecting...
         </div>
     );
 }

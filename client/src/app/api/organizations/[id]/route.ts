@@ -1,23 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-const getBackendUrl = () => {
-    // Check environment variables first
-    const env = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
-    if (env) return env;
-    
-    // Docker container environment detection:
-    // In Docker, HOSTNAME is the container ID (12-char hex)
-    const hostname = process.env.HOSTNAME || '';
-    const isDocker = /^[a-f0-9]{12}$/i.test(hostname) || process.env.DOCKER_CONTAINER === 'true';
-    
-    if (isDocker) {
-        // Use container name for inter-container communication
-        return 'http://aiser-chat2chart-server-dev:8000';
-    }
-    
-    // Local development outside Docker
-    return 'http://localhost:8000';
-};
+import { getBackendUrlForProxy } from '@/utils/backendUrl';
 
 export async function PATCH(
     request: NextRequest,
@@ -25,7 +7,7 @@ export async function PATCH(
 ) {
     try {
         const id = params.id;
-        const backendUrl = getBackendUrl();
+        const backendUrl = getBackendUrlForProxy();
         const body = await request.json();
 
         const headers: Record<string, string> = {
@@ -59,7 +41,7 @@ export async function DELETE(
 ) {
     try {
         const id = params.id;
-        const backendUrl = getBackendUrl();
+        const backendUrl = getBackendUrlForProxy();
 
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',

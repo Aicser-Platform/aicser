@@ -12,15 +12,6 @@ const BACKEND =
   'http://localhost:8000';
 const INTERNAL_BACKEND = BACKEND;
 
-function mapBillingPath(pathSegment: string, method?: string): string {
-  const suffix = pathSegment.replace(/^billing\/?/, '');
-  if (suffix === 'portal') return 'pricing/billing-portal';
-  if (suffix === 'invoices') return 'pricing/payment-history';
-  if (suffix === 'cancel') return 'pricing/cancel-subscription';
-  if (suffix === 'payment-methods' && method === 'POST') return 'pricing/payment-methods/setup-intent';
-  return `pricing/${suffix}`;
-}
-
 // Next.js config to disable body parser for this API route
 export const config = {
   api: {
@@ -56,10 +47,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('ai/')) {
       target = `${targetBase}/${pathSegment}`;
-    } else if (pathSegment.startsWith('pricing/')) {
-      target = `${targetBase}/${pathSegment}`;
-    } else if (pathSegment.startsWith('billing/')) {
-      target = `${targetBase}/${mapBillingPath(pathSegment, req.method)}`;
     } else if (pathSegment.startsWith('conversations') || pathSegment.startsWith('chats')) {
       target = `${targetBase}/${pathSegment}`;
     } else {
@@ -474,4 +461,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(502).json({ error: 'Proxy failed', detail: String(err) });
   }
 }
-
