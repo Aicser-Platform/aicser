@@ -199,6 +199,16 @@ class Settings(BaseSettings):
     STRIPE_PRICE_TEAM_YEARLY: str = os.getenv("STRIPE_PRICE_TEAM_YEARLY", "")
     STRIPE_ENABLED: bool = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
+    # S3-compatible Object Storage (EE — alternative to Azure Blob Storage)
+    # Set STORAGE_BACKEND=s3 to activate. Leave S3_ENDPOINT_URL empty for AWS S3.
+    STORAGE_BACKEND: str = os.getenv("STORAGE_BACKEND", "")  # "s3" | "azure_blob" | "postgresql"
+    S3_PROVIDER: str = os.getenv("S3_PROVIDER", "aws")        # label only: aws | cloudflare_r2 | digitalocean | minio | railway
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")   # empty = AWS; set for R2/Spaces/MinIO/Railway
+    S3_ACCESS_KEY_ID: str = os.getenv("S3_ACCESS_KEY_ID", "")
+    S3_SECRET_ACCESS_KEY: str = os.getenv("S3_SECRET_ACCESS_KEY", "")
+    S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
+    S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
+
     # Telegram Bot Settings
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_WEBHOOK_URL: str = os.getenv("TELEGRAM_WEBHOOK_URL", "")
