@@ -113,3 +113,70 @@ async def test_ee_can_read_legacy_postgres_object_keys(monkeypatch):
 
     assert content == b"postgres"
     assert fake_postgres.calls == [("get", "user_files/project-1/file-1", "project-1")]
+
+
+class _FakeS3Storage:
+    def __init__(self):
+        self.calls = []
+
+    async def store_file(self, **kwargs):
+        self.calls.append(("store", kwargs))
+        return "orgs/org-1/projects/proj-1/data-sources/src-1/compressed/user-1/file.parquet"
+
+    async def get_file(self, object_key, project_id):
+        self.calls.append(("get", object_key, project_id))
+        return b"s3"
+
+    async def delete_file(self, object_key, project_id):
+        self.calls.append(("delete", object_key, project_id))
+        return True
+
+
+@pytest.mark.asyncio
+async def test_ee_storage_backend_s3_selects_s3_service(monkeypatch):
+    fake_s3 = _FakeS3Storage()
+    s3_module = types.ModuleType("ee.modules.data.services.s3_storage_service")
+    s3_module.S3StorageService = lambda: fake_s3
+
+    monkeypatch.setenv("AISER_EDITION", "enterprise")
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    monkeypatch.setitem(
+        sys.modules,
+        "ee.modules.data.services.s3_storage_service",
+        s3_module,
+    )
+
+    service = storage_module.UploadDatasourceStorageService()
+
+    object_key = await service.store_file(
+        file_content=b"content",
+        project_id="proj-1",
+        original_filename="file.parquet",
+        content_type="application/x-parquet",
+        source_id="src-1",
+        organization_id="org-1",
+        user_id="user-1",
+    )
+
+    assert service.storage_type == "s3"
+    assert "orgs/org-1" in object_key
+    assert fake_s3.calls[0][0] == "store"
+
+
+@pytest.mark.asyncio
+async def test_ee_s3_get_file_delegates_to_s3_service(monkeypatch):
+    fake_s3 = _FakeS3Storage()
+    s3_module = types.ModuleType("ee.modules.data.services.s3_storage_service")
+    s3_module.S3StorageService = lambda: fake_s3
+
+    monkeypatch.setenv("AISER_EDITION", "enterprise")
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    monkeypatch.setitem(sys.modules, "ee.modules.data.services.s3_storage_service", s3_module)
+
+    service = storage_module.UploadDatasourceStorageService()
+    content = await service.get_file(
+        "orgs/org-1/projects/proj-1/data-sources/src-1/compressed/user-1/file.parquet",
+        "proj-1",
+    )
+
+    assert content == b"s3"
