@@ -1,12 +1,17 @@
 from uuid import UUID
-from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Body, status, Path, Request
+from typing import List, Dict, Any, Optional
+import copy
+from fastapi import APIRouter, Depends, HTTPException, Body, status, Path, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import get_async_session
 from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.authentication.helpers import extract_user_payload
+from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
+from src.modules.charts.permissions import enforce_publish_owner_chart_edit
+from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, verify_dashboard_read_access
 
 router = APIRouter()
 
@@ -41,6 +46,13 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "metricFilters": chart_query.get("metricFilters", []),
             "limit": chart_query.get("limit"),
             "seriesLimit": chart_query.get("seriesLimit"),
+            "joins": chart_query.get("joins") or [],
+            "saved_query_id": chart_query.get("saved_query_id"),
+            "semantic_metric_id": chart_query.get("semantic_metric_id"),
+            "semantic_dimension_ids": chart_query.get("semantic_dimension_ids") or [],
+            "drillPath": chart_query.get("drillPath") or [],
+            "interactionMode": chart_query.get("interactionMode"),
+            "drillThrough": chart_query.get("drillThrough"),
         },
         "chart_options": payload.get("chartOptions"),
     }
@@ -78,6 +90,8 @@ async def create_chart(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
 
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:edit")
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
 
     chart_payload, layout = normalize_chart_payload(payload)
@@ -98,7 +112,17 @@ async def create_chart(
 # LIST CHARTS IN DASHBOARD
 # -------------------------
 @router.get("")
-async def list_charts(dashboard_id: UUID, db: AsyncSession = Depends(get_async_session)):
+async def list_charts(
+    dashboard_id: UUID,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
+):
+    await verify_dashboard_read_access(
+        db, dashboard_id, current_user=current_user, embed_token=token
+    )
+    uid = user_id_from_payload(extract_user_payload(current_user) if current_user else {})
+    await require_permission(uid, "chart:view")
     service = DashboardChartService(db)
     charts_with_layout = await service.list_charts_with_layout(dashboard_id)
     return [
@@ -114,7 +138,18 @@ async def list_charts(dashboard_id: UUID, db: AsyncSession = Depends(get_async_s
 # GET SINGLE CHART
 # -------------------------
 @router.get("/{chart_id}")
-async def get_chart(dashboard_id: UUID, chart_id: UUID, db: AsyncSession = Depends(get_async_session)):
+async def get_chart(
+    dashboard_id: UUID,
+    chart_id: UUID,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
+):
+    await verify_dashboard_read_access(
+        db, dashboard_id, current_user=current_user, embed_token=token
+    )
+    uid = user_id_from_payload(extract_user_payload(current_user) if current_user else {})
+    await require_permission(uid, "chart:view")
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
     if not chart:
@@ -154,6 +189,8 @@ async def update_chart_layout(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
 
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:edit")
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
 
     service = DashboardChartService(db)
@@ -168,18 +205,82 @@ async def update_chart_layout(
 # -------------------------
 # EXECUTE CHART (Must come before /{chart_id} GET conflicts)
 # -------------------------
-@router.get("/{chart_id}/data")
-async def execute_chart(dashboard_id: UUID, chart_id: UUID, db: AsyncSession = Depends(get_async_session)):
+async def _execute_chart_data(
+    dashboard_id: UUID,
+    chart_id: UUID,
+    db: AsyncSession,
+    runtime_filters: Optional[List[dict]] = None,
+    drill_context: Optional[dict] = None,
+) -> dict:
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    data = await service.chart_service.execute(chart)
+    exec_chart = chart
+    if runtime_filters or drill_context:
+        exec_chart = copy.deepcopy(chart)
+        base_query = copy.deepcopy(chart.chart_query or {})
+        if runtime_filters:
+            base_query = merge_runtime_filters(base_query, runtime_filters)
+        if drill_context:
+            base_query = apply_drill_context(base_query, drill_context)
+        exec_chart.chart_query = base_query
+
+    try:
+        data = await service.chart_service.execute(exec_chart)
+    except ValueError as exc:
+        message = str(exc).strip() or "Chart execution failed"
+        if "data source not found" in message.lower():
+            raise HTTPException(status_code=404, detail="Data source not found") from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Chart execution failed") from exc
+
     return {
         "chart": serialize_chart(chart),
         "data": data,
     }
+
+
+@router.get("/{chart_id}/data")
+async def execute_chart(
+    dashboard_id: UUID,
+    chart_id: UUID,
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
+):
+    await verify_dashboard_read_access(
+        db, dashboard_id, current_user=current_user, embed_token=token
+    )
+    return await _execute_chart_data(dashboard_id, chart_id, db)
+
+
+@router.post("/{chart_id}/data")
+async def execute_chart_with_filters(
+    dashboard_id: UUID,
+    chart_id: UUID,
+    payload: dict = Body(default_factory=dict),
+    token: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
+):
+    """Execute chart with dashboard runtime filters merged into chart_query.filters."""
+    await verify_dashboard_read_access(
+        db, dashboard_id, current_user=current_user, embed_token=token
+    )
+    runtime_filters = payload.get("runtime_filters") if isinstance(payload, dict) else None
+    if runtime_filters is not None and not isinstance(runtime_filters, list):
+        raise HTTPException(status_code=400, detail="runtime_filters must be a list")
+    drill_context = payload.get("drill_context") if isinstance(payload, dict) else None
+    if drill_context is not None and not isinstance(drill_context, dict):
+        raise HTTPException(status_code=400, detail="drill_context must be an object")
+    return await _execute_chart_data(
+        dashboard_id, chart_id, db,
+        runtime_filters=runtime_filters or None,
+        drill_context=drill_context,
+    )
 
 
 # -------------------------
@@ -198,7 +299,10 @@ async def update_chart(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
 
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:edit")
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
+    await enforce_publish_owner_chart_edit(db, chart_id, current_user)
 
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
@@ -230,13 +334,17 @@ async def delete_chart(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
 
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:delete")
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
 
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
-    
-    # Delete chart and related dashboard_chart records
+
+    dashboard_chart = await service.get_dashboard_chart(dashboard_id, chart_id)
+    if dashboard_chart:
+        await db.delete(dashboard_chart)
     await service.chart_service.delete(chart)
     await db.commit()

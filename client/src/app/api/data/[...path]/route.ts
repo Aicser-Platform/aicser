@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Catch-all proxy route for /api/data/* endpoints
@@ -63,14 +64,7 @@ async function handleDataRequest(
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-
-    // Forward Authorization header if present
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-
-    // Forward cookies so backend auth (JWTCookieBearer) works for /data/sources and schema
-    const cookie = request.headers.get('Cookie');
-    if (cookie) headers['Cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
     
     // Prepare request options — 35 s timeout so schema fetches don't hang the proxy
     const requestOptions: RequestInit = {

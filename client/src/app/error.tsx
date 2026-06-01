@@ -1,10 +1,14 @@
- 'use client';
+'use client';
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
+import { captureClientException } from '@/lib/observability/capture';
 
 export default function AppError({ error }: { error: Error }) {
-  // Hide header when error page is shown
+  React.useEffect(() => {
+    captureClientException(error, { surface: 'app-error' });
+  }, [error]);
+
   React.useEffect(() => {
     const header = document.querySelector('.ant-layout-header');
     if (header) {
@@ -18,15 +22,15 @@ export default function AppError({ error }: { error: Error }) {
   }, []);
 
   return (
-    <div 
+    <div
       data-error-page="true"
-      style={{ 
+      style={{
         position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        padding: 40, 
+        padding: 40,
         textAlign: 'center',
         minHeight: '100vh',
         display: 'flex',
@@ -38,9 +42,9 @@ export default function AppError({ error }: { error: Error }) {
       }}
     >
       <h1 style={{ marginBottom: '16px', color: 'var(--ant-color-text)' }}>Application error</h1>
-      <p style={{ color: 'var(--ant-color-text-secondary)' }}>{error?.message || 'An unexpected error occurred.'}</p>
+      <p style={{ color: 'var(--ant-color-text-secondary)' }}>
+        {error?.message || 'An unexpected error occurred.'}
+      </p>
     </div>
   );
 }
-
-

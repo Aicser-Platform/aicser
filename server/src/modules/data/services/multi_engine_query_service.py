@@ -32,6 +32,17 @@ from src.shared.query_limits import PANDAS_FALLBACK_MAX_ROWS
 
 logger = logging.getLogger(__name__)
 
+_multi_engine_service: Optional["MultiEngineQueryService"] = None
+
+
+def get_multi_engine_query_service() -> "MultiEngineQueryService":
+    """Process-wide singleton so query caches survive across chart refreshes."""
+    global _multi_engine_service
+    if _multi_engine_service is None:
+        _multi_engine_service = MultiEngineQueryService()
+    return _multi_engine_service
+
+
 # --- API data source: response cache (TTL) and limits ---
 API_RESPONSE_CACHE_TTL_SEC = 60
 API_MAX_ROWS_DEFAULT = 100_000
@@ -1638,13 +1649,11 @@ class DirectSQLEngine(BaseQueryEngine):
             # User-scoped queries only (no tenant isolation needed)
             
             # Run blocking DB calls in a thread to avoid blocking the event loop
-            def run_sync_query(uri: str, sql: str) -> Dict[str, Any]:
+            from src.modules.data.services.direct_sql_pool import get_sync_engine
+
+            def run_sync_query(source: Dict[str, Any], uri: str, sql: str) -> Dict[str, Any]:
                 try:
-                    # CRITICAL: Set connection to read-only mode if supported
-                    # For PostgreSQL: SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY
-                    # For MySQL: SET SESSION TRANSACTION READ ONLY
-                    # This is handled per-database type in the connection setup
-                    eng = sa.create_engine(uri, pool_pre_ping=True)
+                    eng = get_sync_engine(source, uri)
                     with eng.connect() as conn:
                         res = conn.execute(sa.text(sql))
                         try:
@@ -1655,23 +1664,17 @@ class DirectSQLEngine(BaseQueryEngine):
                         try:
                             fetched = res.fetchall()
                             for row in fetched:
-                                # support RowProxy and tuples
                                 if hasattr(row, '_mapping'):
                                     rows.append(dict(row._mapping))
                                 else:
                                     rows.append(dict(zip(cols, row)))
                         except Exception:
-                            # no rows to fetch (e.g., DDL) - return empty
                             rows = []
-                    try:
-                        eng.dispose()
-                    except Exception:
-                        pass
                     return {"success": True, "data": rows, "columns": cols, "row_count": len(rows)}
                 except Exception as e:
                     return {"success": False, "error": str(e)}
 
-            result = await asyncio.to_thread(run_sync_query, conn_uri, query)
+            result = await asyncio.to_thread(run_sync_query, data_source, conn_uri, query)
 
             if result.get('success'):
                 return {

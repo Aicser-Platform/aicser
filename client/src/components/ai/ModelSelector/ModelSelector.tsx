@@ -360,7 +360,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 placeholder={t('ai_model')}
                 optionLabelProp="label"
                 popupMatchSelectWidth={false}
-                popupClassName="model-selector-dropdown"
+                classNames={{ popup: { root: 'model-selector-dropdown' } }}
                 variant="borderless"
                 suffixIcon={
                     composerEmbed ? (
@@ -442,7 +442,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     placeholder={t('select_ai_model')}
                     optionLabelProp="label"
                     popupMatchSelectWidth={false}
-                    dropdownRender={menu => (
+                    popupRender={menu => (
                         <div>
                             {menu}
                             <div style={{ padding: '8px', borderTop: '1px solid #f0f0f0' }}>

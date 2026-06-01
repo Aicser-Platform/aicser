@@ -6,7 +6,10 @@
  */
 
 import React from 'react';
-import { usePermissions, Permission } from '@/hooks/usePermissions';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
+
+export type { Permission };
 
 interface PermissionGuardProps {
   permission: Permission | Permission[];
@@ -14,6 +17,8 @@ interface PermissionGuardProps {
   projectId?: string | number;
   children: React.ReactNode;
   fallback?: React.ReactNode;
+  /** Shown while permissions are loading; defaults to `fallback` when set, otherwise null */
+  loadingFallback?: React.ReactNode;
   requireAll?: boolean; // If true, requires ALL permissions; if false, requires ANY
 }
 
@@ -41,6 +46,7 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
   projectId,
   children,
   fallback = null,
+  loadingFallback,
   requireAll = false,
 }) => {
   const { hasPermission, hasAnyPermission, hasAllPermissions, loading } = usePermissions({
@@ -49,9 +55,9 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
     autoFetch: true,
   });
 
-  // Show nothing while loading (fail secure)
   if (loading) {
-    return null;
+    const loader = loadingFallback ?? fallback;
+    return loader ? <>{loader}</> : null;
   }
 
   // Check single permission

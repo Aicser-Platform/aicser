@@ -1,13 +1,19 @@
 'use client';
 
 import React, { useRef, useEffect, useCallback, memo, useImperativeHandle, forwardRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { Editor } from '@monaco-editor/react';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import * as monaco from 'monaco-editor';
 
 export interface MemoryOptimizedEditorHandle {
   insertTextAtCursor: (text: string) => void;
   /** Current editor content (live); use when switching tabs so debounced state is not stale */
   getValue: () => string;
+  /** Returns the currently highlighted text, or empty string if nothing is selected */
+  getSelectedText: () => string;
+  /** Triggers Monaco's format-document action (uses any registered formatting provider) */
+  formatDocument: () => void;
 }
 
 interface MemoryOptimizedEditorProps {
@@ -38,6 +44,7 @@ const MemoryOptimizedEditor = memo(forwardRef<MemoryOptimizedEditorHandle, Memor
   onContentChange,
   onMonacoMount,
 }, ref) => {
+  const tEditor = useTranslations('monaco_sql_editor');
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -61,6 +68,16 @@ const MemoryOptimizedEditor = memo(forwardRef<MemoryOptimizedEditorHandle, Memor
       const editor = editorRef.current;
       const model = editor?.getModel();
       return (model?.getValue() ?? value) || '';
+    },
+    getSelectedText: () => {
+      const editor = editorRef.current;
+      if (!editor) return '';
+      const selection = editor.getSelection();
+      if (!selection || selection.isEmpty()) return '';
+      return editor.getModel()?.getValueInRange(selection) ?? '';
+    },
+    formatDocument: () => {
+      editorRef.current?.trigger('keyboard', 'editor.action.formatDocument', null);
     },
   }), [onChange, value]);
 
@@ -261,7 +278,11 @@ const MemoryOptimizedEditor = memo(forwardRef<MemoryOptimizedEditorHandle, Memor
         value={value}
         onMount={handleEditorDidMount}
         options={optimizedOptions}
-        loading={<div>Loading editor...</div>}
+        loading={
+          <div className="qe-monaco-loading">
+            <AppLoadingIndicator variant="inline" tip={tEditor('loading_editor')} />
+          </div>
+        }
       />
     </div>
   );

@@ -4,6 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 async function handleOnboardingRequest(
   request: NextRequest,
@@ -26,10 +27,7 @@ async function handleOnboardingRequest(
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-    const auth = request.headers.get('Authorization');
-    if (auth) headers['Authorization'] = auth;
-    const cookie = request.headers.get('Cookie');
-    if (cookie) headers['Cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const requestOptions: RequestInit = { method, headers, credentials: 'include' };
 

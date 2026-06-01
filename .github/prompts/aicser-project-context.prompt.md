@@ -151,8 +151,9 @@ POST   /data/{id}/query            # Execute SQL
 GET/POST /charts                   # List/create charts
 GET/POST /api/dashboards           # List/create dashboards
 POST   /api/queries                # Execute natural language query
-POST   /api/knowledge/upload       # Upload document (RAG)
-POST   /api/knowledge/search       # Semantic search
+POST   /knowledge/upload            # Upload document (RAG)
+POST   /knowledge/search            # Semantic search
+GET    /api/rbac/me/permissions       # Current user permissions (EE)
 GET    /health                     # Health check
 GET    /docs                       # OpenAPI (auto-generated)
 ```

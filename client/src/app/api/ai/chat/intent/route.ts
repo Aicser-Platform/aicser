@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /** Timeout for intent backend call (ms). Prevents UND_ERR_HEADERS_TIMEOUT when backend is slow. */
 const INTENT_FETCH_TIMEOUT_MS = 25_000;
@@ -23,8 +24,7 @@ export async function POST(request: NextRequest) {
       'Accept': 'application/json',
     };
 
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
+    Object.assign(headers, buildProxyAuthHeaders(request));
     const cookieHeader = request.headers.get('cookie');
     if (cookieHeader) headers['cookie'] = cookieHeader;
 

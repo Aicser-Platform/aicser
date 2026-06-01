@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import * as api from '@/api/dataSources';
+import { useProjectStore } from '@/stores/useProjectStore';
+import {
+  dataSourceKeys,
+  isEnterpriseEdition,
+  resolveDataSourceProjectId,
+} from '@/hooks/dataSourceKeys';
 
 // ── Types (kept here so api/ and hooks/ can import them) ──────────────────────
 
@@ -107,47 +113,63 @@ export const useDataSourceStore = create<DataSourceUIState>()(
   )
 );
 
-// ── Query keys (inlined to avoid circular imports with hooks/useDataSources) ──
-
-const DS_KEYS = {
-  all: ['data-sources'] as const,
-  list: () => ['data-sources', 'list', null] as const,
-};
-
 // ── Composite hook — bridges React Query data + Zustand UI state ──────────────
 // EE components import this via `useDataSources` from '@/stores/useDataSourceStore'.
 
 export function useDataSources() {
-  const store = useDataSourceStore();
+  const selectedId = useDataSourceStore((state) => state.selectedId);
+  const schemaCache = useDataSourceStore((state) => state.schemaCache);
+  const setSelectedId = useDataSourceStore((state) => state.select);
+  const setSchemaLoading = useDataSourceStore((state) => state.setSchemaLoading);
+  const setSchemaCache = useDataSourceStore((state) => state.setSchemaCache);
+  const schemaLoading = useDataSourceStore((state) => state.schemaLoading);
   const qc = useQueryClient();
-  const selectedId = store.selectedId;
-  const schemaCache = store.schemaCache;
+  const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const effectiveProjectId = useMemo(
+    () => resolveDataSourceProjectId(undefined, currentProjectId, false),
+    [currentProjectId]
+  );
 
   const { data, isLoading } = useQuery({
-    queryKey: DS_KEYS.list(),
-    queryFn: () => api.listDataSources(),
+    queryKey: dataSourceKeys.list(effectiveProjectId ?? null),
+    queryFn: () => api.listDataSources(effectiveProjectId),
+    enabled: !isEnterpriseEdition || !!effectiveProjectId,
     select: (res) => res?.data_sources ?? [],
   });
 
   const dataSources: DataSource[] = data ?? [];
 
+  // Auto-select a project data source when none is selected (or selection is stale after project switch).
+  useEffect(() => {
+    if (dataSources.length === 0) {
+      if (selectedId) setSelectedId(null);
+      return;
+    }
+    const stillValid = selectedId && dataSources.some((ds) => ds.id === selectedId);
+    if (stillValid) return;
+    const preferred =
+      dataSources.find((ds) => ds.connection_status === 'connected') ?? dataSources[0];
+    if (preferred?.id) {
+      setSelectedId(preferred.id);
+    }
+  }, [dataSources, selectedId, setSelectedId]);
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteDataSource(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: DS_KEYS.all }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: dataSourceKeys.all }),
   });
 
   const fetchDataSourceSchema = useCallback(
     async (id: string) => {
-      store.setSchemaLoading(true);
+      setSchemaLoading(true);
       try {
         const res = await api.getDataSourceSchema(id);
-        store.setSchemaCache(id, res.schema);
+        setSchemaCache(id, res.schema);
       } finally {
-        store.setSchemaLoading(false);
+        setSchemaLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [store.setSchemaLoading, store.setSchemaCache]
+    [setSchemaLoading, setSchemaCache]
   );
 
   useEffect(() => {
@@ -162,12 +184,12 @@ export function useDataSources() {
 
     const handleDataSourceCreated = (event: Event) => {
       const detail = (event as CustomEvent<DataSource>).detail;
-      qc.invalidateQueries({ queryKey: DS_KEYS.all });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.all });
       if (!detail?.id) return;
 
-      store.select(detail.id);
+      setSelectedId(detail.id);
       if (detail.schema) {
-        store.setSchemaCache(detail.id, detail.schema as SchemaInfo);
+        setSchemaCache(detail.id, detail.schema as SchemaInfo);
       }
       fetchDataSourceSchema(detail.id).catch((error) => {
         console.error('Failed to load created data source schema:', error);
@@ -176,19 +198,17 @@ export function useDataSources() {
 
     window.addEventListener('datasource-created', handleDataSourceCreated);
     return () => window.removeEventListener('datasource-created', handleDataSourceCreated);
-  }, [qc, store, fetchDataSourceSchema]);
+  }, [qc, setSelectedId, setSchemaCache, fetchDataSourceSchema]);
 
-  const dataSourceSchemas = new Map<string, SchemaInfo>(
-    Object.entries(store.schemaCache)
-  );
+  const dataSourceSchemas = new Map<string, SchemaInfo>(Object.entries(schemaCache));
 
   const getSelectedDataSource = useCallback(
-    () => dataSources.find((ds) => ds.id === store.selectedId) ?? null,
-    [dataSources, store.selectedId]
+    () => dataSources.find((ds) => ds.id === selectedId) ?? null,
+    [dataSources, selectedId]
   );
 
   const refreshDataSources = useCallback(
-    () => qc.invalidateQueries({ queryKey: DS_KEYS.all }),
+    () => qc.invalidateQueries({ queryKey: dataSourceKeys.all }),
     [qc]
   );
 
@@ -198,8 +218,8 @@ export function useDataSources() {
     dataSourceSchemas,
     getSelectedDataSource,
     selectDataSource: async (id: string | null) => {
-      store.select(id);
-      if (id && !store.schemaCache[id]) {
+      setSelectedId(id);
+      if (id && !schemaCache[id]) {
         await fetchDataSourceSchema(id);
       }
     },
@@ -208,7 +228,7 @@ export function useDataSources() {
     refreshDataSources,
     refreshSchemaForDataSource: fetchDataSourceSchema,
     isTestingConnection: false as boolean,
-    schemaLoading: store.schemaLoading,
+    schemaLoading,
     isLoading,
   };
 }

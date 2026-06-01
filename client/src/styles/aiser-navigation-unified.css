@@ -62,18 +62,22 @@ html[data-theme="light"] body .ant-layout-sider,
 html[data-theme="dark"] body .ant-layout-sider {
   background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
   background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-  border-right: 1px solid var(--color-border) !important;
+  border-right: none !important;
 }
 
-/* Sidebar header (logo area) - Same navigation color (from logo to bottom) */
-.ant-layout-sider > div:first-child,
-.ant-layout-sider > div[style*="height: 64px"],
-.ant-layout-sider > div[style*="minHeight: 64px"],
-.ant-layout-sider > div[style*="padding"],
-.ant-layout-sider .ant-layout-sider-children > div:first-child,
-.ant-layout-sider .ant-layout-sider-children {
-  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
+/* Custom app sidebar inner — full height flex column (logo + nav + footer) */
+.app-navigation-sider .ant-layout-sider-children > .app-navigation-sider-inner {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 0 !important;
+  border: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.app-navigation-brand {
+  background: transparent !important;
 }
 
 /* Sidebar children container - Extends navigation color to bottom */

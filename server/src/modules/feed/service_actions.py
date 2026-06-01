@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
-from uuid import UUID
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.authentication.rbac.models import Role, UserRole
-from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedShare, FeedView
+from src.modules.charts.models import Chart
+from src.modules.dashboards.models import Dashboard
+from src.modules.data.models import DataQuery
+from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedShare, FeedSnapshot, FeedView, FeedDigestSubscription
 from src.modules.project.models import Project
 from src.modules.user.models import User
 from src.modules.feed.schemas import (
@@ -18,6 +21,7 @@ from src.modules.feed.schemas import (
     AddCollectionItemRequest,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
+    AssetType,
     CreateCollectionRequest,
     DeleteItemResponse,
     DeleteCollectionResponse,
@@ -27,14 +31,21 @@ from src.modules.feed.schemas import (
     FeedCollectionItem,
     MarkNotificationReadResponse,
     PublicationStatus,
+    PublicationMode,
     PublishAssetRequest,
     PublishAssetResponse,
+    PublishFromChatRequest,
+    FeedRenderMode,
+    UpdateSnapshotRequest,
+    ChatFeedDraftRequest,
+    ChatFeedDraftResponse,
     ReactCommentRequest,
     ReactCommentResponse,
     ReactRequest,
     ReactResponse,
     ReactionType,
     FollowAuthorResponse,
+    FeedVisibility,
     SaveResponse,
     ShareResponse,
     TrackViewRequest,
@@ -44,7 +55,13 @@ from src.modules.feed.schemas import (
     UpdateCollectionItemRequest,
     UpdateCollectionRequest,
 )
-from src.modules.feed.service_utils import _enum_value, _reaction_values, _to_iso, _utcnow
+from src.modules.feed.service_utils import _enum_value, _reaction_values, _sanitize_preview_metadata, _to_iso, _utcnow
+from src.modules.feed.snapshot_utils import (
+    build_snapshot_payload_from_preview,
+    create_feed_snapshot,
+    normalize_snapshot_payload,
+)
+from src.modules.feed.permissions import enforce_snapshot_update_owner
 
 
 class FeedServiceActionMixin:
@@ -81,6 +98,38 @@ class FeedServiceActionMixin:
             is_read=False,
         )
         self.db.add(entry)
+
+    async def _notify_followers_of_publish(self, post: FeedPost) -> None:
+        if not post.author_id:
+            return
+        if _enum_value(post.status) != PublicationStatus.approved.value:
+            return
+
+        follower_rows = await self.db.scalars(
+            select(FeedAuthorFollow.follower_id).where(
+                FeedAuthorFollow.following_id == post.author_id
+            )
+        )
+        for follower_id in follower_rows.all():
+            if not follower_id:
+                continue
+            await self._create_notification(
+                recipient_id=follower_id,
+                actor_id=post.author_id,
+                notification_type="publish",
+                post_id=post.id,
+                metadata={"title": post.title},
+            )
+
+    async def _resolve_referrer_user_id(self, referral_code: Optional[str]) -> Optional[UUID]:
+        clean = (referral_code or "").strip().lstrip("@").lower()
+        if not clean:
+            return None
+        user = await self.db.scalar(select(User).where(func.lower(User.username) == clean))
+        if user:
+            return user.id
+        user = await self.db.scalar(select(User).where(func.lower(User.email).like(f"{clean}@%")))
+        return user.id if user else None
 
     async def _get_approver_ids(self, post: FeedPost) -> List[UUID]:
         visibility = _enum_value(post.visibility)
@@ -150,6 +199,7 @@ class FeedServiceActionMixin:
             bookmarks = await self._load_user_bookmarks(user_id, [post])
             followed_authors = await self._load_followed_authors(user_id, [post])
             comments = await self._load_recent_comments([post], viewer_id=user_id)
+            previews = await self._load_preview_payloads([post])
             feed_item = self._build_item_response(
                 post=post,
                 users=users,
@@ -157,6 +207,8 @@ class FeedServiceActionMixin:
                 bookmarks=bookmarks,
                 comments=comments,
                 followed_authors=followed_authors,
+                preview_payload=previews.get(post.id),
+                viewer_id=user_id,
             )
 
         return FeedCollectionItem(
@@ -308,6 +360,71 @@ class FeedServiceActionMixin:
         )
         self.db.add(entry)
 
+    async def _validate_publish_asset(
+        self,
+        asset_type: AssetType,
+        asset_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        asset_value = asset_type.value
+        if asset_value == AssetType.dashboard.value:
+            row = await self.db.scalar(select(Dashboard.id).where(Dashboard.id == asset_id))
+            if not row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
+            return
+        if asset_value == AssetType.chart.value:
+            row = await self.db.scalar(select(Chart.id).where(Chart.id == asset_id))
+            if not row:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chart not found")
+            return
+        if asset_value == AssetType.query.value:
+            result = await self.db.execute(
+                select(DataQuery.id).where(DataQuery.user_id == str(user_id))
+            )
+            query_ids = [row[0] for row in result.all() if row[0]]
+            matching = any(uuid5(NAMESPACE_DNS, f"query:{qid}") == asset_id for qid in query_ids)
+            if not matching:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Query not found")
+            return
+        # insight assets are snapshots — no backing row required
+
+    async def _apply_publication_snapshot(
+        self,
+        post: FeedPost,
+        *,
+        user_id: UUID,
+        render_mode: FeedRenderMode,
+        snapshot_payload: Optional[Dict[str, Any]],
+        preview_metadata: Dict[str, Any],
+        asset_type: str,
+        title: str,
+        description: Optional[str],
+    ) -> Optional[FeedSnapshot]:
+        mode = render_mode.value if hasattr(render_mode, "value") else str(render_mode)
+        if mode != FeedRenderMode.snapshot.value:
+            post.render_mode = FeedRenderMode.live.value
+            return None
+
+        payload = normalize_snapshot_payload(snapshot_payload)
+        if not payload:
+            payload = build_snapshot_payload_from_preview(
+                asset_type,
+                preview_metadata,
+                title=title,
+                description=description,
+            ) or {}
+
+        if not payload:
+            post.render_mode = FeedRenderMode.live.value
+            return None
+
+        return await create_feed_snapshot(
+            self.db,
+            post=post,
+            payload=payload,
+            created_by=user_id,
+        )
+
     async def publish_asset(
         self,
         request: PublishAssetRequest,
@@ -321,6 +438,18 @@ class FeedServiceActionMixin:
 
         await self._set_rls_context(user_id)
         await self._ensure_user_row(user_id, user_payload)
+
+        asset_id = request.asset_id
+        if request.asset_type == AssetType.query and request.source_query_id:
+            asset_id = uuid5(NAMESPACE_DNS, f"query:{request.source_query_id}")
+        if not asset_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_id is required")
+
+        await self._validate_publish_asset(request.asset_type, asset_id, user_id)
+
+        preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
+        if request.asset_type == AssetType.query and request.source_query_id:
+            preview_metadata.setdefault("sourceQueryId", request.source_query_id)
 
         organization_id = request.organization_id
         project_id = request.project_id
@@ -355,12 +484,30 @@ class FeedServiceActionMixin:
             if organization_id and not (is_org_owner or is_org_admin or is_org_member):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient organization role")
 
-        post = await self.db.scalar(
-            select(FeedPost).where(
-                FeedPost.asset_type == request.asset_type.value,
-                FeedPost.asset_id == request.asset_id,
-            )
-        )
+        post = None
+        if request.publication_mode != PublicationMode.create_new:
+            if request.publication_id:
+                post = await self.db.scalar(
+                    select(FeedPost).where(FeedPost.id == request.publication_id)
+                )
+                if post and (
+                    _enum_value(post.asset_type) != request.asset_type.value
+                    or post.asset_id != asset_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="publication_id does not match asset",
+                    )
+            else:
+                post = await self.db.scalar(
+                    select(FeedPost)
+                    .where(
+                        FeedPost.asset_type == request.asset_type.value,
+                        FeedPost.asset_id == asset_id,
+                    )
+                    .order_by(func.coalesce(FeedPost.published_at, FeedPost.created_at).desc())
+                    .limit(1)
+                )
 
         requested_status = request.status.value
         status_value = requested_status
@@ -405,10 +552,14 @@ class FeedServiceActionMixin:
         featured = request.featured if (is_org_owner or is_org_admin) else False
         featured_until = request.featured_until if featured else None
 
+        requires_login = request.requires_login
+        if visibility_value != FeedVisibility.public.value:
+            requires_login = True
+
         if not post:
             post = FeedPost(
                 asset_type=request.asset_type.value,
-                asset_id=request.asset_id,
+                asset_id=asset_id,
                 author_id=user_id,
                 organization_id=organization_id,
                 project_id=project_id,
@@ -424,11 +575,13 @@ class FeedServiceActionMixin:
                 rejected_at=rejected_at,
                 rejection_reason=request.rejection_reason,
                 public_access_level=public_access_level,
-                requires_login=request.requires_login,
+                requires_login=requires_login,
                 featured=featured,
                 featured_until=featured_until,
                 last_activity_at=published_at or now,
             )
+            if preview_metadata:
+                post.preview_metadata = preview_metadata
             self.db.add(post)
         else:
             post.author_id = user_id
@@ -447,12 +600,24 @@ class FeedServiceActionMixin:
             if status_value == PublicationStatus.rejected.value:
                 post.rejection_reason = request.rejection_reason or post.rejection_reason
             post.public_access_level = public_access_level
-            post.requires_login = request.requires_login
+            post.requires_login = requires_login
             post.featured = featured
             post.featured_until = featured_until
             post.last_activity_at = published_at or now
+            if preview_metadata:
+                post.preview_metadata = preview_metadata
 
         await self.db.flush()
+        snapshot_row = await self._apply_publication_snapshot(
+            post,
+            user_id=user_id,
+            render_mode=request.render_mode,
+            snapshot_payload=request.snapshot_payload,
+            preview_metadata=preview_metadata,
+            asset_type=request.asset_type.value,
+            title=request.title,
+            description=request.description,
+        )
         if status_value == PublicationStatus.pending.value:
             await self._log_event(
                 actor_id=user_id,
@@ -485,6 +650,7 @@ class FeedServiceActionMixin:
                     "visibility": visibility_value,
                 },
             )
+            await self._notify_followers_of_publish(post)
         elif status_value == PublicationStatus.rejected.value:
             await self._log_event(
                 actor_id=user_id,
@@ -502,7 +668,145 @@ class FeedServiceActionMixin:
             success=True,
             publication_id=str(post.id),
             status=PublicationStatus(status_value),
+            snapshot_version=int(post.snapshot_version or 0),
+            render_mode=FeedRenderMode(_enum_value(post.render_mode) or FeedRenderMode.live.value),
         )
+
+    async def update_publication_snapshot(
+        self,
+        post_id: UUID,
+        request: UpdateSnapshotRequest,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> PublishAssetResponse:
+        post = await enforce_snapshot_update_owner(self.db, post_id, user_payload)
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
+        if request.title:
+            post.title = request.title
+        if request.description is not None:
+            post.description = request.description
+        if preview_metadata:
+            post.preview_metadata = {**(post.preview_metadata or {}), **preview_metadata}
+
+        await create_feed_snapshot(
+            self.db,
+            post=post,
+            payload=normalize_snapshot_payload(request.snapshot_payload),
+            created_by=user_id,
+        )
+        post.last_activity_at = _utcnow()
+        await self.db.commit()
+
+        return PublishAssetResponse(
+            success=True,
+            publication_id=str(post.id),
+            status=PublicationStatus(_enum_value(post.status)),
+            snapshot_version=int(post.snapshot_version or 0),
+            render_mode=FeedRenderMode.snapshot,
+        )
+
+    async def save_chat_feed_draft(
+        self,
+        request: ChatFeedDraftRequest,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> ChatFeedDraftResponse:
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        from src.modules.feed.models import FeedChatDraft
+
+        draft_row = await self.db.scalar(
+            select(FeedChatDraft).where(
+                FeedChatDraft.user_id == user_id,
+                FeedChatDraft.conversation_id == request.conversation_id,
+                FeedChatDraft.message_id == request.message_id,
+            )
+        )
+        if draft_row:
+            draft_row.draft = request.draft
+            draft_row.updated_at = _utcnow()
+        else:
+            draft_row = FeedChatDraft(
+                user_id=user_id,
+                conversation_id=request.conversation_id,
+                message_id=request.message_id,
+                draft=request.draft,
+            )
+            self.db.add(draft_row)
+        await self.db.commit()
+        return ChatFeedDraftResponse(
+            success=True,
+            conversation_id=request.conversation_id,
+            message_id=request.message_id,
+            draft=request.draft,
+        )
+
+    async def get_chat_feed_draft(
+        self,
+        conversation_id: str,
+        message_id: str,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> ChatFeedDraftResponse:
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        from src.modules.feed.models import FeedChatDraft
+
+        draft_row = await self.db.scalar(
+            select(FeedChatDraft).where(
+                FeedChatDraft.user_id == user_id,
+                FeedChatDraft.conversation_id == conversation_id,
+                FeedChatDraft.message_id == message_id,
+            )
+        )
+        draft = draft_row.draft if draft_row else {}
+        return ChatFeedDraftResponse(
+            success=True,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            draft=draft or {},
+        )
+
+    async def publish_from_chat(
+        self,
+        request: PublishFromChatRequest,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> PublishAssetResponse:
+        asset_id = uuid5(NAMESPACE_DNS, f"chat:{request.conversation_id}:{request.message_id}")
+        preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
+        preview_metadata.setdefault("conversationId", str(request.conversation_id))
+        preview_metadata.setdefault("messageId", str(request.message_id))
+        if request.description and not preview_metadata.get("summary"):
+            preview_metadata = {**preview_metadata, "summary": request.description}
+
+        publish_request = PublishAssetRequest(
+            asset_type=AssetType.insight,
+            asset_id=asset_id,
+            organization_id=request.organization_id,
+            project_id=request.project_id,
+            title=request.title,
+            description=request.description,
+            tags=request.tags,
+            visibility=request.visibility,
+            preview_metadata=preview_metadata,
+            render_mode=request.render_mode,
+            snapshot_payload=request.snapshot_payload,
+            requires_login=request.requires_login,
+            publication_mode=request.publication_mode,
+        )
+        response = await self.publish_asset(publish_request, user_payload)
+
+        post = await self.db.scalar(select(FeedPost).where(FeedPost.id == UUID(response.publication_id)))
+        if post and preview_metadata and not post.preview_metadata:
+            post.preview_metadata = preview_metadata
+            await self.db.commit()
+
+        return response
 
     async def approve_publication(
         self,
@@ -558,6 +862,7 @@ class FeedServiceActionMixin:
                 "status": PublicationStatus.approved.value,
             },
         )
+        await self._notify_followers_of_publish(post)
 
         await self.db.commit()
 
@@ -935,6 +1240,11 @@ class FeedServiceActionMixin:
                 )
             )
             is_following = True
+            await self._create_notification(
+                recipient_id=author_id,
+                actor_id=user_id,
+                notification_type="follow",
+            )
 
         await self.db.commit()
         return FollowAuthorResponse(
@@ -1115,6 +1425,14 @@ class FeedServiceActionMixin:
         )
         post.save_count = bookmark_count
 
+        if is_bookmarked:
+            await self._log_event(
+                actor_id=user_id,
+                event_type="save",
+                post=post,
+                target_user_id=post.author_id,
+            )
+
         await self.db.commit()
 
         return SaveResponse(
@@ -1162,10 +1480,14 @@ class FeedServiceActionMixin:
         )
         await self.db.commit()
 
+        share_link = f"/discover/{post.id}"
+        if _enum_value(post.visibility) != FeedVisibility.public.value:
+            share_link = f"/feed/{post.id}"
+
         return ShareResponse(
             success=True,
             share_count=int(post.share_count or 0),
-            share_link=f"/feed/{post.id}",
+            share_link=share_link,
         )
 
     async def add_comment(
@@ -1536,6 +1858,8 @@ class FeedServiceActionMixin:
         post = await self._get_post_or_404(item_id)
         await self._assert_can_view_post(user_id, post)
 
+        referrer_user_id = await self._resolve_referrer_user_id(request.referral_code)
+
         self.db.add(
             FeedView(
                 post_id=post.id,
@@ -1546,6 +1870,8 @@ class FeedServiceActionMixin:
                 ip_address=ip_address,
                 user_agent=user_agent,
                 referrer=referrer,
+                referral_code=(request.referral_code or "").strip() or None,
+                referrer_user_id=referrer_user_id,
             )
         )
 
@@ -1556,4 +1882,155 @@ class FeedServiceActionMixin:
             success=True,
             view_count=int(post.view_count or 0),
             unique_viewers=0,
+        )
+
+    async def subscribe_digest(
+        self,
+        email: str,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> "DigestSubscribeResponse":
+        from src.modules.feed.schemas import DigestSubscribeResponse
+        import re
+        import secrets
+
+        clean = email.strip().lower()
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address")
+
+        user_id = self.resolve_user_id(user_payload)
+        existing = await self.db.scalar(
+            select(FeedDigestSubscription).where(FeedDigestSubscription.email == clean)
+        )
+        if existing:
+            existing.is_active = True
+            if user_id and not existing.user_id:
+                existing.user_id = user_id
+            await self.db.commit()
+            return DigestSubscribeResponse(success=True, message="You are subscribed to the weekly digest.")
+
+        row = FeedDigestSubscription(
+            email=clean,
+            user_id=user_id,
+            unsubscribe_token=secrets.token_urlsafe(32),
+            is_active=True,
+        )
+        self.db.add(row)
+        await self.db.commit()
+        return DigestSubscribeResponse(success=True, message="You are subscribed to the weekly digest.")
+
+    async def unsubscribe_digest(self, token: str) -> "DigestSubscribeResponse":
+        from src.modules.feed.schemas import DigestSubscribeResponse
+
+        clean = token.strip()
+        if not clean:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+
+        row = await self.db.scalar(
+            select(FeedDigestSubscription).where(FeedDigestSubscription.unsubscribe_token == clean)
+        )
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+        row.is_active = False
+        await self.db.commit()
+        return DigestSubscribeResponse(success=True, message="You have been unsubscribed.")
+
+    async def send_digest_emails(self, *, cron_secret: Optional[str] = None) -> "DigestSendResponse":
+        import os
+
+        from src.modules.feed.schemas import DigestSendResponse
+        from src.shared.transactional_email import send_transactional_email
+
+        expected = os.getenv("FEED_DIGEST_CRON_SECRET", "").strip()
+        if expected and (cron_secret or "").strip() != expected:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid cron secret")
+
+        preview = await self.get_digest_preview(period_days=7, limit=8)
+        if not preview.items:
+            return DigestSendResponse(success=True, sent_count=0, skipped=True)
+
+        subs = (
+            await self.db.scalars(
+                select(FeedDigestSubscription).where(FeedDigestSubscription.is_active.is_(True))
+            )
+        ).all()
+        if not subs:
+            return DigestSendResponse(success=True, sent_count=0, skipped=True)
+
+        site = os.getenv("AISER_PUBLIC_SITE_URL", "http://localhost:3000").rstrip("/")
+        lines = ["Top public insights this week on Aicser Discover:", ""]
+        for item in preview.items:
+            lines.append(f"• {item.title} — {site}/discover/{item.id}")
+        lines.extend(["", f"Browse more: {site}/discover", ""])
+        body = "\n".join(lines)
+        subject = "Aicser Discover — trending insights this week"
+
+        sent = 0
+        now = _utcnow()
+        for sub in subs:
+            personalized = body + f"\nUnsubscribe: {site}/discover?unsubscribe={sub.unsubscribe_token}"
+            ok = await send_transactional_email([sub.email], subject, personalized)
+            if ok:
+                sub.last_sent_at = now
+                sent += 1
+        await self.db.commit()
+        return DigestSendResponse(success=True, sent_count=sent)
+
+    async def remix_feed_post(
+        self,
+        item_id: UUID,
+        user_payload: Optional[Dict[str, Any]],
+        *,
+        project_id: Optional[UUID] = None,
+        referral_code: Optional[str] = None,
+    ) -> "RemixFeedResponse":
+        from src.modules.feed.remix_utils import remix_snapshot_to_dashboard
+        from src.modules.feed.schemas import RemixFeedResponse
+
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        await self._set_rls_context(user_id)
+        await self._ensure_user_row(user_id, user_payload)
+
+        post = await self._get_post_or_404(item_id)
+        await self._assert_can_view_post(user_id, post)
+
+        if _enum_value(getattr(post, "render_mode", None)) != "snapshot" or not post.current_snapshot_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only snapshot publications can be remixed",
+            )
+
+        snapshot = await self.db.scalar(
+            select(FeedSnapshot).where(FeedSnapshot.id == post.current_snapshot_id)
+        )
+        if not snapshot:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
+
+        dashboard = await remix_snapshot_to_dashboard(
+            self.db,
+            post=post,
+            snapshot=snapshot,
+            user_id=user_id,
+            project_id=project_id,
+            referral_code=referral_code,
+        )
+
+        await self._log_event(
+            actor_id=user_id,
+            event_type="share",
+            post=post,
+            target_user_id=post.author_id,
+            metadata={"action": "remix", "dashboardId": str(dashboard.id)},
+        )
+        await self.db.commit()
+
+        title = dashboard.name or dashboard.title or "Remix"
+        return RemixFeedResponse(
+            success=True,
+            dashboard_id=str(dashboard.id),
+            open_path=f"/dashboards/{dashboard.id}",
+            title=title,
         )

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.feed.service_actions import FeedServiceActionMixin
 from src.modules.feed.service_base import FeedServiceBaseMixin
+from src.modules.feed.service_preview import FeedServicePreviewMixin
 from src.modules.feed.service_queries import FeedServiceQueryMixin
 from src.modules.feed.service_seed import FeedServiceSeedMixin
 from src.modules.feed.service_serialization import FeedServiceSerializationMixin
@@ -22,6 +23,7 @@ class FeedService(
     FeedServiceBaseMixin,
     FeedServiceSeedMixin,
     FeedServiceSerializationMixin,
+    FeedServicePreviewMixin,
     FeedServiceQueryMixin,
     FeedServiceActionMixin,
 ):

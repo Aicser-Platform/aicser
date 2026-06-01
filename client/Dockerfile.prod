@@ -45,6 +45,8 @@ ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 
 RUN node scripts/setup-ee.js
 RUN npm run build
+# PWA: Serwist emits public/sw.js during next build — fail fast if missing
+RUN test -f public/sw.js
 
 # Production image, copy all the files and run next
 FROM base AS runner

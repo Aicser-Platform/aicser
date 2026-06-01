@@ -17,11 +17,18 @@ async def run_data_retention_cleanup(ctx: Dict[str, Any]) -> Dict[str, Any]:
     """
     logger.info("Running data retention cleanup")
     try:
+        from src.db.session import async_session
         from src.modules.data.services.data_retention_service import DataRetentionService
-        service = DataRetentionService()
-        result = await service.run_retention_cleanup()
-        logger.info(f"Retention cleanup complete: {result}")
-        return {"success": True, "result": result, "completed_at": datetime.utcnow().isoformat()}
+
+        async with async_session() as db:
+            service = DataRetentionService(db)
+            affected = await service.cleanup_expired_file_sources()
+        logger.info("Retention cleanup complete: %s data sources affected", affected)
+        return {
+            "success": True,
+            "affected": affected,
+            "completed_at": datetime.utcnow().isoformat(),
+        }
     except Exception as e:
         logger.error(f"Retention cleanup failed: {e}")
         return {"success": False, "error": str(e)}
@@ -134,6 +141,17 @@ async def evaluate_alert_rules(ctx: Dict[str, Any]) -> Dict[str, Any]:
     For each active rule: executes condition_sql against the linked data source,
     compares the result to the threshold, and dispatches notifications if breached.
     """
+    # Renew the worker heartbeat so the health endpoint sees the worker as alive.
+    try:
+        import os
+        import redis as _redis
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        _r = _redis.from_url(_redis_url, socket_connect_timeout=1, socket_timeout=1)
+        _r.setex("aiser:worker:heartbeat", 90, "1")
+        _r.close()
+    except Exception:
+        pass
+
     logger.info("🔔 Starting alert rule evaluation cycle")
     try:
         from src.db.session import async_session
@@ -145,3 +163,68 @@ async def evaluate_alert_rules(ctx: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Alert evaluation cycle failed: {e}")
         return {"success": False, "error": str(e)}
+
+
+async def refresh_artifact_data(
+    ctx: Dict[str, Any],
+    data_source_id: str,
+    *,
+    export_formats: Optional[list] = None,
+) -> Dict[str, Any]:
+    """
+    ARQ job: re-execute all dashboard widget queries for a given data source.
+    Triggered on demand (POST /ai/artifacts/refresh) or by cron for live data sources.
+
+    Optional: auto-export updated dashboards to pptx/docx if export_formats is set.
+    """
+    logger.info("refresh_artifact_data: data_source_id=%s", data_source_id)
+    try:
+        from ee.modules.ai.services.artifact_automation_service import (
+            refresh_all_dashboards_for_data_source,
+            export_dashboard_artifacts,
+        )
+        result = await refresh_all_dashboards_for_data_source(data_source_id)
+
+        exports = {}
+        if export_formats:
+            for did in (result.get("dashboard_ids") or [])[:5]:
+                try:
+                    exp = await export_dashboard_artifacts(
+                        did, formats=export_formats, org_id="default"
+                    )
+                    exports[did] = exp
+                except Exception as exc:
+                    exports[did] = {"error": str(exc)}
+
+        return {
+            "success": True,
+            "data_source_id": data_source_id,
+            "refresh_result": result,
+            "exports": exports,
+            "completed_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("refresh_artifact_data failed: %s", exc)
+        return {"success": False, "error": str(exc)}
+
+
+async def sync_artifacts_after_schema_change(
+    ctx: Dict[str, Any],
+    data_source_id: str,
+    old_schema: Optional[dict] = None,
+    new_schema: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """
+    ARQ job: run after schema change detection — flag stale widgets and refresh data.
+    Called by the schema refresh pipeline when drift is detected.
+    """
+    logger.info("sync_artifacts_after_schema_change: data_source_id=%s", data_source_id)
+    try:
+        from ee.modules.ai.services.artifact_automation_service import (
+            sync_artifacts_after_schema_change as _sync,
+        )
+        result = await _sync(data_source_id, old_schema=old_schema, new_schema=new_schema)
+        return {"success": True, **result, "completed_at": datetime.utcnow().isoformat()}
+    except Exception as exc:
+        logger.exception("sync_artifacts_after_schema_change failed: %s", exc)
+        return {"success": False, "error": str(exc)}

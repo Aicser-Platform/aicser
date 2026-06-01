@@ -255,7 +255,8 @@ class EnhancedDataService {
         query: string,
         dataSourceId: string,
         engine?: string,
-        optimization: boolean = true
+        optimization: boolean = true,
+        signal?: AbortSignal
     ): Promise<QueryResult> {
         try {
             // fetchApi already parses JSON and throws on non-2xx responses
@@ -270,6 +271,7 @@ class EnhancedDataService {
                     engine,
                     optimization,
                 }),
+                signal,
             });
 
             return {

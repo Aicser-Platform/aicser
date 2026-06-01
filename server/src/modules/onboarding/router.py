@@ -18,7 +18,14 @@ import uuid
 from src.modules.onboarding.service import OnboardingService
 from src.modules.onboarding.frictionless_optimizer import FrictionlessOptimizer
 from src.modules.onboarding.enhanced_onboarding import EnhancedOnboardingService
-from src.modules.onboarding.steps import TOTAL_STEPS, ONBOARDING_STEPS, STEP_IDS
+from src.modules.onboarding.steps import (
+    TOTAL_STEPS,
+    ONBOARDING_STEPS,
+    STEP_IDS,
+    first_incomplete_step_index,
+    normalize_completed_steps,
+    REQUIRED_STEP_IDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +58,7 @@ class OnboardingCompletionResponse(BaseModel):
     completedAt: str
     personalized: bool = True
     organization_id: Optional[str] = None
+    project_id: Optional[str] = None
     requires_checkout: bool = False
     checkout_plan: Optional[str] = None
 
@@ -94,6 +102,7 @@ async def complete_onboarding(
             completedAt=request.completedAt,
             personalized=True,
             organization_id=result.get("organization_id"),
+            project_id=result.get("project_id"),
             requires_checkout=result.get("requires_checkout", False),
             checkout_plan=result.get("checkout_plan"),
         )
@@ -143,35 +152,7 @@ async def save_onboarding_progress(
             action="step_completed",
         )
 
-        # Auto-complete onboarding when all required steps are done
-        # "plan" is optional — welcome + organization are the required steps
-        REQUIRED_STEPS = {"welcome", "organization"}
-        try:
-            check_result = await db.execute(
-                text("""
-                    SELECT onboarding_data, onboarding_progress, onboarding_completed_at
-                    FROM users WHERE user_id = :user_id
-                """),
-                {"user_id": uuid.UUID(str(user_id))}
-            )
-            check_user = check_result.fetchone()
-            if check_user and check_user.onboarding_completed_at is None:
-                prog = check_user.onboarding_progress or {}
-                if isinstance(prog, str):
-                    prog = json.loads(prog)
-                completed_steps = set(prog.keys()) if isinstance(prog, dict) else set()
-                if REQUIRED_STEPS.issubset(completed_steps):
-                    od = check_user.onboarding_data or {}
-                    if isinstance(od, str):
-                        od = json.loads(od)
-                    await onboarding_service.complete_onboarding(
-                        user_id=str(user_id),
-                        onboarding_data=od,
-                    )
-                    logger.info(f"Auto-completed onboarding for user {user_id} after step '{step}'")
-        except Exception as auto_err:
-            logger.warning(f"Auto-complete onboarding failed (non-fatal): {auto_err}")
-
+        # Progress saved — completion is explicit via POST /complete (frontend Get Started).
         return {"success": True, "step": step}
 
     except HTTPException:
@@ -346,16 +327,21 @@ async def get_onboarding_status(
             except (TypeError, ValueError):
                 pass
         completed_steps = list(onboarding_progress.keys()) if isinstance(onboarding_progress, dict) else []
+        normalized_done = normalize_completed_steps(completed_steps)
         started_at = getattr(user_data, "onboarding_started_at", None)
         completed_at = getattr(user_data, "onboarding_completed_at", None)
-        # Also consider completed if all required steps are done (welcome + organization)
-        REQUIRED_STEPS = {"welcome", "organization"}
-        if not completed and REQUIRED_STEPS.issubset(set(completed_steps)):
-            completed = True
 
         # Fetch real org/project DB info to enrich status payload
         onboarding_service = OnboardingService(db)
         org_info = await onboarding_service.get_organization(user_id=str(user_id))
+
+        skip_steps: list[str] = []
+        if org_info.get("project_id"):
+            skip_steps.append("workspace")
+
+        if not completed and set(REQUIRED_STEP_IDS).issubset(normalized_done):
+            # Legacy users who finished provisioning steps but never hit /complete
+            completed = completed_at is not None
 
         return {
             "completed": completed,
@@ -367,8 +353,9 @@ async def get_onboarding_status(
                 "firstName": getattr(user_data, "first_name", None),
                 "lastName": getattr(user_data, "last_name", None),
             },
-            "currentStep": len(completed_steps),
+            "currentStep": first_incomplete_step_index(completed_steps, skip_steps),
             "totalSteps": TOTAL_STEPS,
+            "skipSteps": skip_steps,
             "startedAt": started_at.isoformat() if started_at else None,
             "completedAt": completed_at.isoformat() if completed_at else None,
             # Real DB references for the onboarding modal pre-fill

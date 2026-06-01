@@ -44,10 +44,11 @@ class FrictionlessOptimizer:
             )
             user = result.fetchone()
         except Exception:
-            return {"minimal": True, "steps": STEP_IDS, "totalSteps": TOTAL_STEPS, "prefill": {}}
+            return {"minimal": True, "steps": STEP_IDS, "totalSteps": TOTAL_STEPS, "prefill": {}, "skip_steps": []}
         if not user:
-            return {"minimal": True, "steps": STEP_IDS, "totalSteps": TOTAL_STEPS, "prefill": {}}
-        prefill = {}
+            return {"minimal": True, "steps": STEP_IDS, "totalSteps": TOTAL_STEPS, "prefill": {}, "skip_steps": []}
+
+        prefill: Dict[str, Any] = {}
         if getattr(user, "first_name", None):
             prefill["firstName"] = user.first_name
         if getattr(user, "last_name", None):
@@ -57,11 +58,24 @@ class FrictionlessOptimizer:
             domain = email.split("@", 1)[1]
             if domain not in ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com"):
                 prefill["company"] = self._extract_company_from_email(domain)
+            if not prefill.get("firstName"):
+                prefill["displayName"] = email.split("@")[0].replace(".", " ").title()
+
+        skip_steps: list[str] = []
+        try:
+            from src.modules.onboarding.service import OnboardingService
+            org_info = await OnboardingService(self.db).get_organization(user_id=str(user_id))
+            if org_info.get("project_id"):
+                skip_steps.append("workspace")
+        except Exception:
+            pass
+
         return {
-            "minimal": False,  # Full 3-step flow is now the standard
+            "minimal": True,
             "steps": STEP_IDS,
             "totalSteps": TOTAL_STEPS,
             "prefill": prefill,
+            "skip_steps": skip_steps,
         }
     
     def _extract_company_from_email(self, domain: str) -> str:
@@ -136,7 +150,9 @@ class FrictionlessOptimizer:
         # Set smart defaults for plan
         if "plan" not in onboarding_data:
             onboarding_data["plan"] = {
-                "selectedPlan": "free",  # Start with free
+                "selectedPlan": "team",
+                "enableTeamTrial": True,
+                "enableProTrial": False,
                 "trialStarted": False,
             }
         
@@ -158,21 +174,64 @@ class FrictionlessOptimizer:
     ) -> Dict[str, Any]:
         """Get contextual help based on current step and user data"""
         help_content = {
+            "name": {
+                "title": "Why we need this",
+                "content": "We'll greet you by name and personalize tips in chat and dashboards.",
+                "tips": ["You can update this anytime in Settings → Profile"],
+            },
+            "company": {
+                "title": "Your organization",
+                "content": "We use this to set up your workspace and team context.",
+                "tips": ["Prefilled from your email when possible"],
+            },
+            "role": {
+                "title": "Tailored for your job",
+                "content": "Your role helps us suggest relevant prompts, charts, and templates.",
+                "tips": ["Pick the closest match — you can refine later"],
+            },
+            "primary_goal": {
+                "title": "Help us help you",
+                "content": "We'll prioritize features and sample content for your main goal.",
+                "tips": ["You can explore everything regardless of your choice"],
+            },
+            "industry": {
+                "title": "Industry context",
+                "content": "We use this to suggest relevant templates, metrics, and sample datasets.",
+                "tips": ["Pick the closest match — you can change this in Settings"],
+            },
+            "company_size": {
+                "title": "Team scale",
+                "content": "Helps us recommend collaboration and governance features.",
+                "tips": ["Approximate is fine"],
+            },
+            "experience": {
+                "title": "Skill level",
+                "content": "We adjust AI explanations and default chart complexity to match your experience.",
+                "tips": ["Beginners get more guided prompts in chat"],
+            },
+            "workspace": {
+                "title": "Your first project",
+                "content": "Projects group data sources, chats, and dashboards for one team or initiative.",
+                "tips": ["You can rename or create more projects later"],
+            },
+            "plan_selection": {
+                "title": "Choose Your Plan",
+                "content": "Start with a Pro trial to explore fully. Switch or stay on Free anytime.",
+                "tips": [
+                    "Pro trial is enabled by default — no charge for 14 days",
+                    "You can change plans anytime in Settings → Billing",
+                ],
+            },
+            # Legacy keys
             "welcome": {
                 "title": "Why we need this",
                 "content": "We'll use this to personalize your experience and set up your workspace.",
-                "tips": [
-                    "You can always update this later in settings",
-                    "Your information is kept private and secure",
-                ],
+                "tips": ["You can always update this later in settings"],
             },
             "organization": {
                 "title": "About Organizations",
                 "content": "Organizations help you collaborate with your team and manage projects together.",
-                "tips": [
-                    "You can create multiple organizations later",
-                    "Free plan includes 1 organization",
-                ],
+                "tips": ["You can create multiple organizations later"],
             },
             "goals": {
                 "title": "Help us help you",

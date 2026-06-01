@@ -73,6 +73,16 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
+
+  /* Interaction & overlay — one brand language */
+  --interaction-hover-bg: var(--ant-color-fill-quaternary);
+  --interaction-hover-bg-strong: var(--ant-color-fill-tertiary);
+  --interaction-hover-transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  --control-height-sm: 28px;
+  --control-height-md: 32px;
+  --overlay-border: 1px solid var(--ant-color-border-secondary);
+  --overlay-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  --overlay-radius: var(--radius-md);
 }
 
 [data-theme="dark"] {
@@ -103,7 +113,12 @@
 }
 
 .ant-card:hover,
-.content-card:hover,
+.content-card:hover {
+  box-shadow: var(--shadow-md) !important;
+  border-color: var(--ant-color-border) !important;
+}
+
+.page-section-card.ant-card:hover,
 .stat-card:hover,
 .summary-card:hover {
   box-shadow: var(--shadow-md) !important;
@@ -158,18 +173,16 @@
    PANELS - CLEAR SEPARATION
    ======================================== */
 
+/* Layout shells (.chat-panel, .data-panel, .monaco-sql-editor-container) — see workspace-chrome.css */
 .enhanced-chat-panel,
 .enhanced-data-panel,
 .chat-history-panel,
-.query-editor-panel,
 .chart-preview-panel,
 .chart-config-panel,
 .dashboard-canvas,
 .unified-design-panel,
 .ant-panel,
 .panel-container,
-.data-panel,
-.monaco-sql-editor-container,
 .ChatHistoryPanel,
 .collapsible-history-panel {
   background: var(--ant-color-bg-container) !important;
@@ -226,12 +239,10 @@
 }
 
 .ant-btn:hover {
-  transform: translateY(-1px) !important;
   box-shadow: var(--shadow-sm) !important;
 }
 
 .ant-btn:active {
-  transform: translateY(0) !important;
   box-shadow: var(--shadow-xs) !important;
 }
 
@@ -272,6 +283,92 @@
 .ant-btn-text:hover {
   background: var(--ant-color-fill-secondary) !important;
   color: var(--ant-color-text) !important;
+}
+
+/* Icon-only controls — no border/background chrome (toolbars, headers, panels) */
+.icon-only-btn.ant-btn,
+.icon-only-btn.ant-btn.ant-btn-text,
+.icon-only-btn.ant-btn.ant-btn-default {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  color: var(--ant-color-text-secondary) !important;
+  transform: none !important;
+}
+
+.icon-only-btn.ant-btn .anticon,
+.icon-only-btn.ant-btn.ant-btn-icon-only .anticon {
+  font-size: 16px !important;
+  line-height: 1 !important;
+}
+
+.icon-only-btn.ant-btn:hover:not(:disabled),
+.icon-only-btn.ant-btn.ant-btn-text:hover:not(:disabled),
+.icon-only-btn.ant-btn:focus-visible:not(:disabled) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--ant-color-text) !important;
+  transform: none !important;
+}
+
+.icon-only-btn--primary.ant-btn,
+.icon-only-btn--primary.ant-btn .anticon,
+.header-shell-icon-btn--primary.ant-btn,
+.header-shell-icon-btn--primary.ant-btn .anticon {
+  color: var(--ant-color-primary) !important;
+}
+
+.icon-only-btn--primary.ant-btn:hover:not(:disabled),
+.header-shell-icon-btn--primary.ant-btn:hover:not(:disabled) {
+  color: var(--ant-color-primary-hover, var(--ant-color-primary)) !important;
+  background: transparent !important;
+}
+
+/* Toolbars: icon-only children inherit spec without per-button classes */
+.icon-toolbar .ant-btn.ant-btn-text,
+.icon-toolbar .ant-btn.ant-btn-default {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--ant-color-text-secondary) !important;
+}
+
+.icon-toolbar .ant-btn.ant-btn-text:hover:not(:disabled),
+.icon-toolbar .ant-btn.ant-btn-default:hover:not(:disabled) {
+  background: transparent !important;
+  border: none !important;
+  color: var(--ant-color-text) !important;
+  transform: none !important;
+}
+
+.icon-toolbar .ant-btn .anticon {
+  font-size: 16px !important;
+}
+
+/* App header: never paint icon buttons as boxed controls */
+.layout-app-header .ant-btn-text:hover,
+.layout-app-header .icon-only-btn.ant-btn:hover:not(:disabled),
+.layout-app-header .header-shell-icon-btn.ant-btn:hover:not(:disabled) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 /* Special buttons */
@@ -392,21 +489,24 @@ textarea.ant-input::placeholder {
 /* Removed custom overrides - let Ant Design handle it */
 
 /* ========================================
-   TABS - CLEAR SEPARATION
+   TABS - page-level only (not query editor / inline workspaces)
    ======================================== */
 
-.ant-tabs {
+.page-tabs.ant-tabs,
+.settings-tabs.ant-tabs {
   background: var(--ant-color-bg-container) !important;
   border-radius: var(--radius-lg) !important;
   padding: var(--spacing-md) !important;
 }
 
-.ant-tabs-nav {
+.page-tabs.ant-tabs .ant-tabs-nav,
+.settings-tabs.ant-tabs .ant-tabs-nav {
   margin-bottom: var(--spacing-md) !important;
   padding: 0 var(--spacing-sm) !important;
 }
 
-.ant-tabs-tab {
+.page-tabs.ant-tabs .ant-tabs-tab,
+.settings-tabs.ant-tabs .ant-tabs-tab {
   border-radius: var(--radius-md) !important;
   margin-right: var(--spacing-sm) !important;
   padding: var(--spacing-sm) var(--spacing-md) !important;
@@ -415,19 +515,22 @@ textarea.ant-input::placeholder {
   font-size: var(--font-size-sm) !important;
 }
 
-.ant-tabs-tab:hover {
+.page-tabs.ant-tabs .ant-tabs-tab:hover,
+.settings-tabs.ant-tabs .ant-tabs-tab:hover {
   background: var(--ant-color-fill-secondary) !important;
   color: var(--ant-color-primary) !important;
 }
 
-.ant-tabs-tab-active {
+.page-tabs.ant-tabs .ant-tabs-tab-active,
+.settings-tabs.ant-tabs .ant-tabs-tab-active {
   background: var(--ant-color-primary-bg) !important;
   border-color: var(--ant-color-primary) !important;
   color: var(--ant-color-primary) !important;
   font-weight: var(--font-weight-semibold) !important;
 }
 
-.ant-tabs-content-holder {
+.page-tabs.ant-tabs .ant-tabs-content-holder,
+.settings-tabs.ant-tabs .ant-tabs-content-holder {
   padding: var(--spacing-md) 0 !important;
   flex: 1 !important;
   min-height: 0 !important;
@@ -436,25 +539,95 @@ textarea.ant-input::placeholder {
   overflow: hidden !important;
 }
 
-.ant-tabs-tabpane {
+/* Inline tabs: query editor, chat analysis — minimal chrome */
+.workspace-inline-tabs.ant-tabs,
+.analysis-data-tabs.ant-tabs {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.workspace-inline-tabs.ant-tabs .ant-tabs-nav,
+.analysis-data-tabs.ant-tabs .ant-tabs-nav {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+}
+
+.workspace-inline-tabs.ant-tabs .ant-tabs-tab,
+.analysis-data-tabs.ant-tabs .ant-tabs-tab {
+  padding: 6px 12px !important;
+  margin: 0 2px 0 0 !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 12px !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-radius: 6px 6px 0 0 !important;
+}
+
+.workspace-inline-tabs.ant-tabs .ant-tabs-tab::before,
+.analysis-data-tabs.ant-tabs .ant-tabs-tab::before {
+  display: none !important;
+}
+
+.workspace-inline-tabs.ant-tabs .ant-tabs-tab:hover,
+.analysis-data-tabs.ant-tabs .ant-tabs-tab:hover {
+  background: var(--ant-color-fill-quaternary) !important;
+  color: var(--ant-color-text) !important;
+}
+
+.workspace-inline-tabs.ant-tabs .ant-tabs-tab-active,
+.analysis-data-tabs.ant-tabs .ant-tabs-tab-active {
+  background: var(--ant-color-fill-quaternary) !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+  color: var(--ant-color-primary) !important;
+}
+
+.workspace-inline-tabs.query-editor-query-tabs.ant-tabs > .ant-tabs-nav {
+  margin: 0 !important;
+}
+
+.workspace-inline-tabs.query-editor-query-tabs .ant-tabs-tab {
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  border-radius: 6px !important;
+}
+
+.workspace-inline-tabs.query-editor-results-tabs.ant-tabs {
+  height: 100%;
+}
+
+.workspace-inline-tabs.query-editor-results-tabs .ant-tabs-nav {
+  margin: 0 !important;
+}
+
+.workspace-inline-tabs.query-editor-results-tabs .ant-tabs-tab {
+  padding: 8px 12px !important;
+}
+
+.workspace-inline-tabs.query-editor-results-tabs .ant-tabs-ink-bar {
+  height: 2px !important;
+}
+
+
+.page-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden),
+.settings-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden) {
   height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
 }
 
-/* ========================================
-   SELECT & DROPDOWN - ELEVATED
-   ======================================== */
-
-.ant-select-dropdown,
-.ant-dropdown-menu {
-  background: var(--ant-color-bg-elevated) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-xl) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-sm) !important;
+.ant-tabs-tabpane-hidden {
+  display: none !important;
 }
+
+/* ========================================
+   SELECT DROPDOWN ITEMS (overlay chrome in interaction-system)
+   ======================================== */
 
 .ant-select-item,
 .ant-dropdown-menu-item {
@@ -463,11 +636,6 @@ textarea.ant-input::placeholder {
   padding: var(--spacing-sm) var(--spacing-md) !important;
   transition: all var(--transition-fast) !important;
   font-size: var(--font-size-sm) !important;
-}
-
-.ant-select-item:hover,
-.ant-dropdown-menu-item:hover {
-  background: var(--ant-color-fill-secondary) !important;
 }
 
 .ant-select-item-option-selected {
@@ -498,8 +666,6 @@ textarea.ant-input::placeholder {
 .ant-modal-content {
   background: var(--ant-color-bg-elevated) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-xl) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
   max-height: calc(100vh - 96px) !important; /* header + top/bottom margin */
   display: flex !important;
   flex-direction: column !important;
@@ -781,18 +947,12 @@ h4, .h4 {
    PAGE LAYOUT - CONSISTENT STRUCTURE
    ======================================== */
 
-/* CRITICAL: Match layout-system.css padding to ensure consistency */
+/* Padding/height — canonical rules in page-shell.css; keep background only */
 .page-content > .page-wrapper,
 .dashboard-content-override .page-content > .page-wrapper,
 .dashboard-content-override .page-wrapper,
 .page-wrapper {
-  padding: 24px !important; /* Override var(--spacing-xl) to use consistent 24px */
-  padding-left: 24px !important; /* Explicit left padding - ensures spacing from sidebar */
-  padding-right: 24px !important;
-  padding-top: 24px !important;
-  padding-bottom: 24px !important;
   background: var(--ant-color-bg-layout) !important;
-  min-height: 100vh !important;
 }
 
 .page-wrapper > .page-header,
@@ -953,9 +1113,9 @@ h4, .h4 {
    ======================================== */
 
 @media (max-width: 768px) {
-  .page-wrapper {
+  .page-wrapper:not(.page-wrapper--full-bleed) {
     padding: var(--spacing-md) !important;
-    padding-left: 16px !important; /* Explicit left padding on mobile */
+    padding-left: 16px !important;
   }
   
   .ant-card,

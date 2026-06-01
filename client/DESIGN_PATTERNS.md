@@ -416,9 +416,11 @@ theme: {
 
 ### Global Stylesheets
 
-- `src/styles/globals.css` — root reset and system font stack
-- `src/styles/design-system.css` — design tokens
-- `src/styles/aiser-unified-design-system.css` — brand-specific overrides
+- `src/app/globals.css` — Tailwind, Ant reset, token bridge, and `@import` chain for all active stylesheets
+- `src/styles/aiser-color-system.css` — canonical color tokens (light/dark)
+- `src/styles/aiser-unified-design-system.css` — spacing, radius, shadows, component base styles
+- `src/styles/aiser-interaction-system.css` — hover, focus, overlay single-border (canonical interaction owner)
+- `src/styles/workspace-chrome.css` — flat layout workspaces (imported last)
 
 ---
 

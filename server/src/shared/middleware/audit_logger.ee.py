@@ -37,6 +37,12 @@ _AUDIT_PATTERNS = [
     ("POST", "/data/sources"),
     ("GET", "/charts/dashboards"),
     ("POST", "/charts/dashboards"),
+    ("GET", "/api/dashboards"),
+    ("POST", "/api/dashboards"),
+    ("GET", "/knowledge"),
+    ("POST", "/knowledge"),
+    ("GET", "/api/embed"),
+    ("POST", "/api/embed"),
     ("POST", "/echarts"),
     ("POST", "/api/users"),
     ("POST", "/auth"),
@@ -207,7 +213,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             category = "admin"
         elif "/billing" in path or "/subscriptions" in path:
             category = "billing"
-        elif "/semantic" in path or "/governance" in path:
+        elif "/semantic" in path or "/governance" in path or "/knowledge" in path:
+            category = "governance"
+        elif "/embed" in path:
             category = "governance"
 
         try:

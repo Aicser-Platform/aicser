@@ -11,6 +11,7 @@ class DashboardCreateRequest(BaseModel):
 
 class DashboardUpdateRequest(BaseModel):
     title: Optional[str] = None
+    description: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
 
 
@@ -18,6 +19,7 @@ class DashboardResponse(BaseModel):
     id: UUID
     project_id: Optional[UUID] = None
     title: Optional[str]
+    description: Optional[str] = None
     config: Optional[Dict[str, Any]]
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

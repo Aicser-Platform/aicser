@@ -116,9 +116,14 @@ class FeedServiceBaseMixin:
             first_name = parts[0]
             last_name = parts[1] if len(parts) > 1 else None
 
+        email = str(payload.get("email") or "").strip() or None
+        username = str(payload.get("username") or payload.get("preferred_username") or "").strip() or None
+
         user = User(
             id=user_id,
             user_id=user_id,
+            email=email,
+            username=username,
             first_name=first_name,
             last_name=last_name,
             company=payload.get("company") or payload.get("title"),

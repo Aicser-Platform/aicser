@@ -35,6 +35,9 @@ export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
 export const SubscriptionSettingsTab = (): null => null;
 export const ThemeCustomizer         = (_props: ThemeCustomizerProps): null => null;
+export const OnboardingBootstrap     = (): null => null;
+export const EnhancedOnboardingModal = (): null => null;
+export const FeaturebaseMessenger    = (): null => null;
 export function BrandThemeProvider({ children }: ProviderProps) {
   return children;
 }
@@ -65,6 +68,7 @@ export async function updateEeUserPassword(_password: string): Promise<boolean> 
 }
 export function loginWithKeycloak(): void {}
 export async function handleKeycloakCallback(_code: string): Promise<void> {}
+export function isKeycloakConfigured(): boolean { return false; }
 
 // ── Organization stubs ──────────────────────────────────────────────────────
 export const organizationKeys = {
@@ -152,6 +156,11 @@ export function useOnboarding() {
   return {
     isComplete: true,
     isLoading: false,
+    isOnboardingActive: false,
+    startOnboarding: () => {},
+    skipOnboarding: () => {},
+    shouldOfferOnboardingMinimal: () => false,
+    recordOnboardingNudgeAfterOffer: () => {},
     steps: [] as unknown[],
     currentStep: null,
     advance: async () => {},

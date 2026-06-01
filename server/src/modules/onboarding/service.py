@@ -131,26 +131,31 @@ class OnboardingService:
                 personal = d.get("personal", d) if isinstance(d.get("personal"), dict) else d
                 first_name_val = personal.get("firstName") or personal.get("first_name")
                 last_name_val = personal.get("lastName") or personal.get("last_name")
+                if not first_name_val and isinstance(d.get("displayName"), str):
+                    parts = d["displayName"].strip().split(None, 1)
+                    first_name_val = parts[0] if parts else None
+                    last_name_val = parts[1] if len(parts) > 1 else None
                 if not first_name_val and isinstance(d.get("name"), str):
                     first_name_val = d["name"].strip()
-                company_val = personal.get("organization") or personal.get("company")
-                raw_role = personal.get("role") or personal.get("job_role")
+            elif step == "company" and isinstance(data, dict):
+                company_val = data.get("organization") or data.get("company")
+            elif step == "role" and isinstance(data, dict):
+                raw_role = data.get("role") or data.get("job_role")
                 job_role_val = raw_role if isinstance(raw_role, str) else None
-                industry_val = personal.get("industry")
-                company_size_val = personal.get("companySize") or personal.get("company_size")
-                data_experience_val = personal.get("dataExperience") or personal.get("data_experience")
-                primary_use_case_val = personal.get("primaryUseCase") or personal.get("primary_use_case")
-                data_frequency_val = personal.get("dataFrequency") or personal.get("data_frequency")
-                goals_raw = personal.get("goals", [])
-                if isinstance(goals_raw, list) and goals_raw:
-                    import json as _json_inline
-                    goals_strings = []
-                    for g in goals_raw:
-                        if isinstance(g, str):
-                            goals_strings.append(g)
-                        elif isinstance(g, dict):
-                            goals_strings.append(g.get("value") or g.get("label") or str(g))
-                    goals_json_val = _json_inline.dumps(goals_strings) if goals_strings else None
+            elif step == "primary_goal" and isinstance(data, dict):
+                primary_use_case_val = data.get("primaryGoal") or data.get("primary_goal")
+                goal_val = primary_use_case_val
+                if goal_val:
+                    import json as _json_goal
+                    goals_json_val = _json_goal.dumps([str(goal_val)])
+            elif step == "industry" and isinstance(data, dict):
+                industry_val = data.get("industry")
+            elif step == "company_size" and isinstance(data, dict):
+                company_size_val = data.get("companySize") or data.get("company_size")
+            elif step == "experience" and isinstance(data, dict):
+                data_experience_val = data.get("experienceLevel") or data.get("dataExperience")
+            elif step in ("workspace", "organization") and isinstance(data, dict):
+                pass  # workspace name stored in onboarding_data only until complete
 
             # Save to database
             import json
@@ -275,36 +280,80 @@ class OnboardingService:
             goals_section = od.get("goals", {}) if isinstance(od.get("goals"), dict) else {}
             plan_selection = od.get("plan", {}) if isinstance(od.get("plan"), dict) else {}
             
-            # Fallback to incremental keys (welcome, organization) if structured ones are empty
+            # Fallback to incremental step keys if structured payload is empty
             db_od: Dict[str, Any] = db_onboarding_data
             welcome = db_od.get("welcome", {}) if isinstance(db_od.get("welcome"), dict) else {}
+            name_inc = db_od.get("name", {}) if isinstance(db_od.get("name"), dict) else {}
+            company_inc = db_od.get("company", {}) if isinstance(db_od.get("company"), dict) else {}
+            role_inc = db_od.get("role", {}) if isinstance(db_od.get("role"), dict) else {}
+            goal_inc = db_od.get("primary_goal", {}) if isinstance(db_od.get("primary_goal"), dict) else {}
+            industry_inc = db_od.get("industry", {}) if isinstance(db_od.get("industry"), dict) else {}
+            company_size_inc = db_od.get("company_size", {}) if isinstance(db_od.get("company_size"), dict) else {}
+            experience_inc = db_od.get("experience", {}) if isinstance(db_od.get("experience"), dict) else {}
             org_inc = db_od.get("organization", {}) if isinstance(db_od.get("organization"), dict) else {}
-            
-            first_name = personal.get("firstName") or welcome.get("firstName") or welcome.get("first_name")
-            last_name = personal.get("lastName") or welcome.get("lastName") or welcome.get("last_name")
-            role = personal.get("role") or personal.get("job_role") or welcome.get("role")
-            industry = personal.get("industry") or welcome.get("industry")
-            company_size = personal.get("companySize") or welcome.get("companySize") or welcome.get("company_size")
-            
-            # Goals and experience
-            experience_level = goals_section.get("experienceLevel") or welcome.get("dataExperience")
-            primary_goal = goals_section.get("primaryGoal") or welcome.get("primaryUseCase")
+            workspace_inc = db_od.get("workspace", {}) if isinstance(db_od.get("workspace"), dict) else {}
+
+            first_name = (
+                personal.get("firstName")
+                or name_inc.get("firstName")
+                or welcome.get("firstName")
+                or welcome.get("first_name")
+            )
+            last_name = (
+                personal.get("lastName")
+                or name_inc.get("lastName")
+                or welcome.get("lastName")
+                or welcome.get("last_name")
+            )
+            role = (
+                personal.get("role")
+                or role_inc.get("role")
+                or welcome.get("role")
+            )
+            industry = (
+                personal.get("industry")
+                or industry_inc.get("industry")
+                or welcome.get("industry")
+            )
+            company_size = (
+                personal.get("companySize")
+                or company_size_inc.get("companySize")
+                or company_size_inc.get("company_size")
+                or welcome.get("companySize")
+                or welcome.get("company_size")
+            )
+
+            experience_level = (
+                goals_section.get("experienceLevel")
+                or experience_inc.get("experienceLevel")
+                or experience_inc.get("dataExperience")
+                or welcome.get("dataExperience")
+            )
+            primary_goal = (
+                goals_section.get("primaryGoal")
+                or goal_inc.get("primaryGoal")
+                or welcome.get("primaryUseCase")
+            )
             data_frequency = goals_section.get("dataFrequency") or welcome.get("dataFrequency")
-            
+
             goals_raw = goals_section.get("goals", []) or welcome.get("goals", [])
 
-            # Resolve names for org/project provisioning
             org_name = (
                 personal.get("company")
+                or company_inc.get("company")
+                or company_inc.get("organization")
                 or welcome.get("company")
                 or welcome.get("organization")
                 or workspace.get("name")
+                or workspace_inc.get("name")
                 or org_inc.get("workspaceName")
                 or f"{first_name or 'User'}'s Organization"
             )
 
             project_name = (
                 workspace.get("name")
+                or workspace_inc.get("name")
+                or org_inc.get("workspaceName")
                 or org_inc.get("workspaceName")
                 or f"{first_name or 'User'}'s Project"
             )
@@ -486,8 +535,12 @@ class OnboardingService:
             await self.db.commit()
 
             # ── 6. Provision trial subscription if requested ─────────────
-            enable_pro_trial = plan_selection.get("enableProTrial", False)
-            enable_team_trial = plan_selection.get("enableTeamTrial", False)
+            enable_pro_trial = bool(plan_selection.get("enableProTrial", False))
+            enable_team_trial = plan_selection.get("enableTeamTrial")
+            if enable_team_trial is None and selected_plan == "team":
+                enable_team_trial = True
+            else:
+                enable_team_trial = bool(enable_team_trial)
             trial_plan = None
             if enable_pro_trial:
                 trial_plan = "pro"
@@ -540,6 +593,20 @@ class OnboardingService:
 
         Always returns the real `organization_id` (UUID string).
         """
+        from src.core.deployment_mode import is_self_host_deployment
+        from src.modules.organizations.deployment_org import (
+            ensure_deployment_organization,
+            ensure_self_host_user_membership,
+        )
+
+        if is_self_host_deployment():
+            org = await ensure_deployment_organization()
+            await ensure_self_host_user_membership(user_id)
+            return {
+                "organization_id": org.id,
+                "organization_name": org.name,
+            }
+
         # Convert user_id to UUID
         u_id = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
 
@@ -671,6 +738,51 @@ class OnboardingService:
             proj_row = result.fetchone()
             project_id = proj_row.id
             logger.info(f"Created project {project_id} '{project_name}' for org {organization_id}")
+
+        # Ensure user has project_owner on this project (required for EE project APIs)
+        try:
+            role_row = await self.db.execute(
+                text("""
+                    SELECT id FROM roles
+                    WHERE  name  = 'project_owner'
+                      AND  scope = 'project'
+                    LIMIT 1
+                """),
+            )
+            owner_role = role_row.fetchone()
+            if owner_role:
+                existing_project_role = await self.db.execute(
+                    text("""
+                        SELECT id FROM user_roles
+                        WHERE  user_id = :user_id
+                          AND  project_id = :project_id
+                          AND  is_active = true
+                        LIMIT 1
+                    """),
+                    {"user_id": u_id, "project_id": project_id},
+                )
+                if not existing_project_role.fetchone():
+                    await self.db.execute(
+                        text("""
+                            INSERT INTO user_roles
+                                (user_id, role_id, organization_id, project_id)
+                            VALUES (:user_id, :role_id, :organization_id, :project_id)
+                            ON CONFLICT DO NOTHING
+                        """),
+                        {
+                            "user_id": u_id,
+                            "role_id": owner_role.id,
+                            "organization_id": organization_id,
+                            "project_id": project_id,
+                        },
+                    )
+                    logger.info(
+                        "Assigned project_owner on project %s for user %s",
+                        project_id,
+                        user_id,
+                    )
+        except Exception as role_err:
+            logger.warning(f"Could not assign project_owner role (non-fatal): {role_err}")
 
         return {
             "project_id": project_id,

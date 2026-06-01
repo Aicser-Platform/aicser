@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Proxy for backend POST /ai/query-editor/generate-code.
@@ -15,10 +16,7 @@ export async function POST(request: NextRequest) {
       'Accept': 'application/json',
     };
 
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-    const cookieHeader = request.headers.get('Cookie');
-    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const response = await fetch(`${backendBase}/ai/query-editor/generate-code`, {
       method: 'POST',

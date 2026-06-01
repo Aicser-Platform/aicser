@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Button, Progress, Space, Steps } from 'antd';
+import { useTranslations } from 'next-intl';
 
 export interface WorkflowStep {
   key: string;
@@ -39,6 +40,7 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
   showProgress = false,
   customActions,
 }) => {
+  const t = useTranslations('workflow');
   const isLast = currentStep === totalSteps - 1;
   const progressPercent = Math.round(((currentStep + 1) / totalSteps) * 100);
 
@@ -63,22 +65,22 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
           status: s.isCompleted
             ? 'finish'
             : steps.indexOf(s) === currentStep
-            ? 'process'
-            : steps.indexOf(s) < currentStep
-            ? 'finish'
-            : 'wait',
+              ? 'process'
+              : steps.indexOf(s) < currentStep
+                ? 'finish'
+                : 'wait',
         }))}
         onChange={onStepChange}
       />
 
       <Space style={{ justifyContent: 'flex-end', width: '100%', display: 'flex' }}>
         <Button onClick={onCancel} disabled={loading}>
-          Cancel
+          {t('cancel')}
         </Button>
 
         {currentStep > 0 && (
           <Button onClick={() => onStepChange(currentStep - 1)} disabled={loading}>
-            Previous
+            {t('previous')}
           </Button>
         )}
 
@@ -86,7 +88,7 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
 
         {onSave && steps[currentStep]?.canSkip && (
           <Button onClick={onSave} disabled={loading}>
-            Save &amp; Skip
+            {t('save_skip')}
           </Button>
         )}
 
@@ -97,7 +99,7 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
             disabled={!canProceed || loading}
             loading={loading}
           >
-            Next
+            {t('next')}
           </Button>
         ) : (
           <Button
@@ -106,7 +108,7 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
             disabled={!canProceed || loading}
             loading={loading}
           >
-            Complete
+            {t('complete')}
           </Button>
         )}
       </Space>

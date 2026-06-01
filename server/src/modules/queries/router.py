@@ -14,6 +14,7 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
+from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.pricing.rate_limiter import RateLimiter
 from src.modules.pricing.plans import is_feature_available
 from fastapi import status
@@ -38,6 +39,18 @@ def _resolve_user_payload(token_or_dict: Any) -> Dict[str, Any]:
         return extract_user_payload(token_or_dict)
     except Exception:
         return {}
+
+
+async def _guard_query(
+    current_user: Any,
+    permission: str,
+    *,
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> None:
+    payload = _resolve_user_payload(current_user)
+    uid = user_id_from_payload(payload)
+    await require_permission(uid, permission, organization_id=organization_id, project_id=project_id)
 
 
 async def ensure_tables(db: AsyncSession):
@@ -213,6 +226,7 @@ async def list_saved_queries(
     db: AsyncSession = Depends(get_async_session)
 ):
     await ensure_tables(db)
+    await _guard_query(current_user, "query:execute", organization_id=organization_id, project_id=project_id)
     user_payload = _resolve_user_payload(current_user)
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
     try:
@@ -247,6 +261,7 @@ async def save_query(
     db: AsyncSession = Depends(get_async_session)
 ):
     await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
     user_payload = _resolve_user_payload(current_user)
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
     name = payload.get("name")
@@ -305,6 +320,7 @@ async def update_saved_query(
 ):
     """Update an existing saved query by id (same scope as list/save). Saves previous sql to version history."""
     await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
     user_payload = _resolve_user_payload(current_user)
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
     name = payload.get("name")
@@ -433,6 +449,7 @@ async def delete_saved_query(
 ):
     """Delete a saved query"""
     await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
     user_payload = _resolve_user_payload(current_user)
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
     try:
@@ -790,8 +807,8 @@ async def create_snapshot(
                 exec_time = None
             else:
                 # Use multi-engine execution path
-                from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService
-                multi = MultiEngineQueryService()
+                from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+                multi = get_multi_engine_query_service()
                 exec_maybe = multi.execute_query(sql, ds, engine=None, optimization=True)
                 exec_result = await exec_maybe if inspect.isawaitable(exec_maybe) else exec_maybe
 

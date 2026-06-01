@@ -1,0 +1,52 @@
+{
+  "name": "@aicser/embed",
+  "version": "0.2.1",
+  "description": "Embed Aicser dashboards, charts, and chat in iframes with postMessage helpers and SSO-ready JWT tokens",
+  "license": "AGPL-3.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@sentry/browser": "^8.55.2",
+    "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "@sentry/browser": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@sentry/browser": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aicser/aicser.git",
+    "directory": "packages/embed"
+  },
+  "keywords": [
+    "aicser",
+    "embed",
+    "iframe",
+    "analytics",
+    "dashboard"
+  ]
+}

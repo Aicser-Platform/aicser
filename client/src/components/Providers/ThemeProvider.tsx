@@ -1,6 +1,7 @@
 'use client';
 
 import { ConfigProvider, theme } from 'antd';
+import { MULTILINGUAL_FONT_STACK } from '@/config/typography';
 import { ThemeModeContext } from './ThemeModeContext';
 import { ReactNode, useLayoutEffect, useState, useEffect, useMemo } from 'react';
 
@@ -261,7 +262,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         
                         // Typography - Enhanced for premium feel
                         fontSize: 14,
-                        fontFamily: '"Inter", "Noto Sans", "Noto Sans Khmer", "Siemreap", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                        fontFamily: MULTILINGUAL_FONT_STACK,
                         fontSizeHeading1: 38,
                         fontSizeHeading2: 30,
                         fontSizeHeading3: 24,

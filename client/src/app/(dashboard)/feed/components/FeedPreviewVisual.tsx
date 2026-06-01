@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { BulbOutlined } from '@ant-design/icons';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   Area,
   AreaChart,
@@ -23,6 +23,7 @@ import type { FeedAssetPreview, FeedItem, FeedPreviewType } from '@/services/soc
 import { chartService } from '../../dashboards/services/chartService';
 import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
+import { FeedPostViewer } from './FeedPostViewer';
 
 interface FeedPreviewVisualProps {
   item: FeedItem;
@@ -32,16 +33,7 @@ interface FeedPreviewVisualProps {
 
 const PIE_COLORS = ['#1877f2', '#38bdf8', '#f59e0b', '#10b981'];
 const DASHBOARD_PREVIEW_LIMIT = 4;
-const DASHBOARD_PREVIEW_MIN_HEIGHT = 160;
-const DASHBOARD_PREVIEW_CHART_CONFIG = {
-  legendFontSize: 14,
-  legendFontWeight: 400,
-  axisLabelFontSize: 12,
-  axisLabelColor: 'var(--ant-color-text-secondary)',
-  gridLineOpacity: 0.15,
-  lineWidth: 3,
-  symbolSize: 6,
-};
+const INSIGHT_CHART_MIN_HEIGHT = 200;
 
 type ChartPoint = {
   label: string;
@@ -102,15 +94,15 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
             <AreaChart data={series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--feed-accent)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="var(--feed-accent)" stopOpacity={0.05} />
+                  <stop offset="5%" stopColor="var(--ant-color-primary)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="var(--ant-color-primary)" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
               <YAxis hide />
               <Area
                 type="monotone"
                 dataKey="value"
-                stroke="var(--feed-accent)"
+                stroke="var(--ant-color-primary)"
                 strokeWidth={2}
                 fill={`url(#${gradientId})`}
               />
@@ -145,18 +137,18 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
             <AreaChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--feed-accent)" stopOpacity={0.45} />
-                  <stop offset="95%" stopColor="var(--feed-accent)" stopOpacity={0.05} />
+                  <stop offset="5%" stopColor="var(--ant-color-primary)" stopOpacity={0.45} />
+                  <stop offset="95%" stopColor="var(--ant-color-primary)" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="var(--feed-border)" strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="label" axisLine={false} tickLine={false} tick={tickStyle} />
               <YAxis hide />
               {showTooltip && <Tooltip cursor={false} contentStyle={tooltipStyle} />}
               <Area
                 type="monotone"
                 dataKey="value"
-                stroke="var(--feed-accent)"
+                stroke="var(--ant-color-primary)"
                 strokeWidth={2.5}
                 fillOpacity={1}
                 fill={`url(#${gradientId})`}
@@ -202,17 +194,17 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
       <div className={chartClass}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-            {!compact && <CartesianGrid stroke="var(--feed-border)" strokeDasharray="3 3" vertical={false} />}
+            {!compact && <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />}
             <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
             <YAxis hide />
             {showTooltip && <Tooltip cursor={false} contentStyle={tooltipStyle} />}
             <Line
               type="monotone"
               dataKey="value"
-              stroke="var(--feed-accent)"
+              stroke="var(--ant-color-primary)"
               strokeWidth={compact ? 2 : 3}
               dot={false}
-              activeDot={compact ? false : { r: 4, fill: 'var(--feed-accent)', stroke: '#ffffff', strokeWidth: 2 }}
+              activeDot={compact ? false : { r: 4, fill: 'var(--ant-color-primary)', stroke: '#ffffff', strokeWidth: 2 }}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -224,179 +216,139 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
     <div className={chartClass}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-          {!compact && <CartesianGrid stroke="var(--feed-border)" strokeDasharray="3 3" vertical={false} />}
+          {!compact && <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />}
           <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
           <YAxis hide />
-          {showTooltip && <Tooltip cursor={{ fill: 'rgba(17, 197, 217, 0.08)' }} contentStyle={tooltipStyle} />}
-          <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="var(--feed-accent)" />
+          {showTooltip && <Tooltip cursor={{ fill: 'var(--ant-color-primary-bg)' }} contentStyle={tooltipStyle} />}
+          <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="var(--ant-color-primary)" />
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 };
 
+/**
+ * ChartLivePreview — renders a single `chart` type feed item using live data.
+ * Falls back to the Recharts sparkline if data cannot be fetched.
+ */
+const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
+  const [widget, setWidget] = useState<WidgetInstance | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const dashboardId = item.asset.dashboardId;
+    const chartId = item.assetId;
+    if (!dashboardId || !chartId) { setLoading(false); return; }
+
+    let cancelled = false;
+    Promise.all([
+      chartService.getChart(dashboardId, chartId),
+      chartService.executeChart(dashboardId, chartId).catch(() => null),
+    ])
+      .then(([chart, execution]) => {
+        if (cancelled) return;
+        const chartOptions = { ...(chart.chartOptions || {}), ...DASHBOARD_PREVIEW_CHART_CONFIG };
+        setWidget({
+          id: `feed-chart-${item.id}`,
+          title: chart.title || item.title,
+          chartType: chart.chartType as WidgetInstance['chartType'],
+          chartData: execution?.data ?? undefined,
+          chartOptions,
+          chartQuery: chart.chartQuery,
+          dataSourceId: chart.dataSourceId ?? null,
+          isLoading: false,
+          error: null,
+        } as WidgetInstance);
+      })
+      .catch(() => { if (!cancelled) setWidget(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [item.assetId, item.asset.dashboardId, item.id, item.title]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-full min-h-[180px] flex items-center justify-center">
+        <div className="w-full h-[180px] bg-[var(--ant-color-border-secondary)] animate-pulse rounded-lg" />
+      </div>
+    );
+  }
+
+  if (!widget) return null;
+
+  return (
+    <div className="w-full h-full min-h-[200px] p-3">
+      <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
+    </div>
+  );
+};
+
+const InsightChartPreview: React.FC<{ item: FeedItem }> = ({ item }) => {
+  const widget = useMemo((): WidgetInstance | null => {
+    const chartWidget = item.asset.chartWidget;
+    if (!chartWidget?.chartType) return null;
+    return {
+      id: `feed-insight-${item.id}`,
+      title: item.title,
+      chartType: chartWidget.chartType as WidgetInstance['chartType'],
+      chartData: chartWidget.chartData as WidgetInstance['chartData'],
+      chartOptions: chartWidget.chartOptions,
+      chartQuery: chartWidget.chartQuery,
+    };
+  }, [item]);
+
+  if (widget) {
+    return (
+      <div className="w-full h-full min-h-[200px] p-4">
+        <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
+      </div>
+    );
+  }
+
+  return null;
+};
+
 const DashboardLivePreview: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews, showOverflowBadge = false }) => {
   const router = useRouter();
+  const t = useTranslations('feed');
   const previewLimit =
     typeof maxPreviews === 'number' ? Math.min(maxPreviews, DASHBOARD_PREVIEW_LIMIT) : DASHBOARD_PREVIEW_LIMIT;
-  const [widgets, setWidgets] = useState<WidgetInstance[]>([]);
-  const [totalCharts, setTotalCharts] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState(0);
-
-  useEffect(() => {
-    if (item.assetType !== 'dashboard' || !item.assetId) return;
-
-    let active = true;
-    setLoading(true);
-    setError(null);
-
-    chartService
-      .listCharts(item.assetId)
-      .then(async (charts: any[]) => {
-        // Reverse so the most recently added chart appears first in the feed preview
-        const reversed = [...charts].reverse();
-        const limited = reversed.slice(0, previewLimit);
-        const widgetList = await Promise.all(
-          limited.map(async (chart) => {
-            const widgetId = `feed-${item.assetId}-${chart.id}`;
-            let chartData = undefined;
-            let chartError: string | null = null;
-            const chartOptions = { ...(chart.chartOptions || {}), ...DASHBOARD_PREVIEW_CHART_CONFIG };
-
-            if (chart.chartType === 'table') {
-              chartOptions.showPagination = false;
-              chartOptions.bordered = false;
-              chartOptions.size = 'small';
-            }
-
-            if (chart.chartType !== 'text') {
-              try {
-                const response = await chartService.executeChart(item.assetId, chart.id);
-                chartData = response.data;
-              } catch (err) {
-                chartError = err instanceof Error ? err.message : 'Failed to load chart data';
-              }
-            }
-
-            return {
-              id: widgetId,
-              chartId: chart.id,
-              dataSourceId: chart.dataSourceId ?? null,
-              title: chart.title || 'Untitled Chart',
-              chartType: chart.chartType,
-              chartQuery: chart.chartQuery,
-              chartOptions,
-              chartData,
-              isLoading: false,
-              error: chartError,
-            } as WidgetInstance;
-          })
-        );
-
-        if (!active) return;
-        setWidgets(widgetList);
-        setTotalCharts(reversed.length);
-      })
-      .catch((err) => {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard preview');
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [item.assetId, item.assetType, previewLimit, refreshToken]);
-
-  useEffect(() => {
-    const triggerRefresh = () => setRefreshToken((prev) => prev + 1);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') triggerRefresh();
-    };
-
-    window.addEventListener('focus', triggerRefresh);
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      window.removeEventListener('focus', triggerRefresh);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, []);
-
-  const gridCount = Math.min(Math.max(widgets.length, 1), DASHBOARD_PREVIEW_LIMIT);
+  const [totalWidgets, setTotalWidgets] = useState<number | null>(null);
 
   const handleViewDashboard = (event?: React.MouseEvent | React.KeyboardEvent) => {
     event?.stopPropagation();
     if (!item.assetId) return;
-    router.push('/dashboards');
+    router.push(`/feed/${encodeURIComponent(item.id)}`);
   };
 
-  if (loading && widgets.length === 0) {
-    const skeletonCount = previewLimit;
-    const skeletonGridClass = skeletonCount >= 2 ? `grid grid-cols-2 gap-3 w-full` : `grid grid-cols-1 w-full gap-2`;
-    return (
-      <div className={skeletonGridClass}>
-        {Array.from({ length: skeletonCount }).map((_, index) => (
-          <div
-            key={`dashboard-skeleton-${index}`}
-            className="relative bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl overflow-hidden shadow-sm aspect-video"
-          >
-            <div className="w-full h-full bg-[var(--ant-color-border-secondary)] animate-pulse rounded-lg" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (error || widgets.length === 0) {
-    return (
-      <div className="grid grid-cols-1 w-full gap-2">
-        <div className="flex items-center justify-center p-4 border border-dashed border-[var(--ant-color-border)] rounded-lg text-[var(--ant-color-text-description)] text-xs">
-          {error ? 'Unable to load dashboard preview' : 'No charts available'}
-        </div>
-      </div>
-    );
-  }
-
-  const overflow = Math.max(0, totalCharts - widgets.length);
+  const overflow = totalWidgets != null ? Math.max(0, totalWidgets - previewLimit) : 0;
 
   return (
-    <div
-      className={`grid gap-2 w-full ${gridCount >= 2 ? 'grid-cols-2' : 'grid-cols-1'} ${gridCount > 2 ? 'grid-rows-2' : ''}`}
-    >
-      {widgets.map((widget, index) => (
+    <div className="feed-dashboard-card-preview relative">
+      <FeedPostViewer
+        item={item}
+        variant="card"
+        maxWidgets={previewLimit}
+        onReady={({ widgetCount }) => setTotalWidgets(widgetCount)}
+      />
+      {showOverflowBadge && overflow > 0 ? (
         <div
-          key={widget.id}
-          className="relative bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-lg overflow-hidden shadow-sm aspect-[4/3]"
+          className="feed-dashboard-card-preview-overflow"
+          role="button"
+          tabIndex={0}
+          onClick={handleViewDashboard}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              handleViewDashboard(event);
+            }
+          }}
         >
-          <div className="absolute inset-0 p-2">
-            <div className="w-full h-full">
-              <WidgetPreview widget={widget} readOnly minHeight={DASHBOARD_PREVIEW_MIN_HEIGHT} />
-            </div>
-          </div>
-          {showOverflowBadge && overflow > 0 && index === widgets.length - 1 && (
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/60 backdrop-blur-sm text-white cursor-pointer z-10 hover:bg-gray-900/70 transition-colors"
-              role="button"
-              tabIndex={0}
-              onClick={handleViewDashboard}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  handleViewDashboard(event);
-                }
-              }}
-            >
-              <span className="font-semibold mb-1">View full dashboard</span>
-              <span className="text-sm opacity-80">{`${overflow} more charts`}</span>
-            </div>
-          )}
+          <span className="feed-dashboard-card-preview-overflow-title">{t('view_full_dashboard')}</span>
+          <span className="feed-dashboard-card-preview-overflow-meta">
+            {t('dashboard_overflow_charts', { count: overflow })}
+          </span>
         </div>
-      ))}
+      ) : null}
     </div>
   );
 };
@@ -406,6 +358,51 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
 
   if (item.assetType === 'dashboard') {
     return <DashboardLivePreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
+  }
+
+  // `chart` type — render live interactive chart via ECharts
+  if (item.assetType === 'chart') {
+    // If backend pre-serialised the chart widget, render it directly
+    const hasChartWidget = Boolean(item.asset.chartWidget?.chartType);
+    if (hasChartWidget) {
+      return <InsightChartPreview item={item} />;
+    }
+    // Otherwise fetch live data (needs dashboardId in asset)
+    if (item.asset.dashboardId || item.assetId) {
+      return <ChartLivePreview item={item} />;
+    }
+    // Final fallback: sparkline
+    if (previews.length > 0 && previews[0]?.data && previews[0].data.length > 0) {
+      return (
+        <div className="w-full h-full flex items-center justify-center p-4">
+          {renderPreview(previews[0], item.id, 0, false)}
+        </div>
+      );
+    }
+    return (
+      <div className="w-full h-full flex items-center justify-center p-8 text-sm text-[var(--ant-color-text-description)]">
+        {item.asset.previewLabel || item.title}
+      </div>
+    );
+  }
+
+  if (item.assetType === 'insight') {
+    const hasChartWidget = Boolean(item.asset.chartWidget?.chartType);
+    if (hasChartWidget) {
+      return <InsightChartPreview item={item} />;
+    }
+    if (previews.length > 0 && previews[0]?.data && previews[0].data.length > 0) {
+      return (
+        <div className="w-full h-full flex items-center justify-center p-4">
+          {renderPreview(previews[0], item.id, 0, false)}
+        </div>
+      );
+    }
+    return (
+      <div className="w-full h-full flex items-center justify-center p-8 text-sm text-[var(--ant-color-text-description)]">
+        {item.asset.previewLabel || item.title}
+      </div>
+    );
   }
 
   if (previews.length > 1) {
@@ -438,37 +435,9 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
     );
   }
 
-  // Single chart - wrap with insights strip
-  const summaryText =
-    item.asset.summary?.trim() || item.description?.trim() || 'Open this post to explore the full analysis.';
-  const tagsText = (item.tags ?? [])
-    .slice(0, 4)
-    .map((tag) => `#${tag}`)
-    .join(' ');
   return (
-    <div className="flex flex-col gap-3 w-full">
+    <div className="w-full h-full flex items-center justify-center p-4">
       {renderPreview(previews[0], item.id, 0, false)}
-      <div className="bg-[var(--ant-color-primary-bg)]/50 rounded-lg p-4 border border-[var(--ant-color-primary-border)] flex gap-3 mt-2">
-        <div className="shrink-0 mt-0.5">
-          <BulbOutlined className="text-[var(--ant-color-primary)] text-lg" />
-        </div>
-        <div className="flex flex-col gap-2 w-full">
-          <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2">
-            <span className="text-xs font-semibold text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)] px-2 py-0.5 rounded shadow-sm shrink-0 w-max">
-              Summary
-            </span>
-            <span className="text-sm text-[var(--ant-color-text)] leading-relaxed">{summaryText}</span>
-          </div>
-          {tagsText && (
-            <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-2 mt-1">
-              <span className="text-xs font-semibold text-[var(--ant-color-info)] bg-[var(--ant-color-info-bg)] px-2 py-0.5 rounded shadow-sm shrink-0 w-max">
-                Tags
-              </span>
-              <span className="text-sm text-[var(--ant-color-info)] font-medium">{tagsText}</span>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 };

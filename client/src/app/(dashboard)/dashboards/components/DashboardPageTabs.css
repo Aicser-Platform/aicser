@@ -1,0 +1,117 @@
+.dashboard-page-tabs-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--studio-border, rgba(0, 0, 0, 0.06));
+}
+
+.dashboard-page-tabs-bar.embedded {
+  margin-bottom: 0;
+  padding: 0;
+  border-bottom: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-page-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.dashboard-page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.dashboard-page-tab:hover {
+  background: var(--studio-primary-light);
+}
+
+.dashboard-page-tab.active {
+  background: var(--studio-primary-light);
+  border-color: rgba(0, 194, 203, 0.35);
+}
+
+.dashboard-page-tab.placeholder {
+  opacity: 0.65;
+}
+
+.dashboard-page-tab-label {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--studio-text-main);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
+}
+
+.dashboard-page-tab.active .dashboard-page-tab-label {
+  color: var(--studio-primary);
+  font-weight: 600;
+}
+
+.dashboard-page-inline-input {
+  width: 100px !important;
+  min-width: 80px;
+}
+
+.dashboard-page-add-input {
+  width: 120px !important;
+}
+
+.dashboard-page-add-btn {
+  color: var(--studio-text-muted) !important;
+  border-radius: 8px !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+
+.dashboard-page-add-btn:hover {
+  color: var(--studio-primary) !important;
+  background: var(--studio-primary-light) !important;
+}
+
+.dashboard-page-tab-menu {
+  opacity: 0.45;
+  padding: 0 2px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+}
+
+.dashboard-page-tab:hover .dashboard-page-tab-menu {
+  opacity: 1;
+}
+
+.dashboard-page-default-star {
+  color: var(--ant-color-warning, #faad14);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.dashboard-page-move-select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border, #d9d9d9);
+  background: var(--ant-color-bg-container, #fff);
+}

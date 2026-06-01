@@ -1,8 +1,9 @@
-# Dev stack: postgres, redis, chat2chart-server, chat2chart-client.
-# - No DuckDB container: sample data is a file (sample_data.duckdb) mounted into
-#   chat2chart-server at /app/sample-data/duckdb; set SAMPLE_DATA_DUCKDB_PATH there for sample_duckdb sources.
-# - ClickHouse is optional: start with --profile enterprise-sample if needed.
-# - Required: .env with POSTGRES_*, REDIS, SECRET_KEY; optional: Azure/OpenAI keys for AI.
+# Dev stack: postgres, redis, chat2chart-server, optional client (ce/ee profiles).
+# - Sample data: DuckDB file via ensure_sample_data (no ClickHouse required).
+# - Keycloak (EE SSO): profile `ee` — http://localhost:8080, realm `aiser`.
+# - ClickHouse (optional warehouse demos): profile `warehouse` only.
+# - Observability (Prometheus, Grafana, OTel Collector): profile `observability`.
+# - Background jobs (ARQ worker): profile `worker`.
 services:
   # PostgreSQL Database
   postgres:
@@ -42,44 +43,24 @@ services:
       timeout: 5s
       retries: 5
 
-  # ClickHouse Data Warehouse (optional: use profile "enterprise-sample" to start)
-  # Sample data for demos/onboarding uses DuckDB (scripts/sample-data) instead.
+  # Optional OLAP warehouse (not required for EE dev — sample data uses DuckDB).
   clickhouse:
     image: clickhouse/clickhouse-server:24.8-alpine
     container_name: aiser-clickhouse-dev
     profiles:
-      - enterprise-sample
+      - warehouse
     ports:
-      - "8123:8123" # HTTP interface
-      - "9000:9000" # Native interface
+      - "8123:8123"
+      - "9000:9000"
     environment:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
-      CLICKHOUSE_HOST: 0.0.0.0
-      CLICKHOUSE_PORT: 8123
     volumes:
       - clickhouse_dev_data:/var/lib/clickhouse
-      - ./scripts/clickhouse-init:/docker-entrypoint-initdb.d
-      - ./clickhouse-config/users.xml:/etc/clickhouse-server/users.d/custom-users.xml:ro
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        /entrypoint.sh &
-        sleep 5
-        /docker-entrypoint-initdb.d/02-insert-data.sh || true
-        wait
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://127.0.0.1:8123/ping",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -87,8 +68,24 @@ services:
       nofile:
         soft: 262144
         hard: 262144
-    networks:
-      - default
+
+  # Keycloak OIDC (EE SSO) — own container, imported realm on first start.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: aiser-keycloak-dev
+    profiles:
+      - ee
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      KC_METRICS_ENABLED: "true"
+    volumes:
+      - ./keycloak/aiser-realm.json:/opt/keycloak/data/import/aiser-realm.json:ro
+    ports:
+      - "8080:8080"
 
   # Chat2Chart Server
   chat2chart-server:
@@ -118,12 +115,19 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
       - AISER_EDITION=${AISER_EDITION:-community}
       - AISER_EDITION_LICENSE_KEY=${AISER_EDITION_LICENSE_KEY:-}
+      - AISER_DEPLOYMENT_MODE=${AISER_DEPLOYMENT_MODE:-self_host}
+      - AISER_ORG_NAME=${AISER_ORG_NAME:-Aicser}
       - ENVIRONMENT=${ENVIRONMENT:-development}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - DEBUG=${APP_DEBUG:-true}
       - ALLOW_UNVERIFIED_JWT_IN_DEV=${ALLOW_UNVERIFIED_JWT_IN_DEV:-true}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_URL=redis://redis:6379
+      - LANGGRAPH_CHECKPOINT_POSTGRES_URI=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-aiser_world_db}
+      - AISER_CHECKPOINTER_ENABLED=${AISER_CHECKPOINTER_ENABLED:-true}
+      - AISER_AI_JOB_QUEUE=${AISER_AI_JOB_QUEUE:-false}
+      - AISER_ORG_LLM_CONCURRENCY=${AISER_ORG_LLM_CONCURRENCY:-5}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
@@ -135,11 +139,17 @@ services:
       - AZURE_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_API_BASE=${AZURE_OPENAI_ENDPOINT}
       - AZURE_API_VERSION=${AZURE_OPENAI_API_VERSION}
-      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-aiser}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      # Optional ClickHouse (only when --profile warehouse is active)
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST:-clickhouse}
       - CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-8123}
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-aiser_warehouse}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-aiser}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      # Keycloak OIDC (EE SSO)
+      - KEYCLOAK_URL=${KEYCLOAK_URL:-http://keycloak:8080}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-aiser}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_BACKEND_CLIENT_ID:-aiser-backend}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-aiser-backend-dev-secret}
       # JWT_SECRET: from Supabase Dashboard → Project Settings → API → JWT Secret (enables token verification; avoids "JWK Set did not contain any keys")
       - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-here}
       # ENCRYPTION_KEY: generate with python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" (encrypts data source credentials at rest)
@@ -175,6 +185,14 @@ services:
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
       - S3_REGION=${S3_REGION:-us-east-1}
+      # Observability (optional — use with --profile observability)
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-aiser-api}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_TRACES_CONSOLE=${OTEL_TRACES_CONSOLE:-false}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+      - SENTRY_TRACES_SAMPLE_RATE=${SENTRY_TRACES_SAMPLE_RATE:-0.1}
     networks:
       - default
     depends_on:
@@ -199,6 +217,10 @@ services:
         /venv/bin/python -m alembic -c alembic.ini upgrade heads || exit 1;
         echo "Ensuring sample data (DuckDB)...";
         if [ -f /app/scripts/ensure_sample_data.py ]; then /venv/bin/python /app/scripts/ensure_sample_data.py || true; else echo "  (ensure_sample_data.py not found, skipping)"; fi;
+        echo "Seeding RBAC roles and permissions...";
+        if [ -f /app/ee/scripts/seed_rbac.py ]; then /venv/bin/python /app/ee/scripts/seed_rbac.py || true; else echo "  (seed_rbac.py not found, skipping)"; fi;
+        echo "Ensuring deployment organization (self-host)...";
+        if [ -f /app/ee/scripts/seed_deployment_org.py ]; then /venv/bin/python /app/ee/scripts/seed_deployment_org.py || true; else echo "  (seed_deployment_org.py not found, skipping)"; fi;
         echo "Starting chat2chart-server...";
         /venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload;
         # Uncomment this to use debugpy
@@ -231,9 +253,18 @@ services:
       - API_TARGET=http://chat2chart-server:8000
       - PORT=3000
       - NEXT_DEV_TURBO=${NEXT_DEV_TURBO:-false}
-      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
+      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2560}
+      - NEXT_DEV_CPUS=${NEXT_DEV_CPUS:-}
       - WATCHPACK_POLLING=${WATCHPACK_POLLING:-false}
       - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+      - NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - NEXT_PUBLIC_SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+      - NEXT_PUBLIC_OTEL_ENABLED=${NEXT_PUBLIC_OTEL_ENABLED:-false}
+      - NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=${NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318/v1/traces}
+      - NEXT_PUBLIC_OTEL_SERVICE_NAME=${NEXT_PUBLIC_OTEL_SERVICE_NAME:-aicser-client}
+    # EE-sized monorepo (Monaco, Sentry, OTel) — raise if dev still hits Next.js memory restart
+    mem_limit: ${CLIENT_DEV_MEM_LIMIT:-4g}
     ports:
       - "3000:3000"
     volumes:
@@ -266,14 +297,29 @@ services:
       - NEXT_PUBLIC_EDITION=enterprise
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - API_TARGET=http://chat2chart-server:8000
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      - NEXT_PUBLIC_KEYCLOAK_URL=${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:8080}
+      - NEXT_PUBLIC_KEYCLOAK_REALM=${KEYCLOAK_REALM:-aiser}
+      - NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
       - PORT=3001
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL:-}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
       - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       - NEXT_DEV_TURBO=${NEXT_DEV_TURBO:-false}
-      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
+      - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2560}
+      - NEXT_DEV_CPUS=${NEXT_DEV_CPUS:-}
       - WATCHPACK_POLLING=${WATCHPACK_POLLING:-false}
       - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
+      - NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - NEXT_PUBLIC_SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+      - NEXT_PUBLIC_OTEL_ENABLED=${NEXT_PUBLIC_OTEL_ENABLED:-false}
+      - NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT=${NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318/v1/traces}
+      - NEXT_PUBLIC_OTEL_SERVICE_NAME=${NEXT_PUBLIC_OTEL_SERVICE_NAME:-aicser-client}
+    # PWA: `next dev` does not register the service worker. For PWA testing use
+    # docker compose -f docker-compose.ee.yml build client (production image).
+    mem_limit: ${CLIENT_DEV_MEM_LIMIT:-4g}
     ports:
       - "3001:3001"
     volumes:
@@ -288,6 +334,116 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ARQ background worker (retention, alerts, scheduled reports).
+  chat2chart-worker:
+    image: aiser-chat2chart-server:dev
+    build:
+      context: ../server
+      dockerfile: Dockerfile.dev
+    container_name: aiser-worker-dev
+    profiles:
+      - worker
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ../server:/app
+      - pip_cache:/root/.cache/pip
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-aiser_world_db}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-123}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-aiser_world_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - AISER_EDITION=${AISER_EDITION:-community}
+      - PYTHONPATH=/app
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_SERVICE_NAME=${OTEL_WORKER_SERVICE_NAME:-aiser-worker}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: ["/venv/bin/python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+    restart: unless-stopped
+
+  # Prometheus — scrapes chat2chart-server /metrics (profile `observability`).
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: aiser-prometheus-dev
+    profiles:
+      - observability
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_dev_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+
+  # Grafana — dashboards for Prometheus (profile `observability`).
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: aiser-grafana-dev
+    profiles:
+      - observability
+    ports:
+      - "3030:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_dev_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+  # OpenTelemetry Collector — receives OTLP from the API (profile `observability`).
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    container_name: aiser-otel-collector-dev
+    profiles:
+      - observability
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: aiser-postgres-exporter-dev
+    profiles:
+      - observability
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: aiser-redis-exporter-dev
+    profiles:
+      - observability
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_dev_data:
   redis_dev_data:
@@ -301,6 +457,8 @@ volumes:
   client_ee_ee_shim:
   client_ce_next:
   client_ee_next:
+  prometheus_dev_data:
+  grafana_dev_data:
 
 networks:
   default:
@@ -308,5 +466,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
-          gateway: 172.20.0.1
+        - subnet: 172.22.0.0/16
+          gateway: 172.22.0.1

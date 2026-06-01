@@ -18,7 +18,8 @@ const eeShimFile = path.join(eeShimDir, 'index.ts');
 
 mkdirSync(eeShimDir, { recursive: true });
 
-const isEnterprise = process.env.EDITION === 'enterprise';
+const edition = (process.env.EDITION || process.env.NEXT_PUBLIC_EDITION || '').toLowerCase();
+const isEnterprise = edition === 'enterprise' || edition === 'ee';
 
 if (isEnterprise && existsSync(eeIndex)) {
   writeFileSync(

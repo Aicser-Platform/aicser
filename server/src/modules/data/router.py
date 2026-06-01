@@ -25,9 +25,12 @@ from .services.data_retention_service import DataRetentionService
 from src.modules.data.services.multi_engine_query_service import (
     MultiEngineQueryService,
     QueryEngine,
+    get_multi_engine_query_service,
     invalidate_api_response_cache,
 )
+from src.modules.data.cube_feature import is_external_cube_enabled
 from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload, data_rbac_guard
 
 # EE-only services. Keep these out of the CE import path because several of
 # them pull in large AI/connector stacks during module import.
@@ -106,6 +109,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def _require_external_cube() -> None:
+    if not is_external_cube_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="External Cube.js is disabled. Set AICSER_EXTERNAL_CUBE_ENABLED=true to enable.",
+        )
+
 # Service Instantiations
 data_service = DataConnectivityService()
 data_crud_service = DataSourcesCRUD()
@@ -115,7 +126,7 @@ database_connector = DatabaseConnectorService()
 intelligent_data_modeling_service = (
     IntelligentDataModelingService() if IntelligentDataModelingService else None
 )
-multi_engine_service = MultiEngineQueryService()
+multi_engine_service = get_multi_engine_query_service()
 enterprise_connectors_service = (
     EnterpriseConnectorsService() if EnterpriseConnectorsService else None
 )
@@ -641,17 +652,12 @@ async def connect_database(request: DatabaseConnectionRequest, current_token: Un
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Authentication required')
 
         # RBAC: verify user has data:connect permission
-        # has_perm = await RBACService.check_permission(
-        #     user_id=user_id,
-        #     permission_code="data:connect",
-        #     organization_id=str(user_payload.get('organization_id') or ''),
-        #     project_id=str(user_payload.get('project_id') or '')
-        # )
-        # if not has_perm:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_403_FORBIDDEN,
-        #         detail="You do not have permission to connect data sources (data:connect required)"
-        #     )
+        await require_permission(
+            user_id,
+            "data:connect",
+            organization_id=str(user_payload.get("organization_id") or user_payload.get("org_id") or "") or None,
+            project_id=str(user_payload.get("project_id") or "") or None,
+        )
 
         # Enforce data source limit based on plan
         org_id = str(user_payload.get('organization_id') or user_payload.get('org_id') or f"user-{user_id}")
@@ -1064,17 +1070,13 @@ async def upload_file(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Authentication required')
 
         # RBAC: verify user has data:upload permission
-        # has_perm = await RBACService.check_permission(
-        #     user_id=user_id,
-        #     permission_code="data:upload",
-        #     organization_id=str(current_token.get('organization_id') or ''),
-        #     project_id=str(project_id or '')
-        # )
-        # if not has_perm:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_403_FORBIDDEN,
-        #         detail="You do not have permission to upload data sources (data:upload required)"
-        #     )
+        upload_payload = current_token if isinstance(current_token, dict) else {}
+        await require_permission(
+            user_id,
+            "data:upload",
+            organization_id=str(upload_payload.get("organization_id") or upload_payload.get("org_id") or "") or None,
+            project_id=str(project_id or "") or None,
+        )
 
         # Enforce data source limit based on plan.
         # enforce_data_source_limit also resolves the real org_id from user_roles when the
@@ -1324,15 +1326,15 @@ async def get_data_source(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Query data source endpoint
-@router.post("/sources/{data_source_id}/query")
+# Query data source endpoint (deprecated — use POST /data/query/execute)
+@router.post("/sources/{data_source_id}/query", deprecated=True)
 async def query_data_source(
     data_source_id: str,
     request: DataSourceQueryRequest,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session)
 ):
-    """Query data from data source - REQUIRES AUTHENTICATION and ownership verification"""
+    """Query data from data source. Deprecated: prefer POST /data/query/execute."""
     try:
         # Extract user ID from JWT token - CRITICAL for security
         try:
@@ -1399,7 +1401,9 @@ async def query_data_source(
                 "total_rows": result.get('total_rows', len(result['data'])),
                 "offset": result.get('offset', 0),
                 "limit": result.get('limit', len(result['data'])),
-                "schema": result.get('schema')
+                "schema": result.get('schema'),
+                "deprecated": True,
+                "redirect_to": "/api/data/query/execute",
             }
         else:
             raise HTTPException(status_code=400, detail=result['error'])
@@ -1532,6 +1536,9 @@ async def update_data_source(
                 cache.delete(f"ds:{data_source_id}")
         except Exception:
             pass
+        if connection_config is not None:
+            from src.modules.data.services.pool_invalidation import dispose_direct_sql_pool_for_data_source
+            dispose_direct_sql_pool_for_data_source(data_source_id)
         # Invalidate SQL feedback cache so stale NL→SQL pairs don't surface after reconnect/schema change
         try:
             from src.modules.ai.utils.sql_feedback_store import invalidate_for_data_source as _inv_feedback
@@ -1806,6 +1813,9 @@ async def delete_data_source(data_source_id: str, current_token: Union[str, dict
             data_source.updated_at = datetime.now(timezone.utc)
             await db.commit()
 
+        from src.modules.data.services.pool_invalidation import dispose_direct_sql_pool_for_data_source
+        dispose_direct_sql_pool_for_data_source(data_source_id)
+
         return {"success": True, "message": "Data source deleted successfully"}
             
     except HTTPException:
@@ -1853,7 +1863,7 @@ async def chat_to_chart_workflow(
             sync_session_factory=get_sync_session,
             litellm_service=litellm_service,
             data_service=data_service,
-            multi_query_service=MultiEngineQueryService(),
+            multi_query_service=get_multi_engine_query_service(),
         )
 
         conversation_id = str(uuid.uuid4())
@@ -1991,6 +2001,8 @@ async def get_learned_patterns():
 @router.get("/cube/status")
 async def get_cube_status():
     """Get Cube.js connection status via CubeEngine HTTP client"""
+    if not is_external_cube_enabled():
+        return {"success": False, "cube_status": "disabled", "message": "Set AICSER_EXTERNAL_CUBE_ENABLED=true to use external Cube.js"}
     try:
         cube_url = os.getenv("CUBE_API_URL", "")
         if not cube_url:
@@ -2018,6 +2030,7 @@ async def connect_to_cube():
 @router.get("/cube/metadata")
 async def get_cube_metadata():
     """Get Cube.js cubes/views metadata via REST API"""
+    _require_external_cube()
     try:
         cube_url = os.getenv("CUBE_API_URL", "")
         cube_secret = os.getenv("CUBE_API_SECRET", "")
@@ -2043,6 +2056,7 @@ async def execute_cube_query(
     current_token: Union[str, dict] = Depends(JWTCookieBearer())
 ):
     """Execute query against Cube.js (Enterprise plan only)"""
+    _require_external_cube()
     try:
         # Extract organization_id from token
         user_id = None
@@ -3176,48 +3190,31 @@ async def get_semantic_layer_for_source(
     current_user: dict = Depends(current_user_payload),
 ):
     """
-    Return auto-generated semantic layer for a data source.
-
-    Infers metrics, dimensions, and join paths from the schema using column-name
-    and type heuristics.  Merges domain template KPIs when a domain_template is
-    stored in the data source's connection_config.
-
-    Used by:
-    - Data Panel: show business glossary alongside schema tree
-    - NL2SQL: inject as context hint in prompt
+    Deprecated: use GET /api/semantic/context instead.
+    Returns unified semantic context from the canonical Postgres model.
     """
     try:
+        from src.db.session import async_session
+        from src.modules.data.services.semantic_context_service import get_unified_semantic_context
+
         data_source = await data_service.get_data_source_by_id(data_source_id)
         if not data_source:
             raise HTTPException(status_code=404, detail="Data source not found")
 
-        schema_info: dict = {}
-        try:
-            schema_result = await data_service.get_source_schema(data_source_id)
-            if schema_result and schema_result.get("success"):
-                schema_info = schema_result.get("schema") or {}
-        except Exception as _se:
-            logger.debug("Semantic layer: schema fetch failed (%s), using cached", _se)
+        async with async_session() as db:
+            context = await get_unified_semantic_context(db, data_source_id)
 
-        conn_cfg = data_source.get("connection_config") or {}
-        if isinstance(conn_cfg, str):
-            try:
-                import json as _j
-                conn_cfg = _j.loads(conn_cfg)
-            except Exception:
-                conn_cfg = {}
-        domain_template = conn_cfg.get("domain_template") or data_source.get("domain_template")
-        db_type = data_source.get("db_type") or data_source.get("type") or ""
-        ds_name = data_source.get("name") or data_source_id
-
-        from src.modules.ai.services.semantic_layer import auto_generate_semantic_layer
-        layer = auto_generate_semantic_layer(
-            schema=schema_info,
-            data_source_name=ds_name,
-            db_type=db_type,
-            domain_template=domain_template,
-        )
-        return {"success": True, "semantic_layer": layer}
+        return {
+            "success": True,
+            "deprecated": True,
+            "redirect_to": f"/api/semantic/context?data_source_id={data_source_id}",
+            "semantic_layer": {
+                "metrics": context.get("metrics", []),
+                "dimensions": context.get("dimensions", []),
+                "join_paths": context.get("join_paths", []),
+                "prompt_hint": context.get("prompt_hint", ""),
+            },
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -4220,6 +4217,11 @@ class StreamCreateRequest(BaseModel):
     streaming_mode: str = "realtime"  # realtime | microbatch
 
 
+class KafkaBrokersTestRequest(BaseModel):
+    kafka_brokers: str
+    topic: Optional[str] = None
+
+
 async def _streams_user_org(
     current_token: Union[str, dict],
     db: AsyncSession,
@@ -4243,6 +4245,49 @@ async def _streams_user_org(
             detail={"message": "Join or select an organization to manage stream ingestion."},
         )
     return user_id, org_id
+
+
+@router.post("/streams/test-kafka", dependencies=[Depends(require_plan_feature("streaming"))])
+async def test_kafka_brokers(
+    request: KafkaBrokersTestRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Verify Kafka broker connectivity (and optional topic) before creating a stream."""
+    import asyncio
+
+    _ = current_token
+    brokers = (request.kafka_brokers or "").strip()
+    if not brokers:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": "kafka_brokers is required"})
+    try:
+        from kafka import KafkaAdminClient  # type: ignore
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"message": "kafka-python not installed on server"},
+        ) from None
+
+    def _probe():
+        admin = KafkaAdminClient(bootstrap_servers=[b.strip() for b in brokers.split(",") if b.strip()], request_timeout_ms=10000)
+        try:
+            return set(admin.list_topics())
+        finally:
+            admin.close()
+
+    try:
+        topics = await asyncio.to_thread(_probe)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    topic = (request.topic or "").strip()
+    out: dict = {"success": True, "topic_count": len(topics)}
+    if topic:
+        out["topic_found"] = topic in topics
+        if topic not in topics:
+            out["message"] = f"Broker OK but topic '{topic}' was not found"
+    else:
+        out["message"] = "Kafka brokers reachable"
+    return out
 
 
 @router.post("/streams", dependencies=[Depends(require_plan_feature("streaming"))])
@@ -4405,3 +4450,12 @@ async def export_schema(data_source_id: str, format: str = 'yaml'):
     except Exception as e:
         logger.error(f"❌ Schema export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+from src.modules.data.model_router import router as data_model_router
+
+router.include_router(
+    data_model_router,
+    prefix="/data-sources/{data_source_id}/model",
+    tags=["data-model"],
+)

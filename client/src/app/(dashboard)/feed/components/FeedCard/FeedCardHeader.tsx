@@ -1,7 +1,8 @@
 import React from 'react';
+import Link from 'next/link';
 import { Avatar, Button, Dropdown, Modal, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
-import { GlobalOutlined, MoreOutlined } from '@ant-design/icons';
+import { MoreOutlined } from '@ant-design/icons';
 import type { FeedItem } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
 import { approvalColors, visibilityColors } from './constants';
@@ -21,6 +22,8 @@ interface FeedCardHeaderProps {
   onOpenPost?: () => void;
   onCopyLink?: () => void;
   onDeletePost?: () => void;
+  /** Link author name to public profile, e.g. `/discover/author`. */
+  authorProfileBasePath?: string;
 }
 
 const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
@@ -34,6 +37,7 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
   onOpenPost,
   onCopyLink,
   onDeletePost,
+  authorProfileBasePath,
 }) => {
   const t = useTranslations('feed');
   const publishedAtMs = new Date(item.publishedAt).getTime();
@@ -43,6 +47,10 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
     Number.isFinite(lastActivityAtMs) &&
     lastActivityAtMs - publishedAtMs > UPDATE_THRESHOLD_MS;
   const activityTime = formatTimeAgo(hasUpdates ? item.lastActivityAt : item.publishedAt);
+  const authorProfileHref =
+    authorProfileBasePath && item.author.username
+      ? `${authorProfileBasePath}/${encodeURIComponent(item.author.username.replace(/^@/, ''))}`
+      : null;
   const handleStopPropagation = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
   };
@@ -61,35 +69,33 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
   ];
 
   return (
-    <div className="flex items-start justify-between p-4 sm:p-5 border-b border-[var(--ant-color-border-secondary)]">
+    <div className="flex items-start justify-between px-4 py-3 border-b border-[var(--ant-color-border-secondary)]">
       {/* Left: avatar + author info */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <Avatar
           className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
-          size={44}
+          size={36}
           src={item.author.avatarUrl}
         >
           {item.author.name.charAt(0).toUpperCase()}
         </Avatar>
         <div className="flex flex-col min-w-0">
-          <Text strong className="text-[15px] text-[var(--ant-color-text)] leading-tight truncate">
-            {item.author.name}
-          </Text>
-          {(item.author.title || item.author.username) && (
-            <div className="flex items-center text-[13px] text-[var(--ant-color-text-secondary)] mt-0.5 truncate">
-              {item.author.title && <span>{item.author.title}</span>}
-              {item.author.title && item.author.username && <span className="mx-1.5 opacity-50">&bull;</span>}
-              {item.author.username && <span>@{item.author.username}</span>}
-            </div>
+          {authorProfileHref ? (
+            <Link href={authorProfileHref} onClick={handleStopPropagation} className="truncate">
+              <Text strong className="text-sm text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
+                {item.author.name}
+              </Text>
+            </Link>
+          ) : (
+            <Text strong className="text-sm text-[var(--ant-color-text)] leading-tight truncate">
+              {item.author.name}
+            </Text>
           )}
-          <div className="flex items-center text-xs text-[var(--ant-color-text-tertiary)] mt-1 gap-1.5 flex-wrap">
-            <span className="flex items-center gap-1">
-              <GlobalOutlined title={visibilityLabel} />
-              {activityTime}
-            </span>
-            <span className="opacity-50">&bull;</span>
+          <div className="flex items-center text-xs text-[var(--ant-color-text-tertiary)] mt-0.5 gap-1.5 flex-wrap">
+            <span>{activityTime}</span>
+            <span className="opacity-40">&bull;</span>
             <Tag
-              className="m-0 rounded border-0 text-[11px] font-medium tracking-wide shadow-sm"
+              className="m-0 rounded border-0 text-[10px] font-medium leading-none py-0 px-1.5"
               color={visibilityColors[item.visibility]}
             >
               {visibilityLabel}

@@ -99,6 +99,12 @@ if is_ee_enabled():
         logger.warning("Alerts router not loaded: %s", _err)
 
     try:
+        from ee.modules.decision_os.router import router as decision_os_router
+        api_router.include_router(decision_os_router, prefix="/api/decision-os", tags=["decision-os"])
+    except Exception as _err:
+        logger.warning("DecisionOS router not loaded: %s", _err)
+
+    try:
         from ee.modules.authentication.router import router as ee_auth_router
         api_router.include_router(ee_auth_router, prefix="", tags=["auth"])
     except Exception as _err:
@@ -139,6 +145,24 @@ if is_ee_enabled():
         api_router.include_router(schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"])
     except Exception as _err:
         logger.warning("Schedule email router not loaded: %s", _err)
+
+    try:
+        from src.modules.embed.router import router as embed_router
+        api_router.include_router(embed_router, prefix="/api/embed", tags=["embed"])
+    except Exception as _err:
+        logger.warning("Embed router not loaded: %s", _err)
+
+    try:
+        from ee.modules.embed.assistant_router import router as embed_assistant_router
+        api_router.include_router(embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"])
+    except Exception as _err:
+        logger.warning("Embed assistants router not loaded: %s", _err)
+
+    try:
+        from ee.modules.knowledge.library_router import router as knowledge_library_router
+        api_router.include_router(knowledge_library_router, prefix="/knowledge/libraries", tags=["knowledge-libraries"])
+    except Exception as _err:
+        logger.warning("Knowledge libraries router not loaded: %s", _err)
 
     try:
         from ee.modules.telegram.router import router as telegram_router

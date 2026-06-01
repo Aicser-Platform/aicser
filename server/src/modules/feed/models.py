@@ -30,7 +30,7 @@ class FeedPost(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
 
     asset_type = Column(
-        Enum("dashboard", "chart", "insight", name="asset_type_enum"),
+        Enum("dashboard", "chart", "insight", "query", name="asset_type_enum"),
         nullable=False,
     )
     asset_id = Column(UUID(as_uuid=True), nullable=False)
@@ -79,11 +79,60 @@ class FeedPost(Base):
     save_count = Column(Integer, nullable=False, server_default=text("0"))
     view_count = Column(Integer, nullable=False, server_default=text("0"))
     share_count = Column(Integer, nullable=False, server_default=text("0"))
+    preview_metadata = Column(JSONB, nullable=True)
+
+    render_mode = Column(
+        Enum("snapshot", "live", name="feed_render_mode_enum"),
+        nullable=False,
+        server_default=text("'snapshot'"),
+    )
+    current_snapshot_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    snapshot_version = Column(Integer, nullable=False, server_default=text("0"))
 
     __table_args__ = (
-        UniqueConstraint("asset_type", "asset_id", name="uq_feed_posts_asset"),
+        Index("idx_feed_posts_asset", "asset_type", "asset_id"),
         Index("idx_feed_posts_org_visibility", "organization_id", "visibility"),
         Index("idx_feed_posts_project_visibility", "project_id", "visibility"),
+    )
+
+
+class FeedSnapshot(Base):
+    """
+    Immutable captured payload for a feed publication (snapshot render mode).
+    Table: feed_snapshots
+    """
+    __tablename__ = "feed_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, server_default=text("1"))
+    payload = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    payload_hash = Column(String(64), nullable=True)
+    byte_size = Column(Integer, nullable=False, server_default=text("0"))
+    filter_state = Column(JSONB, nullable=True)
+    captured_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("post_id", "version", name="uq_feed_snapshots_post_version"),
+        Index("idx_feed_snapshots_post", "post_id"),
+    )
+
+
+class FeedChatDraft(Base):
+    """Server-side chat insight publish draft (replaces sessionStorage)."""
+    __tablename__ = "feed_chat_drafts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    conversation_id = Column(String(255), nullable=False)
+    message_id = Column(String(255), nullable=False)
+    draft = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "conversation_id", "message_id", name="uq_feed_chat_drafts_user_message"),
     )
 
 
@@ -222,6 +271,8 @@ class FeedView(Base):
     ip_address = Column(String(64), nullable=True)
     user_agent = Column(Text, nullable=True)
     referrer = Column(Text, nullable=True)
+    referral_code = Column(String(100), nullable=True)
+    referrer_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class FeedCollection(Base):
@@ -273,7 +324,16 @@ class FeedNotification(Base):
     post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id"), nullable=True)
     comment_id = Column(UUID(as_uuid=True), ForeignKey("feed_comments.id"), nullable=True)
     type = Column(
-        Enum("mention", "comment", "reaction", "share", "approval", name="notification_type_enum"),
+        Enum(
+            "mention",
+            "comment",
+            "reaction",
+            "share",
+            "approval",
+            "follow",
+            "publish",
+            name="notification_type_enum",
+        ),
         nullable=False,
     )
     notification_metadata = Column("metadata", JSONB, nullable=True)
@@ -295,3 +355,24 @@ class FeedShare(Base):
     channel = Column(String(64), nullable=True)
     share_metadata = Column("metadata", JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class FeedDigestSubscription(Base):
+    """
+    Weekly trending digest email subscriptions for public discover feed.
+    Table: feed_digest_subscriptions
+    """
+    __tablename__ = "feed_digest_subscriptions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
+    email = Column(String(320), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    unsubscribe_token = Column(String(64), nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_sent_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("email", name="uq_feed_digest_subscriptions_email"),
+        Index("idx_feed_digest_subscriptions_active", "is_active"),
+    )

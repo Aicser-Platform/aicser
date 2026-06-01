@@ -1,162 +1,72 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Typography, ConfigProvider, Button, Spin, message, Divider, Tag } from 'antd';
+import { Typography, ConfigProvider, Button, Spin, message, Divider, Tag, Alert, Modal, Select } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
   PlusOutlined,
   DashboardOutlined,
-  CloseOutlined,
-  LineChartOutlined,
-  BarChartOutlined,
-  AreaChartOutlined,
-  PieChartFilled,
 } from '@ant-design/icons';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './DashboardStudio.css';
 import { PropertiesPanel } from './Properties/PropertiesPanel';
 import DashboardCanvas from './Canvas/DashboardCanvas';
-import { useDashboardStore, type WidgetInstance, type LayoutItem, WidgetType } from './stores/useDashboardStore';
+import { DashboardViewerGrid } from './components/viewer/DashboardViewerGrid';
+import { useDashboardStore, type WidgetInstance, type LayoutItem, WidgetType, pushUndoSnapshot } from './stores/useDashboardStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { DashboardTabs } from './components/DashboardTabs';
+import { StudioContextBar } from './components/StudioContextBar';
+import { DashboardFilterPanel } from './components/DashboardFilterPanel';
+import { collectDashboardDataSourceIds } from './utils/collectDashboardDataSourceIds';
+import { useDashboardFilterContext } from './hooks/useDashboardFilterContext';
+import { useStudioDashboardView } from './hooks/useStudioDashboardView';
+import { useCollaboration } from '@/hooks/useCollaboration';
+import { useDashboardCollaborationRoom } from './hooks/useCollaborationFeature';
+import { DashboardCollabOverlay } from './components/DashboardCollabOverlay';
+import { DashboardCollabCommentsPanel } from './components/DashboardCollabCommentsPanel';
+import { DashboardFeedStudioBanner } from './components/DashboardFeedStudioBanner';
+import { DashboardRemixBanner } from './components/DashboardRemixBanner';
+import { remixConfigFromDashboard } from './utils/remixSnapshotHydration';
+import {
+  feedPostIdFromDashboardConfig,
+  computeStudioSnapshotFingerprint,
+  isFeedSnapshotOutdated,
+} from '@/app/(dashboard)/feed/utils/dashboardFeedBridge';
+import { buildDashboardSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
+import { socialFeedService } from '@/services/socialFeedService';
+import { PermissionGuard } from '@/components/PermissionGuard';
+import { Permission } from '@/constants/permissions';
+import { applyPresetWithScaffolds } from './utils/layoutScaffolds';
+import { inferPrimaryDataSourceId } from './utils/filterFieldUsage';
+import type { DashboardFilter } from '@/types/dashboard';
+import shortid from 'shortid';
+import { type LayoutPreset } from './components/LayoutPresetsMenu';
+import type { DashboardPageItem } from './components/DashboardPageTabs';
 import { chartService, type DashboardTemplate } from './services/chartService';
+import { WIDGET_TEMPLATES } from './widgetTemplates';
+import { exitDocumentFullscreen } from './utils/studioNavigation';
+import { useChartImportFromChat } from './hooks/useChartImportFromChat';
+import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
+import { DashboardBuildLiveBanner } from './components/DashboardBuildLiveBanner';
+import { isDashboardLiveBuild } from './utils/dashboardLiveBuildStorage';
+import { CreateDashboardWizard, type WizardLayoutChoice } from './components/CreateDashboardWizard';
+import {
+  DEFAULT_CHART_PALETTE_ID,
+  isKnownChartPalette,
+  type ChartPaletteId,
+} from './utils/chartPaletteCatalog';
+import { maxLayoutY } from './utils/layoutSanitize';
+import { formatApiValidationError, isValidUuid } from '@/utils/validationErrorMessage';
+import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
 
 const { Title, Text } = Typography;
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
-
-const WIDGET_TEMPLATES = [
-  {
-    id: 't-line',
-    type: 'line',
-    name: 'Line ',
-    icon: <LineChartOutlined />,
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Line chart using sample data for layout verification.',
-  },
-  {
-    id: 't-bar',
-    type: 'bar',
-    name: 'Bar ',
-    icon: <BarChartOutlined />,
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Bar chart for comparing categories and discrete values.',
-  },
-  {
-    id: 't-area',
-    type: 'area',
-    name: 'Area ',
-    icon: <AreaChartOutlined />,
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Area chart for showing trends over time.',
-  },
-  {
-    id: 't-pie',
-    type: 'pie',
-    name: 'Pie ',
-    icon: <PieChartFilled />,
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Pie chart with stubbed data; useful to test chart slots.',
-  },
-  {
-    id: 't-donut',
-    type: 'donut',
-    name: 'Donut ',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 672c-123.7 0-224-100.3-224-224s100.3-224 224-224 224 100.3 224 224-100.3 224-224 224z" />
-        </svg>
-      </div>
-    ),
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Donut chart; ideal for displaying proportions with a central hole.',
-  },
-  {
-    id: 't-scatter',
-    type: 'scatter',
-    name: 'Scatter',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M888 792H232V136c0-4.4-3.6-8-8-8h-56c-4.4 0-8 3.6-8 8v704c0 4.4 3.6 8 8 8h720c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM312 288c-35.3 0-64 28.7-64 64s28.7 64 64 64 64-28.7 64-64-28.7-64-64-64zm560 216c-35.3 0-64 28.7-64 64s28.7 64 64 64 64-28.7 64-64-28.7-64-64-64zM544 192c-35.3 0-64 28.7-64 64s28.7 64 64 64 64-28.7 64-64-28.7-64-64-64zm176 416c-35.3 0-64 28.7-64 64s28.7 64 64 64 64-28.7 64-64-28.7-64-64-64z" />
-        </svg>
-      </div>
-    ),
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Scatter plot for showing correlation between two variables.',
-  },
-  {
-    id: 't-heatmap',
-    type: 'heatmap',
-    name: 'Heatmap',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M128 128v768h768V128H128zm688 688H208V208h608v608zM320 320h128v128H320V320zm256 0h128v128H576V320zM320 576h128v128H320V576zm256 0h128v128H576V576z" />
-        </svg>
-      </div>
-    ),
-    category: 'Visuals',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Heatmap to visualize data density.',
-  },
-  {
-    id: 't-funnel',
-    type: 'funnel',
-    name: 'Funnel',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M192.1 64h639.8c8.8 0 16 7.2 16 16v121.7c0 4.2-1.7 8.3-4.7 11.3L540.3 515.9V912c0 8.8-7.2 16-16 16h-24.6c-8.8 0-16-7.2-16-16V515.9L180.8 213c-3-3-4.7-7.1-4.7-11.3V80c0-8.8 7.2-16 16-16z" />
-        </svg>
-      </div>
-    ),
-    category: 'Indicators',
-    defaultSize: { w: 6, h: 5 },
-    description: 'Funnel chart for visualizing stages in a process.',
-  },
-  {
-    id: 't-table',
-    type: 'table',
-    name: 'Table',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M912 192H112c-8.8 0-16 7.2-16 16v560c0 8.8 7.2 16 16 16h800c8.8 0 16-7.2 16-16V208c0-8.8-7.2-16-16-16zM656 256v160H368V256h288zM368 480h288v160H368V480zM160 256h144v160H160V256zm0 224h144v160H160V480zm0 304v-80h144v80H160zm208 0v-80h288v80H368zm496 0H720v-80h144v80zm0-144H720V480h144v160zm0-224H720V256h144v160z" />
-        </svg>
-      </div>
-    ),
-    category: 'Data',
-    defaultSize: { w: 8, h: 6 },
-    description: 'Table widget to display raw data.',
-  },
-  {
-    id: 't-text',
-    type: 'text',
-    name: 'Text Block',
-    icon: (
-      <div className="anticon">
-        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
-          <path d="M128 128v768h768V128H128zm688 688H208V208h608v608zM320 320h384v64H320V320zm0 192h384v64H320V512zm0 192h256v64H320V704z" />
-        </svg>
-      </div>
-    ),
-    category: 'Content',
-    defaultSize: { w: 4, h: 3 },
-    description: 'Add text notes or descriptions.',
-  },
-];
 
 const generateWidgetId = () => `w_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
@@ -164,6 +74,10 @@ const generateWidgetId = () => `w_${Date.now()}_${Math.floor(Math.random() * 100
 
 export default function NewDashboardStudio() {
   const t = useTranslations('dashboards_page');
+  const searchParams = useSearchParams();
+  const requestedDashboardId = searchParams?.get('id');
+  const liveBuildParam = searchParams?.get('live') === '1';
+  const appliedDashboardIdRef = useRef<string | null>(null);
   const dashboards = useDashboardStore((s) => s.dashboards);
   const isLoadingDashboards = useDashboardStore((s) => s.isLoadingDashboards);
   const hasLoadedDashboards = useDashboardStore((s) => s.hasLoadedDashboards);
@@ -180,31 +94,252 @@ export default function NewDashboardStudio() {
   const removeWidgetFromStore = useDashboardStore((s) => s.removeWidget);
   const duplicateWidgetFromStore = useDashboardStore((s) => s.duplicateWidget);
   const addDashboard = useDashboardStore((s) => s.addDashboard);
+  const seedDashboardStarterLayout = useDashboardStore((s) => s.seedDashboardStarterLayout);
   const deleteChart = useDashboardStore((s) => s.deleteChart);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
   const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const updateWidgetFromStore = useDashboardStore((s) => s.updateWidget);
   const updateChartLayout = useDashboardStore((s) => s.updateChartLayout);
   const updateChartAndFetchData = useDashboardStore((s) => s.updateChartAndFetchData);
+  const applyDashboardColorPalette = useDashboardStore((s) => s.applyDashboardColorPalette);
   const isFullscreen = useDashboardStore((s) => s.isFullscreen);
   const setIsFullscreenState = useDashboardStore((s) => s.setIsFullscreen);
+  const studioMode = useDashboardStore((s) => s.studioMode);
+  const isEditMode = studioMode === 'edit' && !isFullscreen;
+  const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
+
+  const liveBuildDashboardId = requestedDashboardId || activeDashboardId;
+  const liveBuildEnabled =
+    Boolean(liveBuildDashboardId) &&
+    (liveBuildParam || isDashboardLiveBuild(liveBuildDashboardId || ''));
+  const {
+    progress: buildProgress,
+    isConnected: isBuildLiveConnected,
+    transport: buildTransport,
+    isBuilding,
+    hasNewWidgets,
+  } = useDashboardBuildProgress(liveBuildDashboardId, liveBuildEnabled);
+
+  useEffect(() => {
+    if (!hasNewWidgets || !liveBuildDashboardId) return;
+    void fetchDashboards();
+  }, [hasNewWidgets, liveBuildDashboardId, fetchDashboards]);
+
+  const collabRoomId = useDashboardCollaborationRoom(activeDashboardId, isEditMode);
+  const {
+    connected: collabConnected,
+    peerCount: collabPeers,
+    activeUsers: collabActiveUsers,
+    peerCursors: collabPeerCursors,
+    comments: collabComments,
+    addComment: collabAddComment,
+    emitCursorMove: collabEmitCursorMove,
+    emitWidgetEditing,
+    peerEditingWidgetId,
+    selfUserId: collabSelfUserId,
+  } = useCollaboration(collabRoomId);
+
+  const [collabCommentsOpen, setCollabCommentsOpen] = useState(false);
 
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const td = useTranslations('dashboards');
+  const filterCtx = useDashboardFilterContext(currentProjectId);
+
+  const activeDashboard = useDashboardStore((s) =>
+    s.dashboards.find((d) => d.id === s.activeDashboardId),
+  );
+  const linkedFeedPostId = feedPostIdFromDashboardConfig(
+    activeDashboard?.config as Record<string, unknown> | undefined,
+  );
+  const remixSource = remixConfigFromDashboard(
+    activeDashboard?.config as Record<string, unknown> | undefined,
+  );
+  const linkedFeedSnapshotVersion = Number(
+    (activeDashboard?.config as Record<string, unknown> | undefined)?.feed_snapshot_version ?? 0,
+  );
+  const [updatingFeedSnapshot, setUpdatingFeedSnapshot] = useState(false);
+
+  const feedSnapshotOutdated = useMemo(
+    () =>
+      linkedFeedPostId
+        ? isFeedSnapshotOutdated({
+            config: activeDashboard?.config as Record<string, unknown> | undefined,
+            widgets: filterCtx.pageWidgets,
+            layout: filterCtx.pageLayout,
+            globalFilters: filterCtx.globalFiltersConfig,
+            pageFilters: filterCtx.pageFiltersConfig,
+            pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
+          })
+        : false,
+    [
+      linkedFeedPostId,
+      activeDashboard?.config,
+      filterCtx.pageWidgets,
+      filterCtx.pageLayout,
+      filterCtx.globalFiltersConfig,
+      filterCtx.pageFiltersConfig,
+      filterCtx.pages,
+    ],
+  );
+
+  const handleUpdateFeedSnapshot = useCallback(async () => {
+    if (!linkedFeedPostId || !activeDashboardId || !activeDashboard) return;
+    setUpdatingFeedSnapshot(true);
+    try {
+      const snapshotPayload = buildDashboardSnapshotPayload({
+        dashboardId: activeDashboardId,
+        title: activeDashboard.name,
+        description: activeDashboard.description,
+        widgets: filterCtx.pageWidgets,
+        layout: filterCtx.pageLayout,
+        globalFilters: filterCtx.globalFiltersConfig,
+        pageFilters: filterCtx.pageFiltersConfig,
+        pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
+        runtimeFilters: filterCtx.runtimeFilters,
+      });
+      const fingerprint = computeStudioSnapshotFingerprint({
+        widgets: filterCtx.pageWidgets,
+        layout: filterCtx.pageLayout,
+        globalFilters: filterCtx.globalFiltersConfig,
+        pageFilters: filterCtx.pageFiltersConfig,
+        pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
+      });
+      const result = await socialFeedService.updatePublicationSnapshot(linkedFeedPostId, {
+        snapshot_payload: snapshotPayload as unknown as Record<string, unknown>,
+        title: activeDashboard.name,
+        description: activeDashboard.description,
+      });
+      await useDashboardStore.getState().updateDashboardMeta(activeDashboardId, {
+        config: {
+          ...((activeDashboard.config as Record<string, unknown>) || {}),
+          feed_snapshot_version: result.snapshot_version ?? linkedFeedSnapshotVersion + 1,
+          feed_snapshot_fingerprint: fingerprint,
+        },
+      });
+      message.success(td('feed_snapshot_updated'));
+    } catch (err) {
+      message.error(formatApiValidationError(err));
+    } finally {
+      setUpdatingFeedSnapshot(false);
+    }
+  }, [
+    linkedFeedPostId,
+    activeDashboardId,
+    activeDashboard,
+    filterCtx.pageWidgets,
+    filterCtx.pageLayout,
+    filterCtx.globalFiltersConfig,
+    filterCtx.pageFiltersConfig,
+    filterCtx.pages,
+    filterCtx.runtimeFilters,
+    linkedFeedSnapshotVersion,
+    td,
+  ]);
+
+  const handleCollabAddComment = useCallback(
+    (text: string, widgetId?: string | null) => {
+      collabAddComment(text, widgetId);
+      if (!linkedFeedPostId || !text.trim()) return;
+      const feedBody = widgetId ? `[Widget] ${text.trim()}` : text.trim();
+      void socialFeedService.addComment(linkedFeedPostId, feedBody).catch(() => {
+        /* studio socket comment still visible; feed sync is best-effort */
+      });
+    },
+    [collabAddComment, linkedFeedPostId],
+  );
+
+  const studioDefaultPageId =
+    filterCtx.defaultPageIdRef.current ?? filterCtx.pages[0]?.id ?? null;
+
+  const studioView = useStudioDashboardView({
+    pages: filterCtx.pages,
+    activePageId: filterCtx.activePageId,
+    defaultPageId: studioDefaultPageId,
+  });
+
+  const dashboardDataSourceIds = useMemo(
+    () => collectDashboardDataSourceIds(filterCtx.pageWidgets, filterCtx.combinedFiltersConfig),
+    [filterCtx.pageWidgets, filterCtx.combinedFiltersConfig],
+  );
+
+  useEffect(() => {
+    if (!isEditMode && filterCtx.combinedFiltersConfig.length > 0) {
+      filterCtx.setFiltersPanelOpen(true);
+    }
+  }, [isEditMode, filterCtx.combinedFiltersConfig.length, filterCtx.setFiltersPanelOpen]);
+
+  const chartImport = useChartImportFromChat();
   const [mounted, setMounted] = useState(false);
   const [sampleTemplates, setSampleTemplates] = useState<DashboardTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [creatingDashboard, setCreatingDashboard] = useState(false);
+  const dashboardColorPalette = useDashboardStore((s) => {
+    const dash = s.dashboards.find((d) => d.id === s.activeDashboardId);
+    const fromConfig = dash?.config?.default_color_palette as ChartPaletteId | undefined;
+    return fromConfig && isKnownChartPalette(fromConfig) ? fromConfig : DEFAULT_CHART_PALETTE_ID;
+  });
+
+  const handleWizardCreateWithLayout = useCallback(
+    async (name: string, layout: WizardLayoutChoice) => {
+      setCreatingDashboard(true);
+      try {
+        await addDashboard(name);
+        if (layout === 'kpi' || layout === 'executive') {
+          await seedDashboardStarterLayout(layout, filterCtx.activePageId);
+        }
+        message.success(t('dashboard_created_success'));
+      } catch (err) {
+        message.error(formatApiValidationError(err));
+        throw err;
+      } finally {
+        setCreatingDashboard(false);
+      }
+    },
+    [addDashboard, seedDashboardStarterLayout, filterCtx.activePageId, t]
+  );
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    void exitDocumentFullscreen();
+    setIsFullscreenState(false);
+
+    const content = document.querySelector('.ant-layout-content');
+    content?.classList.add('dashboard-studio-layout');
+    if (content instanceof HTMLElement) content.scrollTop = 0;
+    window.scrollTo(0, 0);
+
+    return () => {
+      content?.classList.remove('dashboard-studio-layout');
+    };
+  }, [setIsFullscreenState]);
 
   // Fetch dashboards when mounted and project changes
   useEffect(() => {
     if (mounted && (!isEnterpriseEdition || currentProjectId)) {
+      appliedDashboardIdRef.current = null;
       fetchDashboards();
     }
   }, [mounted, currentProjectId, fetchDashboards]);
+
+  // Restore dashboard from URL after list loads (e.g. returning from preview)
+  useEffect(() => {
+    if (!hasLoadedDashboards || !requestedDashboardId) return;
+    if (appliedDashboardIdRef.current === requestedDashboardId) return;
+    const match = dashboards.find((d) => String(d.id) === String(requestedDashboardId));
+    if (!match) return;
+    appliedDashboardIdRef.current = requestedDashboardId;
+    if (String(activeDashboardId) !== String(requestedDashboardId)) {
+      setActiveDashboardId(requestedDashboardId);
+    }
+  }, [
+    hasLoadedDashboards,
+    requestedDashboardId,
+    dashboards,
+    activeDashboardId,
+    setActiveDashboardId,
+  ]);
 
   // Load sample dashboard templates for empty-state onboarding.
   useEffect(() => {
@@ -237,6 +372,26 @@ export default function NewDashboardStudio() {
     };
   }, [mounted, dashboards.length]);
 
+  const handleDashboardColorPaletteChange = useCallback(
+    async (paletteId: ChartPaletteId) => {
+      try {
+        await applyDashboardColorPalette(paletteId);
+        message.success(td('palette_applied_success'));
+      } catch (err) {
+        message.error(formatApiValidationError(err));
+      }
+    },
+    [applyDashboardColorPalette, td],
+  );
+
+  useEffect(() => {
+    if (!isEditMode || !selectedWidgetId) {
+      emitWidgetEditing?.(null);
+      return;
+    }
+    emitWidgetEditing?.(selectedWidgetId);
+  }, [isEditMode, selectedWidgetId, emitWidgetEditing]);
+
   // Handle browser fullscreen change
   useEffect(() => {
     const handleFsChange = () => {
@@ -266,11 +421,15 @@ export default function NewDashboardStudio() {
   const addWidget = async (template: (typeof WIDGET_TEMPLATES)[number]) => {
     const instanceId = generateWidgetId();
 
-    // Default chart options based on chart type
     const isPieChart = template.type === 'pie' || template.type === 'donut';
     const isTextWidget = template.type === 'text';
+    const isSlicerWidget = template.type === 'slicer';
+    const isDividerWidget = template.type === 'divider';
+    const isImageWidget = template.type === 'image';
+    const isNonDataWidget = isTextWidget || isSlicerWidget || isDividerWidget || isImageWidget;
 
     let defaultChartOptions;
+    let defaultChartQuery: WidgetInstance['chartQuery'];
 
     if (isTextWidget) {
       defaultChartOptions = {
@@ -280,12 +439,24 @@ export default function NewDashboardStudio() {
         color: 'inherit',
         textAlign: 'left',
       };
+      defaultChartQuery = {};
+    } else if (isSlicerWidget) {
+      defaultChartOptions = { slicerLabel: template.name };
+      defaultChartQuery = { mode: 'single' as const };
+    } else if (isDividerWidget) {
+      defaultChartOptions = { sectionTitle: '', uppercase: true };
+      defaultChartQuery = {};
+    } else if (isImageWidget) {
+      defaultChartOptions = { imageUrl: '', objectFit: 'contain' };
+      defaultChartQuery = {};
     } else if (isPieChart) {
       defaultChartOptions = {
         showLegend: true,
         showDataLabel: false,
         innerRadius: template.type === 'donut' ? 40 : 0,
       };
+    } else if (template.type === 'gauge') {
+      defaultChartOptions = { gaugeMin: 0, gaugeMax: 100, showLegend: false };
     } else {
       defaultChartOptions = {
         showLegend: true,
@@ -298,29 +469,29 @@ export default function NewDashboardStudio() {
     const newWidget: WidgetInstance = {
       id: instanceId,
       dataSourceId: undefined,
-      chartQuery: isTextWidget ? {} : undefined,
+      chartQuery: isNonDataWidget ? defaultChartQuery : undefined,
       chartType: template.type as WidgetType,
-      title: isTextWidget ? '' : template.name,
+      title: isTextWidget || isDividerWidget ? '' : template.name,
       chartOptions: defaultChartOptions,
     };
 
     const nextLayoutItem: LayoutItem = {
       i: instanceId,
       x: 0,
-      y: Infinity,
+      y: maxLayoutY(layout),
       w: template.defaultSize.w,
       h: template.defaultSize.h,
+      ...(filterCtx.activePageId ? { pageId: filterCtx.activePageId } : {}),
     };
 
     addWidgetToStore(newWidget, nextLayoutItem);
 
-    // Auto-persist text widgets immediately (they don't need data source selection)
-    if (isTextWidget) {
+    if (isNonDataWidget) {
       useDashboardStore.getState().createChartAndFetchData(newWidget);
     }
 
-    // Set widget as selected so user can configure it
     setSelectedWidgetId(instanceId);
+    setPropertiesCollapsed(false);
   };
 
   const removeWidget = async (id: string) => {
@@ -365,10 +536,80 @@ export default function NewDashboardStudio() {
     [widgets, selectedWidgetId]
   );
 
-  const createFromTemplate = async (template: DashboardTemplate) => {
-    if (isEnterpriseEdition && !currentProjectId) {
-      message.error('Please select a project first');
-      return;
+  const layoutSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleLayoutSync = useCallback(
+    (newLayout: LayoutItem[]) => {
+      // Capture undo snapshot before persisting the layout change
+      pushUndoSnapshot();
+      if (layoutSyncTimerRef.current) clearTimeout(layoutSyncTimerRef.current);
+      layoutSyncTimerRef.current = setTimeout(() => {
+        newLayout.forEach((l) => {
+          const widget = widgets.find((w) => w.id === l.i);
+          if (widget?.chartId) void updateChartLayout(widget.id, l);
+        });
+      }, 400);
+    },
+    [widgets, updateChartLayout]
+  );
+
+  useEffect(
+    () => () => {
+      if (layoutSyncTimerRef.current) clearTimeout(layoutSyncTimerRef.current);
+    },
+    []
+  );
+
+  const applyLayoutPreset = useCallback(
+    (preset: LayoutPreset) => {
+      const defaultPage = filterCtx.defaultPageIdRef.current || filterCtx.pages[0]?.id || null;
+      const scopedItems = filterCtx.pageLayout.length ? filterCtx.pageLayout : layout;
+      const ordered = [...scopedItems].sort((a, b) => a.y - b.y || a.x - b.x);
+      const { nextLayout, newWidgets, newLayoutItems } = applyPresetWithScaffolds(
+        preset,
+        ordered,
+        widgets,
+      );
+      const fullLayout = [...nextLayout, ...newLayoutItems];
+      filterCtx.updatePageLayout(filterCtx.activePageId, fullLayout, defaultPage);
+      newWidgets.forEach((widget, index) => {
+        addWidgetToStore(widget, newLayoutItems[index]);
+      });
+      fullLayout.forEach((l) => {
+        const w = widgets.find((wi) => wi.id === l.i) || newWidgets.find((wi) => wi.id === l.i);
+        if (w?.chartId) void filterCtx.updateChartLayout(w.id, l);
+      });
+      if (newWidgets.length > 0) {
+        message.success(t('layout_preset_scaffolds_added', { count: newWidgets.length }));
+      }
+    },
+    [filterCtx, layout, widgets, addWidgetToStore, t],
+  );
+
+  const handleAddFilterPreset = useCallback(
+    async (partial: Partial<DashboardFilter>) => {
+      const primaryDs = inferPrimaryDataSourceId(widgets);
+      const filter: DashboardFilter = {
+        id: shortid.generate(),
+        name: partial.name || td('new_filter_default'),
+        type: partial.type || 'dropdown',
+        field: partial.field || '',
+        isGlobal: true,
+        ...(primaryDs ? { dataSourceId: primaryDs } : {}),
+        ...partial,
+      };
+      const next = [...filterCtx.globalFiltersConfig, filter];
+      await filterCtx.saveGlobalFilters(next);
+      // Compact UX: open the lightweight filter panel so the user can immediately apply/adjust values.
+      // (Open the heavy editor only if the user explicitly clicks "Manage filters" from the top bar.)
+      filterCtx.setFiltersPanelOpen(true);
+    },
+    [filterCtx, widgets, td],
+  );
+
+  const createFromTemplate = async (template: DashboardTemplate, dashboardName?: string) => {
+    if (isEnterpriseEdition && !isValidUuid(currentProjectId != null ? String(currentProjectId) : null)) {
+      throw new Error('Select a valid project before creating a dashboard');
     }
 
     setCreatingTemplateId(template.id);
@@ -376,7 +617,7 @@ export default function NewDashboardStudio() {
       const response = await chartService.createDashboardFromTemplate({
         templateId: template.id,
         projectId: isEnterpriseEdition ? currentProjectId : undefined,
-        dashboardName: template.default_dashboard_name,
+        dashboardName: dashboardName || template.default_dashboard_name,
       });
 
       await fetchDashboards();
@@ -388,8 +629,8 @@ export default function NewDashboardStudio() {
       const title = response?.dashboard?.title || template.default_dashboard_name || template.name;
       message.success(`Created ${title}`);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to create sample dashboard';
-      message.error(errorMsg);
+      message.error(formatApiValidationError(error));
+      throw error;
     } finally {
       setCreatingTemplateId(null);
     }
@@ -459,6 +700,11 @@ export default function NewDashboardStudio() {
           <Text type="secondary">
             {isEnterpriseEdition && !currentProjectId ? t('waiting_project') : t('loading_dashboards')}
           </Text>
+          {isEnterpriseEdition && !currentProjectId && (
+            <Text type="secondary" style={{ fontSize: 13 }}>
+              {t('waiting_project_hint')}
+            </Text>
+          )}
         </div>
       </ConfigProvider>
     );
@@ -502,13 +748,13 @@ export default function NewDashboardStudio() {
             type="primary"
             size="large"
             icon={<PlusOutlined />}
-            onClick={() => addDashboard()}
+            onClick={() => setWizardOpen(true)}
             style={{ marginTop: '16px' }}
           >
             {t('create_dashboard')}
           </Button>
 
-          <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>or start from a sample dashboard</Divider>
+          <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{t('or_sample_dashboard')}</Divider>
 
           {isLoadingTemplates ? (
             <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
@@ -578,11 +824,43 @@ export default function NewDashboardStudio() {
             </Text>
           )}
         </div>
+        <CreateDashboardWizard
+          open={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          templates={sampleTemplates}
+          creating={creatingDashboard}
+          onCreateWithLayout={handleWizardCreateWithLayout}
+          onCreateFromTemplate={async (template, name) => {
+            setCreatingDashboard(true);
+            try {
+              await createFromTemplate(template, name);
+              message.success(t('dashboard_created_success'));
+            } catch (err) {
+              message.error(formatApiValidationError(err));
+            } finally {
+              setCreatingDashboard(false);
+            }
+          }}
+        />
       </ConfigProvider>
     );
   }
 
   return (
+    <PermissionGuard
+      permission={Permission.DASHBOARD_VIEW}
+      loadingFallback={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <Spin size="large" tip={t('loading_dashboards')} />
+        </div>
+      }
+      fallback={
+        <div style={{ padding: 48, maxWidth: 480, margin: '0 auto' }}>
+          <Alert type="warning" showIcon message={t('no_dashboard_permission')} description={t('no_dashboard_permission_desc')} />
+        </div>
+      }
+    >
+    <DashboardPageShell fullBleed>
     <ConfigProvider
       theme={{
         token: {
@@ -591,15 +869,10 @@ export default function NewDashboardStudio() {
         },
       }}
     >
-      <div className="studio-wrapper" id="studio-wrapper">
-        {isFullscreen && (
-          <div className="fullscreen-exit-overlay">
-            <div className="fullscreen-exit-btn" onClick={() => document.exitFullscreen()}>
-              <CloseOutlined style={{ fontSize: '14px' }} />
-              <span>{t('exit_fullscreen')}</span>
-            </div>
-          </div>
-        )}
+      <div
+        className={`studio-wrapper dashboard-studio-root ${!isEditMode ? 'view-mode' : ''}`}
+        id="studio-wrapper"
+      >
         <div className="studio-body">
           <main
             className="studio-canvas-area"
@@ -610,37 +883,215 @@ export default function NewDashboardStudio() {
             }}
           >
             {/* Dashboard Selector Tabs & Toolbar — Hidden in Fullscreen */}
-            {!isFullscreen && <DashboardTabs />}
-
-            {/* Float title in fullscreen */}
-            {isFullscreen && dashboards.find((d) => d.id === useDashboardStore.getState().activeDashboardId) && (
-              <div style={{ padding: '48px 48px 0 48px' }}>
-                <Title level={2} style={{ margin: 0 }}>
-                  {dashboards.find((d) => d.id === useDashboardStore.getState().activeDashboardId)?.name}
-                </Title>
-              </div>
+            {!isFullscreen && (
+              <>
+              <DashboardTabs
+                onAddBlock={(type) => {
+                  const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === type);
+                  if (template) void addWidget(template);
+                }}
+                onAddFilterPreset={(preset) => void handleAddFilterPreset(preset)}
+                onApplyLayoutPreset={applyLayoutPreset}
+                filtersPanelOpen={filterCtx.filtersPanelOpen}
+                onOpenFilterPanel={() => filterCtx.setFiltersPanelOpen(!filterCtx.filtersPanelOpen)}
+                onOpenFilterManager={() => filterCtx.setFiltersEditorOpen(true)}
+                activePageId={filterCtx.activePageId}
+                pages={filterCtx.pages}
+                runtimeFilters={filterCtx.runtimeFilters}
+                collabConnected={collabConnected}
+                collabPeerCount={collabPeers}
+                collabActiveUsers={collabActiveUsers}
+              />
+              {linkedFeedPostId ? (
+                <DashboardFeedStudioBanner
+                  feedPostId={linkedFeedPostId}
+                  dashboardTitle={activeDashboard?.name}
+                  snapshotVersion={linkedFeedSnapshotVersion || undefined}
+                  snapshotOutdated={feedSnapshotOutdated}
+                  onUpdateSnapshot={() => void handleUpdateFeedSnapshot()}
+                  updatingSnapshot={updatingFeedSnapshot}
+                />
+              ) : remixSource ? (
+                <DashboardRemixBanner remix={remixSource} dashboardTitle={activeDashboard?.name} />
+              ) : null}
+              </>
             )}
 
+            <div className="dashboard-workspace">
+            <div className="dashboard-workspace-main">
             <div
+              className={`dashboard-page-chrome${isFullscreen ? ' dashboard-page-chrome-presentation' : ''}`}
+            >
+              <StudioContextBar
+                pages={filterCtx.pages}
+                activePageId={filterCtx.activePageId}
+                defaultPageId={filterCtx.defaultPageIdRef.current}
+                globalFiltersConfig={filterCtx.globalFiltersConfig}
+                pageFiltersConfig={filterCtx.pageFiltersConfig}
+                combinedFiltersConfig={filterCtx.combinedFiltersConfig}
+                runtimeFilters={filterCtx.runtimeFilters}
+                onRuntimeFiltersChange={filterCtx.handleRuntimeFiltersChange}
+                filtersPanelOpen={filterCtx.filtersPanelOpen}
+                onFiltersPanelOpenChange={filterCtx.setFiltersPanelOpen}
+                filtersEditorOpen={filterCtx.filtersEditorOpen}
+                onFiltersEditorOpenChange={filterCtx.setFiltersEditorOpen}
+                pageFiltersEditorOpen={filterCtx.pageFiltersEditorOpen}
+                onPageFiltersEditorOpenChange={filterCtx.setPageFiltersEditorOpen}
+                onSavePageFilters={filterCtx.savePageFilters}
+                dataSourceOptions={filterCtx.dataSourceOptions}
+                tableOptionsBySource={filterCtx.tableOptionsBySource}
+                widgetScopeOptions={filterCtx.widgetScopeOptions}
+                filterFieldConflicts={filterCtx.filterFieldConflicts}
+                dataSourcesForFilters={filterCtx.dataSourcesForFilters}
+                dashboardId={activeDashboardId ?? undefined}
+                studioWidgets={widgets}
+                onSaveGlobalFilters={filterCtx.saveGlobalFilters}
+                fetchFilterOptions={filterCtx.fetchFilterOptions}
+                widgetCount={filterCtx.pageWidgets.length}
+                onApplyLayoutPreset={applyLayoutPreset}
+                onResetLayout={() => {
+                  const defaultPage = filterCtx.defaultPageIdRef.current || filterCtx.pages[0]?.id || null;
+                  const reset = filterCtx.pageLayout.map((l, i) => ({ ...l, x: 0, y: i * 5, w: l.w, h: l.h }));
+                  filterCtx.updatePageLayout(filterCtx.activePageId, reset, defaultPage);
+                }}
+                hideLayout={isFullscreen || !isEditMode}
+                onRefresh={isFullscreen ? undefined : filterCtx.handleManualRefresh}
+                refreshing={filterCtx.refreshing}
+                lastRefreshedLabel={isFullscreen ? undefined : filterCtx.lastRefreshedLabel}
+                autoRefreshMinutes={filterCtx.autoRefreshMinutes}
+                onAutoRefreshIntervalChange={isFullscreen ? undefined : filterCtx.setAutoRefreshMinutes}
+                dashboardColorPalette={dashboardColorPalette}
+                onDashboardColorPaletteChange={
+                  isEditMode && !isFullscreen
+                    ? (id) => void handleDashboardColorPaletteChange(id)
+                    : undefined
+                }
+                readOnly={!isEditMode}
+                presentationMode={isFullscreen}
+                presentationTitle={
+                  dashboards.find((d) => d.id === activeDashboardId)?.name
+                }
+                onExitPresentation={() => void exitDocumentFullscreen()}
+                dataSourceIds={dashboardDataSourceIds}
+                pageTabProps={{
+                  showEmptyPlaceholder: true,
+                  readOnly: !isEditMode,
+                  onSelect: filterCtx.setActivePageId,
+                  onCreate: async (name) => {
+                    if (!activeDashboardId) return;
+                    const page = await chartService.createPage(activeDashboardId, name);
+                    filterCtx.setPages((prev) => [...prev, page]);
+                    filterCtx.setActivePageId(page.id);
+                    if (filterCtx.pages.length === 0) {
+                      filterCtx.defaultPageIdRef.current = page.id;
+                      await chartService.setDefaultPage(activeDashboardId, page.id);
+                    }
+                  },
+                  onRename: async (pageId, name) => {
+                    if (!activeDashboardId) return;
+                    await chartService.updatePage(activeDashboardId, pageId, { name });
+                    filterCtx.setPages((prev) => prev.map((p) => (p.id === pageId ? { ...p, name } : p)));
+                  },
+                    onDelete: async (pageId, moveWidgetsToPageId) => {
+                      await filterCtx.deletePage(pageId, moveWidgetsToPageId);
+                    },
+                  onReorder: async (pageIds) => {
+                    if (!activeDashboardId) return;
+                    const reordered = await chartService.reorderPages(activeDashboardId, pageIds);
+                    filterCtx.setPages(reordered as DashboardPageItem[]);
+                  },
+                  onSetDefault: async (pageId) => {
+                    if (!activeDashboardId) return;
+                    await chartService.setDefaultPage(activeDashboardId, pageId);
+                    filterCtx.defaultPageIdRef.current = pageId;
+                    message.success(td('default_page_set'));
+                  },
+                }}
+              />
+              {filterCtx.combinedFiltersConfig.length > 0 &&
+              (!isEditMode || isFullscreen) ? (
+                <DashboardFilterPanel
+                  variant="toolbar"
+                  filters={filterCtx.combinedFiltersConfig}
+                  runtimeFilters={filterCtx.runtimeFilters}
+                  onChange={filterCtx.handleRuntimeFiltersChange}
+                  fetchOptions={filterCtx.fetchFilterOptions}
+                  minimal={!isEditMode || isFullscreen}
+                  showHeader={false}
+                  onClearAll={() => filterCtx.handleRuntimeFiltersChange([])}
+                />
+              ) : null}
+            </div>
+
+            <div
+              className="studio-canvas-scroll"
               style={{
                 flex: 1,
                 width: '100%',
                 overflowX: 'hidden',
                 overflowY: 'auto',
                 minHeight: 0,
-                padding: isFullscreen ? '12px 48px 48px 48px' : '16px',
+                padding: isFullscreen ? '8px 24px 24px' : '16px',
+                position: 'relative',
               }}
               onClick={() => {
                 setSelectedWidgetId(null);
                 setPropertiesCollapsed(true);
               }}
             >
+              {isEditMode && collabConnected ? (
+                <DashboardCollabOverlay cursors={collabPeerCursors} selfUserId={collabSelfUserId} />
+              ) : null}
+              {isEditMode && collabConnected ? (
+                <div className="dashboard-collab-comments-anchor">
+                  <DashboardCollabCommentsPanel
+                    open={collabCommentsOpen}
+                    onOpenChange={setCollabCommentsOpen}
+                    comments={collabComments}
+                    selectedWidgetId={selectedWidgetId}
+                    onAddComment={handleCollabAddComment}
+                    connected={collabConnected}
+                  />
+                </div>
+              ) : null}
+              {isBuilding && buildProgress ? (
+                <DashboardBuildLiveBanner
+                  progress={buildProgress}
+                  isConnected={isBuildLiveConnected}
+                  transport={buildTransport}
+                />
+              ) : null}
+              {!isEditMode && activeDashboardId ? (
+                <DashboardViewerGrid
+                  widgets={studioView.visibleWidgets}
+                  layout={studioView.visibleLayout}
+                  dashboardId={activeDashboardId}
+                  runtimeFilters={filterCtx.runtimeFilters}
+                  onCrossFilter={filterCtx.handleCrossFilter}
+                  onWidgetChartClick={filterCtx.handleWidgetChartClick}
+                  onRetryWidget={studioView.handleRetryWidget}
+                  refreshing={filterCtx.refreshing}
+                />
+              ) : (
               <DashboardCanvas
-                widgets={widgets}
-                layout={layout}
+                widgets={filterCtx.pageWidgets}
+                layout={filterCtx.pageLayout}
+                dashboardId={activeDashboardId ?? undefined}
+                runtimeFilters={filterCtx.runtimeFilters}
+                onCrossFilter={filterCtx.handleCrossFilter}
+                onWidgetChartClick={filterCtx.handleWidgetChartClick}
+                readOnly={!isEditMode}
+                pages={filterCtx.pages}
+                onMoveWidgetToPage={async (widgetId, pageId) => {
+                  await filterCtx.moveWidgetToPage(widgetId, pageId);
+                  message.success(td('move_to_page_success'));
+                }}
                 selectedWidgetId={selectedWidgetId}
                 setSelectedWidgetId={setSelectedWidgetId}
                 setLayout={setLayout}
+                onPageLayoutChange={filterCtx.handlePageLayoutChange}
+                peerEditingWidgetId={peerEditingWidgetId}
+                onCollabCursorMove={collabConnected ? collabEmitCursorMove : undefined}
                 removeWidget={removeWidget}
                 duplicateWidget={duplicateWidget}
                 onAddWidget={(template) => {
@@ -649,20 +1100,32 @@ export default function NewDashboardStudio() {
                 onDropWidget={(template) => addWidget(template)}
                 setPropertiesCollapsed={setPropertiesCollapsed}
                 onUpdateWidget={onUpdateWidget}
-                onLayoutSync={(newLayout) => {
-                  newLayout.forEach((l) => {
-                    const widget = widgets.find((w) => w.id === l.i);
-                    if (widget?.chartId) {
-                      updateChartLayout(widget.id);
-                    }
-                  });
-                }}
+                onLayoutSync={scheduleLayoutSync}
               />
+              )}
+            </div>
+            </div>
+
+            {isEditMode &&
+            !isFullscreen &&
+            filterCtx.combinedFiltersConfig.length > 0 ? (
+              <DashboardFilterPanel
+                variant="panel"
+                filters={filterCtx.combinedFiltersConfig}
+                runtimeFilters={filterCtx.runtimeFilters}
+                onChange={filterCtx.handleRuntimeFiltersChange}
+                fetchOptions={filterCtx.fetchFilterOptions}
+                minimal={false}
+                open={filterCtx.filtersPanelOpen}
+                onClose={() => filterCtx.setFiltersPanelOpen(false)}
+                onClearAll={() => filterCtx.handleRuntimeFiltersChange([])}
+              />
+            ) : null}
             </div>
           </main>
 
           {/* Right toggle button — absolute overlay, does not affect canvas width */}
-          {selectedWidgetId && selectedWidget?.chartType !== 'text' && (
+          {selectedWidgetId && selectedWidget?.chartType !== 'text' && isEditMode && (
             <div
               className={`sidebar-toggle-btn right ${isPropertiesCollapsed ? 'collapsed' : ''}`}
               onClick={() => setPropertiesCollapsed(!isPropertiesCollapsed)}
@@ -680,16 +1143,60 @@ export default function NewDashboardStudio() {
           )}
 
           {/* Right Sidebar Properties — absolute overlay, does NOT push canvas */}
-          <PropertiesPanel
-            selectedWidget={selectedWidget}
-            selectedWidgetId={selectedWidgetId}
-            widgets={widgets}
-            setWidgets={setWidgets}
-            removeWidget={removeWidget}
-            isCollapsed={isPropertiesCollapsed}
-          />
+          {isEditMode && (
+            <PropertiesPanel
+              selectedWidget={selectedWidget}
+              selectedWidgetId={selectedWidgetId}
+              widgets={widgets}
+              setWidgets={setWidgets}
+              removeWidget={removeWidget}
+              isCollapsed={isPropertiesCollapsed}
+              dashboardPages={filterCtx.pages}
+              activeDashboardId={activeDashboardId}
+              peerEditingWidgetId={peerEditingWidgetId}
+              currentProjectId={currentProjectId}
+              filterFieldConflicts={filterCtx.filterFieldConflicts}
+              activeDashboardIdForFilters={activeDashboardId}
+            />
+          )}
         </div>
       </div>
+      <Modal
+        title={t('chart_import_title')}
+        open={chartImport.importOpen}
+        onCancel={chartImport.handleImportCancel}
+        onOk={() => void chartImport.handleImportConfirm()}
+        okText={t('chart_import_confirm')}
+        confirmLoading={chartImport.importing}
+      >
+        <Select
+          style={{ width: '100%' }}
+          placeholder={t('chart_import_select_dashboard')}
+          value={chartImport.targetDashboardId ?? undefined}
+          onChange={chartImport.setTargetDashboardId}
+          options={chartImport.dashboardOptions}
+        />
+      </Modal>
+      <CreateDashboardWizard
+        open={wizardOpen}
+        onClose={() => setWizardOpen(false)}
+        templates={sampleTemplates}
+        creating={creatingDashboard}
+        onCreateWithLayout={handleWizardCreateWithLayout}
+        onCreateFromTemplate={async (template, name) => {
+          setCreatingDashboard(true);
+          try {
+            await createFromTemplate(template, name);
+            message.success(t('dashboard_created_success'));
+          } catch (err) {
+            message.error(formatApiValidationError(err));
+          } finally {
+            setCreatingDashboard(false);
+          }
+        }}
+      />
     </ConfigProvider>
+    </DashboardPageShell>
+    </PermissionGuard>
   );
 }

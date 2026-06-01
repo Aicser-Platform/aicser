@@ -1,0 +1,50 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "00000000-0000-4000-8000-aicser-embed01",
+  "packageName": "com.aicser.teams.embed",
+  "developer": {
+    "name": "Aicser",
+    "websiteUrl": "https://aicser.com",
+    "privacyUrl": "https://aicser.com/privacy",
+    "termsOfUseUrl": "https://aicser.com/terms"
+  },
+  "name": {
+    "short": "Aicser",
+    "full": "Aicser Analytics Embed"
+  },
+  "description": {
+    "short": "Embed Aicser dashboards and AI chat in Teams",
+    "full": "Securely embed Aicser dashboards, charts, and AI chat using signed JWT embed tokens."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#1677FF",
+  "staticTabs": [
+    {
+      "entityId": "aicser-dashboard",
+      "name": "Dashboard",
+      "contentUrl": "https://app.aicser.com/embed/dashboard/{DASHBOARD_ID}?token={EMBED_TOKEN}",
+      "websiteUrl": "https://app.aicser.com/embed/dashboard/{DASHBOARD_ID}?token={EMBED_TOKEN}",
+      "scopes": ["personal", "team"]
+    },
+    {
+      "entityId": "aicser-chat",
+      "name": "AI Chat",
+      "contentUrl": "https://app.aicser.com/embed/chat?token={EMBED_TOKEN}",
+      "websiteUrl": "https://app.aicser.com/embed/chat?token={EMBED_TOKEN}",
+      "scopes": ["personal"]
+    }
+  ],
+  "validDomains": [
+    "app.aicser.com",
+    "localhost"
+  ],
+  "webApplicationInfo": {
+    "id": "00000000-0000-4000-8000-aicser-embed01",
+    "resource": "https://app.aicser.com"
+  }
+}

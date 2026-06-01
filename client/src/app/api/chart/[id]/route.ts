@@ -1,5 +1,6 @@
 
 import { getBackendUrl } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 import { NextRequest, NextResponse } from 'next/server';
 
 const backendBase = getBackendUrl();
@@ -9,15 +10,11 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
   try {
     const targetUrl = `${backendUrl}/${id}`;
 
-    const authHeader = request?.headers.get('Authorization');
-    const cookieHeader = request?.headers.get('Cookie');
-
     const options: RequestInit = {
       method,
       headers: {
         'Content-Type': 'application/json',
-        ...(authHeader ? { 'Authorization': authHeader } : {}),
-        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        ...(request ? buildProxyAuthHeaders(request) : {}),
       },
     };
 
@@ -30,9 +27,21 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
     const response = await fetch(targetUrl, options);
 
     if (!response.ok) {
-        const errorData = await response.text();
-        console.error(`[API Proxy ID] Backend error: ${response.status} - ${errorData}`);
-        return NextResponse.json({ success: false, error: `Backend error: ${response.status}` }, { status: response.status });
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const errorJson = await response.json();
+          return NextResponse.json(errorJson, { status: response.status });
+        } catch {
+          // fall through
+        }
+      }
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`[API Proxy ID] Backend error: ${response.status} - ${errorText}`);
+      return NextResponse.json(
+        { success: false, error: errorText || `Backend error: ${response.status}` },
+        { status: response.status },
+      );
     }
 
     if (response.status === 204) {

@@ -4,14 +4,16 @@ from uuid import UUID as PyUUID
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from src.core.config import settings
 from src.modules.user.models import User
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_logger = logging.getLogger(__name__)
 
 ALGORITHM = "HS256"
 EXPIRY_SECONDS = 7 * 24 * 60 * 60  # 7 days
@@ -36,9 +38,31 @@ def decode_access_token(token: str) -> dict:
     return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
 
 
+def _pick_user_for_email(users: list[User], email: str) -> Optional[User]:
+    """Prefer CE/password account when duplicate rows share an email."""
+    if not users:
+        return None
+    if len(users) == 1:
+        return users[0]
+    _logger.warning(
+        "Multiple users found for email %s; preferring CE/password account",
+        email,
+    )
+    for user in users:
+        if user.provider == "ce" and user.hashed_password:
+            return user
+    for user in users:
+        if user.hashed_password:
+            return user
+    return users[0]
+
+
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
+    normalized = email.strip().lower()
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == normalized)
+    )
+    return _pick_user_for_email(list(result.scalars().all()), email)
 
 
 async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:

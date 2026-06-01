@@ -5,7 +5,7 @@ Replaces the asyncio.create_task(schedule_retention_cleanup()) sleep loops.
 
 Usage:
     # Run the worker:
-    arq app.jobs.worker.WorkerSettings
+    python -m arq src.shared.jobs.worker.WorkerSettings
 
     # Enqueue a job from anywhere:
     from src.shared.jobs.client import enqueue

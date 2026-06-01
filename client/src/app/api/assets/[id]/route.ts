@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 export async function GET(
   request: NextRequest,
@@ -21,13 +22,8 @@ export async function GET(
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...buildProxyAuthHeaders(request),
     };
-    
-    // Forward Authorization header if present
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
     
     const response = await fetch(`${backendBase}/assets/${assetId}`, {
       method: 'GET',
@@ -74,13 +70,8 @@ export async function DELETE(
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...buildProxyAuthHeaders(request),
     };
-    
-    // Forward Authorization header if present
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
     
     const response = await fetch(`${backendBase}/assets/${assetId}`, {
       method: 'DELETE',

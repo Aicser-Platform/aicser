@@ -58,3 +58,8 @@ tmp/**
 .superpowers/*
 # EE submodule content — populated by postinstall symlink
 src/ee/
+
+# Serwist service worker (generated at build)
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js

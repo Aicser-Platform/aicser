@@ -219,8 +219,12 @@
   color: #fff !important;
 }
 
-.table-widget-container .table-row-total .ant-typography {
-  font-weight: 700 !important;
+.table-widget-container .table-row-cross-filter-active > td {
+  background: rgba(0, 194, 203, 0.08) !important;
+}
+
+[data-theme='dark'] .table-widget-container .table-row-cross-filter-active > td {
+  background: rgba(0, 194, 203, 0.15) !important;
 }
 
 /* Column borders */

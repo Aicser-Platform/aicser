@@ -1,12 +1,14 @@
 /* Chart Designer Additional Refinements */
 
 .designer-theme {
-  --studio-sidebar-width: 320px;
+  --studio-sidebar-width: 200px;
 }
 
 .studio-wrapper {
-  height: calc(100vh - 64px);
+  height: 100%;
   width: 100%;
+  min-height: 0;
+  max-height: 100%;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
@@ -22,9 +24,9 @@
 }
 
 .designer-simplified.studio-wrapper {
-  height: calc(100vh - 64px) !important;
-  min-height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
   overflow: hidden !important;
 }
 
@@ -32,6 +34,9 @@
   min-height: 0 !important;
   max-height: 100% !important;
   overflow: hidden !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
 }
 
 .designer-breadcrumb {
@@ -196,13 +201,13 @@
 
 /* Simplified chart-first mode */
 .designer-simplified .chart-designer-sidebar {
-  width: 200px;
-  min-width: 200px;
-  max-width: 200px;
-  flex: 0 0 200px;
+  width: var(--studio-sidebar-width, 200px);
+  min-width: var(--studio-sidebar-width, 200px);
+  max-width: var(--studio-sidebar-width, 200px);
+  flex: 0 0 var(--studio-sidebar-width, 200px);
   min-height: 100%;
   height: 100%;
-  background: #f8fafc;
+  background: var(--studio-sidebar-bg);
   border-right: 1px solid var(--studio-border);
   box-shadow: none;
   backdrop-filter: none;
@@ -230,12 +235,18 @@
 }
 
 .designer-simplified .properties-panel {
+  position: relative;
+  right: auto;
+  top: auto;
+  bottom: auto;
   width: 300px;
   min-width: 300px;
   max-width: 300px;
+  flex: 0 0 300px;
   height: 100%;
   min-height: 100%;
-  background: #f8fafc;
+  transform: none !important;
+  background: var(--studio-sidebar-bg);
   border-left: 1px solid var(--studio-border);
   box-shadow: none;
   backdrop-filter: none;
@@ -274,17 +285,26 @@
 }
 
 .designer-simplified .studio-canvas-area {
-  margin-right: 300px;
+  flex: 1 1 auto;
   min-width: 0;
+  margin-right: 0;
 }
 
 .designer-simplified .designer-fullscreen-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 12px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .designer-simplified .designer-canvas-container {
+  position: relative;
   height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  width: 100%;
   padding: 0 40px;
 }
 
@@ -488,5 +508,92 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+.designer-canvas.studio-canvas-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chart-designer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  flex-shrink: 0;
+}
+
+.chart-designer-toolbar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.chart-designer-toolbar-share {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.designer-fullscreen-canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 992px) {
+  .designer-theme {
+    --studio-sidebar-width: 100%;
+  }
+
+  .studio-body {
+    flex-direction: column !important;
+  }
+
+  .designer-simplified .chart-designer-sidebar,
+  .chart-designer-sidebar {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 auto !important;
+    max-height: 38vh;
+    border-right: none !important;
+    border-bottom: 1px solid var(--studio-border);
+  }
+
+  .designer-simplified .properties-panel {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    flex: 0 0 auto !important;
+    max-height: 42vh;
+    border-left: none !important;
+    border-top: 1px solid var(--studio-border);
+  }
+
+  .chart-designer-toolbar {
+    flex-wrap: wrap;
+    padding: 8px 12px;
+  }
+
+  .widget-selection-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .designer-simplified.studio-wrapper,
+  .studio-wrapper {
+    height: calc(100vh - 64px - var(--mobile-bottom-nav-height, 56px)) !important;
+    min-height: unset !important;
+  }
+
+  .chart-designer-toolbar-title {
+    font-size: 13px;
   }
 }

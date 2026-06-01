@@ -1,4 +1,5 @@
 import { getBackendUrl } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 import { NextRequest, NextResponse } from 'next/server';
 
 const backendBase = getBackendUrl();
@@ -10,15 +11,11 @@ async function forwardRequest(method: string, request?: NextRequest) {
     const query = searchParams.toString();
     const targetUrl = query ? `${backendUrl}?${query}` : backendUrl;
 
-    const authHeader = request?.headers.get('Authorization');
-    const cookieHeader = request?.headers.get('Cookie');
-
     const options: RequestInit = {
       method,
       headers: {
         'Content-Type': 'application/json',
-        ...(authHeader ? { 'Authorization': authHeader } : {}),
-        ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
+        ...(request ? buildProxyAuthHeaders(request) : {}),
       },
     };
 
@@ -27,13 +24,23 @@ async function forwardRequest(method: string, request?: NextRequest) {
       options.body = JSON.stringify(body);
     }
 
-    console.log(`[API Proxy] ${method} ${targetUrl}`);
     const response = await fetch(targetUrl, options);
 
     if (!response.ok) {
-        const errorData = await response.text();
-        console.error(`[API Proxy] Backend error: ${response.status} - ${errorData}`);
-        return NextResponse.json({ success: false, error: `Backend error: ${response.status}` }, { status: response.status });
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const errorJson = await response.json();
+          return NextResponse.json(errorJson, { status: response.status });
+        } catch {
+          // fall through
+        }
+      }
+      const errorText = await response.text().catch(() => 'Unknown error');
+      return NextResponse.json(
+        { success: false, error: errorText || `Backend error: ${response.status}` },
+        { status: response.status },
+      );
     }
 
     const data = await response.json();

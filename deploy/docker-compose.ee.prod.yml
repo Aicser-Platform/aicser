@@ -31,28 +31,19 @@ services:
       retries: 5
     restart: unless-stopped
 
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
-    container_name: aiser-clickhouse-ee-prod
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: aiser-keycloak-ee-prod
+    command: start-dev --import-realm
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
     volumes:
-      - clickhouse_ee_prod_data:/var/lib/clickhouse
+      - ./keycloak/aiser-realm.json:/opt/keycloak/data/import/aiser-realm.json:ro
     ports:
-      - "8123:8123"
-      - "9000:9000"
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
+      - "8080:8080"
     restart: unless-stopped
 
   server:
@@ -78,13 +69,12 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "8123"
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_BACKEND_CLIENT_ID:-aiser-backend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET is required}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
@@ -101,12 +91,10 @@ services:
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       ENVIRONMENT: production
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
     volumes:
@@ -118,8 +106,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      clickhouse:
-        condition: service_healthy
+      keycloak:
+        condition: service_started
     entrypoint:
       - /bin/sh
       - -c
@@ -147,13 +135,12 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (browser-accessible server URL e.g. http://YOUR_HOST:8000)}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-}
-        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
-        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:8080}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     container_name: aiser-client-ee-prod
     environment:
-      # Server-side proxy target (Next.js Route Handlers → FastAPI, internal Docker DNS)
       API_TARGET: http://server:8000
       NODE_ENV: production
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
@@ -172,7 +159,6 @@ services:
 volumes:
   postgres_ee_prod_data:
   redis_ee_prod_data:
-  clickhouse_ee_prod_data:
 
 networks:
   default:

@@ -8,20 +8,21 @@ import {
   CrownOutlined,
   RocketOutlined,
   CustomerServiceOutlined,
+  CommentOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
-import { useOnboardingStore } from '@/stores/useOnboardingStore';
+import { useOnboardingStore, useOnboarding } from '@/stores/useOnboardingStore';
 import { useProfileStore } from '@/stores/useProfileStore';
-import dynamic from 'next/dynamic';
-const PricingModal = dynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.PricingModalEE }))) as any,
-  { ssr: false }
-) as React.ComponentType<{ visible?: boolean; onClose?: () => void; onUpgrade?: (planType: string, isYearly: boolean) => void; currentPlan?: string; loading?: boolean }>;
+import PricingModal from '@/components/PricingModal';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useFeaturebaseStore } from '@/stores/useFeaturebaseStore';
+import { useRouter } from 'next/navigation';
+
+const isEnterpriseEdition = ['enterprise', 'ee'].includes(
+  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
+);
 
 interface UserProfileDropdownProps {
   className?: string;
@@ -30,13 +31,16 @@ interface UserProfileDropdownProps {
 
 const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, showText = true }) => {
   const t = useTranslations('user_profile_dropdown');
+  const router = useRouter();
   const { openHelp } = useFeaturebaseStore();
   const { user, logout } = useAuthStore();
   const { planType, usage, subscription, loading: subLoading, refreshUsage } = useSubscriptionStore();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const _onboarding = useOnboardingStore() as any;
-  const onboardingCompleted: boolean = _onboarding.onboardingCompleted ?? (_onboarding.status?.completed ?? true);
-  const startOnboarding: () => void = _onboarding.startOnboarding ?? (() => {});
+  const onboardingStore = useOnboardingStore();
+  const { startOnboarding } = useOnboarding();
+  const onboardingCompleted: boolean =
+    onboardingStore.status?.completed ??
+    (onboardingStore as { onboardingCompleted?: boolean }).onboardingCompleted ??
+    true;
   const { profile, fetchProfile } = useProfileStore();
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
@@ -276,6 +280,14 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       label: t('get_help'),
       onClick: () => openHelp(),
     },
+    ...(isEnterpriseEdition
+      ? [{
+          key: 'support',
+          icon: <CommentOutlined />,
+          label: t('support'),
+          onClick: () => router.push('/support'),
+        }]
+      : []),
     {
       key: 'logout',
       icon: <LogoutOutlined />,
@@ -316,13 +328,16 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
         overlayStyle={{ minWidth: 300, padding: '8px 0' }}
         onOpenChange={handleDropdownVisibleChange}
       >
-        <div className={`flex items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors ${className}`} style={{ gap: 10, padding: '6px 10px' }}>
+        <div
+          className={`flex items-center cursor-pointer rounded-lg transition-colors header-profile-trigger ${className ?? ''}`}
+          style={showText ? { gap: 10, padding: '6px 10px' } : { padding: 0 }}
+        >
           <div className="relative">
-            <Avatar 
-              size="default"
+            <Avatar
+              size={showText ? 'default' : 24}
               src={profile?.avatar_url || undefined}
               icon={!profile?.avatar_url ? <UserOutlined /> : undefined}
-              className="bg-blue-500"
+              className={showText ? 'bg-blue-500' : undefined}
             />
           </div>
           {/* always show username on desktop and tablet, collapse only on very small screens */}

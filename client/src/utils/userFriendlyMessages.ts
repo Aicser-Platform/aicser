@@ -104,6 +104,15 @@ export function makeProgressMessageUserFriendly(
     'deep_analysis_execution': 'Running analysis...',
     'deep_analysis_synthesis': 'Putting it all together...',
     'deep_analysis_complete': 'All done!',
+    'dashboard_schema_analysis': 'Analyzing your data schema…',
+    'dashboard_llm_planning': 'Designing dashboard layout…',
+    'dashboard_create_shell': 'Creating dashboard…',
+    'dashboard_create_widgets': 'Building widgets…',
+    'dashboard_prefetch_data': 'Loading chart data…',
+    'dashboard_generation_complete': 'Dashboard ready!',
+    'report_planning': 'Planning report sections…',
+    'report_execution': 'Building report sections…',
+    'rag_retrieval': 'Searching your documents…',
     'complete': 'Complete!',
   };
 
@@ -598,16 +607,97 @@ function deriveShortTitle(text: string, maxLen: number = 56): string {
     if (s.length <= maxLen + 5) return s || t.slice(0, maxLen).trim();
   }
   return t.length <= maxLen ? t : t.slice(0, maxLen).trim() + '…';
-}/** Insight: use LLM title + WHAT/SO WHAT/NOW WHAT structure; fallback to description. */
+}
+
+/** True when two text blocks say the same thing (avoid duplicate narrative + insight blocks). */
+export function narrativesAreDuplicate(main: string, secondary: string): boolean {
+  const x = (main || '').replace(/\s+/g, ' ').trim();
+  const y = (secondary || '').replace(/\s+/g, ' ').trim();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  if (x.length >= 60 && y.length >= 60 && (x.includes(y) || y.includes(x))) return true;
+  return false;
+}
+
+function tryParseLooseObject(input: string): Record<string, unknown> | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('{') && !trimmed.includes("'type'") && !trimmed.includes('"type"')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    try {
+      const jsonish = trimmed
+        .replace(/'/g, '"')
+        .replace(/\bNone\b/g, 'null')
+        .replace(/\bTrue\b/g, 'true')
+        .replace(/\bFalse\b/g, 'false');
+      const parsed = JSON.parse(jsonish);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** Normalize backend insight payloads (stringified dicts, snake_case, generic titles). */
+export function normalizeInsightInput(insight: unknown): Record<string, unknown> {
+  if (insight == null) return {};
+  if (typeof insight === 'string') {
+    const parsed = tryParseLooseObject(insight);
+    if (parsed) return normalizeInsightInput(parsed);
+    return { title: insight };
+  }
+  if (typeof insight !== 'object' || Array.isArray(insight)) {
+    return { title: String(insight) };
+  }
+  const o = { ...(insight as Record<string, unknown>) };
+  for (const key of ['title', 'description', 'content', 'text', 'message'] as const) {
+    const val = o[key];
+    if (typeof val === 'string') {
+      const parsed = tryParseLooseObject(val);
+      if (parsed) return { ...o, ...parsed };
+    }
+  }
+  return o;
+}
+
+const INSIGHT_TITLE_ITEM = /^Item\s+\d+$/i;
+
+/** Format query table cells for human-readable numbers (avoid float noise). */
+export function formatTableCellValue(value: unknown): string {
+  if (value == null) return '—';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return String(value);
+    if (Number.isInteger(value)) return value.toLocaleString();
+    const abs = Math.abs(value);
+    if (abs >= 1000) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (abs >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    return value.toLocaleString(undefined, { maximumSignificantDigits: 4 });
+  }
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+export type ChartConfidenceLevel = 'high' | 'medium' | 'low';
+
+export function chartConfidenceLevel(overall: number): ChartConfidenceLevel {
+  if (overall >= 0.8) return 'high';
+  if (overall >= 0.5) return 'medium';
+  return 'low';
+}
+
+/** Insight: use LLM title + WHAT/SO WHAT/NOW WHAT structure; fallback to description. */
 export function makeInsightFriendly(insight: string | { title?: string; description?: string; what?: string; so_what?: string; now_what?: string; business_value?: string; confidence?: number }): { title: string; description: string | null; what: string | null; soWhat: string | null; nowWhat: string | null; businessValue: string | null; confidencePct: number | null } {
-  const rawTitle = typeof insight === 'string' ? insight : (insight?.title || insight?.what || insight?.description || '');
-  const desc = typeof insight === 'object' && insight?.description ? String(insight.description).trim() : '';
-  const what = typeof insight === 'object' && insight?.what ? String(insight.what).trim() : null;
-  const soWhat = typeof insight === 'object' && insight?.so_what ? String(insight.so_what).trim() : null;
-  const nowWhat = typeof insight === 'object' && insight?.now_what ? String(insight.now_what).trim() : null;
-  const businessValue = typeof insight === 'object' && (insight as any)?.business_value ? String((insight as any).business_value).trim() : null;
-  const confidence = typeof insight === 'object' && insight?.confidence != null ? insight.confidence : null;
-  const confidencePctRaw = typeof insight === 'object' && (insight as any)?.confidence_pct != null ? (insight as any).confidence_pct : null;
+  const normalized = normalizeInsightInput(insight);
+  const rawTitle = String(normalized.title || normalized.what || normalized.description || '').trim();
+  const desc = normalized.description ? String(normalized.description).trim() : '';
+  const what = normalized.what ? String(normalized.what).trim() : null;
+  const soWhat = normalized.so_what ? String(normalized.so_what).trim() : null;
+  const nowWhat = normalized.now_what ? String(normalized.now_what).trim() : null;
+  const businessValue = normalized.business_value ? String(normalized.business_value).trim() : null;
+  const confidence = normalized.confidence != null ? normalized.confidence : null;
+  const confidencePctRaw = normalized.confidence_pct != null ? normalized.confidence_pct : null;
   const confidencePct =
     confidence != null && typeof confidence === 'number'
       ? Math.min(100, Math.max(0, Math.round(confidence * 100)))
@@ -627,9 +717,16 @@ export function makeInsightFriendly(insight: string | { title?: string; descript
     description = desc;
   }
 
-  let title = rawTitle.trim() || 'Key finding';
-  if (INSIGHT_TITLE_GENERIC.test(title) && (what || desc)) title = deriveShortTitle(what || desc) || title;
-  if (INSIGHT_TITLE_HARDCODED.test(title)) title = (what || desc) ? deriveShortTitle(what || desc) || 'Results summary' : 'Results summary';
+  let title = rawTitle || 'Key finding';
+  if ((INSIGHT_TITLE_GENERIC.test(title) || INSIGHT_TITLE_ITEM.test(title)) && (what || desc)) {
+    title = deriveShortTitle(what || desc) || title;
+  }
+  if (INSIGHT_TITLE_HARDCODED.test(title)) {
+    title = (what || desc) ? deriveShortTitle(what || desc) || 'Results summary' : 'Results summary';
+  }
+  if (title.startsWith('{') || title.includes("'type'")) {
+    title = deriveShortTitle(what || soWhat || nowWhat || desc) || 'Key finding';
+  }
   return {
     title,
     description: description?.trim() || null,
@@ -735,15 +832,39 @@ export function buildChartExplanationModalContent(args: {
   };
 }
 
+export function normalizeRecommendationInput(rec: unknown): Record<string, unknown> {
+  if (rec == null) return {};
+  if (typeof rec === 'string') {
+    const parsed = tryParseLooseObject(rec);
+    if (parsed) return normalizeRecommendationInput(parsed);
+    return { title: rec };
+  }
+  if (typeof rec !== 'object' || Array.isArray(rec)) {
+    return { title: String(rec) };
+  }
+  const o = { ...(rec as Record<string, unknown>) };
+  for (const key of ['title', 'description', 'content', 'text', 'message'] as const) {
+    const val = o[key];
+    if (typeof val === 'string') {
+      const parsed = tryParseLooseObject(val);
+      if (parsed) return { ...o, ...parsed };
+    }
+  }
+  return o;
+}
+
+const REC_TITLE_ITEM = /^Item\s+\d+$/i;
+
 /** Recommendation: use LLM title + action/rationale/business_value; fallback from description. */
 export function makeRecommendationFriendly(rec: string | { title?: string; description?: string; action?: string; rationale?: string; business_value?: string; effort?: string; priority?: string }): { title: string; description: string | null; action: string | null; rationale: string | null; businessValue: string | null; effort: string | null; priority: string | null } {
-  const rawTitle = typeof rec === 'string' ? rec : (rec?.title || rec?.action || rec?.description || '');
-  const desc = typeof rec === 'object' && rec?.description ? String(rec.description).trim() : '';
-  const action = typeof rec === 'object' && rec?.action ? String(rec.action).trim() : null;
-  const rationale = typeof rec === 'object' && rec?.rationale ? String(rec.rationale).trim() : null;
-  const businessValue = typeof rec === 'object' && (rec as any)?.business_value ? String((rec as any).business_value).trim() : null;
-  const effort = typeof rec === 'object' && rec?.effort ? String(rec.effort).trim() : null;
-  const priority = typeof rec === 'object' && rec?.priority ? String(rec.priority).toLowerCase() : null;
+  const normalized = normalizeRecommendationInput(rec);
+  const rawTitle = String(normalized.title || normalized.action || normalized.description || '').trim();
+  const desc = normalized.description ? String(normalized.description).trim() : '';
+  const action = normalized.action ? String(normalized.action).trim() : null;
+  const rationale = normalized.rationale ? String(normalized.rationale).trim() : null;
+  const businessValue = normalized.business_value ? String(normalized.business_value).trim() : null;
+  const effort = normalized.effort ? String(normalized.effort).trim() : null;
+  const priority = normalized.priority ? String(normalized.priority).toLowerCase() : null;
   const normalizedPriority =
     priority === 'high' || priority === 'medium' || priority === 'low' ? priority : priority || null;
 
@@ -758,8 +879,13 @@ export function makeRecommendationFriendly(rec: string | { title?: string; descr
     description = desc;
   }
 
-  let title = rawTitle.trim() || 'Recommendation';
-  if (REC_TITLE_GENERIC.test(title) && (action || desc)) title = deriveShortTitle(action || desc) || title;
+  let title = rawTitle || 'Recommendation';
+  if ((REC_TITLE_GENERIC.test(title) || REC_TITLE_ITEM.test(title)) && (action || desc)) {
+    title = deriveShortTitle(action || desc) || title;
+  }
+  if (title.startsWith('{') || title.includes("'type'")) {
+    title = deriveShortTitle(action || rationale || desc) || 'Recommendation';
+  }
   return {
     title,
     description: description?.trim() || null,
@@ -769,6 +895,18 @@ export function makeRecommendationFriendly(rec: string | { title?: string; descr
     effort,
     priority: normalizedPriority
   };
+}
+
+/** Sort recommendations: high priority first, then medium, then low. */
+export function sortRecommendationsByPriority<T extends Record<string, unknown>>(recs: T[]): T[] {
+  const rank = (x: T): number => {
+    const p = String((x as { priority?: string }).priority || '').toLowerCase();
+    if (p === 'high') return 0;
+    if (p === 'medium') return 1;
+    if (p === 'low') return 2;
+    return 3;
+  };
+  return [...recs].sort((a, b) => rank(a) - rank(b));
 }
 
 /** Make executive summary / narration more conversational and fix common LLM formatting issues. */

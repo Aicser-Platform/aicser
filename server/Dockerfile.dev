@@ -61,7 +61,15 @@ RUN python -c "import sqlglot; print('sqlglot OK')" || (echo 'ERROR: sqlglot imp
 RUN python -c "import prophet; print('prophet OK')" || (echo 'ERROR: prophet import failed' && exit 1)
 RUN python -c "import pmdarima; print('pmdarima OK')" || (echo 'ERROR: pmdarima import failed' && exit 1)
 RUN python -c "import statsmodels; print('statsmodels OK')" || (echo 'ERROR: statsmodels import failed' && exit 1)
-RUN pip install playwright && playwright install chromium --with-deps
+# Install playwright Python package + Chromium browser.
+# System deps (--with-deps) require apt GPG verification which can fail in
+# restricted build environments; fall back to browserless install so the server
+# still starts. Chart/dashboard screenshot exports will fail at runtime if
+# system libs are missing, but all other routes work normally.
+RUN pip install playwright && \
+    (playwright install chromium --with-deps 2>&1 || \
+     playwright install chromium 2>&1 || \
+     echo "Playwright browser install skipped (non-fatal in dev)")
 # Copy the Alembic configuration and migrations
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic

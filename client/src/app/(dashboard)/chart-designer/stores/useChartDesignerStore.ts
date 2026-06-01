@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { fetchApi } from '@/utils/api';
 import { useProjectStore } from '@/stores/useProjectStore';
+import {
+  peekPendingChartDesignerId,
+  clearPendingChartDesignerSelection,
+  clearPendingChartDesignerImport,
+  readPendingChartDesignerImport,
+  buildStandaloneChartSavePayload,
+  mapApiChartToDesignerWidget,
+  hydrateDesignerWidget,
+  shouldFetchDesignerChartData,
+} from '@/components/charts/chartDesignerBridge';
+import { ApiError } from '@/utils/api';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IS_ENTERPRISE_EDITION =
@@ -65,7 +76,7 @@ interface ChartDesignerState {
 
   // API Actions
   fetchCharts: (userId: string, projectId?: string) => Promise<void>;
-  saveChart: (widget: ChartDesignerWidget, userId: string) => Promise<void>;
+  saveChart: (widget: ChartDesignerWidget, userId: string) => Promise<string | null>;
   createChartAndFetchData: (widget: ChartDesignerWidget) => Promise<void>;
   deleteChart: (widgetId: string) => Promise<void>;
   fetchChartData: (widgetId: string) => Promise<void>;
@@ -134,11 +145,10 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
   setSelectedWidgetId: (id) => {
     set({ selectedWidgetId: id });
 
-    // Auto-fetch data for the newly selected widget if it doesn't have data yet
     if (id) {
       const state = get();
       const widget = state.widgets.find((w) => w.id === id);
-      if (widget && widget.dataSourceId && !widget.chartData && !widget.isLoading) {
+      if (widget && shouldFetchDesignerChartData(widget) && !widget.isLoading) {
         get().fetchChartData(id);
       }
     }
@@ -224,7 +234,7 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       }
 
       if (data && data.success && Array.isArray(data.charts)) {
-        const fetchedWidgets = data.charts.map((c: any) => ({
+        let fetchedWidgets: ChartDesignerWidget[] = data.charts.map((c: any) => ({
           id: `w_saved_${c.id}`,
           chartId: c.id,
           dashboardId: c.dashboard_id || c.dashboardId,
@@ -234,10 +244,10 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
           chartOptions: c.config?.options || c.chartOptions || {},
           dataSourceId: c.data_source_id || c.dataSourceId,
           userId: c.userId || userId,
-          isLoading: !!(c.data_source_id || c.dataSourceId),
+          isLoading: false,
         }));
 
-        const fetchedLayout = data.charts.map((c: any) => {
+        let fetchedLayout: LayoutItem[] = data.charts.map((c: any) => {
           const options = c.config?.options || c.chartOptions || {};
           const savedLayout = c.layout || options.layout;
           return {
@@ -249,36 +259,76 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
           };
         });
 
+        const pendingChartId = peekPendingChartDesignerId();
+
+        if (pendingChartId) {
+          let pendingWidget =
+            fetchedWidgets.find((w) => String(w.chartId) === String(pendingChartId)) ?? null;
+
+          if (!pendingWidget) {
+            try {
+              const chart = await fetchApi(`chart/${pendingChartId}`);
+              if (chart?.id) {
+                const mapped = mapApiChartToDesignerWidget(chart as Record<string, unknown>, userId);
+                if (!fetchedWidgets.some((w) => String(w.chartId) === String(chart.id))) {
+                  fetchedWidgets = [...fetchedWidgets, mapped.widget];
+                  fetchedLayout = [...fetchedLayout, mapped.layout];
+                }
+                pendingWidget = mapped.widget;
+              }
+            } catch (fetchByIdError) {
+              console.warn('[fetchCharts] pending chart fetch by id failed:', fetchByIdError);
+            }
+          }
+
+          if (!pendingWidget) {
+            const pendingImport = readPendingChartDesignerImport(pendingChartId);
+            if (pendingImport?.widget) {
+              pendingWidget = pendingImport.widget;
+              if (!fetchedWidgets.some((w) => String(w.chartId) === String(pendingChartId))) {
+                fetchedWidgets = [...fetchedWidgets, pendingImport.widget];
+                fetchedLayout = [
+                  ...fetchedLayout,
+                  {
+                    i: pendingImport.widget.id,
+                    x: 0,
+                    y: 0,
+                    w: 6,
+                    h: 5,
+                  },
+                ];
+              }
+            }
+          }
+
+          if (pendingWidget) {
+            fetchedWidgets = fetchedWidgets.map((w) =>
+              String(w.chartId) === String(pendingChartId)
+                ? hydrateDesignerWidget(w, pendingChartId)
+                : w,
+            );
+            clearPendingChartDesignerSelection();
+            clearPendingChartDesignerImport();
+          }
+        }
+
         set({ widgets: fetchedWidgets, layout: fetchedLayout });
 
-        // Select first chart by default if nothing selected
-        if (fetchedWidgets.length > 0 && !get().selectedWidgetId) {
-          const firstWidgetId = fetchedWidgets[0].id;
-          set({ selectedWidgetId: firstWidgetId });
-          
-          let usedSessionData = false;
-          try {
-            const tempStr = sessionStorage.getItem('temp_chart_data');
-            if (tempStr) {
-              const parsedData = JSON.parse(tempStr);
-              get().updateWidget(firstWidgetId, { chartData: parsedData.data, isLoading: false });
-              sessionStorage.removeItem('temp_chart_data');
-              usedSessionData = true;
-            }
-          } catch (e) {
-            console.error('Failed to parse temp chart data', e);
-          }
+        const widgetToSelect =
+          (pendingChartId
+            ? fetchedWidgets.find((w) => String(w.chartId) === String(pendingChartId))
+            : null) ||
+          (get().selectedWidgetId
+            ? fetchedWidgets.find((w) => w.id === get().selectedWidgetId)
+            : null) ||
+          fetchedWidgets[0] ||
+          null;
 
-          // Only fetch data for the newly selected first widget
-          if (fetchedWidgets[0].dataSourceId && !usedSessionData) {
-            get().fetchChartData(firstWidgetId);
-          }
-        } else if (get().selectedWidgetId) {
-          // If we already had a selection, refresh its data
-          const selectedId = get().selectedWidgetId!;
-          const selectedWidget = fetchedWidgets.find((w: ChartDesignerWidget) => w.id === selectedId);
-          if (selectedWidget?.dataSourceId) {
-            get().fetchChartData(selectedId);
+        if (widgetToSelect) {
+          set({ selectedWidgetId: widgetToSelect.id, isPropertiesCollapsed: false });
+
+          if (shouldFetchDesignerChartData(widgetToSelect)) {
+            get().fetchChartData(widgetToSelect.id);
           }
         }
       }
@@ -295,20 +345,28 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
   saveChart: async (widget, userId) => {
     set({ isSaving: true });
     try {
-      const payload: any = {
-        title: widget.title,
-        chartType: widget.chartType,
-        dataSourceId: widget.dataSourceId,
-        chartQuery: widget.chartQuery,
-        chartOptions: widget.chartOptions,
-        layout: get().layout.find((l) => l.i === widget.id),
+      // Safe JSON serializer — strips circular refs and non-serializable values
+      // (ECharts configs can contain formatter functions that cause JSON.stringify to throw)
+      const safeStringify = (obj: unknown): string => {
+        const seen = new WeakSet();
+        return JSON.stringify(obj, (_key, value) => {
+          if (typeof value === 'function') return undefined; // strip functions
+          if (typeof value === 'object' && value !== null) {
+            if (seen.has(value)) return '[Circular]'; // break circular refs
+            seen.add(value);
+          }
+          return value;
+        });
       };
 
-      if (userId) {
-        payload.userId = userId;
+      const projectId = useProjectStore.getState().currentProjectId;
+
+      // EE requires a project_id — validate before sending to avoid 400/422
+      if (normalizeProjectId(projectId) === null && IS_ENTERPRISE_EDITION) {
+        throw new Error('Select a project before saving a chart. Choose one from the header.');
       }
 
-      const projectId = useProjectStore.getState().currentProjectId;
+      const payload = buildStandaloneChartSavePayload(widget);
 
       const updateEndpoint =
         widget.chartId && widget.dashboardId
@@ -317,16 +375,27 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
             ? `chart/${widget.chartId}`
             : standaloneChartEndpoint(projectId);
 
+      const bodyStr = safeStringify(payload);
+
       const response = await fetchApi(updateEndpoint, {
         method: widget.chartId ? 'PUT' : 'POST',
-        body: JSON.stringify(payload),
+        body: bodyStr,
       });
 
-      if (response && response.id) {
-        get().updateWidget(widget.id, { chartId: response.id, isLoading: false });
+      const chartId = response?.id ?? response?.chart?.id;
+      if (chartId) {
+        if (get().widgets.some((w) => w.id === widget.id)) {
+          get().updateWidget(widget.id, { chartId, isLoading: false });
+        }
+        return String(chartId);
       }
+      throw new Error('Chart save returned no id');
     } catch (error) {
       console.error('Failed to save chart:', error);
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      throw error instanceof Error ? error : new Error('Failed to save chart');
     } finally {
       set({ isSaving: false });
     }

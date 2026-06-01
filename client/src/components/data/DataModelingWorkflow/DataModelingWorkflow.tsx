@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-    Steps, 
-    Card, 
-    Button, 
-    Space, 
-    Typography, 
-    Tabs, 
-    Rate, 
-    Input, 
+import {
+    Steps,
+    Card,
+    Button,
+    Space,
+    Typography,
+    Tabs,
+    Rate,
+    Input,
     message,
     Spin,
     Alert,
@@ -18,10 +18,11 @@ import {
     Row,
     Col
 } from 'antd';
-import { 
-    ExperimentOutlined, 
-    CheckCircleOutlined, 
-    EditOutlined, 
+import { useTranslations } from 'next-intl';
+import {
+    ExperimentOutlined,
+    CheckCircleOutlined,
+    EditOutlined,
     EyeOutlined,
     DeploymentUnitOutlined,
     StarOutlined
@@ -53,6 +54,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     onComplete,
     onCancel
 }) => {
+    const t = useTranslations('data_modeling');
     const [loading, setLoading] = useState(false);
     const [currentStep, setCurrentStep] = useState(0);
     const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
@@ -68,32 +70,32 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const workflowSteps: WorkflowStep[] = [
         {
             key: 'review',
-            title: 'Review Data Model',
-            description: 'AI-generated visual representation',
+            title: t('step_review_title'),
+            description: t('step_review_desc'),
             isRequired: true,
             isCompleted: !!workflowData?.data_model,
             canSkip: false
         },
         {
             key: 'customize',
-            title: 'Customize Schema',
-            description: 'Edit YAML configuration',
+            title: t('step_customize_title'),
+            description: t('step_customize_desc'),
             isRequired: false,
             isCompleted: yamlContent.length > 0,
             canSkip: true
         },
         {
             key: 'feedback',
-            title: 'Provide Feedback',
-            description: 'Help improve AI accuracy',
+            title: t('step_feedback_title'),
+            description: t('step_feedback_desc'),
             isRequired: false,
             isCompleted: feedback.accuracy_rating > 0,
             canSkip: true
         },
         {
             key: 'deploy',
-            title: 'Deploy',
-            description: 'Activate the schema',
+            title: t('step_deploy_title'),
+            description: t('step_deploy_desc'),
             isRequired: true,
             isCompleted: false,
             canSkip: false
@@ -104,18 +106,18 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const canProceedToNext = (): boolean => {
         const currentStepData = workflowSteps[currentStep];
         if (!currentStepData) return false;
-        
+
         if (currentStepData.isRequired && !currentStepData.isCompleted) {
             return false;
         }
-        
+
         return true;
     };
 
     // Handle step change with validation
     const handleStepChange = (step: number) => {
         if (step > currentStep && !canProceedToNext()) {
-            message.warning('Please complete the current step before proceeding');
+            message.warning(t('step_incomplete_warning'));
             return;
         }
         setCurrentStep(step);
@@ -127,16 +129,16 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
             // Save current progress
             if (currentStep === 1) {
                 // Save YAML customizations
-                message.success('YAML customizations saved');
+                message.success(t('yaml_saved'));
             } else if (currentStep === 2) {
                 // Save feedback
-                message.success('Feedback saved');
+                message.success(t('feedback_saved'));
             }
-            
+
             // Mark step as completed and move to next
             const updatedSteps = [...workflowSteps];
             updatedSteps[currentStep].isCompleted = true;
-            
+
             // Move to next step
             if (currentStep < workflowSteps.length - 1) {
                 setCurrentStep(currentStep + 1);
@@ -153,7 +155,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const startDataModeling = async () => {
         try {
             setLoading(true);
-            
+
             const response = await fetch('/api/charts/ai-data-modeling', {
                 method: 'POST',
                 headers: {
@@ -173,17 +175,17 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
             }
 
             const result = await response.json();
-            
+
             if (result.success) {
                 setWorkflowData(result);
                 setYamlContent(result.data_model?.yaml_schema || '');
-                message.success('AI data modeling completed successfully!');
+                message.success(t('modeling_success'));
             } else {
-                throw new Error(result.error || 'Data modeling failed');
+                throw new Error(result.error || t('modeling_failed'));
             }
         } catch (error) {
             console.error('Data modeling error:', error);
-            message.error(`Data modeling failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            message.error(`${t('modeling_failed')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setLoading(false);
         }
@@ -192,7 +194,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const handleApproval = async (approvalType: string) => {
         try {
             setLoading(true);
-            
+
             const approvalData = {
                 type: approvalType,
                 feedback: feedback,
@@ -215,9 +217,9 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
             }
 
             const result = await response.json();
-            
+
             if (result.success) {
-                message.success('Schema approved and deployed successfully!');
+                message.success(t('approval_success'));
                 onComplete(result);
             } else {
                 throw new Error(result.error || 'Approval failed');
@@ -232,44 +234,44 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
 
     const renderVisualModel = () => {
         if (!workflowData?.data_model?.visual_representation) {
-            return <div>No visual model available</div>;
+            return <div>{t('common.no_data')}</div>;
         }
 
         const visualModel = workflowData.data_model.visual_representation;
-        
+
         return (
             <div style={{ padding: '20px' }}>
                 <Row gutter={[16, 16]}>
                     <Col span={24}>
-                        <Card 
+                        <Card
                             title={
                                 <Space>
                                     <ExperimentOutlined />
-                                    AI-Detected Business Domain: {visualModel.business_context}
+                                    {t('business_domain')}: {visualModel.business_context}
                                 </Space>
                             }
                             size="small"
                         >
                             <Row gutter={[16, 16]}>
                                 <Col span={8}>
-                                    <Card size="small" title="Measures">
+                                    <Card size="small" title={t('measures')}>
                                         <Text strong>{visualModel.metrics_summary?.total_measures || 0}</Text>
                                         <br />
-                                        <Text type="secondary">Numeric fields for aggregation</Text>
+                                        <Text type="secondary">{t('measures_desc')}</Text>
                                     </Card>
                                 </Col>
                                 <Col span={8}>
-                                    <Card size="small" title="Dimensions">
+                                    <Card size="small" title={t('dimensions')}>
                                         <Text strong>{visualModel.metrics_summary?.total_dimensions || 0}</Text>
                                         <br />
-                                        <Text type="secondary">Categorical fields for grouping</Text>
+                                        <Text type="secondary">{t('dimensions_desc')}</Text>
                                     </Card>
                                 </Col>
                                 <Col span={8}>
-                                    <Card size="small" title="Time Dimensions">
+                                    <Card size="small" title={t('time_dimensions')}>
                                         <Text strong>{visualModel.metrics_summary?.total_time_dimensions || 0}</Text>
                                         <br />
-                                        <Text type="secondary">Date/time fields for trends</Text>
+                                        <Text type="secondary">{t('time_desc')}</Text>
                                     </Card>
                                 </Col>
                             </Row>
@@ -280,17 +282,17 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                 <Divider />
 
                 {visualModel.entities?.map((entity: any, index: number) => (
-                    <Card 
+                    <Card
                         key={index}
-                        title={`Data Cube: ${entity.name}`}
+                        title={`${t('data_cube')}: ${entity.name}`}
                         style={{ marginBottom: 16 }}
                     >
-                        <Tabs 
+                        <Tabs
                             defaultActiveKey="measures"
                             items={[
                                 {
                                     key: 'measures',
-                                    label: 'Measures',
+                                    label: t('measures'),
                                     children: (
                                         <Space wrap>
                                             {entity.measures?.map((measure: any, idx: number) => (
@@ -303,7 +305,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                                 },
                                 {
                                     key: 'dimensions',
-                                    label: 'Dimensions',
+                                    label: t('dimensions'),
                                     children: (
                                         <Space wrap>
                                             {entity.dimensions?.map((dim: any, idx: number) => (
@@ -316,7 +318,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                                 },
                                 {
                                     key: 'time',
-                                    label: 'Time Dimensions',
+                                    label: t('time_dimensions'),
                                     children: (
                                         <Space wrap>
                                             {entity.time_dimensions?.map((timeDim: any, idx: number) => (
@@ -338,18 +340,18 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
     const renderYamlEditor = () => (
         <div style={{ padding: '20px' }}>
             <Alert
-                message="Cube.js Schema Configuration"
-                description="You can customize the AI-generated schema below. This YAML will be converted to Cube.js JavaScript configuration."
+                message={t('cube_schema_title')}
+                description={t('cube_schema_desc')}
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
             />
-            
+
             <TextArea
                 rows={10}
                 value={yamlContent}
                 onChange={(e) => setYamlContent(e.target.value)}
-                placeholder="Edit the YAML configuration..."
+                placeholder={t('edit_yaml_placeholder')}
                 style={{ fontFamily: 'monospace' }}
             />
         </div>
@@ -357,46 +359,46 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
 
     const renderFeedbackForm = () => (
         <div style={{ padding: '20px' }}>
-            <Title level={4}>Provide Feedback</Title>
+            <Title level={4}>{t('provide_feedback')}</Title>
             <Paragraph type="secondary">
-                Your feedback helps improve our AI data modeling capabilities.
+                {t('feedback_desc')}
             </Paragraph>
-            
+
             <Space direction="vertical" style={{ width: '100%' }} size="large">
                 <div>
-                    <Text strong>How accurate is the AI analysis?</Text>
+                    <Text strong>{t('accuracy_question')}</Text>
                     <br />
-                    <Rate 
-                        value={feedback.accuracy_rating} 
-                        onChange={(value) => setFeedback({...feedback, accuracy_rating: value})}
+                    <Rate
+                        value={feedback.accuracy_rating}
+                        onChange={(value) => setFeedback({ ...feedback, accuracy_rating: value })}
                     />
                 </div>
-                
+
                 <div>
-                    <Text strong>How useful is the generated schema?</Text>
+                    <Text strong>{t('usefulness_question')}</Text>
                     <br />
-                    <Rate 
-                        value={feedback.usefulness_rating} 
-                        onChange={(value) => setFeedback({...feedback, usefulness_rating: value})}
+                    <Rate
+                        value={feedback.usefulness_rating}
+                        onChange={(value) => setFeedback({ ...feedback, usefulness_rating: value })}
                     />
                 </div>
-                
+
                 <div>
-                    <Text strong>How accurate is the business context detection?</Text>
+                    <Text strong>{t('context_accuracy_question')}</Text>
                     <br />
-                    <Rate 
-                        value={feedback.business_context_accuracy} 
-                        onChange={(value) => setFeedback({...feedback, business_context_accuracy: value})}
+                    <Rate
+                        value={feedback.business_context_accuracy}
+                        onChange={(value) => setFeedback({ ...feedback, business_context_accuracy: value })}
                     />
                 </div>
-                
+
                 <div>
-                    <Text strong>Additional suggestions:</Text>
+                    <Text strong>{t('additional_suggestions')}</Text>
                     <TextArea
                         rows={4}
                         value={feedback.suggestions}
-                        onChange={(e) => setFeedback({...feedback, suggestions: e.target.value})}
-                        placeholder="Any suggestions for improvement..."
+                        onChange={(e) => setFeedback({ ...feedback, suggestions: e.target.value })}
+                        placeholder={t('suggestions_placeholder')}
                     />
                 </div>
             </Space>
@@ -409,9 +411,9 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                 <Spin size="large" />
                 <br />
                 <br />
-                <Title level={4}>AI is analyzing your data...</Title>
+                <Title level={4}>{t('analyzing')}</Title>
                 <Paragraph type="secondary">
-                    This may take a few moments while we generate the optimal data model.
+                    {t('analyzing_desc')}
                 </Paragraph>
             </Card>
         );
@@ -421,8 +423,8 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
         return (
             <Card>
                 <Alert
-                    message="Data Modeling Failed"
-                    description="Unable to start the data modeling workflow. Please try again."
+                    message={t('modeling_failed')}
+                    description={t('modeling_failed_desc')}
                     type="error"
                     showIcon
                 />
@@ -432,17 +434,17 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
 
     return (
         <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <Card 
+            <Card
                 title={
                     <Space>
                         <ExperimentOutlined />
-                        AI Data Modeling Workflow
+                        {t('workflow_title')}
                     </Space>
                 }
                 extra={
                     <Space>
                         <Tag color="blue">
-                            Confidence: {Math.round((workflowData.ai_analysis?.confidence || 0) * 100)}%
+                            {t('confidence')}: {Math.round((workflowData.ai_analysis?.confidence || 0) * 100)}%
                         </Tag>
                         <Tag color="green">
                             {workflowData.performance?.model_used || 'GPT-4o-mini'}
@@ -451,24 +453,24 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                 }
             >
                 <Steps current={currentStep} style={{ marginBottom: 24 }}>
-                    <Step 
-                        title="Review Data Model" 
-                        description="AI-generated visual representation"
+                    <Step
+                        title={t('step_review_title')}
+                        description={t('step_review_desc')}
                         icon={<EyeOutlined />}
                     />
-                    <Step 
-                        title="Customize Schema" 
-                        description="Edit YAML configuration"
+                    <Step
+                        title={t('step_customize_title')}
+                        description={t('step_customize_desc')}
                         icon={<EditOutlined />}
                     />
-                    <Step 
-                        title="Provide Feedback" 
-                        description="Help improve AI accuracy"
+                    <Step
+                        title={t('step_feedback_title')}
+                        description={t('step_feedback_desc')}
                         icon={<StarOutlined />}
                     />
-                    <Step 
-                        title="Deploy" 
-                        description="Activate the schema"
+                    <Step
+                        title={t('step_deploy_title')}
+                        description={t('step_deploy_desc')}
                         icon={<DeploymentUnitOutlined />}
                     />
                 </Steps>
@@ -480,9 +482,9 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                     {currentStep === 3 && (
                         <div style={{ textAlign: 'center', padding: '40px' }}>
                             <CheckCircleOutlined style={{ fontSize: '64px', color: '#52c41a' }} />
-                            <Title level={3}>Ready to Deploy!</Title>
+                            <Title level={3}>{t('ready_to_deploy')}</Title>
                             <Paragraph>
-                                Your data model is ready. Click "Deploy Schema" to activate it and start creating charts.
+                                {t('deploy_desc')}
                             </Paragraph>
                         </div>
                     )}
@@ -503,18 +505,18 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                     customActions={
                         currentStep === 3 && (
                             <Space>
-                                <Button 
-                                    type="primary" 
+                                <Button
+                                    type="primary"
                                     loading={loading}
                                     onClick={() => handleApproval('approve_all')}
                                 >
-                                    Deploy Schema
+                                    {t('deploy_button')}
                                 </Button>
-                                <Button 
+                                <Button
                                     loading={loading}
                                     onClick={() => handleApproval('customize')}
                                 >
-                                    Deploy with Customizations
+                                    {t('deploy_custom_button')}
                                 </Button>
                             </Space>
                         )

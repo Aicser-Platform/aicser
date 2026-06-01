@@ -1,0 +1,58 @@
+.embed-code-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.embed-code-panel__hint {
+  margin: 0 !important;
+  font-size: 13px;
+}
+
+.embed-code-panel__code {
+  font-family: var(--font-mono, ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace) !important;
+  font-size: 12px !important;
+  line-height: 1.55 !important;
+  background: var(--ant-color-fill-quaternary, #f6f8fa) !important;
+  border-radius: 8px !important;
+  resize: none !important;
+}
+
+.embed-code-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.embed-code-panel__preview {
+  border: 1px solid var(--ant-color-border, #e1e4e8);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--ant-color-bg-container, #fff);
+}
+
+.embed-code-panel__preview-label {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+  border-bottom: 1px solid var(--ant-color-border, #e1e4e8);
+  background: var(--ant-color-fill-quaternary, #f6f8fa);
+}
+
+.embed-code-panel__preview-frame {
+  width: 100%;
+  border: 0;
+  display: block;
+  background: var(--ant-color-bg-layout, #fff);
+}
+
+.embed-code-panel__token {
+  word-break: break-all;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  font-size: 11px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary, #f6f8fa);
+  border: 1px dashed var(--ant-color-border, #e1e4e8);
+}

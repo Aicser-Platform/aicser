@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Input, Dropdown, Modal, Typography } from 'antd';
+import { Input, Dropdown, Modal, Typography, Select, message } from 'antd';
 import {
   SearchOutlined,
   PlusOutlined,
@@ -14,9 +14,12 @@ import {
   AreaChartOutlined,
   DotChartOutlined,
   TableOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
-import { WIDGET_TEMPLATES } from '../../dashboards/widgetTemplates';
+import { useDashboardStore } from '../../dashboards/stores/useDashboardStore';
+import { WIDGET_TEMPLATES, CHART_WIDGET_TEMPLATES } from '../../dashboards/widgetTemplates';
 import './ChartDesignerSidebar.css';
 import { useTranslations } from 'next-intl';
 
@@ -51,12 +54,20 @@ const getChartIcon = (type: string) => {
 
 export const ChartDesignerSidebar: React.FC = () => {
   const t = useTranslations('chart_designer');
+  const router = useRouter();
   const { widgets, selectedWidgetId, isSidebarCollapsed, setSelectedWidgetId, deleteChart, updateWidget, addWidget } =
     useChartDesignerStore();
+  const dashboards = useDashboardStore((s) => s.dashboards);
+  const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const copyWidgetToDashboard = useDashboardStore((s) => s.copyWidgetToDashboard);
 
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [addToDashboardOpen, setAddToDashboardOpen] = useState(false);
+  const [addToDashboardWidgetId, setAddToDashboardWidgetId] = useState<string | null>(null);
+  const [targetDashboardId, setTargetDashboardId] = useState<string | null>(null);
+  const [addingToDashboard, setAddingToDashboard] = useState(false);
 
   const filteredWidgets = widgets.filter((w) => w.title?.toLowerCase().includes(search.toLowerCase()));
 
@@ -85,15 +96,48 @@ export const ChartDesignerSidebar: React.FC = () => {
     });
   };
 
+  const openAddToDashboard = async (widgetId: string) => {
+    if (dashboards.length === 0) {
+      try {
+        await fetchDashboards();
+      } catch {
+        message.error(t('add_to_dashboard_load_failed'));
+        return;
+      }
+    }
+    setAddToDashboardWidgetId(widgetId);
+    setTargetDashboardId(useDashboardStore.getState().activeDashboardId ?? dashboards[0]?.id ?? null);
+    setAddToDashboardOpen(true);
+  };
+
+  const handleAddToDashboard = async () => {
+    const widget = widgets.find((w) => w.id === addToDashboardWidgetId);
+    if (!widget?.chartId || !targetDashboardId) {
+      message.warning(t('add_to_dashboard_select_required'));
+      return;
+    }
+    setAddingToDashboard(true);
+    try {
+      const result = await copyWidgetToDashboard(widget as unknown as Parameters<typeof copyWidgetToDashboard>[0], { i: widget.id, x: 0, y: 0, w: 6, h: 5 }, targetDashboardId);
+      message.success(t('add_to_dashboard_success'));
+      setAddToDashboardOpen(false);
+      router.push(`/dashboards?id=${targetDashboardId}&chart=${result.chartId}`);
+    } catch (err) {
+      console.error('[ChartDesignerSidebar] add to dashboard', err);
+      message.error(t('add_to_dashboard_failed'));
+    } finally {
+      setAddingToDashboard(false);
+    }
+  };
+
   const handleAddNew = () => {
-    // Default to bar chart template
-    const template = WIDGET_TEMPLATES[1]; // Bar chart
+    const template = CHART_WIDGET_TEMPLATES[0] || WIDGET_TEMPLATES[0];
     const newWidgetId = `w_designer_${Date.now()}`;
 
     addWidget(
       {
         id: newWidgetId,
-        title: t('untitled_chart'),
+        title: template.name,
         chartType: template.type,
         chartQuery: {},
         chartOptions: {},
@@ -142,6 +186,16 @@ export const ChartDesignerSidebar: React.FC = () => {
               label: t('rename'),
               onClick: () => handleRename(widget.id, widget.title),
             },
+            ...(widget.chartId
+              ? [
+                  {
+                    key: 'add-to-dashboard',
+                    icon: <DashboardOutlined />,
+                    label: t('add_to_dashboard'),
+                    onClick: () => void openAddToDashboard(widget.id),
+                  },
+                ]
+              : []),
             {
               key: 'delete',
               icon: <DeleteOutlined />,
@@ -198,6 +252,23 @@ export const ChartDesignerSidebar: React.FC = () => {
           <span className="item-name">{t('add_chart')}</span>
         </div>
       </div>
+
+      <Modal
+        title={t('add_to_dashboard')}
+        open={addToDashboardOpen}
+        onCancel={() => setAddToDashboardOpen(false)}
+        onOk={() => void handleAddToDashboard()}
+        okText={t('add_to_dashboard_confirm')}
+        confirmLoading={addingToDashboard}
+      >
+        <Select
+          style={{ width: '100%' }}
+          placeholder={t('add_to_dashboard_select')}
+          value={targetDashboardId ?? undefined}
+          onChange={setTargetDashboardId}
+          options={dashboards.map((d) => ({ value: d.id, label: d.name }))}
+        />
+      </Modal>
     </aside>
   );
 };

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Proxies /api/alerts/* → FastAPI /api/alerts/* (alert rules & events).
@@ -45,10 +46,7 @@ async function proxy(
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-    const cookie = request.headers.get('Cookie');
-    if (cookie) headers['Cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const requestOptions: RequestInit = {
       method,

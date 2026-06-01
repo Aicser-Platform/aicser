@@ -4,8 +4,9 @@
  */
 
 import * as echarts from 'echarts';
-import { ChartConfig, ChartData, CHART_COLORS } from './WidgetRendererConfig';
+import { ChartConfig, ChartData, CHART_COLORS, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
 import { formatNumber } from '../utils/numberFormatter';
+import { getPieLayout, getChartSliceBorderColor } from './chartLayoutUtils';
 
 // Helper to convert hex color to rgba
 const hexToRgba = (hex: string, alpha: number): string => {
@@ -96,6 +97,8 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
         borderWidth: isStackedBar ? 1 : 0,
         borderColor: CHART_COLORS.background,
       },
+      emphasis: getCartesianEmphasis('bar'),
+      blur: getCartesianBlur(),
       data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
       yAxisIndex: 0,
     }));
@@ -161,6 +164,8 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
       borderWidth: isStackedBar ? 1 : 0,
       borderColor: CHART_COLORS.background,
     },
+    emphasis: getCartesianEmphasis('bar'),
+    blur: getCartesianBlur(),
   };
 };
 
@@ -213,6 +218,8 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
       },
       data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
       yAxisIndex: 0,
+      emphasis: getCartesianEmphasis('line', config.lineWidth ?? 3),
+      blur: getCartesianBlur(),
     }));
 
     const secondarySeries = (data.secondarySeries || []).map((s) => ({
@@ -246,6 +253,7 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
     return [...primarySeries, ...secondarySeries];
   }
 
+  const primaryColor = colors?.[0] ?? CHART_COLORS.primary;
   return {
     name: 'Value',
     type: 'line',
@@ -269,8 +277,10 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
         : undefined,
     },
     data: data?.y || [],
-    lineStyle: { width: config.lineWidth ?? 3, color: CHART_COLORS.primary },
-    itemStyle: { color: CHART_COLORS.primary },
+    lineStyle: { width: config.lineWidth ?? 3, color: primaryColor },
+    itemStyle: { color: primaryColor },
+    emphasis: getCartesianEmphasis('line', config.lineWidth ?? 3),
+    blur: getCartesianBlur(),
   };
 };
 
@@ -396,6 +406,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
     return [...primarySeries, ...secondarySeries];
   }
 
+  const primaryColor = colors?.[0] ?? CHART_COLORS.primary;
   return {
     name: 'Value',
     type: 'line',
@@ -419,8 +430,10 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
         : undefined,
     },
     data: data?.y || [],
-    lineStyle: { width: config.lineWidth ?? 3, color: CHART_COLORS.primary },
-    itemStyle: { color: CHART_COLORS.primary },
+    lineStyle: { width: config.lineWidth ?? 3, color: primaryColor },
+    itemStyle: { color: primaryColor },
+    emphasis: getCartesianEmphasis('area', config.lineWidth ?? 3),
+    blur: getCartesianBlur(),
     areaStyle: {
       opacity: 0.4,
       color:
@@ -432,8 +445,8 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: hexToRgba(colors[0], 0.6) },
-                { offset: 1, color: hexToRgba(colors[0], 0.1) },
+                { offset: 0, color: hexToRgba(primaryColor, 0.6) },
+                { offset: 1, color: hexToRgba(primaryColor, 0.1) },
               ],
             }
           : new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -445,11 +458,14 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
 };
 
 export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
+  const compact = (config as ChartConfig & { isDashboardWidget?: boolean }).isDashboardWidget ?? true;
+  const sliceBorder = getChartSliceBorderColor();
+
   // If we have multiple series (from multiple yMetrics), create multiple pie series (rings)
   if (data.series && data.series.length > 1) {
     const seriesCount = data.series.length;
     const innerBase = config.innerRadius || 0;
-    const outerBase = 70;
+    const outerBase = compact ? 58 : 70;
     const gap = 5;
     const ringWidth = (outerBase - innerBase - (seriesCount - 1) * gap) / seriesCount;
 
@@ -466,16 +482,14 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
       const isZeroSum = total === 0;
 
       const legendPos = config.legendPosition || (config.showLegend ? 'top' : 'hide');
-      let center = ['50%', '50%'];
-      if (legendPos === 'left') center = ['60%', '50%'];
-      if (legendPos === 'right') center = ['40%', '50%'];
+      const { center } = getPieLayout(legendPos, compact);
 
       return {
         name: s.name,
         type: 'pie',
         radius: isZeroSum ? [0, 0] : [inner + '%', outer + '%'],
-        center: center,
-        itemStyle: { borderRadius: 4, borderColor: CHART_COLORS.background, borderWidth: 2 },
+        center,
+        itemStyle: { borderRadius: 4, borderColor: sliceBorder, borderWidth: 2 },
         label: {
           show: config.showDataLabel && i === seriesCount - 1 && !isZeroSum,
           formatter: (params: any) => {
@@ -503,6 +517,17 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
         },
         stillShowZeroSum: false,
         silent: isZeroSum,
+        emphasis: {
+          disabled: isZeroSum,
+          scale: true,
+          scaleSize: 6,
+          label: { show: config.showDataLabel && i === seriesCount - 1 && !isZeroSum },
+          itemStyle: {
+            shadowBlur: 10,
+            shadowOffsetX: 0,
+            shadowColor: 'rgba(0, 0, 0, 0.35)',
+          },
+        },
         data: pieData,
       };
     });
@@ -519,16 +544,14 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
   const isZeroSum = total === 0;
 
   const legendPos = config.legendPosition || (config.showLegend ? 'top' : 'hide');
-  let center = ['50%', '50%'];
-  if (legendPos === 'left') center = ['60%', '50%'];
-  if (legendPos === 'right') center = ['40%', '50%'];
+  const { center, outerRadius } = getPieLayout(legendPos, compact);
 
   return {
     name: 'Distribution',
     type: 'pie',
-    radius: isZeroSum ? [0, 0] : [config.innerRadius + '%', '70%'],
-    center: center,
-    itemStyle: { borderRadius: 4, borderColor: CHART_COLORS.background, borderWidth: 2 },
+    radius: isZeroSum ? [0, 0] : [config.innerRadius + '%', outerRadius],
+    center,
+    itemStyle: { borderRadius: 4, borderColor: sliceBorder, borderWidth: 2 },
     label: {
       show: config.showDataLabel && !isZeroSum,
       formatter: (params: any) => {
@@ -553,15 +576,18 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
     },
     emphasis: {
       disabled: isZeroSum,
+      focus: 'self',
+      scale: true,
+      scaleSize: 8,
       label: {
-        show: !isZeroSum,
+        show: config.showDataLabel && !isZeroSum,
         fontSize: 14,
         fontWeight: 'bold',
       },
       itemStyle: {
-        shadowBlur: 10,
+        shadowBlur: 12,
         shadowOffsetX: 0,
-        shadowColor: 'rgba(0, 0, 0, 0.5)',
+        shadowColor: 'rgba(0, 0, 0, 0.45)',
       },
     },
     stillShowZeroSum: false,
@@ -613,6 +639,46 @@ export const buildSeriesForType = (
 };
 
 export const buildHeatmapSeries = (data: ChartData, config: ChartConfig) => {
+  const labelStyle = {
+    show: config.showDataLabel,
+    fontSize: config.axisLabelFontSize ?? 11,
+    color:
+      config.axisLabelColor === 'default'
+        ? CHART_COLORS.text.primary
+        : (config.axisLabelColor ?? CHART_COLORS.text.primary),
+  };
+
+  const heatmapCells = (data as ChartData & { heatmap?: Array<[string, string, number]> }).heatmap;
+  if (Array.isArray(heatmapCells) && heatmapCells.length > 0) {
+    const xLabels =
+      data.x?.length && typeof data.x[0] === 'string'
+        ? data.x.map(String)
+        : Array.from(new Set(heatmapCells.map((cell) => String(cell[0]))));
+    const yLabels =
+      data.y?.length && typeof data.y[0] === 'string'
+        ? data.y.map(String)
+        : Array.from(new Set(heatmapCells.map((cell) => String(cell[1]))));
+
+    const heatmapData = heatmapCells.map(([x, y, val]) => [
+      xLabels.indexOf(String(x)),
+      yLabels.indexOf(String(y)),
+      val,
+    ]);
+
+    return {
+      name: 'Heatmap',
+      type: 'heatmap',
+      data: heatmapData,
+      label: labelStyle,
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowColor: 'rgba(0, 0, 0, 0.5)',
+        },
+      },
+    };
+  }
+
   if (!data.group_field || data.group_field.length === 0) {
     // If no group_field, heatmap doesn't make much sense, fallback to bar-like heatmap
     return {

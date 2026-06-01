@@ -1,71 +1,105 @@
 import { create } from 'zustand';
 import type React from 'react';
 import { chartService, type Chart, type ChartData } from '../services/chartService';
+import {
+  fetchWidgetChartData,
+  studioFilterConfigs,
+} from '../services/dashboardDataService';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { mergePageLayout } from '../utils/pageLayoutHelpers';
+import type { DashboardFilter } from '@/types/dashboard';
+import { readStudioMode } from '../utils/studioModeStorage';
+import { partitionSeriesData } from '../utils/chartDataProcessing';
+import { runWithConcurrency, type RefreshResult } from '../utils/dashboardRefresh';
+import type { WidgetDrillState } from '../utils/drillDownHelpers';
+import { sanitizeLayoutItem, maxLayoutY } from '../utils/layoutSanitize';
+import {
+  hydrateRemixWidget,
+  isRemixSnapshotWidget,
+} from '../utils/remixSnapshotHydration';
+import { getColorsFromPalette } from '../widgets/WidgetRendererConfig';
+import { isWidgetPaletteInherited, WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
+import {
+  buildStarterDashboardWidgets,
+  type StarterLayoutKind,
+} from '../utils/dashboardStarterLayouts';
+import { formatApiValidationError, isValidUuid } from '@/utils/validationErrorMessage';
+import {
+  type WidgetType,
+  type LayoutItem,
+  type WidgetInstance,
+  type Dashboard,
+  type StudioMode,
+  type DashboardVersion,
+  scopedFiltersForWidget,
+  isNonDataWidget,
+  type RuntimeFilter,
+} from './dashboardStoreTypes';
+import { createDashboardRuntimeSlice, type DashboardRuntimeSlice } from './slices/dashboardRuntimeSlice';
+import { createDashboardUiSlice, type DashboardUiSlice } from './slices/dashboardUiSlice';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
 
-export type WidgetType = 'pie' | 'line' | 'area' | 'bar' | 'table' | 'scatter' | 'funnel' | 'heatmap' | 'stat' | 'text';
-
-export type LayoutItem = {
-  i: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+export type {
+  WidgetType,
+  LayoutItem,
+  WidgetInstance,
+  Dashboard,
+  StudioMode,
+  DashboardVersion,
+  RuntimeFilter,
 };
+export { scopedFiltersForWidget, isNonDataWidget };
 
-export type WidgetInstance = {
-  id: string;
-  dataSourceId?: string;
-  title: string;
-  chartType: WidgetType;
-  chartQuery?: {
-    x?: string;
-    aggregate?: boolean;
-    yMetric?: 'count' | 'sum' | 'none' | 'distinct_count' | 'avg' | 'min' | 'max';
-    xMetrics?: { field: string; aggregation: string }[];
-    yMetrics?: { field: string; aggregation: string }[];
-    yMetricsSecondary?: { field: string; aggregation: string }[];
-    y?: string;
-    legend?: string;
-    sortBy?: string;
-    filters?: {
-      field: string;
-      operator: string;
-      value: any;
-      type: 'simple' | 'sql';
-      sql?: string;
-    }[];
-    metricFilters?: {
-      field: string;
-      aggregation: string;
-      operator: string;
-      value: any;
-    }[];
-    tableName?: string;
-    sortOrder?: 'asc' | 'desc';
-    limit?: number;
-    seriesLimit?: number;
-  };
-  chartOptions?: any;
-  chartId?: string;
-  chartData?: ChartData;
-  isLoading?: boolean;
-  error?: string | null;
-  lastFetchedQueryHash?: string;
-};
+// ─── Version history (named snapshots, stored in localStorage) ────────────────
+const MAX_VERSIONS = 20;
+const VERSION_STORAGE_KEY = (dashId: string) => `aicser_dash_versions_${dashId}`;
 
-export interface Dashboard {
-  id: string;
-  name: string;
-  widgets: WidgetInstance[];
-  layout: LayoutItem[];
+function loadVersions(dashboardId: string): DashboardVersion[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(VERSION_STORAGE_KEY(dashboardId));
+    return raw ? (JSON.parse(raw) as DashboardVersion[]) : [];
+  } catch {
+    return [];
+  }
 }
 
-interface DashboardState {
+function persistVersions(dashboardId: string, versions: DashboardVersion[]) {
+  try {
+    localStorage.setItem(VERSION_STORAGE_KEY(dashboardId), JSON.stringify(versions));
+  } catch {}
+}
+
+// ─── History snapshot for undo/redo ───────────────────────────────────────────
+type HistorySnapshot = { widgets: WidgetInstance[]; layout: LayoutItem[] };
+const MAX_HISTORY = 30;
+// Module-level stacks (outside Zustand — avoids re-renders on every push)
+const _undoStack: HistorySnapshot[] = [];
+const _redoStack: HistorySnapshot[] = [];
+
+function pushUndo(snap: HistorySnapshot) {
+  if (_undoStack.length >= MAX_HISTORY) _undoStack.shift();
+  _undoStack.push(snap);
+  _redoStack.length = 0; // any new action clears redo
+}
+
+// Selectors exported as hooks
+export const useCanUndo = () => useDashboardStore((s) => s._historyVersion > 0 && _undoStack.length > 0);
+export const useCanRedo = () => useDashboardStore((s) => s._historyVersion >= 0 && _redoStack.length > 0);
+export const useUndo = () => useDashboardStore((s) => s.historyUndo);
+export const useRedo = () => useDashboardStore((s) => s.historyRedo);
+
+/** Call before any layout mutation to capture an undoable snapshot. */
+export function pushUndoSnapshot() {
+  const { widgets, layout } = useDashboardStore.getState();
+  pushUndo({ widgets, layout });
+  useDashboardStore.setState((state) => ({ _historyVersion: state._historyVersion + 1 }));
+}
+
+interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
   dashboards: Dashboard[];
   isLoadingDashboards: boolean;
   hasLoadedDashboards: boolean;
@@ -73,27 +107,42 @@ interface DashboardState {
   activeDashboardId: string | null;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
+  layoutCollabTs?: number;
   selectedWidgetId: string | null;
-  isSidebarCollapsed: boolean;
-  isPropertiesCollapsed: boolean;
-  isSaving: boolean;
-  activeLeftTab: string;
+  /** Bumped on every history mutation so canUndo/canRedo selectors re-run */
+  _historyVersion: number;
+  historyUndo: () => void;
+  historyRedo: () => void;
   setWidgets: React.Dispatch<React.SetStateAction<WidgetInstance[]>>;
   setLayout: React.Dispatch<React.SetStateAction<LayoutItem[]>>;
   setSelectedWidgetId: (id: string | null) => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
-  setPropertiesCollapsed: (collapsed: boolean) => void;
-  setActiveLeftTab: (tab: string) => void;
   setSaving: (saving: boolean) => void;
-  isFullscreen: boolean;
-  setIsFullscreen: (full: boolean) => void;
+  // Multi-widget selection (shift+click)
+  // Version history (named snapshots)
+  dashboardVersions: DashboardVersion[];
+  saveVersionSnapshot: (label?: string) => void;
+  loadVersionHistory: (dashboardId: string) => void;
+  restoreVersionSnapshot: (versionId: string) => void;
+  deleteVersionSnapshot: (versionId: string) => void;
   fetchDashboards: () => Promise<void>;
 
   // Dashboard management
   addDashboard: (name?: string) => Promise<string>;
+  duplicateDashboard: (id: string) => Promise<string>;
+  seedDashboardStarterLayout: (kind: StarterLayoutKind, activePageId?: string | null) => Promise<void>;
   removeDashboard: (id: string) => Promise<void>;
   setActiveDashboardId: (id: string) => void;
   updateDashboardName: (id: string, name: string) => Promise<void>;
+  updateDashboardMeta: (
+    id: string,
+    meta: { name?: string; description?: string; config?: Record<string, unknown> }
+  ) => Promise<void>;
+  setDashboardDescription: (id: string, description: string) => void;
+  // Starred / favourites (local only — stored in localStorage)
+  starredDashboardIds: Set<string>;
+  toggleStarDashboard: (id: string) => void;
+  // Tags — persisted in dashboard config
+  updateDashboardTags: (id: string, tags: string[]) => Promise<void>;
 
   addWidget: (widget: WidgetInstance, layoutItem: LayoutItem) => void;
   removeWidget: (id: string) => void;
@@ -103,17 +152,30 @@ interface DashboardState {
   updateChartAndFetchData: (widgetId: string, updates: Partial<WidgetInstance>) => Promise<void>;
   deleteChart: (widgetId: string) => Promise<void>;
   fetchChartData: (widgetId: string) => Promise<void>;
-  updateChartLayout: (widgetId: string) => Promise<void>;
+  updateChartLayout: (widgetId: string, layoutOverride?: LayoutItem) => Promise<void>;
   removeChartFromAllDashboards: (chartId: string) => void;
   partitionSeriesData: (data: ChartData, widget: WidgetInstance) => ChartData;
+  applyRemoteUpdate: (update: { type: string; id?: string; changes?: Record<string, unknown>; widget?: WidgetInstance }) => void;
+  bulkDeleteWidgets: () => Promise<void>;
+  updatePageLayout: (
+    pageId: string | null,
+    pageLayoutUpdate: LayoutItem[],
+    defaultPageId?: string | null
+  ) => void;
+  applyDashboardColorPalette: (paletteId: string) => Promise<void>;
+  moveWidgetToPage: (widgetId: string, targetPageId: string) => Promise<void>;
   copyWidgetToDashboard: (
     widget: WidgetInstance,
     layoutItem: LayoutItem | undefined,
     targetDashboardId: string
-  ) => Promise<void>;
+  ) => Promise<{ chartId: string; widgetId: string }>;
 }
 
-export const useDashboardStore = create<DashboardState>()((set, get) => ({
+export type { WidgetDrillState };
+
+export const useDashboardStore = create<DashboardState>()((set, get, store) => ({
+  ...createDashboardUiSlice(set, get, store),
+  ...createDashboardRuntimeSlice(set, get, store),
   dashboards: [],
   isLoadingDashboards: false,
   hasLoadedDashboards: false,
@@ -121,34 +183,39 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
   activeDashboardId: null,
   widgets: [],
   layout: [],
+  layoutCollabTs: 0,
   selectedWidgetId: null,
-  isSidebarCollapsed: false,
-  isPropertiesCollapsed: true,
-  isSaving: false,
-  activeLeftTab: 'library',
-  isFullscreen: false,
+  _historyVersion: 0,
 
-  partitionSeriesData: (data, widget) => {
-    // If backend already provided separate series, just use them
-    if (data.secondarySeries && data.secondarySeries.length > 0) return data;
-
-    const cartesianTypes = ['line', 'bar'];
-    if (!cartesianTypes.includes(widget.chartType) || !data.series || data.series.length === 0) return data;
-
-    const yMetricsCount = widget.chartQuery?.yMetrics?.length || 0;
-    const secondaryMetricsCount = widget.chartQuery?.yMetricsSecondary?.length || 0;
-
-    if (secondaryMetricsCount === 0) return data;
-
-    const series = data.series.slice(0, yMetricsCount);
-    const secondarySeries = data.series.slice(yMetricsCount, yMetricsCount + secondaryMetricsCount);
-
-    return {
-      ...data,
-      series,
-      secondarySeries,
-    };
+  historyUndo: () => {
+    const snap = _undoStack.pop();
+    if (!snap) return;
+    const { widgets, layout } = get();
+    _redoStack.push({ widgets, layout });
+    set((state) => {
+      const activeDashboardId = state.activeDashboardId;
+      const dashboards = state.dashboards.map((d) =>
+        d.id === activeDashboardId ? { ...d, widgets: snap.widgets, layout: snap.layout } : d
+      );
+      return { widgets: snap.widgets, layout: snap.layout, dashboards, _historyVersion: state._historyVersion + 1 };
+    });
   },
+
+  historyRedo: () => {
+    const snap = _redoStack.pop();
+    if (!snap) return;
+    const { widgets, layout } = get();
+    _undoStack.push({ widgets, layout });
+    set((state) => {
+      const activeDashboardId = state.activeDashboardId;
+      const dashboards = state.dashboards.map((d) =>
+        d.id === activeDashboardId ? { ...d, widgets: snap.widgets, layout: snap.layout } : d
+      );
+      return { widgets: snap.widgets, layout: snap.layout, dashboards, _historyVersion: state._historyVersion + 1 };
+    });
+  },
+
+  partitionSeriesData,
 
   setWidgets: (next) =>
     set((state) => {
@@ -167,10 +234,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }),
 
   setSelectedWidgetId: (id) => set({ selectedWidgetId: id }),
-  setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
-  setPropertiesCollapsed: (collapsed) => set({ isPropertiesCollapsed: collapsed }),
-  setActiveLeftTab: (tab) => set({ activeLeftTab: tab }),
-  setSaving: (saving: boolean) => set({ isSaving: saving }),
+
+  dashboardVersions: [],
 
   copyWidgetToDashboard: async (widget, layoutItem, targetDashboardId) => {
     const state = get();
@@ -249,8 +314,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
       get().fetchChartData(newWidgetId);
     }
 
-    // Switch the active view to the target dashboard
     get().setActiveDashboardId(targetDashboardId);
+
+    return { chartId: String(newChart.id), widgetId: newWidgetId };
   },
 
   fetchDashboards: async () => {
@@ -275,7 +341,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
             charts.forEach((chart: any) => {
               const widgetId = `widget-${chart.id}`;
 
-              widgets.push({
+              const baseWidget: WidgetInstance = {
                 id: widgetId,
                 chartId: chart.id,
                 dataSourceId: chart.dataSourceId,
@@ -286,7 +352,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
                 chartData: undefined,
                 isLoading: false,
                 error: null,
-              });
+              };
+
+              widgets.push(hydrateRemixWidget(baseWidget));
 
               // Extract layout if it exists, otherwise use defaults
               const chartLayout = chart.layout || {};
@@ -296,13 +364,23 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
                 y: chartLayout.y ?? 0,
                 w: chartLayout.w ?? 4,
                 h: chartLayout.h ?? 5,
+                ...(chartLayout.page_id ? { pageId: String(chartLayout.page_id) } : {}),
               });
             });
 
-            return { id: d.id, name: d.title, widgets, layout };
+            const cfg = d.config || {};
+            return {
+              id: d.id,
+              name: d.title,
+              description: d.description || '',
+              config: cfg,
+              tags: Array.isArray((cfg as any).tags) ? (cfg as any).tags : [],
+              widgets,
+              layout,
+            };
           } catch (error) {
             console.error(`Failed to load charts for dashboard ${d.id}:`, error);
-            return { id: d.id, name: d.title, widgets: [], layout: [] };
+            return { id: d.id, name: d.title, config: d.config || {}, tags: [], widgets: [], layout: [] };
           }
         })
       );
@@ -322,7 +400,11 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
       const state = get();
       const currentActiveId = state.activeDashboardId;
-      const targetDash = dashboards.find((d) => String(d.id) === String(currentActiveId)) || dashboards[0];
+      const urlDashboardId =
+        typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('id') : null;
+      const preferredId = urlDashboardId || currentActiveId;
+      const targetDash =
+        dashboards.find((d) => String(d.id) === String(preferredId)) || dashboards[0];
       const nextActiveId = targetDash.id;
 
       set({
@@ -335,11 +417,12 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         layout: targetDash.layout,
       });
 
-      // Fetch chart data for all widgets in the active dashboard that have chartId
       if (targetDash.widgets.length > 0) {
-        const widgetsToFetch = targetDash.widgets.filter((w) => w.chartId);
-        for (const widget of widgetsToFetch) {
-          get().fetchChartData(widget.id);
+        const widgetsToFetch = targetDash.widgets.filter(
+          (w) => w.chartId && !isNonDataWidget(w.chartType) && !isRemixSnapshotWidget(w),
+        );
+        if (widgetsToFetch.length > 0) {
+          await get().refreshAllChartData(widgetsToFetch.map((w) => w.id));
         }
       }
     } catch (error) {
@@ -357,6 +440,10 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     const { currentProjectId } = useProjectStore.getState();
     const projectId = isEnterpriseEdition ? currentProjectId : undefined;
 
+    if (isEnterpriseEdition && !isValidUuid(projectId != null ? String(projectId) : null)) {
+      throw new Error('Select a valid project before creating a dashboard');
+    }
+
     try {
       const dashboard = await chartService.createDashboard(
         {
@@ -372,31 +459,23 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
       return dashboard.id;
     } catch (error) {
       console.error('Failed to create dashboard:', error);
-      return '';
+      throw new Error(formatApiValidationError(error));
+    }
+  },
+
+  seedDashboardStarterLayout: async (kind, activePageId = null) => {
+    const pairs = buildStarterDashboardWidgets(kind, activePageId);
+    if (!pairs.length) return;
+
+    for (const { widget, layoutItem } of pairs) {
+      get().addWidget(widget, layoutItem);
+      await get().createChartAndFetchData(widget);
     }
   },
 
   removeDashboard: async (id) => {
     try {
-      const state = get();
-      const targetDash = state.dashboards.find((d) => String(d.id) === String(id));
-
-      // 1. Explicitly delete all charts inside this dashboard first if they exist
-      // This satisfies the user's requirement to ensure charts are removed too.
-      if (targetDash && targetDash.widgets.length > 0) {
-        const chartDeletionPromises = targetDash.widgets
-          .filter((w) => w.chartId)
-          .map((w) => chartService.deleteChart(id, w.chartId!));
-
-        try {
-          await Promise.all(chartDeletionPromises);
-        } catch (chartErr) {
-          console.warn(`Some charts failed to delete for dashboard ${id}:`, chartErr);
-          // Continue with dashboard deletion regardless
-        }
-      }
-
-      // 2. Delete the dashboard itself
+      // Backend cascades widgets, charts, pages, shares, and related rows.
       await chartService.deleteDashboard(id);
 
       const { dashboards, activeDashboardId } = get();
@@ -432,7 +511,17 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
   setActiveDashboardId: (id) => {
     const state = get();
-    if (state.activeDashboardId === id) return;
+    if (state.activeDashboardId === id) {
+      set({ selectedWidgetId: null, isPropertiesCollapsed: true });
+      return;
+    }
+
+    if (id) {
+      const savedMode = readStudioMode(id);
+      if (savedMode) {
+        set({ studioMode: savedMode });
+      }
+    }
 
     // Save current active state to dashboards array first
     const updatedDashboards = state.dashboards.map((d) =>
@@ -449,6 +538,10 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
       layout: targetDash.layout,
       selectedWidgetId: null,
       isPropertiesCollapsed: true,
+      runtimeFilters: [],
+      globalFiltersConfig: [],
+      pageFiltersConfig: [],
+      widgetDrillState: {},
     });
 
     // Fetch chart data for all widgets that have chartId
@@ -458,36 +551,127 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }
   },
 
+  updateDashboardMeta: async (id, meta) => {
+    const payload: { title?: string; description?: string; config?: Record<string, unknown> } = {};
+    if (meta.name !== undefined) payload.title = meta.name;
+    if (meta.description !== undefined) payload.description = meta.description;
+    if (meta.config !== undefined) payload.config = meta.config;
+    if (!Object.keys(payload).length) return;
+
+    await chartService.updateDashboard(id, payload);
+    set((state) => ({
+      dashboards: state.dashboards.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              ...(meta.name !== undefined ? { name: meta.name } : {}),
+              ...(meta.description !== undefined ? { description: meta.description } : {}),
+              ...(meta.config !== undefined ? { config: { ...(d.config || {}), ...meta.config } } : {}),
+            }
+          : d
+      ),
+    }));
+  },
+
   updateDashboardName: async (id, name) => {
     try {
-      await chartService.updateDashboard(id, { title: name });
-      set((state) => ({
-        dashboards: state.dashboards.map((d) => (d.id === id ? { ...d, name } : d)),
-      }));
+      await get().updateDashboardMeta(id, { name });
     } catch (error) {
       console.error('Failed to update dashboard name:', error);
+      throw error;
     }
   },
 
-  addWidget: (widget, layoutItem) =>
+  setDashboardDescription: (id, description) =>
+    set((state) => ({
+      dashboards: state.dashboards.map((d) => (d.id === id ? { ...d, description } : d)),
+    })),
+
+  duplicateDashboard: async (id) => {
+    const { dashboards } = get();
+    const src = dashboards.find((d) => d.id === id);
+    const newName = src ? `${src.name} (Copy)` : 'Dashboard Copy';
+    const newId = await get().addDashboard(newName);
+
+    // Copy widgets via store (best-effort: creates new chart records server-side)
+    const srcWidgets = src?.widgets || [];
+    for (const w of srcWidgets) {
+      if (w.chartId) {
+        // Copy the widget to the new dashboard
+        const layoutItem = get().layout.find((l) => l.i === w.id);
+        try {
+          await get().copyWidgetToDashboard(w, layoutItem, newId);
+        } catch {
+          // Non-fatal — partial copy is fine
+        }
+      }
+    }
+    return newId;
+  },
+
+  // Starred dashboards (client-only, persisted in localStorage)
+  starredDashboardIds: (() => {
+    if (typeof window === 'undefined') return new Set<string>();
+    try {
+      const raw = localStorage.getItem('aicser_starred_dashboards');
+      return new Set<string>(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set<string>();
+    }
+  })(),
+
+  toggleStarDashboard: (id) =>
     set((state) => {
-      const widgets = [...state.widgets, widget];
-      const layout = [...state.layout, layoutItem];
-      const dashboards = state.dashboards.map((d) =>
-        d.id === state.activeDashboardId ? { ...d, widgets, layout } : d
-      );
-      return { widgets, layout, dashboards, selectedWidgetId: widget.id, isPropertiesCollapsed: false };
+      const next = new Set(state.starredDashboardIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try { localStorage.setItem('aicser_starred_dashboards', JSON.stringify([...next])); } catch {}
+      return { starredDashboardIds: next };
     }),
-  removeWidget: (id) =>
+
+  updateDashboardTags: async (id, tags) => {
+    // Optimistic update
+    set((state) => ({
+      dashboards: state.dashboards.map((d) =>
+        d.id === id ? { ...d, tags } : d
+      ),
+    }));
+    try {
+      // Persist via updateDashboardMeta — tags are stored in config
+      await chartService.updateDashboard(id, {
+        config: { ...get().dashboards.find((d) => d.id === id)?.config, tags },
+      });
+    } catch {
+      // Revert on failure
+      console.error('[updateDashboardTags] failed to persist');
+    }
+  },
+
+  addWidget: (widget, layoutItem) => {
+    const { widgets, layout } = get();
+    pushUndo({ widgets, layout });
     set((state) => {
-      const widgets = state.widgets.filter((w) => w.id !== id);
-      const layout = state.layout.filter((l) => l.i !== id);
+      const next = [...state.widgets, widget];
+      const nextLayout = [...state.layout, layoutItem];
+      const dashboards = state.dashboards.map((d) =>
+        d.id === state.activeDashboardId ? { ...d, widgets: next, layout: nextLayout } : d
+      );
+      return { widgets: next, layout: nextLayout, dashboards, selectedWidgetId: widget.id, isPropertiesCollapsed: false, _historyVersion: state._historyVersion + 1 };
+    });
+  },
+  removeWidget: (id) => {
+    const { widgets, layout } = get();
+    pushUndo({ widgets, layout });
+    set((state) => {
+      const next = state.widgets.filter((w) => w.id !== id);
+      const nextLayout = state.layout.filter((l) => l.i !== id);
       const selectedWidgetId = state.selectedWidgetId === id ? null : state.selectedWidgetId;
       const dashboards = state.dashboards.map((d) =>
-        d.id === state.activeDashboardId ? { ...d, widgets, layout } : d
+        d.id === state.activeDashboardId ? { ...d, widgets: next, layout: nextLayout } : d
       );
-      return { widgets, layout, selectedWidgetId, dashboards };
-    }),
+      return { widgets: next, layout: nextLayout, selectedWidgetId, dashboards, _historyVersion: state._historyVersion + 1 };
+    });
+  },
 
   removeChartFromAllDashboards: (chartId) =>
     set((state) => {
@@ -561,7 +745,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         title: newTitle,
         chartQuery: originalWidget.chartQuery || {},
         chartOptions: originalWidget.chartOptions || {},
-        layout: newLayout,
+        layout: sanitizeLayoutItem(newLayout),
       };
 
       const newChart = await chartService.createChart(activeDashboardId, payload);
@@ -644,7 +828,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         chartQuery,
         chartOptions: widget.chartOptions,
         ...(layoutItem && {
-          layout: { x: layoutItem.x, y: layoutItem.y, w: layoutItem.w, h: layoutItem.h },
+          layout: sanitizeLayoutItem(layoutItem, maxLayoutY(state.layout)),
         }),
       };
 
@@ -661,8 +845,7 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
       const chart = await chartService.createChart(activeDashboardId, createPayload);
 
-      // For text widgets, we don't need to fetch data - just create the chart entry and we're done
-      const isTextWidget = widget.chartType === 'text';
+      const skipDataFetch = isNonDataWidget(widget.chartType);
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) =>
@@ -674,19 +857,21 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         return { widgets: nextWidgets, dashboards };
       });
 
-      // Skip data fetching for text widgets
-      if (isTextWidget) {
+      if (skipDataFetch) {
         return;
       }
 
-      // Fetch data for charts that need data
       try {
-        const response = await chartService.executeChart(activeDashboardId, chart.id);
-        const { data } = response;
-        const processedData = get().partitionSeriesData(data, widget);
+        const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
+        const { chartData } = await fetchWidgetChartData({
+          dashboardId: activeDashboardId,
+          widget: { ...widget, chartId: chart.id },
+          runtimeFilters: get().runtimeFilters,
+          filterConfigs,
+        });
 
         set((state) => {
-          const nextWidgets = state.widgets.map((w) => (w.id === widget.id ? { ...w, chartData: processedData } : w));
+          const nextWidgets = state.widgets.map((w) => (w.id === widget.id ? { ...w, chartData } : w));
           const dashboards = state.dashboards.map((d) =>
             d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
           );
@@ -776,10 +961,9 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
 
       const updatedChart = await chartService.updateChart(activeDashboardId, widget.chartId, updatePayload);
 
-      // For text widgets, we don't need to fetch data - just update the widget with the new options
-      const isTextWidget = (updates.chartType || widget.chartType) === 'text';
+      const isStaticWidget = isNonDataWidget(updates.chartType || widget.chartType);
 
-      if (isTextWidget) {
+      if (isStaticWidget) {
         set((state) => {
           const nextWidgets = state.widgets.map((w) =>
             w.id === widgetId ? { ...w, ...updates, chartOptions: mergedChartOptions, isLoading: false } : w
@@ -790,13 +974,18 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
           return { widgets: nextWidgets, dashboards };
         });
       } else {
-        // Fetch updated data for charts that need data
-        const { data } = await chartService.executeChart(activeDashboardId, updatedChart.id);
-        const processedData = get().partitionSeriesData(data, { ...widget, ...updates });
+        const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
+        const { chartData } = await fetchWidgetChartData({
+          dashboardId: activeDashboardId,
+          widget: { ...widget, ...updates, chartId: updatedChart.id },
+          runtimeFilters: state.runtimeFilters,
+          filterConfigs,
+          drillState: state.widgetDrillState[widgetId],
+        });
 
         set((state) => {
           const nextWidgets = state.widgets.map((w) =>
-            w.id === widgetId ? { ...w, ...updates, chartData: processedData, isLoading: false } : w
+            w.id === widgetId ? { ...w, ...updates, chartData, isLoading: false } : w
           );
           const dashboards = state.dashboards.map((d) =>
             d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
@@ -878,6 +1067,8 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
       const activeDashboardId = state.activeDashboardId;
       if (!activeDashboardId) throw new Error('No active dashboard');
       if (!widget || !widget.chartId) return;
+      if (isNonDataWidget(widget.chartType)) return;
+      if (isRemixSnapshotWidget(widget) && widget.chartData) return;
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) => (w.id === widgetId ? { ...w, isLoading: true, error: null } : w));
@@ -887,12 +1078,18 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
         return { widgets: nextWidgets, dashboards };
       });
 
-      const { data } = await chartService.executeChart(activeDashboardId, widget.chartId);
-      const processedData = get().partitionSeriesData(data, widget);
+      const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
+      const { chartData } = await fetchWidgetChartData({
+        dashboardId: activeDashboardId,
+        widget,
+        runtimeFilters: get().runtimeFilters,
+        filterConfigs,
+        drillState: get().widgetDrillState[widgetId],
+      });
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) =>
-          w.id === widgetId ? { ...w, chartData: processedData, isLoading: false } : w
+          w.id === widgetId ? { ...w, chartData, isLoading: false } : w
         );
         const dashboards = state.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
@@ -913,24 +1110,258 @@ export const useDashboardStore = create<DashboardState>()((set, get) => ({
     }
   },
 
-  updateChartLayout: async (widgetId: string) => {
+  updateChartLayout: async (widgetId: string, layoutOverride?: LayoutItem) => {
     try {
       const state = get();
       const widget = state.widgets.find((w) => w.id === widgetId);
-      const layoutItem = state.layout.find((l) => l.i === widgetId);
+      const layoutItem = layoutOverride ?? state.layout.find((l) => l.i === widgetId);
       const activeDashboardId = state.activeDashboardId;
 
       if (!activeDashboardId || !widget?.chartId || !layoutItem) return;
 
-      await chartService.updateChartLayout(activeDashboardId, widget.chartId, {
-        x: layoutItem.x,
-        y: layoutItem.y,
-        w: layoutItem.w,
-        h: layoutItem.h,
-      });
+      const safe = sanitizeLayoutItem(layoutItem, maxLayoutY(state.layout));
+      await chartService.updateChartLayout(activeDashboardId, widget.chartId, safe);
     } catch (error) {
       console.error('Failed to update chart layout:', error);
+      throw new Error(formatApiValidationError(error));
     }
   },
-  setIsFullscreen: (full: boolean) => set({ isFullscreen: full }),
+
+  applyRemoteUpdate: (update) => {
+    if (update.type === 'layout:update' && Array.isArray(update.layout)) {
+      const layoutTs = (update as { layoutTs?: number }).layoutTs ?? 0;
+      set((state) => {
+        const localTs = state.layoutCollabTs ?? 0;
+        if (layoutTs < localTs) return state;
+        const layout = update.layout as LayoutItem[];
+        const dashboards = state.dashboards.map((d) =>
+          d.id === state.activeDashboardId ? { ...d, layout } : d,
+        );
+        return { layout, layoutCollabTs: layoutTs, dashboards };
+      });
+      return;
+    }
+    if (update.type === 'widget:update' && update.id && update.changes) {
+      const collabTs =
+        (update as { collabTs?: number }).collabTs ??
+        (update.changes as { collabTs?: number }).collabTs ??
+        0;
+      set((state) => {
+        const existing = state.widgets.find((w) => w.id === update.id || w.chartId === update.id);
+        if (existing && (existing.collabTs ?? 0) > collabTs) return state;
+
+        const widgets = state.widgets.map((w) => {
+          if (w.id !== update.id && w.chartId !== update.id) return w;
+          const { collabTs: _drop, ...rest } = update.changes as Partial<WidgetInstance> & { collabTs?: number };
+          return { ...w, ...rest, collabTs };
+        });
+        const dashboards = state.dashboards.map((d) =>
+          d.id === state.activeDashboardId ? { ...d, widgets } : d,
+        );
+        return { widgets, dashboards };
+      });
+      return;
+    }
+    if (update.type === 'widget:add' && update.widget) {
+      const widget = update.widget as WidgetInstance;
+      const layoutItem = (update as { layout?: LayoutItem }).layout;
+      set((state) => {
+        if (state.widgets.some((w) => w.id === widget.id)) return state;
+        const widgets = [...state.widgets, widget];
+        let layout = state.layout;
+        if (layoutItem && !layout.some((l) => l.i === layoutItem.i)) {
+          layout = [...layout, layoutItem];
+        }
+        const dashboards = state.dashboards.map((d) =>
+          d.id === state.activeDashboardId ? { ...d, widgets, layout } : d,
+        );
+        return { widgets, layout, dashboards };
+      });
+      return;
+    }
+    if (update.type === 'widget:remove' && update.id) {
+      set((state) => {
+        const widgets = state.widgets.filter((w) => w.id !== update.id && w.chartId !== update.id);
+        const dashboards = state.dashboards.map((d) =>
+          d.id === state.activeDashboardId ? { ...d, widgets } : d
+        );
+        return { widgets, dashboards };
+      });
+    }
+  },
+
+  updatePageLayout: (pageId, pageLayoutUpdate, defaultPageId = null) => {
+    set((state) => {
+      const layout = mergePageLayout(state.layout, pageLayoutUpdate, pageId, defaultPageId);
+      const dashboards = state.dashboards.map((d) =>
+        d.id === state.activeDashboardId ? { ...d, layout } : d
+      );
+      return { layout, dashboards };
+    });
+  },
+
+  applyDashboardColorPalette: async (paletteId: string) => {
+    const state = get();
+    const activeDashboardId = state.activeDashboardId;
+    if (!activeDashboardId) return;
+
+    const paletteColors = getColorsFromPalette(paletteId);
+    const previousPalette = state.dashboards.find((d) => d.id === activeDashboardId)?.config
+      ?.default_color_palette as string | undefined;
+
+    const shouldFollowDashboardPalette = (widgetPalette: string | undefined | null) => {
+      if (widgetPalette === 'custom') return false;
+      if (isWidgetPaletteInherited(widgetPalette)) return true;
+      if (!previousPalette || widgetPalette === previousPalette) return true;
+      return false;
+    };
+
+    try {
+      const dash = await chartService.getDashboard(activeDashboardId);
+      const nextConfig = { ...(dash.config || {}), default_color_palette: paletteId };
+      await chartService.updateDashboard(activeDashboardId, { config: nextConfig });
+      set((s) => ({
+        dashboards: s.dashboards.map((d) =>
+          d.id === activeDashboardId ? { ...d, config: nextConfig } : d,
+        ),
+        widgets: s.widgets.map((w) => {
+          if (w.chartType === 'text' || w.chartType === 'slicer') return w;
+          if (!shouldFollowDashboardPalette(w.chartOptions?.colorPalette)) return w;
+          const snapshot = w.chartOptions?.__echartsSnapshot;
+          const nextOptions: Record<string, unknown> = {
+            ...w.chartOptions,
+            colorPalette: WIDGET_PALETTE_INHERIT,
+            customColor: undefined,
+            customPalette: undefined,
+            paletteInverted: false,
+          };
+          if (snapshot && typeof snapshot === 'object') {
+            nextOptions.__echartsSnapshot = {
+              ...(snapshot as Record<string, unknown>),
+              color: paletteColors,
+            };
+          }
+          return { ...w, chartOptions: nextOptions as WidgetInstance['chartOptions'] };
+        }),
+      }));
+    } catch (error) {
+      console.error('[applyDashboardColorPalette] config save failed:', error);
+      throw error;
+    }
+
+    const targets = state.widgets.filter(
+      (w) =>
+        w.chartId &&
+        w.chartType !== 'text' &&
+        w.chartType !== 'slicer' &&
+        shouldFollowDashboardPalette(w.chartOptions?.colorPalette),
+    );
+
+    await Promise.all(
+      targets.map((w) => {
+        const snapshot = w.chartOptions?.__echartsSnapshot;
+        const nextOptions: Record<string, unknown> = {
+          ...w.chartOptions,
+          colorPalette: WIDGET_PALETTE_INHERIT,
+          customColor: undefined,
+          customPalette: undefined,
+          paletteInverted: false,
+        };
+        if (snapshot && typeof snapshot === 'object') {
+          nextOptions.__echartsSnapshot = {
+            ...(snapshot as Record<string, unknown>),
+            color: paletteColors,
+          };
+        }
+        return get().updateChartAndFetchData(w.id, { chartOptions: nextOptions });
+      }),
+    );
+  },
+
+  moveWidgetToPage: async (widgetId, targetPageId) => {
+    const state = get();
+    const layoutItem = state.layout.find((l) => l.i === widgetId);
+    const widget = state.widgets.find((w) => w.id === widgetId);
+    const activeDashboardId = state.activeDashboardId;
+    if (!layoutItem || !activeDashboardId) return;
+
+    const updatedItem: LayoutItem = { ...layoutItem, pageId: targetPageId };
+    set((s) => {
+      const layout = s.layout.map((l) => (l.i === widgetId ? updatedItem : l));
+      const dashboards = s.dashboards.map((d) =>
+        d.id === s.activeDashboardId ? { ...d, layout } : d
+      );
+      return { layout, dashboards };
+    });
+
+    if (widget?.chartId) {
+      const safe = sanitizeLayoutItem(updatedItem);
+      await chartService.updateChartLayout(activeDashboardId, widget.chartId, {
+        ...safe,
+        page_id: targetPageId,
+      });
+    }
+  },
+
+  bulkDeleteWidgets: async () => {
+    const { selectedWidgetIds, widgets } = get();
+    if (!selectedWidgetIds.size) return;
+    const ids = [...selectedWidgetIds];
+    get().clearMultiSelection();
+    for (const id of ids) {
+      const widget = widgets.find((w) => w.id === id);
+      if (widget?.chartId) {
+        try { await get().deleteChart(id); } catch {}
+      } else {
+        get().removeWidget(id);
+      }
+    }
+  },
+
+  // ─── Version history ──────────────────────────────────────────────────────
+  loadVersionHistory: (dashboardId) => {
+    const versions = loadVersions(dashboardId);
+    set({ dashboardVersions: versions });
+  },
+
+  saveVersionSnapshot: (label) => {
+    const { activeDashboardId, widgets, layout } = get();
+    if (!activeDashboardId) return;
+    const id = `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const version: DashboardVersion = {
+      id,
+      dashboardId: activeDashboardId,
+      label: label || new Date().toLocaleString(),
+      savedAt: Date.now(),
+      widgets: JSON.parse(JSON.stringify(widgets)),
+      layout: JSON.parse(JSON.stringify(layout)),
+    };
+    const existing = loadVersions(activeDashboardId);
+    const next = [version, ...existing].slice(0, MAX_VERSIONS);
+    persistVersions(activeDashboardId, next);
+    set({ dashboardVersions: next });
+  },
+
+  restoreVersionSnapshot: (versionId) => {
+    const { activeDashboardId, dashboardVersions } = get();
+    const version = dashboardVersions.find((v) => v.id === versionId);
+    if (!version || !activeDashboardId) return;
+    const { widgets, layout } = version;
+    // Save current state as a recovery point first
+    get().saveVersionSnapshot(`Before restore — ${new Date().toLocaleString()}`);
+    set((state) => {
+      const dashboards = state.dashboards.map((d) =>
+        d.id === activeDashboardId ? { ...d, widgets, layout } : d
+      );
+      return { widgets, layout, dashboards, selectedWidgetId: null };
+    });
+  },
+
+  deleteVersionSnapshot: (versionId) => {
+    const { activeDashboardId, dashboardVersions } = get();
+    if (!activeDashboardId) return;
+    const next = dashboardVersions.filter((v) => v.id !== versionId);
+    persistVersions(activeDashboardId, next);
+    set({ dashboardVersions: next });
+  },
 }));

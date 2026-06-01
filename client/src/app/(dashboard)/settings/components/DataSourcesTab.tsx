@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
   Table,
@@ -22,11 +22,12 @@ import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import type { DataSource as SettingsDataSource } from '../types';
+import type { TabComponentProps } from '../page';
 
 const { Text } = Typography;
 const { Option } = Select;
 
-export const DataSourcesTab: React.FC = () => {
+export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -59,6 +60,15 @@ export const DataSourcesTab: React.FC = () => {
     setEditingSource(null);
     setAddModalVisible(true);
   };
+
+  // Register "Add Data Source" button in page header
+  useEffect(() => {
+    onSetAction?.(
+      <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
+        {t('add_data_source')}
+      </Button>
+    );
+  }, [onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleModalClose = () => {
     setAddModalVisible(false);
@@ -195,49 +205,38 @@ export const DataSourcesTab: React.FC = () => {
   ];
 
   return (
-    <Card
-      size="small"
-      bordered={false}
-      style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-      title={
-        <Space>
-          <DatabaseOutlined />
-          {t('data_sources')}
-        </Space>
-      }
-      extra={
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
-          {t('add_data_source')}
-        </Button>
-      }
-    >
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Space
-          wrap
-          className="data-sources-search-row"
-          style={{ width: '100%', justifyContent: 'space-between', gap: 8 }}
+    <>
+      {/* Toolbar: search + filter left, add button right — no duplicate heading */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <Input
+          placeholder={t('search_data_sources')}
+          prefix={<SearchOutlined />}
+          value={dataSourceSearch}
+          onChange={(e) => setDataSourceSearch(e.target.value)}
+          className="data-sources-search-input"
+          style={{ minWidth: 180, flex: '1 1 180px', maxWidth: 280 }}
+          allowClear
+        />
+        <Select
+          value={dataSourceStatusFilter}
+          onChange={setDataSourceStatusFilter}
+          className="data-sources-status-select"
+          style={{ minWidth: 120, width: 150 }}
         >
-          <Input
-            placeholder={t('search_data_sources')}
-            prefix={<SearchOutlined />}
-            value={dataSourceSearch}
-            onChange={(e) => setDataSourceSearch(e.target.value)}
-            className="data-sources-search-input"
-            style={{ minWidth: 180, flex: '1 1 180px', maxWidth: 280 }}
-            allowClear
-          />
-          <Select
-            value={dataSourceStatusFilter}
-            onChange={setDataSourceStatusFilter}
-            className="data-sources-status-select"
-            style={{ minWidth: 120, width: 150 }}
-          >
-            <Option value="all">{t('all_status')}</Option>
-            <Option value="connected">{t('connected')}</Option>
-            <Option value="failed">{t('failed')}</Option>
-            <Option value="pending">{t('pending')}</Option>
-          </Select>
-        </Space>
+          <Option value="all">{t('all_status')}</Option>
+          <Option value="connected">{t('connected')}</Option>
+          <Option value="failed">{t('failed')}</Option>
+          <Option value="pending">{t('pending')}</Option>
+        </Select>
+        {/* Add button is in the page header via onSetAction */}
+      </div>
+
+      <Card
+        size="small"
+        bordered={false}
+        style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
+      >
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
 
         {dataSources.length === 0 ? (
           <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
@@ -273,5 +272,6 @@ export const DataSourcesTab: React.FC = () => {
         }
       />
     </Card>
+    </>
   );
 };

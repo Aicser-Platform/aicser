@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslations } from 'next-intl';
 import { Modal, Button, Space, Input, Select, message, Spin, DatePicker, Popconfirm, Tag, Empty, Switch } from 'antd';
 import {
   PlusOutlined,
@@ -18,7 +19,6 @@ import {
 } from '../hooks/useAutomationManager';
 
 interface SchedulePublishModalsProps {
-  // Auto send modal
   isAutoSendOpen: boolean;
   setIsAutoSendOpen: (open: boolean) => void;
   isSavingAutoSend: boolean;
@@ -37,8 +37,6 @@ interface SchedulePublishModalsProps {
   isLoadingOrgMembers: boolean;
   orgMemberEmails: string[];
   orgMemberLabelMap: Record<string, string>;
-
-  // Automation list modal
   isAutomationListOpen: boolean;
   setIsAutomationListOpen: (open: boolean) => void;
   isLoadingScheduledEmails: boolean;
@@ -48,23 +46,18 @@ interface SchedulePublishModalsProps {
   handleDeleteSchedule: (id: string) => void;
   openEditAutomationModal: (schedule: any) => void;
   handleToggleScheduleEnabled: (schedule: any, enabled: boolean) => void;
-
-  // Edit automation modal
   isEditAutomationOpen: boolean;
   setIsEditAutomationOpen: (open: boolean) => void;
   isSavingEditAutomation: boolean;
   editingAutomationForm: any;
   setEditingAutomationForm: (form: any | ((prev: any) => any)) => void;
   handleUpdateSchedule: (activate: boolean) => void;
-
-  // Shared
   sharedDashboardUrl: string;
   handlePreviewDashboard: () => void;
   handleCopySharedLink: () => void;
 }
 
 export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
-  // Auto send modal
   isAutoSendOpen,
   setIsAutoSendOpen,
   isSavingAutoSend,
@@ -77,8 +70,6 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
   isLoadingOrgMembers,
   orgMemberEmails,
   orgMemberLabelMap,
-
-  // Automation list modal
   isAutomationListOpen,
   setIsAutomationListOpen,
   isLoadingScheduledEmails,
@@ -88,48 +79,42 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
   handleDeleteSchedule,
   openEditAutomationModal,
   handleToggleScheduleEnabled,
-
-  // Edit automation modal
   isEditAutomationOpen,
   setIsEditAutomationOpen,
   isSavingEditAutomation,
   editingAutomationForm,
   setEditingAutomationForm,
   handleUpdateSchedule,
-
-  // Shared
   sharedDashboardUrl,
   handlePreviewDashboard,
   handleCopySharedLink,
 }) => {
+  const t = useTranslations('dashboard_tabs');
+
   return (
     <>
-      {/* Auto Send Modal */}
       <Modal
-        title="Auto send dashboard"
+        title={t('schedule_modal_title')}
         open={isAutoSendOpen}
         onCancel={() => setIsAutoSendOpen(false)}
         onOk={handleSaveAutoSend}
-        okText="Confirm"
-        cancelText="Cancel"
+        okText={t('confirm')}
+        cancelText={t('cancel')}
         confirmLoading={isSavingAutoSend}
         okButtonProps={{ disabled: autoSendForm.recipients.length === 0 }}
         className="auto-send-modal"
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="auto-send-modal-body">
-          <p className="auto-send-note">
-            All data will be calculated because "Analyze data based on visitors' permissions" feature doesn't apply to
-            Auto-send dashboard.
-          </p>
+          <p className="auto-send-note">{t('schedule_modal_note')}</p>
 
-          <div className="auto-send-section-title">Step 1. Set schedule</div>
+          <div className="auto-send-section-title">{t('schedule_when')}</div>
           <div className="auto-send-panel">
             <div className="auto-send-schedule-grid">
               <div className="auto-send-schedule-field">
                 <div className="auto-send-field-label auto-send-label-with-required">
-                  <span>Send date and time</span>
-                  <span className="auto-send-required-indicator" title="Required field" aria-label="Required field">
+                  <span>{t('schedule_send_at')}</span>
+                  <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
                     *
                   </span>
                 </div>
@@ -148,8 +133,8 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
 
               <div className="auto-send-schedule-field auto-send-schedule-field-frequency">
                 <div className="auto-send-field-label auto-send-label-with-required">
-                  <span>Repeat</span>
-                  <span className="auto-send-required-indicator" title="Required field" aria-label="Required field">
+                  <span>{t('schedule_repeat')}</span>
+                  <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
                     *
                   </span>
                 </div>
@@ -162,33 +147,33 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
             </div>
           </div>
 
-          <div className="auto-send-section-title">Step 2. Compose email</div>
+          <div className="auto-send-section-title">{t('schedule_email')}</div>
           <div className="auto-send-panel">
             <div className="auto-send-label-row">
               <div className="auto-send-label-with-icon">
                 <CalendarOutlined />
-                <span>Recipients</span>
+                <span>{t('schedule_recipients')}</span>
               </div>
-              <span className="auto-send-required-indicator" title="Required field" aria-label="Required field">
+              <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
                 *
               </span>
             </div>
-            <p className="auto-send-field-help">Add at least one recipient to enable Confirm.</p>
+            <p className="auto-send-field-help">{t('schedule_recipients_hint')}</p>
 
-            <div className="auto-send-field-label">Dashboard link</div>
+            <div className="auto-send-field-label">{t('schedule_dashboard_link')}</div>
             <div className="auto-send-link-row">
               <Input value={sharedDashboardUrl} readOnly />
               <Button icon={<EyeOutlined />} onClick={handlePreviewDashboard}>
-                Preview
+                {t('preview')}
               </Button>
               <Button icon={<CopyOutlined />} onClick={handleCopySharedLink}>
-                Copy
+                {t('copy')}
               </Button>
             </div>
 
             <div className="auto-send-field-label auto-send-label-with-required auto-send-inline-label-required">
-              <span>Organization members</span>
-              <span className="auto-send-required-indicator" title="Required field" aria-label="Required field">
+              <span>{t('schedule_org_members')}</span>
+              <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
                 *
               </span>
             </div>
@@ -197,7 +182,7 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
               showSearch
               optionFilterProp="label"
               optionLabelProp="value"
-              placeholder="Select organization members"
+              placeholder={t('schedule_org_members_placeholder')}
               value={autoSendForm.recipients}
               onChange={(value) => {
                 const normalizedRecipients = value
@@ -222,15 +207,15 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                   )
                   .map((email: string) => ({ value: email, label: `${email} (external)` })),
               ]}
-              notFoundContent={isLoadingOrgMembers ? <Spin size="small" /> : 'No organization members found'}
+              notFoundContent={isLoadingOrgMembers ? <Spin size="small" /> : t('schedule_no_members')}
             />
 
-            <div className="auto-send-field-label">External recipients (optional)</div>
+            <div className="auto-send-field-label">{t('schedule_external')}</div>
             <div className="auto-send-external-add-row">
               <Input
                 value={externalRecipientInput}
                 onChange={(e) => setExternalRecipientInput(e.target.value)}
-                placeholder="Add external email"
+                placeholder={t('schedule_external_placeholder')}
                 onPressEnter={(e) => {
                   e.preventDefault();
                   addExternalRecipient(externalRecipientInput);
@@ -242,58 +227,49 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                 icon={<PlusOutlined />}
                 onClick={() => addExternalRecipient(externalRecipientInput)}
               >
-                Add
+                {t('add')}
               </Button>
             </div>
 
-            <p className="auto-send-recipient-hint">
-              Select organization members above. Use Add for emails outside your organization.
-            </p>
+            <p className="auto-send-recipient-hint">{t('schedule_external_hint')}</p>
 
-            <div className="auto-send-field-label">Title</div>
+            <div className="auto-send-field-label">{t('schedule_subject')}</div>
             <Input
               value={autoSendForm.subject}
               onChange={(e) => setAutoSendForm((prev: any) => ({ ...prev, subject: e.target.value }))}
-              placeholder="Email subject"
+              placeholder={t('schedule_subject_placeholder')}
               maxLength={255}
             />
 
-            <div className="auto-send-field-label">Message</div>
+            <div className="auto-send-field-label">{t('schedule_message')}</div>
             <Input.TextArea
               className="auto-send-message-input"
               value={autoSendForm.body}
               onChange={(e) => setAutoSendForm((prev: any) => ({ ...prev, body: e.target.value }))}
-              placeholder="Email message/body"
-              autoSize={{ minRows: 5, maxRows: 10 }}
+              placeholder={t('schedule_message_placeholder')}
+              autoSize={{ minRows: 4, maxRows: 8 }}
             />
           </div>
         </div>
       </Modal>
 
-      {/* Scheduled Automations List Modal */}
       <Modal
-        title="Scheduled Automations"
+        title={t('schedule_list_title')}
         open={isAutomationListOpen}
         onCancel={() => setIsAutomationListOpen(false)}
         footer={null}
         width={720}
-        destroyOnClose
+        destroyOnHidden
       >
         {isLoadingScheduledEmails ? (
           <div style={{ textAlign: 'center', padding: '20px 0' }}>
             <Spin size="small" />
           </div>
         ) : scheduledEmails.length === 0 ? (
-          <Empty description="No automations yet" style={{ padding: '20px 0' }} />
+          <Empty description={t('schedule_list_empty')} style={{ padding: '20px 0' }} />
         ) : (
           <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-              }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {scheduledEmails.map((schedule) => (
                 <div
                   key={schedule.id}
@@ -311,7 +287,7 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                       <Tag color={schedule.enabled ? 'blue' : 'default'}>
                         {normalizeScheduleType(schedule.schedule_type).toUpperCase()}
                       </Tag>
-                      {!schedule.enabled && <Tag color="red">Disabled</Tag>}
+                      {!schedule.enabled && <Tag color="red">{t('schedule_disabled')}</Tag>}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{schedule.subject}</div>
                     <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{formatRuleText(schedule)}</div>
@@ -331,20 +307,24 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                       {schedule.body}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', marginBottom: 4 }}>
-                      {schedule.to_emails.length} recipient{schedule.to_emails.length !== 1 ? 's' : ''}
+                      {t('schedule_recipients_count', { count: schedule.to_emails.length })}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', marginBottom: 4 }}>
                       {normalizeScheduleType(schedule.schedule_type) === 'once'
-                        ? `Sent at: ${schedule.last_send_at ? new Date(schedule.last_send_at).toLocaleString() : 'Pending'}`
-                        : `Next send: ${new Date(schedule.next_send_at).toLocaleString()}`}
+                        ? t('schedule_sent_at', {
+                            time: schedule.last_send_at
+                              ? new Date(schedule.last_send_at).toLocaleString()
+                              : t('schedule_pending'),
+                          })
+                        : t('schedule_next_send', { time: new Date(schedule.next_send_at).toLocaleString() })}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ant-color-text-secondary)' }}>
-                      Timezone: {schedule.timezone}
+                      {t('schedule_timezone', { zone: schedule.timezone })}
                     </div>
                   </div>
                   <Space size={8}>
                     <Button size="small" icon={<EditOutlined />} onClick={() => openEditAutomationModal(schedule)}>
-                      Edit
+                      {t('schedule_edit')}
                     </Button>
                     <Switch
                       size="small"
@@ -353,11 +333,11 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                       onChange={(checked) => handleToggleScheduleEnabled(schedule, checked)}
                     />
                     <Popconfirm
-                      title="Delete automation"
-                      description="Are you sure you want to delete this automation?"
+                      title={t('schedule_delete_title')}
+                      description={t('schedule_delete_confirm')}
                       onConfirm={() => handleDeleteSchedule(schedule.id)}
-                      okText="Delete"
-                      cancelText="Cancel"
+                      okText={t('delete')}
+                      cancelText={t('cancel')}
                       okButtonProps={{ danger: true, loading: isDeletingScheduleId === schedule.id }}
                     >
                       <Button
@@ -367,7 +347,7 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                         icon={<DeleteOutlined />}
                         loading={isDeletingScheduleId === schedule.id}
                       >
-                        Delete
+                        {t('delete')}
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -378,9 +358,8 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
         )}
       </Modal>
 
-      {/* Edit Automation Modal */}
       <Modal
-        title="Edit Automation"
+        title={t('schedule_edit_title')}
         open={isEditAutomationOpen}
         width={980}
         className="edit-automation-modal"
@@ -391,22 +370,21 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
         footer={
           <Space>
             <Button onClick={() => handleUpdateSchedule(false)} loading={isSavingEditAutomation}>
-              Save only
+              {t('schedule_save_only')}
             </Button>
             <Button type="primary" onClick={() => handleUpdateSchedule(true)} loading={isSavingEditAutomation}>
-              Save and activate
+              {t('schedule_save_activate')}
             </Button>
           </Space>
         }
-        destroyOnClose
+        destroyOnHidden
       >
         {editingAutomationForm && (
           <div className="edit-automation-layout">
             <div className="edit-automation-col">
-              <div className="edit-automation-col-title">When the following conditions are met:</div>
-              <div className="edit-automation-step">Step 1</div>
+              <div className="edit-automation-col-title">{t('schedule_when_col')}</div>
               <div className="edit-automation-card">
-                <div className="edit-automation-card-title">At scheduled time</div>
+                <div className="edit-automation-card-title">{t('schedule_at_time')}</div>
                 <div className="edit-automation-trigger-row">
                   <DatePicker
                     showTime={{ format: 'HH:mm' }}
@@ -431,19 +409,18 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
             </div>
 
             <div className="edit-automation-col">
-              <div className="edit-automation-col-title">Perform the following actions:</div>
-              <div className="edit-automation-step">Step 2</div>
+              <div className="edit-automation-col-title">{t('schedule_action_col')}</div>
               <div className="edit-automation-card">
-                <div className="edit-automation-card-title">Send an email message</div>
+                <div className="edit-automation-card-title">{t('schedule_send_email')}</div>
 
-                <div className="edit-automation-field-label">To</div>
+                <div className="edit-automation-field-label">{t('schedule_to')}</div>
                 <Select
                   mode="multiple"
                   showSearch
                   optionFilterProp="label"
                   optionLabelProp="value"
                   className="edit-automation-recipient-select"
-                  placeholder="Add recipients"
+                  placeholder={t('schedule_to_placeholder')}
                   value={editingAutomationForm.recipients}
                   onChange={(value) => {
                     const normalizedRecipients = value
@@ -473,7 +450,7 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                 <Input
                   value={externalRecipientInput}
                   onChange={(e) => setExternalRecipientInput(e.target.value)}
-                  placeholder="Add external email and press Enter"
+                  placeholder={t('schedule_external_enter')}
                   onPressEnter={(e) => {
                     e.preventDefault();
                     const email = externalRecipientInput.trim();
@@ -491,29 +468,29 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                   }}
                 />
 
-                <div className="edit-automation-field-label">Title</div>
+                <div className="edit-automation-field-label">{t('schedule_subject')}</div>
                 <Input
                   value={editingAutomationForm.subject}
                   onChange={(e) =>
                     setEditingAutomationForm((prev: any) => (prev ? { ...prev, subject: e.target.value } : prev))
                   }
-                  placeholder="Email subject"
+                  placeholder={t('schedule_subject_placeholder')}
                   maxLength={255}
                 />
 
-                <div className="edit-automation-field-label">Message</div>
+                <div className="edit-automation-field-label">{t('schedule_message')}</div>
                 <Input.TextArea
                   className="edit-automation-message-input"
                   value={editingAutomationForm.body}
                   onChange={(e) =>
                     setEditingAutomationForm((prev: any) => (prev ? { ...prev, body: e.target.value } : prev))
                   }
-                  placeholder="Email message/body"
-                  autoSize={{ minRows: 8, maxRows: 14 }}
+                  placeholder={t('schedule_message_placeholder')}
+                  autoSize={{ minRows: 6, maxRows: 12 }}
                 />
 
                 <div className="edit-automation-enabled-row">
-                  <span>Enabled</span>
+                  <span>{t('schedule_enabled')}</span>
                   <Switch
                     checked={editingAutomationForm.enabled}
                     onChange={(checked) =>

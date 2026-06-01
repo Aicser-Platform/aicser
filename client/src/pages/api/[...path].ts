@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { Writable } from 'stream';
 import { File } from 'node-fetch'; // Re-import File from node-fetch
+import { buildProxyAuthHeadersFromRaw } from '@/utils/proxyAuthHeaders';
 
 const BACKEND =
   process.env.API_TARGET ||
@@ -53,16 +54,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       target = `${targetBase}/api/${pathSegment}`;
     }
 
-    const headers: Record<string, string> = {};
-    if (req.headers.cookie) headers.cookie = String(req.headers.cookie);
-    if (req.headers.authorization) headers.authorization = String(req.headers.authorization);
+    const headers: Record<string, string> = buildProxyAuthHeadersFromRaw(
+      req.headers.cookie ? String(req.headers.cookie) : undefined,
+      req.headers.authorization ? String(req.headers.authorization) : undefined,
+    );
 
     const fetchOptions: any = { method: req.method, headers, redirect: 'follow' };
 
     // Handle multipart/form-data specifically for /data/upload and /users/profile/avatar
     // Parse with formidable and reconstruct using form-data package with streams
     // FastAPI's File() dependency needs proper multipart/form-data format
-    if ((pathSegment === 'data/upload' || pathSegment === 'users/profile/avatar') && req.method === 'POST') {
+    if ((pathSegment === 'data/upload' || pathSegment === 'users/profile/avatar' || pathSegment === 'organizations/me/logo') && req.method === 'POST') {
         const backendUrl = target;
         console.log('📤 Proxy: Handling file upload to backend:', backendUrl);
 
@@ -146,14 +148,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 formData.append('preview_only', fields.preview_only[0]);
             }
 
-            // Forward cookies and authorization
-            const forwardHeaders: Record<string, string> = {};
-            if (req.headers.cookie) {
-                forwardHeaders.cookie = String(req.headers.cookie);
-            }
-            if (req.headers.authorization) {
-                forwardHeaders.authorization = String(req.headers.authorization);
-            }
+            const forwardHeaders = buildProxyAuthHeadersFromRaw(
+              req.headers.cookie ? String(req.headers.cookie) : undefined,
+              req.headers.authorization ? String(req.headers.authorization) : undefined,
+            );
 
             // Get FormData headers (includes Content-Type with boundary)
             const formDataHeaders = formData.getHeaders();

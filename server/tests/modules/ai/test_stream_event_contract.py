@@ -127,14 +127,17 @@ async def test_resume_stream_emits_event_type_alias(monkeypatch):
     monkeypatch.setattr(api_streaming, "LiteLLMService", _FakeLiteLLMService)
     monkeypatch.setattr(api_streaming, "_get_langgraph_orchestrator_imports", _fake_orchestrator_imports)
 
-    from src.modules.data.service import data_connectivity_service
-    from src.modules.data.service import multi_engine_query_service
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.data.services import multi_engine_query_service
 
-    monkeypatch.setattr(data_connectivity_service, "DataConnectivityService", _FakeDataConnectivityService)
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        _FakeDataConnectivityService,
+    )
     monkeypatch.setattr(
         multi_engine_query_service,
-        "MultiEngineQueryService",
-        _FakeMultiEngineQueryService,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
     )
 
     request = api_streaming.ResumeRequestSchema(
@@ -187,14 +190,17 @@ async def test_resume_stream_error_is_sanitized_and_has_alias(monkeypatch):
     monkeypatch.setattr(api_streaming, "LiteLLMService", _FakeLiteLLMService)
     monkeypatch.setattr(api_streaming, "_get_langgraph_orchestrator_imports", _fake_orchestrator_imports)
 
-    from src.modules.data.service import data_connectivity_service
-    from src.modules.data.service import multi_engine_query_service
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.data.services import multi_engine_query_service
 
-    monkeypatch.setattr(data_connectivity_service, "DataConnectivityService", _FakeDataConnectivityService)
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        _FakeDataConnectivityService,
+    )
     monkeypatch.setattr(
         multi_engine_query_service,
-        "MultiEngineQueryService",
-        _FakeMultiEngineQueryService,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
     )
 
     request = api_streaming.ResumeRequestSchema(
@@ -259,14 +265,17 @@ async def test_stream_bills_only_on_terminal_success(monkeypatch):
     monkeypatch.setattr(api_streaming, "LiteLLMService", _FakeLiteLLMService)
     monkeypatch.setattr(api_streaming, "_get_langgraph_orchestrator_imports", _fake_orchestrator_imports)
 
-    from src.modules.data.service import data_connectivity_service
-    from src.modules.data.service import multi_engine_query_service
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.data.services import multi_engine_query_service
 
-    monkeypatch.setattr(data_connectivity_service, "DataConnectivityService", _FakeDataConnectivityService)
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        _FakeDataConnectivityService,
+    )
     monkeypatch.setattr(
         multi_engine_query_service,
-        "MultiEngineQueryService",
-        _FakeMultiEngineQueryService,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
     )
     from src.modules.pricing import usage_tracker
     monkeypatch.setattr(usage_tracker, "track_ai_credits_idempotent", _fake_track_ai_credits_idempotent)
@@ -294,7 +303,11 @@ async def test_stream_bills_only_on_terminal_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
     class _FakeLiteLLMService:
-        pass
+        async def hydrate_user_byok_models(self, _user_id):
+            return None
+
+        async def resolve_working_model_id(self, model_id):
+            return model_id
 
     class _FakeDataConnectivityService:
         pass
@@ -339,13 +352,16 @@ async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
 
     monkeypatch.setattr(api_streaming, "LiteLLMService", _FakeLiteLLMService)
     monkeypatch.setattr(api_streaming, "_get_langgraph_orchestrator_imports", _fake_orchestrator_imports)
-    from src.modules.data.service import data_connectivity_service
-    from src.modules.data.service import multi_engine_query_service
-    monkeypatch.setattr(data_connectivity_service, "DataConnectivityService", _FakeDataConnectivityService)
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.data.services import multi_engine_query_service
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        _FakeDataConnectivityService,
+    )
     monkeypatch.setattr(
         multi_engine_query_service,
-        "MultiEngineQueryService",
-        _FakeMultiEngineQueryService,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
     )
     from src.modules.pricing import usage_tracker
     monkeypatch.setattr(usage_tracker, "track_ai_credits_idempotent", _fake_track_ai_credits_idempotent)

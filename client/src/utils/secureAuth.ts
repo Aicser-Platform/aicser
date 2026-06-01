@@ -3,6 +3,8 @@
  * Provides secure token handling with validation and no leaks
  */
 
+import { getCeBearerToken } from '@/auth/ce/bearerToken';
+
 /**
  * Validates if a token is secure and valid
  * @param token - Token string to validate
@@ -21,21 +23,24 @@ export function isValidToken(token: string | null | undefined): boolean {
 }
 
 /**
- * Gets secure authentication headers using Supabase session token
- * @param session - Supabase session object with access_token
- * @returns Headers object with Bearer token authentication
+ * Gets secure authentication headers using Supabase session token or CE bearer token.
+ * @param session - Supabase session object with access_token (optional)
+ * @returns Headers object with Bearer token authentication when available
  */
 export function getSecureAuthHeaders(session: { access_token?: string } | null | undefined): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  // Add Bearer token from Supabase session if available
-  if (session?.access_token && isValidToken(session.access_token)) {
-    headers['Authorization'] = `Bearer ${session.access_token}`;
+  let token = session?.access_token;
+  if (!token || !isValidToken(token)) {
+    token = getCeBearerToken() ?? undefined;
   }
 
-  // Filter out undefined values to ensure type safety
+  if (token && isValidToken(token)) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   return Object.fromEntries(
     Object.entries(headers).filter(([_, value]) => value !== undefined)
   ) as Record<string, string>;

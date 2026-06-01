@@ -742,8 +742,8 @@ class DataConnectivityService:
             # For file and database sources, use MultiEngineQueryService for execution
             elif source.get('type') in ('file', 'database', 'warehouse', 'sample_duckdb'):
                 try:
-                    from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService
-                    multi = MultiEngineQueryService()
+                    from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+                    multi = get_multi_engine_query_service()
                     
                     # MultiEngineQueryService handles connection resolution, engine selection, and execution
                     result = await multi.execute_query(query, source)
@@ -907,8 +907,8 @@ class DataConnectivityService:
                     
                     sql = f"SELECT * FROM {schema_name}.{table_name} LIMIT {limit or 100}"
                     
-                    from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService
-                    multi = MultiEngineQueryService()
+                    from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+                    multi = get_multi_engine_query_service()
                     result = await multi.execute_query(sql, source)
                     
                     if result.get('success'):
@@ -997,6 +997,7 @@ class DataConnectivityService:
                         'schema': source.schema,
                         'user_id': str(source.user_id) if getattr(source, 'user_id', None) else None,
                         'project_id': str(source.project_id) if getattr(source, 'project_id', None) else None,
+                        'tenant_id': str(source.tenant_id) if getattr(source, 'tenant_id', None) else None,
                         'created_at': source.created_at.isoformat() if source.created_at else None,
                         'updated_at': source.updated_at.isoformat() if source.updated_at else None,
                         'is_active': source.is_active,
@@ -2463,8 +2464,8 @@ class DataConnectivityService:
         try:
             # If not using Cube.js, attempt direct SQL execution using MultiEngineQueryService
             if not data_source.get('cube_integration'):
-                from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService
-                multi = MultiEngineQueryService()
+                from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+                multi = get_multi_engine_query_service()
                 
                 # Build SQL if missing but table and columns are provided in query
                 sql_query = query.get('sql') or query.get('query')
@@ -2786,6 +2787,9 @@ class DataConnectivityService:
                         except Exception:
                             pass
                 self.data_sources.pop(data_source_id, None)
+
+            from src.modules.data.services.pool_invalidation import dispose_direct_sql_pool_for_data_source
+            dispose_direct_sql_pool_for_data_source(data_source_id)
 
             return {'success': True, 'message': 'Data source deleted successfully'}
         except Exception as e:

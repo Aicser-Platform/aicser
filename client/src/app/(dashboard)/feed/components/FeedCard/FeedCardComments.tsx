@@ -230,7 +230,7 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
               ) : null}
 
               <div
-                className="relative flex items-center"
+                className="feed-card-comment-react-picker relative flex items-center"
                 onMouseEnter={() => {
                   if (pendingCommentReactionId !== null) return;
                   onOpenCommentReactionPicker(comment.id);

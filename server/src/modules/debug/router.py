@@ -1,8 +1,14 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, status
 import logging
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.core.production import is_production
 
 router = APIRouter()
+
+
+def _require_non_production() -> None:
+    if is_production():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 logger = logging.getLogger(__name__)
 
 # In-memory store for last client log payload (dev only)
@@ -12,6 +18,7 @@ _last_client_log: dict | None = None
 @router.post("/client-error")
 async def client_error(request: Request):
     """Receive client-side JS errors for debugging during development."""
+    _require_non_production()
     try:
         payload = await request.json()
     except Exception:
@@ -29,6 +36,7 @@ async def client_error(request: Request):
 @router.get("/client-error/last")
 async def client_error_last():
     """Return the last received client log payload (dev only)."""
+    _require_non_production()
     return {"last": _last_client_log}
 
 
@@ -40,6 +48,7 @@ async def eval_clear_caches(
     Dev-only: clear LangGraph schema + query-result caches so eval runs reflect
     the real workflow behavior (interrupt/auto-resume paths).
     """
+    _require_non_production()
     try:
         from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
 

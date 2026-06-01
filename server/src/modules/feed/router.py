@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer, current_user_payload
 from src.modules.authentication.helpers import extract_user_payload
@@ -38,6 +39,10 @@ from src.modules.feed.schemas import (
     LeaderboardTimeRange,
     PublishAssetRequest,
     PublishAssetResponse,
+    PublishFromChatRequest,
+    UpdateSnapshotRequest,
+    ChatFeedDraftRequest,
+    ChatFeedDraftResponse,
     ReactCommentRequest,
     ReactCommentResponse,
     ReactRequest,
@@ -47,6 +52,15 @@ from src.modules.feed.schemas import (
     ShareResponse,
     TrackViewRequest,
     TrackViewResponse,
+    PublicationLookupResponse,
+    PublicAuthorProfileResponse,
+    DigestSubscribeRequest,
+    DigestSubscribeResponse,
+    DigestPreviewResponse,
+    DigestSendResponse,
+    RemixFeedRequest,
+    RemixFeedResponse,
+    PublicLeaderboardResponse,
     UpdateCommentRequest,
     UpdateCommentResponse,
     UpdateCollectionItemRequest,
@@ -433,6 +447,59 @@ async def publish_feed_asset(
     return await service.publish_asset(payload, _normalize_user_payload(current_user))
 
 
+@router.post("/publications/from-chat", response_model=PublishAssetResponse, status_code=status.HTTP_201_CREATED)
+async def publish_feed_from_chat(
+    payload: PublishFromChatRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> PublishAssetResponse:
+    service = FeedService(db)
+    return await service.publish_from_chat(payload, _normalize_user_payload(current_user))
+
+
+@router.post("/publications/{post_id}/snapshots", response_model=PublishAssetResponse)
+async def update_feed_publication_snapshot(
+    post_id: UUID,
+    payload: UpdateSnapshotRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> PublishAssetResponse:
+    service = FeedService(db)
+    return await service.update_publication_snapshot(post_id, payload, _normalize_user_payload(current_user))
+
+
+@router.get("/publications/lookup", response_model=PublicationLookupResponse)
+async def lookup_feed_publication(
+    asset_type: AssetType = Query(..., alias="assetType"),
+    asset_id: UUID = Query(..., alias="assetId"),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> PublicationLookupResponse:
+    service = FeedService(db)
+    return await service.lookup_publication_by_asset(asset_type, asset_id, _normalize_user_payload(current_user))
+
+
+@router.put("/drafts/chat", response_model=ChatFeedDraftResponse)
+async def save_chat_feed_draft(
+    payload: ChatFeedDraftRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> ChatFeedDraftResponse:
+    service = FeedService(db)
+    return await service.save_chat_feed_draft(payload, _normalize_user_payload(current_user))
+
+
+@router.get("/drafts/chat", response_model=ChatFeedDraftResponse)
+async def get_chat_feed_draft(
+    conversation_id: str = Query(..., alias="conversationId"),
+    message_id: str = Query(..., alias="messageId"),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> ChatFeedDraftResponse:
+    service = FeedService(db)
+    return await service.get_chat_feed_draft(conversation_id, message_id, _normalize_user_payload(current_user))
+
+
 @router.post("/authors/{author_id}/follow", response_model=FollowAuthorResponse)
 async def toggle_follow_author(
     author_id: UUID,
@@ -530,26 +597,161 @@ async def react_to_feed_comment(
     return await service.react_to_comment(item_id, comment_id, payload, _normalize_user_payload(current_user))
 
 
-@router.post("/{item_id}/views", response_model=TrackViewResponse)
-async def track_feed_item_view(
+@router.post("/public/{item_id}/views", response_model=TrackViewResponse)
+async def track_public_feed_item_view(
     item_id: UUID,
     payload: TrackViewRequest,
     request: Request,
-    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    current_user: Optional[Dict[str, Any]] = Depends(JWTCookieBearer(auto_error=False)),
     db: AsyncSession = Depends(get_async_session),
 ) -> TrackViewResponse:
     service = FeedService(db)
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     referrer = request.headers.get("referer")
+    user_payload = _normalize_user_payload(current_user) if current_user else None
     return await service.track_view(
         item_id,
         payload,
-        _normalize_user_payload(current_user),
+        user_payload,
         ip_address=ip_address,
         user_agent=user_agent,
         referrer=referrer,
     )
+
+
+@router.post("/{item_id}/views", response_model=TrackViewResponse)
+async def track_feed_item_view(
+    item_id: UUID,
+    payload: TrackViewRequest,
+    request: Request,
+    current_user: Optional[Dict[str, Any]] = Depends(JWTCookieBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_async_session),
+) -> TrackViewResponse:
+    service = FeedService(db)
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    referrer = request.headers.get("referer")
+    user_payload = _normalize_user_payload(current_user) if current_user else None
+    return await service.track_view(
+        item_id,
+        payload,
+        user_payload,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        referrer=referrer,
+    )
+
+
+@router.get("/public/leaderboard", response_model=PublicLeaderboardResponse)
+async def get_public_leaderboard(
+    time_range: LeaderboardTimeRange = Query(default=LeaderboardTimeRange.week, alias="timeRange"),
+    sort_by: LeaderboardSortBy = Query(default=LeaderboardSortBy.popular, alias="sortBy"),
+    limit: int = Query(default=8, ge=3, le=20),
+    db: AsyncSession = Depends(get_async_session),
+) -> PublicLeaderboardResponse:
+    service = FeedService(db)
+    return await service.get_public_leaderboard(time_range=time_range, sort_by=sort_by, limit=limit)
+
+
+@router.post("/public/{item_id}/remix", response_model=RemixFeedResponse)
+async def remix_public_feed_item(
+    item_id: UUID,
+    payload: RemixFeedRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> RemixFeedResponse:
+    service = FeedService(db)
+    return await service.remix_feed_post(
+        item_id,
+        _normalize_user_payload(current_user),
+        project_id=payload.project_id,
+        referral_code=payload.referral_code,
+    )
+
+
+@router.post("/{item_id}/remix", response_model=RemixFeedResponse)
+async def remix_feed_item(
+    item_id: UUID,
+    payload: RemixFeedRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> RemixFeedResponse:
+    service = FeedService(db)
+    return await service.remix_feed_post(
+        item_id,
+        _normalize_user_payload(current_user),
+        project_id=payload.project_id,
+        referral_code=payload.referral_code,
+    )
+
+
+@router.get("/public/authors/{username}", response_model=PublicAuthorProfileResponse)
+async def get_public_author_profile(
+    username: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: Optional[Dict[str, Any]] = Depends(JWTCookieBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_async_session),
+) -> PublicAuthorProfileResponse:
+    service = FeedService(db)
+    user_payload = _normalize_user_payload(current_user) if current_user else None
+    return await service.get_public_author_profile(
+        username, limit=limit, offset=offset, user_payload=user_payload
+    )
+
+
+@router.get("/public/digest/preview", response_model=DigestPreviewResponse)
+async def get_public_digest_preview(
+    period_days: int = Query(default=7, ge=1, le=30, alias="periodDays"),
+    limit: int = Query(default=8, ge=1, le=20),
+    db: AsyncSession = Depends(get_async_session),
+) -> DigestPreviewResponse:
+    service = FeedService(db)
+    return await service.get_digest_preview(period_days=period_days, limit=limit)
+
+
+@router.post("/public/digest/subscribe", response_model=DigestSubscribeResponse)
+async def subscribe_public_digest(
+    payload: DigestSubscribeRequest,
+    current_user: Optional[Dict[str, Any]] = Depends(JWTCookieBearer(auto_error=False)),
+    db: AsyncSession = Depends(get_async_session),
+) -> DigestSubscribeResponse:
+    service = FeedService(db)
+    user_payload = _normalize_user_payload(current_user) if current_user else None
+    return await service.subscribe_digest(payload.email, user_payload)
+
+
+@router.post("/public/digest/unsubscribe", response_model=DigestSubscribeResponse)
+async def unsubscribe_public_digest(
+    token: str = Query(..., min_length=8),
+    db: AsyncSession = Depends(get_async_session),
+) -> DigestSubscribeResponse:
+    service = FeedService(db)
+    return await service.unsubscribe_digest(token)
+
+
+@router.post("/public/digest/send", response_model=DigestSendResponse)
+async def send_public_digest(
+    cron_secret: Optional[str] = Query(default=None, alias="cronSecret"),
+    db: AsyncSession = Depends(get_async_session),
+) -> DigestSendResponse:
+    """Cron hook: set FEED_DIGEST_CRON_SECRET and call weekly with ?cronSecret=…"""
+    service = FeedService(db)
+    return await service.send_digest_emails(cron_secret=cron_secret)
+
+
+@router.get("/public/{item_id}", response_model=FeedItemResponse)
+async def get_public_feed_item_detail(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_async_session),
+) -> FeedItemResponse:
+    """Anonymous-safe detail for approved public posts."""
+    service = FeedService(db)
+    item = await service.get_public_item_by_id(item_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed item not found")
+    return item
 
 
 @router.get("/{item_id}", response_model=FeedItemResponse)

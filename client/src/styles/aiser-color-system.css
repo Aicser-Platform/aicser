@@ -152,10 +152,6 @@ ul.ant-menu-inline {
   border-bottom: 1px solid var(--color-border) !important;
 }
 
-.ant-table-tbody > tr:hover > td {
-  background: var(--color-bg-elevated) !important;
-}
-
 /* Forms - Container Color */
 .ant-form,
 .ant-form-item,
@@ -175,44 +171,10 @@ textarea.ant-input {
   border-color: var(--color-primary) !important;
 }
 
-/* Modals & Dropdowns - Elevated Color */
-.ant-modal-content,
-.ant-modal-header,
-.ant-drawer-content,
-.ant-drawer-header,
-.ant-dropdown-menu,
-.ant-select-dropdown,
-.ant-picker-dropdown {
-  background: var(--color-bg-elevated) !important;
-  border-color: var(--color-border) !important;
-}
+/* Button colors — base layout in unified-design-system; hover in interaction-system */
 
-/* Buttons - Clear Hierarchy */
-.ant-btn-default {
-  background: var(--color-bg-container) !important;
-  border-color: var(--color-border) !important;
-  color: var(--color-text-primary) !important;
-}
-
-.ant-btn-default:hover {
-  background: var(--color-bg-elevated) !important;
-  border-color: var(--color-primary) !important;
-  color: var(--color-primary) !important;
-}
-
-.ant-btn-primary {
-  background: var(--color-primary) !important;
-  border-color: var(--color-primary) !important;
-  color: #ffffff !important;
-}
-
-.ant-btn-primary:hover {
-  background: var(--color-primary-hover) !important;
-  border-color: var(--color-primary-hover) !important;
-}
-
-/* Tabs - Container Color */
-.ant-tabs {
+/* Tabs - Container Color (page-level tabs only) */
+.ant-tabs:not(.workspace-inline-tabs):not(.analysis-data-tabs) {
   background: var(--color-bg-container) !important;
 }
 

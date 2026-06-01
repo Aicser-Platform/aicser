@@ -41,6 +41,7 @@ import {
   CopyOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CloseOutlined,
   EditOutlined,
   DeleteOutlined,
   ClockCircleOutlined,
@@ -57,11 +58,55 @@ import {
   SyncOutlined,
   ThunderboltOutlined,
   UnorderedListOutlined,
-  CodeOutlined
+  CodeOutlined,
+  QuestionCircleOutlined,
+  ScissorOutlined,
+  FormatPainterOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
+import { CeSchemaExplorer } from '@/components/data/SQLEditor/CeSchemaExplorer';
+import { generateColumns } from '@/components/data/SQLEditor/panes/generateColumns';
+import { PerformancePane } from '@/components/data/SQLEditor/panes/PerformancePane';
+import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistoryPane';
+import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
+import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
+import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
+import {
+  isSameQueryName,
+  resolveQueryTabSaveName,
+  snapshotNameFromTabTitle,
+} from '@/utils/queryTabNaming';
+
+const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
+
+/** Strip non-JSON-serializable cell values before snapshot POST. */
+function jsonSafeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  try {
+    return JSON.parse(
+      JSON.stringify(rows, (_key, value) => {
+        if (typeof value === 'bigint') return value.toString();
+        if (value instanceof Date) return value.toISOString();
+        if (typeof value === 'undefined') return null;
+        return value;
+      }),
+    ) as Record<string, unknown>[];
+  } catch {
+    return rows.map((row) => {
+      const next: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) {
+        if (v == null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+          next[k] = v;
+        } else {
+          next[k] = String(v);
+        }
+      }
+      return next;
+    });
+  }
+}
+
 const EnhancedDataPanel = dynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (() => import('@/ee').then((m) => ({ default: m.EnhancedDataPanel }))) as any,
@@ -78,47 +123,8 @@ import type { SchemaTable } from '../../../utils/sqlCompletion';
 
 const { Sider, Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
-const { TabPane } = Tabs;
 const { Panel } = Collapse;
 
-// Function to suggest chart types based on query results
-const suggestChartTypes = (results: any[]) => {
-  if (!results || results.length === 0) return [];
-
-  const firstRow = results[0];
-  const columns = Object.keys(firstRow);
-  const numericColumns = columns.filter((col) => typeof firstRow[col] === 'number' || !isNaN(Number(firstRow[col])));
-  const textColumns = columns.filter((col) => typeof firstRow[col] === 'string' && isNaN(Number(firstRow[col])));
-
-  const suggestions = [];
-
-  if (numericColumns.length >= 2 && textColumns.length >= 1) {
-    suggestions.push({ icon: '📊', name: 'Bar Chart' });
-    suggestions.push({ icon: '📈', name: 'Line Chart' });
-  }
-
-  if (numericColumns.length >= 1 && textColumns.length >= 1) {
-    suggestions.push({ icon: '🥧', name: 'Pie Chart' });
-    suggestions.push({ icon: '📊', name: 'Column Chart' });
-  }
-
-  if (numericColumns.length >= 2) {
-    suggestions.push({ icon: '🔍', name: 'Scatter Plot' });
-    suggestions.push({ icon: '📊', name: 'Area Chart' });
-  }
-
-  if (results.length > 10) {
-    suggestions.push({ icon: '📊', name: 'Histogram' });
-  }
-
-  return suggestions.length > 0
-    ? suggestions
-    : [
-        { icon: '📊', name: 'Bar Chart' },
-        { icon: '📈', name: 'Line Chart' },
-        { icon: '🥧', name: 'Pie Chart' },
-      ];
-};
 
 interface MonacoSQLEditorProps {
   isDarkMode?: boolean;
@@ -181,6 +187,7 @@ type QueryTab = {
   sql: string;
   python?: string;
   language?: QueryLanguage;
+  savedQueryId?: number | string | null;
 };
 
 type QueryLanguage = 'sql' | 'python';
@@ -189,21 +196,45 @@ const resolveLanguage = (language?: string | null): QueryLanguage => (language =
 
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDataSourceSchema, useDataSources } from '@/hooks/useDataSources';
+import { useFormatUserError } from '@/hooks/useFormatUserError';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { DEFAULT_QUERY_LIMIT, ROW_LIMIT_PRESETS } from '@/config/queryLimits';
+import {
+  clearQueryEditorImport,
+  consumeQueryEditorImport,
+  peekQueryEditorImport,
+  QUERY_EDITOR_IMPORT_EVENT,
+  type QueryEditorImportPayload,
+} from '@/utils/queryEditorBridge';
 
 const DEFAULT_SQL_SNIPPET = `SELECT * FROM data LIMIT ${DEFAULT_QUERY_LIMIT};`;
-const MIN_EDITOR_HEIGHT = 120;
-const RUN_BAR_HEIGHT = 52;
-const TABS_ROW_HEIGHT = 40;
+const MIN_EDITOR_HEIGHT = 100;
+const RUN_BAR_HEIGHT = 44;
+const TABS_ROW_HEIGHT = 32;
 const MIN_TOP_SECTION_HEIGHT = TABS_ROW_HEIGHT + MIN_EDITOR_HEIGHT + RUN_BAR_HEIGHT; // tabs + editor + run bar
-const DEFAULT_EDITOR_HEIGHT = 260;
-const computeMaxEditorHeight = () => {
-  if (typeof window === 'undefined') return 1600;
-  return Math.max(500, window.innerHeight - 220);
+const MIN_RESULTS_PANE_HEIGHT = 140;
+const DEFAULT_EDITOR_HEIGHT = 200;
+const DATA_PANEL_MIN = 260;
+const DATA_PANEL_MAX = 600;
+const DATA_PANEL_DEFAULT = 320;
+const computeMaxEditorHeight = (workspaceHeight?: number) => {
+  if (typeof window === 'undefined') return 360;
+  const base =
+    workspaceHeight ??
+    (typeof document !== 'undefined'
+      ? document.querySelector('.qe-workspace-main')?.clientHeight
+      : undefined) ??
+    window.innerHeight;
+  const reserved = 180;
+  const available = Math.max(MIN_TOP_SECTION_HEIGHT, base - reserved);
+  return Math.max(MIN_TOP_SECTION_HEIGHT, available - MIN_RESULTS_PANE_HEIGHT);
+};
+const computeDefaultEditorHeight = () => {
+  const max = computeMaxEditorHeight();
+  return Math.min(220, Math.max(MIN_TOP_SECTION_HEIGHT, Math.floor(max * 0.55)));
 };
 const buildPythonTemplate = (baseSql: string, dataSourceName?: string) => `# Python code to query data source
 import pandas as pd
@@ -224,8 +255,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   defaultSidebarOpen = false,
 }) => {
   const t = useTranslations('monaco_sql_editor');
+  const formatError = useFormatUserError();
   const authenticatedFetch = useAuthenticatedFetch();
-  const { session } = useAuthStore();
+  const { session, user: authUser } = useAuthStore();
   const authToken = session?.access_token;
   const { currentProject, currentProjectId } = useProjectStore();
   const organizationId =
@@ -292,6 +324,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
   const [isExecuting, setExecuting] = useState(false);
   const [activeTab, setActiveTab] = useState('results');
+  const resultsTabByQueryKeyRef = useRef<Record<string, string>>({});
   // Query tabs - support both SQL and Python
   const [queryTabs, setQueryTabs] = useState<QueryTab[]>([
     {
@@ -303,7 +336,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     },
   ]);
   const [activeQueryKey, setActiveQueryKey] = useState<string>('q-1');
-  const [previewChart, setPreviewChart] = useState<any>(null);
+  const handleResultsTabChange = useCallback((key: string) => {
+    if (activeQueryKey) {
+      resultsTabByQueryKeyRef.current[activeQueryKey] = key;
+    }
+    setActiveTab(key);
+  }, [activeQueryKey]);
   const [openTableTabs, setOpenTableTabs] = useState<string[]>([]);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [showTableSchema, setShowTableSchema] = useState(true);
@@ -321,6 +359,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   });
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   const [results, setResults] = useState<any[]>([]);
+  const [resultLimitApplied, setResultLimitApplied] = useState(false);
   const [executionStatus, setExecutionStatus] = useState<string>('');
   const [selectedEngine, setSelectedEngine] = useState<string>('auto');
   const [resolvedEngine, setResolvedEngine] = useState<string | null>(null);
@@ -329,12 +368,66 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const importHandledRef = useRef(false);
 
   const screens = Grid.useBreakpoint();
   const isDesktopLayout = screens.lg ?? false;
   const isStackedLayout = !isDesktopLayout;
   const effectiveSidebarCollapsed = isStackedLayout ? false : sidebarCollapsed;
 
+  const [dataPanelWidth, setDataPanelWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return DATA_PANEL_DEFAULT;
+    try {
+      const saved = window.localStorage.getItem('qe_data_panel_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!Number.isNaN(parsed) && parsed >= DATA_PANEL_MIN && parsed <= DATA_PANEL_MAX) return parsed;
+      }
+    } catch {
+      /* ignore */
+    }
+    return DATA_PANEL_DEFAULT;
+  });
+  const dataPanelDragRef = useRef({ active: false, startX: 0, startWidth: DATA_PANEL_DEFAULT });
+
+  const handleDataPanelDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dataPanelDragRef.current = { active: true, startX: e.clientX, startWidth: dataPanelWidth };
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      const onMove = (me: MouseEvent) => {
+        if (!dataPanelDragRef.current.active) return;
+        const delta = dataPanelDragRef.current.startX - me.clientX;
+        const next = Math.min(
+          DATA_PANEL_MAX,
+          Math.max(DATA_PANEL_MIN, dataPanelDragRef.current.startWidth + delta),
+        );
+        setDataPanelWidth(next);
+      };
+
+      const onUp = () => {
+        dataPanelDragRef.current.active = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        setDataPanelWidth((prev) => {
+          try {
+            window.localStorage.setItem('qe_data_panel_width', String(prev));
+          } catch {
+            /* ignore */
+          }
+          return prev;
+        });
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [dataPanelWidth],
+  );
 
   // Load query execution history from backend (persisted across sessions; authenticatedFetch returns parsed JSON)
   useEffect(() => {
@@ -354,7 +447,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           sql: r.sql || '',
           status: r.status || r.state,
           database: r.database || '',
-          user: r.user || 'current_user',
+          user: r.user || authUser?.email || 'unknown',
           engine: r.engine || 'unknown',
           error: r.error
         })));
@@ -363,6 +456,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       }
     })();
     return () => { cancelled = true; };
+  }, [authenticatedFetch]);
+
+  const columns = useMemo(() => generateColumns(results, t), [results, t]);
+
+  const handleHistoryRemove = useCallback(async (id: string | number) => {
+    await authenticatedFetch(`/api/queries/execution-history/${id}`, { method: 'DELETE' });
+    setQueryHistory((prev) => prev.filter((r: any) => (r.id ?? r.history_id) !== id));
   }, [authenticatedFetch]);
 
   // Sync collapse state from other components via event
@@ -388,22 +488,32 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [hasCube, setHasCube] = useState(false);
   const [selectedView, setSelectedView] = useState<string>('');
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
-  const [perfLoading, setPerfLoading] = useState(false);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
-  const [perfPlan, setPerfPlan] = useState<any>(null);
-  const [perfSuggestions, setPerfSuggestions] = useState<string[]>([]);
+  const [aiExplainOpen, setAiExplainOpen] = useState(false);
+  const [aiExplainContent, setAiExplainContent] = useState('');
+  const [aiExplaining, setAiExplaining] = useState(false);
+  const [hasEditorSelection, setHasEditorSelection] = useState(false);
+  const [aiOptimizing, setAiOptimizing] = useState(false);
+  // Optimize diff state — show before/after instead of silent overwrite
+  const [optimizeDiffOpen, setOptimizeDiffOpen] = useState(false);
+  const [optimizeOriginalSQL, setOptimizeOriginalSQL] = useState('');
+  const [optimizeNewSQL, setOptimizeNewSQL] = useState('');
+  const [optimizeImprovements, setOptimizeImprovements] = useState('');
+  // Query cancel support
+  const queryAbortControllerRef = useRef<AbortController | null>(null);
+  // Query parameters: {{param_name}} substitution
+  const [queryParamValues, setQueryParamValues] = useState<Record<string, string>>({});
   const [editingTabKey, setEditingTabKey] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState<string>('');
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [modalSaveQueryName, setModalSaveQueryName] = useState('');
+  const [savingSavedQuery, setSavingSavedQuery] = useState(false);
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [permissionModalVisible, setPermissionModalVisible] = useState(false);
   const [permEmail, setPermEmail] = useState('');
   const [permLoading, setPermLoading] = useState(false);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [chartDesignerActiveKeys, setChartDesignerActiveKeys] = useState<string[]>([]);
   const [savedQueries, setSavedQueries] = useState<any[]>([]);
-  const [schedules, setSchedules] = useState<any[]>([]);
   const [isSavingTabs, setIsSavingTabs] = useState(false);
   const [showSaveSnapshotModal, setShowSaveSnapshotModal] = useState(false);
   const [saveSnapshotName, setSaveSnapshotName] = useState('');
@@ -423,18 +533,25 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_EDITOR_HEIGHT;
+    const max = computeMaxEditorHeight();
     const stored = Number(window.localStorage.getItem('qe_editor_height'));
-    const initial = Number.isFinite(stored) ? stored : DEFAULT_EDITOR_HEIGHT;
-    return Math.min(Math.max(initial, MIN_TOP_SECTION_HEIGHT), computeMaxEditorHeight());
+    const initial = Number.isFinite(stored) && stored > 0 ? stored : computeDefaultEditorHeight();
+    return Math.min(Math.max(initial, MIN_TOP_SECTION_HEIGHT), max);
   });
   const editorResizeStateRef = useRef({
     isResizing: false,
     startY: 0,
     startHeight: editorHeight,
   });
+  const workspaceMainRef = useRef<HTMLDivElement>(null);
   const clampEditorHeight = useCallback(
-    (value: number) => Math.min(Math.max(value, MIN_TOP_SECTION_HEIGHT), maxEditorHeight),
-    [maxEditorHeight]
+    (value: number) => {
+      const workspaceH = workspaceMainRef.current?.clientHeight;
+      const max = computeMaxEditorHeight(workspaceH);
+      setMaxEditorHeight(max);
+      return Math.min(Math.max(value, MIN_TOP_SECTION_HEIGHT), max);
+    },
+    [],
   );
   const rowLimitOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [...ROW_LIMIT_PRESETS];
@@ -444,8 +561,23 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     return opts;
   }, [limitSource, rowLimit]);
   useEffect(() => {
+    const nextMax = computeMaxEditorHeight();
+    setMaxEditorHeight(nextMax);
+    setEditorHeight((h) => {
+      const clamped = Math.min(Math.max(h, MIN_TOP_SECTION_HEIGHT), nextMax);
+      if (clamped !== h) {
+        try {
+          window.localStorage.setItem('qe_editor_height', String(clamped));
+        } catch {
+          /* ignore */
+        }
+      }
+      return clamped;
+    });
     const handleWindowResize = () => {
-      setMaxEditorHeight(computeMaxEditorHeight());
+      const max = computeMaxEditorHeight();
+      setMaxEditorHeight(max);
+      setEditorHeight((h) => Math.min(Math.max(h, MIN_TOP_SECTION_HEIGHT), max));
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', handleWindowResize);
@@ -466,12 +598,14 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     tabs.map((tab, index) => {
       const sql = tab.sql ?? DEFAULT_SQL_SNIPPET;
       const language = resolveLanguage(tab.language);
+      const meta = (tab as { metadata?: { savedQueryId?: number | string } }).metadata;
       return {
         key: tab.key ?? `tab-${index}`,
         title: tab.title ?? `Query ${index + 1}`,
         sql,
         python: tab.python ?? buildPythonTemplate(sql, selectedDataSource?.name),
         language,
+        savedQueryId: tab.savedQueryId ?? meta?.savedQueryId ?? null,
       };
     });
 
@@ -561,8 +695,57 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     };
   }, [queryTabs, activeQueryKey, editorLanguage, selectedDataSource?.name]);
 
+  const applyQueryEditorImport = useCallback(
+    (payload: QueryEditorImportPayload) => {
+      const sql = payload?.sql?.trim();
+      if (!sql) return;
+      importHandledRef.current = true;
+      if (payload.dataSourceId) selectDataSource(String(payload.dataSourceId));
+      setEditorLanguage('sql');
+      setSqlQuery(sql);
+      const tabKey = activeQueryKey || 'q-1';
+      const nextTabs = (() => {
+        const tabs = queryTabs.length
+          ? queryTabs
+          : [{ key: 'q-1', title: 'Query 1', sql: DEFAULT_SQL_SNIPPET, language: 'sql' as QueryLanguage }];
+        return tabs.map((tab) =>
+          tab.key === tabKey
+            ? { ...tab, sql, title: payload.title?.trim() || tab.title, language: 'sql' as QueryLanguage }
+            : tab,
+        );
+      })();
+      setQueryTabs(nextTabs);
+      try {
+        localStorage.setItem('qe_tabs', JSON.stringify({ tabs: nextTabs, activeKey: tabKey }));
+      } catch {
+        /* ignore */
+      }
+      if (payload.rows?.length) {
+        setResults(payload.rows);
+        onQueryResult?.(payload.rows);
+        setActiveTab('results');
+      }
+      clearQueryEditorImport();
+      message.success(t('toast_imported_from_chat'));
+    },
+    [activeQueryKey, onQueryResult, queryTabs, selectDataSource, t],
+  );
+
+  useEffect(() => {
+    const staged = consumeQueryEditorImport();
+    if (staged) applyQueryEditorImport(staged);
+
+    const onImport = (event: Event) => {
+      const detail = (event as CustomEvent<QueryEditorImportPayload>).detail;
+      if (detail?.sql?.trim()) applyQueryEditorImport(detail);
+    };
+    window.addEventListener(QUERY_EDITOR_IMPORT_EVENT, onImport);
+    return () => window.removeEventListener(QUERY_EDITOR_IMPORT_EVENT, onImport);
+  }, [applyQueryEditorImport]);
+
   // When user selects a data source and schema loads, set starter SQL if editor still has default snippet
   useEffect(() => {
+    if (importHandledRef.current || peekQueryEditorImport()) return;
     if (editorLanguage !== 'sql' || !selectedDataSourceId || !schema) return;
     const trimmed = sqlQuery.trim();
     if (trimmed !== DEFAULT_SQL_SNIPPET.trim()) return; // leave user's query as-is
@@ -639,6 +822,18 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       window.removeEventListener('mouseup', stopEditorResize);
     };
   }, [handleEditorResizeMove, stopEditorResize]);
+
+  useEffect(() => {
+    const updateMax = () => {
+      const workspaceH = workspaceMainRef.current?.clientHeight;
+      if (workspaceH) {
+        setMaxEditorHeight(computeMaxEditorHeight(workspaceH));
+      }
+    };
+    updateMax();
+    window.addEventListener('resize', updateMax);
+    return () => window.removeEventListener('resize', updateMax);
+  }, []);
 
   // Enhanced data sources with real integration capabilities
   const enhancedDatabases = [
@@ -772,6 +967,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // Fetch tabs from backend and apply to state (used on auth ready and on visibility refocus)
   const fetchTabsFromBackend = useCallback(async () => {
+    if (importHandledRef.current || peekQueryEditorImport()) return false;
     try {
       const params = new URLSearchParams();
       if (organizationId) params.set('organization_id', organizationId);
@@ -800,6 +996,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // Load persisted tabs: localStorage first (instant), then backend when auth is ready
   useEffect(() => {
+    if (importHandledRef.current || peekQueryEditorImport()) return;
+
     // 1) Restore from localStorage immediately so we don't flash default tab
     try {
       const raw = localStorage.getItem('qe_tabs');
@@ -861,6 +1059,262 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const savedQueriesUrl = queriesScopeParams ? `/api/queries/saved-queries?${queriesScopeParams}` : '/api/queries/saved-queries';
   const snapshotsUrl = queriesScopeParams ? `/api/queries/snapshots?${queriesScopeParams}` : '/api/queries/snapshots';
 
+  const saveTabsToBackendRef = useRef<
+    (tabs: QueryTab[], activeKey: string, silent?: boolean) => Promise<void>
+  >(async () => {});
+
+  // Persist tabs to backend (use same auth and org/project scope as load). silent = true for auto-save (no toast).
+  const saveTabsToBackend = useCallback(async (tabs: QueryTab[], activeKey: string, silent?: boolean) => {
+    try {
+      setIsSavingTabs(true);
+      const params = new URLSearchParams();
+      if (organizationId) params.set('organization_id', organizationId);
+      if (projectId) params.set('project_id', projectId);
+      const qs = params.toString();
+      const url = qs ? `/api/queries/tabs?${qs}` : '/api/queries/tabs';
+      await authenticatedFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabs, active_key: activeKey })
+      });
+      if (!silent) message.success(t('tabs_saved_ok'));
+    } catch {
+      if (!silent) message.error(t('tabs_save_failed'));
+    } finally {
+      setIsSavingTabs(false);
+    }
+  }, [authenticatedFetch, organizationId, projectId, t]);
+
+  useEffect(() => {
+    saveTabsToBackendRef.current = saveTabsToBackend;
+  }, [saveTabsToBackend]);
+
+  const removeQueryTab = useCallback(
+    (key: string) => {
+      if (queryTabs.length <= 1) return;
+      const idx = queryTabs.findIndex((tab) => tab.key === key);
+      const newTabs = queryTabs.filter((tab) => tab.key !== key);
+      const nextActiveKey =
+        activeQueryKey === key && newTabs.length ? newTabs[Math.max(0, idx - 1)].key : activeQueryKey;
+      setQueryTabs(newTabs);
+      if (activeQueryKey === key && newTabs.length) {
+        const next = newTabs[Math.max(0, idx - 1)];
+        const nextLanguage = resolveLanguage(next.language);
+        setActiveQueryKey(next.key);
+        setEditorLanguage(nextLanguage);
+        setSqlQuery(
+          nextLanguage === 'python'
+            ? getPythonTemplate(next, selectedDataSource?.name)
+            : (next.sql ?? DEFAULT_SQL_SNIPPET),
+        );
+      } else if (!newTabs.length) {
+        setActiveQueryKey('');
+        setEditorLanguage('sql');
+        setSqlQuery(DEFAULT_SQL_SNIPPET);
+      }
+      saveTabsToBackendRef.current(newTabs, newTabs.length ? nextActiveKey : '', true);
+    },
+    [queryTabs, activeQueryKey, selectedDataSource?.name],
+  );
+
+  const refreshSavedQueriesList = useCallback(async () => {
+    const j = await authenticatedFetch(savedQueriesUrl);
+    const list = Array.isArray((j as { items?: unknown[] })?.items) ? (j as { items: unknown[] }).items.filter(Boolean) : [];
+    setSavedQueries(list);
+    return list as Array<{ id?: number | string; name?: string }>;
+  }, [authenticatedFetch, savedQueriesUrl]);
+
+  const persistSavedQueryForTab = useCallback(
+    async (opts: {
+      name: string;
+      sql: string;
+      tabKey: string;
+      language: QueryLanguage;
+      savedQueryId?: number | string | null;
+      syncTabTitle?: boolean;
+    }) => {
+      const trimmedName = opts.name.trim();
+      if (!trimmedName || !opts.sql.trim()) {
+        message.warning(t('no_query_to_save'));
+        return null;
+      }
+
+      const metadata = {
+        tabKey: opts.tabKey,
+        language: opts.language,
+        activeQueryKey: opts.tabKey,
+      };
+
+      const scopeQs = queriesScopeParams ? `?${queriesScopeParams}` : '';
+      let targetId = opts.savedQueryId ?? null;
+
+      if (!targetId) {
+        const tab = queryTabs.find((qt) => qt.key === opts.tabKey);
+        if (tab?.savedQueryId != null) targetId = tab.savedQueryId;
+      }
+      if (!targetId) {
+        const byName = savedQueries.find((q: { name?: string; id?: number | string }) =>
+          isSameQueryName(q.name, trimmedName),
+        );
+        if (byName?.id != null) targetId = byName.id;
+      }
+
+      if (targetId != null && typeof targetId === 'number') {
+        await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+        });
+      } else {
+        await authenticatedFetch(savedQueriesUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+        });
+      }
+
+      const list = await refreshSavedQueriesList();
+      const saved =
+        list.find((q) => q.id != null && targetId != null && String(q.id) === String(targetId)) ??
+        list.find((q) => isSameQueryName(q.name, trimmedName));
+
+      if (saved?.id != null) {
+        setQueryTabs((prev) =>
+          prev.map((tab) =>
+            tab.key === opts.tabKey
+              ? {
+                  ...tab,
+                  savedQueryId: saved.id,
+                  title: opts.syncTabTitle === false ? tab.title : trimmedName,
+                }
+              : tab,
+          ),
+        );
+      } else if (opts.syncTabTitle !== false) {
+        setQueryTabs((prev) =>
+          prev.map((tab) => (tab.key === opts.tabKey ? { ...tab, title: trimmedName } : tab)),
+        );
+      }
+
+      return saved?.id ?? null;
+    },
+    [
+      authenticatedFetch,
+      queriesScopeParams,
+      queryTabs,
+      refreshSavedQueriesList,
+      savedQueries,
+      savedQueriesUrl,
+      t,
+    ],
+  );
+
+  useEffect(() => {
+    if (!showSavedModal) return;
+    const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+    const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+    setModalSaveQueryName(resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length));
+  }, [showSavedModal, activeQueryKey, queryTabs]);
+
+  const activeTabForSavedModal = useMemo(() => {
+    const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+    if (!tab) return null;
+    return { key: tab.key, title: tab.title, savedQueryId: tab.savedQueryId ?? null };
+  }, [queryTabs, activeQueryKey]);
+
+  const buildTabFromSavedRecord = useCallback(
+    (record: { name?: string; sql?: string; metadata?: Record<string, unknown>; id?: number | string }, newKey: string) => {
+      const metadata = record?.metadata || {};
+      const language = resolveLanguage(metadata.language as string | undefined);
+      const baseSql = record.sql || DEFAULT_SQL_SNIPPET;
+      const pythonContent =
+        language === 'python' ? baseSql : buildPythonTemplate(baseSql, selectedDataSource?.name);
+      return {
+        key: newKey,
+        title: (record.name || '').trim() || 'Query',
+        sql: language === 'python' ? DEFAULT_SQL_SNIPPET : baseSql,
+        python: pythonContent,
+        language,
+        savedQueryId: record.id ?? null,
+      };
+    },
+    [selectedDataSource?.name],
+  );
+
+  const handleModalSaveCurrentQuery = useCallback(async () => {
+    const currentTab = queryTabs.find((qt) => qt.key === activeQueryKey);
+    if (!currentTab) return;
+    const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+    const name = modalSaveQueryName.trim() || resolveQueryTabSaveName(currentTab.title, idx >= 0 ? idx + 1 : queryTabs.length);
+    const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+    if (!content) {
+      message.warning(t('no_query_to_save'));
+      return;
+    }
+
+    const existing = savedQueries.find((q: { name?: string; id?: number | string }) =>
+      isSameQueryName(q.name, name),
+    );
+    const canUpdateExisting =
+      existing &&
+      typeof existing.id === 'number' &&
+      existing.id !== currentTab.savedQueryId &&
+      !isSameQueryName(currentTab.title, name);
+
+    if (canUpdateExisting) {
+      Modal.confirm({
+        title: t('saved_query_name_exists_title'),
+        content: t('saved_query_name_exists_body', { name }),
+        okText: t('update_existing_query'),
+        cancelText: t('save_as_new_copy'),
+        onCancel: () => setModalSaveQueryName(`${name} (copy)`),
+        onOk: async () => {
+          setSavingSavedQuery(true);
+          try {
+            await persistSavedQueryForTab({
+              name,
+              sql: content,
+              tabKey: currentTab.key,
+              language: resolveLanguage(currentTab.language ?? editorLanguage),
+              savedQueryId: existing.id,
+            });
+            message.success(t('saved_to_list', { name }));
+          } catch (e: unknown) {
+            message.error(formatError(e as { message?: string }, 'save_failed', t('update_failed')));
+          } finally {
+            setSavingSavedQuery(false);
+          }
+        },
+      });
+      return;
+    }
+
+    setSavingSavedQuery(true);
+    try {
+      await persistSavedQueryForTab({
+        name,
+        sql: content,
+        tabKey: currentTab.key,
+        language: resolveLanguage(currentTab.language ?? editorLanguage),
+        savedQueryId: currentTab.savedQueryId,
+      });
+      message.success(t('saved_to_list', { name }));
+    } catch (err: unknown) {
+      message.error(formatError(err as { message?: string }, 'save_failed', t('save_failed')));
+    } finally {
+      setSavingSavedQuery(false);
+    }
+  }, [
+    activeQueryKey,
+    editorLanguage,
+    modalSaveQueryName,
+    persistSavedQueryForTab,
+    queryTabs,
+    savedQueries,
+    sqlQuery,
+    t,
+  ]);
+
   // Load saved queries and snapshots when Saved Queries & Snapshots modal opens (same scope as tabs)
   useEffect(() => {
     if (!showSavedModal) return;
@@ -912,28 +1366,6 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     } catch {}
   }, [queryTabs, activeQueryKey]);
 
-  // Persist tabs to backend (use same auth and org/project scope as load). silent = true for auto-save (no toast).
-  const saveTabsToBackend = useCallback(async (tabs: QueryTab[], activeKey: string, silent?: boolean) => {
-    try {
-      setIsSavingTabs(true);
-      const params = new URLSearchParams();
-      if (organizationId) params.set('organization_id', organizationId);
-      if (projectId) params.set('project_id', projectId);
-      const qs = params.toString();
-      const url = qs ? `/api/queries/tabs?${qs}` : '/api/queries/tabs';
-      await authenticatedFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tabs, active_key: activeKey })
-      });
-      if (!silent) message.success(t('tabs_saved_ok'));
-    } catch {
-      if (!silent) message.error(t('tabs_save_failed'));
-    } finally {
-      setIsSavingTabs(false);
-    }
-  }, [authenticatedFetch, organizationId, projectId]);
-
   // Ctrl+S save shortcut and Ctrl+Enter run (use refs so handler always has latest; Monaco Ctrl+Enter registered in onMonacoMount)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -942,7 +1374,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         const tabs = queryTabsRef.current;
         const activeKey = activeQueryKeyRef.current;
         try { localStorage.setItem('qe_tabs', JSON.stringify({ tabs, activeKey })); } catch { }
-        saveTabsToBackend(tabs, activeKey);
+        saveTabsToBackendRef.current(tabs, activeKey);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -951,7 +1383,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [saveTabsToBackend]);
+  }, []);
 
   // Refs for debounced auto-save (timeout must see latest state)
   const queryTabsRef = useRef<QueryTab[]>(queryTabs);
@@ -968,7 +1400,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // Debounced auto-save: persist current tab content to backend after 2s of no typing
   useEffect(() => {
-    const t = window.setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       const tabs = queryTabsRef.current;
       const activeKey = activeQueryKeyRef.current;
       const sql = sqlQueryRef.current;
@@ -979,22 +1411,87 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           ? { ...tab, sql: lang === 'sql' ? sql : tab.sql, python: lang === 'python' ? sql : tab.python, language: lang }
           : tab
       );
-      saveTabsToBackend(merged, activeKey, true);
+      saveTabsToBackendRef.current(merged, activeKey, true);
     }, 2000);
-    return () => window.clearTimeout(t);
-  }, [sqlQuery, activeQueryKey, editorLanguage, saveTabsToBackend]);
+    return () => window.clearTimeout(timeoutId);
+  }, [sqlQuery, activeQueryKey, editorLanguage]);
 
   // Schema is now loaded automatically by DataSourceContext when selectDataSource is called
 
-  // Register SQL completion, language config, and Ctrl+Enter run on the same Monaco instance the editor uses
+  /**
+   * Parse a SQL error message for a line/column position and highlight it in Monaco.
+   * Supports common patterns from PostgreSQL, MySQL, SQLite, DuckDB, Trino, BigQuery.
+   */
+  const highlightSQLError = useCallback((errorMessage: string) => {
+    const monacoInstance = monacoInstanceRef.current;
+    const model = editorModelRef.current;
+    if (!monacoInstance?.editor?.setModelMarkers || !model) return;
+
+    // Clear previous markers
+    monacoInstance.editor.setModelMarkers(model, 'sql-error', []);
+
+    // Patterns: "line N", "LINE N", "at line N", "position N" (char offset), "[N:M]"
+    let line = 0, col = 1;
+    const lineMatch = errorMessage.match(/\bline[:\s]+(\d+)/i) || errorMessage.match(/\[(\d+):(\d+)\]/);
+    const posMatch = errorMessage.match(/\bposition\s+(\d+)/i); // char-offset (PostgreSQL)
+
+    if (lineMatch) {
+      line = parseInt(lineMatch[1], 10);
+      if (lineMatch[2]) col = parseInt(lineMatch[2], 10);
+    } else if (posMatch) {
+      // Convert char offset to line/col using the model's content
+      const charOffset = parseInt(posMatch[1], 10);
+      const sql: string = typeof model.getValue === 'function' ? model.getValue() : '';
+      let remaining = charOffset;
+      const lines: string[] = sql.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (remaining <= lines[i].length) { line = i + 1; col = remaining + 1; break; }
+        remaining -= lines[i].length + 1;
+      }
+      if (!line) line = lines.length;
+    }
+
+    if (!line) return; // no position info found
+
+    const totalLines = typeof model.getLineCount === 'function' ? model.getLineCount() : 1;
+    const safeLine = Math.min(Math.max(line, 1), totalLines);
+    const lineLength = typeof model.getLineLength === 'function' ? model.getLineLength(safeLine) : 80;
+
+    monacoInstance.editor.setModelMarkers(model, 'sql-error', [{
+      severity: 8, // MarkerSeverity.Error
+      message: errorMessage,
+      startLineNumber: safeLine,
+      startColumn: col,
+      endLineNumber: safeLine,
+      endColumn: Math.max(lineLength + 1, col + 1),
+    }]);
+  }, []);
+
+  // Register SQL completion, language config, Ctrl+Enter run, format provider, and selection tracking
   const handleMonacoMount = useCallback((editor: unknown, monacoInstance: unknown) => {
+    // Store refs for external use (e.g. setModelMarkers for error highlighting)
+    monacoInstanceRef.current = monacoInstance;
+    editorModelRef.current = (editor as any)?.getModel?.() ?? null;
+
     const monaco = monacoInstance as {
-      languages: { setLanguageConfiguration: (lang: string, config: unknown) => { dispose: () => void }; registerCompletionItemProvider: (lang: string, provider: unknown) => { dispose: () => void } };
-      KeyMod?: { CtrlCmd: number };
-      KeyCode?: { Enter: number };
-      editor?: { IStandaloneCodeEditor: unknown };
+      languages: {
+        setLanguageConfiguration: (lang: string, config: unknown) => { dispose: () => void };
+        registerCompletionItemProvider: (lang: string, provider: unknown) => { dispose: () => void };
+        registerDocumentFormattingEditProvider: (lang: string, provider: unknown) => { dispose: () => void };
+      };
+      editor: {
+        setModelMarkers: (model: unknown, owner: string, markers: unknown[]) => void;
+      };
+      KeyMod?: { CtrlCmd: number; Alt: number; Shift: number };
+      KeyCode?: { Enter: number; KeyF: number };
     };
-    const standAlone = editor as { addAction?: (action: { id: string; label: string; keybindings?: number[]; run: (ed: unknown) => void }) => void };
+    const standAlone = editor as {
+      addAction?: (action: { id: string; label: string; keybindings?: number[]; run: (ed: unknown) => void }) => void;
+      onDidChangeCursorSelection?: (fn: (e: { selection: { isEmpty: () => boolean } }) => void) => { dispose: () => void };
+      getModel?: () => unknown;
+    };
+
+    // Ctrl+Enter → run query
     if (standAlone?.addAction && monaco?.KeyMod != null && monaco?.KeyCode != null) {
       standAlone.addAction({
         id: 'run-query-editor',
@@ -1003,7 +1500,61 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         run: () => { runHandlerRef.current?.(); },
       });
     }
+
+    // Track editor text selection so we can offer "Run Selection"
+    const selectionDisposable = standAlone?.onDidChangeCursorSelection?.((e) => {
+      setHasEditorSelection(!e.selection.isEmpty());
+    });
+
+    // Register a simple SQL document formatter (Shift+Alt+F / Shift+Option+F)
+    let formatDisposable: { dispose: () => void } | null = null;
+    if (monaco?.languages?.registerDocumentFormattingEditProvider) {
+      const SQL_KEYWORDS = [
+        'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT',
+        'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN',
+        'ON', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+        'UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT',
+        'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+        'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
+        'WITH', 'AS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+        'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+      ];
+      const formatSQL = (sql: string): string => {
+        // Normalise whitespace
+        let s = sql.replace(/\r\n/g, '\n').trim();
+        // Uppercase keywords that appear as whole tokens
+        const escaped = SQL_KEYWORDS
+          .slice()
+          .sort((a, b) => b.length - a.length) // longest first to avoid partial match
+          .map((k) => k.replace(/ /g, '\\s+'));
+        s = s.replace(
+          new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi'),
+          (m) => m.toUpperCase()
+        );
+        // Add newline before major clause keywords
+        const CLAUSE_BREAKS = ['SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING',
+          'LIMIT', 'OFFSET', 'UNION ALL', 'UNION', 'INTERSECT', 'EXCEPT',
+          'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'FULL OUTER JOIN', 'CROSS JOIN', 'JOIN',
+          'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM', 'WITH'];
+        for (const kw of CLAUSE_BREAKS) {
+          s = s.replace(new RegExp(`(?<!\\n)\\s+\\b${kw.replace(/ /g, '\\s+')}\\b`, 'g'), `\n${kw}`);
+        }
+        // Indent lines after SELECT / CASE commas
+        s = s.replace(/,\s*\n/g, ',\n  ').replace(/,\s+(?=[^\n])/g, ',\n  ');
+        // Collapse excessive blank lines
+        s = s.replace(/\n{3,}/g, '\n\n').trim();
+        return s;
+      };
+      formatDisposable = monaco.languages.registerDocumentFormattingEditProvider('sql', {
+        provideDocumentFormattingEdits: (model: { getValue: () => string; getFullModelRange: () => unknown }) => {
+          const formatted = formatSQL(model.getValue());
+          return [{ range: model.getFullModelRange(), text: formatted }];
+        },
+      });
+    }
+
     if (!monaco?.languages) return () => {};
+
     const disposableConfig = monaco.languages.setLanguageConfiguration('sql', SQL_LANGUAGE_CONFIG as never);
     const disposableProvider = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: [' ', '.', '\n', '{'],
@@ -1029,6 +1580,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     return () => {
       disposableProvider?.dispose();
       disposableConfig?.dispose();
+      formatDisposable?.dispose();
+      selectionDisposable?.dispose();
     };
   }, []);
 
@@ -1149,6 +1702,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   const pendingRerunSqlRef = useRef<string | null>(null);
   const editorInsertRef = useRef<MemoryOptimizedEditorHandle>(null);
+  // Store monaco instance + editor model ref for setModelMarkers (error highlighting)
+  const monacoInstanceRef = useRef<any>(null);
+  const editorModelRef = useRef<any>(null);
   /** Live editor content for the *active* tab only (updated on every keystroke via onContentChange). */
   const latestEditorContentRef = useRef<string>('');
   // When sqlQuery is set externally (e.g. load from backend, switch tab), sync ref for current tab
@@ -1216,493 +1772,118 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     message.success(`Downloaded as .${ext} file`);
   }, [sqlQuery, editorLanguage]);
 
-  const handleCreateChart = (chartType: string, data: any[], existingConfig?: any) => {
-    try {
-      if (!data || data.length === 0) {
-        message.warning(t('chart_no_data'));
-        return;
-      }
-      if (!data || data.length === 0) {
-        message.warning(t('chart_no_data'));
-        return;
-      }
-
-      // CRITICAL: Intelligently analyze data structure
-      const firstRow = data[0];
-      if (!firstRow || typeof firstRow !== 'object') {
-        message.error(t('invalid_data_format'));
-        return;
-      }
-
-      const columns: string[] = Object.keys(firstRow);
-      if (columns.length === 0) {
-        message.error(t('no_columns'));
-        return;
-      }
-
-      // Enhanced column detection - handle various data types
-      const numericColumns: string[] = [];
-      const textColumns: string[] = [];
-      const dateColumns: string[] = [];
-
-      columns.forEach((col: string) => {
-        const sampleValue = firstRow[col];
-        if (sampleValue === null || sampleValue === undefined) {
-          return; // Skip null/undefined columns
-        }
-
-        // Check if numeric (including strings that can be parsed as numbers)
-        if (typeof sampleValue === 'number') {
-          numericColumns.push(col);
-        } else if (typeof sampleValue === 'string') {
-          // Try to parse as number
-          const numValue = Number(sampleValue);
-          if (!isNaN(numValue) && sampleValue.trim() !== '') {
-            numericColumns.push(col);
-          } else {
-            // Check if date-like
-            const dateValue = new Date(sampleValue);
-            if (!isNaN(dateValue.getTime()) && sampleValue.length > 5) {
-              dateColumns.push(col);
-            } else {
-              textColumns.push(col);
-            }
-          }
-        } else if (sampleValue instanceof Date) {
-          dateColumns.push(col);
-        }
-      });
-
-      // Determine best columns for chart - use config if available, otherwise auto-detect
-      const xColumn =
-        existingConfig?.xAxisField ||
-        previewChart?.config?.xAxisField ||
-        textColumns[0] ||
-        dateColumns[0] ||
-        columns[0];
-      const yColumn =
-        existingConfig?.yAxisField ||
-        previewChart?.config?.yAxisField ||
-        numericColumns[0] ||
-        columns.find((col: string) => !textColumns.includes(col) && !dateColumns.includes(col)) ||
-        columns[1] ||
-        columns[0];
-      const yColumn2 = numericColumns[1] || null;
-
-      // Handle axis swap for chart generation - define effective columns
-      let effectiveXColumn = xColumn;
-      let effectiveYColumn = yColumn;
-      if (existingConfig?.swapAxes && xColumn && yColumn) {
-        // When swapped, use yColumn for x-axis and xColumn for y-axis
-        effectiveXColumn = yColumn;
-        effectiveYColumn = xColumn;
-      }
-
-      // Apply data transformations: filter, sort, aggregation
-      let processedData = Array.isArray(data) ? [...data] : [];
-
-      // Apply filter if specified
-      if (existingConfig?.filter && existingConfig.filter.trim() !== '') {
-        try {
-          const filterExpr = existingConfig.filter.trim();
-          // Simple filter evaluation (basic support for >, <, >=, <=, ==, !=)
-          processedData = processedData.filter((row: any) => {
-            try {
-              // Try to evaluate simple expressions like "value > 100"
-              const match = filterExpr.match(/(\w+)\s*(>|<|>=|<=|==|!=)\s*(.+)/);
-              if (match) {
-                const [, field, op, value] = match;
-                const fieldVal = row[field.trim()];
-                const compareVal = isNaN(Number(value)) ? value.trim().replace(/['"]/g, '') : Number(value);
-                const numFieldVal = typeof fieldVal === 'number' ? fieldVal : Number(fieldVal);
-                const numCompareVal = typeof compareVal === 'number' ? compareVal : Number(compareVal);
-
-                switch (op) {
-                  case '>':
-                    return numFieldVal > numCompareVal;
-                  case '<':
-                    return numFieldVal < numCompareVal;
-                  case '>=':
-                    return numFieldVal >= numCompareVal;
-                  case '<=':
-                    return numFieldVal <= numCompareVal;
-                  case '==':
-                    return numFieldVal === numCompareVal || String(fieldVal) === String(compareVal);
-                  case '!=':
-                    return numFieldVal !== numCompareVal && String(fieldVal) !== String(compareVal);
-                  default:
-                    return true;
-                }
-              }
-              return true;
-            } catch {
-              return true;
-            }
-          });
-        } catch (e) {
-          console.warn('Filter evaluation failed:', e);
-        }
-      }
-
-      // Apply sort if specified
-      if (existingConfig?.sortOrder && existingConfig.sortOrder !== 'none' && yColumn) {
-        processedData.sort((a: any, b: any) => {
-          const aVal = typeof a[yColumn] === 'number' ? a[yColumn] : Number(a[yColumn]) || 0;
-          const bVal = typeof b[yColumn] === 'number' ? b[yColumn] : Number(b[yColumn]) || 0;
-          return existingConfig.sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-        });
-      }
-
-      // Apply aggregation if specified
-      if (existingConfig?.aggregation && existingConfig.aggregation !== 'none' && yColumn && xColumn) {
-        const grouped: Record<string, number[]> = {};
-        processedData.forEach((row: any) => {
-          const key = String(row[xColumn] || 'Unknown');
-          const val = typeof row[yColumn] === 'number' ? row[yColumn] : Number(row[yColumn]) || 0;
-          if (!grouped[key]) grouped[key] = [];
-          grouped[key].push(val);
-        });
-
-        processedData = Object.entries(grouped).map(([key, values]) => {
-          let aggregatedValue = 0;
-          switch (existingConfig.aggregation) {
-            case 'sum':
-              aggregatedValue = values.reduce((a, b) => a + b, 0);
-              break;
-            case 'avg':
-              aggregatedValue = values.reduce((a, b) => a + b, 0) / values.length;
-              break;
-            case 'count':
-              aggregatedValue = values.length;
-              break;
-            case 'min':
-              aggregatedValue = Math.min(...values);
-              break;
-            case 'max':
-              aggregatedValue = Math.max(...values);
-              break;
-          }
-          return { [xColumn]: key, [yColumn]: aggregatedValue };
-        });
-      }
-
-      // Use processed data
-      const actualData = processedData;
-
-      // Intelligent chart type selection and data mapping
-      const normalizedChartType = chartType.toLowerCase().replace(/\s+/g, ' ').trim();
-      let chartData: any = {};
-      let chartConfig: any = {};
-
-      switch (normalizedChartType) {
-        case 'bar chart':
-        case 'column chart':
-        case 'bar':
-        case 'column':
-          if (!effectiveXColumn || !effectiveYColumn) {
-            message.error(t('bar_chart_cols'));
-            return;
-          }
-          chartData = {
-            xAxis: actualData.map((row) => {
-              const val = row[effectiveXColumn];
-              return val !== null && val !== undefined ? String(val) : '';
-            }),
-            yAxis: actualData.map((row) => {
-              const val = row[effectiveYColumn];
-              return typeof val === 'number' ? val : Number(val) || 0;
-            }),
-          };
-          chartConfig = {
-            chartType: 'bar',
-            title: { text: `${effectiveXColumn} vs ${effectiveYColumn}` },
-            showTitle: true,
-            showLegend: true,
-            showTooltip: true,
-            showGrid: true,
-          };
-          break;
-
-        case 'line chart':
-        case 'line':
-          if (!effectiveXColumn || !effectiveYColumn) {
-            message.error(t('line_chart_cols'));
-            return;
-          }
-          chartData = {
-            xAxis: actualData.map((row) => {
-              const val = row[effectiveXColumn];
-              return val !== null && val !== undefined ? String(val) : '';
-            }),
-            yAxis: actualData.map((row) => {
-              const val = row[effectiveYColumn];
-              return typeof val === 'number' ? val : Number(val) || 0;
-            }),
-          };
-          chartConfig = {
-            chartType: 'line',
-            title: { text: `${effectiveXColumn} Trend` },
-            showTitle: true,
-            showLegend: true,
-            showTooltip: true,
-            showGrid: true,
-          };
-          break;
-
-        case 'pie chart':
-        case 'pie':
-          if (!effectiveXColumn || !effectiveYColumn) {
-            message.error(t('pie_chart_cols'));
-            return;
-          }
-          chartData = {
-            series: actualData
-              .filter((row) => {
-                const val = row[effectiveYColumn];
-                return val !== null && val !== undefined && (typeof val === 'number' || !isNaN(Number(val)));
-              })
-              .map((row) => ({
-                name: String(row[effectiveXColumn] || 'Unknown'),
-                value:
-                  typeof row[effectiveYColumn] === 'number'
-                    ? row[effectiveYColumn]
-                    : Number(row[effectiveYColumn]) || 0,
-              })),
-          };
-          chartConfig = {
-            chartType: 'pie',
-            title: { text: `${effectiveXColumn} Distribution` },
-            showTitle: true,
-            showLegend: true,
-            showTooltip: true,
-          };
-          break;
-
-        case 'scatter plot':
-        case 'scatter':
-          if (numericColumns.length < 2) {
-            message.error(t('scatter_cols'));
-            return;
-          }
-          // For scatter plots, use effective columns if available, otherwise use first two numeric columns
-          const scatterX =
-            effectiveXColumn && numericColumns.includes(effectiveXColumn) ? effectiveXColumn : numericColumns[0];
-          const scatterY =
-            effectiveYColumn && numericColumns.includes(effectiveYColumn) ? effectiveYColumn : numericColumns[1];
-          chartData = {
-            series: actualData
-              .filter((row) => {
-                const val1 = row[scatterX];
-                const val2 = row[scatterY];
-                return val1 !== null && val1 !== undefined && val2 !== null && val2 !== undefined;
-              })
-              .map((row) => ({
-                value: [
-                  typeof row[scatterX] === 'number' ? row[scatterX] : Number(row[scatterX]) || 0,
-                  typeof row[scatterY] === 'number' ? row[scatterY] : Number(row[scatterY]) || 0,
-                ],
-                name: `${row[scatterX]}, ${row[scatterY]}`,
-              })),
-          };
-          chartConfig = {
-            chartType: 'scatter',
-            title: { text: `${scatterX} vs ${scatterY}` },
-            showTitle: true,
-            showLegend: true,
-            showTooltip: true,
-            showGrid: true,
-          };
-          break;
-
-        default:
-          // Fallback: try to create a bar chart with available columns
-          if (xColumn && yColumn) {
-            chartData = {
-              xAxis: actualData.map((row) => String(row[xColumn] || '')),
-              yAxis: actualData.map((row) => {
-                const val = row[yColumn];
-                return typeof val === 'number' ? val : Number(val) || 0;
-              }),
-            };
-            chartConfig = {
-              chartType: 'bar',
-              title: { text: `${xColumn} vs ${yColumn}` },
-              showTitle: true,
-              showLegend: true,
-              showTooltip: true,
-              showGrid: true,
-            };
-          } else {
-            message.error(
-              'Unable to determine suitable columns for chart. Please ensure your query returns at least one text and one numeric column.'
-            );
-            return;
-          }
-      }
-
-      // Validate chart data before creating widget
-      if (!chartData || Object.keys(chartData).length === 0) {
-        message.error(t('chart_gen_failed'));
-        return;
-      }
-
-      // Create chart widget data with proper structure
-      // CRITICAL: Normalize config.title to be a string (not an object) for ChartWidget compatibility
-      // Merge with existing config to preserve user settings
-      // Preserve existing title if user has edited it
-      const existingTitle = previewChart?.title || previewChart?.name || existingConfig?.title;
-      const defaultTitle =
-        typeof chartConfig.title === 'object' && chartConfig.title?.text
-          ? chartConfig.title.text
-          : typeof chartConfig.title === 'string'
-            ? chartConfig.title
-            : 'Untitled Chart';
-      const finalTitle =
-        existingTitle && existingTitle !== 'Untitled Chart' && existingTitle !== defaultTitle
-          ? existingTitle
-          : defaultTitle;
-
-      // Validate axis fields against available columns
-      const validXField =
-        existingConfig?.xAxisField && columns.includes(existingConfig.xAxisField)
-          ? existingConfig.xAxisField
-          : textColumns[0] || dateColumns[0] || columns[0];
-      const validYField =
-        existingConfig?.yAxisField && columns.includes(existingConfig.yAxisField)
-          ? existingConfig.yAxisField
-          : numericColumns[0] ||
-            columns.find((col: string) => !textColumns.includes(col) && !dateColumns.includes(col)) ||
-            columns[1] ||
-            columns[0];
-
-      const normalizedConfig = {
-        ...existingConfig,
-        ...chartConfig,
-        title: finalTitle,
-        chartType: chartConfig.chartType,
-        // Preserve axis fields if valid, otherwise use defaults
-        xAxisField: validXField,
-        yAxisField: validYField,
-        // Preserve data transformation settings
-        aggregation: existingConfig?.aggregation || 'none',
-        filter: existingConfig?.filter || '',
-        sortOrder: existingConfig?.sortOrder || 'none',
-        swapAxes: existingConfig?.swapAxes || false,
-        // Preserve other user settings
-        colorPalette: existingConfig?.colorPalette || chartConfig.colorPalette,
-        legendShow: existingConfig?.legendShow !== undefined ? existingConfig.legendShow : chartConfig.showLegend,
-        tooltipShow: existingConfig?.tooltipShow !== undefined ? existingConfig.tooltipShow : chartConfig.showTooltip,
-        showGrid: existingConfig?.showGrid !== undefined ? existingConfig.showGrid : chartConfig.showGrid,
-      };
-
-      const chartWidget = {
-        id: previewChart?.id || `chart-${Date.now()}`,
-        type: chartConfig.chartType,
-        name: finalTitle,
-        title: finalTitle,
-        config: normalizedConfig,
-        data: chartData,
-        query: sqlQuery,
-        dataSourceId: selectedDataSource?.id || selectedDataSourceId || '',
-        // Add raw data for reference
-        rawData: actualData,
-        // Store original columns for robust axis selection
-        originalColumns: columns,
-        numericColumns: numericColumns,
-        textColumns: textColumns,
-        dateColumns: dateColumns,
-        // Metadata
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Set preview chart and switch to preview tab
-      setPreviewChart((prevChart: any) => {
-        // Only show message if this is a new chart generation, not a type change
-        // Check if we already have a previewChart with the same rawData (indicating a type change)
-        const isTypeChange = prevChart && prevChart.rawData === actualData && prevChart.id !== chartWidget.id;
-        if (!isTypeChange) {
-          message.success({
-            content: `Chart "${normalizedConfig.title}" preview created!`,
-            duration: 2,
-          });
-        }
-        return chartWidget;
-      });
-      // Only switch tab if not already in preview (to avoid disrupting user if they're switching chart types)
-      setActiveTab((prevTab) => (prevTab !== 'preview' ? 'preview' : prevTab));
-    } catch (error: any) {
-      console.error('Error creating chart:', error);
-      message.error({
-        content: `Failed to create chart: ${error.message || 'Unknown error'}`,
-        duration: 5,
-      });
+  const getCurrentSQL = (ignoreSelection = false): string => {
+    if (!ignoreSelection) {
+      const selected = editorInsertRef.current?.getSelectedText?.() || '';
+      if (selected.trim()) return selected.trim();
     }
+    return latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
   };
 
-  const handleDesignerPanelHover = (panelKey: string) => {
-    setChartDesignerActiveKeys([panelKey]);
-  };
-
-  const handleDesignerPanelLeave = (panelKey: string) => {
-    setChartDesignerActiveKeys((prev) => (prev[0] === panelKey ? [] : prev));
-  };
-
-  const handleDesignerCollapseChange = (keys: string | string[]) => {
-    const normalizedKeys = Array.isArray(keys) ? keys : keys ? [keys] : [];
-    setChartDesignerActiveKeys(normalizedKeys as string[]);
-  };
-
-  const handleChartGenerate = (chartConfig: any) => {
-    if (onChartCreate) {
-      const chartWidget = {
-        type: chartConfig.chartType,
-        name: chartConfig.title.text,
-        title: chartConfig.title.text,
-        config: chartConfig,
-        data: chartConfig.data,
-        query: sqlQuery,
-        dataSourceId: selectedDataSource,
-        rawData: chartConfig.rawData,
-      };
-      onChartCreate(chartWidget);
+  // Extract {{param}} names from SQL (preserving order, deduped)
+  const detectedQueryParams = useMemo((): string[] => {
+    const sql = latestEditorContentRef.current || sqlQuery || '';
+    const matches = [...sql.matchAll(/\{\{(\w+)\}\}/g)];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const m of matches) {
+      if (!seen.has(m[1])) { seen.add(m[1]); result.push(m[1]); }
     }
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sqlQuery]);
+
+  // Substitute {{param}} with user-supplied values before execution
+  const applyQueryParams = (sql: string): string => {
+    if (detectedQueryParams.length === 0) return sql;
+    return sql.replace(/\{\{(\w+)\}\}/g, (_, name) => queryParamValues[name] ?? `{{${name}}}`);
   };
 
-  const saveChartAsset = async (assetData: any, successMessage: string) => {
+  const handleAIExplainSQL = async () => {
+    const sql = getCurrentSQL();
+    if (!sql) { message.warning(t('no_query_to_save')); return; }
+    setAiExplaining(true);
+    setAiExplainContent('');
+    setAiExplainOpen(true);
+
+    // Build compact schema context string for the backend prompt
+    const schemaContext = (() => {
+      const tables = schema?.tables ?? [];
+      if (!tables.length) return '';
+      return tables
+        .slice(0, 20)
+        .map((tbl: { name: string; schema?: string; columns?: { name: string; type?: string }[] }) => {
+          const cols = (tbl.columns ?? [])
+            .slice(0, 15)
+            .map((c: { name: string; type?: string }) => `${c.name}${c.type ? `:${c.type}` : ''}`)
+            .join(', ');
+          const fullName = tbl.schema && tbl.schema !== 'public' ? `${tbl.schema}.${tbl.name}` : tbl.name;
+          return `${fullName}(${cols})`;
+        })
+        .join('\n');
+    })();
+
     try {
-      const response = await authenticatedFetch('/api/assets', {
+      const result = await authenticatedFetch('/api/ai/query-editor/explain-sql', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(assetData),
-      });
-      const responseText = await response.text().catch(() => '');
-      let result: any = {};
-      if (responseText) {
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}`);
-        }
-      }
-      if (response.status === 401) {
-        message.error(t('auth_required_chart'));
-        return null;
-      }
-      if (!response.ok) {
-        const errorMsg = result?.error || result?.detail || result?.message || `HTTP ${response.status}`;
-        throw new Error(errorMsg);
-      }
-      if (!result || !(result.id || result.asset_id)) {
-        throw new Error('Save failed - unexpected response format');
-      }
-      message.success(successMessage);
-      return result;
-    } catch (error: any) {
-      console.error('Failed to save chart:', error);
-      message.error(`Failed to save chart: ${error.message || 'Unknown error'}`);
-      return null;
+        body: JSON.stringify({
+          sql,
+          data_source_id: selectedDataSourceId,
+          schema_context: schemaContext || undefined,
+        }),
+      }) as { success: boolean; explanation?: string };
+      setAiExplainContent(result.explanation || t('explain_sql_no_result'));
+    } catch (err) {
+      const e = err as { message?: string };
+      setAiExplainContent(e?.message || t('explain_sql_failed'));
+    } finally {
+      setAiExplaining(false);
     }
+  };
+
+  const handleAIOptimizeSQL = async () => {
+    const sql = getCurrentSQL();
+    if (!sql) { message.warning(t('no_query_to_save')); return; }
+    if (!selectedDataSourceId) { message.warning(t('select_ds_first')); return; }
+    setAiOptimizing(true);
+    try {
+      const result = await authenticatedFetch('/api/ai/query-editor/optimize-sql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sql,
+          data_source_id: selectedDataSourceId,
+        }),
+      }) as { success: boolean; optimized_sql?: string; improvements?: string };
+      if (result.success && result.optimized_sql) {
+        setOptimizeOriginalSQL(sql);
+        setOptimizeNewSQL(result.optimized_sql.trim());
+        setOptimizeImprovements(result.improvements?.trim() || '');
+        setOptimizeDiffOpen(true);
+      } else {
+        message.warning(t('optimize_no_result'));
+      }
+    } catch (err) {
+      const e = err as { message?: string };
+      message.error(formatError(e, 'generic', t('optimize_failed')));
+    } finally {
+      setAiOptimizing(false);
+    }
+  };
+
+  const handleAcceptOptimize = () => {
+    const optimized = optimizeNewSQL;
+    const merged = queryTabs.map(tab => {
+      if (tab.key !== activeQueryKey) return tab;
+      return editorLanguage === 'python'
+        ? { ...tab, python: optimized, language: editorLanguage }
+        : { ...tab, sql: optimized, language: editorLanguage };
+    });
+    setQueryTabs(merged);
+    setSqlQuery(optimized);
+    setOptimizeDiffOpen(false);
+    message.success(t('optimize_success'));
   };
 
   const handleAIGenerate = async () => {
@@ -1813,18 +1994,21 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         setAiAssistantInput('');
       } else {
         // More detailed error message
-        const errorMsg = result.error || result.detail || 'Failed to generate code. Please try again.';
+        const errorMsg = formatError(
+          result.error || result.detail || result,
+          'generic',
+          t('ai_assistant_hint'),
+        );
         console.error('AI generation failed:', result);
         message.error({
           content: errorMsg,
           duration: 5,
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('AI generation error:', error);
-      const errorMessage = error?.message || error?.toString() || 'Failed to generate code. Please try again.';
       message.error({
-        content: `Error: ${errorMessage}`,
+        content: formatError(error, 'generic', t('ai_assistant_hint')),
         duration: 5,
       });
     } finally {
@@ -1846,15 +2030,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
       // Determine data source id
       const dsId = selectedDataSource?.id || selectedDataSourceId || '';
-      if (!dsId) {
-        throw new Error(
-          'No data source selected. Please select a data source from the left panel before executing your script.'
-        );
-      }
-
-      if (!sqlQuery.trim()) {
-        throw new Error('Please enter a Python script to execute.');
-      }
+      if (!dsId) throw new Error(t('no_ds_to_run'));
+      if (!sqlQuery.trim()) throw new Error(t('no_script_to_run'));
 
       setExecutionStatus('Executing Python script...');
 
@@ -1915,22 +2092,40 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       console.error('❌ Python execution error:', err);
       setError(errorMessage);
       setExecutionStatus('Python execution failed');
-      message.error(`Python execution failed: ${errorMessage}`);
+      message.error(formatError({ message: errorMessage }, 'generic', t('python_exec_failed')));
     } finally {
       setExecuting(false);
       setLoading(false);
     }
   };
 
+  const handleCancelQuery = () => {
+    queryAbortControllerRef.current?.abort();
+    queryAbortControllerRef.current = null;
+    setExecuting(false);
+    setLoading(false);
+    setExecutionStatus('');
+    message.info(t('query_cancelled'));
+  };
+
   const handleExecuteQuery = async () => {
+    // Cancel any in-flight query before starting a new one
+    queryAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    queryAbortControllerRef.current = abortController;
+
     setExecuting(true);
     setLoading(true);
     setError(null);
     setExecutionTime(null);
-    setResolvedEngine(null); // Clear resolved engine when starting new execution
-    setResolvedEngine(null); // Clear resolved engine when starting new execution
+    setResolvedEngine(null);
     setExecutionStatus('Analyzing query...');
-    let executedSql = sqlQuery;
+    // Clear previous error markers when starting a new run
+    if (monacoInstanceRef.current?.editor?.setModelMarkers && editorModelRef.current) {
+      monacoInstanceRef.current.editor.setModelMarkers(editorModelRef.current, 'sql-error', []);
+    }
+    // Use selected text if available (Run Selection), otherwise full query; substitute {{params}}
+    let executedSql = applyQueryParams(getCurrentSQL());
     let appendedLimit = false;
 
     try {
@@ -1938,12 +2133,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
       // Respect the limit the user has set: use LIMIT/TOP in the SQL if present; otherwise use Row Limit control (or no limit if "All").
       if (editorLanguage === 'sql' && !isPromqlDataSource) {
-        const existingLimit = extractLimitFromQuery(sqlQuery);
+        const existingLimit = extractLimitFromQuery(executedSql);
         const limitInQuery = existingLimit !== null || limitSource === 'query';
         if (!limitInQuery && rowLimit !== 'all') {
           const parsedLimit = parseInt(rowLimit, 10);
           if (!Number.isNaN(parsedLimit) && parsedLimit > 0) {
-            executedSql = appendLimitClause(sqlQuery, parsedLimit, selectedDataSource?.db_type);
+            executedSql = appendLimitClause(executedSql, parsedLimit, selectedDataSource?.db_type);
             appendedLimit = true;
           }
         }
@@ -1953,7 +2148,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       const dsId = selectedDataSource?.id || selectedDataSourceId || '';
       if (!dsId) {
         throw new Error(
-          'No data source selected. Please select a data source from the left panel before executing your query.'
+          t('no_ds_to_run')
         );
       }
 
@@ -2000,7 +2195,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       // Use enhancedDataService to run multi-engine queries (server-side routing)
       // If engine is 'auto' or empty, pass undefined to let backend auto-select
       const engineParam = selectedEngine && selectedEngine !== 'auto' ? selectedEngine : undefined;
-      const result = await enhancedDataService.executeMultiEngineQuery(executedSql, dsId, engineParam);
+      const result = await enhancedDataService.executeMultiEngineQuery(executedSql, dsId, engineParam, true, abortController.signal);
 
       const executionTime = Date.now() - startTime;
 
@@ -2031,11 +2226,16 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }
 
         setResults(resultData);
+        setResultLimitApplied(appendedLimit);
         setExecutionTime(result.execution_time || executionTime);
         // Update resolved engine state for display
         const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
         setResolvedEngine(resolvedEngineValue);
         setExecutionStatus('Query completed successfully');
+        // Clear any lingering error markers on success
+        if (monacoInstanceRef.current?.editor?.setModelMarkers && editorModelRef.current) {
+          monacoInstanceRef.current.editor.setModelMarkers(editorModelRef.current, 'sql-error', []);
+        }
 
         // Switch to results tab to show the results (even if empty, so user can see the status)
         setActiveTab('results');
@@ -2063,7 +2263,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           status: 'success',
           database: selectedDataSourceId || '',
           schema: selectedSchema,
-          user: 'current_user',
+          user: authUser?.email || authUser?.username || authUser?.id || 'unknown',
           queryType: sqlQuery.trim().toUpperCase().split(' ')[0],
           engine: result.engine || (engineParam as string) || 'unknown',
         };
@@ -2096,12 +2296,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         throw new Error(result.error || 'Query execution failed');
       }
     } catch (error) {
+      // Swallow abort errors — user intentionally cancelled
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       const errorMessage = error instanceof Error ? error.message : 'Query execution failed';
       setExecutionStatus('Query failed');
       setSelectedEngine('unknown');
       setError(errorMessage);
       setLoading(false);
-      // Remove duplicate message.error to avoid confusion - error is now displayed in Alert
+      // Highlight error line in Monaco if position info is present
+      highlightSQLError(errorMessage);
       console.error('Query execution error:', error);
 
       // Add failed query to history
@@ -2160,188 +2363,96 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     }
   }, [sqlQuery]);
 
-  // Generate columns dynamically from query results
-  const generateColumns = (data: any[]) => {
-    if (!data || data.length === 0) return [];
-
-    const firstRow = data[0];
-    const columnKeys = Object.keys(firstRow);
-
-    return columnKeys.map((key, index) => ({
-      title: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-      dataIndex: key,
-      key: key,
-      render: (value: any) => {
-        if (typeof value === 'number') {
-          return value?.toLocaleString();
-        }
-        return value;
-      },
-      width: 150,
-      sorter: (a: any, b: any) => {
-        const aVal = a[key];
-        const bVal = b[key];
-        if (typeof aVal === 'number' && typeof bVal === 'number') {
-          return aVal - bVal;
-        }
-        return String(aVal).localeCompare(String(bVal));
-      },
-    }));
-  };
-
-  const columns = generateColumns(results);
-
-  const historyColumns = [
-    {
-      title: 'Status',
-      key: 'status',
-      render: (record: any) => (
-        <Badge
-          status={record.state === 'success' ? 'success' : record.state === 'running' ? 'processing' : 'error'}
-          text={
-            <span style={{ fontSize: 'var(--font-size-sm)' }}>
-              {record.state === 'success' ? '✅ Success' : record.state === 'running' ? '🔄 Running' : '❌ Failed'}
-            </span>
-          }
-        />
-      ),
-    },
-    {
-      title: 'Started',
-      dataIndex: 'started',
-      key: 'started',
-      render: (value: string) => <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{value}</span>,
-    },
-    {
-      title: 'Duration',
-      dataIndex: 'duration',
-      key: 'duration',
-      render: (value: string) => <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{value}</span>,
-    },
-    {
-      title: 'Progress',
-      key: 'progress',
-      render: (record: any) => (
-        <Progress
-          percent={record.progress}
-          size="small"
-          status={record.state === 'success' ? 'success' : record.state === 'running' ? 'active' : 'exception'}
-          showInfo={false}
-        />
-      ),
-    },
-    {
-      title: 'Rows',
-      dataIndex: 'rows',
-      key: 'rows',
-      render: (value: number) => value?.toLocaleString(),
-    },
-    {
-      title: 'Engine',
-      dataIndex: 'engine',
-      key: 'engine',
-      render: (value: string) => {
-        const getEngineIcon = (engine: string) => {
-          switch (engine) {
-            case 'duckdb':
-              return '🦆';
-            case 'cube':
-              return '📊';
-            case 'spark':
-              return '⚡';
-            case 'direct_sql':
-              return '🗄️';
-            case 'pandas':
-              return '🐼';
-            case 'demo':
-              return '🎯';
-            case 'error':
-              return '❌';
-            default:
-              return '🔧';
-          }
-        };
-
-        return (
-          <span style={{ fontSize: '11px' }}>
-            {getEngineIcon(value)} {value}
-          </span>
-        );
-      },
-    },
-    {
-      title: 'User',
-      dataIndex: 'user',
-      key: 'user',
-      render: (value: string) => <span style={{ fontSize: '11px' }}>{value}</span>,
-    },
-    {
-      title: 'SQL Query',
-      dataIndex: 'sql',
-      key: 'sql',
-      render: (value: string) => (
-        <Tooltip title={value} placement="topLeft">
-          <div
-            style={{
-              cursor: 'pointer',
-              fontFamily: 'monospace',
-              fontSize: '10px',
-              maxWidth: '200px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+  const resultsTabItems = useMemo(
+    () => [
+      {
+        key: 'results',
+        label: t('tab_query_results'),
+        children: (
+          <ResultsTabPane
+            results={results}
+            columns={columns}
+            isExecuting={isExecuting}
+            loading={loading}
+            executionStatus={executionStatus}
+            executionTime={executionTime}
+            resultLimitApplied={resultLimitApplied}
+            rowLimit={Number(rowLimit)}
+            sqlQuery={sqlQuery}
+            latestSql={latestEditorContentRef.current || sqlQuery}
+            selectedDataSourceId={selectedDataSourceId}
+            onSaveSnapshot={() => {
+              const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+              setSaveSnapshotName(
+                snapshotNameFromTabTitle(
+                  tab?.title,
+                  `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`,
+                ),
+              );
+              setShowSaveSnapshotModal(true);
             }}
-            onClick={() => handleHistoryItemClick(value)}
-          >
-            {value}
-          </div>
-        </Tooltip>
-      ),
-    },
-    {
-      title: t('col_actions'),
-      key: 'actions',
-      render: (record: any) => (
-        <Space size="small">
-          <Tooltip title={t('tooltip_load_into_editor')}>
-            <Button
-              size="small"
-              type="text"
-              icon={<EditOutlined />}
-              onClick={() => handleHistoryItemClick(record.sql)}
-            />
-          </Tooltip>
-          <Tooltip title={t('tooltip_load_and_run')}>
-            <Button
-              size="small"
-              type="text"
-              icon={<PlayCircleOutlined />}
-              onClick={() => handleHistoryRerun(record)}
-            />
-          </Tooltip>
-          <Tooltip title={t('tooltip_remove_from_history')}>
-            <Button
-              size="small"
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={async () => {
-                const id = record?.id ?? record?.history_id;
-                if (id == null) return;
-                try {
-                  await authenticatedFetch(`/api/queries/execution-history/${id}`, { method: 'DELETE' });
-                  setQueryHistory((prev) => prev.filter((r: any) => (r.id ?? r.history_id) !== id));
-                  message.success(t('removed_from_history'));
-                } catch (err: any) {
-                  message.error(err?.message || t('delete_failed'));
-                }
-              }}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
-  ];
+            onExportCsv={() => exportToCSV(results)}
+            onExportJson={() => exportToJSON(results)}
+          />
+        ),
+      },
+      {
+        key: 'performance',
+        label: t('tab_performance'),
+        children: (
+          <PerformancePane
+            sqlQuery={sqlQuery}
+            selectedDataSourceId={selectedDataSourceId}
+            selectedDataSource={selectedDataSource}
+            isDarkMode={isDarkMode}
+            authenticatedFetch={authenticatedFetch}
+            formatError={formatError}
+          />
+        ),
+      },
+      {
+        key: 'history',
+        label: t('tab_query_history'),
+        children: (
+          <QueryHistoryPane
+            queryHistory={queryHistory}
+            historySearch={historySearch}
+            historyStatusFilter={historyStatusFilter}
+            onHistorySearchChange={setHistorySearch}
+            onHistoryStatusFilterChange={setHistoryStatusFilter}
+            onHistoryItemClick={handleHistoryItemClick}
+            onHistoryRerun={handleHistoryRerun}
+            onHistoryRemove={handleHistoryRemove}
+          />
+        ),
+      },
+    ],
+    [
+      activeQueryKey,
+      authenticatedFetch,
+      columns,
+      executionStatus,
+      executionTime,
+      formatError,
+      handleHistoryItemClick,
+      handleHistoryRerun,
+      handleHistoryRemove,
+      historySearch,
+      historyStatusFilter,
+      isDarkMode,
+      isExecuting,
+      loading,
+      queryHistory,
+      queryTabs,
+      resultLimitApplied,
+      results,
+      rowLimit,
+      selectedDataSource,
+      selectedDataSourceId,
+      sqlQuery,
+      t,
+    ],
+  );
 
   return (
     <div
@@ -2379,13 +2490,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           height: '100%',
           maxHeight: '100%'
         }}>
-          {/* Aicser AI Assistant Prompt Bar */}
-          <div style={{
-            padding: '8px 16px',
-            background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-            flexShrink: 0,
-            borderRadius: '8px 8px 0 0',
-          }}>
+          {IS_EE && (
+          <div className="qe-ai-bar">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Tooltip
                 title={
@@ -2400,10 +2506,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 placement="bottomLeft"
               >
                 <div
+                  className="qe-ai-avatar"
                   style={{
                     flexShrink: 0,
-                    width: '32px',
-                    height: '32px',
+                    width: '28px',
+                    height: '28px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -2411,7 +2518,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   }}
                 >
                   <AnimatedAIAvatar
-                    size={24}
+                    size={22}
                     isSpeaking={!!aiAssistantInput && !aiGenerating}
                     isThinking={aiGenerating}
                   />
@@ -2419,30 +2526,26 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               </Tooltip>
               <Input
                 placeholder={t('ai_assistant_placeholder')}
-                style={{ flex: 1, height: '36px', borderRadius: '6px' }}
+                style={{ flex: 1, height: '32px', borderRadius: '6px' }}
                 size="middle"
                 value={aiAssistantInput}
                 onChange={(e) => setAiAssistantInput(e.target.value)}
                 onPressEnter={handleAIGenerate}
                 disabled={aiGenerating}
               />
-              <Button
-                size="middle"
-                type="primary"
-                icon={<RocketOutlined />}
-                style={{
-                  height: '36px',
-                  borderRadius: '6px',
-                  flexShrink: 0,
-                }}
-                onClick={handleAIGenerate}
-                loading={aiGenerating}
-                disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
-              >
-                Generate {editorLanguage === 'python' ? 'Python' : 'SQL'}
-              </Button>
+              <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<RocketOutlined />}
+                  onClick={handleAIGenerate}
+                  loading={aiGenerating}
+                  disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
+                />
+              </Tooltip>
             </div>
           </div>
+          )}
 
           {/* Query workspace: two panels at same level - (1) Editor+Run (2) Results - resize between them */}
           <div
@@ -2455,63 +2558,57 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               maxHeight: '100%',
               height: '100%',
               background: 'var(--ant-color-bg-container)',
-              border: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
-              borderRadius: '8px',
             }}
+            className="qe-workspace-main"
+            ref={workspaceMainRef}
           >
             {/* Top panel: Tabs + Editor + Run (fixed height, flexShrink: 0 - never goes under results) */}
-            <div style={{
+            <div
+              className="qe-editor-top-panel"
+              style={{
               height: editorHeight,
               minHeight: MIN_TOP_SECTION_HEIGHT,
               maxHeight: maxEditorHeight,
-              flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              background: 'var(--ant-color-bg-container)'
             }}>
             {/* Query Tabs - inside top panel so they move with editor+run */}
-            <div style={{ padding: '4px 16px', flexShrink: 0, background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* Language Switcher */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: 'auto' }}>
-                <Text style={{ fontSize: 'var(--font-size-sm)', color: 'var(--ant-color-text-secondary)' }}>{t('label_language')}</Text>
-                <Select
-                  value={editorLanguage}
-                  onChange={(val) => {
-                    const nextLanguage = resolveLanguage(val as string);
-                    if (nextLanguage === editorLanguage) return;
-                    const currentActiveKey = activeQueryKeyRef.current;
-                    const activeTab = queryTabs.find(t => t.key === currentActiveKey);
-                    const pythonText = getPythonTemplate(activeTab, selectedDataSource?.name);
-                    setQueryTabs(prev => prev.map(t => {
-                      if (t.key !== currentActiveKey) return t;
-                      if (nextLanguage === 'python') {
-                        return { ...t, python: pythonText, language: nextLanguage };
-                      }
-                      return { ...t, language: nextLanguage };
-                    }));
-                    setEditorLanguage(nextLanguage);
-                    if (nextLanguage === 'python') {
-                      setSqlQuery(pythonText);
-                    } else {
-                      setSqlQuery(activeTab?.sql ?? DEFAULT_SQL_SNIPPET);
-                    }
-                  }}
-                  size="small"
-                  style={{ width: 120 }}
-                  options={[
-                    { value: 'sql', label: 'SQL' },
-                    // { value: 'python', label: 'Python' }
-                  ]}
-                />
-              </div>
+            <div className="qe-query-tabs-row">
               <Tabs
                 size="small"
-                type="editable-card"
-                hideAdd={false}
+                type="line"
+                hideAdd
+                className="workspace-inline-tabs query-editor-query-tabs"
                 activeKey={activeQueryKey}
-                tabBarExtraContent={
-                  <Space size="small" style={{ marginLeft: 8 }}>
+                tabBarExtraContent={{
+                  left: (
+                    <Tooltip title={t('new_query_tab')}>
+                      <Button
+                        type="text"
+                        size="small"
+                        className="icon-only-btn qe-tab-add-btn"
+                        icon={<PlusOutlined />}
+                        aria-label={t('new_query_tab')}
+                        onClick={() => {
+                          const newKey = `q-${Date.now()}`;
+                          const defaultPython = buildPythonTemplate(DEFAULT_SQL_SNIPPET, selectedDataSource?.name);
+                          const newTitle = getNextDefaultTabTitle(queryTabs);
+                          const newTab = {
+                            key: newKey,
+                            title: newTitle,
+                            sql: DEFAULT_SQL_SNIPPET,
+                            python: defaultPython,
+                            language: editorLanguage,
+                          };
+                          const next = [...queryTabs, newTab];
+                          setQueryTabs(next);
+                          setActiveQueryKey(newKey);
+                          setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
+                          saveTabsToBackend(next, newKey, true);
+                        }}
+                      />
+                    </Tooltip>
+                  ),
+                  right: (
+                  <Space size={4} className="icon-toolbar qe-tab-toolbar">
                     <Tooltip title={t('tooltip_save_query_script')}>
                       <Button
                         type="text"
@@ -2519,46 +2616,27 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         icon={<SaveOutlined />}
                         aria-label={t('aria_save_to_saved_queries')}
                         onClick={async () => {
-                          const tab = queryTabs.find(t => t.key === activeQueryKey);
-                          const name = (tab?.title || '').trim() || `Query ${queryTabs.length + 1}`;
+                          const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+                          const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+                          const name = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
                           const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
                           if (!content) {
                             message.warning(t('no_query_to_save'));
                             return;
                           }
                           try {
-                            await authenticatedFetch(savedQueriesUrl, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                name,
-                                sql: content,
-                                metadata: { tabKey: tab?.key, language: editorLanguage }
-                              })
+                            await persistSavedQueryForTab({
+                              name,
+                              sql: content,
+                              tabKey: tab?.key ?? activeQueryKey,
+                              language: resolveLanguage(tab?.language ?? editorLanguage),
+                              savedQueryId: tab?.savedQueryId,
                             });
                             message.success(t('saved_to_list', { name }));
                             setShowSavedModal(true);
-                            const [savedRes] = await Promise.all([
-                              authenticatedFetch(savedQueriesUrl).catch(() => ({ items: [] }))
-                            ]);
-                            setSavedQueries(Array.isArray((savedRes as any)?.items) ? (savedRes as any).items.filter(Boolean) : []);
                           } catch (e: unknown) {
-                            const err = e as { message?: string };
-                            message.error(err?.message || t('save_failed_name_exists'));
+                            message.error(formatError(e as { message?: string }, 'save_failed', t('save_failed_name_exists')));
                           }
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title={t('tooltip_save_result_snapshot')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<FileTextOutlined />}
-                        aria-label={t('aria_save_as_snapshot')}
-                        onClick={() => {
-                          const tab = queryTabs.find(t => t.key === activeQueryKey);
-                          setSaveSnapshotName(tab?.title ? `${t('snapshot')}: ${tab.title}` : `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`);
-                          setShowSaveSnapshotModal(true);
                         }}
                       />
                     </Tooltip>
@@ -2566,10 +2644,38 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       <Button type="text" size="small" icon={<DownloadOutlined />} aria-label={t('aria_download_tab_as_file')} onClick={downloadCurrentQueryAsFile} disabled={!sqlQuery.trim()} />
                     </Tooltip>
                     <Tooltip title={t('tooltip_saved_queries_snapshots')}>
-                      <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => setShowSavedModal(true)} />
+                      <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
                     </Tooltip>
+                    {IS_EE && editorLanguage === 'sql' && (
+                      <>
+                        <Divider type="vertical" style={{ margin: '0 2px' }} />
+                        <Tooltip title={t('explain_sql_tooltip')}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<QuestionCircleOutlined />}
+                            loading={aiExplaining}
+                            disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                            onClick={() => void handleAIExplainSQL()}
+                            aria-label={t('explain_sql_title')}
+                          />
+                        </Tooltip>
+                        <Tooltip title={t('optimize_sql_tooltip')}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<ScissorOutlined />}
+                            loading={aiOptimizing}
+                            disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                            onClick={() => void handleAIOptimizeSQL()}
+                            aria-label={t('optimize_sql_title')}
+                          />
+                        </Tooltip>
+                      </>
+                    )}
                   </Space>
-                }
+                  ),
+                }}
                 onChange={(key) => {
                   // Prefer ref (updated on every keystroke), then editor.getValue(), then state (avoids losing changes due to 300ms debounce)
                   const fromRef = latestEditorContentRef.current;
@@ -2585,7 +2691,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   setQueryTabs(merged);
                   saveTabsToBackend(merged, activeQueryKey, true);
 
+                  if (activeQueryKey) {
+                    resultsTabByQueryKeyRef.current[activeQueryKey] = activeTab;
+                  }
+
                   setActiveQueryKey(key);
+                  setActiveTab(resultsTabByQueryKeyRef.current[key] ?? 'results');
                   const tab = merged.find(t => t.key === key);
                   if (tab) {
                     const nextLanguage = resolveLanguage(tab.language);
@@ -2613,226 +2724,96 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
                     saveTabsToBackend(next, newKey, true);
                   } else if (action === 'remove') {
-                    const key = String(targetKey);
-                    const idx = queryTabs.findIndex(t => t.key === key);
-                    const newTabs = queryTabs.filter(t => t.key !== key);
-                    const nextActiveKey = activeQueryKey === key && newTabs.length
-                      ? newTabs[Math.max(0, idx - 1)].key
-                      : activeQueryKey;
-                    setQueryTabs(newTabs);
-                    if (activeQueryKey === key && newTabs.length) {
-                      const next = newTabs[Math.max(0, idx - 1)];
-                      const nextLanguage = resolveLanguage(next.language);
-                      setActiveQueryKey(next.key);
-                      setEditorLanguage(nextLanguage);
-                      setSqlQuery(nextLanguage === 'python' ? getPythonTemplate(next, selectedDataSource?.name) : (next.sql ?? DEFAULT_SQL_SNIPPET));
-                    } else if (!newTabs.length) {
-                      setActiveQueryKey('');
-                      setEditorLanguage('sql');
-                      setSqlQuery(DEFAULT_SQL_SNIPPET);
-                    }
-                    saveTabsToBackend(newTabs, newTabs.length ? nextActiveKey : '', true);
+                    removeQueryTab(String(targetKey));
                   }
                 }}
-                items={queryTabs.map(t => ({
-                  key: t.key,
+                items={queryTabs.map((tab) => ({
+                  key: tab.key,
+                  closable: false,
                   label: (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {editingTabKey === t.key ? (
+                    <div className="qe-query-tab-label">
+                      {editingTabKey === tab.key ? (
                         <input
+                          className="qe-query-tab-rename-input"
                           value={titleDraft}
                           autoFocus
+                          onClick={(e) => e.stopPropagation()}
                           onChange={e => setTitleDraft(e.target.value)}
                           onBlur={() => {
-                            const idx = queryTabs.findIndex(x => x.key === t.key);
-                            const fallbackTitle = idx >= 0 ? `Query ${idx + 1}` : t.title;
+                            const idx = queryTabs.findIndex((x) => x.key === tab.key);
+                            const fallbackTitle = idx >= 0 ? `Query ${idx + 1}` : tab.title;
                             const newTitle = (titleDraft || '').trim() || fallbackTitle;
-                            const nextTabs = queryTabs.map(x => x.key === t.key ? { ...x, title: newTitle } : x);
+                            const nextTabs = queryTabs.map((x) =>
+                              x.key === tab.key ? { ...x, title: newTitle } : x,
+                            );
                             setQueryTabs(nextTabs);
                             setEditingTabKey(null);
                             saveTabsToBackend(nextTabs, activeQueryKey, true);
+                            if (tab.savedQueryId != null && typeof tab.savedQueryId === 'number' && !isSameQueryName(tab.title, newTitle)) {
+                              const content = tab.language === 'python' ? tab.python ?? tab.sql : tab.sql;
+                              void persistSavedQueryForTab({
+                                name: newTitle,
+                                sql: content,
+                                tabKey: tab.key,
+                                language: resolveLanguage(tab.language),
+                                savedQueryId: tab.savedQueryId,
+                                syncTabTitle: false,
+                              }).catch(() => undefined);
+                            }
                           }}
-                          onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
-                          style={{ width: 100 }}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                            if (e.key === 'Escape') {
+                              setEditingTabKey(null);
+                              setTitleDraft('');
+                            }
+                          }}
                         />
                       ) : (
                         <>
-                          <span onDoubleClick={() => { setEditingTabKey(t.key); setTitleDraft(t.title ?? ''); }}>{t.title}</span>
-                          {/* <Tooltip title="Save this query">
-                    setQueryTabs(prev => [...prev, newTab]);
-                    setActiveQueryKey(newKey);
-                    setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
-                  } else if (action === 'remove') {
-                    const key = String(targetKey);
-                    const idx = queryTabs.findIndex(t => t.key === key);
-                    const newTabs = queryTabs.filter(t => t.key !== key);
-                    const nextActiveKey = activeQueryKey === key && newTabs.length
-                      ? newTabs[Math.max(0, idx - 1)].key
-                      : activeQueryKey;
-                    setQueryTabs(newTabs);
-                    if (activeQueryKey === key && newTabs.length) {
-                      const next = newTabs[Math.max(0, idx - 1)];
-                      const nextLanguage = resolveLanguage(next.language);
-                      setActiveQueryKey(next.key);
-                      setEditorLanguage(nextLanguage);
-                      setSqlQuery(nextLanguage === 'python' ? getPythonTemplate(next, selectedDataSource?.name) : (next.sql ?? DEFAULT_SQL_SNIPPET));
-                    } else if (!newTabs.length) {
-                      setActiveQueryKey('');
-                      setEditorLanguage('sql');
-                      setSqlQuery(DEFAULT_SQL_SNIPPET);
-                    }
-                    saveTabsToBackend(newTabs, newTabs.length ? nextActiveKey : '', true);
-                  }
-                }}
-                items={queryTabs.map(t => ({
-                  key: t.key,
-                  label: (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {editingTabKey === t.key ? (
-                        <input
-                          value={titleDraft}
-                          autoFocus
-                          onChange={e => setTitleDraft(e.target.value)}
-                          onBlur={() => {
-                            const idx = queryTabs.findIndex(x => x.key === t.key);
-                            const fallbackTitle = idx >= 0 ? `Query ${idx + 1}` : t.title;
-                            const newTitle = (titleDraft || '').trim() || fallbackTitle;
-                            const nextTabs = queryTabs.map(x => x.key === t.key ? { ...x, title: newTitle } : x);
-                            setQueryTabs(nextTabs);
-                            setEditingTabKey(null);
-                            saveTabsToBackend(nextTabs, activeQueryKey, true);
-                          }}
-                          onKeyDown={e => { if (e.key === 'Enter') { (e.target as HTMLInputElement).blur(); } }}
-                          style={{ width: 100 }}
-                        />
-                      ) : (
-                        <>
-                          <span onDoubleClick={() => { setEditingTabKey(t.key); setTitleDraft(t.title ?? ''); }}>{t.title}</span>
-                          {/* <Tooltip title="Save this query">
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<SaveOutlined />}
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              // Get current SQL from editor if this is the active tab
-                          const baseLanguage = resolveLanguage(t.language);
-                          const isActiveTab = t.key === activeQueryKey;
-                          const currentSql = baseLanguage === 'python'
-                            ? (isActiveTab ? sqlQuery : getPythonTemplate(t, selectedDataSource?.name))
-                            : (isActiveTab ? sqlQuery : (t.sql ?? DEFAULT_SQL_SNIPPET));
-                              try {
-                                // Check for duplicate name first
-                                const checkRes = await authenticatedFetch(savedQueriesUrl);
-                                if (checkRes.ok) {
-                                  const checkData = await checkRes.json();
-                                  const existingQueries = Array.isArray(checkData.items) ? checkData.items : [];
-                                  const duplicate = existingQueries.find((q: any) => q.name === t.title);
-                                  if (duplicate) {
-                                    message.warning(`Query name "${t.title}" already exists. Please rename the tab first.`);
-                                    return;
-                                  }
-                                }
-                                
-                                const res = await authenticatedFetch(savedQueriesUrl, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ 
-                                    name: t.title, 
-                                    sql: currentSql, 
-                                    metadata: { 
-                                      language: baseLanguage,
-                                      tabKey: t.key 
-                                    } 
-                                  })
-                                });
-                                if (res.status === 403 || res.status === 401) { 
-                                  setPermissionModalVisible(true); 
-                                  return; 
-                                }
-                                if (!res.ok) {
-                                  const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-                                  const errorMsg = errorData.detail || errorData.error || 'Failed to save';
-                                  if (errorMsg.includes('already exists')) {
-                                    message.warning(errorMsg);
-                                  } else {
-                                    message.error(errorMsg);
-                                  }
-                                  return;
-                                }
-                                message.success(`Query "${t.title}" saved successfully`);
-                                // Reload saved queries
-                                const reload = await authenticatedFetch(savedQueriesUrl);
-                                if (reload.ok) { 
-                                  const j = await reload.json(); 
-                                  setSavedQueries(Array.isArray(j.items) ? j.items : []); 
-                                }
-                              } catch (err: any) {
-                                message.error(err.message || 'Failed to save query');
-                              }
-                            }}
-                            style={{ padding: '0 4px', height: '20px' }}
-                          />
-                        </Tooltip> */}
-                          </>
-                        )}
-                      </div>
-                    ),
-                  }))}
-                />
-                {/* Saved Queries icon - moved to right of tabs */}
-                {/* <Tooltip title="Show Saved Queries & Snapshots">
+                          <Tooltip title={t('rename_query_tab_hint')}>
+                            <span
+                              className="qe-query-tab-title"
+                              onDoubleClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingTabKey(tab.key);
+                                setTitleDraft(tab.title ?? '');
+                              }}
+                            >
+                              {tab.title}
+                            </span>
+                          </Tooltip>
+                          {queryTabs.length > 1 ? (
+                            <Tooltip title={t('close_query_tab')}>
+                              <button
+                                type="button"
+                                className="qe-query-tab-close"
+                                aria-label={t('close_query_tab')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeQueryTab(tab.key);
+                                }}
+                              >
+                                <CloseOutlined />
+                              </button>
+                            </Tooltip>
+                          ) : null}
                         </>
                       )}
                     </div>
-                  )
+                  ),
                 }))}
-              />
-              {/* Saved Queries icon - moved to right of tabs */}
-                {/* <Tooltip title="Show Saved Queries & Snapshots">
-              <Button 
-                size="small" 
-                icon={<FolderOutlined />}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  padding: '0 4px'
-                }}
-                onClick={async () => {
-                  try {
-                    const res = await authenticatedFetch(savedQueriesUrl);
-                    if (res.status === 403 || res.status === 401) { 
-                      setPermissionModalVisible(true); 
-                      return; 
-                    }
-                    if (res.ok) {
-                      const j = await res.json();
-                      setSavedQueries(Array.isArray(j.items) ? j.items : []);
-                      // Also load snapshots
-                      const snapRes = await authenticatedFetch(snapshotsUrl);
-                      if (snapRes.ok) {
-                        const snapJ = await snapRes.json();
-                        setSnapshots(Array.isArray(snapJ.items) ? snapJ.items : []);
-                      }
-                      setShowSavedModal(true);
-                    } else { 
-                      message.error(t('load_saved_queries_failed')); 
-                    }
-                  } catch (err: any) { 
-                    message.error(t('load_saved_queries_failed')); 
-                  }
-                }} 
-              />
-            </Tooltip> */}
+                />
               </div>
 
               {/* SQL Editor - fills space between Tabs and Run bar */}
               <div
+                className="qe-editor-surface"
                 style={{
                   flex: 1,
                   minHeight: 0,
-                  padding: '16px',
                   overflow: 'hidden',
                   display: 'flex',
                   flexDirection: 'column',
@@ -2881,25 +2862,36 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 </div>
               </div>
 
+              {/* Query Parameters bar — shown only when {{params}} are detected */}
+              {detectedQueryParams.length > 0 && (
+                <div className="qe-query-params-bar">
+                  <Text style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', whiteSpace: 'nowrap' }}>
+                    {t('query_params_title')}:
+                  </Text>
+                  {detectedQueryParams.map(param => (
+                    <div key={param} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Tag style={{ margin: 0, fontFamily: 'monospace', fontSize: 11 }}>{`{{${param}}}`}</Tag>
+                      <Input
+                        size="small"
+                        placeholder={param}
+                        value={queryParamValues[param] ?? ''}
+                        onChange={e => setQueryParamValues(prev => ({ ...prev, [param]: e.target.value }))}
+                        style={{ width: 120, fontSize: 12 }}
+                        allowClear
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Query Controls & Execute Button - part of top section */}
-            <div style={{
-              padding: '8px 16px',
-              borderTop: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
-              background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-              flexShrink: 0
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div className="qe-run-bar">
+              <div className="qe-run-bar-inner">
+                <div className="qe-run-bar-left">
                   <Button
                     type="primary"
                     icon={<PlayCircleOutlined />}
-                    size="middle"
+                    size="small"
                     loading={isExecuting}
                     onClick={() => runHandlerRef.current?.()}
                     disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSourceId}
@@ -2908,40 +2900,63 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       ? t('run_python')
                       : isPromqlDataSource
                         ? t('run_promql')
-                        : t('run_sql')}
+                        : hasEditorSelection
+                          ? t('run_selection')
+                          : t('run_sql')}
                   </Button>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Text style={{ fontSize: 'var(--font-size-sm)' }}>{t('label_row_limit')}</Text>
-                    <Space size={4}>
-                      <Select
-                        value={rowLimit}
-                        onChange={handleRowLimitChange}
-                        style={{ width: '100px' }}
+                  {isExecuting && (
+                    <Tooltip title={t('cancel_query_tooltip')}>
+                      <Button
                         size="small"
-                        disabled={limitSource === 'query'}
-                        options={rowLimitOptions}
+                        danger
+                        icon={<CloseCircleOutlined />}
+                        onClick={handleCancelQuery}
+                      >
+                        {t('cancel_query')}
+                      </Button>
+                    </Tooltip>
+                  )}
+                  {editorLanguage === 'sql' && (
+                    <Tooltip title={t('format_sql_tooltip')}>
+                      <Button
+                        type="text"
+                        icon={<FormatPainterOutlined />}
+                        size="small"
+                        className="icon-only-btn"
+                        onClick={() => editorInsertRef.current?.formatDocument()}
+                        disabled={!sqlQuery.trim()}
                       />
-                      {limitSource === 'query' && (
-                        <Tooltip title={t('limit_detected_in_sql')}>
-                          <Tag color="blue" style={{ margin: 0 }}>{t('in_sql')}</Tag>
-                        </Tooltip>
-                      )}
-                    </Space>
+                    </Tooltip>
+                  )}
+                  <div className="qe-run-control-group">
+                    <span>{t('label_row_limit')}</span>
+                    <Select
+                      className="qe-row-limit-select"
+                      value={rowLimit}
+                      onChange={handleRowLimitChange}
+                      size="small"
+                      disabled={limitSource === 'query'}
+                      options={rowLimitOptions}
+                    />
+                    {limitSource === 'query' && (
+                      <Tooltip title={t('limit_detected_in_sql')}>
+                        <span className="qe-run-meta--engine">{t('in_sql')}</span>
+                      </Tooltip>
+                    )}
                   </div>
                 </div>
 
-                  {/* Harmonized Engine selector with status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Text style={{ fontSize: 'var(--font-size-sm)' }}>{t('label_engine')}</Text>
+                <div className="qe-run-bar-right">
+                  <div className="qe-run-control-group">
+                    <span>{t('label_engine')}</span>
                     <Select
+                      className="qe-engine-select"
                       value={selectedEngine}
                       onChange={(val) => {
                         setSelectedEngine(val);
-                        setResolvedEngine(null); // Clear resolved engine when user changes selection
+                        setResolvedEngine(null);
                       }}
                       size="small"
-                      style={{ width: 140 }}
-                      placeholder="Select engine"
                       options={[
                         { value: 'auto', label: 'Auto' },
                         ...enhancedDataService
@@ -2949,57 +2964,33 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                           .map((e) => ({ value: e.type, label: e.name })),
                       ]}
                     />
-                    {/* Show resolved engine status after execution */}
                     {resolvedEngine && !isExecuting && (
-                      <Tag color="success" style={{ margin: 0 }}>
-                        <ThunderboltOutlined style={{ marginRight: '4px' }} />
-                        {resolvedEngine}
-                      </Tag>
+                      <Tooltip title={resolvedEngine}>
+                        <span className="qe-run-meta--engine">{resolvedEngine}</span>
+                      </Tooltip>
                     )}
-                    {/* Show execution status */}
                     {isExecuting && (
-                      <Tag color="processing" style={{ margin: 0 }}>
-                        <SyncOutlined spin style={{ marginRight: '4px' }} />
-                        {executionStatus || 'Executing...'}
-                      </Tag>
+                      <span className="qe-run-meta--engine">
+                        <SyncOutlined spin style={{ marginRight: 4 }} />
+                        {executionStatus || '…'}
+                      </span>
                     )}
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ClockCircleOutlined style={{ fontSize: 'var(--font-size-base)' }} />
-                    <Text style={{ fontFamily: 'monospace', fontSize: 'var(--font-size-sm)' }}>
-                      {executionTime ? `00:00:${(executionTime / 1000).toFixed(2)}` : '00:00:00.00'}
-                    </Text>
-                  </div>
-
+                  <span className="qe-run-meta--engine" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '—'}
+                  </span>
                 </div>
               </div>
+            </div>
             </div>
 
             {/* Resize handle: border between Run button and Query Results - drag to split */}
             <div
+              className="qe-split-handle"
               onMouseDown={startEditorResize}
-              style={{
-                cursor: 'row-resize',
-                height: '10px',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '2px 16px',
-                background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-                borderTop: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
-              }}
               title={t('tooltip_drag_resize')}
             >
-              <div
-                style={{
-                  width: '64px',
-                  height: '3px',
-                  borderRadius: '999px',
-                  background: 'var(--ant-color-border)',
-                }}
-              />
+              <div className="qe-split-handle-grip" />
             </div>
 
             {/* Error Display - tight to control bar */}
@@ -3026,19 +3017,16 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
             {/* Results - directly under Run / errors, no extra gap */}
             <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                borderTop: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
-                background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-              }}
+              className="qe-results-pane"
+              style={{ flex: 1, minHeight: MIN_RESULTS_PANE_HEIGHT, display: 'flex', flexDirection: 'column' }}
             >
               <Tabs
                 activeKey={activeTab}
-                onChange={setActiveTab}
+                onChange={handleResultsTabChange}
                 size="small"
+                destroyInactiveTabPane={false}
+                className="workspace-inline-tabs query-editor-results-tabs"
+                items={resultsTabItems}
                 style={{
                   flex: 1,
                   display: 'flex',
@@ -3050,1454 +3038,29 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 }}
                 tabBarStyle={{
                   margin: 0,
-                  padding: '0 12px 0 16px',
-                  minHeight: 40,
-                  background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-                  borderBottom: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
+                  minHeight: 36,
+                  background: 'var(--ant-color-bg-container)',
                   flexShrink: 0,
                 }}
-              >
-                <TabPane tab={t('tab_query_results')} key="results">
-                  <div
-                    style={{
-                      padding: '8px 16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      flex: 1,
-                      minHeight: 0,
-                      background: 'transparent',
-                    }}
-                  >
-                    <div
-                      style={{
-                        marginBottom: 6,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div>
-                        {executionTime && (
-                          <Text type="secondary" style={{ fontSize: 'var(--font-size-sm)' }}>
-                            {t('execution_time_ms', { ms: executionTime })}
-                          </Text>
-                        )}
-                      </div>
-                      <Space size="small">
-                        <Tooltip title={t('save_as_snapshot')}>
-                          <Button
-                            size="small"
-                            icon={<SaveOutlined />}
-                            onClick={() => {
-                              const tab = queryTabs.find(t => t.key === activeQueryKey);
-                              setSaveSnapshotName(tab?.title ? `${t('snapshot')}: ${tab.title}` : `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`);
-                              setShowSaveSnapshotModal(true);
-                            }}
-                            disabled={results.length === 0}
-                          >
-                            {t('save')}
-                          </Button>
-                        </Tooltip>
-                        <Button
-                          size="small"
-                          icon={<DownloadOutlined />}
-                          onClick={() => exportToCSV(results)}
-                          disabled={results.length === 0}
-                        >
-                          CSV
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<DownloadOutlined />}
-                          onClick={() => exportToJSON(results)}
-                          disabled={results.length === 0}
-                        >
-                          JSON
-                        </Button>
-                      </Space>
-                    </div>
-                    <div
-                      className="data-content"
-                      style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'transparent' }}
-                    >
-                      {isExecuting || loading ? (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            padding: '24px 16px',
-                            gap: '12px',
-                          }}
-                        >
-                          <QueryLoading
-                            message={executionStatus || t('executing_query')}
-                            progress={
-                              executionStatus && executionStatus.toLowerCase().includes('executing') ? 50 : undefined
-                            }
-                          />
-                          <div
-                            style={{
-                              textAlign: 'center',
-                              maxWidth: '400px',
-                              color: 'var(--ant-color-text-secondary)',
-                            }}
-                          >
-                            <Text type="secondary" style={{ fontSize: '14px', display: 'block', marginBottom: '8px' }}>
-                              {t('please_wait_processing')}
-                            </Text>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              {t('processing_may_take_moments')}
-                            </Text>
-                          </div>
-                        </div>
-                      ) : results && results.length > 0 ? (
-                        <div style={{ background: 'transparent' }}>
-                          <Table
-                            dataSource={results}
-                            columns={columns}
-                            size="small"
-                            pagination={{
-                              pageSize: 100,
-                              showSizeChanger: true,
-                              pageSizeOptions: ['50', '100', '250', '500'],
-                              showTotal: (total, range) => t('rows_range_total', { from: range[0], to: range[1], total }),
-                            }}
-                            scroll={{ y: 'calc(100vh - 600px)' }}
-                            rowKey={(record, index) => `row-${index}`}
-                            style={{ background: 'transparent' }}
-                          />
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            color: 'var(--ant-color-text-secondary)',
-                            background: 'transparent',
-                          }}
-                        >
-                          <Text type="secondary" style={{ fontSize: 14 }}>
-                            {t('no_results_to_display')}
-                          </Text>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </TabPane>
-                <TabPane tab={t('tab_performance')} key="performance">
-                  <div
-                    style={{
-                      padding: '12px 16px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      flex: 1,
-                      minHeight: 0,
-                      maxHeight: '100%',
-                      height: '100%',
-                      overflow: 'hidden',
-                      background: 'transparent',
-                    }}
-                  >
-                    <div
-                      style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, maxHeight: '100%', overflow: 'hidden' }}
-                    >
-                      <div
-                        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}
-                      >
-                        <Space style={{ marginBottom: 8, flexShrink: 0 }}>
-                          <Button
-                            type="primary"
-                            size="small"
-                            icon={<BulbOutlined />}
-                            loading={perfLoading}
-                            onClick={async () => {
-                              if (!selectedDataSourceId && !selectedDataSource?.id) {
-                                message.warning(t('select_ds_analyze'));
-                                return;
-                              }
-                              if (!sqlQuery || !sqlQuery.trim()) {
-                                message.warning(t('enter_sql_analyze'));
-                                return;
-                              }
-                              setPerfLoading(true);
-                              setPerfPlan(null);
-                              setPerfSuggestions([]);
-                              try {
-                                const dataSourceId = selectedDataSource?.id || selectedDataSourceId || '';
-                                const res = await authenticatedFetch(`/api/data/sources/${dataSourceId}/analyze`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ sql: sqlQuery }),
-                                });
-
-                                if (!res.ok) {
-                                  const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                                  throw new Error(errorData.error || errorData.detail || `HTTP ${res.status}`);
-                                }
-
-                                const j = await res.json();
-                                if (j.success) {
-                                  setPerfPlan(j.plan);
-                                  setPerfSuggestions(j.suggestions || []);
-                                  message.success(
-                                    `Analysis complete${j.suggestions?.length ? ` - ${j.suggestions.length} suggestions` : ''}`
-                                  );
-                                } else {
-                                  throw new Error(j.error || j.detail || 'Analysis failed');
-                                }
-                              } catch (e: any) {
-                                console.error('Performance analysis failed:', e);
-                                message.error(e.message || 'Analysis failed. Please check your query and try again.');
-                                setPerfPlan(null);
-                                setPerfSuggestions([]);
-                              } finally {
-                                setPerfLoading(false);
-                              }
-                            }}
-                          >
-                            {t('analyze_query_performance')}
-                          </Button>
-                          {perfPlan && (
-                            <Button
-                              size="small"
-                              icon={<CopyOutlined />}
-                              onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(perfPlan, null, 2));
-                                message.success(t('plan_copied'));
-                              }}
-                            >
-                              Copy Plan
-                            </Button>
-                          )}
-                        </Space>
-                        <Card
-                          size="small"
-                          title={
-                            <Space>
-                              <BulbOutlined />
-                              <span>{t('performance_suggestions')}</span>
-                              {perfSuggestions.length > 0 && (
-                                <Badge count={perfSuggestions.length} style={{ backgroundColor: '#52c41a' }} />
-                              )}
-                            </Space>
-                          }
-                          style={{
-                            marginBottom: 8,
-                            flexShrink: 0,
-                            background: 'transparent',
-                          }}
-                          bodyStyle={{ background: 'transparent', padding: '12px' }}
-                        >
-                          <div
-                            className="data-content"
-                            style={{
-                              maxHeight: '200px',
-                              overflowY: 'auto',
-                              overflowX: 'hidden',
-                              background: 'transparent',
-                              paddingRight: '8px',
-                              paddingBottom: '4px',
-                              scrollbarGutter: 'stable',
-                              scrollBehavior: 'smooth',
-                            }}
-                          >
-                            {perfSuggestions.length ? (
-                              <ul style={{ paddingLeft: 18, margin: 0, listStyle: 'disc' }}>
-                                {perfSuggestions.map((s, i) => (
-                                  <li key={i} style={{ fontSize: 12, marginBottom: '6px', lineHeight: '1.5' }}>
-                                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: '6px' }} />
-                                    {s}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <Text
-                                type="secondary"
-                                style={{ fontSize: 12, background: 'transparent', fontStyle: 'italic' }}
-                              >
-                                {perfLoading
-                                  ? 'Analyzing query...'
-                                  : t('no_suggestions_yet')}
-                              </Text>
-                            )}
-                          </div>
-                        </Card>
-                        <Card
-                          size="small"
-                          title={
-                            <Space>
-                              <FileTextOutlined />
-                              <span>{t('execution_plan')}</span>
-                              {perfPlan && <Tag color="success">{t('available')}</Tag>}
-                            </Space>
-                          }
-                          style={{
-                            flex: 1,
-                            minHeight: 0,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            background: 'transparent',
-                          }}
-                          bodyStyle={{
-                            flex: 1,
-                            minHeight: 0,
-                            padding: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            background: 'transparent',
-                          }}
-                          extra={
-                            perfPlan && (
-                              <Button
-                                size="small"
-                                type="text"
-                                icon={<CopyOutlined />}
-                                onClick={() => {
-                                  navigator.clipboard.writeText(JSON.stringify(perfPlan, null, 2));
-                                  message.success(t('plan_copied_short'));
-                                }}
-                              >
-                                Copy
-                              </Button>
-                            )
-                          }
-                        >
-                          <div
-                            className="data-content"
-                            style={{
-                              flex: 1,
-                              minHeight: 0,
-                              maxHeight: '100%',
-                              overflowY: 'auto',
-                              overflowX: 'auto',
-                              background: isDarkMode ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.02)',
-                              padding: '12px',
-                              borderRadius: '4px',
-                              paddingRight: '8px',
-                              paddingBottom: '8px',
-                              scrollbarGutter: 'stable',
-                              scrollBehavior: 'smooth',
-                            }}
-                          >
-                            <pre
-                              style={{
-                                fontSize: 11,
-                                whiteSpace: 'pre-wrap',
-                                margin: 0,
-                                background: 'transparent',
-                                fontFamily: 'monospace',
-                                lineHeight: '1.5',
-                              }}
-                            >
-                              {perfPlan ? (
-                                JSON.stringify(perfPlan, null, 2)
-                              ) : (
-                                <Text type="secondary" style={{ fontStyle: 'italic' }}>
-                                  {perfLoading
-                                    ? 'Generating execution plan...'
-                                    : t('no_execution_plan_yet')}
-                                </Text>
-                              )}
-                            </pre>
-                          </div>
-                        </Card>
-                      </div>
-                      {/* <div style={{ width: 280, flexShrink: 0 }}>
-                        <Button
-                          size="small"
-                          icon={<DownloadOutlined />}
-                          onClick={() => exportToCSV(results)}
-                          disabled={results.length === 0}
-                        >
-                          CSV
-                        </Button>
-                        <Button
-                          size="small"
-                          icon={<DownloadOutlined />}
-                          onClick={() => exportToJSON(results)}
-                          disabled={results.length === 0}
-                        >
-                          JSON
-                        </Button>
-                      </Space>
-                    </div>
-                    <div className="data-content" style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'transparent' }}>
-                      {isExecuting || loading ? (
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          height: '100%',
-                          padding: '24px 16px',
-                          gap: '12px'
-                        }}>
-                          <QueryLoading
-                            message={executionStatus || 'Executing query...'}
-                            progress={executionStatus && executionStatus.toLowerCase().includes('executing') ? 50 : undefined}
-                          />
-                          <div style={{
-                            textAlign: 'center',
-                            maxWidth: '400px',
-                            color: 'var(--ant-color-text-secondary)'
-                          }}>
-                            <Text type="secondary" style={{ fontSize: '14px', display: 'block', marginBottom: '8px' }}>
-                              Please wait while we process your request...
-                            </Text>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>
-                              This may take a few moments depending on query complexity and data size.
-                            </Text>
-                          </div>
-                        </div>
-                      ) : results && results.length > 0 ? (
-                        <div style={{ background: 'transparent' }}>
-                          <Table
-                            dataSource={results}
-                            columns={columns}
-                            size="small"
-                            pagination={{
-                              pageSize: 100,
-                              showSizeChanger: true,
-                              pageSizeOptions: ['50', '100', '250', '500'],
-                              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} rows`,
-                            }}
-                            scroll={{ y: 'calc(100vh - 600px)' }}
-                            rowKey={(record, index) => `row-${index}`}
-                            style={{ background: 'transparent' }}
-                          />
-                        </div>
-                      ) : (
-                        <div style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          height: '100%',
-                          color: 'var(--ant-color-text-secondary)',
-                          background: 'transparent'
-                        }}>
-                          <Text type="secondary" style={{ fontSize: 14 }}>
-                            {t('no_results_to_display')}
-                          </Text>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </TabPane>
-                <TabPane tab={t('tab_performance')} key="performance">
-                  <div style={{
-                    padding: '12px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    flex: 1,
-                    minHeight: 0,
-                    maxHeight: '100%',
-                    height: '100%',
-                    overflow: 'hidden',
-                    background: 'transparent'
-                  }}>
-                    <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, maxHeight: '100%', overflow: 'hidden' }}>
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                        <Space style={{ marginBottom: 8, flexShrink: 0 }}>
-                          <Button
-                            type="primary"
-                            size="small"
-                            icon={<BulbOutlined />}
-                            loading={perfLoading}
-                            onClick={async () => {
-                              if (!selectedDataSourceId && !selectedDataSource?.id) {
-                                message.warning(t('select_ds_analyze'));
-                                return;
-                              }
-                              if (!sqlQuery || !sqlQuery.trim()) {
-                                message.warning(t('enter_sql_analyze'));
-                                return;
-                              }
-                              setPerfLoading(true);
-                              setPerfPlan(null);
-                              setPerfSuggestions([]);
-                              try {
-                                const dataSourceId = selectedDataSource?.id || selectedDataSourceId || '';
-                                const res = await authenticatedFetch(`/api/data/sources/${dataSourceId}/analyze`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ sql: sqlQuery })
-                                });
-
-                                if (!res.ok) {
-                                  const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                                  throw new Error(errorData.error || errorData.detail || `HTTP ${res.status}`);
-                                }
-
-                                const j = await res.json();
-                                if (j.success) {
-                                  setPerfPlan(j.plan);
-                                  setPerfSuggestions(j.suggestions || []);
-                                  message.success(`Analysis complete${j.suggestions?.length ? ` - ${j.suggestions.length} suggestions` : ''}`);
-                                } else {
-                                  throw new Error(j.error || j.detail || 'Analysis failed');
-                                }
-                              } catch (e: any) {
-                                console.error('Performance analysis failed:', e);
-                                message.error(e.message || 'Analysis failed. Please check your query and try again.');
-                                setPerfPlan(null);
-                                setPerfSuggestions([]);
-                              } finally {
-                                setPerfLoading(false);
-                              }
-                            }}
-                          >
-                            {t('analyze_query_performance')}
-                          </Button>
-                          {perfPlan && (
-                            <Button
-                              size="small"
-                              icon={<CopyOutlined />}
-                              onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(perfPlan, null, 2));
-                                message.success(t('plan_copied'));
-                              }}
-                            >
-                              Copy Plan
-                            </Button>
-                          )}
-                        </Space>
-                        <Card
-                          size="small"
-                          title={
-                            <Space>
-                              <BulbOutlined />
-                              <span>{t('performance_suggestions')}</span>
-                              {perfSuggestions.length > 0 && (
-                                <Badge count={perfSuggestions.length} style={{ backgroundColor: '#52c41a' }} />
-                              )}
-                            </Space>
-                          }
-                          style={{
-                            marginBottom: 8,
-                            flexShrink: 0,
-                            background: 'transparent'
-                          }}
-                          bodyStyle={{ background: 'transparent', padding: '12px' }}
-                        >
-                          <div className="data-content" style={{
-                            maxHeight: '200px',
-                            overflowY: 'auto',
-                            overflowX: 'hidden',
-                            background: 'transparent',
-                            paddingRight: '8px',
-                            paddingBottom: '4px',
-                            scrollbarGutter: 'stable',
-                            scrollBehavior: 'smooth'
-                          }}>
-                            {perfSuggestions.length ? (
-                              <ul style={{ paddingLeft: 18, margin: 0, listStyle: 'disc' }}>
-                                {perfSuggestions.map((s, i) => (
-                                  <li key={i} style={{ fontSize: 12, marginBottom: '6px', lineHeight: '1.5' }}>
-                                    <CheckCircleOutlined style={{ color: '#52c41a', marginRight: '6px' }} />
-                                    {s}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <Text type="secondary" style={{ fontSize: 12, background: 'transparent', fontStyle: 'italic' }}>
-                                {perfLoading ? t('analyzing_query') : t('no_suggestions_yet')}
-                              </Text>
-                            )}
-                          </div>
-                        </Card>
-                        <Card
-                          size="small"
-                          title={
-                            <Space>
-                              <FileTextOutlined />
-                              <span>{t('execution_plan')}</span>
-                              {perfPlan && <Tag color="success">{t('available')}</Tag>}
-                            </Space>
-                          }
-                          style={{
-                            flex: 1,
-                            minHeight: 0,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            background: 'transparent'
-                          }}
-                          bodyStyle={{
-                            flex: 1,
-                            minHeight: 0,
-                            padding: '12px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            background: 'transparent'
-                          }}
-                          extra={perfPlan && (
-                            <Button
-                              size="small"
-                              type="text"
-                              icon={<CopyOutlined />}
-                              onClick={() => {
-                                navigator.clipboard.writeText(JSON.stringify(perfPlan, null, 2));
-                                message.success(t('plan_copied_short'));
-                              }}
-                            >
-                              Copy
-                            </Button>
-                          )}
-                        >
-                          <div className="data-content" style={{
-                            flex: 1,
-                            minHeight: 0,
-                            maxHeight: '100%',
-                            overflowY: 'auto',
-                            overflowX: 'auto',
-                            background: isDarkMode ? 'rgba(0, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.02)',
-                            padding: '12px',
-                            borderRadius: '4px',
-                            paddingRight: '8px',
-                            paddingBottom: '8px',
-                            scrollbarGutter: 'stable',
-                            scrollBehavior: 'smooth'
-                          }}>
-                            <pre style={{
-                              fontSize: 11,
-                              whiteSpace: 'pre-wrap',
-                              margin: 0,
-                              background: 'transparent',
-                              fontFamily: 'monospace',
-                              lineHeight: '1.5'
-                            }}>
-                              {perfPlan ? JSON.stringify(perfPlan, null, 2) : (
-                                <Text type="secondary" style={{ fontStyle: 'italic' }}>
-                                  {perfLoading ? t('generating_execution_plan') : t('no_execution_plan_yet')}
-                                </Text>
-                              )}
-                            </pre>
-                          </div>
-                        </Card>
-                      </div>
-                      {/* <div style={{ width: 280, flexShrink: 0 }}>
-                    <Card 
-                      size="small" 
-                      title={t('materialized_views')}
-                      style={{ background: 'transparent' }}
-                      bodyStyle={{ background: 'transparent' }}
-                    >
-                      <Space direction="vertical" style={{ width: '100%' }}>
-                        <Button size="small" onClick={async () => {
-                          if (!selectedDataSourceId) { message.warning(t('select_data_source')); return; }
-                          const name = prompt('MV name (letters/underscores)');
-                          if (!name) return;
-                          try {
-                            const res = await authenticatedFetch(`/api/data/sources/${selectedDataSourceId}/materialized-views`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, sql: sqlQuery }) });
-                            if (!res.ok) throw new Error('Create failed');
-                            message.success(t('materialized_view_created'));
-                          } catch { message.error(t('create_failed')); }
-                        }}>{t('create_mv_from_sql')}</Button>
-                        <Button size="small" onClick={async () => {
-                          if (!selectedDataSourceId) { message.warning(t('select_data_source')); return; }
-                          try {
-                            const res = await authenticatedFetch(`/api/data/sources/${selectedDataSourceId}/materialized-views`);
-                            const j = await res.json();
-                            if (!res.ok) throw new Error('Load failed');
-                            Modal.info({ title: 'Materialized Views', width: 520, content: (
-                                <ul className="data-content" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                {(j.materialized_views||[]).map((mv:any) => <li key={`${mv.schema}.${mv.name}`}>{mv.schema}.{mv.name}</li>)}
-                              </ul>
-                            )});
-                          } catch { message.error(t('load_failed')); }
-                        }}>{t('list_mvs')}</Button>
-                      </Space>
-                    </Card>
-                    </div> */}
-                    </div>
-                  </div>
-                </TabPane>
-
-                {/* Chart Preview Tab */}
-                {/* <TabPane 
-                    </div>
-                  </div>
-                </TabPane>
-
-                {/* Chart Preview Tab */}
-                {/* <TabPane 
-                tab="Chart Preview" 
-                key="preview"
-              >
-                <div style={{ 
-                  padding: '0',
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  flex: 1,
-                  minHeight: 0,
-                  height: '100%',
-                  maxHeight: '100%',
-                  background: 'transparent',
-                  overflow: 'hidden',
-                  width: '100%',
-                  position: 'relative'
-                }}>
-                  {previewChart ? (
-                      <div style={{ 
-                        display: 'flex', 
-                      flexDirection: 'row', 
-                      flex: 1, 
-                      minHeight: 0,
-                      height: '100%',
-                      overflow: 'hidden',
-                      gap: '8px',
-                      padding: '8px',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}>
-
-                      <div style={{ 
-                        flex: '1 1 70%',
-                        minWidth: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        background: 'transparent',
-                        overflow: 'hidden',
-                        padding: '0',
-                        height: '100%',
-                        minHeight: 0
-                      }}>
-                        <div style={{
-                          width: '100%',
-                          height: '100%',
-                          minHeight: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'stretch',
-                          justifyContent: 'stretch',
-                          overflow: 'hidden',
-                          position: 'relative'
-                        }}>
-                          <ChartWidget
-                            key={`chart-${previewChart.id}-${previewChart.config?.chartType || previewChart.type}-${previewChart.config?.colorPalette || 'default'}-${previewChart.config?.legendShow !== false ? 'legend' : 'no-legend'}-${previewChart.config?.tooltipShow !== false ? 'tooltip' : 'no-tooltip'}-${previewChart.config?.showGrid !== false ? 'grid' : 'no-grid'}`}
-                            widget={previewChart}
-                            config={{
-                              ...previewChart.config,
-                              padding: 8,
-                              responsive: true
-                            }}
-                            data={previewChart.data || {}}
-                            isDarkMode={isDarkMode}
-                            showEditableTitle={true}
-                            onTitleChange={(newTitle) => {
-                              setPreviewChart({
-                                ...previewChart,
-                                title: newTitle,
-                                name: newTitle,
-                                config: {
-                                  ...previewChart.config,
-                                  title: newTitle
-                                }
-                              });
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ 
-                        flex: '0 0 30%',
-                        minWidth: 0,
-                        maxWidth: '30%',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0',
-                        overflow: 'hidden',
-                        background: 'transparent',
-                        padding: '0',
-                        height: '100%',
-                        minHeight: 0
-                      }}>
-                        <div style={{ 
-                          background: isDarkMode ? 'var(--ant-color-bg-container)' : 'var(--ant-color-bg-container)',
-                          padding: '12px',
-                          height: '100%',
-                          flex: 1,
-                          minHeight: 0,
-                          maxHeight: '100%',
-                          overflow: 'hidden',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          position: 'relative'
-                        }}>
-                          <div
-                            className="data-content"
-                            style={{
-                              flex: 1,
-                              minHeight: 0,
-                              maxHeight: '100%',
-                              overflowY: 'auto',
-                              overflowX: 'hidden',
-                              width: '100%',
-                              paddingRight: '8px',
-                              paddingBottom: '8px',
-                              scrollbarGutter: 'stable',
-                              WebkitOverflowScrolling: 'touch',
-                              scrollBehavior: 'smooth'
-                            }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          <Button 
-                            type="primary" 
-                            size="small"
-                            icon={<BarChartOutlined />}
-                                  onClick={async () => {
-                                    try {
-                                      if (!previewChart) {
-                                        message.warning(t('no_chart_to_add'));
-                                        return;
-                                      }
-                                      if (onChartCreate) {
-                                onChartCreate(previewChart);
-                                message.success(t('chart_added_dashboard'));
-                                      } else {
-                                        const chartTitle = previewChart.title || previewChart.name || 'Untitled Chart';
-                                        const assetData = {
-                                          asset_type: 'chart',
-                                          title: chartTitle,
-                                          conversation_id: null,
-                                          content: {
-                                            type: previewChart.type || previewChart.config?.chartType || 'bar',
-                                            config: previewChart.config || {},
-                                            data: previewChart.data || {},
-                                            query: previewChart.query,
-                                            dataSourceId: previewChart.dataSourceId
-                                          },
-                                          data_source_id: previewChart.dataSourceId || null,
-                                          metadata: {
-                                            chartType: previewChart.config?.chartType || previewChart.type,
-                                            dataSourceId: previewChart.dataSourceId,
-                                            query: previewChart.query,
-                                            name: chartTitle,
-                                            description: `Chart generated from query: ${previewChart.query?.substring(0, 100) || 'N/A'}`,
-                                            source: 'query-editor'
-                                          }
-                                        };
-                                        await saveChartAsset(
-                                          assetData,
-                                          'Chart saved to library! You can add it to a dashboard from the library.'
-                                        );
-                                      }
-                                    } catch (error: any) {
-                                      console.error('Error adding chart to dashboard:', error);
-                                      message.error(`Failed to add chart: ${error.message || 'Unknown error'}`);
-                                    }
-                                  }}
-                                  style={{ flex: 1, minWidth: '120px' }}
-                                >
-                                  {onChartCreate ? 'Add to Dashboard' : 'Save to Library'}
-                          </Button>
-                          <Button 
-                            size="small"
-                            icon={<SaveOutlined />}
-                            onClick={async () => {
-                              if (previewChart) {
-                                try {
-                                        const chartTitle = previewChart.title || previewChart.name || 'Untitled Chart';
-                                        const assetData = {
-                                          asset_type: 'chart',
-                                          title: chartTitle,
-                                          conversation_id: null,
-                                          content: {
-                                            type: previewChart.type || previewChart.config?.chartType || 'bar',
-                                            config: previewChart.config || {},
-                                            data: previewChart.data || {},
-                                            query: previewChart.query,
-                                            dataSourceId: previewChart.dataSourceId
-                                          },
-                                          data_source_id: previewChart.dataSourceId || null,
-                                          metadata: {
-                                            chartType: previewChart.config?.chartType || previewChart.type,
-                                            dataSourceId: previewChart.dataSourceId,
-                                            query: previewChart.query,
-                                            name: chartTitle,
-                                            description: `Chart generated from query: ${previewChart.query?.substring(0, 100) || 'N/A'}`,
-                                            source: 'query-editor'
-                                          }
-                                        };
-                                        await saveChartAsset(
-                                          assetData,
-                                          'Chart saved to library! You can add it to a dashboard from the library.'
-                                        );
-                                } catch (error) {
-                                        // saveChartAsset already handles messaging
-                                }
-                              }
-                            }}
-                                  style={{ flex: 1, minWidth: '100px' }}
-                          >
-                            Save Chart
-                          </Button>
-                                <Button
-                                  size="small"
-                                  type="text"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={() => {
-                                    Modal.confirm({
-                                      title: 'Clear Chart Preview?',
-                                      content: 'This will remove the current chart preview. Continue?',
-                                      okText: 'Clear',
-                                      cancelText: 'Cancel',
-                                      onOk: () => {
-                                        setPreviewChart(null);
-                                        message.info(t('chart_preview_cleared'));
-                                      }
-                                    });
-                                  }}
-                                >
-                                  Clear
-                                </Button>
-                              </div>
-
-                              <Collapse
-                                activeKey={chartDesignerActiveKeys}
-                                onChange={handleDesignerCollapseChange}
-                                ghost
-                                size="small"
-                                expandIconPosition="end"
-                                style={{ background: 'transparent' }}
-                              >
-                                <Panel
-                                  key="basic"
-                                  header={
-                                    <div
-                                      onMouseEnter={() => handleDesignerPanelHover('basic')}
-                                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                      <EditOutlined style={{ fontSize: '12px', color: 'var(--ant-color-primary)' }} />
-                                      <span style={{ fontSize: '11px', fontWeight: 500 }}>{t('basic_settings')}</span>
-                                    </div>
-                                  }
-                                >
-                                  <div
-                                    onMouseEnter={() => handleDesignerPanelHover('basic')}
-                                    onMouseLeave={() => handleDesignerPanelLeave('basic')}
-                                  >
-                                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                                      <Input
-                                        size="small"
-                                        value={previewChart.title || previewChart.name || t('untitled_chart')}
-                                        onChange={(e) => {
-                                          const newTitle = e.target.value;
-                                          setPreviewChart({
-                                            ...previewChart,
-                                            title: newTitle,
-                                            name: newTitle,
-                                            config: {
-                                              ...previewChart.config,
-                                              title: newTitle
-                                            }
-                                          });
-                                        }}
-                                        placeholder={t('chart_title_placeholder')}
-                                        prefix={<EditOutlined style={{ fontSize: '10px', color: 'var(--ant-color-text-tertiary)' }} />}
-                                      />
-                                      <Select
-                                        size="small"
-                                        value={previewChart.config?.chartType || 'bar'}
-                                        style={{ width: '100%' }}
-                                        onChange={(value) => {
-                                          try {
-                                            if (!previewChart.rawData || previewChart.rawData.length === 0) {
-                                              message.warning(t('cannot_change_chart_type'));
-                                              return;
-                                            }
-                                            const columns = previewChart.originalColumns || (previewChart.rawData[0] ? Object.keys(previewChart.rawData[0]) : []);
-                                            const numericColumns = previewChart.numericColumns || [];
-                                            const textColumns = previewChart.textColumns || [];
-                                            const dateColumns = previewChart.dateColumns || [];
-                                            let preservedXField = previewChart.config?.xAxisField;
-                                            let preservedYField = previewChart.config?.yAxisField;
-                                            if (!preservedXField || !columns.includes(preservedXField)) {
-                                              preservedXField = textColumns[0] || dateColumns[0] || columns[0];
-                                            }
-                                            if (!preservedYField || !columns.includes(preservedYField)) {
-                                              preservedYField = numericColumns[0] || columns.find((col: string) => !textColumns.includes(col) && !dateColumns.includes(col)) || columns[1] || columns[0];
-                                            }
-                                            const existingConfig = {
-                                              ...previewChart.config,
-                                              title: previewChart.title || previewChart.name,
-                                              xAxisField: preservedXField,
-                                              yAxisField: preservedYField,
-                                              colorPalette: previewChart.config?.colorPalette,
-                                              legendShow: previewChart.config?.legendShow,
-                                              tooltipShow: previewChart.config?.tooltipShow,
-                                              showGrid: previewChart.config?.showGrid,
-                                              animation: previewChart.config?.animation,
-                                              aggregation: previewChart.config?.aggregation,
-                                              filter: previewChart.config?.filter,
-                                              sortOrder: previewChart.config?.sortOrder,
-                                              swapAxes: previewChart.config?.swapAxes
-                                            };
-                                            const chartTypeName = value.charAt(0).toUpperCase() + value.slice(1) + ' Chart';
-                                            handleCreateChart(chartTypeName, previewChart.rawData, existingConfig);
-                                          } catch (error) {
-                                            console.error('Error changing chart type:', error);
-                                            message.error(t('change_chart_type_failed'));
-                                          }
-                                        }}
-                                      >
-                                        <Select.Option value="bar">{t('chart_type_bar')}</Select.Option>
-                                        <Select.Option value="line">{t('chart_type_line')}</Select.Option>
-                                        <Select.Option value="pie">{t('chart_type_pie')}</Select.Option>
-                                        <Select.Option value="scatter">{t('chart_type_scatter')}</Select.Option>
-                                      </Select>
-                        </Space>
-                      </div>
-                                </Panel>
-                                <Panel
-                                  key="data"
-                                  header={
-                                    <div
-                                      onMouseEnter={() => handleDesignerPanelHover('data')}
-                                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                      <DatabaseOutlined style={{ fontSize: '12px', color: 'var(--ant-color-primary)' }} />
-                                      <span style={{ fontSize: '11px', fontWeight: 500 }}>{t('data_configuration')}</span>
-                                    </div>
-                                  }
-                                >
-                                  <div
-                                    onMouseEnter={() => handleDesignerPanelHover('data')}
-                                    onMouseLeave={() => handleDesignerPanelLeave('data')}
-                                  >
-                                    {previewChart.rawData && previewChart.rawData.length > 0 ? (() => {
-                                      const columns: string[] = previewChart.originalColumns || (previewChart.rawData[0] ? Object.keys(previewChart.rawData[0]) : []);
-                                      const numericColumns: string[] = previewChart.numericColumns || columns.filter((col: string) => {
-                                        const val = previewChart.rawData[0]?.[col];
-                                        return typeof val === 'number' || (!isNaN(Number(val)) && val !== null && val !== undefined);
-                                      });
-                                      const textColumns: string[] = previewChart.textColumns || columns.filter((col: string) => {
-                                        const val = previewChart.rawData[0]?.[col];
-                                        return typeof val === 'string' && isNaN(Number(val)) && val !== null && val !== undefined;
-                                      });
-                                      const dateColumns: string[] = previewChart.dateColumns || [];
-                                      const chartType = previewChart.config?.chartType || 'bar';
-                                      const currentXField = previewChart.config?.xAxisField;
-                                      const currentYField = previewChart.config?.yAxisField;
-                                      const validXField = currentXField && columns.includes(currentXField)
-                                        ? currentXField
-                                        : (textColumns[0] || dateColumns[0] || columns[0]);
-                                      const validYField = currentYField && columns.includes(currentYField)
-                                        ? currentYField
-                                        : (numericColumns[0] || columns.find((col: string) => !textColumns.includes(col) && !dateColumns.includes(col)) || columns[1] || columns[0]);
-                                      const showTransforms = chartType !== 'pie';
-
-                                      return (
-                                        <Space direction="vertical" style={{ width: '100%' }} size={10}>
-                                          {chartType !== 'pie' && (
-                                            <>
-                                              <div>
-                                                <Text strong style={{ fontSize: '10px', display: 'block', marginBottom: '3px', color: 'var(--ant-color-text-secondary)' }}>
-                                                  {t('x_axis')}
-                                                </Text>
-                                                <Select
-                                                  size="small"
-                                                  value={validXField}
-                                                  style={{ width: '100%' }}
-                                                  onChange={(value) => {
-                                                    try {
-                                                      const newConfig = {
-                                                        ...previewChart.config,
-                                                        xAxisField: value,
-                                                        yAxisField: validYField,
-                                                        aggregation: previewChart.config?.aggregation || 'none',
-                                                        filter: previewChart.config?.filter || '',
-                                                        sortOrder: previewChart.config?.sortOrder || 'none',
-                                                        swapAxes: previewChart.config?.swapAxes || false
-                                                      };
-                                                      const chartTypeName = (chartType.charAt(0).toUpperCase() + chartType.slice(1)) + ' Chart';
-                                                      handleCreateChart(chartTypeName, previewChart.rawData, newConfig);
-                                                    } catch (error) {
-                                                      console.error('Error changing X-axis:', error);
-                                                      message.error(t('update_x_axis_failed'));
-                                                    }
-                                                  }}
-                                                  showSearch
-                                                  filterOption={(input, option) => {
-                                                    const label = typeof option?.children === 'string' ? option.children : '';
-                                                    return label.toLowerCase().includes(input.toLowerCase());
-                                                  }}
-                                                >
-                                                  {columns.map(col => (
-                                                    <Select.Option key={col} value={col}>
-                                                      <span>{col}</span>
-                                                      {numericColumns.includes(col) && <Tag color="green" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('numeric')}</Tag>}
-                                                      {textColumns.includes(col) && <Tag color="blue" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('text')}</Tag>}
-                                                      {dateColumns.includes(col) && <Tag color="purple" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('date')}</Tag>}
-                                                    </Select.Option>
-                                                  ))}
-                                                </Select>
-                                              </div>
-                                              <div>
-                                                <Text strong style={{ fontSize: '10px', display: 'block', marginBottom: '3px', color: 'var(--ant-color-text-secondary)' }}>
-                                                  {t('y_axis')}
-                                                </Text>
-                                                <Select
-                                                  size="small"
-                                                  value={validYField}
-                                                  style={{ width: '100%' }}
-                                                  onChange={(value) => {
-                                                    try {
-                                                      const newConfig = {
-                                                        ...previewChart.config,
-                                                        yAxisField: value,
-                                                        xAxisField: validXField,
-                                                        aggregation: previewChart.config?.aggregation || 'none',
-                                                        filter: previewChart.config?.filter || '',
-                                                        sortOrder: previewChart.config?.sortOrder || 'none',
-                                                        swapAxes: previewChart.config?.swapAxes || false
-                                                      };
-                                                      const chartTypeName = (chartType.charAt(0).toUpperCase() + chartType.slice(1)) + ' Chart';
-                                                      handleCreateChart(chartTypeName, previewChart.rawData, newConfig);
-                                                    } catch (error) {
-                                                      console.error('Error changing Y-axis:', error);
-                                                      message.error(t('update_y_axis_failed'));
-                                                    }
-                                                  }}
-                                                  showSearch
-                                                  filterOption={(input, option) => {
-                                                    const label = typeof option?.children === 'string' ? option.children : '';
-                                                    return label.toLowerCase().includes(input.toLowerCase());
-                                                  }}
-                                                >
-                                                  {columns.map(col => (
-                                                    <Select.Option key={col} value={col}>
-                                                      <span>{col}</span>
-                                                      {numericColumns.includes(col) && <Tag color="green" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('numeric')}</Tag>}
-                                                      {textColumns.includes(col) && <Tag color="blue" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('text')}</Tag>}
-                                                      {dateColumns.includes(col) && <Tag color="purple" style={{ marginLeft: '4px', fontSize: '9px' }}>{t('date')}</Tag>}
-                                                    </Select.Option>
-                                                  ))}
-                                                </Select>
-                                              </div>
-                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <Text style={{ fontSize: '10px' }}>{t('switch_rows_columns')}</Text>
-                                                <Switch
-                                                  size="small"
-                                                  checked={previewChart.config?.swapAxes || false}
-                                                  onChange={(checked) => {
-                                                    const newConfig = {
-                                                      ...previewChart.config,
-                                                      swapAxes: checked,
-                                                      xAxisField: checked ? validYField : validXField,
-                                                      yAxisField: checked ? validXField : validYField
-                                                    };
-                                                    const chartTypeName = (chartType.charAt(0).toUpperCase() + chartType.slice(1)) + ' Chart';
-                                                    handleCreateChart(chartTypeName, previewChart.rawData, newConfig);
-                                                  }}
-                                                />
-                                              </div>
-                                            </>
-                                          )}
-                                          {showTransforms && (
-                                            <>
-                                              <Divider plain style={{ margin: '4px 0', fontSize: '10px' }}>{t('data_transformations')}</Divider>
-                                              <Select
-                                                size="small"
-                                                value={previewChart.config?.aggregation || 'none'}
-                                                style={{ width: '100%' }}
-                                                onChange={(value) => {
-                                                  try {
-                                                    const newConfig = {
-                                                      ...previewChart.config,
-                                                      aggregation: value,
-                                                      xAxisField: previewChart.config?.xAxisField,
-                                                      yAxisField: previewChart.config?.yAxisField,
-                                                      filter: previewChart.config?.filter || '',
-                                                      sortOrder: previewChart.config?.sortOrder || 'none',
-                                                      swapAxes: previewChart.config?.swapAxes || false
-                                                    };
-                                                    const chartTypeName = (chartType.charAt(0).toUpperCase() + chartType.slice(1)) + ' Chart';
-                                                    handleCreateChart(chartTypeName, previewChart.rawData, newConfig);
-                                                  } catch (error) {
-                                                    console.error('Error changing aggregation:', error);
-                                                    message.error(t('update_agg_failed'));
-                                                  }
-                                                }}
-                                              >
-                                                <Select.Option value="none">{t('no_aggregation')}</Select.Option>
-                                                <Select.Option value="sum">{t('agg_sum')}</Select.Option>
-                                                <Select.Option value="avg">{t('agg_average')}</Select.Option>
-                                                <Select.Option value="count">{t('agg_count')}</Select.Option>
-                                                <Select.Option value="min">{t('agg_min')}</Select.Option>
-                                                <Select.Option value="max">{t('agg_max')}</Select.Option>
-                                              </Select>
-                                              <Input
-                                                size="small"
-                                                placeholder={t('filter_placeholder')}
-                                                value={previewChart.config?.filter || ''}
-                                                onChange={(e) => {
-                                                  const updatedConfig = { ...previewChart.config, filter: e.target.value };
-                                                  setPreviewChart({
-                                                    ...previewChart,
-                                                    config: updatedConfig
-                                                  });
-                                                }}
-                                                onPressEnter={() => {
-                                                  const chartTypeName = ((previewChart.config?.chartType || 'bar').charAt(0).toUpperCase() + (previewChart.config?.chartType || 'bar').slice(1)) + ' Chart';
-                                                  handleCreateChart(chartTypeName, previewChart.rawData, previewChart.config);
-                                                }}
-                                                onBlur={() => {
-                                                  const chartTypeName = ((previewChart.config?.chartType || 'bar').charAt(0).toUpperCase() + (previewChart.config?.chartType || 'bar').slice(1)) + ' Chart';
-                                                  handleCreateChart(chartTypeName, previewChart.rawData, previewChart.config);
-                                                }}
-                                              />
-                                              <Select
-                                                size="small"
-                                                value={previewChart.config?.sortOrder || 'none'}
-                                                style={{ width: '100%' }}
-                                                onChange={(value) => {
-                                                  try {
-                                                    const newConfig = {
-                                                      ...previewChart.config,
-                                                      sortOrder: value,
-                                                      xAxisField: previewChart.config?.xAxisField,
-                                                      yAxisField: previewChart.config?.yAxisField,
-                                                      aggregation: previewChart.config?.aggregation || 'none',
-                                                      filter: previewChart.config?.filter || '',
-                                                      swapAxes: previewChart.config?.swapAxes || false
-                                                    };
-                                                    const chartTypeName = (chartType.charAt(0).toUpperCase() + chartType.slice(1)) + ' Chart';
-                                                    handleCreateChart(chartTypeName, previewChart.rawData, newConfig);
-                                                  } catch (error) {
-                                                    console.error('Error changing sort order:', error);
-                                                    message.error(t('update_sort_failed'));
-                                                  }
-                                                }}
-                                              >
-                                                <Select.Option value="none">{t('original_order')}</Select.Option>
-                                                <Select.Option value="asc">{t('ascending')}</Select.Option>
-                                                <Select.Option value="desc">{t('descending')}</Select.Option>
-                                              </Select>
-                                            </>
-                                          )}
-                                        </Space>
-                                      );
-                                    })() : (
-                                      <Text type="secondary" style={{ fontSize: '11px' }}>
-                                        {t('execute_query_configure_axes')}
-                                      </Text>
-                                    )}
-                                  </div>
-                                </Panel>
-                                <Panel
-                                  key="display"
-                                  header={
-                                    <div
-                                      onMouseEnter={() => handleDesignerPanelHover('display')}
-                                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                                    >
-                                      <SettingOutlined style={{ fontSize: '12px', color: 'var(--ant-color-primary)' }} />
-                                      <span style={{ fontSize: '11px', fontWeight: 500 }}>{t('display_styling')}</span>
-                                    </div>
-                                  }
-                                >
-                                  <div
-                                    onMouseEnter={() => handleDesignerPanelHover('display')}
-                                    onMouseLeave={() => handleDesignerPanelLeave('display')}
-                                  >
-                                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                                      <Select
-                                        size="small"
-                                        value={previewChart.config?.colorPalette || 'default'}
-                                        style={{ width: '100%' }}
-                                        onChange={(value) => {
-                                          setPreviewChart({
-                                            ...previewChart,
-                                            config: { ...previewChart.config, colorPalette: value }
-                                          });
-                                          setTimeout(() => {
-                                            setPreviewChart((prev: any) => ({ ...prev, config: { ...prev.config, colorPalette: value } }));
-                                          }, 0);
-                                        }}
-                                      >
-                                        <Select.Option value="default">{t('palette_default')}</Select.Option>
-                                        <Select.Option value="vibrant">{t('palette_vibrant')}</Select.Option>
-                                        <Select.Option value="pastel">{t('palette_pastel')}</Select.Option>
-                                        <Select.Option value="monochrome">{t('palette_monochrome')}</Select.Option>
-                                        <Select.Option value="cool">{t('palette_cool')}</Select.Option>
-                                        <Select.Option value="warm">{t('palette_warm')}</Select.Option>
-                                      </Select>
-                                      {(() => {
-                                        const chartType = previewChart.config?.chartType || 'bar';
-                                        const legendSupported = !['scatter', 'gauge', 'heatmap'].includes(chartType);
-                                        return (
-                                          <Space direction="vertical" size={6} style={{ width: '100%' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                              <Text style={{ fontSize: '10px' }}>{t('show_legend')}</Text>
-                                              <Tooltip title={legendSupported ? '' : t('legend_disabled_for_chart_type')}>
-                                                <Switch
-                                                  size="small"
-                                                  disabled={!legendSupported}
-                                                  checked={legendSupported ? previewChart.config?.legendShow !== false : false}
-                                                  onChange={(checked) => {
-                                                    if (!legendSupported) return;
-                                                    setPreviewChart({
-                                                      ...previewChart,
-                                                      config: { ...previewChart.config, legendShow: checked }
-                                                    });
-                                                    setTimeout(() => {
-                                                      setPreviewChart((prev: any) => ({ ...prev, config: { ...prev.config, legendShow: checked } }));
-                                                    }, 0);
-                                                  }}
-                                                />
-                                              </Tooltip>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                              <Text style={{ fontSize: '10px' }}>{t('show_tooltip')}</Text>
-                                              <Switch
-                                                size="small"
-                                                checked={previewChart.config?.tooltipShow !== false}
-                                                onChange={(checked) => {
-                                                  setPreviewChart({
-                                                    ...previewChart,
-                                                    config: { ...previewChart.config, tooltipShow: checked }
-                                                  });
-                                                  setTimeout(() => {
-                                                    setPreviewChart((prev: any) => ({ ...prev, config: { ...prev.config, tooltipShow: checked } }));
-                                                  }, 0);
-                                                }}
-                                              />
-                                            </div>
-                                            {previewChart.config?.chartType !== 'pie' && (
-                                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <Text style={{ fontSize: '10px' }}>{t('show_grid')}</Text>
-                                                <Switch
-                                                  size="small"
-                                                  checked={previewChart.config?.showGrid !== false}
-                                                  onChange={(checked) => {
-                                                    setPreviewChart({
-                                                      ...previewChart,
-                                                      config: { ...previewChart.config, showGrid: checked }
-                                                    });
-                                                    setTimeout(() => {
-                                                      setPreviewChart((prev: any) => ({ ...prev, config: { ...prev.config, showGrid: checked } }));
-                                                    }, 0);
-                                                  }}
-                                                />
-                                              </div>
-                                            )}
-                                          </Space>
-                                        );
-                                      })()}
-                                    </Space>
-                                  </div>
-                                </Panel>
-                              </Collapse>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="data-content" style={{ 
-                      flex: 1,
-                      minHeight: 0,
-                      display: 'flex', 
-                      flexDirection: 'column',
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      color: 'var(--ant-color-text-secondary)',
-                      padding: '32px 20px',
-                      background: 'transparent',
-                      border: `1px dashed ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`,
-                      borderRadius: '6px',
-                      overflow: 'auto'
-                    }}>
-                      <BarChartOutlined style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.4, color: 'var(--ant-color-text-tertiary)' }} />
-                      <Title level={5} style={{ color: 'var(--ant-color-text-secondary)', marginBottom: '6px', fontWeight: 500 }}>
-                        No Chart Preview
-                      </Title>
-                      <Text style={{ color: 'var(--ant-color-text-tertiary)', textAlign: 'center', maxWidth: '350px', fontSize: '13px' }}>
-                        Execute a query and click "Generate Chart" in the Query Results tab to see a preview here.
-                      </Text>
-                    </div>
-                  )}
-                </div>
-              </TabPane> */}
-
-                <TabPane tab={t('tab_query_history')} key="history">
-                  <div style={{
-                    padding: '12px 16px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    flex: 1,
-                    minHeight: 0,
-                    background: 'transparent'
-                  }}>
-                    <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 8 }}>
-                      <Space wrap>
-                        <Input
-                          placeholder="Search SQL or error..."
-                          value={historySearch}
-                          onChange={(e) => setHistorySearch(e.target.value)}
-                          allowClear
-                          style={{ width: 220 }}
-                          size="small"
-                        />
-                        <Select
-                          value={historyStatusFilter}
-                          onChange={setHistoryStatusFilter}
-                          style={{ width: 120 }}
-                          size="small"
-                          options={[
-                            { value: 'all', label: 'All' },
-                            { value: 'success', label: 'Success' },
-                            { value: 'error', label: 'Failed' },
-                          ]}
-                        />
-                      </Space>
-                    </Space>
-                    <div className="data-content" style={{ flex: 1, minHeight: 0, overflow: 'auto', background: 'transparent' }}>
-                      <Table
-                        dataSource={(() => {
-                          const search = (historySearch || '').toLowerCase().trim();
-                          const status = historyStatusFilter;
-                          return queryHistory.filter((r: any) => {
-                            if (status !== 'all' && (r.status || r.state) !== status) return false;
-                            if (!search) return true;
-                            return (
-                              (r.sql || '').toLowerCase().includes(search) ||
-                              (r.error || '').toLowerCase().includes(search)
-                            );
-                          });
-                        })()}
-                        columns={historyColumns}
-                        size="small"
-                        pagination={false}
-                        scroll={{ y: 'calc(100vh - 600px)' }}
-                        style={{ background: 'transparent' }}
-                        className="query-history-table"
-                        onRow={(record) => ({
-                          style: { cursor: 'pointer' },
-                        })}
-                      />
-                    </div>
-                  </div>
-                </TabPane>
-              </Tabs>
+              />
             </div>
           </div>
         </div>
+        {!isStackedLayout && !effectiveSidebarCollapsed ? (
+          <div
+            className="qe-panel-resize-handle"
+            onMouseDown={handleDataPanelDragStart}
+            title={t('tooltip_drag_resize')}
+            aria-hidden
+          >
+            <div />
+          </div>
+        ) : null}
         {/* Data Sources Panel on Right */}
         <div
           style={{
-            width: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : '320px',
-            minWidth: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : '320px',
+            width: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
+            minWidth: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
             minHeight: isStackedLayout ? 'auto' : '100%',
             borderLeft:
               !isStackedLayout && !effectiveSidebarCollapsed
@@ -4516,24 +3079,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           }}
         >
           {!isStackedLayout && effectiveSidebarCollapsed ? (
-            <div
-              style={{
-                padding: '16px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '16px',
-                background: 'var(--ant-color-bg-container)',
-                border: '1px solid var(--ant-color-border)',
-                borderRadius: 'var(--ant-border-radius-lg)',
-                height: '100%',
-                boxShadow: 'var(--ant-box-shadow)',
-              }}
-            >
+            <div className="qe-sources-collapsed">
               <Tooltip title={t('expand_data_panel')} placement="left">
                 <Button
                   type="text"
                   size="small"
+                  className="icon-only-btn qe-sources-collapsed-btn"
                   icon={<ExpandOutlined />}
                   onClick={() => {
                     setSidebarCollapsed(false);
@@ -4546,35 +3097,22 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       );
                     } catch {}
                   }}
-                  style={{
-                    width: '100%',
-                    height: '40px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
                 />
               </Tooltip>
               <Tooltip title={t('add_data_source')} placement="left">
                 <Button
                   type="text"
                   size="small"
+                  className="icon-only-btn qe-sources-collapsed-btn"
                   icon={<PlusOutlined />}
                   onClick={() => setShowConnectDataModal(true)}
-                  style={{
-                    width: '100%',
-                    height: '40px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
                 />
               </Tooltip>
               <Tooltip title={t('data_sources')} placement="left">
                 <DatabaseOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
               </Tooltip>
             </div>
-          ) : (
+          ) : IS_EE ? (
             <EnhancedDataPanel
               onCollapse={() => {
                 setSidebarCollapsed(true);
@@ -4594,12 +3132,28 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
                 editorInsertRef.current?.insertTextAtCursor(text);
               }}
-              // insertHint={
-              //   <Text type="secondary" style={{ fontSize: 11 }}>
-              //     Click table → full SELECT snippet. Click column → name only. In editor: autocomplete (tables, columns, keywords) and type <code style={{ padding: '0 2px' }}>{'{{ '}</code> for Jinja templates.
-              //   </Text>
-              // }
-              compact={false}
+              schemaTreeCompact
+            />
+          ) : (
+            <CeSchemaExplorer
+              onCollapse={() => {
+                setSidebarCollapsed(true);
+                try {
+                  window.localStorage.setItem('sidebarCollapsed', 'true');
+                } catch {}
+                try {
+                  window.dispatchEvent(new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } }));
+                } catch {}
+              }}
+              onTableClick={(tableName, schemaName) => {
+                const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
+                const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
+                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT 100`);
+              }}
+              onColumnClick={(tableName, columnName, _schemaName) => {
+                const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
+                editorInsertRef.current?.insertTextAtCursor(text);
+              }}
             />
           )}
         </div>
@@ -4621,431 +3175,146 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         title={t('saved_queries_snapshots_title')}
         onCancel={() => setShowSavedModal(false)}
         footer={null}
-        width={900}
+        width={920}
         centered
+        className="qe-saved-modal"
       >
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
-          Same project scope as your query tabs. Load a query into a tab or load snapshot results.
-        </Text>
-        <Tabs
-          defaultActiveKey="saved"
-          items={[
-            {
-              key: 'saved',
-              label: `Saved Queries (${savedQueries.length})`,
-              children: (
-                <div>
-                  <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
-                    {t('saved_queries_help')}
-                  </div>
-                  <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <Input
-                      placeholder="Query name (default: current tab title)"
-                      style={{ width: 260 }}
-                      id="save-query-name"
-                      key={showSavedModal ? 'saved-modal-open' : 'saved-modal-closed'}
-                      defaultValue={queryTabs.find(t => t.key === activeQueryKey)?.title}
-                    />
-                    <Button
-                      type="primary"
-                      icon={<SaveOutlined />}
-                      onClick={async () => {
-                        const nameInput = document.getElementById('save-query-name') as HTMLInputElement | null;
-                        const currentTab = queryTabs.find((t) => t.key === activeQueryKey);
-                        const name = nameInput?.value?.trim() || currentTab?.title || `Query ${Date.now()}`;
-                        const existing = savedQueries.find((q: any) => (q.name || '').trim() === name);
-                        const canUpdate = existing && typeof existing.id === 'number';
-                        const doSaveAsNew = () => {
-                          const newName = `${name} (copy)`;
-                          if (nameInput) nameInput.value = newName;
-                          message.info(`Name set to "${newName}". Click Save again to save as new.`);
-                        };
-                        if (existing && canUpdate) {
-                          Modal.confirm({
-                            title: 'Query name already exists',
-                            content: `A saved query named "${name}" already exists. Update it or save as a new copy?`,
-                            okText: 'Update existing',
-                            cancelText: 'Save as new',
-                            onCancel: doSaveAsNew,
-                            onOk: async () => {
-                              try {
-                                await authenticatedFetch(`/api/queries/saved-queries/${existing.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`, {
-                                  method: 'PUT',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({
-                                    name,
-                                    sql: sqlQuery,
-                                    metadata: {
-                                      activeQueryKey,
-                                      language: resolveLanguage(currentTab?.language ?? editorLanguage),
-                                      tabKey: currentTab?.key
-                                    }
-                                  })
-                                });
-                                message.success(`Query "${name}" updated`);
-                                const j = await authenticatedFetch(savedQueriesUrl);
-                                setSavedQueries(Array.isArray(j?.items) ? j.items : []);
-                              } catch (e: any) {
-                                message.error(e?.message || 'Update failed');
-                              }
-                            },
-                          });
-                          return;
-                        }
-                        if (existing && !canUpdate) {
-                          doSaveAsNew();
-                          return;
-                        }
-                        try {
-                          await authenticatedFetch(savedQueriesUrl, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                name,
-                                sql: sqlQuery,
-                                metadata: {
-                                  activeQueryKey,
-                                  language: resolveLanguage(currentTab?.language ?? editorLanguage),
-                                  tabKey: currentTab?.key
-                                }
-                              })
-                            });
-                          message.success(`Query "${name}" saved successfully`);
-                          const j = await authenticatedFetch(savedQueriesUrl);
-                          setSavedQueries(Array.isArray(j?.items) ? j.items : []);
-                          if (nameInput) nameInput.value = '';
-                        } catch (err: any) {
-                          message.error(err.message || 'Save failed');
-                        }
-                      }}
-                    >
-                      Save Current Query
-                    </Button>
-                  </div>
-                  <Table
-                    dataSource={(savedQueries || []).filter(Boolean)}
-                    rowKey={(r: any) => r?.id ?? r?.name ?? String(Math.random())}
-                    size="small"
-                    pagination={{ pageSize: 10 }}
-                    locale={{
-                      emptyText: (
-                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--ant-color-text-secondary)' }}>
-                          <p style={{ marginBottom: 8 }}>{t('no_saved_queries_yet')}</p>
-                          <p style={{ fontSize: 12 }}>{t('saved_queries_empty_help')}</p>
-                        </div>
-                      )
-                    }}
-                    columns={[
-                      { title: t('name'), dataIndex: 'name', key: 'name' },
-                      {
-                        title: t('query'),
-                        dataIndex: 'sql',
-                        key: 'sql',
-                        render: (text: string) => (
-                          <Text
-                            code
-                            style={{
-                              fontSize: '12px',
-                              maxWidth: '400px',
-                              display: 'block',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                            }}
-                          >
-                            {text?.substring(0, 100)}
-                            {text?.length > 100 ? '...' : ''}
-                          </Text>
-                        ),
-                      },
-                      {
-                        title: 'Language',
-                        dataIndex: ['metadata', 'language'],
-                        key: 'language',
-                        render: (lang: string) => <Tag>{lang?.toUpperCase() || 'SQL'}</Tag>,
-                      },
-                      {
-                        title: t('created'),
-                        dataIndex: 'created_at',
-                        key: 'created_at',
-                        render: (v: string) => (v ? new Date(v).toLocaleString() : '-'),
-                      },
-                      {
-                        title: t('actions'),
-                        key: 'actions',
-                        render: (_: any, record: any) => {
-                          if (record == null) return null;
-                          return (
-                          <Space>
-                            <Button
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={() => {
-                                const newKey = `q-${Date.now()}`;
-                                const metadata = record?.metadata || {};
-                                const language = resolveLanguage(metadata.language);
-                                const baseSql = record.sql || DEFAULT_SQL_SNIPPET;
-                                const pythonContent =
-                                  language === 'python'
-                                    ? baseSql
-                                    : buildPythonTemplate(baseSql, selectedDataSource?.name);
-                                const newTab = {
-                                  key: newKey,
-                                  title: record.name,
-                                  sql: language === 'python' ? DEFAULT_SQL_SNIPPET : baseSql,
-                                  python: pythonContent,
-                                  language,
-                                };
-                                const next = [...queryTabs, newTab];
-                                setQueryTabs(next);
-                                setActiveQueryKey(newKey);
-                                setEditorLanguage(language);
-                                setSqlQuery(language === 'python' ? pythonContent : baseSql);
-                                setShowSavedModal(false);
-                                saveTabsToBackend(next, newKey, true);
-                                message.success(`Query "${record.name}" loaded into new tab`);
-                              }}
-                            >
-                              Load to Tab
-                            </Button>
-                            <Button
-                              size="small"
-                              onClick={() => {
-                                const metadata = record?.metadata || {};
-                                const language = resolveLanguage(metadata.language);
-                                const baseSql = record?.sql || DEFAULT_SQL_SNIPPET;
-                                const pythonContent = language === 'python'
-                                  ? baseSql
-                                  : buildPythonTemplate(baseSql, selectedDataSource?.name);
-                                const updated = queryTabs.map(t =>
-                                  t.key === activeQueryKey
-                                    ? {
-                                        ...t,
-                                        title: record?.name ?? t.title,
-                                        sql: language === 'python' ? DEFAULT_SQL_SNIPPET : baseSql,
-                                        python: pythonContent,
-                                        language
-                                      }
-                                    : t
-                                );
-                                setQueryTabs(updated);
-                                setEditorLanguage(language);
-                                setSqlQuery(language === 'python' ? pythonContent : baseSql);
-                                setShowSavedModal(false);
-                                saveTabsToBackend(updated, activeQueryKey, true);
-                                message.success(t('loaded_query', { name: record?.name || 'Query' }));
-                              }}
-                            >
-                              {t('load_here')}
-                            </Button>
-                            <Tooltip title={t('version_history')}>
-                              <Button
-                                size="small"
-                                icon={<HistoryOutlined />}
-                                onClick={() => {
-                                  setVersionsModalQueryRecord({ name: record?.name ?? '', metadata: record?.metadata });
-                                  setShowVersionsModalForQueryId(record?.id ?? null);
-                                }}
-                              />
-                            </Tooltip>
-                            <Tooltip title={t('duplicate_as_new_saved_query')}>
-                              <Button
-                                size="small"
-                                icon={<CopyOutlined />}
-                                onClick={async () => {
-                                  try {
-                                    const name = `${(record?.name || 'Query').replace(/\s*\(copy( \d+)?\)\s*$/i, '')} (copy)`;
-                                    await authenticatedFetch(savedQueriesUrl, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({
-                                        name,
-                                        sql: record?.sql || '',
-                                        metadata: record?.metadata || {}
-                                      })
-                                    });
-                                    message.success(t('saved_as', { name }));
-                                    const j = await authenticatedFetch(savedQueriesUrl);
-                                    setSavedQueries(Array.isArray(j?.items) ? j.items : []);
-                                  } catch (err: unknown) {
-                                    const e = err as { message?: string };
-                                    message.error(e?.message || t('duplicate_failed'));
-                                  }
-                                }}
-                              />
-                            </Tooltip>
-                            <Button
-                              size="small"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={async () => {
-                                try {
-                                  await authenticatedFetch(`/api/queries/saved-queries/${record.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`, {
-                                    method: 'DELETE'
-                                  });
-                                  message.success(t('saved_query_removed'));
-                                  const j = await authenticatedFetch(savedQueriesUrl);
-                                  setSavedQueries(Array.isArray(j?.items) ? j.items : []);
-                                } catch (err: any) {
-                                  message.error(err?.message || t('delete_failed'));
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </Space>
-                        );
-                        }
-                      }
-                    ]}
-                  />
-                </div>
-              ),
-            },
-            {
-              key: 'snapshots',
-              label: t('snapshots_count', { count: snapshots.length }),
-              children: (
-                <div>
-                  <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
-                    {t('snapshots_include_desc')}
-                  </div>
-                  <Table
-                    dataSource={(snapshots || []).filter(Boolean)}
-                    rowKey={(r: any) => r?.id ?? String(Math.random())}
-                    size="small"
-                    pagination={{ pageSize: 10 }}
-                    locale={{
-                      emptyText: (
-                        <div style={{ padding: 24, textAlign: 'center', color: 'var(--ant-color-text-secondary)' }}>
-                          <p style={{ marginBottom: 8 }}>{t('no_snapshots_yet')}</p>
-                          <p style={{ fontSize: 12 }}>{t('snapshots_empty_help')}</p>
-                        </div>
-                      )
-                    }}
-                    columns={[
-                      { title: t('name'), dataIndex: 'name', key: 'name' },
-                      {
-                        title: t('query'),
-                        dataIndex: 'sql',
-                        key: 'sql',
-                        render: (text: string) => (
-                          <Text
-                            code
-                            style={{
-                              fontSize: '12px',
-                              maxWidth: '400px',
-                              display: 'block',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                            }}
-                          >
-                            {text?.substring(0, 100)}
-                            {text?.length > 100 ? '...' : ''}
-                          </Text>
-                        ),
-                      },
-                      {
-                        title: t('created'),
-                        dataIndex: 'created_at',
-                        key: 'created_at',
-                        render: (v: string) => (v ? new Date(v).toLocaleString() : '-'),
-                      },
-                      {
-                        title: t('actions'),
-                        key: 'actions',
-                        render: (_: any, r: any) => {
-                          if (r == null) return null;
-                          return (
-                          <Space>
-                            <Button
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={async () => {
-                                try {
-                                  const url = `/api/queries/snapshots/${r?.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`;
-                                  const j = await authenticatedFetch(url) as { snapshot?: { sql?: string; name?: string } };
-                                  const snap = j?.snapshot;
-                                  if (!snap) {
-                                    message.error(t('snapshot_not_found'));
-                                    return;
-                                  }
-                                  const baseSql = snap.sql || DEFAULT_SQL_SNIPPET;
-                                  const newKey = `q-${Date.now()}`;
-                                  const newTab = {
-                                    key: newKey,
-                                    title: snap.name || r?.name || 'Snapshot',
-                                    sql: baseSql,
-                                    python: buildPythonTemplate(baseSql, selectedDataSource?.name),
-                                    language: 'sql' as QueryLanguage
-                                  };
-                                  setQueryTabs(prev => [...prev, newTab]);
-                                  setActiveQueryKey(newKey);
-                                  setEditorLanguage('sql');
-                                  setSqlQuery(baseSql);
-                                  setShowSavedModal(false);
-                                  message.success(`Snapshot "${snap.name || r?.name}" loaded into new tab`);
-                                } catch (e: unknown) {
-                                  const err = e as { message?: string; status?: number };
-                                  message.error(err?.message || t('load_snapshot_failed'));
-                                }
-                              }}
-                            >
-                              {t('load_query_to_tab')}
-                            </Button>
-                            <Button
-                              size="small"
-                              onClick={async () => {
-                                try {
-                                  const url = `/api/queries/snapshots/${r?.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`;
-                                  const j = await authenticatedFetch(url) as { snapshot?: { rows?: unknown[] } };
-                                  const rows = Array.isArray(j?.snapshot?.rows) ? j.snapshot.rows : [];
-                                  if (rows.length) {
-                                    setResults(rows);
-                                    setActiveTab('results');
-                                    setShowSavedModal(false);
-                                    message.success(t('snapshot_loaded_results'));
-                                  } else {
-                                    message.warning(t('snapshot_no_rows'));
-                                  }
-                                } catch (e: unknown) {
-                                  const err = e as { message?: string };
-                                  message.error(err?.message || t('load_snapshot_failed'));
-                                }
-                              }}
-                            >
-                              {t('load_results')}
-                            </Button>
-                            <Button
-                              size="small"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={async () => {
-                                try {
-                                  await authenticatedFetch(`/api/queries/snapshots/${r?.id}`, {
-                                    method: 'DELETE',
-                                    headers: { 'Content-Type': 'application/json' },
-                                  });
-                                  message.success(t('snapshot_deleted'));
-                                  const j = await authenticatedFetch(snapshotsUrl);
-                                  setSnapshots(Array.isArray(j?.items) ? j.items : []);
-                                } catch (err: any) {
-                                  if (err?.status === 403 || err?.status === 401) setPermissionModalVisible(true);
-                                  else message.error(err?.message || t('delete_failed'));
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </Space>
-                        );
-                        }
-                      }
-                    ]}
-                  />
-                </div>
-              )
+        <SavedQueriesSnapshotsPane
+          savedQueries={savedQueries}
+          snapshots={snapshots}
+          activeTab={activeTabForSavedModal}
+          saveQueryName={modalSaveQueryName}
+          onSaveQueryNameChange={setModalSaveQueryName}
+          onSaveCurrentQuery={handleModalSaveCurrentQuery}
+          savingCurrent={savingSavedQuery}
+          onLoadToNewTab={(record) => {
+            const newKey = `q-${Date.now()}`;
+            const newTab = buildTabFromSavedRecord(record, newKey);
+            const next = [...queryTabs, newTab];
+            setQueryTabs(next);
+            setActiveQueryKey(newKey);
+            setEditorLanguage(newTab.language ?? 'sql');
+            setSqlQuery(newTab.language === 'python' ? newTab.python ?? '' : newTab.sql);
+            setShowSavedModal(false);
+            saveTabsToBackend(next, newKey, true);
+            message.success(t('loaded_query', { name: record.name || 'Query' }));
+          }}
+          onLoadHere={(record) => {
+            const newTab = buildTabFromSavedRecord(record, activeQueryKey);
+            const updated = queryTabs.map((tab) =>
+              tab.key === activeQueryKey ? { ...tab, ...newTab, key: tab.key } : tab,
+            );
+            setQueryTabs(updated);
+            setEditorLanguage(newTab.language ?? 'sql');
+            setSqlQuery(newTab.language === 'python' ? newTab.python ?? '' : newTab.sql);
+            setShowSavedModal(false);
+            saveTabsToBackend(updated, activeQueryKey, true);
+            message.success(t('loaded_query', { name: record.name || 'Query' }));
+          }}
+          onShowVersions={(record) => {
+            setVersionsModalQueryRecord({ name: record?.name ?? '', metadata: record?.metadata });
+            setShowVersionsModalForQueryId(typeof record?.id === 'number' ? record.id : null);
+          }}
+          onDuplicateSaved={async (record) => {
+            try {
+              const name = `${(record?.name || 'Query').replace(/\s*\(copy( \d+)?\)\s*$/i, '')} (copy)`;
+              await authenticatedFetch(savedQueriesUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name,
+                  sql: record?.sql || '',
+                  metadata: record?.metadata || {},
+                }),
+              });
+              message.success(t('saved_as', { name }));
+              await refreshSavedQueriesList();
+            } catch (err: unknown) {
+              message.error(formatError(err as { message?: string }, 'generic', t('duplicate_failed')));
             }
-          ]}
+          }}
+          onDeleteSaved={async (record) => {
+            try {
+              await authenticatedFetch(
+                `/api/queries/saved-queries/${record.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`,
+                { method: 'DELETE' },
+              );
+              message.success(t('saved_query_removed'));
+              await refreshSavedQueriesList();
+              if (activeTabForSavedModal?.savedQueryId != null && String(activeTabForSavedModal.savedQueryId) === String(record.id)) {
+                setQueryTabs((prev) =>
+                  prev.map((tab) =>
+                    tab.key === activeQueryKey ? { ...tab, savedQueryId: null } : tab,
+                  ),
+                );
+              }
+            } catch (err: unknown) {
+              message.error(formatError(err as { message?: string }, 'delete_failed'));
+            }
+          }}
+          onLoadSnapshotToTab={async (r) => {
+            try {
+              const url = `/api/queries/snapshots/${r?.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`;
+              const j = (await authenticatedFetch(url)) as { snapshot?: { sql?: string; name?: string } };
+              const snap = j?.snapshot;
+              if (!snap) {
+                message.error(t('snapshot_not_found'));
+                return;
+              }
+              const baseSql = snap.sql || DEFAULT_SQL_SNIPPET;
+              const snapName = snapshotNameFromTabTitle(snap.name || r?.name, t('snapshot'));
+              const newKey = `q-${Date.now()}`;
+              const newTab = {
+                key: newKey,
+                title: snapName,
+                sql: baseSql,
+                python: buildPythonTemplate(baseSql, selectedDataSource?.name),
+                language: 'sql' as QueryLanguage,
+              };
+              const next = [...queryTabs, newTab];
+              setQueryTabs(next);
+              setActiveQueryKey(newKey);
+              setEditorLanguage('sql');
+              setSqlQuery(baseSql);
+              setShowSavedModal(false);
+              saveTabsToBackend(next, newKey, true);
+              message.success(t('loaded_query', { name: snapName }));
+            } catch (e: unknown) {
+              message.error(formatError(e as { message?: string }, 'generic', t('load_snapshot_failed')));
+            }
+          }}
+          onLoadSnapshotResults={async (r) => {
+            try {
+              const url = `/api/queries/snapshots/${r?.id}${queriesScopeParams ? `?${queriesScopeParams}` : ''}`;
+              const j = (await authenticatedFetch(url)) as { snapshot?: { rows?: unknown[] } };
+              const rows = Array.isArray(j?.snapshot?.rows) ? j.snapshot.rows : [];
+              if (rows.length) {
+                setResults(rows);
+                setActiveTab('results');
+                setShowSavedModal(false);
+                message.success(t('snapshot_loaded_results'));
+              } else {
+                message.warning(t('snapshot_no_rows'));
+              }
+            } catch (e: unknown) {
+              message.error(formatError(e as { message?: string }, 'generic', t('load_snapshot_failed')));
+            }
+          }}
+          onDeleteSnapshot={async (r) => {
+            try {
+              await authenticatedFetch(`/api/queries/snapshots/${r?.id}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+              });
+              message.success(t('snapshot_deleted'));
+              const j = await authenticatedFetch(snapshotsUrl);
+              setSnapshots(Array.isArray((j as { items?: unknown[] })?.items) ? (j as { items: unknown[] }).items.filter(Boolean) : []);
+            } catch (err: unknown) {
+              const e = err as { status?: number; message?: string };
+              if (e?.status === 403 || e?.status === 401) setPermissionModalVisible(true);
+              message.error(formatError(e, 'delete_failed'));
+            }
+          }}
         />
       </Modal>
 
@@ -5058,21 +3327,25 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         cancelText={t('cancel')}
         okButtonProps={{ disabled: !results?.length }}
         onOk={async () => {
-          const name = (saveSnapshotName || '').trim() || `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`;
+          const name = (saveSnapshotName || '').trim() || snapshotNameFromTabTitle(
+            queryTabs.find((qt) => qt.key === activeQueryKey)?.title,
+            `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`,
+          );
           const columnKeys = results?.length && results[0] ? Object.keys(results[0]) : [];
+          const dsId = selectedDataSource?.id || selectedDataSourceId || null;
+          const safeRows = jsonSafeRows((results || []) as Record<string, unknown>[]);
+          const snapshotBody: Record<string, unknown> = {
+            name,
+            sql: sqlQuery,
+            rows: safeRows,
+            columns: columnKeys,
+          };
+          if (dsId) snapshotBody.data_source_id = String(dsId);
           try {
             await authenticatedFetch(snapshotsUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                name,
-                sql: sqlQuery,
-                data_source_id: selectedDataSource?.id || selectedDataSourceId || '',
-                rows: results || [],
-                columns: columnKeys,
-                organization_id: organizationId,
-                project_id: currentProject?.id || projectId
-              })
+              body: JSON.stringify(snapshotBody),
             });
             message.success(t('snapshot_saved_hint'));
             setShowSaveSnapshotModal(false);
@@ -5083,7 +3356,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           } catch (err: unknown) {
             const apiErr = err as { status?: number; message?: string };
             if (apiErr?.status === 403 || apiErr?.status === 401) setPermissionModalVisible(true);
-            else message.error(apiErr?.message || 'Failed to save snapshot');
+            else message.error(formatError(apiErr, 'save_failed', t('save_snapshot_failed')));
           }
         }}
       >
@@ -5166,7 +3439,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         setSavedQueries(Array.isArray(j?.items) ? j.items : []);
                       } catch (err: unknown) {
                         const e = err as { message?: string };
-                        message.error(e?.message || 'Restore failed');
+                        message.error(formatError(e, 'generic', t('load_snapshot_failed')));
                       }
                     }}
                   >
@@ -5222,69 +3495,118 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         </div>
       </Modal>
 
-      {/* Schedule Modal */}
+      {IS_EE && (
+      <>
+      {/* ── AI Optimize Diff Modal ─────────────────────────────────── */}
       <Modal
-        open={showScheduleModal}
-        title={t('schedule_query')}
-        onCancel={() => setShowScheduleModal(false)}
-        footer={null}
-        width={640}
-        centered
+        open={optimizeDiffOpen}
+        onCancel={() => setOptimizeDiffOpen(false)}
+        width={860}
+        title={
+          <Space>
+            <ThunderboltOutlined style={{ color: 'var(--ant-color-primary)' }} />
+            <span>{t('optimize_diff_title')}</span>
+          </Space>
+        }
+        footer={[
+          <Button key="reject" onClick={() => setOptimizeDiffOpen(false)}>
+            {t('optimize_reject')}
+          </Button>,
+          <Button key="accept" type="primary" icon={<CheckCircleOutlined />} onClick={handleAcceptOptimize}>
+            {t('optimize_accept')}
+          </Button>,
+        ]}
       >
-        <Form
-          layout="inline"
-          onFinish={async (vals) => {
-            try {
-              const res = await authenticatedFetch(`/api/queries/schedules`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: vals.name, sql: sqlQuery, cron: vals.cron, enabled: true }),
-              });
-              if (!res.ok) throw new Error('Failed');
-              message.success(t('scheduled_ok'));
-              const reload = await authenticatedFetch(`/api/queries/schedules`);
-              if (reload.ok) {
-                const j = await reload.json();
-                setSchedules(Array.isArray(j.items) ? j.items : []);
-              }
-            } catch {
-              message.error(t('schedule_failed'));
-            }
-          }}
-        >
-          <Form.Item name="name" rules={[{ required: true }]}>
-            <Input placeholder="Schedule name" />
-          </Form.Item>
-          <Form.Item name="cron" rules={[{ required: true }]}>
-            <Input placeholder="Cron (e.g., 0 9 * * 1)" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">
-              Create
-            </Button>
-          </Form.Item>
-        </Form>
-        <Divider />
-        <Table
-          dataSource={schedules}
-          rowKey={(r) => r.id}
-          size="small"
-          pagination={false}
-          columns={[
-            { title: t('name'), dataIndex: 'name', key: 'name' },
-            { title: 'Cron', dataIndex: 'cron', key: 'cron' },
-            { title: 'Enabled', dataIndex: 'enabled', key: 'enabled', render: (v: boolean) => (v ? 'Yes' : 'No') },
-            {
-              title: 'Last Run',
-              dataIndex: 'last_run_at',
-              key: 'last_run_at',
-              render: (v: string) => (v ? new Date(v).toLocaleString() : '-'),
-            },
-          ]}
-          className="data-content"
-          style={{ maxHeight: 300, overflow: 'auto' }}
-        />
+        {optimizeImprovements && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12, fontSize: 13 }}
+            message={<pre style={{ margin: 0, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: 12 }}>{optimizeImprovements}</pre>}
+          />
+        )}
+        <div style={{ display: 'flex', gap: 12, height: 340 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-text-secondary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {t('optimize_diff_original')}
+            </div>
+            <div style={{ flex: 1, border: '1px solid var(--ant-color-border)', borderRadius: 6, overflow: 'hidden' }}>
+              <MemoryOptimizedEditor
+                value={optimizeOriginalSQL}
+                onChange={() => {}}
+                language="sql"
+                theme={isDarkMode ? 'vs-dark' : 'vs-light'}
+                options={{ readOnly: true, lineNumbers: 'on', scrollBeyondLastLine: false }}
+              />
+            </div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-success)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {t('optimize_diff_optimized')}
+            </div>
+            <div style={{ flex: 1, border: '1px solid var(--ant-color-success-border)', borderRadius: 6, overflow: 'hidden' }}>
+              <MemoryOptimizedEditor
+                value={optimizeNewSQL}
+                onChange={() => {}}
+                language="sql"
+                theme={isDarkMode ? 'vs-dark' : 'vs-light'}
+                options={{ readOnly: true, lineNumbers: 'on', scrollBeyondLastLine: false }}
+              />
+            </div>
+          </div>
+        </div>
       </Modal>
+
+      {/* ── AI Explain SQL Modal ─────────────────────────────────── */}
+      <Modal
+        open={aiExplainOpen}
+        onCancel={() => setAiExplainOpen(false)}
+        width={680}
+        title={
+          <Space>
+            <QuestionCircleOutlined style={{ color: 'var(--ant-color-primary)' }} />
+            <span>{t('explain_sql_title')}</span>
+          </Space>
+        }
+        footer={
+          !aiExplaining && aiExplainContent ? [
+            <Button
+              key="copy"
+              icon={<CopyOutlined />}
+              onClick={() => {
+                void navigator.clipboard.writeText(aiExplainContent);
+                message.success(t('explain_sql_copied'));
+              }}
+            >
+              {t('explain_sql_copy')}
+            </Button>,
+          ] : null
+        }
+      >
+        {aiExplaining ? (
+          <div style={{ padding: '40px 0', textAlign: 'center' }}>
+            <Spin size="large" tip={t('explain_sql_analyzing')}>
+              <div style={{ minHeight: 60 }} />
+            </Spin>
+          </div>
+        ) : (
+          <div
+            style={{
+              maxHeight: 480,
+              overflowY: 'auto',
+              padding: '4px 0',
+            }}
+          >
+            {aiExplainContent ? (
+              <AiMarkdownContent content={aiExplainContent} />
+            ) : (
+              <span style={{ color: 'var(--ant-color-text-secondary)' }}>{t('explain_sql_no_result')}</span>
+            )}
+          </div>
+        )}
+      </Modal>
+      </>
+      )}
     </div>
   );
 };

@@ -65,6 +65,23 @@ class DataSource(Base):
     last_accessed = Column(DateTime(timezone=True), nullable=True)
 
 
+class DataModelRelationship(Base):
+    """
+    Join relationships between tables for a data source (semantic / dashboard joins).
+    Table: data_model_relationships
+    """
+    __tablename__ = "data_model_relationships"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid(), index=True)
+    data_source_id = Column(String, ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_table = Column(String, nullable=False)
+    from_column = Column(String, nullable=False)
+    to_table = Column(String, nullable=False)
+    to_column = Column(String, nullable=False)
+    join_type = Column(String, nullable=False, server_default=text("'LEFT'"))
+    created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
+
+
 class ProjectDataSource(Base):
     """
     Many-to-many link between projects and data sources.

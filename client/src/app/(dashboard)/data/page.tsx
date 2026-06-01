@@ -23,6 +23,8 @@ import {
     Empty,
     Alert,
     Progress,
+    Drawer,
+    Spin,
 } from 'antd';
 import {
     PlusOutlined,
@@ -32,6 +34,17 @@ import {
     ReloadOutlined,
     SearchOutlined,
     ArrowUpOutlined,
+    BellOutlined,
+    BarChartOutlined,
+    CheckCircleOutlined,
+    CloudServerOutlined,
+    CodeOutlined,
+    ExclamationCircleOutlined,
+    FileTextOutlined,
+    ApartmentOutlined,
+    SafetyOutlined,
+    ScanOutlined,
+    RocketOutlined,
 } from '@ant-design/icons';
 
 const UniversalDataSourceModal = nextDynamic(
@@ -42,40 +55,36 @@ import { usePlanRestrictions } from '@/hooks/usePlanRestrictions';
 import { usePermissions, Permission } from '@/hooks/usePermissions';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
-const PricingModal = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.PricingModalEE }))) as any,
-  { ssr: false }
-) as React.ComponentType<{ visible?: boolean; onClose?: () => void; onUpgrade?: (planType: string, isYearly: boolean) => void; currentPlan?: string; loading?: boolean }>;
+import PricingModal from '@/components/PricingModal';
 import { type DataSource } from '@/stores/useDataSourceStore';
 import { useDataSources, useDeleteDataSource } from '@/hooks/useDataSources';
+import { useFormatUserError } from '@/hooks/useFormatUserError';
+import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useSubscriptionStore as useSubscription } from '@/stores/useSubscriptionStore';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { DataModelRelationships } from '@/components/data/DataModelRelationships';
+
+const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
+
+const ConnectModelVisualizeWizard = nextDynamic(
+  () => isEEEdition
+    ? import('@/ee/components/semantic/ConnectModelVisualizeWizard').then((m) => m.default)
+    : Promise.resolve(() => null as React.ReactElement | null),
+  { ssr: false },
+);
 
 const { Title, Text } = Typography;
 
 const isSampleDataSource = (ds: { type?: string | null }) =>
     (ds.type || '').toLowerCase() === 'sample_duckdb';
 
-// interface DataSource {
-//     id: string;
-//     name: string;
-//     type: 'file' | 'database' | 'warehouse' | 'api' | 'cube';
-//     connection_status?: 'connected' | 'disconnected' | 'error' | 'testing';
-//     connection_info?: any;
-//     lastUsed?: string;
-//     rowCount?: number;
-//     columns?: any[];
-//     size?: string;
-//     description?: string;
-// }
-
 const DataSourcesPage: React.FC = () => {
     const t = useTranslations('data_page');
+    const formatError = useFormatUserError();
     const { usage } = useSubscription();
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -86,6 +95,11 @@ const DataSourcesPage: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<'all' | DataSource['connection_status']>('all');
     const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>('all');
     const [pricingModalVisible, setPricingModalVisible] = useState(false);
+    const [modelDataSource, setModelDataSource] = useState<DataSource | null>(null);
+    const [wizardSource, setWizardSource] = useState<DataSource | null>(null);
+    const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
+    const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
+    const [profileLoading, setProfileLoading] = useState(false);
     const { dataSources, isLoading } = useDataSources();
     const { mutateAsync: deleteDataSource } = useDeleteDataSource();
     const qc = useQueryClient();
@@ -106,11 +120,21 @@ const DataSourcesPage: React.FC = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when editId or data list length changes
     }, [editId, dataSources.length]);
 
-    // Debug: Log when data sources change
+    const modelId = searchParams?.get('model');
+    const openedModelIdRef = React.useRef<string | null>(null);
     useEffect(() => {
-        console.log('📊 Data sources updated:', dataSources.length, 'sources');
-        console.log('Data sources:', dataSources);
-    }, [dataSources]);
+        if (!modelId || dataSources.length === 0) return;
+        if (openedModelIdRef.current === modelId) return;
+        const ds = dataSources.find((d) => d.id === modelId);
+        if (ds) {
+            openedModelIdRef.current = modelId;
+            setModelDataSource(ds);
+            router.replace('/data', { scroll: false });
+        }
+    }, [modelId, dataSources, router]);
+
+    const isModelEligible = (ds: DataSource) =>
+        ['database', 'warehouse', 'cube', 'file'].includes((ds.type || '').toLowerCase());
 
     
     const handleAddDataSource = () => {
@@ -135,8 +159,7 @@ const DataSourcesPage: React.FC = () => {
             setSelectedDataSource(full);
             setModalVisible(true);
         } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : t('load_connection_failed');
-            message.error(msg.includes('API Error') ? msg : `${t('load_connection_failed')}: ${msg}`);
+            message.error(formatError(e, 'load_failed'));
         }
     };
 
@@ -158,12 +181,28 @@ const DataSourcesPage: React.FC = () => {
                     await deleteDataSource(dataSource.id);
                     message.success(t('deleted_success'));
                 } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : t('delete_failed');
-                    message.error(errorMessage);
+                    message.error(formatError(error, 'delete_failed'));
                     console.error('Error deleting data source:', error);
                 }
             },
         });
+    };
+
+    const handleProfileDataSource = async (ds: DataSource) => {
+        setProfileDataSource(ds);
+        setProfileResult(null);
+        setProfileLoading(true);
+        try {
+            const res = await authenticatedFetch(
+                `/api/platform/catalog/quality/profile/source/${ds.id}?sample_size=1000`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+            );
+            setProfileResult(res as Record<string, unknown>);
+        } catch {
+            message.error(t('profile_failed'));
+        } finally {
+            setProfileLoading(false);
+        }
     };
 
     const getStatusColor = (status: string) => {
@@ -186,10 +225,12 @@ const DataSourcesPage: React.FC = () => {
             title: t('col_name'),
             dataIndex: 'name',
             key: 'name',
+            ellipsis: true,
+            minWidth: 220,
             render: (text: string, record: DataSource) => (
                 <Space>
-                    <DataSourceIcon type={record.type} dbType={record.db_type} size={18} style={{ opacity: 0.9 }} />
-                    <Text strong>{text}</Text>
+                    <DataSourceIcon type={record.type} dbType={record.db_type} size={18} style={{ opacity: 0.9, flexShrink: 0 }} />
+                    <Text strong ellipsis>{text}</Text>
                 </Space>
             ),
         },
@@ -197,16 +238,18 @@ const DataSourcesPage: React.FC = () => {
             title: t('col_type'),
             dataIndex: 'type',
             key: 'type',
+            width: 120,
             render: (type: string) => (
-                <Tag color="blue">{type.toUpperCase()}</Tag>
+                <Tag bordered className="page-table-tag">{type.toUpperCase()}</Tag>
             ),
         },
         {
             title: t('col_status'),
             dataIndex: 'connection_status',
             key: 'connection_status',
+            width: 130,
             render: (status: string) => (
-                <Tag color={getStatusColor(status)}>
+                <Tag bordered color={getStatusColor(status)} className="page-table-tag">
                     {status ? status.toUpperCase() : t('unknown')}
                 </Tag>
             ),
@@ -215,23 +258,28 @@ const DataSourcesPage: React.FC = () => {
             title: t('col_rows'),
             dataIndex: 'row_count',
             key: 'row_count',
+            width: 100,
             render: (count: number) => count ? count.toLocaleString() : '-',
         },
         {
             title: t('col_size'),
             dataIndex: 'size',
             key: 'size',
+            width: 110,
             render: (size: number) => size ? `${(size / 1024).toFixed(2)} KB` : '-',
         },
         {
             title: t('col_last_used'),
             dataIndex: 'last_accessed',
             key: 'last_accessed',
+            width: 120,
             render: (date: string) => date ? new Date(date).toLocaleDateString() : '-',
         },
         {
             title: t('col_actions'),
             key: 'actions',
+            width: 160,
+            align: 'right' as const,
             render: (_: any, record: DataSource) => (
                 <Space>
                     <Tooltip title={t('edit_connection')}>
@@ -241,6 +289,29 @@ const DataSourcesPage: React.FC = () => {
                             onClick={() => handleEditDataSource(record)}
                         />
                     </Tooltip>
+                    <Tooltip title={t('profile_source')}>
+                        <Button
+                            size="small"
+                            icon={<ScanOutlined />}
+                            onClick={() => handleProfileDataSource(record)}
+                        />
+                    </Tooltip>
+                    <Tooltip title={t('monitor_source')}>
+                        <Button
+                            size="small"
+                            icon={<BellOutlined />}
+                            onClick={() => router.push(`/alerts?new=1&ds=${encodeURIComponent(record.id)}`)}
+                        />
+                    </Tooltip>
+                    {isModelEligible(record) && (
+                        <Tooltip title={t('data_model')}>
+                            <Button
+                                size="small"
+                                icon={<ApartmentOutlined />}
+                                onClick={() => router.push(`/data/sources/${record.id}/semantic`)}
+                            />
+                        </Tooltip>
+                    )}
                     <Tooltip title={t('delete')}>
                         <Button
                             size="small"
@@ -322,22 +393,25 @@ const DataSourcesPage: React.FC = () => {
     ]);
 
     return (
-        <div
-            className="page-wrapper"
-            style={{
-                paddingLeft: '16px',
-                paddingRight: '16px',
-                paddingTop: '16px',
-                paddingBottom: '24px',
-                background: 'var(--ant-color-bg-layout)',
-            }}
+        <PermissionGuard
+            permission={Permission.DATA_VIEW}
+            loadingFallback={
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+                    <Spin size="large" />
+                </div>
+            }
+            fallback={
+                <DashboardPageShell maxWidth={720}>
+                    <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />
+                </DashboardPageShell>
+            }
         >
-            <div className="page-header" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '8px' }}>
-                    <Title level={2} className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: 0 }}>
-                        <DatabaseOutlined style={{ color: 'var(--ant-color-primary, var(--ant-primary-color))', fontSize: '24px' }} />
-                        {t('title')}
-                    </Title>
+        <DashboardPageShell>
+            <DashboardPageHeader
+                icon={<DatabaseOutlined />}
+                title={t('title')}
+                description={t('description')}
+                extra={
                     <PermissionGuard permission={Permission.DATA_EDIT}>
                         <Tooltip
                             title={
@@ -347,6 +421,7 @@ const DataSourcesPage: React.FC = () => {
                             }
                         >
                             <Button
+                                type="primary"
                                 icon={<PlusOutlined />}
                                 onClick={handleAddDataSource}
                                 disabled={!canAddDataSource}
@@ -355,72 +430,117 @@ const DataSourcesPage: React.FC = () => {
                             </Button>
                         </Tooltip>
                     </PermissionGuard>
-                </div>
-                <Text type="secondary" className="page-description" style={{ marginTop: '4px', marginBottom: '0' }}>
-                    {t('description')}
-                </Text>
-            </div>
+                }
+            />
             <div className="page-body">
-            {/* Statistics & quick actions */}
-            <Row gutter={[24, 24]} style={{ marginBottom: '24px' }}>
+            {/* What's next — guide new users before first connection */}
+            {stats.total === 0 && (
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                {([
+                  {
+                    icon: <CodeOutlined style={{ fontSize: 20, color: 'var(--ant-color-primary)' }} />,
+                    title: t('next_query_title'),
+                    desc: t('next_query_desc'),
+                    href: '/query-editor',
+                  },
+                  {
+                    icon: <BarChartOutlined style={{ fontSize: 20, color: '#52c41a' }} />,
+                    title: t('next_dashboard_title'),
+                    desc: t('next_dashboard_desc'),
+                    href: '/dashboards',
+                  },
+                  {
+                    icon: <BellOutlined style={{ fontSize: 20, color: '#faad14' }} />,
+                    title: t('next_alert_title'),
+                    desc: t('next_alert_desc'),
+                    href: '/alerts',
+                  },
+                  ...(isEEEdition ? [{
+                    icon: <RocketOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
+                    title: t('next_ai_title'),
+                    desc: t('next_ai_desc'),
+                    href: '/chat',
+                  }] : []),
+                ] as Array<{ icon: React.ReactNode; title: string; desc: string; href: string }>).map((item) => (
+                  <Col xs={24} sm={12} lg={isEEEdition ? 6 : 8} key={item.href}>
+                    <Card
+                      size="small"
+                      className="page-stat-tile"
+                      bordered={false}
+                      hoverable
+                      style={{ cursor: 'pointer', height: '100%' }}
+                      onClick={() => router.push(item.href)}
+                    >
+                      <Space direction="vertical" size={4}>
+                        {item.icon}
+                        <Text strong style={{ fontSize: 13 }}>{item.title}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{item.desc}</Text>
+                      </Space>
+                    </Card>
+                  </Col>
+                ))}
+              </Row>
+            )}
+            {/* Statistics & quick actions — hide empty chrome until first source exists */}
+            {stats.total > 0 ? (
+            <Row gutter={[16, 16]} className="page-stat-grid">
+
                 <Col xs={24} lg={6}>
-                    <Card className="stat-card" style={{ background: 'var(--ant-color-bg-container)' }} bodyStyle={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <Card className="page-stat-tile" size="small" bordered={false}>
                         <Statistic title={t('stat_total_sources')} value={stats.total} prefix={<DatabaseOutlined />} />
-                        <Text type="secondary">{t('stat_in_project')}</Text>
+                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_in_project')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="stat-card" style={{ background: 'var(--ant-color-bg-container)' }}>
-                        <Statistic title={t('stat_connected')} value={stats.connected} valueStyle={{ color: 'var(--ant-color-success)' }} />
-                        <Text type="secondary">{t('stat_healthy_connections')}</Text>
+                    <Card className="page-stat-tile" size="small" bordered={false}>
+                        <Statistic title={t('stat_connected')} value={stats.connected} prefix={<CheckCircleOutlined />} valueStyle={{ color: 'var(--ant-color-success)' }} />
+                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_healthy_connections')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="stat-card" style={{ background: 'var(--ant-color-bg-container)' }}>
-                        <Statistic title={t('stat_databases')} value={stats.databases} />
-                        <Text type="secondary">{t('stat_sql_transactional')}</Text>
+                    <Card className="page-stat-tile" size="small" bordered={false}>
+                        <Statistic title={t('stat_databases')} value={stats.databases} prefix={<CloudServerOutlined />} />
+                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_sql_transactional')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="stat-card" style={{ background: 'var(--ant-color-bg-container)' }}>
-                        <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} />
-                        <Text type="secondary">{t('stat_flat_files_services')}</Text>
+                    <Card className="page-stat-tile" size="small" bordered={false}>
+                        <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} prefix={<FileTextOutlined />} />
+                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_flat_files_services')}</Text>
                     </Card>
                 </Col>
             </Row>
+            ) : null}
 
-            <Card className="content-card" style={{ marginTop: 24, marginBottom: 24, background: 'var(--ant-color-bg-container)' }}>
-                <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} md={18}>
-                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                            <Text type="secondary">{t('plan_quota')}</Text>
-                            <Progress
-                                percent={dataSourcesPercent}
-                                status={dataSourcesPercent >= 90 ? 'exception' : 'active'}
-                                strokeColor={dataSourcesPercent >= 90 ? '#ff7875' : 'var(--ant-color-primary)'}
-                                format={() =>
-                                    dataSourcesLimit < 0
-                                        ? t('connected_org_count', { count: dataSourcesUsedCount })
-                                        : t('used_limit', { used: dataSourcesUsedCount, limit: dataSourcesLimit })
-                                }
-                            />
-                            <Text>
-                                {dataSourcesLimit < 0
-                                    ? t('unlimited_connections')
-                                    : t('connections_remaining', { count: Math.max(dataSourcesLimit - dataSourcesUsedCount, 0) })}
-                            </Text>
-                        </Space>
-                    </Col>
-                    <Col xs={24} md={6} style={{ textAlign: 'right' }}>
-                        <Button
-                            icon={<ArrowUpOutlined />}
-                            onClick={() => setPricingModalVisible(true)}
-                            block
-                        >
-                            {t('view_plans')}
-                        </Button>
-                    </Col>
-                </Row>
+            {stats.total > 0 ? (
+            <Card className="content-card page-section-card">
+                <div className="page-quota-strip">
+                    <div className="page-quota-strip__content">
+                        <Text type="secondary" className="page-quota-strip__label">{t('plan_quota')}</Text>
+                        <Progress
+                            percent={dataSourcesPercent}
+                            status={dataSourcesPercent >= 90 ? 'exception' : 'active'}
+                            strokeColor={dataSourcesPercent >= 90 ? '#ff7875' : 'var(--ant-color-primary)'}
+                            format={() =>
+                                dataSourcesLimit < 0
+                                    ? t('connected_org_count', { count: dataSourcesUsedCount })
+                                    : t('used_limit', { used: dataSourcesUsedCount, limit: dataSourcesLimit })
+                            }
+                        />
+                        <Text className="page-quota-strip__meta">
+                            {dataSourcesLimit < 0
+                                ? t('unlimited_connections')
+                                : t('connections_remaining', { count: Math.max(dataSourcesLimit - dataSourcesUsedCount, 0) })}
+                        </Text>
+                    </div>
+                    <Button
+                        className="page-quota-strip__action"
+                        icon={<ArrowUpOutlined />}
+                        onClick={() => setPricingModalVisible(true)}
+                    >
+                        {t('view_plans')}
+                    </Button>
+                </div>
                 {!canAddDataSource && (
                     <Alert
                         type="warning"
@@ -430,47 +550,30 @@ const DataSourcesPage: React.FC = () => {
                     />
                 )}
             </Card>
+            ) : null}
 
-            <Card className="content-card" style={{ marginTop: 24, background: 'var(--ant-color-bg-container)' }}>
-                <div className="page-toolbar" style={{ flexWrap: 'wrap', gap: 12, flexDirection: 'column', alignItems: 'stretch' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Space size={12} wrap>
-                            <PermissionGuard permission={Permission.DATA_EDIT}>
-                                <Tooltip
-                                    title={
-                                        canAddDataSource
-                                            ? t('connect_new_tooltip')
-                                            : t('reached_plan_limit', { limit: dataSourcesLimit > -1 ? dataSourcesLimit : 1 })
-                                    }
-                                >
-                                    <Button
-                                        type="primary"
-                                        icon={<PlusOutlined />}
-                                        onClick={handleAddDataSource}
-                                        disabled={!canAddDataSource}
-                                    >
-                                        {t('add_data_source')}
-                                    </Button>
-                                </Tooltip>
-                            </PermissionGuard>
-                            <Button 
-                                icon={<ReloadOutlined />} 
+            <Card className="content-card page-section-card">
+                <div className="page-panel-toolbar">
+                    <div className="page-panel-toolbar__row">
+                        <div className="page-panel-toolbar__actions">
+                            <Button
+                                icon={<ReloadOutlined />}
                                 onClick={() => refreshDataSources()}
                                 loading={isLoading}
                             >
                                 {t('refresh')}
                             </Button>
-                        </Space>
+                        </div>
                         <Input
+                            className="page-panel-toolbar__search"
                             allowClear
                             prefix={<SearchOutlined />}
                             placeholder={t('search_sources')}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            style={{ minWidth: 160, maxWidth: 220, flex: '1 1 160px' }}
                         />
                     </div>
-                    <Space size={12} wrap style={{ marginTop: 4 }}>
+                    <div className="page-panel-toolbar__filters">
                         <Segmented
                             value={statusFilter}
                             onChange={(value) => setStatusFilter(value as typeof statusFilter)}
@@ -493,12 +596,12 @@ const DataSourcesPage: React.FC = () => {
                                 { label: t('filter_apis'), value: 'api' },
                             ]}
                         />
-                    </Space>
+                    </div>
                 </div>
                 <Divider className="page-divider" />
                 <div style={{ minHeight: '50vh' }}>
                     <Table
-                        className="data-table"
+                        className="page-data-table"
                         columns={columns}
                         dataSource={filteredDataSources}
                         rowKey="id"
@@ -512,7 +615,18 @@ const DataSourcesPage: React.FC = () => {
                                             ? t('empty_filtered')
                                             : t('empty_none')
                                     }
-                                />
+                                >
+                                    {!searchTerm && statusFilter === 'all' && typeFilter === 'all' && (
+                                        <Button
+                                            type="primary"
+                                            icon={<PlusOutlined />}
+                                            onClick={() => setModalVisible(true)}
+                                            disabled={!canAddDataSource}
+                                        >
+                                            {t('connect_data_source')}
+                                        </Button>
+                                    )}
+                                </Empty>
                             ),
                         }}
                         pagination={{
@@ -522,7 +636,7 @@ const DataSourcesPage: React.FC = () => {
                             showTotal: (total, range) =>
                                 t('pagination_total', { start: range[0], end: range[1], total }),
                         }}
-                        scroll={{ x: true }}
+                        scroll={{ x: 960 }}
                     />
                 </div>
             </Card>
@@ -531,9 +645,200 @@ const DataSourcesPage: React.FC = () => {
             <UniversalDataSourceModal
                 isOpen={modalVisible}
                 onClose={handleModalClose}
-                onDataSourceCreated={async () => { handleModalClose(); await refreshDataSources(); }}
+                onDataSourceCreated={async (created) => {
+                    handleModalClose();
+                    await refreshDataSources();
+                    if (created?.id) {
+                        setWizardSource(created as DataSource);
+                        const isModelEligible = ['database', 'warehouse', 'cube', 'file'].includes(
+                            (created.type || '').toLowerCase(),
+                        );
+                        message.success(
+                            <span>
+                                {t('connected_success', { name: created.name || t('unknown') })}{' '}
+                                {isModelEligible && (
+                                    <Button
+                                        type="link"
+                                        size="small"
+                                        style={{ padding: 0 }}
+                                        onClick={() => router.push(`/data/sources/${created.id}/semantic`)}
+                                    >
+                                        {t('open_model')}
+                                    </Button>
+                                )}
+                                {' · '}
+                                <Button
+                                    type="link"
+                                    size="small"
+                                    style={{ padding: 0 }}
+                                    onClick={() => router.push('/chat')}
+                                >
+                                    {t('open_ai_engine')}
+                                </Button>
+                            </span>,
+                            8,
+                        );
+                    }
+                }}
                 existingDataSource={selectedDataSource}
             />
+            {wizardSource && isEEEdition && (
+                <ConnectModelVisualizeWizard
+                    open={!!wizardSource}
+                    dataSourceId={wizardSource.id}
+                    dataSourceName={wizardSource.name}
+                    onClose={() => setWizardSource(null)}
+                />
+            )}
+            <Drawer
+                title={modelDataSource ? t('data_model_title', { name: modelDataSource.name }) : t('data_model')}
+                open={!!modelDataSource}
+                onClose={() => setModelDataSource(null)}
+                width={720}
+                destroyOnHidden
+            >
+                {modelDataSource && (
+                    <DataModelRelationships dataSourceId={modelDataSource.id} />
+                )}
+            </Drawer>
+
+            {/* Data Profile + PII Drawer */}
+            <Drawer
+                title={
+                    <span>
+                        <ScanOutlined style={{ marginRight: 8, color: 'var(--ant-color-primary)' }} />
+                        {t('profile_drawer_title', { name: profileDataSource?.name ?? '' })}
+                    </span>
+                }
+                open={!!profileDataSource}
+                onClose={() => { setProfileDataSource(null); setProfileResult(null); }}
+                width={700}
+                destroyOnHidden
+                extra={
+                    profileDataSource && (
+                        <Button
+                            size="small"
+                            icon={<ScanOutlined />}
+                            loading={profileLoading}
+                            onClick={() => profileDataSource && handleProfileDataSource(profileDataSource)}
+                        >
+                            {t('re_scan')}
+                        </Button>
+                    )
+                }
+            >
+                {profileLoading && (
+                    <div style={{ textAlign: 'center', padding: 40 }}>
+                        <Spin size="large" tip={t('profiling_in_progress')}>
+                            <div style={{ minHeight: 60 }} />
+                        </Spin>
+                    </div>
+                )}
+                {!profileLoading && !profileResult && (
+                    <div style={{ textAlign: 'center', padding: 40, color: 'var(--ant-color-text-secondary)' }}>
+                        {t('profile_click_scan')}
+                    </div>
+                )}
+                {!profileLoading && profileResult && (() => {
+                    const cols = (profileResult.columns as Record<string, unknown>[] | null) ?? [];
+                    const overallScore = typeof profileResult.quality_score === 'number' ? profileResult.quality_score : null;
+                    const piiCols = cols.filter((c: any) => c.pii_detected || (c.pii_types && (c.pii_types as string[]).length > 0));
+                    const highNullCols = cols.filter((c: any) => (c.null_pct ?? 0) > 0.5);
+                    return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            {/* Quality score summary */}
+                            <Card size="small" title={t('profile_summary')}>
+                                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--ant-color-text-secondary)' }}>{t('profile_quality_score')}</div>
+                                        <div style={{ fontSize: 22, fontWeight: 700, color: overallScore !== null && overallScore >= 0.8 ? 'var(--ant-color-success)' : overallScore !== null && overallScore >= 0.5 ? 'var(--ant-color-warning)' : 'var(--ant-color-error)' }}>
+                                            {overallScore !== null ? `${Math.round(overallScore * 100)}%` : '—'}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: 11, color: 'var(--ant-color-text-secondary)' }}>{t('profile_columns')}</div>
+                                        <div style={{ fontSize: 22, fontWeight: 700 }}>{cols.length}</div>
+                                    </div>
+                                    {piiCols.length > 0 && (
+                                        <div>
+                                            <div style={{ fontSize: 11, color: 'var(--ant-color-text-secondary)' }}>{t('profile_pii_cols')}</div>
+                                            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ant-color-warning)' }}>
+                                                {piiCols.length}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                {piiCols.length > 0 && (
+                                    <Alert
+                                        type="warning"
+                                        showIcon
+                                        icon={<SafetyOutlined />}
+                                        style={{ marginTop: 12 }}
+                                        message={t('profile_pii_warning', { n: piiCols.length })}
+                                        description={t('profile_pii_desc')}
+                                    />
+                                )}
+                            </Card>
+
+                            {/* Per-column profile table */}
+                            <Card size="small" title={t('profile_columns_detail')}>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ borderBottom: '1px solid var(--ant-color-border)' }}>
+                                                {[t('col_name'), t('profile_type'), t('profile_null_pct'), t('profile_unique'), t('profile_quality'), t('profile_pii')].map((h) => (
+                                                    <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--ant-color-text-secondary)' }}>{h}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {cols.map((col: any, i: number) => {
+                                                const nullPct = typeof col.null_pct === 'number' ? `${Math.round(col.null_pct * 100)}%` : '—';
+                                                const colScore = typeof col.quality_score === 'number' ? Math.round(col.quality_score * 100) : null;
+                                                const hasPii = col.pii_detected || (col.pii_types?.length > 0);
+                                                const piiTypes: string[] = col.pii_types || [];
+                                                return (
+                                                    <tr key={i} style={{ borderBottom: '1px solid var(--ant-color-border-secondary)', background: hasPii ? 'var(--ant-color-warning-bg)' : 'transparent' }}>
+                                                        <td style={{ padding: '5px 8px', fontWeight: 500 }}>{col.column || col.name}</td>
+                                                        <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontSize: 11 }}>{col.type_inferred || '—'}</td>
+                                                        <td style={{ padding: '5px 8px', color: (col.null_pct ?? 0) > 0.5 ? 'var(--ant-color-error)' : 'inherit' }}>{nullPct}</td>
+                                                        <td style={{ padding: '5px 8px' }}>{col.unique_count ?? '—'}</td>
+                                                        <td style={{ padding: '5px 8px' }}>
+                                                            {colScore !== null ? (
+                                                                <Tag color={colScore >= 80 ? 'success' : colScore >= 50 ? 'warning' : 'error'} style={{ fontSize: 10 }}>
+                                                                    {colScore}%
+                                                                </Tag>
+                                                            ) : '—'}
+                                                        </td>
+                                                        <td style={{ padding: '5px 8px' }}>
+                                                            {hasPii ? (
+                                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                                                    {piiTypes.slice(0, 3).map((p: string) => (
+                                                                        <Tag key={p} color="orange" icon={<ExclamationCircleOutlined />} style={{ fontSize: 10, margin: 0 }}>{p}</Tag>
+                                                                    ))}
+                                                                </div>
+                                                            ) : <Tag color="success" style={{ fontSize: 10 }}>Clean</Tag>}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
+
+                            {highNullCols.length > 0 && (
+                                <Alert
+                                    type="info"
+                                    showIcon
+                                    message={t('profile_high_null_warning', { n: highNullCols.length })}
+                                    description={highNullCols.map((c: any) => c.column || c.name).join(', ')}
+                                />
+                            )}
+                        </div>
+                    );
+                })()}
+            </Drawer>
             </div>
             <PricingModal
                 visible={pricingModalVisible}
@@ -542,7 +847,8 @@ const DataSourcesPage: React.FC = () => {
                 currentPlan={'free'}
                 loading={false}
             />
-        </div>
+        </DashboardPageShell>
+        </PermissionGuard>
     );
 };
 

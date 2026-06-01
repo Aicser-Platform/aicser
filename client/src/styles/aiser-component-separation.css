@@ -96,10 +96,9 @@
    DATA SOURCE PANEL FIXES
    ======================================== */
 
-/* Data Source Panel - Full Container Color */
+/* Data Source Panel - background only (borders in DataPanel/styles.css + workspace-chrome.css) */
 .data-panel,
-.enhanced-data-panel,
-[class*="data-panel"] {
+.enhanced-data-panel {
   background: var(--color-bg-container) !important;
 }
 

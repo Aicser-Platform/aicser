@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
-
-function forwardAuthHeaders(incoming: NextRequest): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const auth =
-    incoming.headers.get('authorization') || incoming.headers.get('Authorization');
-  if (auth) headers['Authorization'] = auth;
-  const cookie = incoming.headers.get('cookie') || incoming.headers.get('Cookie');
-  if (cookie) headers['Cookie'] = cookie;
-  return headers;
-}
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Proxies GET/PUT /api/users/ai-provider-keys[/{provider}] to FastAPI with auth + cookies.
@@ -18,7 +9,7 @@ function forwardAuthHeaders(incoming: NextRequest): Record<string, string> {
 export async function GET(request: NextRequest) {
   try {
     const backendUrl = getBackendUrlForProxy();
-    const headers = forwardAuthHeaders(request);
+    const headers = buildProxyAuthHeaders(request);
     const response = await fetch(`${backendUrl}/api/users/ai-provider-keys`, {
       method: 'GET',
       headers,
@@ -45,7 +36,7 @@ export async function PUT(
     const backendUrl = getBackendUrlForProxy();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...forwardAuthHeaders(request),
+      ...buildProxyAuthHeaders(request),
     };
     const response = await fetch(`${backendUrl}/api/users/ai-provider-keys/${provider}`, {
       method: 'PUT',

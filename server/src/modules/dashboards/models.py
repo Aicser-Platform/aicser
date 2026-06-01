@@ -124,6 +124,7 @@ dashboard_widgets_table = Table(
     Column("is_locked", Boolean, default=False),
     Column("is_resizable", Boolean, default=True),
     Column("is_draggable", Boolean, default=True),
+    Column("is_deleted", Boolean, default=False),
     Column("last_data_refresh", DateTime(timezone=True), nullable=True),
     Column("data_cache_ttl", Integer, default=300),
     Column("query_execution_time", Float, nullable=True),
