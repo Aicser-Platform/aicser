@@ -1,6 +1,8 @@
-DEV  := docker compose -f docker-compose.dev.yml
-CE   := docker compose -f docker-compose.ce.yml
-EE   := docker compose -f docker-compose.ee.yml
+DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+COMPOSE    := docker compose --project-directory $(DEPLOY_DIR)
+DEV        := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.dev.yml
+CE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ce.yml
+EE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.yml
 
 # ── Dev (live-reload, volume-mounted) ────────────────────────────────────────
 dev:
@@ -51,15 +53,23 @@ dev-ee-down:
 dev-ee-logs:
 	AISER_EDITION=enterprise $(DEV) --profile ee logs -f
 
+dev-ee-turbo:
+	AISER_EDITION=enterprise NEXT_DEV_TURBO=true $(DEV) --profile ee up -d --force-recreate client-ee
+
 # -- EE build
 ee:
 	$(EE) up -d --build
+ee-client-light:
+	COMPOSE_PARALLEL_LIMIT=1 NEXT_BUILD_CPUS=1 NEXT_BUILD_MAX_OLD_SPACE_SIZE=1024 $(EE) build client
+	$(EE) up -d --no-deps client
 ee-down:
 	$(EE) down
 ee-logs:
 	$(EE) logs -f
 ee-restart:
 	$(EE) restart server
+ee-restart-client:
+	$(EE) restart client
 ee-recreate:
 	$(EE) up -d --build --force-recreate server
 ee-reset:
@@ -75,4 +85,5 @@ seed-rbac-dev:
 	$(DEV) exec chat2chart-server python -m ee.scripts.seed_rbac
 
 .PHONY: dev dev-ce dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset \
-        seed-rbac-ee seed-rbac-dev
+        dev-ee dev-ee-build dev-ee-down dev-ee-logs dev-ee-turbo ee ee-down ee-logs \
+        ee-client-light ee-restart ee-restart-client ee-recreate ee-reset seed-rbac-ee seed-rbac-dev
