@@ -10,7 +10,7 @@
     "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev",
     "dev:light": "NODE_OPTIONS='--max-old-space-size=3072' next dev",
     "dev:turbo": "NODE_OPTIONS='--max-old-space-size=4096' next dev --turbo",
-    "build": "NODE_OPTIONS='--max-old-space-size=2048' next build",
+    "build": "NODE_OPTIONS='--max-old-space-size=1536' next build",
     "build:light": "NODE_OPTIONS='--max-old-space-size=1024' next build",
     "start:prod": "next start",
     "preview:pwa": "NEXT_PUBLIC_PWA_DEV=true npm run build && NEXT_PUBLIC_PWA_DEV=true next start",

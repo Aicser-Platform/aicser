@@ -74,10 +74,14 @@ const nextConfig = {
 
   output: 'standalone',
 
+  productionBrowserSourceMaps: false,
+
   experimental: {
+    webpackBuildWorker: false,
     ...(process.env.NEXT_DEV_CPUS
       ? { cpus: Number.parseInt(process.env.NEXT_DEV_CPUS, 10) }
       : {}),
+    workerThreads: false,
     optimizePackageImports: ['antd', '@ant-design/icons', 'echarts'],
     instrumentationHook: true,
     turbo: {
@@ -94,6 +98,9 @@ const nextConfig = {
   },
 
   webpack: (config, { isServer }) => {
+    // Limit webpack's internal module parallelism to reduce peak heap usage
+    config.parallelism = 1;
+
     config.resolve.extensionAlias = {
       '.js': ['.js', '.ts', '.tsx'],
       '.jsx': ['.jsx', '.tsx'],
