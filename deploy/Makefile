@@ -59,6 +59,8 @@ dev-ee-turbo:
 # -- EE build
 ee:
 	$(EE) up -d --build
+ee-up:
+	$(EE) up -d
 ee-client-light:
 	COMPOSE_PARALLEL_LIMIT=1 NEXT_BUILD_CPUS=1 NEXT_BUILD_MAX_OLD_SPACE_SIZE=1024 $(EE) build client
 	$(EE) up -d --no-deps client
