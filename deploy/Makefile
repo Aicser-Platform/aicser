@@ -1,22 +1,79 @@
 DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 COMPOSE    := docker compose --project-directory $(DEPLOY_DIR)
-DEV        := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.dev.yml
+DEV_BASE   := -f $(DEPLOY_DIR)/docker-compose.dev.yml
+DEV_CE     := AISER_EDITION=community $(COMPOSE) -p aiser-dev-ce $(DEV_BASE) -f $(DEPLOY_DIR)/docker-compose.dev.ce.yml
+DEV_EE     := AISER_EDITION=enterprise $(COMPOSE) -p aiser-dev-ee $(DEV_BASE) -f $(DEPLOY_DIR)/docker-compose.dev.ee.yml
+DEV_CE_EXTRAS := $(DEV_CE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
+DEV_EE_EXTRAS := $(DEV_EE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
+DEV_LEGACY := $(COMPOSE) -p deploy $(DEV_BASE)
 CE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ce.yml
 EE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.yml
 
 # ── Dev (live-reload, volume-mounted) ────────────────────────────────────────
-dev:
-	$(DEV) up -d
+dev: dev-ce
 
-# Start Ce Dev (live-reload, volume-mounted, with CE-specific services like Postgres and Redis)
+# Start only the CE development stack.
 dev-ce:
-	$(DEV) --profile ce up -d
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
+	$(DEV_CE) up -d
+
+dev-ce-build:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
+	$(DEV_CE) up -d --build
+
+dev-ce-logs:
+	$(DEV_CE) logs -f
+
+dev-ce-down:
+	$(DEV_CE_EXTRAS) down --remove-orphans
+
+# Start only the EE development stack.
+dev-ee:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	$(DEV_EE) up -d
+
+dev-ee-build:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	$(DEV_EE) up -d --build
+
+dev-ee-logs:
+	$(DEV_EE) logs -f
+
+dev-ee-down:
+	$(DEV_EE_EXTRAS) down --remove-orphans
+
+dev-ee-turbo:
+	NEXT_DEV_TURBO=true $(DEV_EE) up -d --force-recreate client
+
+# Optional services. These remain stopped during normal CE/EE development.
+dev-ce-warehouse:
+	$(DEV_CE_EXTRAS) --profile warehouse up -d clickhouse
+
+dev-ee-warehouse:
+	$(DEV_EE_EXTRAS) --profile warehouse up -d clickhouse
+
+dev-ce-worker:
+	$(DEV_CE_EXTRAS) --profile worker up -d worker
+
+dev-ee-worker:
+	$(DEV_EE_EXTRAS) --profile worker up -d worker
+
+dev-ce-observability:
+	$(DEV_CE_EXTRAS) --profile observability up -d
+
+dev-ee-observability:
+	$(DEV_EE_EXTRAS) --profile observability up -d
 
 dev-down:
-	$(DEV) down
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
 
-dev-logs:
-	$(DEV) logs -f
+dev-logs: dev-ce-logs
 
 # ── CE build (rebuild image on code change, run migrations, start) ────────────
 ce:
@@ -38,23 +95,6 @@ ce-recreate:
 # Stop everything and wipe volumes (fresh start)
 ce-reset:
 	$(CE) down -v
-
-
-# EE DEV
-dev-ee:
-	AISER_EDITION=enterprise $(DEV) --profile ee up -d
-
-dev-ee-build:
-	AISER_EDITION=enterprise $(DEV) --profile ee up -d --build
-
-dev-ee-down:
-	AISER_EDITION=enterprise $(DEV) --profile ee down
-
-dev-ee-logs:
-	AISER_EDITION=enterprise $(DEV) --profile ee logs -f
-
-dev-ee-turbo:
-	AISER_EDITION=enterprise NEXT_DEV_TURBO=true $(DEV) --profile ee up -d --force-recreate client-ee
 
 # -- EE build
 ee:
@@ -84,8 +124,11 @@ seed-rbac-ee:
 
 # Run inside the already-running dev container
 seed-rbac-dev:
-	$(DEV) exec chat2chart-server python -m ee.scripts.seed_rbac
+	$(DEV_EE) exec server python -m ee.scripts.seed_rbac
 
-.PHONY: dev dev-ce dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset \
-        dev-ee dev-ee-build dev-ee-down dev-ee-logs dev-ee-turbo ee ee-down ee-logs \
-        ee-client-light ee-restart ee-restart-client ee-recreate ee-reset seed-rbac-ee seed-rbac-dev
+.PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
+        dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse \
+        dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
+        dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset \
+        ee ee-down ee-logs ee-client-light ee-restart ee-restart-client \
+        ee-recreate ee-reset seed-rbac-ee seed-rbac-dev

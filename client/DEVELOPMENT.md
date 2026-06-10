@@ -428,7 +428,7 @@ If you add a new full-page workspace, extend `workspace-chrome.css` rather than 
 
 ### Docker dev: “Loading CSS chunk … failed”
 
-In `docker compose … client-ee`, Next.js logs:
+In the EE `client` service, Next.js logs:
 
 `Server is approaching the used memory threshold, restarting...`
 
@@ -436,9 +436,9 @@ When that happens, the browser may still request CSS chunks from the **previous*
 
 **Fix:**
 
-1. Hard-refresh the tab (or close and reopen `http://localhost:3001/chat`).
-2. Tune dev memory in `deploy/.env`: `NEXT_DEV_TURBO=false`, `NODE_MAX_OLD_SPACE_SIZE=2560`, and optionally `CLIENT_DEV_MEM_LIMIT=4g`, then recreate `client-ee`. Keep the Node heap below Docker Desktop's available memory so V8 can collect before the container hits an OOM kill. On very small Docker Desktop memory limits, `NEXT_DEV_CPUS=2` can reduce peak memory, but it may slow first route compilation.
-3. If the stack is wedged: `docker compose -f deploy/docker-compose.dev.yml --profile ee restart client-ee`.
+1. Hard-refresh the tab (or close and reopen `http://localhost:3000/chat`).
+2. Tune dev memory in `deploy/.env`: `NEXT_DEV_TURBO=false`, `NODE_MAX_OLD_SPACE_SIZE=2048`, and optionally `CLIENT_DEV_MEM_LIMIT=3g`, then recreate the client. Keep the Node heap below Docker Desktop's available memory so V8 can collect before the container hits an OOM kill. On very small Docker Desktop memory limits, `NEXT_DEV_CPUS=2` can reduce peak memory, but it may slow first route compilation.
+3. If the stack is wedged: `make -C deploy dev-ee-down && make -C deploy dev-ee`.
 
 The ChatPanel stylesheet itself is fine (~100KB source); the failure is a stale/missing chunk during dev-server restart, not a CSS syntax error.
 

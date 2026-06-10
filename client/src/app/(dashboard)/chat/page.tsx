@@ -6,7 +6,7 @@ import { Spin } from 'antd';
 const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
 
 const EEChatPage = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.ChatPage })),
+  () => import('@/ee/chat-page'),
   { ssr: false }
 );
 

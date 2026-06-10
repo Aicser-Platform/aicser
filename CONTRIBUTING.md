@@ -19,7 +19,10 @@ aicser/                        ← Public CE monorepo (this repo)
 ├── deploy/
 │   ├── docker-compose.ce.yml  ← CE stack
 │   ├── docker-compose.ee.yml  ← EE stack
-│   └── docker-compose.dev.yml ← Local dev stack
+│   ├── docker-compose.dev.yml        ← Shared local dev services
+│   ├── docker-compose.dev.ce.yml     ← CE development overrides
+│   ├── docker-compose.dev.ee.yml     ← EE development overrides
+│   └── docker-compose.dev.extras.yml ← Optional warehouse/worker/observability
 └── .gitmodules                ← Submodule definitions
 ```
 
@@ -86,6 +89,46 @@ This means application code always imports from `src.modules.*` — the shim tra
 ---
 
 ## Setting Up for Development
+
+### Local Development with Hot Reload
+
+The development stack runs one edition at a time. The Make targets stop the
+other edition before starting the requested one.
+
+```bash
+cp .env.example .env
+
+# Community Edition: Postgres, Redis, server, and one client
+make -C deploy dev-ce
+
+# Enterprise Edition: the same core stack plus Keycloak
+make -C deploy dev-ee
+```
+
+Both editions use `http://localhost:3000` for the client and
+`http://localhost:8000` for the API. CE and EE use separate Compose projects,
+networks, and named volumes, so their dependency and Next.js caches do not
+overwrite each other.
+
+Useful commands:
+
+```bash
+make -C deploy dev-ce-logs
+make -C deploy dev-ee-logs
+make -C deploy dev-down
+
+# Rebuild images only when dependencies or Dockerfiles change
+make -C deploy dev-ce-build
+make -C deploy dev-ee-build
+```
+
+Optional services stay stopped during normal development:
+
+```bash
+make -C deploy dev-ee-warehouse
+make -C deploy dev-ee-worker
+make -C deploy dev-ee-observability
+```
 
 ### CE Only
 
