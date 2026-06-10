@@ -27,7 +27,7 @@ from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.core.config import settings
 from src.core.edition import is_ee_enabled
-from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Request, status, Query
 from typing import Union
 import asyncio
 import os
@@ -53,6 +53,11 @@ async def use_session(db: AsyncSession | None):
 # User model removed - user management will be handled by Supabase
 from src.modules.authentication.rbac import has_dashboard_access
 from src.modules.authentication.rbac.decorators import require_permission
+from src.modules.authentication.rbac.guard import (
+    require_permission as require_ee_permission,
+    user_id_from_payload,
+    legacy_charts_rbac_guard,
+)
 from src.modules.pricing.feature_gate import check_feature_for_org
 from src.modules.pricing.rate_limiter import RateLimiter
 
@@ -78,7 +83,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(legacy_charts_rbac_guard)])
 service = ChatVisualizationService()
 chart_generation_service = ChartGenerationService()
 mcp_echarts_service = MCPEChartsService()
@@ -834,7 +839,7 @@ async def get(id: str):
     try:
         return await service.get(id)
     except Exception as e:
-        return HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.post("/")
@@ -2481,7 +2486,13 @@ async def publish_dashboard(dashboard_id: str, make_public: bool = True, current
 
 @router.post("/dashboards/{dashboard_id}/embed")
 async def create_dashboard_embed(dashboard_id: str, options: Dict[str, Any] = Body({}), current_token: str = Depends(JWTCookieBearer())):
-    """Create an embeddable token/URL for a dashboard. In production, persist tokens and validate scopes."""
+    """Deprecated — use POST /api/embed/tokens for JWT embed tokens."""
+    jwt_only = os.getenv("EMBED_JWT_ONLY", "true").strip().lower() in ("1", "true", "yes")
+    if jwt_only:
+        raise HTTPException(
+            status_code=410,
+            detail="Legacy DB embed tokens are disabled. Use Settings → Embed or POST /api/embed/tokens.",
+        )
     try:
         user_payload = extract_user_payload(current_token)
 
@@ -2788,49 +2799,50 @@ async def create_dashboard_from_template(
 # 🔗 Embed endpoints (public, token-authenticated)
 
 @router.get("/dashboards/{dashboard_id}/embed")
-async def get_dashboard_for_embed(dashboard_id: str, token: Optional[str] = None):
+async def get_dashboard_for_embed(
+    dashboard_id: str,
+    token: Optional[str] = None,
+    page_id: Optional[str] = Query(None),
+    filters: Optional[str] = Query(None),
+):
     """
-    Return dashboard data for public embed rendering.
-    Validates embed_token if provided; if none, dashboard must be public.
+    Legacy embed endpoint — proxies to canonical dashboard embed payload.
+    Prefer GET /api/dashboards/{id}/embed (Deprecation header included).
     """
+    from uuid import UUID as PyUUID
+    from fastapi.responses import JSONResponse
+    from src.db.session import async_session
+    from src.modules.dashboards import operations as dash_ops
+    from src.modules.charts.deprecation import apply_dashboard_deprecation
+
     try:
-        from src.db.session import async_session
-        from src.modules.charts.services.dashboard_service import DashboardService
+        dash_uuid = PyUUID(str(dashboard_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Dashboard not found") from exc
 
+    parsed_filters: list = []
+    if filters:
+        try:
+            import json as _json
+
+            parsed = _json.loads(filters)
+            if isinstance(parsed, list):
+                parsed_filters = parsed
+        except Exception:
+            parsed_filters = []
+
+    try:
         async with async_session() as db:
-            service = DashboardService(db)
-            dashboard = await service.get_dashboard(dashboard_id)
-            if not dashboard:
-                raise HTTPException(status_code=404, detail="Dashboard not found")
-
-            settings_data = dashboard.settings if isinstance(dashboard.settings, dict) else {}
-            is_public = settings_data.get("is_public", False)
-
-            if not is_public:
-                if not token:
-                    raise HTTPException(status_code=403, detail="This dashboard requires an embed token")
-                valid_token = settings_data.get("embed_token")
-                if not valid_token or token != valid_token:
-                    raise HTTPException(status_code=403, detail="Invalid embed token")
-
-            widgets = await service.get_dashboard_widgets(dashboard_id)
-            return {
-                "id": str(dashboard.id),
-                "name": dashboard.name,
-                "description": dashboard.description,
-                "theme": settings_data.get("theme", "light"),
-                "widgets": [
-                    {
-                        "id": str(w.id),
-                        "title": w.title if hasattr(w, "title") else None,
-                        "chart_option": w.config.get("chart_option") if isinstance(getattr(w, "config", None), dict) else None,
-                        "echarts_option": w.config.get("echarts_option") if isinstance(getattr(w, "config", None), dict) else None,
-                        "type": w.type if hasattr(w, "type") else "chart",
-                    }
-                    for w in (widgets or [])
-                ],
-            }
-
+            await dash_ops.verify_dashboard_read_access(db, dash_uuid, embed_token=token)
+            payload = await dash_ops.build_embed_payload(
+                db,
+                dash_uuid,
+                page_id=page_id,
+                runtime_filters=parsed_filters or None,
+            )
+            response = JSONResponse(content=payload)
+            apply_dashboard_deprecation(response)
+            return response
     except HTTPException:
         raise
     except Exception as e:
@@ -2946,7 +2958,7 @@ def _serialize_standalone_chart(chart) -> dict:
     }
 
 
-standalone_chart_router = APIRouter()
+standalone_chart_router = APIRouter(dependencies=[Depends(legacy_charts_rbac_guard)])
 
 
 @standalone_chart_router.post("", status_code=status.HTTP_201_CREATED)
@@ -2960,6 +2972,8 @@ async def standalone_create_chart(
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit", project_id=project_id)
     user_uuid = _parse_optional_uuid(str(user_id), "user_id")
 
     project_uuid = _parse_optional_uuid(project_id, "project_id")
@@ -2989,6 +3003,9 @@ async def standalone_list_charts(
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:view", project_id=project_id)
+
     user_uuid = _parse_optional_uuid(str(user_id), "user_id")
 
     project_uuid = _parse_optional_uuid(project_id, "project_id")
@@ -3018,6 +3035,13 @@ async def standalone_execute_adhoc_chart(
     """Execute a chart query without saving it first."""
     from src.modules.charts.services.v2.chart_service import ChartService
     from src.modules.charts.models import Chart
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    project_id = payload.get("projectId") or payload.get("project_id") if isinstance(payload, dict) else None
+    await require_ee_permission(uid, "chart:view", project_id=str(project_id) if project_id else None)
+
     chart_payload, _ = _normalize_chart_payload(payload)
     chart = Chart(**chart_payload)
 
@@ -3037,7 +3061,15 @@ async def standalone_execute_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    data = await service.execute(chart)
+    try:
+        data = await service.execute(chart)
+    except ValueError as exc:
+        message = str(exc).strip() or "Chart execution failed"
+        if "data source not found" in message.lower():
+            raise HTTPException(status_code=404, detail="Data source not found") from exc
+        raise HTTPException(status_code=400, detail=message) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Chart execution failed") from exc
     return {
         "chart": _serialize_standalone_chart(chart),
         "data": data,
@@ -3052,6 +3084,12 @@ async def standalone_get_chart(
 ):
     from src.modules.charts.services.v2.chart_service import ChartService
     user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:view")
+
     service = ChartService(db)
     chart = await service.get(chart_id)
     if not chart:
@@ -3075,6 +3113,9 @@ async def standalone_update_chart(
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit")
 
     service = ChartService(db)
     chart = await service.get(chart_id)
@@ -3101,6 +3142,11 @@ async def standalone_delete_chart(
 ):
     from src.modules.charts.services.v2.chart_service import ChartService
     user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:delete")
+
     service = ChartService(db)
     chart = await service.get(chart_id)
     if not chart:

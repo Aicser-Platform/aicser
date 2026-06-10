@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const backendBase = getBackendUrlForApi();
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...buildProxyAuthHeaders(request),
     };
-    
-    // Forward Authorization header if present
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
     
     const response = await fetch(`${backendBase}/assets`, {
       method: 'POST',
@@ -49,13 +45,8 @@ export async function GET(request: NextRequest) {
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...buildProxyAuthHeaders(request),
     };
-    
-    // Forward Authorization header if present
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
     
     // Build query string from search params
     const queryString = searchParams.toString();

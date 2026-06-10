@@ -5,6 +5,7 @@ import { Card, message } from 'antd';
 import { useRouter } from 'next/navigation';
 import { socialFeedService } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
+import { canOpenFeedAsset, getFeedAssetPath } from '@/utils/feedAssetLinks';
 import FeedCardActions, { FeedCardActionsHandle } from './FeedCardActions';
 import FeedCardBody from './FeedCardBody';
 import FeedCardComments from './FeedCardComments';
@@ -30,6 +31,9 @@ interface FeedCardProps {
   };
   compact?: boolean;
   hideInteractions?: boolean;
+  highlighted?: boolean;
+  /** Detail link base — default `/feed` for app feed; `/discover` for public. */
+  detailBasePath?: string;
 }
 
 const FeedCard: React.FC<FeedCardProps> = ({
@@ -43,6 +47,8 @@ const FeedCard: React.FC<FeedCardProps> = ({
   interactionState,
   compact = false,
   hideInteractions = false,
+  highlighted = false,
+  detailBasePath = '/feed',
 }) => {
   const t = useTranslations('feed');
   const router = useRouter();
@@ -54,12 +60,11 @@ const FeedCard: React.FC<FeedCardProps> = ({
   const commenting = Boolean(interactionState?.commenting);
   const following = Boolean(interactionState?.following);
   const deleting = Boolean(interactionState?.deleting);
-  const detailPath = `/feed/${item.id}`;
+  const detailPath = `${detailBasePath}/${item.id}`;
   const isPostOwner = !!user && item.author?.id === user.id;
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
-  const canViewDashboard =
-    item.assetType === 'dashboard' && !!item.assetId && (item.visibility !== 'private' || isPostOwner);
+  const canOpenAsset = canOpenFeedAsset(item, isPostOwner);
   const safeAddComment = useCallback(
     (itemId: string, content: string, parentCommentId?: string) => {
       if (!onAddComment) return;
@@ -86,8 +91,8 @@ const FeedCard: React.FC<FeedCardProps> = ({
   const handleOpen = () => router.push(detailPath);
   const handlePrefetch = () => router.prefetch(detailPath);
   const handlePreviewOpen = () => {
-    if (!canViewDashboard) return;
-    router.push('/dashboards');
+    if (!canOpenAsset) return;
+    router.push(getFeedAssetPath(item));
   };
   const handleToggleFollow = useCallback(() => {
     if (!item.author?.id || !onToggleFollow) return;
@@ -145,8 +150,11 @@ const FeedCard: React.FC<FeedCardProps> = ({
   );
 
   return (
+    <div id={`feed-post-${item.id}`} className={highlighted ? 'feed-post-anchor feed-post-anchor--highlighted' : 'feed-post-anchor'}>
     <Card
-      className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-sm rounded-xl overflow-hidden mb-6 hover:shadow-md transition-shadow`}
+      className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-none rounded-lg overflow-hidden mb-4 hover:border-[var(--ant-color-border)] transition-colors ${
+        highlighted ? 'feed-post-highlight' : ''
+      }`}
       bodyStyle={{ padding: 0 }}
     >
       <FeedCardHeader
@@ -160,12 +168,13 @@ const FeedCard: React.FC<FeedCardProps> = ({
         onOpenPost={handleOpen}
         onCopyLink={handleCopyLink}
         onDeletePost={isPostOwner ? handleDeleteItem : undefined}
+        authorProfileBasePath={detailBasePath === '/discover' ? '/discover/author' : undefined}
       />
 
       <FeedCardBody
         item={item}
         compact={compact}
-        previewClickable={canViewDashboard}
+        previewClickable={canOpenAsset}
         onPreviewClick={handlePreviewOpen}
       />
 
@@ -234,6 +243,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
         </>
       )}
     </Card>
+    </div>
   );
 };
 

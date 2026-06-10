@@ -1,14 +1,23 @@
 import React, { useEffect } from 'react';
-import { Card, Form, Button, message, Space, Alert } from 'antd';
-import { SaveOutlined, SecurityScanOutlined } from '@ant-design/icons';
+import { Card, Form, Button, message, Alert } from 'antd';
+import { SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { SecurityForm } from './forms/SecurityForm';
+import type { TabComponentProps } from '../page';
 
-export const SecurityTab: React.FC = () => {
+export const SecurityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
   const [form] = Form.useForm();
   const { securitySettings, loading, updateSecuritySettings } = useSettingsStore();
+
+  useEffect(() => {
+    onSetAction?.(
+      <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={loading}>
+        {t('save_changes')}
+      </Button>
+    );
+  }, [loading, onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Data fetching is now handled by the parent SettingsPage based on active tab
 
@@ -37,17 +46,6 @@ export const SecurityTab: React.FC = () => {
       size="small"
       bordered={false}
       style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-      title={
-        <Space>
-          <SecurityScanOutlined />
-          {t('security_title')}
-        </Space>
-      }
-      extra={
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={loading}>
-          {t('save_changes')}
-        </Button>
-      }
     >
       <Alert
         message={t('security_alert_title')}
@@ -56,7 +54,6 @@ export const SecurityTab: React.FC = () => {
         showIcon
         style={{ marginBottom: 24 }}
       />
-
       <SecurityForm form={form} onFinish={handleSubmit} />
     </Card>
   );

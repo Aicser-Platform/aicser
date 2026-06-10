@@ -1,0 +1,146 @@
+/**
+ * Workspace chrome — single-border model (imported last in globals.css).
+ *
+ * Shell (sidebar, header, panel splits) owns outer edges.
+ * Layout workspaces (.chat-page-container, .query-editor-workspace, settings) stay flat.
+ * Leaf UI (.page-section-card, .welcome-content, composer shell) keeps one rim.
+ */
+
+/* ── Full-viewport workspaces: no global “floating panel card” chrome ── */
+
+.chat-page-container .chat-panel,
+.chat-page-container .data-panel,
+.query-editor-workspace .data-panel,
+.query-editor-workspace .monaco-sql-editor-container,
+.page-wrapper.page-wrapper--full-bleed .dashboard-studio-root,
+.page-wrapper.page-wrapper--full-bleed .studio-wrapper,
+.page-wrapper.settings-page .settings-layout,
+.page-wrapper.settings-page .settings-sidebar,
+.page-wrapper.settings-page .settings-main {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.chat-page-container .chat-panel {
+  border: none !important;
+  background: var(--ant-color-bg-layout) !important;
+}
+
+/* Data panel edge — module CSS owns border-left only */
+.chat-page-container .data-panel,
+.query-editor-workspace .data-panel {
+  border: none !important;
+  border-left: 1px solid var(--color-border, var(--ant-color-border)) !important;
+}
+
+.query-editor-workspace .monaco-sql-editor-container {
+  border: none !important;
+  background: var(--ant-color-bg-container) !important;
+}
+
+/* Legacy global panel classes (rarely used in markup) — flat inside workspaces */
+.chat-page-container .enhanced-chat-panel,
+.chat-page-container .enhanced-data-panel,
+.chat-page-container .query-editor-panel,
+.query-editor-workspace .query-editor-panel,
+.query-editor-workspace .enhanced-data-panel {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* ── Nested cards: one visible rim (parent only) ── */
+
+.page-wrapper .ant-card .ant-card,
+.chat-page-container .ant-card .ant-card {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.page-wrapper .ant-card .ant-card::before,
+.chat-page-container .ant-card .ant-card::before {
+  display: none !important;
+}
+
+.page-wrapper .ant-card .ant-card:hover,
+.chat-page-container .ant-card .ant-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.page-wrapper .ant-card .ant-card > .ant-card-head {
+  border-bottom: none !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.page-wrapper .ant-card .ant-card > .ant-card-body {
+  padding: 0 !important;
+}
+
+/* Borderless / embedded cards (settings org tab, inner forms) */
+.page-wrapper .ant-card-borderless,
+.settings-page .ant-card.ant-card-borderless,
+.chat-page-container .ant-card-borderless {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.page-wrapper .ant-card-borderless:hover,
+.settings-page .ant-card-borderless:hover,
+.chat-page-container .ant-card-borderless:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Duplicate rim: content-card inside section card */
+.page-wrapper .page-section-card .content-card,
+.page-wrapper .page-section-card.ant-card .ant-card {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Composer: single shell border (input-container only) ── */
+
+.chat-page-container .chat-input {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.chat-page-container .chat-composer-shell.input-container {
+  border: 1px solid var(--ant-color-border-secondary) !important;
+}
+
+.chat-page-container .chat-composer-shell.input-container:focus-within {
+  border-color: var(--ant-color-primary) !important;
+}
+
+/* Welcome hero is intentionally one card — no extra outer frame */
+.chat-page-container .welcome-message {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* ── Card hover lift: section/stat cards only (not every ant-card) ── */
+
+.page-wrapper .ant-card:hover:not(.page-section-card):not(.stat-card):not(.summary-card) {
+  transform: none !important;
+}
+
+.page-wrapper .ant-card:not(.page-section-card):not(.stat-card):not(.summary-card):hover {
+  border-color: var(--ant-color-border) !important;
+}
+
+.page-wrapper .page-section-card.ant-card:hover,
+.page-wrapper .stat-card.ant-card:hover,
+.page-wrapper .summary-card:hover {
+  transform: translateY(-1px) !important;
+}

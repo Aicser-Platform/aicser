@@ -1,5 +1,6 @@
 import { Modal } from 'antd';
 import React from 'react';
+import { useTranslations } from 'next-intl';
 import UploadDragger from './Dragger';
 import { IFileUpload } from './types';
 
@@ -8,7 +9,7 @@ interface UploadModalProps {
     onClose: () => void;
     onUpload: (fileData?: IFileUpload) => void;
     validFileTypes?: string[];
-    projectId?: string | number; // Project ID for file ownership
+    projectId?: string | number;
 }
 
 const UploadModal: React.FC<UploadModalProps> = ({
@@ -18,6 +19,8 @@ const UploadModal: React.FC<UploadModalProps> = ({
     validFileTypes = [],
     projectId,
 }) => {
+    const t = useTranslations('file_upload');
+
     const handleUploadSuccess = (response?: IFileUpload): void => {
         onUpload(response);
         onClose();
@@ -25,10 +28,11 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
     return (
         <Modal
-            title="Upload Files"
+            title={t('modal_title')}
             open={isOpen}
             onCancel={onClose}
             footer={null}
+            destroyOnHidden
         >
             <UploadDragger
                 onUpload={handleUploadSuccess}

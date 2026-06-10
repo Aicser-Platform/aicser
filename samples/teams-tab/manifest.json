@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "00000000-0000-4000-8000-aicser-chat-tab",
+  "packageName": "com.aicser.teams.chat",
+  "developer": {
+    "name": "Aicser",
+    "websiteUrl": "https://aicser.com",
+    "privacyUrl": "https://aicser.com/privacy",
+    "termsOfUseUrl": "https://aicser.com/terms"
+  },
+  "name": {
+    "short": "Aicser Chat",
+    "full": "Aicser AI Data Assistant"
+  },
+  "description": {
+    "short": "Ask questions about your connected data in Teams.",
+    "full": "Embed Aicser AI chat in Microsoft Teams. Requires an Aicser EE deployment and a signed embed JWT from Settings → Embed."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#00c2cb",
+  "staticTabs": [
+    {
+      "entityId": "aicser-chat",
+      "name": "Chat",
+      "contentUrl": "https://YOUR_AICSER_HOST/embed/chat?token=YOUR_JWT_EMBED_TOKEN",
+      "websiteUrl": "https://YOUR_AICSER_HOST/chat",
+      "scopes": ["personal", "team"]
+    }
+  ],
+  "validDomains": ["YOUR_AICSER_HOST"]
+}

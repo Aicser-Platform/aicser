@@ -1,7 +1,22 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Tabs, Typography, Row, Col, Statistic } from 'antd';
+/**
+ * Settings Page — sidebar navigation + page-level action button.
+ *
+ * Layout pattern (Vercel / Linear / GitHub / Stripe):
+ *
+ *   [Icon]  Title                          [Action Button]
+ *           Description
+ *   ────────────────────────────────────────────────────
+ *   Content (NO second divider, NO repeated header)
+ *
+ * Action button: tabs register theirs via onSetAction callback.
+ * The page renders it inline with the title — never orphaned.
+ */
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import nextDynamic from 'next/dynamic';
+import { Tooltip } from 'antd';
 import {
   UserOutlined,
   SecurityScanOutlined,
@@ -12,99 +27,289 @@ import {
   BankOutlined,
   SettingOutlined,
   LinkOutlined,
+  CodeOutlined,
   CreditCardOutlined,
+  AuditOutlined,
+  ThunderboltOutlined,
+  FileTextOutlined,
+  LockOutlined,
+  MenuOutlined,
+  CloseOutlined,
+  ProjectOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
-import nextDynamic from 'next/dynamic';
-const PricingModal = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.PricingModalEE }))) as any,
-  { ssr: false }
-) as React.ComponentType<{ visible?: boolean; onClose?: () => void; onUpgrade?: (planType: string, isYearly: boolean) => void; currentPlan?: string; loading?: boolean }>;
+import PricingModal from '@/components/PricingModal';
+import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import './settings-page.css';
 
-// Import tab components
+// ── Tab components ─────────────────────────────────────────────────────────────
 import { ProfileTab } from './components/ProfileTab';
 import { SecurityTab } from './components/SecurityTab';
 import { NotificationsTab } from './components/NotificationsTab';
 import { ApiKeysTab } from './components/ApiKeysTab';
 import { DataSourcesTab } from './components/DataSourcesTab';
 import { GeneralTab } from './components/GeneralTab';
+import { ProjectTab } from './components/ProjectTab';
 
 const OrganizationTab = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (() => import('@/ee').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
   { ssr: false }
-) as React.ComponentType;
-const TeamTab = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.TeamSettingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType;
-const IntegrationTab = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType;
+) as React.ComponentType<TabComponentProps>;
+const TeamTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.TeamSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const IntegrationTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
 const SubscriptionTab = nextDynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
   { ssr: false }
-) as React.ComponentType;
+) as React.ComponentType<TabComponentProps>;
+const RolesTab = nextDynamic(
+  () => import('@/ee/app/(dashboard)/settings/components/RolesTab').then((m) => ({ default: m.RolesTab })),
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const AgentSkillsTab = nextDynamic(
+  () => import('@/ee/app/(dashboard)/settings/components/AgentSkillsTab').then((m) => ({ default: m.AgentSkillsTab })),
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const AgentWorkflowsTab = nextDynamic(
+  () =>
+    import('@/ee/app/(dashboard)/settings/components/AgentWorkflowsTab').then((m) => ({
+      default: m.AgentWorkflowsTab,
+    })),
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const BriefingsTab = nextDynamic(
+  () => import('@/ee/app/(dashboard)/settings/components/BriefingsTab').then((m) => ({ default: m.BriefingsTab })),
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AuditLogTab = nextDynamic(() => import('./components/AuditLogTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
 
-const { Title, Text } = Typography;
-const isEnterpriseEdition = ['enterprise', 'ee'].includes(
-  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
-);
+/** Props passed to every tab so it can register an action button with the page header. */
+export interface TabComponentProps {
+  /** Tab calls this with its primary action button (or null to clear). */
+  onSetAction?: (node: React.ReactNode) => void;
+}
+
+const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 export const dynamic = 'force-dynamic';
 
-// Tab order: General → Profile → Security → Notifications → API Keys → Data Sources, plus EE workspace tabs.
-const BASE_TABS = [
-  'general',
-  'profile',
-  'security',
-  'notifications',
-  'api-keys',
-  'data-sources',
+// ── Navigation structure ───────────────────────────────────────────────────────
+
+interface NavItem {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  eeOnly?: boolean;
+  component: React.ComponentType<TabComponentProps>;
+  description?: string;
+}
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Account',
+    items: [
+      {
+        key: 'profile',
+        label: 'Profile',
+        icon: <UserOutlined />,
+        component: ProfileTab,
+        description: 'Name, avatar, preferences',
+      },
+      {
+        key: 'security',
+        label: 'Security',
+        icon: <LockOutlined />,
+        component: SecurityTab,
+        description: '2FA, sessions, password',
+      },
+      {
+        key: 'notifications',
+        label: 'Notifications',
+        icon: <BellOutlined />,
+        component: NotificationsTab,
+        description: 'Email and push alerts',
+      },
+    ],
+  },
+  {
+    label: 'Workspace',
+    items: [
+      {
+        key: 'general',
+        label: 'General',
+        icon: <SettingOutlined />,
+        component: GeneralTab,
+        description: 'Language, timezone, theme',
+      },
+      {
+        key: 'project',
+        label: 'Project',
+        icon: <ProjectOutlined />,
+        component: ProjectTab,
+        description: 'Name, description, project settings',
+      },
+      {
+        key: 'organization',
+        label: 'Organization',
+        icon: <BankOutlined />,
+        eeOnly: true,
+        component: OrganizationTab,
+        description: 'Logo, name, branding',
+      },
+      {
+        key: 'team',
+        label: 'Team',
+        icon: <TeamOutlined />,
+        eeOnly: true,
+        component: TeamTab,
+        description: 'Members and invitations',
+      },
+      {
+        key: 'roles',
+        label: 'Roles & Access',
+        icon: <SecurityScanOutlined />,
+        eeOnly: true,
+        component: RolesTab,
+        description: 'Permissions and RBAC',
+      },
+      {
+        key: 'billing-subscription',
+        label: 'Billing',
+        icon: <CreditCardOutlined />,
+        eeOnly: true,
+        component: SubscriptionTab,
+        description: 'Plan, usage, invoices',
+      },
+    ],
+  },
+  {
+    label: 'Data & Integrations',
+    items: [
+      {
+        key: 'data-sources',
+        label: 'Data Sources',
+        icon: <DatabaseOutlined />,
+        component: DataSourcesTab,
+        description: 'Connected databases and files',
+      },
+      {
+        key: 'integrations',
+        label: 'Integrations',
+        icon: <LinkOutlined />,
+        eeOnly: true,
+        component: IntegrationTab,
+        description: 'Slack, Jira, Salesforce…',
+      },
+    ],
+  },
+  {
+    label: 'Developer',
+    items: [
+      {
+        key: 'api-keys',
+        label: 'API Keys',
+        icon: <KeyOutlined />,
+        component: ApiKeysTab,
+        description: 'Programmatic access tokens',
+      },
+      {
+        key: 'embed',
+        label: 'Embed',
+        icon: <CodeOutlined />,
+        component: EmbedTab,
+        description: 'Embed charts in your apps',
+      },
+      {
+        key: 'audit',
+        label: 'Audit Log',
+        icon: <AuditOutlined />,
+        component: AuditLogTab,
+        description: 'Activity history',
+      },
+    ],
+  },
+  {
+    label: 'AI Agent',
+    items: [
+      {
+        key: 'agent-skills',
+        label: 'Skills',
+        icon: <ThunderboltOutlined />,
+        eeOnly: true,
+        component: AgentSkillsTab,
+        description: 'Custom tool integrations',
+      },
+      {
+        key: 'agent-workflows',
+        label: 'Workflows',
+        icon: <ApartmentOutlined />,
+        eeOnly: true,
+        component: AgentWorkflowsTab,
+        description: 'Multi-step agent plans',
+      },
+      {
+        key: 'briefings',
+        label: 'Briefings',
+        icon: <FileTextOutlined />,
+        eeOnly: true,
+        component: BriefingsTab,
+        description: 'Scheduled AI reports',
+      },
+    ],
+  },
 ];
-const EE_TABS = ['organization', 'team', 'integrations', 'billing-subscription'];
-const VALID_TABS = [...BASE_TABS, ...(isEnterpriseEdition ? EE_TABS : [])];
+
+const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+
+function resolveSettingsTab(tabParam: string | null | undefined, eeEnabled: boolean): string {
+  const visibleItems = ALL_ITEMS.filter((item) => !item.eeOnly || eeEnabled);
+  const visibleKeys = new Set(visibleItems.map((item) => item.key));
+  if (tabParam && visibleKeys.has(tabParam)) return tabParam;
+  return 'profile';
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
 
 const SettingsPage: React.FC = () => {
-  const t = useTranslations('settings');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentProject } = useProjectStore();
   const { currentOrganization } = useOrganizationStore();
   const { planType, init: initSubscription } = useSubscriptionStore();
+  const [pricingModalVisible, setPricingModalVisible] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [pageAction, setPageAction] = useState<React.ReactNode>(null);
 
-  const [pricingModalVisible, setPricingModalVisible] = useState(false); // kept as no-op; EE modal renders null
+  const activeTab = resolveSettingsTab(searchParams?.get('tab'), isEE);
 
-  const {
-    activeTab,
-    teamMembers,
-    dataSources,
-    apiKeys,
-    setActiveTab,
-    loadSettingsByTab,
-    loadApiKeys,
-    loadTeamMembers,
-    loadDataSources,
-  } = useSettingsStore();
-  // Sync URL ?tab= with store so /settings?tab=general works
+  const { setActiveTab, loadSettingsByTab, loadApiKeys, loadTeamMembers, loadDataSources } = useSettingsStore();
+
+  // Keep store in sync for any legacy consumers
   useEffect(() => {
-    const tab = searchParams?.get('tab');
-    if (tab && VALID_TABS.includes(tab)) {
-      setActiveTab(tab);
-    } else if (!VALID_TABS.includes(activeTab)) {
-      setActiveTab('general');
-    }
-  }, [activeTab, searchParams, setActiveTab]);
+    setActiveTab(activeTab);
+  }, [activeTab, setActiveTab]);
+
+  // Clear the action button when switching tabs
+  useEffect(() => {
+    setPageAction(null);
+  }, [activeTab]);
 
   // Load overview data and subscription on mount
   useEffect(() => {
@@ -112,237 +317,156 @@ const SettingsPage: React.FC = () => {
     loadTeamMembers(currentOrganization?.id);
     loadDataSources(currentProject?.id as string | undefined);
     void initSubscription();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id]);
 
   useEffect(() => {
-    if (!isEnterpriseEdition && EE_TABS.includes(activeTab)) return;
     loadSettingsByTab(activeTab, currentOrganization?.id, { projectId: currentProject?.id as string | undefined });
   }, [activeTab, loadSettingsByTab, currentOrganization?.id, currentProject?.id]);
 
-  const handleTabChange = (key: string) => {
-    setActiveTab(key);
-    router.replace(`/settings?tab=${key}`, { scroll: false });
-  };
-
-  const overviewStats = useMemo(
-    () => ({
-      members: teamMembers.length,
-      activeMembers: teamMembers.filter((m) => m.is_active).length,
-      dataSources: dataSources.length,
-      apiKeys: apiKeys.length,
-    }),
-    [teamMembers, dataSources, apiKeys]
+  const handleNav = useCallback(
+    (key: string) => {
+      router.replace(`/settings?tab=${key}`, { scroll: false });
+      setMobileSidebarOpen(false);
+    },
+    [router]
   );
 
-  const tabContentStyle = { paddingTop: 24, paddingBottom: 24 };
+  const handleSetAction = useCallback((node: React.ReactNode) => {
+    setPageAction(node);
+  }, []);
 
-  const baseTabItems = [
-    {
-      key: 'general',
-      label: (
-        <span>
-          <SettingOutlined /> {t('tab_general')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <GeneralTab />
-        </div>
-      ),
-    },
-    {
-      key: 'profile',
-      label: (
-        <span>
-          <UserOutlined /> {t('tab_profile')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <ProfileTab />
-        </div>
-      ),
-    },
-    {
-      key: 'security',
-      label: (
-        <span>
-          <SecurityScanOutlined /> {t('tab_security')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <SecurityTab />
-        </div>
-      ),
-    },
-    {
-      key: 'notifications',
-      label: (
-        <span>
-          <BellOutlined /> {t('tab_notifications')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <NotificationsTab />
-        </div>
-      ),
-    },
-    {
-      key: 'api-keys',
-      label: (
-        <span>
-          <KeyOutlined /> {t('tab_api_keys')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <ApiKeysTab />
-        </div>
-      ),
-    },
-    {
-      key: 'data-sources',
-      label: (
-        <span>
-          <DatabaseOutlined /> {t('tab_data_sources')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <DataSourcesTab />
-        </div>
-      ),
-    },
-  ];
-  const eeTabItems = [
-    {
-      key: 'organization',
-      label: (
-        <span>
-          <BankOutlined /> {t('tab_organization')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <OrganizationTab />
-        </div>
-      ),
-    },
-    {
-      key: 'team',
-      label: (
-        <span>
-          <TeamOutlined /> {t('tab_team')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <TeamTab />
-        </div>
-      ),
-    },
-    {
-      key: 'integrations',
-      label: (
-        <span>
-          <LinkOutlined /> {t('tab_integrations')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <IntegrationTab />
-        </div>
-      ),
-    },
-    {
-      key: 'billing-subscription',
-      label: (
-        <span>
-          <CreditCardOutlined /> {t('tab_billing')}
-        </span>
-      ),
-      children: (
-        <div style={tabContentStyle}>
-          <SubscriptionTab />
-        </div>
-      ),
-    },
-  ];
-  const tabItems = isEnterpriseEdition ? [...baseTabItems, ...eeTabItems] : baseTabItems;
+  const activeItem = useMemo(() => ALL_ITEMS.find((i) => i.key === activeTab), [activeTab]);
+  const ActiveComponent = (activeItem?.component ?? ProfileTab) as React.ComponentType<TabComponentProps>;
+
+  // ── Sidebar nav ──────────────────────────────────────────────────────────────
+  const SidebarNav = () => (
+    <nav className="w-full">
+      {NAV_GROUPS.map((group) => {
+        const visibleItems = group.items.filter((item) => !item.eeOnly || isEE);
+        if (!visibleItems.length) return null;
+        return (
+          <div key={group.label} className="mb-[18px]">
+            {/* Group label — matches main sidebar's section label style */}
+            <div className="mb-0.5 px-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ant-color-text-quaternary)]">
+              {group.label}
+            </div>
+            {visibleItems.map((item) => {
+              const isActive = activeTab === item.key;
+              return (
+                <Tooltip key={item.key} title={item.description} placement="right" mouseEnterDelay={0.7}>
+                  <button
+                    type="button"
+                    onClick={() => handleNav(item.key)}
+                    className={[
+                      'relative flex w-full cursor-pointer items-center gap-2 rounded-md border-0 px-2 py-1.5 text-left text-[13px]',
+                      'transition-colors duration-150',
+                      isActive
+                        ? 'bg-[var(--ant-color-primary-bg)] font-semibold text-[var(--ant-color-primary)]'
+                        : 'bg-transparent font-normal text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-text)]',
+                    ].join(' ')}
+                  >
+                    {/* Active bar — matches main sidebar: border-radius 0 2px 2px 0, height 18px */}
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-sm bg-[var(--ant-color-primary)]" />
+                    )}
+                    <span className={`shrink-0 text-sm ${isActive ? 'ml-1' : ''}`}>{item.icon}</span>
+                    <span className="leading-[1.3]">{item.label}</span>
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
+  );
 
   return (
-    <div className="settings-page p-4 sm:p-6 space-y-5">
-      {/* Header */}
-      <div className="space-y-1">
-        <Title level={3} style={{ marginBottom: 0, fontWeight: 600 }}>
-          {t('title')}
-        </Title>
-        <Text type="secondary" style={{ fontSize: 13 }}>
-          {t('page_subtitle')}
-        </Text>
+    <DashboardPageShell className="settings-page">
+      <div className="flex w-full min-h-0 flex-1 flex-col items-stretch md:flex-row md:items-start">
+        {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
+        <aside className="sticky top-0 hidden w-[210px] shrink-0 flex-col self-start border-r border-[var(--ant-color-border)] py-5 pl-0 pr-2 md:flex">
+          <div className="mb-4 px-2">
+            <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
+          </div>
+          <SidebarNav />
+        </aside>
+
+        {/* ── Mobile header bar ──────────────────────────────────────────── */}
+        <div className="sticky top-0 z-10 flex w-full items-center justify-between gap-2.5 border-b border-[var(--ant-color-border)] bg-[var(--ant-color-bg-container)] px-4 py-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent text-[13px] font-semibold text-[var(--ant-color-text)]"
+          >
+            <MenuOutlined className="text-[15px]" />
+            <span>{activeItem?.label || 'Settings'}</span>
+          </button>
+          {pageAction}
+        </div>
+
+        {/* ── Mobile drawer ────────────────────────────────────────────────── */}
+        {mobileSidebarOpen && (
+          <div className="fixed inset-0 z-[1000] bg-black/40 md:hidden" onClick={() => setMobileSidebarOpen(false)}>
+            <div
+              className="absolute inset-y-0 left-0 w-[250px] overflow-y-auto bg-[var(--ant-color-bg-container)] px-2 py-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between px-2">
+                <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
+                <button
+                  type="button"
+                  aria-label="Close settings navigation"
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="cursor-pointer border-0 bg-transparent text-base text-[var(--ant-color-text-tertiary)] hover:text-[var(--ant-color-text)]"
+                >
+                  <CloseOutlined />
+                </button>
+              </div>
+              <SidebarNav />
+            </div>
+          </div>
+        )}
+
+        {/* ── Main content ─────────────────────────────────────────────────── */}
+        <main className="w-full min-w-0 flex-1 overflow-visible px-4 py-4 sm:px-5 md:w-0 md:px-7 md:py-6 lg:px-8">
+          {/*
+           * Page header: Icon + Title (left) | Action button (right)
+           * Description below title, ONE divider.
+           * This is the standard Vercel/Linear/GitHub settings header.
+           */}
+          {activeItem && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between gap-3">
+                {/* Left: icon + title + description */}
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="mt-0.5 shrink-0 text-lg text-[var(--ant-color-primary)]">{activeItem.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-base font-bold leading-[1.3] text-[var(--ant-color-text)]">
+                      {activeItem.label}
+                    </div>
+                    {activeItem.description && (
+                      <div className="mt-0.5 text-xs leading-[1.4] text-[var(--ant-color-text-tertiary)]">
+                        {activeItem.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: tab action button — registered by each tab via onSetAction */}
+                {pageAction && <div className="hidden shrink-0 md:block">{pageAction}</div>}
+              </div>
+
+              {/* Single divider — tabs must NOT add their own */}
+              <div className="mt-3.5 border-b border-[var(--ant-color-border)]" />
+            </div>
+          )}
+
+          {/* Tab content */}
+          <ActiveComponent key={activeTab} onSetAction={handleSetAction} />
+        </main>
       </div>
-
-      {/* Overview Stats - minimal borders */}
-      <Row gutter={[12, 12]}>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-            <Statistic
-              title={t('overview_team_members')}
-              value={overviewStats.members}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#3f8600' }}
-            />
-            <Text type="secondary" className="text-xs">
-              {t('overview_active_suffix', { count: overviewStats.activeMembers })}
-            </Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-            <Statistic
-              title={t('overview_data_sources')}
-              value={overviewStats.dataSources}
-              prefix={<DatabaseOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-            <Text type="secondary" className="text-xs">
-              {t('overview_all_operational')}
-            </Text>
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-            <Statistic
-              title={t('overview_api_keys')}
-              value={overviewStats.apiKeys}
-              prefix={<KeyOutlined />}
-              valueStyle={{ color: '#722ed1' }}
-            />
-            <Text type="secondary" className="text-xs">
-              {overviewStats.apiKeys === 0
-                ? t('overview_api_keys_none')
-                : t('overview_api_keys_active', { count: overviewStats.apiKeys })}
-            </Text>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Settings Tabs - scrollable on mobile; destroyInactiveTabPane for faster load */}
-      <Tabs
-        activeKey={activeTab}
-        onChange={handleTabChange}
-        items={tabItems}
-        type="card"
-        size="middle"
-        className="settings-tabs"
-        style={{ marginTop: 24 }}
-        tabBarStyle={{ marginBottom: 0 }}
-        destroyInactiveTabPane
-        tabBarGutter={12}
-      />
 
       <PricingModal
         visible={pricingModalVisible}
@@ -351,7 +475,7 @@ const SettingsPage: React.FC = () => {
         currentPlan={planType}
         loading={false}
       />
-    </div>
+    </DashboardPageShell>
   );
 };
 

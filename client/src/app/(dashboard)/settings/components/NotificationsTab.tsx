@@ -1,16 +1,25 @@
 import React, { useEffect } from 'react';
-import { Card, Form, Button, message, Space, Divider, Typography } from 'antd';
-import { BellOutlined, SaveOutlined } from '@ant-design/icons';
+import { Card, Form, Button, message, Divider, Typography } from 'antd';
+import { SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { NotificationForm } from './forms/NotificationForm';
+import type { TabComponentProps } from '../page';
 
 const { Title, Text } = Typography;
 
-export const NotificationsTab: React.FC = () => {
+export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
   const [form] = Form.useForm();
   const { notificationSettings, loading, updateNotificationSettings } = useSettingsStore();
+
+  useEffect(() => {
+    onSetAction?.(
+      <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={loading}>
+        {t('save_changes')}
+      </Button>
+    );
+  }, [loading, onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Data fetching is now handled by the parent SettingsPage based on active tab
 
@@ -37,21 +46,10 @@ export const NotificationsTab: React.FC = () => {
       size="small"
       bordered={false}
       style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-      title={
-        <Space>
-          <BellOutlined />
-          {t('notifications_title')}
-        </Space>
-      }
-      extra={
-        <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={loading}>
-          {t('save_changes')}
-        </Button>
-      }
     >
-      <div style={{ marginBottom: 24 }}>
-        <Title level={5}>{t('notifications_communication_preferences')}</Title>
-        <Text type="secondary">{t('notifications_section_sub')}</Text>
+      <div style={{ marginBottom: 20 }}>
+        <Title level={5} style={{ margin: 0 }}>{t('notifications_communication_preferences')}</Title>
+        <Text type="secondary" style={{ fontSize: 13 }}>{t('notifications_section_sub')}</Text>
       </div>
 
       <NotificationForm form={form} onFinish={handleSubmit} />

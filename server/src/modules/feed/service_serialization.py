@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 from uuid import NAMESPACE_DNS, UUID, uuid5
 
 from sqlalchemy import select
@@ -10,18 +10,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.feed.models import FeedAuthorFollow, FeedComment as FeedCommentModel, FeedCommentReaction, FeedInteraction, FeedPost
 from src.modules.user.models import User
+from src.modules.user.avatar_storage_service import generate_avatar_sas_url
 from src.modules.feed.schemas import (
     AssetType,
     FeedAuthor,
     FeedComment,
     FeedItemResponse,
     FeedMetrics,
+    FeedRenderMode,
+    FeedSnapshotInfo,
     FeedUserInteraction,
     FeedVisibility,
     PublicationStatus,
     ReactionType,
 )
-from src.modules.feed.service_utils import _enum_value, _reaction_values, _to_iso
+from src.modules.feed.service_utils import _enum_value, _normalize_asset_payload, _reaction_values, _to_iso
 
 
 class FeedServiceSerializationMixin:
@@ -29,6 +32,7 @@ class FeedServiceSerializationMixin:
 
     def _preview_payload(self, post: FeedPost) -> Dict[str, Any]:
         asset_type = _enum_value(post.asset_type)
+        meta = getattr(post, "preview_metadata", None) or {}
         preview_label_map = {
             AssetType.dashboard.value: "Live Dashboard",
             AssetType.chart.value: "Interactive Chart",
@@ -40,28 +44,43 @@ class FeedServiceSerializationMixin:
         if asset_type == AssetType.dashboard.value:
             preview_type = "dashboard"
         elif asset_type == AssetType.insight.value:
-            preview_type = "insight"
+            preview_type = meta.get("previewType") or "insight"
         else:
-            preview_type = chart_types[raw % len(chart_types)]
-        preview_data = [18 + ((raw >> (idx * 3)) % 72) for idx in range(6)]
+            preview_type = meta.get("previewType") or chart_types[raw % len(chart_types)]
+        preview_data = meta.get("previewData") or [18 + ((raw >> (idx * 3)) % 72) for idx in range(6)]
 
-        previews: List[Dict[str, Any]] = []
-        if asset_type == AssetType.dashboard.value:
-            variant_types = ["line", "bar", "pie", "bar", "line"]
-            for index, variant in enumerate(variant_types):
-                offset = (index - 1) * 6
-                adjusted = [max(6, min(95, value + offset)) for value in preview_data]
-                previews.append({"type": variant, "data": adjusted})
-        else:
-            previews.append({"type": preview_type, "data": preview_data})
+        previews: List[Dict[str, Any]] = meta.get("previews") or []
+        if not previews:
+            if asset_type == AssetType.dashboard.value:
+                variant_types = ["line", "bar", "pie", "bar", "line"]
+                for index, variant in enumerate(variant_types):
+                    offset = (index - 1) * 6
+                    adjusted = [max(6, min(95, value + offset)) for value in preview_data]
+                    previews.append({"type": variant, "data": adjusted})
+            else:
+                previews.append({"type": preview_type, "data": preview_data})
 
-        return {
-            "summary": f"{post.title or 'Insight'} - {asset_type} summary",
-            "previewLabel": preview_label_map.get(asset_type, "Insight Snapshot"),
+        payload: Dict[str, Any] = {
+            "summary": post.description or post.title or f"{asset_type} summary",
+            "previewLabel": meta.get("previewLabel") or preview_label_map.get(asset_type, "Insight Snapshot"),
             "previewType": preview_type,
             "previewData": preview_data,
             "previews": previews,
         }
+
+        for key in (
+            "chartWidget",
+            "dashboardId",
+            "sourceQueryId",
+            "excerpt",
+            "questionTitle",
+            "conversationId",
+            "messageId",
+        ):
+            if meta.get(key) is not None:
+                payload[key] = meta[key]
+
+        return _normalize_asset_payload(payload)
 
     @staticmethod
     def _build_name(user: Optional[User], fallback: str) -> str:
@@ -82,16 +101,22 @@ class FeedServiceSerializationMixin:
         fallback_name = f"User {fallback_id[:8]}"
         name = self._build_name(user, fallback_name)
         email = str(getattr(user, "email", "") or "")
-        if email and "@" in email:
-            username = email.split("@", 1)[0]
-        else:
-            username = name.lower().replace(" ", ".")
+        username = (getattr(user, "username", None) or "").strip()
+        if not username:
+            if email and "@" in email:
+                username = email.split("@", 1)[0]
+            else:
+                username = name.lower().replace(" ", ".")
+
+        avatar_url = getattr(user, "avatar_url", None)
+        if avatar_url:
+            avatar_url = generate_avatar_sas_url(avatar_url)
 
         return FeedAuthor(
             id=str(getattr(user, "id", fallback_id)),
             name=name,
             username=username,
-            avatarUrl=None,
+            avatarUrl=avatar_url,
             title=getattr(user, "company", None),
         )
 
@@ -100,9 +125,18 @@ class FeedServiceSerializationMixin:
         if not unique_ids:
             return {}
 
-        result = await self.db.execute(select(User).where(User.id.in_(unique_ids)))
+        from sqlalchemy import or_
+
+        result = await self.db.execute(
+            select(User).where(or_(User.id.in_(unique_ids), User.user_id.in_(unique_ids)))
+        )
         users = result.scalars().all()
-        return {user.id: user for user in users}
+        user_map: Dict[UUID, User] = {}
+        for user in users:
+            user_map[user.id] = user
+            if user.user_id:
+                user_map[user.user_id] = user
+        return user_map
 
     async def _load_user_reactions(
         self,
@@ -281,6 +315,8 @@ class FeedServiceSerializationMixin:
         bookmarks: Set[UUID],
         comments: Dict[UUID, List[FeedComment]],
         followed_authors: Optional[Set[UUID]] = None,
+        preview_payload: Optional[Dict[str, Any]] = None,
+        viewer_id: Optional[UUID] = None,
     ) -> FeedItemResponse:
         asset_type = _enum_value(post.asset_type)
         post_id = post.id
@@ -327,6 +363,31 @@ class FeedServiceSerializationMixin:
 
         last_activity_at = latest_comment_time or _to_iso(post.published_at or post.created_at)
 
+        render_mode_raw = _enum_value(getattr(post, "render_mode", None)) or FeedRenderMode.live.value
+        try:
+            typed_render_mode = FeedRenderMode(render_mode_raw)
+        except ValueError:
+            typed_render_mode = FeedRenderMode.live
+
+        snapshot_info: Optional[FeedSnapshotInfo] = None
+        if typed_render_mode == FeedRenderMode.snapshot and int(getattr(post, "snapshot_version", 0) or 0) > 0:
+            captured_at = None
+            if preview_payload:
+                captured_at = preview_payload.get("snapshotCapturedAt")
+                if not captured_at and preview_payload.get("snapshotPayload"):
+                    snap_raw = preview_payload["snapshotPayload"]
+                    if isinstance(snap_raw, dict):
+                        captured_at = snap_raw.get("capturedAt")
+            snapshot_info = FeedSnapshotInfo(
+                version=int(getattr(post, "snapshot_version", 0) or 0),
+                capturedAt=str(captured_at) if captured_at else None,
+                renderMode=FeedRenderMode.snapshot,
+            )
+
+        is_owner = bool(
+            viewer_id and post.author_id and str(post.author_id) == str(viewer_id)
+        )
+
         return FeedItemResponse(
             id=str(post.id),
             assetType=typed_asset_type,
@@ -356,5 +417,10 @@ class FeedServiceSerializationMixin:
                 ),
             ),
             recentComments=recent_comments,
-            asset=self._preview_payload(post),
+            asset=_normalize_asset_payload(
+                preview_payload if preview_payload is not None else self._preview_payload(post)
+            ),
+            renderMode=typed_render_mode,
+            snapshot=snapshot_info,
+            isOwner=is_owner,
         )

@@ -436,6 +436,9 @@ async def save_ai_provider_key(
         "model": (payload.model or "").strip() or existing.get("model"),
         "endpoint": (payload.endpoint or "").strip() or existing.get("endpoint"),
     }
+    from src.modules.data.utils.credentials import encrypt_credentials
+
+    store = encrypt_credentials(store)
     await _user_settings_repo.set_setting(
         user_id, f"provider_key.{key_normalized}", json.dumps(store)
     )
@@ -550,3 +553,37 @@ async def get_team_members(
     except Exception as e:
         logger.exception("get_team_members failed")
         return {"members": []}
+
+
+# ─── Brand Config (user/org branding for PPTX, dashboards, reports) ───────────
+
+@router.get("/settings/brand")
+async def get_brand_config(
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Get the user's brand configuration (colors, fonts, logo, PPTX template)."""
+    user_id = _require_user_id(current_token)
+    try:
+        from ee.modules.ai.services.brand_config_service import BrandConfig
+        org_id = None
+        if isinstance(current_token, dict):
+            org_id = current_token.get("organization_id") or current_token.get("org_id")
+        brand = await BrandConfig.load(user_id=user_id, org_id=org_id)
+        return {"success": True, "brand": brand.to_dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/settings/brand")
+async def save_brand_config(
+    body: dict,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Save user brand configuration."""
+    user_id = _require_user_id(current_token)
+    try:
+        from ee.modules.ai.services.brand_config_service import save_brand_config as _save
+        await _save(user_id, body)
+        return {"success": True, "message": "Brand configuration saved."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

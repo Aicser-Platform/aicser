@@ -2,6 +2,8 @@ import { Grid, Layout, theme, message } from 'antd';
 import React, { useState, useCallback } from 'react';
 import { LayoutHeader } from '../Header/Header';
 import Navigation from '../Navigation/Navigation';
+import MobileBottomNav from '../Navigation/MobileBottomNav';
+import '@/layouts/Navigation/MobileBottomNav.css';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import { useDataSources } from '@/hooks/useDataSources';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -37,6 +39,9 @@ function setStoredLayoutSidebarCollapsed(collapsed: boolean): void {
   }
 }
 import { useTranslations } from 'next-intl';
+import { OnboardingBootstrap } from '@/components/onboarding/OnboardingBootstrap';
+import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
+import { CE_ONBOARDING_AWAITING_DATA, CE_ONBOARDING_DATA_CONNECTED } from '@/components/onboarding/CeOnboardingModal';
 
 const { useBreakpoint } = Grid;
 const { Content } = Layout;
@@ -86,6 +91,10 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
 
   const sidebarOffset = React.useMemo(() => (isBreakpoint ? 0 : collapsed ? 80 : 256), [collapsed, isBreakpoint]);
 
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', `${sidebarOffset}px`);
+  }, [sidebarOffset]);
+
   // On mobile, tapping the backdrop closes the sidebar
   const handleBackdropClick = useCallback(() => {
     if (isBreakpoint && !collapsed) {
@@ -98,25 +107,29 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
 
   return (
     <Layout
+      className={isBreakpoint ? 'layout-app-shell layout--mobile-nav' : 'layout-app-shell'}
       style={{
         height: '100vh',
         margin: 0,
         padding: 0,
         background: 'var(--ant-color-bg-layout)',
       }}
-      hasSider
+      hasSider={!isBreakpoint}
     >
-      <Navigation
-        collapsed={collapsed}
-        isBreakpoint={isBreakpoint}
-        onCollapse={setCollapsed}
-        onBreakpoint={setIsBreakpoint}
-      />
+      <SkipToContentLink />
+      {!isBreakpoint && (
+        <Navigation
+          collapsed={collapsed}
+          isBreakpoint={isBreakpoint}
+          onCollapse={setCollapsed}
+          onBreakpoint={setIsBreakpoint}
+        />
+      )}
 
-      {/* Mobile backdrop — sits between sidebar and content, closes sidebar on tap.
-                Uses a dedicated div instead of CSS filter (filter creates a new stacking
-                context that breaks position:fixed on the header). */}
-      {showMobileBackdrop && (
+      {isBreakpoint && <MobileBottomNav />}
+
+      {/* Desktop sidebar backdrop only (mobile uses bottom nav + more drawer) */}
+      {showMobileBackdrop && !isBreakpoint && (
         <div
           className="mobile-sidebar-backdrop"
           onClick={handleBackdropClick}
@@ -136,13 +149,11 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
       )}
 
       <Layout
+        className="layout-main-column"
         style={{
           height: '100vh',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'margin-left 0.2s ease',
-          marginLeft: sidebarOffset,
-          width: `calc(100% - ${sidebarOffset}px)`,
           marginTop: 0,
           padding: 0,
           background: 'var(--ant-color-bg-layout)',
@@ -156,25 +167,21 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
           highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
         />
         <Content
-          // className="dashboard-content-override"
+          id="main-content"
+          tabIndex={-1}
+          className={`layout-page-content${isBreakpoint ? ' layout-main-content' : ''}`}
           style={{
             flex: 1,
-            height: 'calc(100vh - 64px)',
-            minHeight: '0',
-            // maxHeight: 'calc(100vh - 64px)',
+            minHeight: 0,
             margin: 0,
-            marginTop: '64px',
             padding: 0,
-            paddingTop: 0,
             background: 'var(--ant-color-bg-layout)',
-            // display: 'flex',
-            // flexDirection: 'column',
             position: 'relative',
             boxSizing: 'border-box',
             border: 'none',
             outline: 'none',
             width: '100%',
-            overflowY: 'auto',
+            overflowY: 'hidden',
             overflowX: 'hidden',
           }}
         >
@@ -182,7 +189,10 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
             className="page-content"
             style={{
               width: '100%',
-              minHeight: '100%',
+              height: '100%',
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
             {children}
@@ -201,15 +211,22 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
               contextSelectDataSource(dataSource.id);
             }
             message.success(
-              t('toast_ds_connected', { name: dataSource?.name ?? t('unknown') })
-                        
+              t('toast_ds_connected', { name: dataSource?.name ?? t('unknown') }),
             );
-          } catch (e) {
+            try {
+              if (sessionStorage.getItem(CE_ONBOARDING_AWAITING_DATA) === '1') {
+                window.dispatchEvent(new CustomEvent(CE_ONBOARDING_DATA_CONNECTED));
+              }
+            } catch {
+              /* ignore */
+            }
+          } catch {
             message.error(t('toast_refresh_datasources_failed'));
           }
         }}
         isChatIntegration={false}
       />
+      <OnboardingBootstrap onConnectData={() => setShowDataSourceModal(true)} />
     </Layout>
   );
 });

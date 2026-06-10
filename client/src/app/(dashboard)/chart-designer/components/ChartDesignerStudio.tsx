@@ -1,22 +1,21 @@
 'use client';
 
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { Typography, ConfigProvider, Spin } from 'antd';
+import { ConfigProvider, Spin } from 'antd';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../dashboards/DashboardStudio.css';
 import './ChartDesignerStudio.css';
-import { WIDGET_TEMPLATES } from '../../dashboards/widgetTemplates';
+import { WidgetBlockPicker } from '../../dashboards/components/WidgetBlockPicker';
 import { PropertiesPanel } from '../../dashboards/Properties/PropertiesPanel';
 import DashboardCanvas from '../../dashboards/Canvas/DashboardCanvas';
 import { ChartDesignerSidebar } from './ChartDesignerSidebar';
+import { ChartDesignerToolbar } from './ChartDesignerToolbar';
 import { useChartDesignerStore, type ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
 
 import { useProjectStore } from '@/stores/useProjectStore';
-
-const { Text } = Typography;
 
 const generateWidgetId = () => `w_designer_${Date.now()}`;
 const DESIGNER_DEFAULT_CHART_HEIGHT = 24;
@@ -26,23 +25,7 @@ function EmptyDesignerState({ onSelect }: { onSelect: (template: any) => void })
   return (
     <div className="canvas-empty">
       <div className="canvas-empty-content animate-in">
-        <div style={{ marginBottom: 32, textAlign: 'center' }}>
-          <Text type="secondary" style={{ fontSize: 18, opacity: 0.8 }}>
-            {t('empty_state_hint')}
-          </Text>
-        </div>
-
-        <div className="widget-selection-grid">
-          {WIDGET_TEMPLATES.map((item: any) => (
-            <div key={item.id} onClick={() => onSelect(item)} className="widget-template-item">
-              <div className="widget-template-icon">{item.icon}</div>
-              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <div className="widget-template-title">{item.name}</div>
-                <div className="widget-template-description">{item.description}</div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <WidgetBlockPicker variant="canvas" onSelect={onSelect} hintText={t('empty_state_hint')} />
       </div>
     </div>
   );
@@ -169,6 +152,7 @@ export default function ChartDesignerStudio() {
 
           {/* Canvas Area */}
           <main className="studio-canvas-area designer-canvas">
+            <ChartDesignerToolbar selectedWidget={selectedWidget} />
             <div className="designer-fullscreen-canvas">
               <div className="designer-canvas-container">
                 {selectedWidget ? (

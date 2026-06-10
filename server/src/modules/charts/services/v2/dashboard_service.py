@@ -68,9 +68,12 @@ class DashboardService:
         dashboard: Dashboard,
         data: Mapping[str, Any],
     ) -> Dashboard:
-        for key, value in self._normalize_data(data).items():
+        normalized = self._normalize_data(data)
+        for key, value in normalized.items():
             if value is not None:
                 setattr(dashboard, key, value)
+        if "description" in data:
+            dashboard.description = data.get("description")
 
         await self.db.commit()
         await self.db.refresh(dashboard)
@@ -78,5 +81,81 @@ class DashboardService:
         return dashboard
 
     async def delete(self, dashboard: Dashboard) -> None:
+        """Remove dashboard and dependent rows (widgets, pages, charts, shares, analytics)."""
+        from sqlalchemy import delete, select, update
+
+        from src.modules.charts.models import Chart, DashboardEmbed, QueryPattern
+        from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
+        from src.modules.dashboards.models import (
+            DashboardAnalytics,
+            DashboardChart,
+            DashboardPage,
+            DashboardShare,
+            dashboard_widgets_table,
+        )
+
+        dashboard_id = dashboard.id
+
+        # Legacy widget rows (FK to dashboard and pages)
+        await self.db.execute(
+            delete(dashboard_widgets_table).where(
+                dashboard_widgets_table.c.dashboard_id == dashboard_id
+            )
+        )
+
+        chart_service = DashboardChartService(self.db)
+        charts = await chart_service.list_charts(dashboard_id)
+
+        await self.db.execute(
+            delete(DashboardChart).where(DashboardChart.dashboard_id == dashboard_id)
+        )
+
+        for chart in charts:
+            await self.db.delete(chart)
+
+        orphan_charts = await self.db.execute(
+            select(Chart).where(Chart.dashboard_id == dashboard_id)
+        )
+        for chart in orphan_charts.scalars():
+            await self.db.delete(chart)
+
+        await self.db.execute(
+            update(QueryPattern)
+            .where(QueryPattern.dashboard_id == dashboard_id)
+            .values(dashboard_id=None)
+        )
+
+        pages_result = await self.db.execute(
+            select(DashboardPage).where(DashboardPage.dashboard_id == dashboard_id)
+        )
+        for page in pages_result.scalars():
+            await self.db.delete(page)
+
+        await self.db.execute(
+            delete(DashboardShare).where(DashboardShare.dashboard_id == dashboard_id)
+        )
+        await self.db.execute(
+            delete(DashboardAnalytics).where(DashboardAnalytics.dashboard_id == dashboard_id)
+        )
+        await self.db.execute(
+            delete(DashboardEmbed).where(DashboardEmbed.dashboard_id == dashboard_id)
+        )
+
+        try:
+            from sqlalchemy import text
+
+            dash_id_str = str(dashboard_id)
+            await self.db.execute(
+                text(
+                    "DELETE FROM scheduled_emails WHERE body LIKE :meta_pattern OR body LIKE :url_pattern"
+                ),
+                {
+                    "meta_pattern": f'%"dashboard_id": "{dash_id_str}"%',
+                    "url_pattern": f"%{dash_id_str}%",
+                },
+            )
+        except Exception:
+            pass
+
         await self.db.delete(dashboard)
         await self.db.commit()

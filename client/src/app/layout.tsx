@@ -1,18 +1,51 @@
 export const dynamic = 'force-dynamic';
 
-import React from 'react';
+import { GOOGLE_FONTS_HREF } from '@/config/typography';
 import { Providers } from '@/components/Providers/Providers';
 import GlobalErrorBoundary from '@/components/layout/GlobalErrorBoundary';
-import { Metadata } from 'next';
+import { SerwistProvider } from '@/components/pwa/SerwistProvider';
+import { Metadata, Viewport } from 'next';
+
+const APP_NAME = 'Aicser';
+const APP_DESCRIPTION = 'AI-powered data analytics and visualization platform';
 
 export const metadata: Metadata = {
+  applicationName: APP_NAME,
   title: {
     default: 'Aicser - AI Data Scientist',
     template: 'Aicser | %s',
   },
-  icons: {
-    icon: '/aicser_logo.png',
+  description: APP_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: APP_NAME,
   },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#0d1117' },
+  ],
+  colorScheme: 'light dark',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -33,7 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Khmer:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Siemreap&display=swap" rel="stylesheet" />
+        <link href={GOOGLE_FONTS_HREF} rel="stylesheet" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -62,7 +95,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }}
       >
         <GlobalErrorBoundary>
-          <Providers>{children}</Providers>
+          <SerwistProvider>
+            <Providers>{children}</Providers>
+          </SerwistProvider>
         </GlobalErrorBoundary>
       </body>
     </html>

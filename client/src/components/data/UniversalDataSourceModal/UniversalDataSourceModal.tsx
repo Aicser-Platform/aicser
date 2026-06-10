@@ -2242,8 +2242,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               </Form.Item>
             </Col>
           </Row>
-          <Divider style={{ margin: '24px 0' }} />
-          {renderTestAndSave()}
         </div>
       );
     }
@@ -3827,7 +3825,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           return (
             <>
               {renderApiConfiguration()}
-              <Divider style={{ margin: '24px 0' }} />
               {renderTestAndSave()}
             </>
           );
@@ -3839,7 +3836,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             return (
               <>
                 {renderCloudStorageConfiguration()}
-                <Divider style={{ margin: '24px 0' }} />
                 {renderTestAndSave()}
               </>
             );
@@ -3847,7 +3843,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           return (
             <>
               {renderDatabaseConfiguration()}
-              <Divider style={{ margin: '24px 0' }} />
               {renderTestAndSave()}
             </>
           );
@@ -3855,7 +3850,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           return (
             <>
               {renderDatabaseConfiguration()}
-              <Divider style={{ margin: '24px 0' }} />
               {renderTestAndSave()}
             </>
           );
@@ -3999,6 +3993,72 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     }
   };
 
+  const renderWizardFooter = () => (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        width: '100%',
+        gap: 8,
+      }}
+    >
+      <div>
+        {currentStep > 0 && <Button onClick={handlePrev}>{t('btn_previous')}</Button>}
+        {currentStep === 0 && <Button onClick={onClose}>{t('cancel')}</Button>}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {currentStep === 0 && (
+          <Button type="primary" onClick={handleNext} disabled={!canProceedToNext()}>
+            {t('btn_next')}
+          </Button>
+        )}
+        {currentStep === 1 && dataSourceConfig.type === 'file' && fileSourceKind === 'upload' && (
+          <Button
+            type="primary"
+            onClick={saveDataSource}
+            loading={loading}
+            disabled={!uploadedFile || !dataSourceConfig.name}
+            icon={<SaveOutlined />}
+          >
+            {t('btn_save')}
+          </Button>
+        )}
+        {currentStep === 1 && dataSourceConfig.type === 'knowledge_base' && kbDocuments.length > 0 && (
+          <Button type="primary" onClick={onClose}>
+            {t('btn_done')}
+          </Button>
+        )}
+        {currentStep === 1 &&
+          (dataSourceConfig.type !== 'file' || fileSourceKind === 'google_sheet') &&
+          dataSourceConfig.type !== 'knowledge_base' &&
+          dataSourceConfig.type !== 'sample_duckdb' && (
+            <>
+              <Button type="default" onClick={testConnection} loading={loading} icon={<CheckCircleOutlined />}>
+                {t('btn_test')}
+              </Button>
+              <Button
+                type="primary"
+                onClick={saveDataSource}
+                loading={loading}
+                icon={<SaveOutlined />}
+                disabled={
+                  dataSourceConfig.type === 'file' && fileSourceKind === 'google_sheet'
+                    ? !dataSourceConfig.name?.trim() || !googleSheetUrl?.trim()
+                    : testResult
+                      ? !testResult.success
+                      : false
+                }
+              >
+                {t('btn_save')}
+              </Button>
+            </>
+          )}
+      </div>
+    </div>
+  );
+
   return (
     <Modal
       title={
@@ -4009,7 +4069,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       }
       open={isOpen}
       onCancel={onClose}
-      footer={null}
+      footer={renderWizardFooter()}
       width={isCompactViewport ? '95vw' : 800}
       centered={!isCompactViewport}
       style={isCompactViewport ? { top: 12 } : undefined}
@@ -4024,7 +4084,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           paddingTop: 16,
         },
       }}
-      destroyOnClose
+      destroyOnHidden
     >
       <Steps
         current={currentStep}
@@ -4038,75 +4098,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       </Steps>
 
       {renderStepContent()}
-
-      <Divider />
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          bottom: 0,
-          background: 'var(--ant-color-bg-elevated)',
-          paddingTop: '12px',
-          zIndex: 1,
-        }}
-      >
-        <div>
-          {currentStep > 0 && <Button onClick={handlePrev}>{t('btn_previous')}</Button>}
-          {currentStep === 0 && <Button onClick={onClose}>{t('cancel')}</Button>}
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {currentStep === 0 && (
-            <Button type="primary" onClick={handleNext} disabled={!canProceedToNext()}>
-              {t('btn_next')}
-            </Button>
-          )}
-          {currentStep === 1 && dataSourceConfig.type === 'file' && fileSourceKind === 'upload' && (
-            <Button
-              type="primary"
-              onClick={saveDataSource}
-              loading={loading}
-              disabled={!uploadedFile || !dataSourceConfig.name}
-              icon={<SaveOutlined />}
-            >
-              {t('btn_save')}
-            </Button>
-          )}
-          {currentStep === 1 && dataSourceConfig.type === 'knowledge_base' && kbDocuments.length > 0 && (
-            <Button type="primary" onClick={onClose}>
-              {t('btn_done')}
-            </Button>
-          )}
-          {currentStep === 1 &&
-            (dataSourceConfig.type !== 'file' || fileSourceKind === 'google_sheet') &&
-            dataSourceConfig.type !== 'knowledge_base' &&
-            dataSourceConfig.type !== 'sample_duckdb' && (
-              <>
-                <Button type="default" onClick={testConnection} loading={loading} icon={<CheckCircleOutlined />}>
-                  {t('btn_test')}
-                </Button>
-                <Button
-                  type="primary"
-                  onClick={saveDataSource}
-                  loading={loading}
-                  icon={<SaveOutlined />}
-                  disabled={
-                    dataSourceConfig.type === 'file' && fileSourceKind === 'google_sheet'
-                      ? !dataSourceConfig.name?.trim() || !googleSheetUrl?.trim()
-                      : testResult
-                        ? !testResult.success
-                        : false
-                  }
-                >
-                  {t('btn_save')}
-                </Button>
-              </>
-            )}
-        </div>
-      </div>
     </Modal>
   );
 };

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Catch-all proxy route for /api/knowledge/* endpoints
@@ -56,14 +57,7 @@ async function handleKnowledgeRequest(
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-
-    // Forward Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-
-    // Forward cookies for backend auth (JWTCookieBearer)
-    const cookie = request.headers.get('Cookie');
-    if (cookie) headers['Cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const requestOptions: RequestInit = {
       method,

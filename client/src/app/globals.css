@@ -24,6 +24,14 @@
 @import '../styles/aiser-component-separation.css';
 @import '../styles/aiser-unified-design-system.css';
 @import '../styles/aiser-aesthetic-enhancements.css';
+@import '../styles/dashboard-page-visual-language.css';
+@import '../layouts/Navigation/Navigation.css';
+@import '../styles/page-shell.css';
+@import '../styles/aiser-interaction-system.css';
+@import '../styles/workspace-chrome.css';
+@import '../styles/query-editor.css';
+@import '../styles/schema-explorer.css';
+@import '../styles/platform-loading.css';
 
 /* ========================================
    GLOBAL RESET AND BASE STYLES
@@ -35,6 +43,8 @@
 
 :root {
   --ant-color-bg-layout: var(--color-bg-base, #ffffff);
+  --app-shell-gutter: 24px;
+  --app-mobile-nav-height: 56px;
 }
 
 html.dark,
@@ -48,8 +58,8 @@ html {
   padding: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  overflow: hidden !important;
   overflow-x: hidden !important;
-  overflow-y: auto !important;
   background: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
   background-color: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
   box-sizing: border-box !important;
@@ -60,15 +70,25 @@ body {
   padding: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  overflow: hidden !important;
   overflow-x: hidden !important;
-  overflow-y: auto !important;
   background: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
   background-color: var(--ant-color-bg-layout, var(--color-bg-base)) !important;
   color: var(--ant-color-text) !important;
   box-sizing: border-box !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-family: "Inter", "Noto Sans", "Noto Sans Khmer", "Siemreap", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
+}
+
+/* Routes outside the dashboard app shell may scroll the document */
+html:has(.login-page),
+html:has(.login-page) body,
+html:has(.aicser-embed-root),
+html:has(.aicser-embed-root) body,
+html:has(.executive-report-fullpage),
+html:has(.executive-report-fullpage) body {
+  overflow-y: auto !important;
 }
 
 #__next {
@@ -137,8 +157,8 @@ html.dark {
   --color-brand-primary-foreground: #ffffff;
   --layout-background: var(--ant-color-bg-layout, var(--color-bg-base, #f8f9fa));
   --color-border-primary: var(--ant-color-border, var(--color-border, #e1e4e8));
-  --color-border-primary-strong: var(--ant-color-border, var(--color-border, #d9d9d9));
-  --font-sans: var(--ant-font-family, "Inter", "Noto Sans", "Noto Sans Khmer", "Siemreap", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  --color-border-primary-strong: var(--ant-color-border, var(--color-border, #e1e4e8));
+  --font-sans: var(--ant-font-family, "Noto Sans", "Noto Sans SC", "Noto Sans JP", "Noto Sans Thai", "Noto Sans Khmer", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
   /* Functional colors - map to Ant Design semantic tokens */
   --color-functional-success: var(--ant-color-success, #16a34a);

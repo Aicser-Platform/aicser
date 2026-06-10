@@ -1,10 +1,36 @@
-import React, { useEffect, useState } from 'react';
-import { Typography } from 'antd';
-import { DownOutlined, UpOutlined } from '@ant-design/icons';
+import React from 'react';
+import { useTranslations } from 'next-intl';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import type { FeedItem } from '@/services/socialFeedService';
 import FeedPreviewVisual from '../FeedPreviewVisual';
+import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import { assetTypeLabelKey } from '@/components/Feed/feedPostDisplay';
 
-const { Paragraph } = Typography;
+dayjs.extend(relativeTime);
+
+function formatSharedAgo(dateStr: string, t: ReturnType<typeof useTranslations>): string {
+  const d = dayjs(dateStr);
+  if (!d.isValid()) return '';
+  const diffDays = dayjs().diff(d, 'day');
+  if (diffDays < 1) return t('shared_today');
+  if (diffDays === 1) return t('shared_yesterday');
+  if (diffDays < 7) return t('shared_days_ago', { count: diffDays });
+  return t('shared_on_date', { date: d.format('MMM D') });
+}
+
+function formatSnapshotLabel(item: FeedItem, t: ReturnType<typeof useTranslations>): string | null {
+  const captured =
+    item.snapshot?.capturedAt ||
+    item.asset.snapshotCapturedAt ||
+    (item.asset.snapshotPayload as { capturedAt?: string } | undefined)?.capturedAt;
+  if (item.renderMode === 'snapshot' && captured) {
+    const d = dayjs(captured);
+    if (!d.isValid()) return t('snapshot_badge');
+    return t('snapshot_from_date', { date: d.format('MMM D, YYYY') });
+  }
+  return formatSharedAgo(item.publishedAt || item.lastActivityAt, t);
+}
 
 interface FeedCardBodyProps {
   item: FeedItem;
@@ -14,13 +40,7 @@ interface FeedCardBodyProps {
 }
 
 const FeedCardBody: React.FC<FeedCardBodyProps> = ({ item, compact, previewClickable, onPreviewClick }) => {
-  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [descriptionTruncated, setDescriptionTruncated] = useState(false);
-
-  useEffect(() => {
-    setDescriptionExpanded(false);
-    setDescriptionTruncated(false);
-  }, [item.description, item.id]);
+  const t = useTranslations('feed');
 
   const handleMediaKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!previewClickable) return;
@@ -30,69 +50,15 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({ item, compact, previewClick
     }
   };
 
-  const assetTypeLabel =
-    item.assetType === 'dashboard' ? 'Dashboard' : item.assetType === 'insight' ? 'Insight' : 'Chart';
+  const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
+  const freshnessLabel = formatSnapshotLabel(item, t);
 
   return (
     <div className="flex flex-col">
-      {/* LinkedIn-style post content */}
-      <div className="px-5 pt-3 pb-4 flex flex-col gap-2">
-        <Paragraph
-          className="text-base font-semibold m-0 leading-snug text-[var(--ant-color-text)]"
-          ellipsis={{ rows: 2 }}
-        >
-          {item.title}
-        </Paragraph>
-        {item.description && (
-          <div className="flex flex-col items-start gap-2">
-            <div className="relative w-full">
-              <Paragraph
-                className="text-sm m-0 leading-relaxed text-[var(--ant-color-text-secondary)]"
-                ellipsis={
-                  descriptionExpanded
-                    ? false
-                    : {
-                        rows: 3,
-                        onEllipsis: (ellipsed) => setDescriptionTruncated(ellipsed),
-                      }
-                }
-              >
-                {item.description}
-              </Paragraph>
-              {descriptionTruncated && !descriptionExpanded && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[var(--ant-color-bg-container)] via-[var(--ant-color-bg-container)]/95 to-transparent" />
-              )}
-            </div>
-            {(descriptionTruncated || descriptionExpanded) && (
-              <button
-                type="button"
-                aria-expanded={descriptionExpanded}
-                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--ant-color-primary-border)] bg-[var(--ant-color-primary-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--ant-color-primary)] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--ant-color-primary)] hover:bg-[var(--ant-color-fill-quaternary)] hover:shadow-md"
-                onClick={() => setDescriptionExpanded((prev) => !prev)}
-              >
-                <span className="underline decoration-[0.08em] underline-offset-2">
-                  {descriptionExpanded ? 'See less' : 'See more'}
-                </span>
-                {descriptionExpanded ? <UpOutlined className="text-[10px]" /> : <DownOutlined className="text-[10px]" />}
-              </button>
-            )}
-          </div>
-        )}
-        {(item.tags?.length ?? 0) > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-1">
-            {item.tags.map((tag) => (
-              <span
-                key={tag}
-                className="text-[13px] font-medium text-[var(--ant-color-primary)] hover:text-[var(--ant-color-primary-hover)] transition-colors cursor-pointer"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
+      <div className="px-4 pt-3 pb-3">
+        <FeedPostContent item={item} compactTitle />
       </div>
 
-      {/* Full-width visualization media block */}
       <div
         className={`relative ${item.assetType === 'dashboard' ? 'aspect-[4/3]' : 'aspect-[16/9]'} w-full bg-[var(--ant-color-bg-container)] border-y border-[var(--ant-color-border-secondary)] overflow-hidden group/media ${
           previewClickable ? 'cursor-pointer' : ''
@@ -101,30 +67,29 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({ item, compact, previewClick
         tabIndex={previewClickable ? 0 : -1}
         onClick={previewClickable ? onPreviewClick : undefined}
         onKeyDown={handleMediaKeyDown}
-        aria-label={previewClickable ? `Open ${assetTypeLabel}` : undefined}
+        aria-label={previewClickable ? t('open_post') : undefined}
       >
         <div className="absolute top-4 left-4 z-10">
           <span className="px-2.5 py-1 rounded-md bg-[var(--ant-color-bg-elevated)] backdrop-blur-sm border border-[var(--ant-color-border-secondary)] text-xs font-semibold tracking-wide text-[var(--ant-color-text)] shadow-sm uppercase">
-            {assetTypeLabel}
+            {item.renderMode === 'snapshot' ? t('snapshot_badge') : assetTypeLabel}
           </span>
         </div>
-        <div className="w-full h-full flex items-center justify-center bg-[var(--ant-color-bg-container)] relative pointer-events-none">
-          <FeedPreviewVisual item={item} maxPreviews={compact ? 4 : undefined} showOverflowBadge={compact} />
-        </div>
-        {previewClickable && (
-          <div className="absolute inset-0 bg-black/0 group-hover/media:bg-black/5 hover:bg-black/10 transition-colors z-20 flex items-center justify-center opacity-0 group-hover/media:opacity-100">
-            <button
-              type="button"
-              className="bg-[var(--ant-color-bg-elevated)] text-[var(--ant-color-text)] px-5 py-2.5 rounded-full font-semibold shadow-xl border border-[var(--ant-color-border-secondary)] backdrop-blur transform translate-y-2 group-hover/media:translate-y-0 transition-all duration-200"
-              onClick={(event) => {
-                event.stopPropagation();
-                onPreviewClick?.();
+        {freshnessLabel && (
+          <div className="absolute bottom-3 right-3 z-10 pointer-events-none">
+            <span
+              className="px-2 py-0.5 rounded-full text-[10px] font-medium tracking-wide"
+              style={{
+                background: 'rgba(0,0,0,0.45)',
+                color: 'rgba(255,255,255,0.88)',
+                backdropFilter: 'blur(4px)',
+                letterSpacing: '0.02em',
               }}
             >
-              Explore live data
-            </button>
+              {freshnessLabel}
+            </span>
           </div>
         )}
+        <FeedPreviewVisual item={item} maxPreviews={compact ? 4 : undefined} showOverflowBadge={compact} />
       </div>
     </div>
   );

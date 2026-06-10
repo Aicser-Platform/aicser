@@ -284,9 +284,9 @@ class EnhancedOnboardingService:
                         metadata,
                         created_at
                     ) VALUES (
-                        :user_id,
+                        CAST(:user_id AS uuid),
                         :event,
-                        CAST(:metadata_json::text AS jsonb),
+                        CAST(:metadata_json AS jsonb),
                         NOW()
                     )
                 """),

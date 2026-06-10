@@ -1,0 +1,451 @@
+/**
+ * Canonical app page shell — imported LAST among design-system layers in app/globals.css.
+ * Resolves conflicts between layout-system, unified-design-system, and aesthetic layers.
+ *
+ * Scroll model: html/body locked in app/globals.css; .page-wrapper scrolls (not full-bleed).
+ * Height model: flex chain (100% + min-height: 0), not calc(100vh) on nested wrappers.
+ *
+ * APP SHELL GEOMETRY (sidebar, header, main column) lives ONLY in this file.
+ */
+
+/* ── Shell tokens ─────────────────────────────────────────── */
+
+:root {
+  --sidebar-width: 256px;
+  --app-header-height: 64px;
+}
+
+/* ── Root shell: sidebar rail + main column ───────────────── */
+
+.layout-app-shell.ant-layout.ant-layout-has-sider {
+  flex-direction: row !important;
+}
+
+.layout-app-shell > .layout-main-column {
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100vh !important;
+  width: auto !important;
+  margin-left: var(--sidebar-width, 256px) !important;
+  padding-top: var(--app-header-height, 64px) !important;
+  box-sizing: border-box !important;
+  transition: margin-left 0.2s ease !important;
+}
+
+/* ── Fixed sidebar (custom SidebarNav, not Ant Menu) ──────── */
+
+.app-navigation-sider.ant-layout-sider {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  bottom: 0 !important;
+  height: 100vh !important;
+  z-index: 1000 !important;
+  width: var(--sidebar-width, 256px) !important;
+  min-width: var(--sidebar-width, 256px) !important;
+  max-width: var(--sidebar-width, 256px) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  border: none !important;
+  border-right: 1px solid var(--ant-color-border) !important;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08) !important;
+  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease !important;
+}
+
+.app-navigation-sider .ant-layout-sider-children {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+[data-theme='dark'] .app-navigation-sider.ant-layout-sider {
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* ── Fixed top header ─────────────────────────────────────── */
+
+.layout-app-header.ant-layout-header,
+.ant-layout-header.layout-app-header {
+  position: fixed !important;
+  top: 0 !important;
+  left: var(--sidebar-width, 256px) !important;
+  right: 0 !important;
+  width: calc(100% - var(--sidebar-width, 256px)) !important;
+  height: var(--app-header-height, 64px) !important;
+  min-height: var(--app-header-height, 64px) !important;
+  max-height: var(--app-header-height, 64px) !important;
+  z-index: 1001 !important;
+  margin: 0 !important;
+  padding: 0 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  box-sizing: border-box !important;
+  border: none !important;
+  border-bottom: 1px solid var(--ant-color-border) !important;
+  box-shadow: none !important;
+  transition: left 0.2s ease, width 0.2s ease !important;
+}
+
+.layout-app-header.ant-layout-header::after,
+.ant-layout-header.layout-app-header::after {
+  display: none !important;
+}
+
+/* Header workspace / project chips — match chat composer controls (28px) */
+.header-shell-chip.ant-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--ant-color-border-secondary) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  color: var(--ant-color-text) !important;
+  max-width: min(220px, 28vw);
+}
+
+.header-shell-chip.ant-btn:hover {
+  border-color: var(--ant-color-border) !important;
+  background: transparent !important;
+  color: var(--ant-color-text) !important;
+}
+
+.header-shell-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.header-shell-chip.header-org-chip.ant-btn {
+  padding: 0 !important;
+  max-width: none;
+  width: 28px;
+  min-width: 28px;
+  justify-content: center !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.header-shell-chip.header-org-chip.ant-btn:hover {
+  border: none !important;
+  background: transparent !important;
+}
+
+.header-shell-chip.header-org-chip .workspace-brand-btn,
+.header-shell-chip.header-org-chip > div {
+  justify-content: center !important;
+  width: 100%;
+}
+
+.header-shell-chip-chevron {
+  font-size: 10px !important;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.header-shell-icon-btn.ant-btn,
+.header-shell-icon-btn.ant-btn.ant-btn-text {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 4px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  color: var(--ant-color-text-secondary) !important;
+}
+
+.header-shell-icon-btn.ant-btn:hover:not(:disabled),
+.header-shell-icon-btn.ant-btn.ant-btn-text:hover:not(:disabled) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--ant-color-text) !important;
+}
+
+.header-shell-icon-btn.ant-btn .anticon {
+  font-size: 16px !important;
+}
+
+.header-shell-icon-btn--primary.ant-btn,
+.header-shell-icon-btn--primary.ant-btn .anticon {
+  color: var(--ant-color-primary) !important;
+}
+
+.header-shell-divider.ant-divider-vertical {
+  height: 16px !important;
+  margin: 0 4px !important;
+  border-color: var(--ant-color-border-secondary) !important;
+}
+
+.layout-app-header .header-right .header-locale-btn.header-shell-icon-btn {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+}
+
+.layout-app-header .header-right .header-profile-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.layout-app-header .header-right .header-profile-trigger:hover {
+  background: transparent !important;
+  border: none !important;
+}
+
+.layout-app-header .header-right .header-profile-trigger .ant-avatar {
+  width: 24px !important;
+  height: 24px !important;
+  line-height: 24px !important;
+  font-size: 12px !important;
+}
+
+.layout-app-header .header-right {
+  gap: 4px !important;
+  align-items: center !important;
+}
+
+.layout-app-header .header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Tooltip wrapper must not shrink the 28×28 icon hit target */
+.layout-app-header .header-left .ant-tooltip-disabled-compatible-wrapper {
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1 !important;
+}
+
+.layout-app-header .header-right .ant-badge {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.layout-app-header .header-right .ant-badge .ant-badge-dot {
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  box-shadow: none;
+}
+
+.layout-app-header .header-right .header-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--ant-color-border-secondary);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ── Main content column ──────────────────────────────────── */
+
+.layout-main-column > .ant-layout-content,
+.layout-main-column > .layout-page-content,
+#main-content.ant-layout-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+}
+
+.ant-layout-content,
+.dashboard-content-override {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.page-content {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+}
+
+/* ── Standard scrollable page wrapper ───────────────────── */
+
+.page-content > .page-wrapper,
+.page-content > .page-container,
+.dashboard-content-override .page-content > .page-wrapper,
+.dashboard-content-override .page-content > .page-container,
+.dashboard-content-override .page-wrapper,
+.dashboard-content-override .page-container,
+div.page-wrapper,
+div.page-container,
+.page-wrapper,
+.page-container {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  padding: var(--app-shell-gutter) !important;
+  gap: var(--page-section-gap, var(--app-shell-gutter)) !important;
+  margin: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  position: relative !important;
+}
+
+.page-wrapper.page-wrapper--full-bleed,
+.page-container.page-wrapper--full-bleed {
+  padding: 0 !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+}
+
+.page-wrapper.page-wrapper--full-bleed::before,
+.page-container.page-wrapper--full-bleed::before {
+  display: none !important;
+}
+
+.page-content:has(.dashboard-studio-root),
+.page-content:has(.designer-simplified) {
+  overflow: hidden !important;
+}
+
+.dashboard-canvas-wrapper,
+.dashboard-viewer-canvas,
+.dashboard-viewer-canvas .react-grid-layout {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Chat / full-viewport workspace routes (no page-wrapper) */
+.page-content > .chat-page-container,
+.chat-page-container {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.page-content:has(.chat-page-container) {
+  overflow: hidden !important;
+}
+
+.page-wrapper--full-bleed .studio-wrapper,
+.page-wrapper--full-bleed .dashboard-studio-root {
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.page-wrapper--full-bleed .studio-body,
+.page-wrapper--full-bleed .studio-canvas-area {
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.page-wrapper.page-wrapper--fill-height {
+  overflow: hidden !important;
+}
+
+.page-wrapper.page-wrapper--fill-height > .page-shell-inner,
+.page-wrapper.page-wrapper--fill-height > .page-body,
+.page-wrapper.page-wrapper--fill-height .page-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.page-wrapper.page-wrapper--fill-height .query-editor-workspace {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* ── Mobile ───────────────────────────────────────────────── */
+
+@media (max-width: 991.98px) {
+  .layout-app-shell > .layout-main-column {
+    margin-left: 0 !important;
+    width: 100% !important;
+    padding-bottom: var(--mobile-bottom-nav-height, 0px) !important;
+    height: 100vh !important;
+  }
+
+  .layout-app-header.ant-layout-header,
+  .ant-layout-header.layout-app-header {
+    left: 0 !important;
+    width: 100% !important;
+  }
+
+  .layout--mobile-nav .layout-main-column > .ant-layout-content,
+  .layout--mobile-nav .layout-page-content {
+    height: 100% !important;
+    max-height: 100% !important;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .page-wrapper:not(.page-wrapper--full-bleed),
+  .page-container:not(.page-wrapper--full-bleed) {
+    --app-shell-gutter: 16px;
+    padding: 16px !important;
+  }
+}

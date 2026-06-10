@@ -10,9 +10,6 @@ import asyncio
 
 try:
     from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-    from opentelemetry.sdk.resources import Resource
     from opentelemetry.trace import Status, StatusCode
     OTEL_AVAILABLE = True
 except ImportError:
@@ -62,16 +59,11 @@ class DistributedTracer:
             print("Using fallback tracing (install opentelemetry-api for full features)")
     
     def _initialize_otel(self) -> None:
-        """Initialize OpenTelemetry tracer"""
-        resource = Resource.create({"service.name": self.service_name})
-        provider = TracerProvider(resource=resource)
-        
-        # Console exporter for development (replace with OTLP for production)
-        processor = BatchSpanProcessor(ConsoleSpanExporter())
-        provider.add_span_processor(processor)
-        
-        trace.set_tracer_provider(provider)
-        self.tracer = trace.get_tracer(__name__)
+        """Use shared tracer provider (OTLP and/or console via env)."""
+        from src.shared.observability.setup import ensure_tracer_provider
+
+        if ensure_tracer_provider(self.service_name):
+            self.tracer = trace.get_tracer(__name__)
     
     @contextmanager
     def start_span(self, name: str, attributes: Optional[Dict[str, Any]] = None):

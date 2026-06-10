@@ -99,7 +99,12 @@
 }
 
 .ant-card:hover,
-.content-card:hover,
+.content-card:hover {
+  box-shadow: var(--shadow-card-hover) !important;
+  border-color: var(--ant-color-border) !important;
+}
+
+.page-section-card.ant-card:hover,
 .stat-card:hover,
 .summary-card:hover {
   box-shadow: var(--shadow-card-hover) !important;
@@ -176,12 +181,10 @@
 }
 
 .ant-btn:hover {
-  transform: translateY(-2px) !important;
   box-shadow: var(--shadow-sm) !important;
 }
 
 .ant-btn:active {
-  transform: translateY(0) !important;
   box-shadow: var(--shadow-xs) !important;
 }
 
@@ -195,8 +198,7 @@
 
 .ant-btn-primary:hover {
   background: linear-gradient(135deg, var(--ant-color-primary-hover) 0%, var(--ant-color-primary-active) 100%) !important;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4), 0 4px 8px rgba(37, 99, 235, 0.3) !important;
-  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
 }
 
 .ant-btn-primary:active {
@@ -320,22 +322,25 @@ textarea.ant-input {
 }
 
 /* ========================================
-   TABS - PREMIUM NAVIGATION
+   TABS - page-level only (see workspace-inline-tabs in unified DS)
    ======================================== */
 
-.ant-tabs {
+.page-tabs.ant-tabs,
+.settings-tabs.ant-tabs {
   background: var(--ant-color-bg-container) !important;
   border-radius: var(--radius-lg) !important;
   padding: var(--spacing-md) !important;
   box-shadow: var(--shadow-sm) !important;
 }
 
-.ant-tabs-nav {
+.page-tabs.ant-tabs .ant-tabs-nav,
+.settings-tabs.ant-tabs .ant-tabs-nav {
   margin-bottom: var(--spacing-md) !important;
   padding: 0 var(--spacing-sm) !important;
 }
 
-.ant-tabs-tab {
+.page-tabs.ant-tabs .ant-tabs-tab,
+.settings-tabs.ant-tabs .ant-tabs-tab {
   border-radius: var(--radius-md) !important;
   margin-right: var(--spacing-sm) !important;
   padding: var(--spacing-sm) var(--spacing-md) !important;
@@ -346,7 +351,8 @@ textarea.ant-input {
   overflow: hidden !important;
 }
 
-.ant-tabs-tab::before {
+.page-tabs.ant-tabs .ant-tabs-tab::before,
+.settings-tabs.ant-tabs .ant-tabs-tab::before {
   content: '';
   position: absolute;
   bottom: 0;
@@ -358,13 +364,15 @@ textarea.ant-input {
   transition: width var(--transition-smooth);
 }
 
-.ant-tabs-tab:hover {
+.page-tabs.ant-tabs .ant-tabs-tab:hover,
+.settings-tabs.ant-tabs .ant-tabs-tab:hover {
   background: var(--ant-color-fill-secondary) !important;
   color: var(--ant-color-primary) !important;
   transform: translateY(-2px) !important;
 }
 
-.ant-tabs-tab-active {
+.page-tabs.ant-tabs .ant-tabs-tab-active,
+.settings-tabs.ant-tabs .ant-tabs-tab-active {
   background: var(--ant-color-primary-bg) !important;
   border-color: var(--ant-color-primary) !important;
   color: var(--ant-color-primary) !important;
@@ -372,59 +380,23 @@ textarea.ant-input {
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15) !important;
 }
 
-.ant-tabs-tab-active::before {
+.page-tabs.ant-tabs .ant-tabs-tab-active::before,
+.settings-tabs.ant-tabs .ant-tabs-tab-active::before {
   width: 80%;
 }
 
 /* ========================================
-   MODALS & DROPDOWNS - GLASSMORPHISM
+   MODALS & DROPDOWNS — overlay chrome owned by aiser-interaction-system.css
    ======================================== */
-
-.ant-modal-content,
-.ant-drawer-content {
-  background: var(--ant-color-bg-elevated) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  border-radius: 16px !important;
-  box-shadow: var(--shadow-floating) !important;
-  border: 1px solid var(--ant-color-border) !important;
-}
-
-[data-theme="dark"] .ant-modal-content,
-[data-theme="dark"] .ant-drawer-content {
-  background: var(--glass-bg-dark) !important;
-  border-color: var(--glass-border-dark) !important;
-}
-
-.ant-modal-header {
-  border-bottom: 1px solid var(--ant-color-border) !important;
-  padding: 24px !important;
-  background: var(--ant-color-bg-container) !important;
-  border-radius: 16px 16px 0 0 !important;
-  /* backdrop-filter removed for performance */
-}
-
-.ant-dropdown-menu {
-  background: var(--ant-color-bg-elevated) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  border-radius: 12px !important;
-  box-shadow: var(--shadow-floating) !important;
-  border: 1px solid var(--ant-color-border) !important;
-  padding: 8px !important;
-}
-
-[data-theme="dark"] .ant-dropdown-menu {
-  background: var(--glass-bg-dark) !important;
-  border-color: var(--glass-border-dark) !important;
-}
 
 /* ========================================
    PANELS - PREMIUM ELEVATED DESIGN
    ======================================== */
 
+/* Layout shells (.chat-panel, .data-panel, query editor) — see workspace-chrome.css */
 .enhanced-chat-panel,
 .enhanced-data-panel,
 .chat-history-panel,
-.query-editor-panel,
 .chart-preview-panel,
 .chart-config-panel,
 .dashboard-canvas,
@@ -674,25 +646,20 @@ h3, .h3 {
 
 /* CRITICAL: This file loads LAST, so these rules must match layout-system.css exactly */
 /* CRITICAL: padding-left MUST be 24px to create space from sidebar border */
+/* Padding/height — canonical rules in page-shell.css */
 .page-content > .page-wrapper,
 .dashboard-content-override .page-content > .page-wrapper,
 .dashboard-content-override .page-wrapper,
 div.page-wrapper,
 .page-wrapper {
-  padding: 24px !important; /* Override var(--spacing-xl) to use consistent 24px */
-  padding-left: 24px !important; /* CRITICAL: Explicit left padding - ensures spacing from sidebar */
-  padding-right: 24px !important;
-  padding-top: 24px !important;
-  padding-bottom: 24px !important;
   background: var(--ant-color-bg-layout) !important;
-  min-height: 100vh !important;
   position: relative !important;
 }
 
-/* Subtle background pattern */
+/* Subtle background pattern — absolute so it does not cover the fixed sidebar */
 .page-wrapper::before {
   content: '';
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -801,9 +768,9 @@ div.page-wrapper,
    ======================================== */
 
 @media (max-width: 768px) {
-  .page-wrapper {
+  .page-wrapper:not(.page-wrapper--full-bleed) {
     padding: var(--spacing-md) !important;
-    padding-left: 16px !important; /* Explicit left padding on mobile */
+    padding-left: 16px !important;
   }
   
   .ant-card,
@@ -846,11 +813,11 @@ div.page-wrapper,
   backface-visibility: hidden !important;
 }
 
-/* Reduce repaints */
-.ant-layout-header,
-.ant-layout-sider,
-.ant-layout-content {
-  contain: layout style paint !important;
+/* Reduce repaints — do not contain layout on shell regions (breaks flex sizing) */
+.ant-card,
+.ant-btn,
+.stat-card {
+  backface-visibility: hidden !important;
 }
 
 /* ========================================
@@ -858,47 +825,29 @@ div.page-wrapper,
    ======================================== */
 
 .ant-layout-header {
-  /* backdrop-filter: blur(20px) saturate(180%) - Removed for performance, use solid background */
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 1px 0 rgba(255, 255, 255, 0.05) inset !important;
   border-bottom: 1px solid var(--ant-color-border) !important;
-  position: relative !important;
+  /* Position owned by layout-system.css + page-shell.css — do not override here */
 }
 
-[data-theme="dark"] .ant-layout-header {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), 0 1px 0 rgba(255, 255, 255, 0.05) inset !important;
+.layout-app-header.ant-layout-header {
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .ant-layout-header:not(.layout-app-header) {
+  box-shadow: none !important;
 }
 
 .ant-layout-header::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, var(--ant-color-border) 50%, transparent 100%);
-  opacity: 0.5;
+  display: none;
 }
 
 .ant-layout-sider {
-  /* backdrop-filter: blur(20px) saturate(180%) - Removed for performance, use solid background */
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08), -1px 0 0 rgba(255, 255, 255, 0.05) inset !important;
-  border-right: 1px solid var(--ant-color-border) !important;
-  position: relative !important;
+  box-shadow: none !important;
+  border-right: none !important;
 }
 
 [data-theme="dark"] .ant-layout-sider {
-  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.4), -1px 0 0 rgba(255, 255, 255, 0.05) inset !important;
-}
-
-.ant-layout-sider::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  background: linear-gradient(180deg, transparent 0%, var(--ant-color-border) 50%, transparent 100%);
-  opacity: 0.5;
+  box-shadow: none !important;
 }
 
 /* Menu items - Premium hover effects */
@@ -948,4 +897,3 @@ div.page-wrapper,
     transition-duration: 0.01ms !important;
   }
 }
-

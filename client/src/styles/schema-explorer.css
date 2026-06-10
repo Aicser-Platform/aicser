@@ -1,0 +1,354 @@
+/**
+ * Schema explorer — modern data source / object tree (chat + query editor)
+ */
+
+.schema-explorer-panel.data-panel,
+.chat-page-container .schema-explorer-panel,
+.query-editor-workspace .schema-explorer-panel {
+  border-left: 1px solid var(--ant-color-border-secondary) !important;
+}
+
+.schema-explorer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0 !important;
+  background: var(--ant-color-bg-container);
+}
+
+.schema-explorer-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+}
+
+.schema-explorer-toolbar .ant-input-affix-wrapper {
+  flex: 1;
+  min-width: 0;
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  font-size: 12px;
+}
+
+.schema-explorer-toolbar .ant-input-affix-wrapper:hover {
+  border-color: var(--ant-color-border-secondary) !important;
+  box-shadow: none !important;
+}
+
+.schema-explorer-toolbar .ant-input-affix-wrapper:focus,
+.schema-explorer-toolbar .ant-input-affix-wrapper-focused {
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-primary) !important;
+  box-shadow: none !important;
+}
+
+.schema-explorer-toolbar .ant-input-affix-wrapper .ant-input {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.schema-explorer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.schema-explorer-toolbar-actions .ant-btn {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+}
+
+.schema-explorer-ds-row {
+  flex-shrink: 0;
+  padding: 0 10px 8px;
+}
+
+.schema-explorer-ds-row .ant-select {
+  width: 100%;
+}
+
+.schema-explorer-ds-row .ant-select-selector {
+  min-height: 32px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+}
+
+.schema-explorer-tree-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 4px 8px;
+}
+
+.schema-explorer-tree.ant-tree {
+  background: transparent;
+  font-size: 12px;
+}
+
+.schema-explorer-tree .ant-tree-indent-unit {
+  width: 14px;
+}
+
+.schema-explorer-tree .ant-tree-treenode {
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.schema-explorer-tree .ant-tree-treenode:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.schema-explorer-tree .ant-tree-treenode.ant-tree-treenode-selected {
+  background: var(--ant-color-primary-bg);
+}
+
+.schema-explorer-tree .ant-tree-switcher {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  align-self: center !important;
+  flex-shrink: 0;
+  width: 20px !important;
+  min-width: 20px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  color: var(--ant-color-text-quaternary);
+  transition: color 0.15s ease;
+}
+
+.schema-explorer-tree .ant-tree-switcher::before,
+.schema-explorer-tree .ant-tree-switcher::after {
+  display: none !important;
+}
+
+.schema-explorer-tree .ant-tree-switcher:hover,
+.schema-explorer-tree .ant-tree-switcher:focus,
+.schema-explorer-tree .ant-tree-switcher:active {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.schema-explorer-tree .ant-tree-treenode:hover .ant-tree-switcher {
+  color: var(--ant-color-text-secondary);
+}
+
+.schema-explorer-tree .ant-tree-switcher-icon,
+.schema-explorer-tree .ant-tree-switcher .anticon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+}
+
+.schema-explorer-tree .ant-tree-node-content-wrapper {
+  display: flex !important;
+  align-items: center !important;
+  flex: 1;
+  min-width: 0;
+  min-height: 28px !important;
+  line-height: 1.35 !important;
+  padding: 2px 6px 2px 2px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  transition: none;
+}
+
+.schema-explorer-tree .ant-tree-node-content-wrapper:hover,
+.schema-explorer-tree .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: transparent !important;
+}
+
+.schema-explorer-tree .ant-tree-node-selected .ant-tree-node-content-wrapper {
+  background: transparent !important;
+}
+
+.schema-explorer-tree .ant-tree-title {
+  width: 100%;
+  min-width: 0;
+}
+
+.schema-explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.schema-explorer-row--clickable {
+  cursor: pointer;
+}
+
+.schema-explorer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ant-color-text);
+}
+
+.schema-explorer-row--schema .schema-explorer-name {
+  font-weight: 600;
+}
+
+.schema-explorer-row--table .schema-explorer-name {
+  font-weight: 500;
+}
+
+.schema-explorer-type-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--ant-color-text-tertiary);
+}
+
+.schema-explorer-meta {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--ant-color-text-quaternary);
+  font-variant-numeric: tabular-nums;
+}
+
+.schema-explorer-type-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.schema-explorer-type-icon--time {
+  color: #52c41a;
+}
+
+.schema-explorer-type-icon--symbol {
+  color: #faad14;
+}
+
+.schema-explorer-type-icon--array {
+  color: #1677ff;
+}
+
+.schema-explorer-type-icon--number {
+  color: #1677ff;
+}
+
+.schema-explorer-type-icon--string {
+  color: #13c2c2;
+}
+
+.schema-explorer-type-icon--bool {
+  color: #722ed1;
+}
+
+.schema-explorer-type-icon--other {
+  color: var(--ant-color-text-tertiary);
+}
+
+.schema-explorer-section-label {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-tertiary);
+}
+
+.schema-explorer-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+/* CE query-editor custom object rows (CaretRight chevron) */
+.schema-explorer-object-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.schema-explorer-object-row:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.schema-explorer-caret-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  line-height: 0;
+  color: var(--ant-color-text-quaternary);
+}
+
+.schema-explorer-caret-slot .anticon {
+  display: block;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+
+.schema-explorer-caret-slot.is-expanded .anticon {
+  transform: rotate(90deg);
+}
+
+.schema-explorer-column-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.schema-explorer-column-row:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+
+/* Progress status — prevent shimmer / label clipping in chat */
+.ai-progress-status-line {
+  overflow: visible !important;
+  min-height: 24px;
+  padding: 2px 0 4px;
+  align-items: center !important;
+}
+
+.ai-status-text.premium-thinking-shimmer {
+  line-height: 1.45 !important;
+  padding: 2px 0;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.ai-message .message-bubble:has(.ai-progress-premium-container),
+.ai-message .message-bubble:has(.ai-progress-integrated-wrapper) {
+  min-height: 56px;
+  overflow: visible;
+}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 export async function PATCH(
     request: NextRequest,
@@ -14,11 +15,7 @@ export async function PATCH(
             'Content-Type': 'application/json',
         };
 
-        const authHeader = request.headers.get('Authorization');
-        if (authHeader) headers['Authorization'] = authHeader;
-
-        const cookieHeader = request.headers.get('cookie');
-        if (cookieHeader) headers['cookie'] = cookieHeader;
+        Object.assign(headers, buildProxyAuthHeaders(request));
 
         const response = await fetch(`${backendUrl}/api/organizations/${id}`, {
             method: 'PATCH',
@@ -47,11 +44,7 @@ export async function DELETE(
             'Content-Type': 'application/json',
         };
 
-        const authHeader = request.headers.get('Authorization');
-        if (authHeader) headers['Authorization'] = authHeader;
-
-        const cookieHeader = request.headers.get('cookie');
-        if (cookieHeader) headers['cookie'] = cookieHeader;
+        Object.assign(headers, buildProxyAuthHeaders(request));
 
         const response = await fetch(`${backendUrl}/api/organizations/${id}`, {
             method: 'DELETE',

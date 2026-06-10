@@ -19,7 +19,7 @@ const TEXT_FONT_SIZE = 12;
 
 export { WatermarkOverlay } from './watermark-overlay';
 
-/** ECharts graphic (fallback for contexts that need canvas-only). Logo + text, center-aligned. */
+/** ECharts graphic (fallback for canvas-only contexts). Logo + text, centered on the chart area. */
 export function getWatermarkGraphicElement(options?: WatermarkOptions): any {
   const isDark = options?.isDark;
   const textFill =
@@ -32,10 +32,8 @@ export function getWatermarkGraphicElement(options?: WatermarkOptions): any {
   return {
     type: 'group',
     id: 'aiser-watermark-group',
-    left: '50%',
-    top: '50%',
-    width: 0,
-    height: 0,
+    left: 'center',
+    top: 'middle',
     children: [
       {
         type: 'group',
@@ -50,26 +48,32 @@ export function getWatermarkGraphicElement(options?: WatermarkOptions): any {
             id: 'aiser-watermark',
             left: 0,
             top: 0,
-            style: { image: '/aiser-logo.png', width: LOGO_SIZE, height: LOGO_SIZE, opacity: 0.35 },
+            style: { image: '/aiser-logo.png', width: LOGO_SIZE, height: LOGO_SIZE, opacity: 0.28 },
             silent: true,
           },
           {
             type: 'text',
             id: 'aiser-watermark-text',
             left: 0,
-            right: 0,
             top: LOGO_SIZE + GAP,
-            height: 16,
-            style: { text: 'Aicser', fill: textFill, fontSize: TEXT_FONT_SIZE, fontFamily: 'sans-serif', textAlign: 'center' },
+            width: W,
+            style: {
+              text: 'Aicser',
+              fill: textFill,
+              fontSize: TEXT_FONT_SIZE,
+              fontFamily: 'sans-serif',
+              textAlign: 'center',
+              textVerticalAlign: 'top',
+            },
             silent: true,
           },
         ],
         silent: true,
       },
     ],
-    z: 999999,
+    z: 1,
     silent: true,
-    zlevel: 10,
+    zlevel: 0,
   };
 }
 
@@ -131,17 +135,8 @@ export const addWatermarkToChart = (
 
   const watermarkGroup = getWatermarkGraphicElement(options);
 
-  if (typeof window !== 'undefined') {
-    const img = new Image();
-    img.onload = () => console.log('✅ Watermark image loaded successfully:', '/aiser-logo.png');
-    img.onerror = () => console.error('❌ Watermark image failed to load:', '/aiser-logo.png');
-    img.src = '/aiser-logo.png';
-  }
-
   optionCopy.graphic.push(watermarkGroup);
-  console.log('✅ Watermark added (center-middle: logo + Aicser text below)');
-
-    return optionCopy;
+  return optionCopy;
   } catch (error) {
     // CRITICAL: Don't break chart rendering if watermark fails
     console.error('❌ Watermark application error (non-blocking):', error);

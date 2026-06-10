@@ -39,6 +39,28 @@ def test_build_context_pack_from_final_state_minimal():
     assert pack["model"]["id"] == "gpt-test"
 
 
+def test_build_context_pack_includes_decision_evidence():
+    from src.modules.ai.services.context_pack import build_context_pack_from_final_state
+
+    state = {
+        "decision_brief": {
+            "executive_decision": "Increase marketing spend by 15%",
+            "decision_confidence": "high",
+            "confidence_score": 0.9,
+            "options": [{}, {}],
+            "recommended_actions": [{}],
+        },
+        "rag_citations": [{"source": "policy.pdf", "document_id": "d1", "chunk_id": "c1"}],
+        "case_file": {"id": "case-1", "status": "open", "evidence_items": [{"kind": "data_source"}]},
+        "execution_metadata": {"confidence_score": 0.9},
+    }
+    pack = build_context_pack_from_final_state(state, query="What should we decide?")
+    assert pack.get("decision")
+    assert pack["decision"]["actions_count"] == 1
+    assert pack.get("evidence", {}).get("rag_citations")
+    assert pack.get("evidence", {}).get("case_file")
+
+
 def test_build_context_pack_conversational():
     pack = build_context_pack_conversational(query="Hello", model_id="m1", ai_engine="Conversational")
     assert pack["version"] == CONTEXT_PACK_VERSION

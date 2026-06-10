@@ -1,5 +1,22 @@
 import type { AuthActions, SignupResult } from '@/auth/types';
 import { setCeBearerToken, clearCeBearerToken } from '@/auth/ce/bearerToken';
+import { parseAuthResponseError } from '@/auth/parseAuthResponseError';
+
+type AuthJson = {
+  detail?: string | { message?: string };
+  message?: string;
+  error?: string;
+  details?: Array<{ loc?: (string | number)[]; msg?: string }>;
+  access_token?: string;
+};
+
+async function readAuthJson(res: Response): Promise<AuthJson> {
+  try {
+    return (await res.json()) as AuthJson;
+  } catch {
+    return {};
+  }
+}
 
 export const ceAuthActions: AuthActions = {
   async login(email: string, password: string): Promise<void> {
@@ -9,9 +26,9 @@ export const ceAuthActions: AuthActions = {
       body: JSON.stringify({ email, password }),
       credentials: 'include',
     });
-    const data = (await res.json().catch(() => ({}))) as { detail?: string; access_token?: string };
+    const data = await readAuthJson(res);
     if (!res.ok) {
-      throw new Error(data.detail ?? 'Invalid email or password');
+      throw new Error(parseAuthResponseError(res.status, data));
     }
     if (data.access_token) setCeBearerToken(data.access_token);
   },
@@ -23,9 +40,9 @@ export const ceAuthActions: AuthActions = {
       body: JSON.stringify({ email, username, password }),
       credentials: 'include',
     });
-    const data = (await res.json().catch(() => ({}))) as { detail?: string; access_token?: string };
+    const data = await readAuthJson(res);
     if (!res.ok) {
-      throw new Error(data.detail ?? 'Registration failed');
+      throw new Error(parseAuthResponseError(res.status, data));
     }
     if (data.access_token) setCeBearerToken(data.access_token);
     return { success: true, is_verified: true, message: 'Account created successfully!' };

@@ -9,8 +9,11 @@ import json
 import logging
 from typing import Dict, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+from src.core.production import is_production
+from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +36,13 @@ class TranslateResponse(BaseModel):
 
 
 @router.post("/generate", response_model=TranslateResponse)
-async def generate_translations(req: TranslateRequest):
+async def generate_translations(
+    req: TranslateRequest,
+    _token: dict = Depends(JWTCookieBearer()),
+):
     """Generate translations for a target language using LLM (Gemini via LiteLLM)."""
+    if is_production():
+        raise HTTPException(status_code=404, detail="Not found")
 
     cache_key = f"{req.target_language}:{hash(json.dumps(req.source_messages, sort_keys=True))}"
     if cache_key in _translation_cache:

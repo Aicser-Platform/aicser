@@ -1,0 +1,55 @@
+/* Inner subtabs (billing, API keys) — flat, no nested scroll traps */
+.settings-page .settings-subtabs.ant-tabs {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.settings-page .settings-subtabs .ant-tabs-content-holder,
+.settings-page .settings-subtabs .ant-tabs-content,
+.settings-page .settings-subtabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden) {
+  display: block !important;
+  height: auto !important;
+  min-height: 0 !important;
+  flex: none !important;
+  overflow: visible !important;
+  padding: 0 !important;
+}
+
+.settings-subtabs.ant-tabs > .ant-tabs-nav {
+  margin-bottom: 16px !important;
+}
+
+.settings-subtabs.ant-tabs > .ant-tabs-nav::before {
+  border-bottom-color: var(--ant-color-border-secondary) !important;
+}
+
+.settings-subtabs .ant-tabs-tab {
+  border-radius: 6px !important;
+  padding: 6px 14px !important;
+  font-size: 13px !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.settings-subtabs .ant-tabs-tab:hover {
+  background: var(--ant-color-fill-quaternary) !important;
+  color: var(--ant-color-text) !important;
+}
+
+.settings-subtabs .ant-tabs-tab-active {
+  background: var(--ant-color-fill-quaternary) !important;
+  color: var(--ant-color-primary) !important;
+  font-weight: 500 !important;
+  border: none !important;
+}
+
+.settings-subtabs .ant-tabs-ink-bar {
+  height: 2px !important;
+  border-radius: 1px !important;
+}
+
+.settings-subtabs .ant-tabs-content-holder {
+  padding-top: 0 !important;
+}

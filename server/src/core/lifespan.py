@@ -12,6 +12,20 @@ from src.core.edition import is_ee_enabled
 logger = logging.getLogger(__name__)
 
 
+def _import_module_quiet(name: str) -> None:
+    """Import optional heavy deps without noisy optional-dependency warnings (e.g. Prophet→plotly)."""
+    import io
+    import sys
+
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = buf_out, buf_err
+    try:
+        __import__(name)
+    finally:
+        sys.stdout, sys.stderr = old_out, old_err
+
+
 def _check_predictive_deps() -> dict:
     """Check availability of prophet, pmdarima, statsmodels."""
     if not is_ee_enabled():
@@ -20,7 +34,7 @@ def _check_predictive_deps() -> dict:
     out = {}
     for name in ("prophet", "pmdarima", "statsmodels"):
         try:
-            __import__(name)
+            _import_module_quiet(name)
             out[name] = True
         except ImportError:
             out[name] = False
@@ -46,6 +60,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """FastAPI lifespan context manager: runs startup, yields, then runs shutdown."""
     # ── Startup ──────────────────────────────────────────────────────────────
     try:
+        from src.shared.observability.setup import setup_observability
+
+        setup_observability()
+
+        from src.core.production import require_encryption_key_in_production
+
+        require_encryption_key_in_production()
+
         # Check predictive analytics dependencies
         predictive_ok = _check_predictive_deps()
         missing = [k for k, v in predictive_ok.items() if not v]
@@ -172,6 +194,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
     logger.info("Performing cleanup before shutdown...")
+    try:
+        from src.shared.observability.setup import shutdown_observability
+
+        shutdown_observability()
+    except Exception as e:
+        logger.warning("Observability shutdown error: %s", e)
     try:
         from src.db.session import async_engine
         await async_engine.dispose()

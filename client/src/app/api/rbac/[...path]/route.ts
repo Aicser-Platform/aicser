@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 type RouteContext = { params?: Promise<Record<string, unknown>> | Record<string, unknown> };
 
@@ -32,53 +33,47 @@ async function proxy(request: NextRequest, context: RouteContext, method: string
         : rawParams;
     const pathSegments = (resolvedParams as { path?: string[] })?.path || [];
     const path = Array.isArray(pathSegments) ? pathSegments.join('/') : String(pathSegments || '');
+
     const backendBase = getBackendUrlForProxy();
-    const backendUrl = `${backendBase}/api/rbac/${path}`;
-    const queryString = request.nextUrl.searchParams.toString();
-    const fullUrl = queryString ? `${backendUrl}?${queryString}` : backendUrl;
+    const { searchParams } = new URL(request.url);
+    const queryString = searchParams.toString();
+    const backendUrl = `${backendBase}/api/rbac/${path}${queryString ? `?${queryString}` : ''}`;
 
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-    const cookie = request.headers.get('cookie');
-    if (cookie) headers['cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
+    const orgHeader = request.headers.get('X-Organization-Id');
+    if (orgHeader) headers['X-Organization-Id'] = orgHeader;
 
-    const requestOptions: RequestInit = {
-      method,
-      headers,
-      credentials: 'include',
-    };
-
-    if (!['GET', 'HEAD'].includes(method)) {
+    const init: RequestInit = { method, headers, credentials: 'include' };
+    if (['POST', 'PUT', 'PATCH'].includes(method)) {
       const body = await request.text();
-      if (body) {
-        requestOptions.body = body;
-        headers['Content-Type'] = contentType || 'application/json';
+      if (body) init.body = body;
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    }
+
+    const response = await fetch(backendUrl, init);
+
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
+
+    if (!response.ok) {
+      const text = await response.text();
+      try {
+        return NextResponse.json(JSON.parse(text), { status: response.status });
+      } catch {
+        return NextResponse.json({ error: text }, { status: response.status });
       }
     }
 
-    const response = await fetch(fullUrl, requestOptions);
-    const responseContentType = response.headers.get('content-type') || '';
-
-    if (response.status === 204) {
-      return new NextResponse(null, { status: 204 });
+    const ct = response.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      return NextResponse.json(await response.json(), { status: response.status });
     }
-
-    if (responseContentType.includes('application/json')) {
-      const data = await response.json();
-      return NextResponse.json(data, { status: response.status });
-    }
-
-    const text = await response.text();
-    return new NextResponse(text, {
-      status: response.status,
-      headers: { 'Content-Type': responseContentType || 'text/plain' },
-    });
+    return NextResponse.json({ data: await response.text() }, { status: response.status });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : 'Proxy failed';
     console.error('[api/rbac] Proxy error:', error);
-    return NextResponse.json({ detail: message }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

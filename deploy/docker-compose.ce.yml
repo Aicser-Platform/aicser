@@ -55,6 +55,7 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ENVIRONMENT: production
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
     volumes:

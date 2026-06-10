@@ -2,6 +2,13 @@ export interface Organization {
     id: string;
     name: string;
     description?: string;
+    logo_url?: string | null;
+    settings?: {
+        branding?: {
+            logo_url?: string | null;
+            app_name?: string | null;
+        };
+    } | null;
     created_at: string;
     updated_at?: string;
     is_active: boolean;
@@ -20,7 +27,6 @@ export interface CreateOrganizationPayload {
 }
 
 export interface UpdateOrganizationPayload {
-    id: string;
     name?: string;
     description?: string;
     is_active?: boolean;

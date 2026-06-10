@@ -2,10 +2,85 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from src.modules.feed.schemas import ReactionType
+
+
+def _sanitize_preview_data(values: Any, limit: int = 12) -> List[float]:
+    """Normalize sparkline preview values — chart metrics are often fractional."""
+    if not isinstance(values, (list, tuple)):
+        return []
+
+    out: List[float] = []
+    for item in values[:limit]:
+        try:
+            if item is None:
+                continue
+            if isinstance(item, (int, float)):
+                num = float(item)
+            elif isinstance(item, dict) and "value" in item:
+                num = float(item["value"])
+            else:
+                num = float(item)
+            if num == num:  # skip NaN
+                out.append(num)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _normalize_asset_payload(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Ensure feed asset preview numerics validate and serialize consistently."""
+    if not payload:
+        return {}
+
+    result = dict(payload)
+    if "previewData" in result:
+        result["previewData"] = _sanitize_preview_data(result.get("previewData"))
+
+    previews = result.get("previews")
+    if isinstance(previews, list):
+        normalized: List[Dict[str, Any]] = []
+        for preview in previews:
+            if not isinstance(preview, dict):
+                continue
+            entry = dict(preview)
+            if "data" in entry:
+                entry["data"] = _sanitize_preview_data(entry.get("data"))
+            normalized.append(entry)
+        result["previews"] = normalized
+
+    dashboard_id = result.get("dashboardId")
+    if dashboard_id is not None:
+        result["dashboardId"] = str(dashboard_id)
+
+    return result
+
+
+def _sanitize_preview_metadata(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Normalize preview_metadata stored on feed posts (sparkline numerics, etc.)."""
+    if not meta:
+        return {}
+
+    cleaned = dict(meta)
+    if "previewData" in cleaned:
+        cleaned["previewData"] = _sanitize_preview_data(cleaned.get("previewData"))
+
+    previews = cleaned.get("previews")
+    if isinstance(previews, list):
+        normalized: List[Dict[str, Any]] = []
+        for preview in previews:
+            if not isinstance(preview, dict):
+                continue
+            entry = dict(preview)
+            if "data" in entry:
+                entry["data"] = _sanitize_preview_data(entry.get("data"))
+            normalized.append(entry)
+        cleaned["previews"] = normalized
+
+    return cleaned
 
 
 def _utcnow() -> datetime:

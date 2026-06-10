@@ -45,11 +45,21 @@ function persistThemeModeAndNotify(theme: string) {
   }
 }
 
-export const GeneralTab: React.FC = () => {
+import type { TabComponentProps } from '../page';
+
+export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
+
+  useEffect(() => {
+    onSetAction?.(
+      <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={loading}>
+        {t('save')}
+      </Button>
+    );
+  }, [loading, onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -102,7 +112,7 @@ export const GeneralTab: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
       });
       if (values.language) {
-        window.dispatchEvent(new CustomEvent('aiser-locale-change', { detail: values.language }));
+        window.dispatchEvent(new CustomEvent('aicser-locale-change', { detail: values.language }));
       }
       persistThemeModeAndNotify((values.theme as string) || DEFAULTS.theme);
       message.success(t('saved'));
@@ -128,12 +138,7 @@ export const GeneralTab: React.FC = () => {
     <Form form={form} layout="vertical" onFinish={onFinish} initialValues={DEFAULTS}>
       <Card
         size="small"
-        title={
-          <>
-            <GlobalOutlined style={{ marginRight: 8 }} />
-            {t('language_region')}
-          </>
-        }
+        title={t('language_region')}
         className="mb-4"
         bordered={false}
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
@@ -233,9 +238,6 @@ export const GeneralTab: React.FC = () => {
         </Row>
       </Card>
 
-      <Button type="primary" htmlType="submit" loading={loading} icon={<SaveOutlined />}>
-        {t('save')}
-      </Button>
     </Form>
   );
 };

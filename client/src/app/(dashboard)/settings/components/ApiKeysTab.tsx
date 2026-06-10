@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Card,
@@ -29,6 +29,7 @@ import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const ModelSelector = dynamic(
   () => import('@/components/ai/ModelSelector/ModelSelector').then((m) => m.ModelSelector),
@@ -99,8 +100,20 @@ const PROVIDER_I18N_KEYS: Record<string, { nameKey: string; descKey: string }> =
 
 const PROVIDER_CARD_ORDER = ['openai', 'anthropic', 'azure_openai', 'google', 'ollama'] as const;
 
-export const ApiKeysTab: React.FC = () => {
+import type { TabComponentProps } from '../page';
+
+export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const apiSubTabKeys = ['platform', 'providers', 'ai-model'] as const;
+  const activeApiTab = useMemo(() => {
+    const requested = searchParams?.get('subtab');
+    if (requested && apiSubTabKeys.includes(requested as (typeof apiSubTabKeys)[number])) {
+      return requested;
+    }
+    return 'platform';
+  }, [searchParams?.get('subtab')]);
   const [apiKeyForm] = Form.useForm();
   const [providerKeyForm] = Form.useForm();
   const [createdKeyOnce, setCreatedKeyOnce] = useState<{ name: string; key: string } | null>(null);
@@ -290,52 +303,41 @@ export const ApiKeysTab: React.FC = () => {
     },
   ];
 
+  // Register "Create Key" in page header only on the platform keys tab
+  useEffect(() => {
+    onSetAction?.(
+      activeApiTab === 'platform' ? (
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowCreateModal(true)}>
+          {t('create_api_key')}
+        </Button>
+      ) : null
+    );
+  }, [activeApiTab, onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleApiTabChange = useCallback(
+    (nextKey: string) => {
+      const params = new URLSearchParams(searchParams?.toString());
+      params.set('tab', 'api-keys');
+      params.set('subtab', nextKey);
+      router.replace(`/settings?${params.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
+
   return (
     <div>
-      {/* AI Model preference - lives with API Keys for one place to configure AI/keys */}
-      <Card
-        size="small"
-        title={
-          <>
-            <RobotOutlined style={{ marginRight: 8 }} /> {t('default_ai_model')}
-          </>
-        }
-        bordered={false}
-        style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8, marginBottom: 16 }}
-      >
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
-          {t('default_ai_model_desc')}
-        </Text>
-        <ModelSelector
-          persistPreference
-          reloadNonce={aiModelsReloadNonce}
-          onChange={() => message.success(t('model_preference_saved'))}
-        />
-      </Card>
-
       <Tabs
-        defaultActiveKey="platform"
+        className="settings-subtabs"
+        activeKey={activeApiTab}
+        onChange={handleApiTabChange}
+        destroyInactiveTabPane
         items={[
           {
             key: 'platform',
-            label: (
-              <Space>
-                <KeyOutlined />
-                {t('platform_api_keys')}
-              </Space>
-            ),
+            label: t('platform_api_keys'),
             children: (
-              <Card
-                size="small"
-                bordered={false}
-                style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-                extra={
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowCreateModal(true)}>
-                    {t('create_api_key')}
-                  </Button>
-                }
-              >
-                <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ paddingTop: 4 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
                   {t('platform_api_keys_desc')}
                 </Text>
                 <Table
@@ -346,71 +348,80 @@ export const ApiKeysTab: React.FC = () => {
                   pagination={{ pageSize: 10 }}
                   scroll={{ x: 'max-content' }}
                 />
-              </Card>
+              </div>
             ),
           },
           {
             key: 'providers',
-            label: (
-              <Space>
-                <KeyOutlined />
-                {t('ai_provider_keys')}
-              </Space>
-            ),
+            label: t('ai_provider_keys'),
             children: (
-              <Card
-                size="small"
-                bordered={false}
-                style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-              >
-                <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
+              <div style={{ paddingTop: 4 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
                   {t('ai_provider_keys_desc')}
                 </Text>
-                <Space direction="vertical" size="large" className="api-provider-cards" style={{ width: '100%' }}>
+                {/* Provider list — flat rows, no stacked full-width cards */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {providers.map((provider) => (
-                    <Card
+                    <div
                       key={provider.key}
-                      size="small"
-                      hoverable={!provider.comingSoon}
-                      style={{
-                        cursor: provider.comingSoon ? 'default' : 'pointer',
-                        borderRadius: 8,
-                        opacity: provider.comingSoon ? 0.85 : 1,
-                      }}
                       onClick={() => !provider.comingSoon && handleOpenProviderKeyModal(provider.key)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '10px 12px',
+                        borderRadius: 8,
+                        border: '1px solid var(--ant-color-border)',
+                        background: 'var(--ant-color-bg-container)',
+                        cursor: provider.comingSoon ? 'default' : 'pointer',
+                        opacity: provider.comingSoon ? 0.6 : 1,
+                        transition: 'background 0.12s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!provider.comingSoon)
+                          (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-fill-tertiary)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-bg-container)';
+                      }}
                     >
-                      <Space direction="vertical" size={4}>
-                        <Space align="center" size={8}>
-                          {getAiProviderLogo(provider.key) ? (
-                            <img
-                              src={getAiProviderLogo(provider.key)}
-                              alt=""
-                              width={24}
-                              height={24}
-                              style={{ objectFit: 'contain', borderRadius: 4 }}
-                            />
-                          ) : (
-                            <RobotOutlined style={{ fontSize: 20, color: 'var(--ant-color-text-secondary)' }} />
-                          )}
-                          <Text strong>{provider.name}</Text>
-                        </Space>
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                          {provider.description}
-                        </Text>
-                        {provider.comingSoon ? (
-                          <Tag color="default" style={{ marginTop: 8 }}>
-                            {t('coming_soon')}
-                          </Tag>
-                        ) : providerApiKeys[provider.key] ? (
-                          <Tag color="green" style={{ marginTop: 8 }}>
-                            {t('configured')}
-                          </Tag>
-                        ) : null}
-                      </Space>
-                    </Card>
+                      {getAiProviderLogo(provider.key) ? (
+                        <img src={getAiProviderLogo(provider.key)} alt="" width={20} height={20}
+                          style={{ objectFit: 'contain', borderRadius: 3, flexShrink: 0 }} />
+                      ) : (
+                        <RobotOutlined style={{ fontSize: 18, color: 'var(--ant-color-text-secondary)', flexShrink: 0 }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: 13, lineHeight: 1.3 }}>{provider.name}</div>
+                        <Text type="secondary" style={{ fontSize: 11 }}>{provider.description}</Text>
+                      </div>
+                      {provider.comingSoon ? (
+                        <Tag style={{ margin: 0, fontSize: 10 }}>{t('coming_soon')}</Tag>
+                      ) : providerApiKeys[provider.key] ? (
+                        <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{t('configured')}</Tag>
+                      ) : (
+                        <Tag style={{ margin: 0, fontSize: 10 }}>Not set</Tag>
+                      )}
+                    </div>
                   ))}
-                </Space>
-              </Card>
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: 'ai-model',
+            label: t('default_ai_model'),
+            children: (
+              <div style={{ paddingTop: 4 }}>
+                <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
+                  {t('default_ai_model_desc')}
+                </Text>
+                <ModelSelector
+                  persistPreference
+                  reloadNonce={aiModelsReloadNonce}
+                  onChange={() => message.success(t('model_preference_saved'))}
+                />
+              </div>
             ),
           },
         ]}

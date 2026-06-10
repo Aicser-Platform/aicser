@@ -11,9 +11,29 @@ export class ApiError extends Error {
   detail: any;
 
   constructor(status: number, detail: any, rawText?: string) {
-    const friendlyMsg =
-      (typeof detail === 'object' && detail?.message) ||
-      (typeof detail === 'string' ? detail : `Request failed (${status})`);
+    // Extract a human-readable message:
+    // 1. Plain string detail
+    // 2. Object with message property
+    // 3. FastAPI/Pydantic array: [{loc, msg, type}] → join msg fields
+    // 4. Fallback: "Request failed (status)"
+    let friendlyMsg: string;
+    if (typeof detail === 'string' && detail.trim()) {
+      friendlyMsg = detail.trim();
+    } else if (typeof detail === 'object' && detail !== null && typeof detail.message === 'string') {
+      friendlyMsg = detail.message;
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      // FastAPI Pydantic validation errors: [{loc:[], msg:"...", type:"..."}]
+      const msgs = detail
+        .map((d: any) => {
+          const msg = typeof d?.msg === 'string' ? d.msg : '';
+          const loc = Array.isArray(d?.loc) ? d.loc.filter((l: any) => l !== 'body').join(' → ') : '';
+          return loc ? `${loc}: ${msg}` : msg;
+        })
+        .filter(Boolean);
+      friendlyMsg = msgs.length > 0 ? msgs.join('; ') : `Request failed (${status})`;
+    } else {
+      friendlyMsg = `Request failed (${status})`;
+    }
     super(friendlyMsg);
     this.name = 'ApiError';
     this.status = status;
@@ -179,8 +199,22 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}): Pro
       // not JSON — leave parsed as null
     }
 
+    // App-level validation envelope: { error, message, details[] }
+    if (
+      parsed &&
+      parsed.error === 'validation_error' &&
+      Array.isArray(parsed.details)
+    ) {
+      throw new ApiError(response.status, parsed, errorText);
+    }
+
     // FastAPI structured errors: {"detail": { "error": "...", "message": "..." }}
     if (parsed && typeof parsed.detail === 'object' && parsed.detail !== null) {
+      throw new ApiError(response.status, parsed.detail, errorText);
+    }
+
+    // Pydantic field errors: { detail: [{ loc, msg }] }
+    if (parsed && Array.isArray(parsed.detail) && parsed.detail.length) {
       throw new ApiError(response.status, parsed.detail, errorText);
     }
 
@@ -188,8 +222,18 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}): Pro
     let message = errorText;
     if (parsed && typeof parsed.detail === 'string') {
       message = parsed.detail;
+    } else if (
+      parsed &&
+      typeof parsed.error === 'string' &&
+      parsed.error === 'internal_server_error' &&
+      typeof parsed.message === 'string' &&
+      parsed.message.trim()
+    ) {
+      message = parsed.message;
     } else if (parsed && typeof parsed.error === 'string') {
       message = parsed.error;
+    } else if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+      message = parsed.message;
     }
     throw new ApiError(response.status, message, errorText);
   }

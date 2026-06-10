@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   MenuFoldOutlined,
-  MenuOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
   SunOutlined,
@@ -15,6 +14,8 @@ import { Badge, Button, Layout, Tooltip, Modal, Form, Input, Typography, message
 const { Text } = Typography;
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
+import AicserLogo from '@/components/ui/Logo/AicserLogo';
+import { WorkspaceBrand } from '@/components/WorkspaceBrand/WorkspaceBrand';
 import { useLocale, useTranslations } from 'next-intl';
 import { LOCALE_OPTIONS, getLocaleLabel, getLocaleMeta } from '@/config/locales';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
@@ -25,7 +26,7 @@ const ProjectSelectorModal = dynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (() => import('@/ee').then((m) => ({ default: m.ProjectSelectorModal }))) as any,
   { ssr: false }
-) as React.ComponentType<{ open?: boolean; onClose?: () => void; onProjectChange?: (projectId: string | number) => void; onCreateNew?: () => void; [key: string]: unknown }>;
+) as React.ComponentType<{ open?: boolean; onClose?: () => void; onProjectChange?: (projectId: string | number) => void; onCreateNew?: () => void;[key: string]: unknown }>;
 const ActivityInboxBell = dynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (() => import('@/ee').then((m) => ({ default: m.ActivityInboxBell }))) as any,
@@ -33,9 +34,13 @@ const ActivityInboxBell = dynamic(
 ) as React.ComponentType;
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useProjects, useCreateProject } from '@/hooks/useProjects';
+import { dataSourceKeys } from '@/hooks/dataSourceKeys';
+import { useQueryClient } from '@tanstack/react-query';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
-import { useOrganizations, useCreateOrganization } from '@/ee';
+import { useOrganizations, useCreateOrganization } from '@/hooks/useOrganizations';
+import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { useHeaderStore } from '@/stores/useHeaderStore';
 import { useConversationStore } from '@/stores/useConversationStore';
 import { Divider } from 'antd';
@@ -71,6 +76,12 @@ export const LayoutHeader: React.FC<Props> = ({
   const [customizerOpen, setCustomizerOpen] = React.useState(false);
 
   const { currentProject, selectProject } = useProjectStore();
+  const queryClient = useQueryClient();
+
+  const resetProjectScopedData = () => {
+    useDataSourceStore.getState().select(null);
+    void queryClient.invalidateQueries({ queryKey: dataSourceKeys.all });
+  };
 
   const { createConversation } = useConversationStore();
 
@@ -84,7 +95,7 @@ export const LayoutHeader: React.FC<Props> = ({
         body: JSON.stringify({ language: locale }),
       });
       // Fire custom event for LocaleProvider to pick up
-      window.dispatchEvent(new CustomEvent('aiser-locale-change', { detail: locale }));
+      window.dispatchEvent(new CustomEvent('aicser-locale-change', { detail: locale }));
       message.success(t('language_switched', { language: getLocaleLabel(locale) }));
     } catch (err) {
       message.error(t('language_switch_failed'));
@@ -102,6 +113,7 @@ export const LayoutHeader: React.FC<Props> = ({
   // Organization state
   const { currentOrganization, setCurrentOrganization } = useOrganizationStore();
   const { organizations, isLoading: orgLoading } = useOrganizations({ enabled: isEnterpriseEdition });
+  const { allowsCreateOrg } = useWorkspaceConfig({ enabled: isEnterpriseEdition });
   const createOrgMutation = useCreateOrganization();
 
   // Project state (depends on currentOrganization being declared first)
@@ -126,24 +138,53 @@ export const LayoutHeader: React.FC<Props> = ({
     if (!isEnterpriseEdition) return;
     if (!userWithId?.id || orgLoading) return;
     if (organizations.length === 0) {
-      setCreateOrgModalOpen(true);
-    } else if (!currentOrganization || !organizations.find((o) => o.id === currentOrganization.id)) {
+      if (currentOrganization) setCurrentOrganization(null);
+      if (allowsCreateOrg) {
+        setCreateOrgModalOpen(true);
+      }
+      return;
+    }
+    const validCurrent = currentOrganization
+      ? organizations.find((org) => org.id === currentOrganization.id)
+      : null;
+    if (!validCurrent) {
       setCurrentOrganization(organizations[0]);
     }
-  }, [userWithId?.id, orgLoading, organizations, currentOrganization, setCurrentOrganization]);
+  }, [userWithId?.id, orgLoading, organizations, currentOrganization, setCurrentOrganization, isEnterpriseEdition, allowsCreateOrg]);
 
-  // Auto-select first project if none is selected
+  // Auto-select first project if none is selected (or clear stale project from localStorage)
+  const { clearProject } = useProjectStore();
   React.useEffect(() => {
-    if (!projectsLoading && projects.length > 0 && !currentProject) {
+    if (!isEnterpriseEdition || !currentOrganization) return;
+    if (
+      currentProject?.organization_id &&
+      String(currentProject.organization_id) !== String(currentOrganization.id)
+    ) {
+      clearProject();
+    }
+  }, [currentOrganization, currentProject, clearProject, isEnterpriseEdition]);
+
+  React.useEffect(() => {
+    if (!isEnterpriseEdition || projectsLoading) return;
+    if (projects.length === 0) {
+      if (currentProject) clearProject();
+      return;
+    }
+    const validProject = currentProject
+      ? projects.find((p) => p.id == currentProject.id)
+      : null;
+    if (!validProject) {
       selectProject(projects[0]);
     }
-  }, [projectsLoading, projects, currentProject, selectProject]);
+  }, [projectsLoading, projects, currentProject, selectProject, clearProject, isEnterpriseEdition]);
 
   const handleProjectChange = (projectId: number | string) => {
     const project = projects.find((p) => p.id == projectId);
     if (project) {
       message.loading({ content: t('switching_project'), key: 'project-switch' });
       selectProject(project);
+      resetProjectScopedData();
+      void useConversationStore.getState().loadConversations(String(project.id));
       message.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
     } else {
       message.error({ content: t('switch_failed'), key: 'project-switch', duration: 2 });
@@ -160,6 +201,7 @@ export const LayoutHeader: React.FC<Props> = ({
 
       if (newProject) {
         selectProject(newProject);
+        resetProjectScopedData();
         setCreateProjectModalOpen(false);
         createForm.resetFields();
         message.success({ content: t('project_created'), key: 'project-create', duration: 2 });
@@ -190,8 +232,10 @@ export const LayoutHeader: React.FC<Props> = ({
       setCreateOrgLoading(true);
       const newOrg = await createOrgMutation.mutateAsync(values);
       if (newOrg) {
+        setCurrentOrganization(newOrg);
         setCreateOrgModalOpen(false);
         orgForm.resetFields();
+        message.success(t('organization_created'));
       }
     } catch (error) {
       console.error('Failed to create organization:', error);
@@ -200,40 +244,17 @@ export const LayoutHeader: React.FC<Props> = ({
     }
   };
 
-  const sidebarOffset = React.useMemo(() => (isBreakpoint ? 0 : collapsed ? 80 : 256), [collapsed, isBreakpoint]);
-
   const headerGradient =
     'linear-gradient(135deg, var(--color-bg-navigation-header, var(--color-bg-navigation)) 0%, var(--color-bg-navigation-header-glow, rgba(255,255,255,0.25)) 100%)';
 
   return (
     <Layout.Header
+      className="layout-app-header"
       style={{
-        padding: '0 16px', // Ant Design: 16px horizontal (2 * 8px)
-        height: '64px',
-        minHeight: '64px',
-        maxHeight: '64px',
         lineHeight: '64px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        position: 'fixed',
-        top: 0,
-        left: `${sidebarOffset}px`,
-        right: 0,
-        zIndex: 1001,
-        transition: 'all 0.2s ease',
         background: headerGradient,
-        borderBottom: '1px solid var(--ant-color-border)',
         color: 'var(--ant-color-text)',
-        margin: 0,
-        paddingTop: 0,
-        paddingBottom: 0,
-        width: 'auto',
         boxShadow: 'none',
-        boxSizing: 'border-box',
-        borderTop: 'none',
-        borderRight: 'none',
-        borderLeft: 'none',
       }}
     >
       <div
@@ -246,72 +267,67 @@ export const LayoutHeader: React.FC<Props> = ({
           transition: 'margin-left 0.2s ease',
         }}
       >
-        {/* Sidebar toggle */}
-        <Tooltip title={collapsed ? t('open_sidebar') : t('collapse_sidebar')}>
-          <Button
-            type="text"
-            icon={isBreakpoint ? <MenuOutlined /> : collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? t('open_sidebar') : t('collapse_sidebar')}
-            className="sidebar-toggle"
-            style={{
-              fontSize: '18px',
-              width: 48,
-              height: 48,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 'var(--radius-base)',
-              transition: 'all var(--transition-fast)',
-            }}
-          />
-        </Tooltip>
+        {/* Sidebar toggle — desktop only; mobile uses bottom tab bar */}
+        {!isBreakpoint && (
+          <Tooltip title={collapsed ? t('open_sidebar') : t('collapse_sidebar')}>
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              aria-label={collapsed ? t('open_sidebar') : t('collapse_sidebar')}
+              className="header-shell-icon-btn icon-only-btn sidebar-toggle"
+            />
+          </Tooltip>
+        )}
+
+        {isBreakpoint && (
+          <AicserLogo size={28} showText={false} />
+        )}
+
+        {isEnterpriseEdition && currentOrganization && !isBreakpoint && (
+          <>
+            <Tooltip title={currentOrganization.name}>
+              <Button
+                type="text"
+                className="header-shell-chip header-org-chip"
+                onClick={() => router.push('/settings?tab=organization')}
+              >
+                <WorkspaceBrand size="sm" compact />
+              </Button>
+            </Tooltip>
+            <Divider type="vertical" className="header-shell-divider" />
+          </>
+        )}
 
         {isEnterpriseEdition && (
           <>
             <Tooltip title={t('switch_project')}>
               <Button
                 type="text"
-                icon={<FolderOutlined />}
                 onClick={() => setProjectModalOpen(true)}
-                style={{
-                  fontSize: '14px',
-                  height: 40,
-                  padding: '0 16px',
-                  borderRadius: 'var(--radius-base)',
-                  transition: 'all var(--transition-fast)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
+                className={`header-shell-chip header-project-btn${isBreakpoint ? ' header-project-btn--mobile' : ''}`}
               >
-                <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <FolderOutlined style={{ fontSize: 13, flexShrink: 0 }} />
+                <span className="header-shell-chip-label">
                   {currentProject
                     ? currentProject.is_private && currentProject.owner_name
                       ? `${currentProject.name} (${currentProject.owner_name})`
                       : currentProject.name
                     : t('select_project')}
                 </span>
-                <DownOutlined style={{ fontSize: '12px' }} />
+                <DownOutlined className="header-shell-chip-chevron" />
               </Button>
             </Tooltip>
-            <Tooltip title={t('project_settings')}>
-              <Button
-                type="text"
-                icon={<SettingOutlined />}
-                onClick={handleProjectSettings}
-                style={{
-                  fontSize: '18px',
-                  width: 40,
-                  height: 40,
-                  borderRadius: 'var(--radius-base)',
-                  transition: 'all var(--transition-fast)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              />
-            </Tooltip>
+            {!isBreakpoint && (
+              <Tooltip title={t('project_settings')}>
+                <Button
+                  type="text"
+                  icon={<SettingOutlined />}
+                  onClick={handleProjectSettings}
+                  className="header-shell-icon-btn icon-only-btn"
+                />
+              </Tooltip>
+            )}
           </>
         )}
 
@@ -330,43 +346,28 @@ export const LayoutHeader: React.FC<Props> = ({
         }}
       >
         {/* Divider */}
-        <div
-          style={{
-            width: '1px',
-            height: '32px',
-            background: 'var(--ant-color-border)',
-            margin: '0 var(--space-2)',
-          }}
-        />
+        <div className="header-toolbar-divider" aria-hidden="true" />
 
         {extraRight}
 
         {/* Theme Controls & Profile */}
-        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
           {onOpenDataSourceModal && (
             <Tooltip
               title={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
               placement="bottom"
             >
-              <Badge dot={highlightConnectData} status="processing" offset={[-2, 2]}>
+              <Badge dot={highlightConnectData} offset={[-3, 3]}>
                 <Button
                   type="text"
-                  icon={<PlusOutlined style={{ fontSize: 18, color: 'var(--ant-color-primary)' }} />}
+                  icon={<PlusOutlined />}
                   onClick={onOpenDataSourceModal}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 'var(--radius-base)',
-                    transition: 'all var(--transition-fast)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
+                  className="header-shell-icon-btn icon-only-btn header-shell-icon-btn--primary icon-only-btn--primary"
                 />
               </Badge>
             </Tooltip>
           )}
-          {isEnterpriseEdition && <ActivityInboxBell />}
+          {isEnterpriseEdition && <ActivityInboxBell className="header-shell-icon-btn icon-only-btn" />}
 
           {isEnterpriseEdition && (
             <Tooltip title={t('customize_theme')}>
@@ -374,16 +375,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 type="text"
                 icon={<BgColorsOutlined />}
                 onClick={() => setCustomizerOpen(true)}
-                style={{
-                  fontSize: '18px',
-                  width: 40,
-                  height: 40,
-                  borderRadius: 'var(--radius-base)',
-                  transition: 'all var(--transition-fast)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                className="header-shell-icon-btn icon-only-btn"
               />
             </Tooltip>
           )}
@@ -395,7 +387,6 @@ export const LayoutHeader: React.FC<Props> = ({
               onClick={() => {
                 const next = !isDarkMode;
                 setIsDarkMode(next);
-                // Sync theme to backend so Settings → General stays in sync
                 fetchApi('users/settings', {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
@@ -403,13 +394,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 }).catch(() => { });
               }}
               aria-label={isDarkMode ? t('light_mode') : t('dark_mode')}
-              style={{
-                fontSize: '16px',
-                width: 40,
-                height: 40,
-                borderRadius: 'var(--radius-base)',
-                transition: 'all var(--transition-fast)',
-              }}
+              className="header-shell-icon-btn icon-only-btn"
             />
           </Tooltip>
 
@@ -447,28 +432,19 @@ export const LayoutHeader: React.FC<Props> = ({
             >
               <Button
                 type="text"
-                icon={
-                  <LocaleFlagIcon
-                    locale={currentLocale}
-                    width={22}
-                    title={`${getLocaleMeta(currentLocale).nativeName} — ${getLocaleMeta(currentLocale).regionEn}`}
-                  />
-                }
                 aria-label={`${t('select_language')}: ${getLocaleLabel(currentLocale)}`}
-                style={{
-                  width: 44,
-                  height: 40,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 'var(--radius-base)',
-                  padding: 0,
-                }}
-              />
+                className="header-shell-icon-btn icon-only-btn header-locale-btn"
+              >
+                <LocaleFlagIcon
+                  locale={currentLocale}
+                  width={18}
+                  title={`${getLocaleMeta(currentLocale).nativeName} — ${getLocaleMeta(currentLocale).regionEn}`}
+                />
+              </Button>
             </Tooltip>
           </Dropdown>
 
-          <UserProfileDropdown showText={false} />
+          <UserProfileDropdown showText={false} className="header-profile-trigger" />
         </div>
       </div>
 
@@ -543,8 +519,8 @@ export const LayoutHeader: React.FC<Props> = ({
           )}
         </Modal>
       )}
-      {/* Create Organization Modal (Required for new EE users) */}
-      {isEnterpriseEdition && (
+      {/* Create Organization Modal (SaaS only — self-host uses single deployment org) */}
+      {isEnterpriseEdition && allowsCreateOrg && (
         <Modal
           title={t('create_organization')}
           open={createOrgModalOpen}

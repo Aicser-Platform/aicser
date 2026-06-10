@@ -1,1 +1,1 @@
-export { default } from './AiserLogo';
+export { default } from './AicserLogo';

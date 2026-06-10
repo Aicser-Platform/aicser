@@ -7,55 +7,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { getCeBearerToken } from '@/auth/ce/bearerToken';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { useProjectStore } from '@/stores/useProjectStore';
 
-export enum Permission {
-  // Organization permissions
-  ORG_VIEW = 'org:view',
-  ORG_EDIT = 'org:edit',
-  ORG_DELETE = 'org:delete',
-  ORG_MANAGE_USERS = 'org:manage_users',
-  ORG_MANAGE_BILLING = 'org:manage_billing',
-  ORG_VIEW_ANALYTICS = 'org:view_analytics',
-  
-  // Project permissions
-  PROJECT_VIEW = 'project:view',
-  PROJECT_EDIT = 'project:edit',
-  PROJECT_DELETE = 'project:delete',
-  PROJECT_MANAGE_MEMBERS = 'project:manage_members',
-  PROJECT_EXPORT = 'project:export',
-  
-  // Data permissions
-  DATA_VIEW = 'data:view',
-  DATA_EDIT = 'data:edit',
-  DATA_DELETE = 'data:delete',
-  DATA_UPLOAD = 'data:upload',
-  DATA_CONNECT = 'data:connect',
-  
-  // Chart/Dashboard permissions
-  CHART_VIEW = 'chart:view',
-  CHART_EDIT = 'chart:edit',
-  CHART_DELETE = 'chart:delete',
-  CHART_SHARE = 'chart:share',
-  DASHBOARD_VIEW = 'dashboard:view',
-  DASHBOARD_EDIT = 'dashboard:edit',
-  DASHBOARD_DELETE = 'dashboard:delete',
-  DASHBOARD_PUBLISH = 'dashboard:publish',
-  
-  // AI permissions
-  AI_USE = 'ai:use',
-  AI_ADVANCED = 'ai:advanced',
-  AI_TRAIN_MODELS = 'ai:train_models',
-  
-  // Query permissions
-  QUERY_EXECUTE = 'query:execute',
-  QUERY_SAVE = 'query:save',
-  QUERY_SHARE = 'query:share',
-  
-  // User permissions
-  USER_VIEW_PROFILE = 'user:view_profile',
-  USER_EDIT_PROFILE = 'user:edit_profile',
-  USER_MANAGE_API_KEYS = 'user:manage_api_keys',
-}
+export { Permission } from '@/constants/permissions';
+import { Permission } from '@/constants/permissions';
 
 interface UsePermissionsOptions {
   organizationId?: string | number;
@@ -90,18 +47,21 @@ interface UsePermissionsReturn {
  */
 export function usePermissions(options: UsePermissionsOptions = {}): UsePermissionsReturn {
   const { user, isAuthenticated, session } = useAuth();
+  const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const currentProject = useProjectStore((s) => s.currentProject);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Organization context removed - use provided organizationId or undefined
   const organizationId = useMemo(() => {
-    return options.organizationId ? String(options.organizationId) : undefined;
-  }, [options.organizationId]);
+    if (options.organizationId != null) return String(options.organizationId);
+    return currentOrganization?.id != null ? String(currentOrganization.id) : undefined;
+  }, [options.organizationId, currentOrganization?.id]);
 
   const projectId = useMemo(() => {
-    return options.projectId ? String(options.projectId) : undefined;
-  }, [options.projectId]);
+    if (options.projectId != null) return String(options.projectId);
+    return currentProject?.id != null ? String(currentProject.id) : undefined;
+  }, [options.projectId, currentProject?.id]);
 
   const fetchPermissions = useCallback(async () => {
     if (!isAuthenticated || !user) {
@@ -125,11 +85,12 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
+      const bearer = session?.access_token || getCeBearerToken();
+      if (bearer) {
+        headers['Authorization'] = `Bearer ${bearer}`;
       }
 
-      const response = await fetch(`/api/rbac/permissions?${params.toString()}`, {
+      const response = await fetch(`/api/rbac/me/permissions?${params.toString()}`, {
         cache: 'no-store',
         method: 'GET',
         credentials: 'include',
@@ -151,7 +112,9 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
       }
 
       const data = await response.json();
-      const permissionValues = (data?.permissions || []).map((p: string) => p as Permission);
+      const permissionValues = (Array.isArray(data?.permissions) ? data.permissions : []).map(
+        (p: string) => p as Permission
+      );
       setPermissions(permissionValues);
     } catch (err) {
       console.error('Error fetching permissions:', err);

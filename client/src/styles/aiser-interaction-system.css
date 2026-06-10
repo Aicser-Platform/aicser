@@ -1,0 +1,269 @@
+/**
+ * Aiser Interaction System — canonical hover, focus, and overlay chrome.
+ * Loads after aesthetic polish, before workspace-chrome (layout-only).
+ * One motion language: flat controls, in-place fills, single overlay border.
+ */
+
+/* ── Overlays — one visible rim (wrapper is positioning-only) ── */
+
+.ant-dropdown:not(.ant-dropdown-hidden),
+.ant-dropdown-menu-submenu-popup {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup > .ant-dropdown-menu,
+.ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
+  background: var(--ant-color-bg-elevated) !important;
+  border: var(--overlay-border) !important;
+  border-radius: var(--overlay-radius) !important;
+  box-shadow: var(--overlay-shadow) !important;
+  padding: 4px !important;
+}
+
+.ant-select-dropdown:not(.ant-select-dropdown-hidden) {
+  background: var(--ant-color-bg-elevated) !important;
+  padding: 4px !important;
+  border: var(--overlay-border) !important;
+  box-shadow: var(--overlay-shadow) !important;
+  border-radius: var(--overlay-radius) !important;
+}
+
+.ant-popover .ant-popover-inner {
+  background: var(--ant-color-bg-elevated) !important;
+  border: var(--overlay-border) !important;
+  box-shadow: var(--overlay-shadow) !important;
+  border-radius: var(--overlay-radius) !important;
+  padding: var(--spacing-sm) var(--spacing-md) !important;
+}
+
+.ant-tooltip .ant-tooltip-inner {
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--overlay-shadow) !important;
+}
+
+.ant-modal-content {
+  border: var(--overlay-border) !important;
+  box-shadow: var(--overlay-shadow) !important;
+  background: var(--ant-color-bg-elevated) !important;
+}
+
+.ant-drawer-content {
+  background: var(--ant-color-bg-elevated) !important;
+  border: var(--overlay-border) !important;
+  box-shadow: var(--overlay-shadow) !important;
+  border-radius: var(--overlay-radius) !important;
+}
+
+/* ── Menu / select items ── */
+
+.ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-title,
+.ant-select-item {
+  border-radius: var(--radius-sm) !important;
+  margin: 1px 0 !important;
+  transition: var(--interaction-hover-transition) !important;
+}
+
+.ant-dropdown-menu-item:hover,
+.ant-dropdown-menu-submenu-title:hover,
+.ant-select-item-option-active:not(.ant-select-item-option-disabled),
+.ant-select-item-option:hover:not(.ant-select-item-option-disabled) {
+  background: var(--interaction-hover-bg-strong) !important;
+  transform: none !important;
+}
+
+/* ── Buttons — flat motion ── */
+
+.ant-btn:hover,
+.ant-btn:focus-visible,
+.ant-btn:active {
+  transform: none !important;
+}
+
+.ant-btn:not(.ant-btn-primary):not(.ant-btn-dangerous):not(.icon-only-btn):hover:not(:disabled) {
+  box-shadow: none !important;
+}
+
+.ant-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
+}
+
+.ant-btn-text:hover:not(:disabled):not(.icon-only-btn) {
+  background: var(--interaction-hover-bg) !important;
+}
+
+.icon-only-btn.ant-btn:hover:not(:disabled),
+.icon-toolbar .ant-btn:hover:not(:disabled) {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--ant-color-text) !important;
+}
+
+/* ── Navigation menus ── */
+
+.ant-menu-item,
+.ant-menu-submenu-title {
+  transition: var(--interaction-hover-transition) !important;
+}
+
+.ant-menu-item:hover,
+.ant-menu-submenu-title:hover {
+  transform: none !important;
+}
+
+/* ── Tables & lists ── */
+
+.ant-table-tbody > tr {
+  transition: var(--interaction-hover-transition) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--interaction-hover-bg) !important;
+}
+
+.ant-list-item {
+  transition: var(--interaction-hover-transition) !important;
+}
+
+.ant-list-item:hover {
+  background: var(--interaction-hover-bg) !important;
+  transform: none !important;
+}
+
+/* ── Tabs ── */
+
+.page-tabs.ant-tabs .ant-tabs-tab:hover,
+.settings-tabs.ant-tabs .ant-tabs-tab:hover,
+.workspace-inline-tabs.ant-tabs .ant-tabs-tab:hover,
+.analysis-data-tabs.ant-tabs .ant-tabs-tab:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Cards — lift only on intentional marketing/stat tiles ── */
+
+.ant-card:hover:not(.page-section-card):not(.stat-card):not(.summary-card),
+.content-card:hover:not(.page-section-card):not(.stat-card):not(.summary-card) {
+  transform: none !important;
+}
+
+.page-section-card.ant-card:hover,
+.stat-card.ant-card:hover,
+.summary-card:hover {
+  transform: translateY(-1px) !important;
+}
+
+/* ── Trees — row hover, bare chevrons (icon centered in row) ── */
+
+.ant-tree .ant-tree-treenode {
+  display: flex !important;
+  align-items: center !important;
+  border-radius: var(--radius-xs);
+  transition: var(--interaction-hover-transition);
+}
+
+.ant-tree .ant-tree-switcher {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  align-self: center !important;
+  flex: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  width: 20px !important;
+  min-width: 20px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 0 !important;
+  color: var(--ant-color-text-quaternary);
+  transition: color 0.15s ease;
+}
+
+.ant-tree .ant-tree-switcher:hover,
+.ant-tree .ant-tree-switcher:focus,
+.ant-tree .ant-tree-switcher:active {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ant-tree .ant-tree-switcher .ant-tree-switcher-icon,
+.ant-tree .ant-tree-switcher .anticon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
+.ant-tree .ant-tree-switcher-noop {
+  width: 20px !important;
+  min-width: 20px !important;
+  background: transparent !important;
+  cursor: default;
+}
+
+.ant-tree .ant-tree-treenode:hover {
+  background: var(--interaction-hover-bg);
+}
+
+.ant-tree .ant-tree-treenode:hover .ant-tree-switcher {
+  color: var(--ant-color-text-secondary);
+}
+
+.ant-tree .ant-tree-treenode.ant-tree-treenode-selected {
+  background: var(--ant-color-primary-bg);
+}
+
+.ant-tree .ant-tree-node-content-wrapper,
+.ant-tree .ant-tree-node-content-wrapper:hover,
+.ant-tree .ant-tree-node-selected .ant-tree-node-content-wrapper {
+  background: transparent !important;
+  transition: none !important;
+}
+
+/* ── Inputs ── */
+
+.ant-input:hover,
+.ant-input-affix-wrapper:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
+  transform: none !important;
+}
+
+/* Workspace filter inputs — single border ring */
+.chat-page-container .schema-explorer-toolbar .ant-input-affix-wrapper,
+.query-editor-workspace .schema-explorer-toolbar .ant-input-affix-wrapper {
+  box-shadow: none !important;
+}
+
+.chat-page-container .schema-explorer-toolbar .ant-input-affix-wrapper-focused,
+.query-editor-workspace .schema-explorer-toolbar .ant-input-affix-wrapper-focused {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ant-btn,
+  .ant-dropdown-menu-item,
+  .ant-menu-item,
+  .ant-table-tbody > tr,
+  .ant-list-item,
+  .ant-tree-treenode,
+  .ant-tree-switcher {
+    transition: none !important;
+  }
+
+  .page-section-card.ant-card:hover,
+  .stat-card.ant-card:hover,
+  .summary-card:hover {
+    transform: none !important;
+  }
+}

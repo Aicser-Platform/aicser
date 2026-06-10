@@ -9,7 +9,6 @@
    ======================================== */
 
 /* Root Layout Container */
-/* Use Ant Design tokens for proper theme adaptation */
 .ant-layout {
   margin: 0 !important;
   padding: 0 !important;
@@ -17,8 +16,14 @@
   min-height: 100vh !important;
   width: 100% !important;
   display: flex !important;
-  flex-direction: row !important; /* Sidebar and Content side-by-side */
 }
+
+/* App root only: fixed sidebar + main column side-by-side */
+.ant-layout.ant-layout-has-sider {
+  flex-direction: row !important;
+}
+
+/* Main column stacking is handled by .layout-main-column in page-shell.css */
 
 .ant-layout-has-sider {
   margin: 0 !important;
@@ -27,179 +32,30 @@
 }
 
 /* ========================================
-   SIDEBAR (NAVIGATION) - FIXED POSITIONING
+   SIDEBAR & HEADER GEOMETRY
+   Owned by page-shell.css (.app-navigation-sider, .layout-app-header)
+   and Navigation.css (.app-navigation-brand, .sidebar-nav).
+   Do NOT add legacy Ant Menu / sider-children > div:first-child rules here.
    ======================================== */
-
-/* Sidebar - Fixed on left, full height */
-.ant-layout-sider {
-  /* Positioning */
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  bottom: 0 !important;
-  height: 100vh !important;
-  z-index: 1000 !important; /* Below header */
-  
-  /* Dimensions */
-  width: 256px !important; /* Default width */
-  min-width: 256px !important;
-  max-width: 256px !important;
-  
-  /* Spacing - No margins/padding on container */
-  margin: 0 !important;
-  padding: 0 !important;
-  
-  /* Borders - Right border only (Ant Design pattern) */
-  /* Use Ant Design tokens - adapts automatically to dark/light mode */
-  border: none !important;
-  border-right: 1px solid var(--ant-color-border) !important;
-  border-top: none !important;
-  border-bottom: none !important;
-  border-left: none !important;
-  
-  /* Visual - Use navigation color (handled by aiser-navigation-unified.css) */
-  /* Background color managed by aiser-navigation-unified.css */
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1) !important;
-  transition: width 0.2s ease, left 0.2s ease !important;
-  
-  /* Prevent overflow */
-  overflow: hidden !important;
-  box-sizing: border-box !important;
-}
-
-/* Collapsed sidebar */
-.ant-layout-sider-collapsed {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-/* Dark mode sidebar - Enhanced shadow for visibility */
-[data-theme='dark'] .ant-layout-sider {
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* Sidebar logo area - Same navigation color as sidebar */
-.ant-layout-sider .ant-layout-sider-children > div:first-child {
-  /* Spacing - Ant Design: 16px (2 * 8px) */
-  padding: 16px !important;
-  height: 64px !important; /* Match header height */
-  min-height: 64px !important;
-  max-height: 64px !important;
-  
-  /* Borders - Bottom border only - Use Ant Design tokens */
-  border-bottom: 1px solid var(--color-border) !important;
-  border-top: none !important;
-  border-right: none !important;
-  border-left: none !important;
-  
-  /* Background - Same navigation color as sidebar (from logo to bottom) */
-  background: var(--color-bg-navigation) !important;
-  background-color: var(--color-bg-navigation) !important;
-  
-  /* Layout */
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  box-sizing: border-box !important;
-}
-
-/* Collapsed sidebar logo area */
-.ant-layout-sider-collapsed .ant-layout-sider-children > div:first-child {
-  padding: 12px !important; /* Slightly less padding when collapsed */
-  justify-content: center !important;
-}
-
-/* Sidebar menu - Same navigation color as sidebar */
-.ant-layout-sider .ant-menu {
-  /* Spacing */
-  margin: 0 !important;
-  padding: 0 !important;
-  border: none !important;
-  
-  /* Layout */
-  flex: 1 !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  height: calc(100vh - 64px) !important; /* Full height minus logo area */
-  
-  /* Background - Same navigation color as sidebar (extends to bottom) */
-  background: var(--color-bg-navigation) !important;
-  background-color: var(--color-bg-navigation) !important;
-  color: var(--ant-color-text) !important; /* Use Ant Design text color */
-}
-
-/* ========================================
-   HEADER - FIXED POSITIONING
-   ======================================== */
-
-/* Header - Fixed on top, spans from sidebar to right edge */
-.ant-layout-header {
-  /* Positioning */
-  position: fixed !important;
-  top: 0 !important;
-  left: 256px !important; /* Default: after 256px sidebar */
-  right: 0 !important;
-  height: 64px !important;
-  min-height: 64px !important;
-  max-height: 64px !important;
-  z-index: 1001 !important; /* Above sidebar */
-  
-  /* Spacing - Ant Design: 16px horizontal (2 * 8px) */
-  margin: 0 !important;
-  padding: 0 16px !important; /* Vertical: 0, Horizontal: 16px */
-  
-  /* Borders - Bottom border only - Use Ant Design tokens */
-  border: none !important;
-  border-bottom: 1px solid var(--ant-color-border) !important;
-  border-top: none !important;
-  border-right: none !important;
-  border-left: none !important;
-  
-  /* Visual - Use Ant Design tokens for proper theme adaptation */
-  background: var(--ant-color-bg-container, var(--layout-header-background)) !important;
-  color: var(--ant-color-text) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-  transition: left 0.2s ease, width 0.2s ease, background-color 0.2s ease !important;
-  
-  /* Layout */
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  box-sizing: border-box !important;
-  width: calc(100% - 256px) !important; /* Default: full width minus sidebar */
-}
-
-/* Header when sidebar is collapsed */
-.ant-layout-sider-collapsed ~ .ant-layout .ant-layout-header,
-.ant-layout-has-sider .ant-layout-sider-collapsed + .ant-layout .ant-layout-header {
-  left: 80px !important;
-  width: calc(100% - 80px) !important;
-}
-
-/* Dark mode header - Enhanced shadow for visibility */
-[data-theme='dark'] .ant-layout-header {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-}
 
 /* ========================================
    CONTENT AREA - FLEX LAYOUT
    ======================================== */
 
-/* Main Content Area - Following Ant Design best practices */
-/* Uses flex layout to fill space naturally */
+/* Main Content Area — geometry (header offset, height) in page-shell.css */
 .ant-layout-content,
 .dashboard-content-override {
-  /* Spacing - No margins/padding (content handles its own spacing) */
-  margin: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  margin-bottom: 0 !important;
   padding: 0 !important;
-  
+
   /* Borders - None */
   border: none !important;
   border-width: 0 !important;
   border-style: none !important;
   outline: none !important;
-  
+
   /* Layout properties - Flex pattern - Use Ant Design tokens */
   /* CRITICAL: Full-width background extends to all edges */
   background: var(--ant-color-bg-layout) !important;
@@ -208,22 +64,18 @@
   box-sizing: border-box !important;
   position: relative !important;
   overflow: hidden !important;
-  
+
   /* Flex properties for proper layout */
-  flex: 1 !important; /* Fill available space (Ant Design best practice) */
-  min-height: 0 !important; /* Critical for flex children */
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+
+  /* Dimensions — height/offset in page-shell.css (.layout-page-content) */
+  width: 100% !important;
   display: flex !important;
   flex-direction: column !important;
-  
-  /* Dimensions - Account for fixed header */
-  width: 100% !important;
-  height: calc(100vh - 64px) !important;
-  min-height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
-  min-width: 0 !important;
-  
-  /* NOTE: margin-top and margin-left are handled by inline styles in DashboardLayout */
-  /* This allows dynamic adjustment based on sidebar collapse state */
+
+  /* NOTE: header offset via .layout-main-column padding-top in page-shell.css */
 }
 
 /* Full-width background for content area */
@@ -246,18 +98,18 @@
 .page-content {
   margin: 0 !important;
   padding: 0 !important;
-  padding-left: 0 !important; /* NO left padding - page-wrapper handles spacing */
+  padding-left: 0 !important;
   background: var(--ant-color-bg-layout) !important;
   color: var(--ant-color-text) !important;
   width: 100% !important;
-  height: calc(100vh - 64px) !important;
-  min-height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
   box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 0 !important;
-  flex: 1 !important;
+  flex: 1 1 auto !important;
   position: relative !important;
   overflow: hidden !important;
 }
@@ -278,23 +130,23 @@
 /* Using maximum specificity to ensure this rule applies and overrides all other rules */
 /* IMPORTANT: This rule MUST come after all other .page-wrapper rules in other files */
 .page-content > .page-wrapper,
+.page-content > .page-container,
 .dashboard-content-override .page-content > .page-wrapper,
+.dashboard-content-override .page-content > .page-container,
 .dashboard-content-override .page-wrapper,
+.dashboard-content-override .page-container,
 div.page-wrapper,
-.page-wrapper {
+div.page-container,
+.page-wrapper,
+.page-container {
   position: relative !important;
   width: 100% !important;
   height: 100% !important;
-  min-height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
-  flex: 1 !important;
-  /* CRITICAL: Explicit padding values - do not use CSS variables that might be overridden */
-  /* CRITICAL: padding-left MUST be set to 24px to create space from sidebar border */
-  padding: 24px !important;
-  padding-left: 24px !important; /* CRITICAL: Explicit left padding - ensures spacing from sidebar */
-  padding-right: 24px !important; /* Ensure padding extends to scrollbar area */
-  padding-top: 24px !important;
-  padding-bottom: 24px !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  flex: 1 1 auto !important;
+  /* Gutter/padding — canonical values in page-shell.css */
+  padding: var(--app-shell-gutter, 24px) !important;
   margin: 0 !important;
   margin-bottom: 0 !important;
   margin-left: 0 !important; /* No left margin - padding handles spacing */
@@ -314,6 +166,20 @@ div.page-wrapper,
   /* Consistent scrollbar styling */
   scrollbar-width: thin;
   scrollbar-color: var(--ant-color-text-tertiary) var(--ant-color-fill-tertiary);
+}
+
+/* Studio pages (dashboards, chart designer) — edge-to-edge canvas */
+.page-wrapper.page-wrapper--full-bleed {
+  padding: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
 }
 
 /* Scrollbar styling for page-wrapper */
@@ -355,27 +221,26 @@ div.page-wrapper,
 }
 
 /* Page Header - Consistent spacing */
-/* CRITICAL: Header MUST have padding-left to ensure spacing from sidebar */
-/* Even though page-wrapper has padding, header needs its own as a safety measure */
-.page-wrapper > .page-header,
-.page-content > .page-wrapper > .page-header,
-.dashboard-content-override .page-content > .page-wrapper > .page-header,
 .page-header {
-  margin: 0 !important; /* Zero all margins - use gap instead */
+  margin: 0 !important;
   margin-bottom: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
   margin-top: 0 !important;
   flex-shrink: 0;
   padding: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  padding-left: 24px !important; /* CRITICAL: Left padding ensures spacing from sidebar */
-  padding-right: 24px !important; /* Consistent right padding */
   box-sizing: border-box !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 0 !important; /* No gap - header content handles its own spacing */
+  gap: 0 !important;
+}
+
+/* Inside page-wrapper, horizontal inset comes from the shell — avoid double padding */
+.page-wrapper > .page-header,
+.page-content > .page-wrapper > .page-header,
+.dashboard-content-override .page-content > .page-wrapper > .page-header {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 /* Page Title - Consistent styling across all pages */
@@ -538,6 +403,45 @@ div.page-wrapper,
   margin-bottom: 0 !important;
 }
 
+/* Integrations (/data-platform) — tab nav + panels align with page shell */
+.page-wrapper.integrations-page .integrations-tabs.ant-tabs {
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav {
+  margin: 0 0 16px 0 !important;
+  padding: 0 !important;
+}
+
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav::before {
+  border-bottom-color: var(--ant-color-border-secondary) !important;
+}
+
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content-holder {
+  padding: 0 !important;
+}
+
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-tabpane {
+  padding: 0 !important;
+}
+
+.page-wrapper.integrations-page .page-tab-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.page-wrapper.integrations-page .data-platform-scope-bar {
+  margin-bottom: 0 !important;
+}
+
+.page-wrapper.integrations-page .data-platform-access-banner {
+  margin: 0 !important;
+}
+
 /* ========================================
    RESPONSIVE DESIGN
    ======================================== */
@@ -569,9 +473,9 @@ div.page-wrapper,
   }
 
   .header-right .ant-btn {
-    width: 36px !important;
-    height: 36px !important;
-    font-size: 15px !important;
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 16px !important;
   }
 
   /* Hide the divider line on mobile to save space */
@@ -580,13 +484,13 @@ div.page-wrapper,
   }
 
   .sidebar-toggle {
-    width: 40px !important;
-    height: 40px !important;
+    width: 28px !important;
+    height: 28px !important;
   }
 
   /* ── Content ─────────────────────────────────────── */
-  /* Main content wrapper (Layout around Content) — override any inline marginLeft */
-  .ant-layout > .ant-layout {
+  /* Main content wrapper — margin from --sidebar-width via .layout-main-column */
+  .layout-main-column {
     margin-left: 0 !important;
     width: 100% !important;
   }
@@ -596,9 +500,7 @@ div.page-wrapper,
     margin-left: 0 !important;
     width: 100% !important;
   }
-
-  /* ── Page wrapper ────────────────────────────────── */
-  .page-wrapper {
+  .page-wrapper:not(.page-wrapper--full-bleed):not(.page-wrapper--fill-height) {
     padding: 16px 0 0 16px !important;
     padding-left: 16px !important;
   }
@@ -628,12 +530,12 @@ div.page-wrapper,
     padding: 12px 0 0 12px !important; /* Further reduced: 12px, bottom: 0 to extend to edge */
     padding-left: 12px !important; /* Explicit left padding on small mobile */
   }
-  
+
   .page-header {
     padding-right: 0 !important; /* Extend to scrollbar on small mobile too */
     margin-bottom: 16px !important;
   }
-  
+
   .page-wrapper .ant-row,
   .page-wrapper .content-card,
   .page-wrapper .page-divider,
@@ -641,7 +543,7 @@ div.page-wrapper,
     margin-right: 0 !important; /* Extend to scrollbar on small mobile too */
     margin-bottom: 0 !important; /* Extend to bottom edge */
   }
-  
+
   .page-wrapper > *:not(.page-header):not(.ant-row):not(.content-card):not(.page-divider):not(.page-toolbar) {
     padding-right: 0 !important; /* Extend to scrollbar on small mobile too */
     padding-bottom: 0 !important; /* Extend to bottom edge */
@@ -660,21 +562,13 @@ div.page-wrapper,
 /* ========================================
    SETTINGS PAGE & TABS — FULLY RESPONSIVE
    ======================================== */
-.settings-page {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  box-sizing: border-box;
-  overflow-x: hidden;
-}
-
-/* Settings tabs: proper spacing and scroll on mobile */
+/* Settings tabs: proper spacing and scroll on mobile — scoped to legacy settings-tabs only */
 .settings-page .settings-tabs.ant-tabs,
 .settings-page .ant-tabs.settings-tabs {
   padding: 20px 0 0 0;
 }
 .settings-page .settings-tabs .ant-tabs-nav,
-.settings-page .ant-tabs-nav {
+.settings-page .ant-tabs.settings-tabs > .ant-tabs-nav {
   margin-bottom: 16px;
   padding: 0 4px 8px 0;
   overflow-x: auto;
@@ -692,11 +586,13 @@ div.page-wrapper,
   padding: 8px 12px !important;
 }
 
-/* Settings tab content: prevent overflow */
-.settings-page .ant-tabs-content-holder {
+/* Settings tab content: prevent overflow — legacy settings-tabs only */
+.settings-page .settings-tabs .ant-tabs-content-holder,
+.settings-page .ant-tabs.settings-tabs .ant-tabs-content-holder {
   overflow-x: hidden;
 }
-.settings-page .ant-tabs-content {
+.settings-page .settings-tabs .ant-tabs-content,
+.settings-page .ant-tabs.settings-tabs .ant-tabs-content {
   overflow-x: hidden;
 }
 

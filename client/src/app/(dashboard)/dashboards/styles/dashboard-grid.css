@@ -1,0 +1,1154 @@
+/* Fullscreen Styles */
+.studio-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  background: var(--studio-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+
+/* Dashboard studio inside app shell — prevent outer layout scroll clipping the toolbar */
+.page-content:has(.dashboard-studio-root) {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.ant-layout-content.dashboard-studio-layout {
+  overflow: hidden !important;
+}
+
+.studio-wrapper:fullscreen,
+.studio-wrapper:-webkit-full-screen,
+.studio-wrapper:-ms-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100vh !important;
+  background: var(--studio-bg);
+  z-index: 9999;
+}
+
+.studio-header {
+  height: var(--studio-header-height);
+  background: var(--studio-bg);
+  border-bottom: 1px solid var(--studio-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.studio-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+/* Sidebars are now handled in their own CSS files with absolute positioning to prevent layout shifts */
+
+/* Canvas & Content */
+.studio-canvas-area {
+  flex: 1;
+  overflow: hidden;
+  background-image: radial-gradient(var(--studio-border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  position: relative;
+  z-index: 10;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.dark ::webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--studio-primary);
+}
+
+.dashboard-container {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  min-height: 100%;
+  padding-bottom: 40px;
+  background: transparent;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.dashboard-container.drag-over {
+  background: rgba(0, 194, 203, 0.05);
+  border: 2px dashed var(--studio-primary);
+  border-radius: 8px;
+}
+
+/* React Grid Layout Container */
+.layout {
+  min-height: 800px;
+  position: relative;
+}
+
+/* React Grid Layout fixes for proper widget sizing */
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+  box-sizing: border-box;
+}
+
+.react-grid-item > div {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Resize Handles - Essential for RGL resizing */
+.react-grid-item > .react-resizable-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  bottom: 0;
+  right: 0;
+  cursor: se-resize;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: none !important; /* Force hide default RGL dots/icons */
+}
+
+.react-grid-item:hover > .react-resizable-handle,
+.react-grid-item.resizing > .react-resizable-handle {
+  opacity: 1;
+}
+
+.react-grid-item > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(0, 0, 0, 0.4);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.4);
+  transition: border-color 0.2s;
+}
+
+.react-grid-item:hover > .react-resizable-handle:hover::after {
+    border-color: var(--studio-primary);
+}
+
+.dark .react-grid-item > .react-resizable-handle::after {
+  border-right-color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: rgba(255, 255, 255, 0.4);
+}
+
+
+/* Widget Cards - Lark Style with Aiser Brand */
+.widget-card {
+  width: 100%;
+  height: 100%;
+  background: var(--studio-card-bg);
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--studio-shadow-sm);
+  overflow: hidden;
+}
+
+.widget-card:hover {
+  box-shadow: var(--studio-shadow-md);
+  border-color: var(--studio-border);
+}
+
+.widget-card.selected {
+  border-color: var(--studio-primary);
+  box-shadow:
+    0 0 0 1px var(--studio-primary),
+    var(--studio-shadow-md);
+  z-index: 10;
+}
+
+.widget-card.multi-selected {
+  border-color: #722ed1;
+  box-shadow:
+    0 0 0 2px rgba(114, 46, 209, 0.35),
+    var(--studio-shadow-md);
+  z-index: 9;
+}
+
+.widget-card.is-cross-filter-source {
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 194, 203, 0.35),
+    var(--studio-shadow-sm);
+}
+
+.widget-card.is-peer-editing {
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--ant-color-warning) 55%, transparent),
+    var(--studio-shadow-sm);
+}
+
+.widget-cross-filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--studio-primary);
+  background: var(--studio-primary-light);
+  flex-shrink: 0;
+}
+
+/* Handle transparent background widgets */
+.widget-card.is-transparent {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.widget-card.is-transparent:hover,
+.widget-card.is-transparent.selected {
+  border-color: var(--studio-primary);
+}
+
+.widget-card.is-transparent.selected {
+  box-shadow: 
+    0 0 0 1px var(--studio-primary),
+    var(--studio-shadow-md);
+}
+
+
+.widget-card-header {
+  min-height: 40px;
+  height: auto;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.widget-card-header-stack {
+  align-items: flex-start;
+}
+
+.widget-card-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.widget-card-subtitle {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--studio-text-muted, rgba(0, 0, 0, 0.45));
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.widget-card-header:active {
+  cursor: grabbing;
+}
+
+.drag-handle-icon.middle-top {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--studio-text-muted);
+  cursor: grab;
+  opacity: 0;
+  transition: all 0.2s ease;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  background: transparent;
+  padding: 4px;
+}
+
+.widget-card:hover .middle-top {
+  opacity: 0.3;
+}
+
+.widget-card-header:hover ~ .middle-top,
+.middle-top:hover {
+  opacity: 1 !important;
+  color: var(--studio-primary) !important;
+}
+
+.middle-top:active {
+  cursor: grabbing;
+}
+
+.widget-card-title {
+  font-size: 14px; /* Increased from 13px */
+  font-weight: 700; /* Bolder */
+  color: var(--studio-text-main);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* New: Handle dragging for headerless widgets */
+.drag-handle {
+  cursor: grab !important;
+}
+
+.drag-handle:active {
+  cursor: grabbing !important;
+}
+
+.widget-card.header-hidden .widget-card-body {
+  padding-top: 16px !important;
+}
+
+.widget-card-body {
+  flex: 1;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-card-bg);
+}
+
+/* Chart / data widget content fills card without bleeding or clipping */
+.widget-content-root {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.widget-chart-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  isolation: isolate;
+}
+
+.widget-chart-canvas {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+}
+
+.widget-chart-canvas > div,
+.widget-chart-canvas svg,
+.widget-chart-canvas canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* DOM watermark above canvas (dashboard); graphic fallback for canvas-only contexts */
+.widget-chart-shell .aiser-watermark-overlay {
+  z-index: 2;
+}
+
+/* Nested table/stat shells — avoid double card chrome */
+.widget-card .table-widget-container {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 8px 12px 12px !important;
+}
+
+.widget-card.widget-type-stat .widget-content-root,
+.widget-card.widget-type-slicer .widget-content-root {
+  padding: 4px 8px 8px;
+}
+
+.widget-card.widget-type-pie .widget-chart-shell,
+.widget-card.widget-type-donut .widget-chart-shell,
+.widget-card.widget-type-funnel .widget-chart-shell {
+  padding: 0 4px 4px;
+}
+
+/* ECharts tooltips appended to body — high contrast, above grid/cards */
+.dashboard-chart-tooltip {
+  z-index: 99999 !important;
+  pointer-events: none !important;
+}
+
+html[data-theme='dark'] .dashboard-chart-tooltip,
+.dark .dashboard-chart-tooltip {
+  background: rgba(22, 27, 34, 0.97) !important;
+  border: 1px solid #30363d !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+html[data-theme='light'] .dashboard-chart-tooltip,
+:root:not([data-theme='dark']) .dashboard-chart-tooltip {
+  background: rgba(255, 255, 255, 0.98) !important;
+  border: 1px solid #d0d7de !important;
+  color: #24292f !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+.dark .widget-loading-overlay {
+  background: rgba(13, 17, 23, 0.45) !important;
+}
+
+.widget-loading-overlay {
+  background: rgba(255, 255, 255, 0.5) !important;
+}
+
+.widget-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* Text widgets should look like other chart widgets */
+.widget-card.widget-type-text {
+  background: var(--studio-card-bg);
+  border-color: var(--studio-border);
+  box-shadow: var(--studio-shadow-sm);
+}
+
+.widget-card.widget-type-text:hover,
+.widget-card.widget-type-text.selected {
+  background: var(--studio-card-bg);
+  border-color: var(--studio-primary);
+  box-shadow: var(--studio-shadow-md);
+}
+
+.widget-card.widget-type-text .widget-card-header {
+  opacity: 1;
+  height: 40px;
+  padding: 0 16px;
+  transition: opacity 0.2s;
+  background: rgba(0, 0, 0, 0.01);
+  border-bottom: 1px solid transparent;
+}
+
+.widget-card.widget-type-text .widget-card-body {
+  padding: 16px 20px;
+  padding-top: 4px;
+}
+
+.widget-card.widget-type-text .widget-card-title {
+  font-size: 14px;
+  color: var(--studio-text-main);
+}
+
+/* Section divider block — line only, or title + extending rule */
+.widget-section-divider {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  min-height: 0;
+}
+
+.widget-section-divider--titled {
+  gap: 12px;
+}
+
+.widget-section-divider-title {
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.widget-section-divider-line {
+  flex: 1;
+  height: 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+}
+
+.widget-section-divider--line-only .widget-section-divider-line {
+  width: 100%;
+  flex: none;
+}
+
+.widget-card.widget-type-divider {
+  background: transparent;
+  box-shadow: none;
+}
+
+.widget-card.widget-type-divider .widget-card-body {
+  padding: 0;
+}
+
+/* Library Items */
+.library-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--studio-text-muted);
+  padding: 24px 16px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.library-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin: 2px 12px;
+  border-radius: var(--studio-radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--studio-text-main);
+}
+
+.library-item:hover {
+  background: var(--studio-primary-light);
+  color: var(--studio-primary);
+}
+
+/* Grid Layout for Library Cards */
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.library-item-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--studio-radius);
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--studio-text-main);
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-bg);
+}
+
+.library-item-card:hover {
+  background: var(--studio-primary-light);
+  color: var(--studio-primary);
+  border-color: var(--studio-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--studio-shadow-sm);
+}
+
+.library-item-icon {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--studio-primary);
+  font-size: 18px;
+  transition: all 0.2s;
+}
+
+.library-item-card:hover .library-item-icon {
+  transform: scale(1.05);
+}
+
+.library-item:hover .library-item-icon {
+  border-color: var(--studio-primary);
+  transform: translateY(-1px);
+}
+
+.library-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.library-item-card .library-item-name {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Buttons & Toggles */
+.btn-studio {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-bg);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  color: var(--studio-text-main);
+}
+
+.btn-studio:hover {
+  border-color: var(--studio-primary);
+  color: var(--studio-primary);
+  background: var(--studio-primary-light);
+}
+
+.btn-studio.primary {
+  background: var(--studio-primary);
+  border-color: var(--studio-primary);
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 194, 203, 0.2);
+}
+
+.btn-studio.primary:hover {
+  background: var(--studio-primary-hover);
+  border-color: var(--studio-primary-hover);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 194, 203, 0.3);
+}
+
+.sidebar-toggle-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 40px;
+  background: var(--studio-card-bg);
+  border: 1px solid var(--studio-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1100;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  color: var(--studio-text-muted);
+}
+
+.sidebar-toggle-btn:hover {
+  color: var(--studio-primary);
+  background: var(--studio-primary-light);
+  width: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.sidebar-toggle-btn.right {
+  right: 0;
+  border-radius: 8px 0 0 8px;
+  border-right: none;
+}
+
+.sidebar-toggle-btn.left {
+  left: 0;
+  border-radius: 0 8px 8px 0;
+  border-left: none;
+}
+
+/* Tabs */
+.studio-tabs-modern {
+  display: flex;
+  padding: 4px;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  margin: 0 12px;
+}
+
+.studio-tab-modern {
+  flex: 1;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--studio-text-secondary);
+  transition: all 0.2s;
+}
+
+.studio-tab-modern.active {
+  background: var(--studio-card-bg);
+  color: var(--studio-primary);
+  font-weight: 700;
+  box-shadow: var(--studio-shadow-sm);
+}
+
+/* Empty Canvas State */
+.canvas-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 24px;
+  z-index: 5;
+  pointer-events: none; /* Let clicks pass through to container */
+}
+
+.canvas-empty-content {
+  margin: auto;
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto; /* Enable clicks for items */
+}
+
+.widget-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* Animations */
+@keyframes slideInUp {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-in {
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Custom Dropdown Menu Styles */
+.ant-dropdown-menu {
+  font-size: 12px !important;
+}
+
+.ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-title {
+  font-size: 12px !important;
+  padding: 8px 24px 8px 12px !important; /* Extra right padding for arrow space */
+  line-height: 1.5 !important;
+  position: relative !important;
+}
+
+.ant-dropdown-menu-item .anticon,
+.ant-dropdown-menu-submenu-title .anticon {
+  font-size: 12px !important;
+  margin-right: 8px !important;
+}
+
+.ant-dropdown-menu-submenu-title {
+  padding-right: 32px !important; /* More space for submenu arrow */
+}
+
+/* Submenu arrow positioning */
+.ant-dropdown-menu-submenu-arrow {
+  position: absolute !important;
+  right: 1px !important;
+}
+
+/* Custom Dropdown Menu Styles */
+.ant-dropdown-menu {
+  font-size: 12px !important;
+}
+
+.ant-dropdown-menu-item,
+.ant-dropdown-menu-submenu-title {
+  font-size: 12px !important;
+  padding: 6px 12px !important;
+  line-height: 1.4 !important;
+}
+
+.ant-dropdown-menu-item .anticon,
+.ant-dropdown-menu-submenu-title .anticon {
+  font-size: 12px !important;
+  margin-right: 8px;
+}
+
+.ant-dropdown-menu-item-label {
+  font-size: 12px !important;
+}
+
+/* =================================================================
+   NUMBER FORMATTING CLASSES
+   ================================================================= */
+
+/* Better number display with tabular figures */
+.number-display,
+.number-large,
+.number-currency,
+.number-percent,
+.number-compact,
+.studio-stat-value {
+  font-feature-settings: 'tnum' 1; /* Tabular numbers for better alignment */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Trend indicators */
+.number-positive {
+  color: var(--ant-color-success, #52c41a) !important;
+}
+
+.number-negative {
+  color: var(--ant-color-error, #ff4d4f) !important;
+}
+
+/* Chart label improvements */
+.echarts-for-react text {
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Table number formatting */
+.ant-table-tbody .number-display {
+  text-align: right;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+}
+
+/* Mobile responsive number display */
+@media (max-width: 768px) {
+  .number-large {
+    font-size: 24px !important;
+  }
+
+  .number-compact {
+    font-size: 14px !important;
+  }
+}
+
+/* ==========================================
+   NUMBER FORMATTING STYLES
+   ========================================== */
+
+/* Stat Widget Number Display */
+.studio-stat-value {
+  font-variant-numeric: proportional-nums;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+
+/* Table Number Formatting */
+.table-widget-container .ant-table-tbody .ant-typography {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Chart Axis Labels */
+.echarts-container text {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Tooltip Number Display */
+.ant-tooltip-inner {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compact number display (k, M, B suffixes) */
+.number-compact {
+  font-variant-numeric: proportional-nums;
+  white-space: nowrap;
+}
+
+/* Large number displays */
+.number-large {
+  font-size: 1.2em;
+  font-weight: 600;
+  color: var(--studio-text-main);
+}
+
+/* Small number displays */
+.number-small {
+  font-size: 0.9em;
+  color: var(--studio-text-secondary);
+}
+
+/* Currency displays */
+.number-currency {
+  color: var(--studio-primary);
+  font-weight: 500;
+}
+
+/* Percentage displays */
+.number-percent {
+  font-weight: 500;
+}
+
+/* Positive trend numbers */
+.number-positive {
+  color: #52c41a;
+}
+
+/* Negative trend numbers */
+.number-negative {
+  color: #ff4d4f;
+}
+
+/* Responsive number sizing */
+@media (max-width: 768px) {
+  .studio-stat-value {
+    font-size: 24px !important;
+  }
+
+  .number-large {
+    font-size: 1.1em;
+  }
+}
+
+/* Widget Template Items */
+.widget-template-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  gap: 12px;
+  border: 1px solid var(--studio-border);
+  background: var(--studio-card-bg);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.widget-template-item:hover {
+  border-color: var(--studio-primary);
+  background: var(--studio-primary-light);
+  transform: translateY(-2px);
+  box-shadow: var(--studio-shadow-md);
+}
+
+.widget-template-icon {
+  color: var(--studio-primary);
+  background: var(--studio-primary-light);
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  font-size: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.widget-template-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+  color: var(--studio-text-main);
+}
+
+.widget-template-description {
+  font-size: 12px;
+  color: var(--studio-text-secondary);
+  line-height: 1.4;
+}
+
+/* Dark mode overrides for widget templates */
+.dark .widget-template-item {
+  border-color: var(--studio-border);
+}
+
+.dark .widget-template-item:hover {
+  background: rgba(0, 194, 203, 0.12);
+  border-color: var(--studio-primary);
+}
+/* ==========================================
+   FILTER POPOVER & INPUT STYLES
+   ========================================== */
+
+.filter-popover .ant-popover-inner {
+  padding: 12px 16px !important;
+  border-radius: 8px !important;
+  box-shadow: var(--studio-shadow-lg) !important;
+  border: 1px solid var(--studio-border);
+}
+
+.filter-select.ant-select-multiple .ant-select-selection-item {
+  height: 22px !important;
+  line-height: 20px !important;
+  background: var(--studio-primary-light) !important;
+  border: 1px solid var(--studio-primary) !important;
+  color: var(--studio-primary) !important;
+  border-radius: 4px !important;
+  margin-block: 2px !important;
+  font-size: 11px !important;
+}
+
+.filter-select.ant-select .ant-select-selector {
+  border-radius: 6px !important;
+  border-color: var(--studio-border) !important;
+  padding: 2px 8px !important;
+  min-height: 32px !important;
+}
+
+.filter-select.ant-select:hover .ant-select-selector,
+.filter-select.ant-select-focused .ant-select-selector {
+  border-color: var(--studio-primary) !important;
+  box-shadow: 0 0 0 2px var(--studio-primary-light) !important;
+}
+
+.premium-input.ant-input {
+  border-radius: 6px !important;
+  border-color: var(--studio-border) !important;
+  height: 32px !important;
+}
+
+.premium-input.ant-input:hover,
+.premium-input.ant-input:focus {
+  border-color: var(--studio-primary) !important;
+  box-shadow: 0 0 0 2px var(--studio-primary-light) !important;
+}
+
+.premium-input.ant-input-disabled {
+  background-color: #f7f8f9 !important;
+  border-color: #d1d5db !important;
+  border-style: dashed !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+  opacity: 0.8;
+}
+
+.filter-item-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.filter-item-field {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--studio-text-main);
+}
+
+.filter-item-condition {
+  font-size: 11px;
+  color: var(--studio-text-secondary);
+}
+
+.studio-context-presentation {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--studio-border, var(--ant-color-border));
+  border-radius: 8px;
+  background: var(--studio-surface, var(--ant-color-bg-container));
+}
+
+.studio-context-presentation .studio-context-row {
+  flex-wrap: nowrap;
+}
+
+.studio-context-presentation-title {
+  flex: 0 1 auto;
+  max-width: min(240px, 28vw);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--studio-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 8px;
+}
+
+.studio-context-presentation .studio-context-pages {
+  flex: 1 1 auto;
+}
+
+.studio-context-presentation .studio-refresh-dropdown-trigger.studio-context-btn {
+  max-width: min(200px, 32vw);
+}
+
+.studio-presentation-exit {
+  flex-shrink: 0;
+}
+
+.studio-wrapper:fullscreen .studio-context-presentation,
+.studio-wrapper:-webkit-full-screen .studio-context-presentation {
+  margin-top: 4px;
+}
+
+.studio-context {
+  margin-bottom: 0;
+}
+
+.dashboard-page-chrome {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  background: var(--studio-surface-elevated, var(--ant-color-bg-layout));
+  position: sticky;
+  top: 0;
+  z-index: 12;
+}
+
+.dashboard-page-chrome-viewer {
+  padding: 0 24px 8px;
+  margin-bottom: 4px;
+  border-bottom: none;
+  background: transparent;
+}

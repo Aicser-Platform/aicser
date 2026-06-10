@@ -3,7 +3,20 @@
  * Centralized colors, defaults, and chart settings
  */
 
-import { formatAxisLabel } from '../utils/numberFormatter';
+import { formatAxisLabel, formatNumber } from '../utils/numberFormatter';
+
+/** Format a value for axis labels/tooltips based on the widget's valueFormat setting. */
+export function formatByValueFormat(value: unknown, valueFormat?: string): string {
+  const num = Number(value);
+  if (isNaN(num)) return String(value ?? '');
+  switch (valueFormat) {
+    case 'compact': return formatNumber(num, { compact: true, decimals: 1 });
+    case 'currency': return formatNumber(num, { currency: true, compact: true, decimals: 0 });
+    case 'percent': return `${num.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+    case 'full': return num.toLocaleString();
+    default: return formatAxisLabel(num); // auto-compact
+  }
+}
 
 // Helper to check if dark mode is active
 export const isDark = () => {
@@ -163,6 +176,13 @@ export const DEFAULT_CHART_CONFIG = {
   lineStackMode: 'none' as const, // Default line chart stack mode
 };
 
+/** Solid grey axis grid — used by dashboard widgets (not dashed/dotted). */
+export const CHART_GRID_LINE_STYLE = {
+  color: CHART_COLORS.border.light,
+  type: 'solid' as const,
+  width: 1,
+};
+
 export interface ChartConfig {
   showLegend?: boolean;
   showDataLabel?: boolean;
@@ -216,6 +236,25 @@ export interface ChartConfig {
   hAxisStrikethrough?: boolean;
   hAxisUnderline?: boolean;
   showHAxisLine?: boolean;
+  /** Dashboard grid tiles — tighter chrome so axes/labels survive small card sizes */
+  isDashboardWidget?: boolean;
+  /**
+   * Value display format applied to tooltips and (optionally) axis labels.
+   * 'compact' → 1.2K / 3.4M
+   * 'currency' → $1,234
+   * 'percent' → 12.3%
+   * 'full' → 1,234,567  (no abbreviation)
+   * undefined / 'auto' → compact (legacy default for axis), full for tooltips
+   */
+  valueFormat?: 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+  /** Highlight statistical outliers (IQR method) with markPoints on line/bar/area/scatter charts. */
+  showAnomalies?: boolean;
+  /** Widget-level border width in pixels (0 = none) */
+  borderWidth?: number;
+  /** Widget-level border color */
+  borderColor?: string;
+  /** Widget-level box shadow preset */
+  boxShadow?: 'sm' | 'md' | 'lg';
 }
 
 export interface ChartData {
@@ -224,6 +263,12 @@ export interface ChartData {
   series?: { name: string; data: any[] }[];
   secondarySeries?: { name: string; data: any[] }[];
   group_field?: any[];
+  /** Scalar value for gauge/single-metric charts. */
+  value?: number | null;
+  /** Category labels for treemap / series-based builders. */
+  categories?: string[];
+  /** Raw heatmap cell tuples [xLabel, yLabel, value] for heatmap charts. */
+  heatmap?: Array<[string, string, number]>;
 }
 
 const applyTextDecorations = (text: string, underline?: boolean, strikethrough?: boolean) => {
@@ -253,15 +298,92 @@ const applyTextDecorations = (text: string, underline?: boolean, strikethrough?:
     .join('');
 };
 
-export const getBaseTooltipConfig = (type: string) => ({
-  trigger: ['pie', 'donut', 'funnel', 'heatmap'].includes(type) ? 'item' : 'axis',
-  confine: true, // Keep tooltip within chart area
-  backgroundColor: isDark() ? '#161b22' : '#fff',
-  borderRadius: 8,
-  padding: 12,
-  textStyle: { color: CHART_COLORS.text.primary, fontSize: 12 },
-  extraCssText: `box-shadow: 0 4px 12px rgba(0,0,0,${isDark() ? '0.3' : '0.08'}); border: 1px solid ${CHART_COLORS.border.light};`,
+export const getBaseTooltipConfig = (type: string, opts?: { appendToBody?: boolean }) => {
+  const appendToBody = opts?.appendToBody ?? false;
+  const dark = isDark();
+  const isItemTrigger = ['pie', 'donut', 'funnel', 'heatmap'].includes(type);
+  const isLineFamily = ['line', 'area'].includes(type);
+  const borderColor = CHART_COLORS.border.light;
+
+  return {
+    trigger: isItemTrigger ? 'item' : 'axis',
+    confine: !appendToBody,
+    appendToBody,
+    className: 'dashboard-chart-tooltip',
+    renderMode: 'html' as const,
+    backgroundColor: dark ? 'rgba(22, 27, 34, 0.97)' : 'rgba(255, 255, 255, 0.98)',
+    borderColor,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: [10, 14],
+    textStyle: { color: CHART_COLORS.text.primary, fontSize: 13, lineHeight: 20 },
+    extraCssText: `box-shadow: 0 8px 24px rgba(0,0,0,${dark ? '0.45' : '0.14'}); backdrop-filter: blur(8px); z-index: 99999 !important; pointer-events: none;`,
+    transitionDuration: 0.15,
+    axisPointer: isItemTrigger
+      ? undefined
+      : {
+          type: isLineFamily ? 'cross' : 'shadow',
+          snap: true,
+          crossStyle: {
+            color: CHART_COLORS.primary,
+            width: 1,
+            type: 'dashed' as const,
+            opacity: 0.85,
+          },
+          lineStyle: {
+            color: CHART_COLORS.primary,
+            width: 1,
+            type: 'dashed' as const,
+            opacity: 0.85,
+          },
+          shadowStyle: {
+            color: dark ? 'rgba(0, 194, 203, 0.14)' : 'rgba(0, 194, 203, 0.1)',
+          },
+          label: {
+            backgroundColor: dark ? '#21262d' : '#f6f8fa',
+            borderColor,
+            borderWidth: 1,
+            color: CHART_COLORS.text.primary,
+            fontSize: 11,
+            padding: [4, 6],
+          },
+        },
+  };
+};
+
+/** Dim non-hovered series/points (Tableau-style focus). */
+export const getCartesianBlur = (): Record<string, unknown> => ({
+  itemStyle: { opacity: 0.22 },
+  lineStyle: { opacity: 0.18 },
+  areaStyle: { opacity: 0.08 },
 });
+
+/** Shared hover emphasis for cartesian series (bar / line / area). */
+export const getCartesianEmphasis = (
+  kind: 'bar' | 'line' | 'area',
+  lineWidth = 3,
+): Record<string, unknown> => {
+  if (kind === 'bar') {
+    return {
+      focus: 'self',
+      blurScope: 'coordinateSystem',
+      itemStyle: {
+        opacity: 1,
+        shadowBlur: 12,
+        shadowOffsetY: 2,
+        shadowColor: isDark() ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.18)',
+      },
+    };
+  }
+  return {
+    focus: 'series',
+    blurScope: 'coordinateSystem',
+    scale: true,
+    scaleSize: kind === 'area' ? 6 : 8,
+    lineStyle: { width: lineWidth + 1.5 },
+    itemStyle: { borderWidth: 2, borderColor: CHART_COLORS.background },
+  };
+};
 
 export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: ChartConfig) => {
   const position = config?.legendPosition || (showLegend ? 'top' : 'hide');
@@ -303,6 +425,7 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
 };
 
 export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
+  const compact = config.isDashboardWidget === true;
   const legendPos = config.legendPosition || (config.showLegend !== false ? 'top' : 'hide');
   const showXAxisLabels = (config.showHAxisLabels ?? config.showAxis) !== false;
   const showYAxisLabels = (config.showVAxisLabels ?? config.showAxis) !== false;
@@ -322,20 +445,22 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
     config.vAxisLabelSlant === 'right-diagonal' ||
     config.vAxisLabelSlant === 'left-diagonal';
 
-  // Base distances based on legend position and labels
-  const baseBottom = legendPos === 'bottom' ? 40 : config.xAxisLabel ? 45 : 20;
-  const baseLeft = legendPos === 'left' ? 80 : config.yAxisLabel ? 50 : 20;
-  const baseTop = legendPos === 'top' ? 45 : 20;
-  const baseRight = legendPos === 'right' ? 80 : 20;
+  // Base distances — slightly leaner in dashboard tiles; containLabel still expands for labels
+  const pad = compact ? 4 : 0;
+  const baseBottom =
+    (legendPos === 'bottom' ? 40 : config.xAxisLabel ? 45 : compact ? 22 : 20) + pad;
+  const baseLeft =
+    (legendPos === 'left' ? 80 : config.yAxisLabel ? 50 : compact ? 16 : 20) + pad;
+  const baseTop = (legendPos === 'top' ? (compact ? 38 : 45) : compact ? 14 : 20) + pad;
+  const baseRight = (legendPos === 'right' ? 80 : compact ? 14 : 20) + pad;
 
-  // Add extra for slanted labels or specific font sizes
-  const extraBottom = showXAxisLabels ? (xAxisLabelSlanted ? 14 : 8) : 0;
+  const extraBottom = showXAxisLabels ? (xAxisLabelSlanted ? (compact ? 18 : 14) : compact ? 10 : 8) : 0;
   const extraLeft = showYAxisLabels
     ? yAxisLabelSlanted
-      ? Math.max(22, Math.round(yAxisFontSize * 2.1))
-      : Math.max(10, Math.round(yAxisFontSize))
+      ? Math.max(22, Math.round(yAxisFontSize * 2.1)) + (compact ? 4 : 0)
+      : Math.max(10, Math.round(yAxisFontSize)) + (compact ? 2 : 0)
     : 0;
-  
+
   const extraRight = secondaryName && secondaryName !== '' ? 45 : 0;
 
   return {
@@ -348,6 +473,7 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
 };
 
 export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: string = 'bar') => {
+  const compact = config.isDashboardWidget === true;
   const isHorizontalBar = config.barChartType === 'horizontal';
   const isPercentStacked = config.barStackMode === 'stacked-100' || config.lineStackMode === 'stacked-100';
   const isScatter = chartType === 'scatter';
@@ -357,7 +483,7 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
     type: isHorizontalBar || isScatter ? 'value' : 'category',
     name: config.xAxisLabel,
     nameLocation: 'middle',
-    nameGap: 30,
+    nameGap: compact ? 22 : 30,
     nameTextStyle: {
       color:
         config.axisLabelColor === 'default'
@@ -392,16 +518,18 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
               : config.hAxisLabelSlant === 'left-diagonal'
                 ? -45
                 : 0,
-      margin: 12,
+      margin: compact ? 6 : 12,
       interval: isHorizontalBar ? undefined : 'auto', // Auto-hide labels if they don't fit
       hideOverlap: !isHorizontalBar, // explicit hide overlap
-      overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : 'break', // Disable break for decorated text
-      width: isHorizontalBar ? undefined : hasXAxisTextDecoration ? undefined : 80,
+      overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : 'break',
+      width: isHorizontalBar ? undefined : hasXAxisTextDecoration ? undefined : compact ? undefined : 80,
       formatter: (value: any) => {
         const baseText = isHorizontalBar
           ? isPercentStacked && typeof value === 'number'
             ? `${value}%`
-            : formatAxisLabel(value)
+            : config.valueFormat && config.valueFormat !== 'auto'
+              ? formatByValueFormat(value, config.valueFormat)
+              : formatAxisLabel(value)
           : `${value ?? ''}`;
 
         return hasXAxisTextDecoration
@@ -413,16 +541,15 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
     splitLine: {
       show: isHorizontalBar || isScatter ? config.showGridline !== false : false,
       lineStyle: {
-        color: '#d1d5db',
-        type: 'dashed',
+        ...CHART_GRID_LINE_STYLE,
         opacity: config.gridLineOpacity ?? 0.6,
-        width: 1,
       },
     },
   };
 };
 
 export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
+  const compact = config.isDashboardWidget === true;
   const isHorizontalBar = config.barChartType === 'horizontal';
   const isPercentStacked = config.barStackMode === 'stacked-100' || config.lineStackMode === 'stacked-100';
   const hasYAxisTextDecoration = !!(config.vAxisUnderline || config.vAxisStrikethrough);
@@ -437,7 +564,7 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
     type: isHorizontalBar ? 'category' : 'value',
     name: config.yAxisLabel,
     nameLocation: 'middle',
-    nameGap: isHorizontalBar ? (hasYTitle ? 55 : 45) : 42,
+    nameGap: isHorizontalBar ? (hasYTitle ? 55 : 45) : compact ? 34 : 42,
     nameRotate: 90,
     nameTextStyle: {
       color:
@@ -453,10 +580,8 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
     splitLine: {
       show: isHorizontalBar ? false : config.showGridline !== false,
       lineStyle: {
-        color: '#d1d5db',
-        type: 'dashed',
+        ...CHART_GRID_LINE_STYLE,
         opacity: config.gridLineOpacity ?? 0.6,
-        width: 1,
       },
     },
     axisLine: {
@@ -488,13 +613,15 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
           ? `${value ?? ''}`
           : isPercentStacked && typeof value === 'number'
             ? `${value}%`
-            : formatAxisLabel(value);
+            : config.valueFormat && config.valueFormat !== 'auto'
+              ? formatByValueFormat(value, config.valueFormat)
+              : formatAxisLabel(value);
 
         return hasYAxisTextDecoration
           ? applyTextDecorations(baseText, config.vAxisUnderline, config.vAxisStrikethrough)
           : baseText;
       },
-      margin: yAxisLabelSlanted ? 16 : 12,
+      margin: compact ? 8 : yAxisLabelSlanted ? 16 : 12,
       interval: isHorizontalBar ? 0 : undefined, // Show all labels for horizontal bars
       hideOverlap: !isHorizontalBar,
       overflow: isHorizontalBar ? (hasYAxisTextDecoration ? 'none' : 'truncate') : undefined,

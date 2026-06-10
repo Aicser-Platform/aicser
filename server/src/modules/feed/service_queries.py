@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 
 from src.modules.authentication.rbac.models import Role, UserRole
 from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedView
+from src.modules.user.models import User
 from src.modules.feed.schemas import (
     AssetType,
     ActivityFeedItem,
@@ -27,6 +28,7 @@ from src.modules.feed.schemas import (
     FeedItemResponse,
     FeedLeaderboardItem,
     FeedLeaderboardTrend,
+    FeedRecommendedItem,
     FeedResponse,
     FeedScope,
     FeedSidebarActivity,
@@ -42,6 +44,13 @@ from src.modules.feed.schemas import (
     NotificationItem,
     NotificationResponse,
     PublicationStatus,
+    PublicationLookupResponse,
+    PublicAuthorProfileResponse,
+    PublicAuthorStats,
+    DigestPreviewItem,
+    DigestPreviewResponse,
+    PublicLeaderboardResponse,
+    RemixFeedResponse,
     ReactionType,
 )
 from src.modules.feed.service_utils import _enum_value, _safe_uuid, _time_ago, _to_iso
@@ -298,6 +307,7 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, posts)
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
+        previews = await self._load_preview_payloads(posts)
 
         items = [
             self._build_item_response(
@@ -307,6 +317,8 @@ class FeedServiceQueryMixin:
                 bookmarks=bookmarks,
                 comments=comments,
                 followed_authors=followed_authors,
+                preview_payload=previews.get(post.id),
+                viewer_id=user_id,
             )
             for post in posts
         ]
@@ -542,6 +554,7 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, [post])
         followed_authors = await self._load_followed_authors(user_id, [post])
         comments = await self._load_recent_comments([post], per_asset_limit=100, viewer_id=user_id)
+        previews = await self._load_preview_payloads([post])
 
         return self._build_item_response(
             post,
@@ -550,7 +563,21 @@ class FeedServiceQueryMixin:
             bookmarks,
             comments,
             followed_authors=followed_authors,
+            preview_payload=previews.get(post.id),
+            viewer_id=user_id,
         )
+
+    async def get_public_item_by_id(self, item_id: UUID) -> Optional[FeedItemResponse]:
+        """Approved public posts viewable without authentication."""
+        await self._seed_mock_data_if_empty()
+        post = await self.db.scalar(select(FeedPost).where(FeedPost.id == item_id))
+        if not post:
+            return None
+        if _enum_value(post.visibility) != FeedVisibility.public.value:
+            return None
+        if _enum_value(post.status) != PublicationStatus.approved.value:
+            return None
+        return await self.get_item_by_id(item_id, user_payload=None)
 
     async def get_filter_options(
         self,
@@ -601,6 +628,8 @@ class FeedServiceQueryMixin:
                 asset_counts.chart += 1
             elif asset_type_value == AssetType.insight.value:
                 asset_counts.insight += 1
+            elif asset_type_value == AssetType.query.value:
+                asset_counts.query += 1
 
         users = await self._load_users(author_ids)
         authors = [self._to_author(users.get(author_id), author_id) for author_id in author_ids]
@@ -951,6 +980,7 @@ class FeedServiceQueryMixin:
             activity.append(
                 FeedSidebarActivity(
                     id=str(row.id),
+                    postId=str(row.post_id) if row.post_id else None,
                     actor=self._to_author(actor_map.get(row.actor_id), row.actor_id),
                     action=_enum_value(row.type),
                     assetType=typed_asset,
@@ -959,10 +989,87 @@ class FeedServiceQueryMixin:
                 )
             )
 
+        recommended: List[FeedRecommendedItem] = []
+        if user_id and posts:
+            followed_ids: set[UUID] = set()
+            follow_result = await self.db.execute(
+                select(FeedAuthorFollow.following_id).where(FeedAuthorFollow.follower_id == user_id)
+            )
+            followed_ids = {row[0] for row in follow_result.all() if row[0]}
+
+            saved_tags: set[str] = set()
+            saved_posts_result = await self.db.execute(
+                select(FeedPost.tags)
+                .join(FeedInteraction, FeedInteraction.post_id == FeedPost.id)
+                .where(
+                    FeedInteraction.user_id == user_id,
+                    FeedInteraction.type == "save",
+                )
+            )
+            for tag_row in saved_posts_result.all():
+                for tag in tag_row[0] or []:
+                    if tag:
+                        saved_tags.add(tag)
+
+            org_boost = organization_id is not None
+
+            def _recommend_score(post: FeedPost) -> tuple[int, str]:
+                score = 0
+                reasons: List[str] = []
+                if post.author_id and post.author_id in followed_ids:
+                    score += 40
+                    reasons.append("From someone you follow")
+                post_tags = set(post.tags or [])
+                overlap = post_tags & saved_tags
+                if overlap:
+                    score += 20 + min(10, len(overlap) * 5)
+                    reasons.append("Matches your interests")
+                engagement = (
+                    int(post.view_count or 0)
+                    + int(post.reaction_count or 0) * 2
+                    + int(post.comment_count or 0) * 2
+                    + int(post.save_count or 0) * 3
+                )
+                score += min(30, engagement // 5)
+                if engagement > 10:
+                    reasons.append("Trending in your network")
+                if org_boost and post.organization_id == organization_id:
+                    score += 15
+                    reasons.append("From your organization")
+                reason = reasons[0] if reasons else "Recommended for you"
+                return score, reason
+
+            scored_posts = sorted(
+                [post for post in posts if post.id],
+                key=lambda post: (_recommend_score(post)[0], post.published_at or post.created_at),
+                reverse=True,
+            )
+            author_map = await self._load_users(post.author_id for post in scored_posts[:6] if post.author_id)
+            for post in scored_posts[:6]:
+                score, reason = _recommend_score(post)
+                if score <= 0:
+                    continue
+                asset_type_value = _enum_value(post.asset_type)
+                try:
+                    typed_asset = AssetType(asset_type_value)
+                except ValueError:
+                    typed_asset = AssetType.dashboard
+                recommended.append(
+                    FeedRecommendedItem(
+                        id=str(post.id),
+                        postId=str(post.id),
+                        assetType=typed_asset,
+                        title=post.title or "Untitled",
+                        creator=self._to_author(author_map.get(post.author_id), post.author_id),
+                        reason=reason,
+                        score=score,
+                    )
+                )
+
         return FeedSidebarResponse(
             leaderboard=leaderboard,
             topContributors=top_contributors,
-            recommended=[],
+            recommended=recommended,
             trendingTags=trending_tags,
             collections=collections,
             activity=activity,
@@ -1514,3 +1621,175 @@ class FeedServiceQueryMixin:
         ]
 
         return FeedResponse(items=items, total=total, limit=limit, offset=offset)
+
+    async def lookup_publication_by_asset(
+        self,
+        asset_type: AssetType,
+        asset_id: UUID,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> PublicationLookupResponse:
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        await self._set_rls_context(user_id)
+        await self._validate_publish_asset(asset_type, asset_id, user_id)
+
+        post = await self.db.scalar(
+            select(FeedPost)
+            .where(
+                FeedPost.asset_type == asset_type.value,
+                FeedPost.asset_id == asset_id,
+            )
+            .order_by(func.coalesce(FeedPost.published_at, FeedPost.created_at).desc())
+            .limit(1)
+        )
+        if not post:
+            return PublicationLookupResponse(exists=False)
+
+        visibility = _enum_value(post.visibility)
+        return PublicationLookupResponse(
+            exists=True,
+            publication_id=str(post.id),
+            title=post.title,
+            published_at=post.published_at,
+            snapshot_version=int(post.snapshot_version or 0),
+            visibility=FeedVisibility(visibility) if visibility in FeedVisibility.__members__ else None,
+        )
+
+    async def get_public_author_profile(
+        self,
+        username: str,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        user_payload: Optional[Dict[str, Any]] = None,
+    ) -> PublicAuthorProfileResponse:
+        await self._seed_mock_data_if_empty()
+        user_id = self.resolve_user_id(user_payload)
+        await self._set_rls_context(user_id)
+
+        clean = username.strip().lstrip("@").lower()
+        if not clean:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Author not found")
+
+        user = await self.db.scalar(select(User).where(func.lower(User.username) == clean))
+        if not user:
+            user = await self.db.scalar(
+                select(User).where(func.lower(User.email).like(f"{clean}@%"))
+            )
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Author not found")
+
+        author_id = user.id
+        public_filters = and_(
+            FeedPost.author_id == author_id,
+            FeedPost.visibility == FeedVisibility.public.value,
+            FeedPost.status == PublicationStatus.approved.value,
+            FeedPost.requires_login.is_(False),
+            FeedPost.public_access_level == "results_only",
+        )
+
+        post_count = int(await self.db.scalar(select(func.count()).select_from(FeedPost).where(public_filters)) or 0)
+        total_views = int(
+            await self.db.scalar(
+                select(func.coalesce(func.sum(FeedPost.view_count), 0)).where(public_filters)
+            )
+            or 0
+        )
+        follower_count = int(
+            await self.db.scalar(
+                select(func.count()).select_from(FeedAuthorFollow).where(
+                    FeedAuthorFollow.following_id == author_id
+                )
+            )
+            or 0
+        )
+
+        stmt = select(FeedPost).where(public_filters)
+        feed = await self._fetch_feed_response(stmt, FeedSort.recent, limit, offset, user_id)
+
+        is_following = False
+        if user_id and author_id != user_id:
+            follow_row = await self.db.scalar(
+                select(FeedAuthorFollow.id).where(
+                    FeedAuthorFollow.follower_id == user_id,
+                    FeedAuthorFollow.following_id == author_id,
+                )
+            )
+            is_following = follow_row is not None
+
+        return PublicAuthorProfileResponse(
+            author=self._to_author(user, author_id),
+            stats=PublicAuthorStats(
+                post_count=post_count,
+                total_views=total_views,
+                follower_count=follower_count,
+            ),
+            items=feed.items,
+            total=feed.total,
+            limit=limit,
+            offset=offset,
+            isFollowing=is_following,
+        )
+
+    async def get_digest_preview(self, *, period_days: int = 7, limit: int = 10) -> DigestPreviewResponse:
+        await self._seed_mock_data_if_empty()
+        await self._set_rls_context(None)
+
+        period_days = max(1, min(period_days, 30))
+        limit = max(1, min(limit, 20))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=period_days)
+        trending_score = (
+            FeedPost.view_count
+            + FeedPost.reaction_count * 2
+            + FeedPost.comment_count
+            + FeedPost.save_count * 3
+        )
+
+        stmt = (
+            select(FeedPost)
+            .where(
+                FeedPost.visibility == FeedVisibility.public.value,
+                FeedPost.status == PublicationStatus.approved.value,
+                FeedPost.requires_login.is_(False),
+                FeedPost.public_access_level == "results_only",
+                func.coalesce(FeedPost.published_at, FeedPost.created_at) >= cutoff,
+            )
+            .order_by(trending_score.desc(), func.coalesce(FeedPost.published_at, FeedPost.created_at).desc())
+            .limit(limit)
+        )
+        result = await self.db.execute(stmt)
+        posts = result.scalars().all()
+
+        items = [
+            DigestPreviewItem(
+                id=str(post.id),
+                title=post.title or "Untitled insight",
+                description=post.description,
+                view_count=int(post.view_count or 0),
+                reaction_count=int(post.reaction_count or 0),
+                published_at=post.published_at,
+            )
+            for post in posts
+        ]
+        return DigestPreviewResponse(items=items, period_days=period_days)
+
+    async def get_public_leaderboard(
+        self,
+        *,
+        time_range: LeaderboardTimeRange = LeaderboardTimeRange.week,
+        sort_by: LeaderboardSortBy = LeaderboardSortBy.popular,
+        limit: int = 8,
+    ) -> PublicLeaderboardResponse:
+        sidebar = await self.get_sidebar_data(
+            user_payload=None,
+            scope=FeedScope.public,
+            time_range=time_range,
+            sort_by=sort_by,
+            leaderboard_limit=max(3, min(limit, 20)),
+        )
+        return PublicLeaderboardResponse(
+            items=sidebar.leaderboard[:limit],
+            timeRange=time_range,
+        )

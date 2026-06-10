@@ -1,39 +1,61 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import nextDynamic from 'next/dynamic';
 import { DEFAULT_QUERY_LIMIT } from '@/config/queryLimits';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingScreen from '@/components/LoadingScreen/LoadingScreen';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
-import { Card, Typography, Alert, Space, Button, Tooltip, Dropdown, Tag, Popover, message, Spin } from 'antd';
+import { Card, Typography, Alert, Space, Button, Tooltip, Tag, Popover, message, Spin } from 'antd';
 import { useTranslations } from 'next-intl';
+import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { AccessDenied } from '@/components/layout/AccessDenied';
+import { PermissionGuard } from '@/components/PermissionGuard';
+import { Permission } from '@/constants/permissions';
+import {
+  QuestionCircleOutlined,
+  RocketOutlined,
+  BulbOutlined,
+  PlayCircleOutlined,
+  DatabaseOutlined,
+  InfoCircleOutlined,
+  CodeOutlined,
+  ShareAltOutlined,
+  EyeOutlined,
+  NumberOutlined,
+  SearchOutlined,
+  BarChartOutlined,
+  SortAscendingOutlined,
+  LinkOutlined,
+} from '@ant-design/icons';
+import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
+import {
+  dispatchQueryEditorImport,
+  peekQueryEditorImport,
+} from '@/utils/queryEditorBridge';
+import { useProjectStore } from '@/stores/useProjectStore';
 
 /* Lazy load Monaco editor for faster initial page load */
 function EditorLoadingPlaceholder() {
   const t = useTranslations('query_editor');
   return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-      <Spin size="large" tip={t('loading_editor')} />
+      <Spin size="large" tip={t('loading_editor')}>
+        <div style={{ minHeight: 80 }} />
+      </Spin>
     </div>
   );
 }
-const MonacoSQLEditor = nextDynamic(() => import('../../../components/data/SQLEditor/MonacoSQLEditor').then((m) => m.default), {
-  ssr: false,
-  loading: () => <EditorLoadingPlaceholder />,
-});
-import { 
-  QuestionCircleOutlined, 
-  RocketOutlined, 
-  BulbOutlined,
-  PlayCircleOutlined,
-  DatabaseOutlined,
-  CloseOutlined,
-  InfoCircleOutlined,
-  CodeOutlined
-} from '@ant-design/icons';
+
+const MonacoSQLEditor = nextDynamic(
+  () => import('../../../components/data/SQLEditor/MonacoSQLEditor').then((m) => m.default),
+  {
+    ssr: false,
+    loading: () => <EditorLoadingPlaceholder />,
+  }
+);
+
 const AnimatedAIAvatar = nextDynamic(
   () => import('@/ee').then((m) => ({ default: m.AnimatedAIAvatar })),
   { ssr: false }
@@ -52,7 +74,7 @@ const generateQueryTemplates = (
   name: string;
   description: string;
   sql: string;
-  icon: string;
+  icon: React.ReactNode;
 }> => {
   // CRITICAL: For file sources, always use 'data' as table name
   const isFileSource = schemaName === 'file';
@@ -67,41 +89,41 @@ const generateQueryTemplates = (
       name: t('tpl_view_all'),
       description: tableName ? t('tpl_view_all_desc_table', { table: actualTableName }) : t('tpl_view_all_desc'),
       sql: `SELECT * FROM ${fullTableName} LIMIT ${DEFAULT_QUERY_LIMIT};`,
-      icon: '👀'
+      icon: <EyeOutlined />
     },
     {
       name: t('tpl_count'),
       description: tableName ? t('tpl_count_desc_table', { table: actualTableName }) : t('tpl_count_desc'),
       sql: `SELECT COUNT(*) as total_records FROM ${fullTableName};`,
-      icon: '🔢'
+      icon: <NumberOutlined />
     },
     {
       name: t('tpl_find'),
       description: tableName ? t('tpl_find_desc_table', { table: actualTableName }) : t('tpl_find_desc'),
       sql: `SELECT * FROM ${fullTableName} WHERE column_name = 'value' LIMIT ${DEFAULT_QUERY_LIMIT};`,
-      icon: '🔍'
+      icon: <SearchOutlined />
     },
     {
       name: t('tpl_group'),
       description: tableName ? t('tpl_group_desc_table', { table: actualTableName }) : t('tpl_group_desc'),
       sql: `SELECT category, SUM(amount) as total FROM ${fullTableName} GROUP BY category;`,
-      icon: '📊'
+      icon: <BarChartOutlined />
     },
     {
       name: t('tpl_sort'),
       description: tableName ? t('tpl_sort_desc_table', { table: actualTableName }) : t('tpl_sort_desc'),
       sql: `SELECT * FROM ${fullTableName} ORDER BY date_column DESC LIMIT ${DEFAULT_QUERY_LIMIT};`,
-      icon: '⬆️'
+      icon: <SortAscendingOutlined />
     },
     {
       name: t('tpl_join'),
       description: t('tpl_join_desc'),
       sql: isFileSource
         ? `-- File sources use "data" table\n-- For joins, you may need to load multiple files\nSELECT * FROM ${fullTableName} LIMIT ${DEFAULT_QUERY_LIMIT};`
-        : (tableName 
+        : (tableName
           ? `SELECT a.*, b.name FROM ${fullTableName} a JOIN ${schemaPrefix}other_table b ON a.id = b.id LIMIT ${DEFAULT_QUERY_LIMIT};`
           : `SELECT a.*, b.name FROM table_a a JOIN table_b b ON a.id = b.id LIMIT ${DEFAULT_QUERY_LIMIT};`),
-      icon: '🔗'
+      icon: <LinkOutlined />
     }
   ];
 };
@@ -110,7 +132,17 @@ export default function QueryEditorPage() {
   const t = useTranslations('query_editor');
   const { isAuthenticated, authLoading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const savedQueryId = searchParams?.get('queryId') || '';
+  const importFromChat = searchParams?.get('import') === '1';
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
+  const organizationId =
+    currentProject?.organization_id ||
+    (currentProject as { organizationId?: string } | null)?.organizationId ||
+    undefined;
   const { isDarkMode } = useThemeMode();
+  const [publishOpen, setPublishOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -124,6 +156,14 @@ export default function QueryEditorPage() {
   const [editorMode, setEditorMode] = useState<'sql' | 'python'>('sql');
   const [selectedTableName, setSelectedTableName] = useState<string | undefined>();
   const [selectedSchemaName, setSelectedSchemaName] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (!importFromChat) return;
+    const payload = peekQueryEditorImport();
+    if (!payload) return;
+    const timer = window.setTimeout(() => dispatchQueryEditorImport(payload), 250);
+    return () => window.clearTimeout(timer);
+  }, [importFromChat]);
 
   // Listen for table selection from MonacoSQLEditor
   useEffect(() => {
@@ -164,38 +204,72 @@ export default function QueryEditorPage() {
   }
 
   return (
-    <div className="page-wrapper" style={{ paddingLeft: '16px', paddingRight: '16px', paddingTop: '16px', paddingBottom: '24px' }}>
-        <div className="page-header" style={{ zIndex: 998, position: 'sticky', top: 0, background: 'var(--ant-color-bg-layout)', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)', marginBottom: '24px' }}>
-          <div className="page-toolbar" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '12px' }}>
-            <Title level={2} className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, flex: '0 0 auto', fontSize: 'clamp(18px, 4vw, 24px)' }}>
-              <CodeOutlined style={{ color: 'var(--ant-color-primary)', fontSize: '24px', flexShrink: 0 }} />
-              <span style={{ flexShrink: 0 }}>{t('title')}</span>
+    <PermissionGuard
+      permission={Permission.QUERY_EXECUTE}
+      loadingFallback={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <Spin size="large" tip={t('loading_editor')}>
+            <div style={{ minHeight: 80 }} />
+          </Spin>
+        </div>
+      }
+      fallback={
+        <AccessDenied
+          title={t('no_query_permission')}
+          description={t('no_query_permission_desc')}
+          secondaryAction={{ label: t('open_data_sources'), href: '/data' }}
+        />
+      }
+    >
+    <DashboardPageShell fillHeight className="query-editor-page page-wrapper--full-bleed">
+        <DashboardPageHeader
+          sticky
+          icon={<CodeOutlined />}
+          title={
+            <>
+              {t('title')}
               {editorMode === 'python' && (
-                <Tag color="orange" icon={<CodeOutlined />} style={{ margin: 0, flexShrink: 0, marginLeft: '4px' }}>
+                <Tag color="orange" icon={<CodeOutlined />} style={{ margin: 0, marginLeft: 4 }}>
                   {t('python_mode_tag')}
                 </Tag>
               )}
-            </Title>
-            <Space size="large" style={{ flex: '0 0 auto', marginLeft: 'auto' }}>
-                  <Tooltip title={t('add_data_source')}>
-                    <Button
-                      type="primary"
-                      icon={<DatabaseOutlined />}
-                      onClick={() => {
-                        window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        borderRadius: '6px',
-                      }}
-                    >
-                      {t('add_data_source')}
-                    </Button>
-                  </Tooltip>
+            </>
+          }
+          extra={
+            <Space size={8} wrap className="qe-page-actions">
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<DatabaseOutlined />}
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
+                    }}
+                  >
+                    {t('add_data_source')}
+                  </Button>
 
-                  {/* Templates Popover - Separate from dropdown to allow clicking without closing */}
+                  {['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<RocketOutlined />}
+                      onClick={() => router.push('/chat')}
+                    >
+                      {t('ask_ai_engine')}
+                    </Button>
+                  )}
+
+                  {savedQueryId ? (
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<ShareAltOutlined />}
+                      onClick={() => setPublishOpen(true)}
+                    >
+                      {t('publish_to_feed')}
+                    </Button>
+                  ) : null}
+
                   <Popover
                     content={
                       <div style={{ width: '320px' }}>
@@ -234,7 +308,6 @@ export default function QueryEditorPage() {
                               key={index}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                // Dispatch event to load template
                                 const event = new CustomEvent('load-query-template', { 
                                   detail: { sql: template.sql } 
                                 });
@@ -272,7 +345,7 @@ export default function QueryEditorPage() {
                               }}
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '20px', lineHeight: 1 }}>{template.icon}</span>
+                                <span style={{ fontSize: '18px', lineHeight: 1, color: 'var(--ant-color-primary)', flexShrink: 0 }}>{template.icon}</span>
                                 <div style={{ flex: 1 }}>
                                   <div style={{ 
                                     fontWeight: 600, 
@@ -301,44 +374,34 @@ export default function QueryEditorPage() {
                     placement="bottomRight"
                     overlayStyle={{ maxWidth: '360px' }}
                   >
-                    <Tooltip title={t('templates_tooltip')}>
-                      <Button 
-                        type="text"
-                        icon={<BulbOutlined />}
-                        style={{ 
-                          fontSize: '18px',
-                          width: '36px',
-                          height: '36px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'var(--ant-color-text)',
-                          borderRadius: '6px'
-                        }}
-                      />
-                    </Tooltip>
+                    <Button type="default" size="small" icon={<BulbOutlined />}>
+                      {t('query_templates')}
+                    </Button>
                   </Popover>
+            </Space>
+          }
+        />
 
-                  {showWelcome && (
-                    <Button 
-                      type="text" 
-                      icon={<CloseOutlined />}
-                      onClick={handleDismissWelcome}
-                      title={t('dismiss_welcome')}
-                    />
-                  )}
-                </Space>
-          </div>
-        </div>
-
-        {/* Compact Welcome Alert - Ensure visible below header */}
         {showWelcome && (
-          <div style={{ padding: '16px 24px', paddingTop: '16px', marginTop: 0, position: 'relative', zIndex: 1 }}>
+          <div style={{ padding: '8px 12px', margin: 0 }}>
             <Alert
               message={
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: 'var(--ant-color-text)', lineHeight: '1.6' }}>
                   <InfoCircleOutlined style={{ color: 'var(--ant-color-primary)', fontSize: '18px', flexShrink: 0 }} />
                   <span>{t('welcome_alert')}</span>
+                  <Popover
+                    title={t('show_tips')}
+                    content={
+                      <div style={{ maxWidth: 320, whiteSpace: 'pre-line', fontSize: 13, lineHeight: 1.5 }}>
+                        {t('welcome_tips')}
+                      </div>
+                    }
+                    trigger="click"
+                  >
+                    <Button type="link" size="small" style={{ padding: 0, height: 'auto' }}>
+                      {t('show_tips')}
+                    </Button>
+                  </Popover>
                 </div>
               }
               type="info"
@@ -395,7 +458,7 @@ export default function QueryEditorPage() {
               }}
             >
               {editorMode === 'sql' ? (
-                <div style={{ 
+                <div className="query-editor-workspace" style={{ 
                   flex: 1, 
                   minHeight: 0, 
                   maxHeight: '100%', 
@@ -505,6 +568,19 @@ export default function QueryEditorPage() {
               )}
             </div>
         </div>
-      </div>
+      {savedQueryId && (
+        <PublishToFeedModal
+          open={publishOpen}
+          assetType="query"
+          sourceQueryId={savedQueryId}
+          defaultTitle={t('saved_query_title')}
+          projectId={projectId}
+          organizationId={organizationId}
+          onCancel={() => setPublishOpen(false)}
+          onSuccess={() => setPublishOpen(false)}
+        />
+      )}
+    </DashboardPageShell>
+    </PermissionGuard>
   );
 }

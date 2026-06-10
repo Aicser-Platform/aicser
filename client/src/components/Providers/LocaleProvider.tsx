@@ -3,9 +3,28 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import { DEFAULT_LOCALE } from '@/config/locales';
+import { applyTypographyForLocale } from '@/config/typography';
 import { mergeMessagesWithEnglishFallback } from '@/utils/mergeMessagesWithEnglish';
 import { fetchApi } from '@/utils/api';
+import { getCeBearerToken } from '@/auth/ce/bearerToken';
+import { useAuthStore } from '@/stores/useAuthStore';
 import enMessages from '@/messages/en.json';
+
+function waitForAuthSettled(maxMs = 4000): Promise<void> {
+    return new Promise((resolve) => {
+        if (!useAuthStore.getState().authLoading) {
+            resolve();
+            return;
+        }
+        const started = Date.now();
+        const interval = window.setInterval(() => {
+            if (!useAuthStore.getState().authLoading || Date.now() - started >= maxMs) {
+                window.clearInterval(interval);
+                resolve();
+            }
+        }, 50);
+    });
+}
 
 const MESSAGES_MAP: Record<string, () => Promise<any>> = {
     en: () => import('@/messages/en.json'),
@@ -36,6 +55,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
                 setMessages(mergeMessagesWithEnglishFallback(en, loaded));
             }
             setLocale(targetLocale);
+            applyTypographyForLocale(targetLocale);
             if (typeof window !== 'undefined') {
                 localStorage.setItem('aiser_locale', targetLocale);
             }
@@ -50,15 +70,23 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         async function initLocale() {
             let currentLocale: string = DEFAULT_LOCALE;
+            await waitForAuthSettled();
+            const { isAuthenticated } = useAuthStore.getState();
+            const hasSession = isAuthenticated || !!getCeBearerToken();
             try {
-                const data = await fetchApi('users/settings').catch(() => null);
-                if (data?.settings?.language) {
-                    currentLocale = data.settings.language;
+                if (hasSession) {
+                    const data = await fetchApi('users/settings').catch(() => null);
+                    if (data?.settings?.language) {
+                        currentLocale = data.settings.language;
+                    } else {
+                        const saved = localStorage.getItem('aiser_locale');
+                        if (saved) currentLocale = saved;
+                    }
                 } else {
                     const saved = localStorage.getItem('aiser_locale');
                     if (saved) currentLocale = saved;
                 }
-            } catch (err) {
+            } catch {
                 console.warn('Settings fetch failed, using default locale');
             }
             await loadLocaleData(currentLocale);
@@ -74,8 +102,8 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
             }
         };
 
-        window.addEventListener('aiser-locale-change', handleLocaleChange);
-        return () => window.removeEventListener('aiser-locale-change', handleLocaleChange);
+        window.addEventListener('aicser-locale-change', handleLocaleChange);
+        return () => window.removeEventListener('aicser-locale-change', handleLocaleChange);
     }, [locale]);
 
     return (

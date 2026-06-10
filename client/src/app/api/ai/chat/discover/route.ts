@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Proxy for backend POST /ai/chat/discover.
@@ -12,17 +13,8 @@ export async function POST(request: NextRequest) {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      ...buildProxyAuthHeaders(request),
     };
-
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
-
-    const cookieHeader = request.headers.get('cookie');
-    if (cookieHeader) {
-      headers['cookie'] = cookieHeader;
-    }
 
     const response = await fetch(`${backendBase}/ai/chat/discover`, {
       method: 'POST',

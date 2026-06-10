@@ -33,36 +33,19 @@ services:
       timeout: 5s
       retries: 5
 
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
-    container_name: aiser-clickhouse-ee
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    container_name: aiser-keycloak-ee
+    command: start-dev --import-realm
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
-      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
     volumes:
-      - clickhouse_ee_data:/var/lib/clickhouse
+      - ./keycloak/aiser-realm.json:/opt/keycloak/data/import/aiser-realm.json:ro
     ports:
-      - "8123:8123"
-      - "9000:9000"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://127.0.0.1:8123/ping",
-        ]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
+      - "8080:8080"
 
   server:
     build:
@@ -94,11 +77,11 @@ services:
       AZURE_API_VERSION: ${AZURE_OPENAI_API_VERSION}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_SECRET: ${JWT_SECRET:-}
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "8123"
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      SAMPLE_DATA_DUCKDB_PATH: ${SAMPLE_DATA_DUCKDB_PATH:-/app/scripts/sample-data/duckdb/sample_data.duckdb}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_BACKEND_CLIENT_ID:-aiser-backend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-aiser-backend-dev-secret}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
       AZURE_TENANT_ID: ${AZURE_TENANT_ID}
@@ -109,11 +92,9 @@ services:
       JWT_EXPIRY_SECONDS: "604800"
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      KEYCLOAK_URL: ${KEYCLOAK_URL}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       ENVIRONMENT: production
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
       STORAGE_BACKEND: ${STORAGE_BACKEND:-}
@@ -132,8 +113,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      clickhouse:
-        condition: service_healthy
+      keycloak:
+        condition: service_started
     entrypoint:
       - /bin/sh
       - -c
@@ -161,10 +142,12 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-}
-        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
-        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:8080}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-1}
+        NEXT_BUILD_MAX_OLD_SPACE_SIZE: ${NEXT_BUILD_MAX_OLD_SPACE_SIZE:-1536}
     container_name: aiser-client-ee
     environment:
       API_TARGET: ${API_TARGET:-http://server:8000}
@@ -187,7 +170,6 @@ services:
 volumes:
   postgres_ee_data:
   redis_ee_data:
-  clickhouse_ee_data:
 
 networks:
   default:

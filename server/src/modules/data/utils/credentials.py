@@ -18,6 +18,14 @@ def _get_fernet():
     global _encryption_warned
     key = os.getenv("ENCRYPTION_KEY")
     if not key or Fernet is None:
+        try:
+            from src.core.production import require_encryption_key_in_production
+
+            require_encryption_key_in_production()
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
         if not _encryption_warned:
             _encryption_warned = True
             logger.warning(

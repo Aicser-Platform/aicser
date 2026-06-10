@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Catch-all proxy route for /api/dashboards/* endpoints.
@@ -44,12 +45,7 @@ async function handleRequest(request: NextRequest, context: { params?: any }, me
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
-
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-
-    const cookie = request.headers.get('Cookie');
-    if (cookie) headers['Cookie'] = cookie;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const requestOptions: RequestInit = { method, headers };
 
@@ -85,6 +81,20 @@ async function handleRequest(request: NextRequest, context: { params?: any }, me
 
     if (response.status === 204) {
       return new NextResponse(null, { status: 204 });
+    }
+
+    // Pipe SSE streams through without buffering (dashboard build progress, etc.)
+    if (responseContentType.includes('text/event-stream') && response.body) {
+      const { pipeTolerantStream } = await import('@/app/api/lib/streamProxy');
+      return new NextResponse(pipeTolerantStream(response.body), {
+        status: response.status,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
     }
 
     if (responseContentType.includes('application/json')) {

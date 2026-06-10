@@ -31,6 +31,8 @@ interface FeedSidebarProps {
   onOpenItem: (postId: string) => void;
   onLikeItem: (postId: string) => void;
   onSaveItem: (postId: string) => void;
+  onTagClick?: (tag: string) => void;
+  showRecommended?: boolean;
 }
 
 const FeedSidebar: React.FC<FeedSidebarProps> = ({
@@ -45,6 +47,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
   onOpenItem,
   onLikeItem,
   onSaveItem,
+  onTagClick,
+  showRecommended = true,
 }) => {
   const t = useTranslations('feed');
   const router = useRouter();
@@ -84,26 +88,37 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
     }
   };
 
+  const formatActivityAction = (action: string) => {
+    const key = `activity_action_${action}`;
+    try {
+      const label = t(key as 'latest_activity');
+      if (label && label !== key) return label;
+    } catch {
+      // fall through
+    }
+    return action.replace(/_/g, ' ');
+  };
+
   const cardStyles =
-    'bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] shadow-sm rounded-xl overflow-hidden';
+    'bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] shadow-none rounded-lg overflow-hidden';
   const cardHeadStyles = {
     borderBottom: '1px solid var(--ant-color-border-secondary)',
-    padding: '16px 20px',
+    padding: '12px 16px',
     minHeight: 'auto',
-    fontSize: '15px',
+    fontSize: '14px',
   };
   const cardBodyStyles = { padding: '0px' };
+  const cardStylesProp = { header: cardHeadStyles, body: cardBodyStyles };
 
   return (
-    <div className="flex flex-col gap-5 w-full sticky top-4">
+    <div className="flex flex-col gap-4 w-full sticky top-4 feed-sidebar">
       {/* Leaderboard Card */}
       <Card
         className={cardStyles}
-        headStyle={cardHeadStyles}
-        bodyStyle={cardBodyStyles}
-        title={<span className="font-semibold text-[var(--ant-color-text)]">{t('top_leaderboard')}</span>}
+        styles={cardStylesProp}
+        title={<span className="font-medium text-[var(--ant-color-text)]">{t('top_leaderboard')}</span>}
       >
-        <div className="p-4 bg-[var(--ant-color-bg-layout)] border-b border-[var(--ant-color-border-secondary)] flex flex-wrap gap-2">
+        <div className="p-3 bg-[var(--ant-color-bg-layout)] border-b border-[var(--ant-color-border-secondary)] flex flex-wrap gap-1.5">
           <Select
             size="small"
             className="min-w-[100px]"
@@ -164,9 +179,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                     <h4 className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight line-clamp-2 mb-1">
                       {item.title}
                     </h4>
-                    <p className="text-xs text-[var(--ant-color-text-secondary)]">
-                      {t('leaderboard_by_author')}{' '}
-                      <span className="font-medium text-[var(--ant-color-text)]">{item.creator.name}</span>
+                    <p className="text-xs text-[var(--ant-color-text-secondary)] truncate">
+                      {item.creator.name}
                     </p>
                   </div>
                   <div className="shrink-0 pt-0.5">{trendIcon(item.trend)}</div>
@@ -214,12 +228,33 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
         )}
       </Card>
 
+      {showRecommended && (data.recommended ?? []).length > 0 && (
+        <Card
+          className={cardStyles}
+          headStyle={cardHeadStyles}
+          bodyStyle={cardBodyStyles}
+          title={<span className="font-medium text-[var(--ant-color-text)]">{t('recommended_for_you')}</span>}
+        >
+          <List
+            dataSource={data.recommended}
+            renderItem={(entry) => (
+              <div
+                className="flex flex-col gap-1 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors cursor-pointer"
+                onClick={() => onOpenItem(entry.postId)}
+              >
+                <span className="text-sm font-medium text-[var(--ant-color-text)] line-clamp-2">{entry.title}</span>
+                <span className="text-xs text-[var(--ant-color-text-description)]">{entry.creator.name}</span>
+              </div>
+            )}
+          />
+        </Card>
+      )}
+
       {/* Top Contributors Card */}
       <Card
         className={cardStyles}
-        headStyle={cardHeadStyles}
-        bodyStyle={cardBodyStyles}
-        title={<span className="font-semibold text-[var(--ant-color-text)]">{t('top_contributors')}</span>}
+        styles={cardStylesProp}
+        title={<span className="font-medium text-[var(--ant-color-text)]">{t('top_contributors')}</span>}
       >
         <List
           dataSource={data.topContributors ?? []}
@@ -247,10 +282,7 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                   )}
                 </div>
                 <div className="text-xs text-[var(--ant-color-text-secondary)]">
-                  {t('contributors_posts_engagement', {
-                    posts: entry.contributionCount,
-                    engagement: entry.engagementScore,
-                  })}
+                  {entry.contributionCount} · {entry.engagementScore}
                 </div>
               </div>
             </div>
@@ -261,9 +293,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       {/* Collections Card */}
       <Card
         className={cardStyles}
-        headStyle={cardHeadStyles}
-        bodyStyle={cardBodyStyles}
-        title={<span className="font-semibold text-[var(--ant-color-text)]">{t('collections')}</span>}
+        styles={cardStylesProp}
+        title={<span className="font-medium text-[var(--ant-color-text)]">{t('collections')}</span>}
       >
         <List
           dataSource={data.collections ?? []}
@@ -294,14 +325,23 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       {/* Trending Tags Card */}
       <Card
         className={cardStyles}
-        headStyle={cardHeadStyles}
-        title={<span className="font-semibold text-[var(--ant-color-text)]">{t('trending_tags')}</span>}
+        styles={{ header: cardHeadStyles }}
+        title={<span className="font-medium text-[var(--ant-color-text)]">{t('trending_tags')}</span>}
       >
         <div className="flex flex-wrap gap-2">
           {(data.trendingTags ?? []).map((tag) => (
             <div
               key={tag.tag}
+              role="button"
+              tabIndex={0}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--ant-color-bg-layout)] hover:bg-[var(--ant-color-border-secondary)] border border-[var(--ant-color-border)] rounded-full cursor-pointer transition-colors text-sm"
+              onClick={() => onTagClick?.(tag.tag)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onTagClick?.(tag.tag);
+                }
+              }}
             >
               <span className="text-[var(--ant-color-text-secondary)] font-medium">#{tag.tag}</span>
               <span className="text-xs bg-[var(--ant-color-bg-container)] px-1.5 rounded-full text-[var(--ant-color-text-secondary)] border border-[var(--ant-color-border)]">
@@ -315,27 +355,38 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       {/* Latest Activity Card */}
       <Card
         className={cardStyles}
-        headStyle={cardHeadStyles}
-        bodyStyle={cardBodyStyles}
-        title={<span className="font-semibold text-[var(--ant-color-text)]">{t('latest_activity')}</span>}
+        styles={cardStylesProp}
+        title={<span className="font-medium text-[var(--ant-color-text)]">{t('latest_activity')}</span>}
       >
         <List
-          dataSource={data.activity ?? []}
+          dataSource={(data.activity ?? []).slice(0, 6)}
           renderItem={(activity) => (
-            <div className="p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors flex gap-3 items-start">
+            <div
+              className="p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors flex gap-3 items-start cursor-pointer"
+              role="button"
+              tabIndex={0}
+              onClick={() => activity.postId && onOpenItem(activity.postId)}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && activity.postId) {
+                  e.preventDefault();
+                  onOpenItem(activity.postId);
+                }
+              }}
+            >
               <Avatar
                 size={28}
+                src={activity.actor.avatarUrl}
                 className="bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)] shrink-0 mt-0.5"
               >
                 {activity.actor.name.charAt(0)}
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-[var(--ant-color-text-secondary)] leading-tight">
-                  <span className="font-semibold text-[var(--ant-color-text)]">{activity.actor.name}</span>{' '}
-                  {activity.action}
+                <p className="text-sm text-[var(--ant-color-text-secondary)] leading-snug line-clamp-2 m-0">
+                  <span className="font-medium text-[var(--ant-color-text)]">{activity.actor.name}</span>{' '}
+                  {formatActivityAction(activity.action)}
+                  <span className="text-[var(--ant-color-text)]"> · {activity.title}</span>
                 </p>
-                <p className="text-sm font-medium text-[var(--ant-color-text)] mt-1 truncate">{activity.title}</p>
-                <div className="flex items-center gap-1 mt-1.5 text-[11px] text-[var(--ant-color-text-description)]">
+                <div className="flex items-center gap-1 mt-1 text-[11px] text-[var(--ant-color-text-description)]">
                   <ClockCircleOutlined />
                   <span>{activity.time}</span>
                 </div>

@@ -1,0 +1,43 @@
+:root {
+  /* Use Aiser Branding */
+  --studio-primary: #00c2cb;
+  --studio-primary-hover: #058990;
+  --studio-primary-active: #1e777c;
+  --studio-primary-light: rgba(0, 194, 203, 0.08);
+
+  /* Hierarchy Colors */
+  --studio-bg: #f3f4f6;
+  --studio-sidebar-bg: #f8f9fa;
+  --studio-card-bg: #ffffff;
+  --studio-border: rgba(0, 0, 0, 0.06);
+  --studio-border-hover: rgba(0, 0, 0, 0.12);
+
+  /* Text Colors */
+  --studio-text-main: var(--color-text-primary, #24292f);
+  --studio-text-secondary: var(--color-text-secondary, #57606a);
+  --studio-text-muted: var(--color-text-tertiary, #8b949e);
+
+  /* Layout Constants */
+  --studio-header-height: 48px;
+  --studio-sidebar-width: 200px;
+  --studio-radius: 6px;
+
+  /* Shadows */
+  --studio-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --studio-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --studio-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+.dark {
+  --studio-bg: var(--color-bg-base, #0d1117);
+  --studio-sidebar-bg: var(--color-bg-navigation-sider, #030712);
+  --studio-card-bg: var(--color-bg-container, #161b22);
+  --studio-border: var(--color-border, #30363d);
+  --studio-border-hover: rgba(255, 255, 255, 0.16);
+  --studio-text-main: var(--color-text-primary, #e6edf3);
+  --studio-text-secondary: var(--color-text-secondary, #8b949e);
+  --studio-text-muted: var(--color-text-tertiary, #6e7681);
+  --studio-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --studio-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+

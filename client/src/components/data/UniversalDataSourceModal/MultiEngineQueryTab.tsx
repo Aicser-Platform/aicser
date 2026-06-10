@@ -269,7 +269,7 @@ const MultiEngineQueryTab: React.FC = () => {
                     <Button 
                         type="primary" 
                         icon={<RocketOutlined />}
-                        onClick={() => window.location.href = '/dash-studio'}
+                        onClick={() => { window.location.href = '/dashboards'; }}
                     >
                         {t('try_query_studio')}
                     </Button>

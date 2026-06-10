@@ -1,0 +1,64 @@
+{
+  "realm": "aiser",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      { "name": "aiser-admin", "description": "Platform administrator" },
+      { "name": "aiser-editor", "description": "Editor / analyst" },
+      { "name": "aiser-analyst", "description": "Analyst" },
+      { "name": "viewer", "description": "Read-only viewer" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "aiser-client",
+      "name": "Aicser Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "http://127.0.0.1:3000/*",
+        "http://127.0.0.1:3001/*"
+      ],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "aiser-backend",
+      "name": "Aicser Backend",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "aiser-backend-dev-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "User",
+      "email": "demo@dataticon.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo1234!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["aiser-analyst"]
+    }
+  ]
+}

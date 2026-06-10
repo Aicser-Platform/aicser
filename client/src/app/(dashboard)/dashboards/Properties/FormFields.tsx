@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover } from 'antd';
-import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined } from '@ant-design/icons';
+import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
+import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { useTranslations } from 'next-intl';
 import { SegmentedOption, METRIC_OPTIONS } from './PropertiesPanelConfig';
 
 const { Text } = Typography;
@@ -97,14 +98,23 @@ interface FieldProps {
   label: string;
   required?: boolean;
   className?: string;
+  hint?: string;
 }
 
-export const SectionLabel: React.FC<FieldProps> = ({ label, required = false, className = '' }) => (
-  <div style={{ marginBottom: 8 }} className={className}>
+export const SectionLabel: React.FC<FieldProps> = ({ label, required = false, className = '', hint }) => (
+  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }} className={className}>
     <Text className="section-label">
       {label}
       {required && <span className="required-star">*</span>}
     </Text>
+    {hint ? (
+      <Tooltip title={hint}>
+        <InfoCircleOutlined
+          style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', cursor: 'help' }}
+          aria-label={hint}
+        />
+      </Tooltip>
+    ) : null}
   </div>
 );
 
@@ -121,12 +131,14 @@ interface SelectFieldProps extends FieldProps {
   disabled?: boolean;
   isLoading?: boolean;
   showSearch?: boolean;
+  allowClear?: boolean;
   mode?: 'multiple' | 'tags';
 }
 
 export const SelectField: React.FC<SelectFieldProps> = ({
   label,
   required,
+  hint,
   value,
   onChange,
   options,
@@ -134,10 +146,11 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   disabled = false,
   isLoading = false,
   showSearch = true,
+  allowClear,
   mode,
 }) => (
   <div className="panel-section">
-    <SectionLabel label={label} required={required} />
+    <SectionLabel label={label} required={required} hint={hint} />
     <Select
       style={{ width: '100%' }}
       value={value}
@@ -150,7 +163,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
       showSearch={showSearch}
       optionFilterProp="label"
       mode={mode}
-      allowClear={!required}
+      allowClear={allowClear ?? !required}
       styles={{
         popup: { root: { zIndex: 10000, maxHeight: 300 } },
       }}
@@ -175,6 +188,7 @@ interface InputFieldProps extends FieldProps {
 export const InputField: React.FC<InputFieldProps> = ({
   label,
   required,
+  hint,
   value,
   onChange,
   placeholder,
@@ -182,7 +196,7 @@ export const InputField: React.FC<InputFieldProps> = ({
   disabled = false,
 }) => (
   <div className="panel-section">
-    <SectionLabel label={label} required={required} />
+    <SectionLabel label={label} required={required} hint={hint} />
     <Input
       size="small"
       className="premium-input"
@@ -222,6 +236,7 @@ interface MetricListFieldProps extends FieldProps {
 export const MetricListField: React.FC<MetricListFieldProps> = ({
   label,
   required,
+  hint,
   metrics = [],
   onChange,
   columnOptions,
@@ -320,7 +335,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
 
   return (
     <div className="panel-section">
-      <SectionLabel label={label} required={required} />
+      <SectionLabel label={label} required={required} hint={hint} />
 
       <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {metrics.map((item, index) => {
@@ -461,6 +476,7 @@ interface FilterListFieldProps extends FieldProps {
 export const FilterListField: React.FC<FilterListFieldProps> = ({
   label,
   required,
+  hint,
   filters = [],
   onChange,
   columnOptions,
@@ -601,7 +617,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
 
   return (
     <div className="panel-section">
-      <SectionLabel label={label} required={required} />
+      <SectionLabel label={label} required={required} hint={hint} />
 
       <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {filters.map((filter, index) => (
@@ -698,6 +714,7 @@ interface MetricFilterListFieldProps extends FieldProps {
 export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
   label,
   required,
+  hint,
   filters = [],
   onChange,
   metricOptions = [],
@@ -806,7 +823,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
 
   return (
     <div className="panel-section">
-      <SectionLabel label={label} required={required} />
+      <SectionLabel label={label} required={required} hint={hint} />
 
       <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {filters.map((filter, index) => {
@@ -1007,28 +1024,40 @@ export const TextAreaField: React.FC<TextAreaFieldProps> = ({
  * Theme color palette selection for charts
  * =======================================================*/
 
-const COLOR_PALETTES = [
-  { label: 'Default', value: 'default', colors: ['#00c2cb', '#2ed3db', '#5df2f9', '#0f8a8f', '#064d50'] },
-  { label: 'Vibrant', value: 'vibrant', colors: ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'] },
-  { label: 'Cool Blues', value: 'cool', colors: ['#3498db', '#5dade2', '#85c1e9', '#aed6f1', '#d6eaf8'] },
-  { label: 'Warm Sunset', value: 'warm', colors: ['#e74c3c', '#ec7063', '#f1948a', '#f5b7b1', '#fadbd8'] },
-  { label: 'Nature Green', value: 'nature', colors: ['#27ae60', '#52c882', '#7dd3a8', '#a8dece', '#d0ece7'] },
-  { label: 'Corporate', value: 'corporate', colors: ['#2c3e50', '#34495e', '#7f8c8d', '#95a5a6', '#bdc3c7'] },
-  { label: 'Pastel', value: 'pastel', colors: ['#ff9ff3', '#54a0ff', '#5f27cd', '#00d2d3', '#ff9f43'] },
-  { label: 'Custom Picker', value: 'custom', colors: [] },
-];
+import {
+  CHART_PALETTE_CATALOG,
+  WIDGET_PALETTE_INHERIT,
+  isWidgetPaletteInherited,
+} from '../utils/chartPaletteCatalog';
 
 interface ColorPaletteFieldProps extends FieldProps {
   value: string;
   chartOptions?: any;
+  dashboardDefaultPalette?: string;
   onChange: (value: string) => void;
   onUpdateChartOptions?: (updates: Record<string, any>) => void;
 }
 
-export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({ label, value, chartOptions, onChange, onUpdateChartOptions }) => {
-  const renderPalette = (palette: any) => (
+export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({
+  label,
+  value,
+  chartOptions,
+  dashboardDefaultPalette,
+  onChange,
+  onUpdateChartOptions,
+}) => {
+  const t = useTranslations('dashboards');
+  const inheritPaletteId =
+    dashboardDefaultPalette && CHART_PALETTE_CATALOG.some((p) => p.id === dashboardDefaultPalette)
+      ? dashboardDefaultPalette
+      : 'default';
+  const inheritPalette = CHART_PALETTE_CATALOG.find((p) => p.id === inheritPaletteId);
+
+  const renderPalette = (palette: { labelKey?: string; label?: string; colors: readonly string[] }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: '12px', minWidth: '60px' }}>{palette.label}</span>
+      <span style={{ fontSize: '12px', minWidth: '72px' }}>
+        {palette.labelKey ? t(palette.labelKey as 'palette_default') : palette.label}
+      </span>
       {palette.colors.length > 0 && (
         <div style={{ display: 'flex', gap: 2 }}>
           {palette.colors.map((color: string, idx: number) => (
@@ -1048,40 +1077,61 @@ export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({ label, val
     </div>
   );
 
+  const paletteOptions = [
+    {
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '12px', minWidth: '72px' }}>{t('palette_inherit_dashboard')}</span>
+          {inheritPalette ? renderPalette(inheritPalette) : null}
+        </div>
+      ),
+      value: WIDGET_PALETTE_INHERIT,
+    },
+    ...CHART_PALETTE_CATALOG.map((palette) => ({
+      label: renderPalette(palette),
+      value: palette.id,
+    })),
+    { label: t('palette_custom'), value: 'custom' },
+  ];
+
+  const selectValue = isWidgetPaletteInherited(value) ? WIDGET_PALETTE_INHERIT : value;
+
   return (
     <div className="panel-section">
       <SectionLabel label={label} />
       <Select
         style={{ width: '100%' }}
-        value={value}
+        value={selectValue}
         onChange={(val) => {
           if (onUpdateChartOptions) {
             if (val === 'custom') {
-              // Switch to custom mode: keep existing custom color or default to brand
               onUpdateChartOptions({
                 colorPalette: 'custom',
                 customColor: chartOptions?.customColor || '#00c2cb',
                 customPalette: chartOptions?.customPalette || generateShades(chartOptions?.customColor || '#00c2cb'),
               });
+            } else if (val === WIDGET_PALETTE_INHERIT) {
+              onUpdateChartOptions({
+                colorPalette: WIDGET_PALETTE_INHERIT,
+                customColor: undefined,
+                customPalette: undefined,
+                paletteInverted: false,
+              });
             } else {
-              // Reset custom settings when selecting standard palette
               onUpdateChartOptions({
                 colorPalette: val,
                 customColor: undefined,
                 customPalette: undefined,
-                paletteInverted: false
+                paletteInverted: false,
               });
             }
           } else {
-            onChange(val);
+            onChange(val === WIDGET_PALETTE_INHERIT ? WIDGET_PALETTE_INHERIT : val);
           }
         }}
         size="small"
-        placeholder="Choose color palette..."
-        options={COLOR_PALETTES.map((palette) => ({
-          label: renderPalette(palette),
-          value: palette.value,
-        }))}
+        placeholder={t('palette_select_placeholder')}
+        options={paletteOptions}
         optionRender={(option) => option.label}
       />
     </div>

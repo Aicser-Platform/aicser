@@ -1,0 +1,133 @@
+# Optional development services.
+#
+# Include this file and enable only the profile you need:
+#   --profile warehouse
+#   --profile worker
+#   --profile observability
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    profiles: [warehouse]
+    ports:
+      - "${DEV_CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${DEV_CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse_dev_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8123/ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+
+  worker:
+    image: aiser-chat2chart-server:dev
+    build:
+      context: ../server
+      dockerfile: Dockerfile.dev
+    profiles: [worker]
+    working_dir: /app
+    volumes:
+      - ../server:/app
+      - pip_cache:/root/.cache/pip
+    environment:
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      AISER_EDITION: ${AISER_EDITION:-community}
+      PYTHONPATH: /app
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_SERVICE_NAME: ${OTEL_WORKER_SERVICE_NAME:-aiser-worker}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: ["/venv/bin/python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [observability]
+    ports:
+      - "${DEV_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_dev_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: [observability]
+    ports:
+      - "${DEV_GRAFANA_PORT:-3030}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_dev_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    profiles: [observability]
+    ports:
+      - "${DEV_OTEL_GRPC_PORT:-4317}:4317"
+      - "${DEV_OTEL_HTTP_PORT:-4318}:4318"
+      - "${DEV_OTEL_METRICS_PORT:-8889}:8889"
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    profiles: [observability]
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    profiles: [observability]
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  clickhouse_dev_data:
+  prometheus_dev_data:
+  grafana_dev_data:

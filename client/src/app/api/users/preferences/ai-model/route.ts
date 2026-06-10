@@ -1,22 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
-
-function forwardAuthHeaders(incoming: NextRequest): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const auth =
-    incoming.headers.get('authorization') ||
-    incoming.headers.get('Authorization');
-  if (auth) headers['Authorization'] = auth;
-  const cookie =
-    incoming.headers.get('cookie') || incoming.headers.get('Cookie');
-  if (cookie) headers['Cookie'] = cookie;
-  return headers;
-}
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 export async function GET(request: NextRequest) {
   try {
     const backendUrl = getBackendUrlForProxy();
-    const headers = forwardAuthHeaders(request);
+    const headers = buildProxyAuthHeaders(request);
 
     const response = await fetch(`${backendUrl}/api/users/preferences/ai-model`, {
       method: 'GET',
@@ -42,7 +31,7 @@ export async function PUT(request: NextRequest) {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...forwardAuthHeaders(request),
+      ...buildProxyAuthHeaders(request),
     };
 
     const response = await fetch(`${backendUrl}/api/users/preferences/ai-model`, {

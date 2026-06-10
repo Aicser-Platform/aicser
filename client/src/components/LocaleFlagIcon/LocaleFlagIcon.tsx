@@ -37,50 +37,63 @@ export type LocaleFlagIconProps = {
 };
 
 export function LocaleFlagIcon({ locale, width = 20, className, title }: LocaleFlagIconProps) {
-  const [imageFailed, setImageFailed] = React.useState(false);
   const countryCode = COUNTRY_CODE_BY_LOCALE[locale] ?? 'us';
-  const fallbackEmoji = EMOJI_BY_LOCALE[locale] ?? '🌐';
+  const emoji = EMOJI_BY_LOCALE[locale] ?? '🌐';
   const src = `https://flagcdn.com/w40/${countryCode}.png`;
-
-  if (imageFailed) {
-    return (
-      <span
-        title={title}
-        className={className}
-        aria-hidden
-        style={{
-          width,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          lineHeight: 1,
-          fontSize: Math.max(12, Math.round(width * 0.82)),
-          flexShrink: 0,
-        }}
-      >
-        {fallbackEmoji}
-      </span>
-    );
-  }
+  const [imageFailed, setImageFailed] = React.useState(false);
+  const showImage = !imageFailed;
 
   return (
-    <img
-      src={src}
-      alt={title ?? locale}
+    <span
       title={title}
       className={className}
       aria-hidden
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setImageFailed(true)}
       style={{
         width,
-        height: 'auto',
-        display: 'block',
+        height: Math.round(width * 0.68),
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        lineHeight: 1,
+        fontSize: Math.max(14, Math.round(width * 0.82)),
         flexShrink: 0,
+        position: 'relative',
+        overflow: 'hidden',
         borderRadius: 2,
-        boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.08)',
       }}
-    />
+    >
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 'inherit',
+          lineHeight: 1,
+        }}
+      >
+        {emoji}
+      </span>
+      {showImage ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setImageFailed(true)}
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+            borderRadius: 2,
+          }}
+        />
+      ) : null}
+    </span>
   );
 }

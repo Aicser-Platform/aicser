@@ -1,0 +1,64 @@
+# Enterprise Edition development overrides.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.5
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
+      KC_METRICS_ENABLED: "true"
+    volumes:
+      - ./keycloak/aiser-realm.json:/opt/keycloak/data/import/aiser-realm.json:ro
+    ports:
+      - "${DEV_KEYCLOAK_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  server:
+    environment:
+      AISER_EDITION: enterprise
+      AISER_EDITION_LICENSE_KEY: ${AISER_EDITION_LICENSE_KEY:-}
+      RUN_EE_DEV_SEEDS: "true"
+      LANGGRAPH_CHECKPOINT_POSTGRES_URI: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
+      AISER_CHECKPOINTER_ENABLED: ${AISER_CHECKPOINTER_ENABLED:-true}
+      AISER_AI_JOB_QUEUE: ${AISER_AI_JOB_QUEUE:-false}
+      AISER_ORG_LLM_CONCURRENCY: ${AISER_ORG_LLM_CONCURRENCY:-5}
+      USE_LANGGRAPH_ORCHESTRATOR: ${USE_LANGGRAPH_ORCHESTRATOR:-true}
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_BACKEND_CLIENT_ID:-aiser-backend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-aiser-backend-dev-secret}
+      SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+      STRIPE_ENABLED: ${STRIPE_ENABLED:-true}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
+      STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
+      STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
+      STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  client:
+    image: aiser-client:dev-ee
+    build:
+      args:
+        EDITION: enterprise
+    environment:
+      EDITION: enterprise
+      NEXT_PUBLIC_EDITION: enterprise
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:${DEV_KEYCLOAK_PORT:-8080}
+      NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}

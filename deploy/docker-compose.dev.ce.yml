@@ -1,0 +1,17 @@
+# Community Edition development overrides.
+
+services:
+  server:
+    environment:
+      AISER_EDITION: community
+      AISER_EDITION_LICENSE_KEY: ""
+      RUN_EE_DEV_SEEDS: "false"
+
+  client:
+    image: aiser-client:dev-ce
+    build:
+      args:
+        EDITION: community
+    environment:
+      EDITION: community
+      NEXT_PUBLIC_EDITION: community

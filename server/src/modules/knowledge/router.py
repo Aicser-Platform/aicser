@@ -18,6 +18,7 @@ from src.core.config import settings
 from src.modules.knowledge.models import DocumentChunk, KnowledgeDocument
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.authentication.rbac.guard import require_permission
 from src.modules.knowledge.schemas import (
     CitationOut,
     KnowledgeDocumentOut,
@@ -125,6 +126,7 @@ async def create_knowledge_base(
     Creates the data source, then ingests each file.
     """
     user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:create")
 
     if not files:
         raise HTTPException(status_code=400, detail="At least one file is required")
@@ -189,6 +191,7 @@ async def upload_knowledge_document(
     Triggers ingestion (chunking + embedding).
     """
     user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:create")
     file_path = await _save_uploaded_file(file)
 
     try:
@@ -293,6 +296,7 @@ async def delete_knowledge_document(
 ):
     """Delete a knowledge document and all its chunks."""
     user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:delete")
 
     stmt = select(KnowledgeDocument).where(
         KnowledgeDocument.id == doc_id,
@@ -326,7 +330,8 @@ async def search_knowledge_base(
     Direct semantic search over the knowledge base.
     Useful for testing retrieval quality and advanced use cases.
     """
-    _get_user_id(current_token)  # auth check
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:search")
 
     from src.modules.knowledge.services.rag_retrieval_service import RAGRetrievalService
 
@@ -353,3 +358,19 @@ async def search_knowledge_base(
         ],
         total=len(chunks),
     )
+
+
+@router.get("/health/retrieval")
+async def knowledge_retrieval_health(
+    session: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Health check for RAG retrieval backend (pgvector vs JSONB) and probe latency."""
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:view")
+
+    from src.modules.knowledge.services.rag_retrieval_service import RAGRetrievalService
+
+    service = RAGRetrievalService(session)
+    report = await service.retrieval_health()
+    return {"success": True, **report}

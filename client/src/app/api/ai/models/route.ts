@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
  * Proxy route for /api/ai/models
@@ -15,10 +16,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Forward auth so backend can validate (cookie or Bearer)
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-    const cookieHeader = request.headers.get('Cookie');
-    if (cookieHeader) headers['Cookie'] = cookieHeader;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const response = await fetch(backendUrl, {
       method: 'GET',

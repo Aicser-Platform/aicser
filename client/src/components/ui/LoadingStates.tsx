@@ -100,6 +100,27 @@ const LoadingStates: React.FC<LoadingStatesProps> = ({
     }
   };
 
+  if (type === 'query') {
+    return (
+      <div className="app-loading-indicator app-loading-indicator--inline" style={{ minHeight: 160, padding: '24px 16px' }}>
+        <Spin size={size === 'small' ? 'default' : 'large'} />
+        <p className="app-loading-indicator__tip" style={{ fontWeight: 500, color: 'var(--ant-color-text)' }}>
+          {getLoadingMessage()}
+        </p>
+        {progress !== undefined ? (
+          <Progress
+            percent={progress}
+            style={{ width: 200, margin: 0 }}
+            strokeColor="var(--ant-color-primary)"
+            trailColor="var(--ant-color-border-secondary)"
+            showInfo={false}
+            size="small"
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   if (type === 'chart') {
     return (
       <Card 

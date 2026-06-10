@@ -2,10 +2,10 @@
 
 import { WidgetInstance } from '../stores/useDashboardStore';
 import { WidgetRenderer } from './WidgetRenderer';
-import { Typography } from 'antd';
 import * as echarts from 'echarts';
-
-const { Text } = Typography;
+import type { RuntimeFilter } from '../stores/useDashboardStore';
+import { useDashboardStore } from '../stores/useDashboardStore';
+import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 
 export const WidgetPreview: React.FC<{
   widget: WidgetInstance;
@@ -15,40 +15,52 @@ export const WidgetPreview: React.FC<{
   minHeight?: number;
   isDesigner?: boolean;
   isSelected?: boolean;
-}> = ({ 
-  widget, 
-  onChartReady, 
-  onUpdateConfig, 
-  readOnly = false, 
-  minHeight, 
-  isDesigner = false, 
-  isSelected = false 
+  dashboardId?: string;
+  runtimeFilters?: RuntimeFilter[];
+  onFilter?: (field: string, value: unknown) => void;
+}> = ({
+  widget,
+  onChartReady,
+  onUpdateConfig,
+  readOnly = false,
+  minHeight,
+  isDesigner = false,
+  isSelected = false,
+  dashboardId,
+  runtimeFilters = [],
+  onFilter,
 }) => {
-  if (['line', 'area', 'pie', 'bar', 'table', 'scatter', 'funnel', 'heatmap', 'stat', 'text', 'donut'].includes(widget.chartType)) {
-    return (
-      <WidgetRenderer
-        type={widget.chartType}
-        data={widget.chartData}
-        config={widget.chartOptions}
-        query={widget.chartQuery}
-        isLoading={widget.isLoading}
-        error={widget.error}
-        onChartReady={onChartReady}
-        onUpdateConfig={onUpdateConfig}
-        readOnly={readOnly}
-        minHeight={minHeight}
-        isDesigner={isDesigner}
-        isSelected={isSelected}
-      />
-    );
-  }
+  const dashboardDefaultPalette = useDashboardStore((s) => {
+    const dash = s.dashboards.find((d) => d.id === s.activeDashboardId);
+    return dash?.config?.default_color_palette as string | undefined;
+  });
+
+  const resolvedChartConfig = {
+    ...(widget.chartOptions || {}),
+    colorPalette: resolveChartPaletteId(
+      widget.chartOptions?.colorPalette,
+      dashboardDefaultPalette,
+    ),
+    dashboardDefaultPalette,
+  };
 
   return (
-    <div className="widget-placeholder">
-      <Text strong>Charts paused</Text>
-      <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
-        We are holding chart rendering to validate layout and state flow first.
-      </Text>
-    </div>
+    <WidgetRenderer
+      type={widget.chartType}
+      data={widget.chartData}
+      config={resolvedChartConfig}
+      query={{ ...widget.chartQuery, dataSourceId: widget.dataSourceId }}
+      isLoading={widget.isLoading}
+      error={widget.error}
+      onChartReady={onChartReady}
+      onUpdateConfig={onUpdateConfig}
+      readOnly={readOnly}
+      minHeight={minHeight}
+      isDesigner={isDesigner}
+      isSelected={isSelected}
+      dashboardId={dashboardId}
+      runtimeFilters={runtimeFilters}
+      onFilter={onFilter}
+    />
   );
 };

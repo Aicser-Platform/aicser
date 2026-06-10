@@ -758,3 +758,50 @@
 .filter-popover .ant-popover-arrow::after {
   background: var(--studio-card-bg) !important;
 }
+
+/* ─── Conditional Formatting Editor ─────────────────────────────────────── */
+.cf-rule-card {
+  border: 1px solid var(--ant-color-border, #e8e8e8);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--ant-color-bg-container, #fff);
+}
+
+.cf-rule-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cf-rule-condition {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cf-rule-style {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.table-column-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.table-column-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}

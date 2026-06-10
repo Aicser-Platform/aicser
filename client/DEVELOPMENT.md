@@ -53,6 +53,12 @@ client/
 
 **Path alias:** `@/*` → `./src/*` (configured in `tsconfig.json`)
 
+### CSS design contract
+
+- **Tokens:** consume `var(--ant-*)` / `var(--color-*)` from `app/globals.css` and `src/styles/aiser-*.css` — do not introduce parallel scales in feature CSS.
+- **One owner per global Ant control:** base in `aiser-unified-design-system.css`, hover/overlays in `aiser-interaction-system.css`. Feature sheets scope under a root class (`.chat-panel`, `.query-editor-workspace`).
+- **Checks:** `npm run lint:css` (stylelint + brace balance + ownership scan). See `src/styles/README.md`.
+
 ---
 
 ## Logical Architecture
@@ -180,6 +186,25 @@ function ProtectedRoute({ children }) {
 ```
 
 Do **not** add per-page auth checks — the layout handles it.
+
+### EE `/chat` and artifact deep links (EE only)
+
+Canonical query parameter for opening a conversation is **`conversation`** (not `conversationId`). Legacy `?conversationId=` URLs are rewritten to `?conversation=` on load.
+
+| URL | Purpose |
+| --- | --- |
+| `/chat?conversation={uuid}&message={id}` | Open conversation and scroll to message |
+| `/chat?mode=executive_report` | Pre-select executive report mode |
+| `/chat?mode=dashboard` | Pre-select dashboard build mode |
+| `/chat?tier=brief\|standard\|long` | Report depth (with `mode=executive_report`) |
+| `/chat?tier=monitoring\|operational\|executive` | Dashboard tier (with `mode=dashboard`) |
+| `/chat?prompt=…` | Seed the composer |
+| `/chat?data_source_id=…` | Select data source on load |
+| `/chat?regenerate=1` | Re-run last user message in executive report mode (requires `conversation`) |
+| `/report/{conversationId}/{messageId}` | Full-page executive report viewer (export/print) |
+| `/dashboards?id={uuid}&page={pageId}` | Open AI-built dashboard in studio (`from_chat` optional breadcrumb) |
+
+Helpers live in [`ee/src/ee/app/(dashboard)/chat/utils/chatDeepLinks.ts`](ee/src/ee/app/(dashboard)/chat/utils/chatDeepLinks.ts).
 
 ---
 
@@ -394,6 +419,30 @@ DashboardLayout.displayName = 'DashboardLayout';
 ### EE-only feature
 
 Follow the same structure but place files under `ee/src/` instead of `src/ee/`. Add CE stubs under `src/ee/` that export the same interface with safe defaults (empty arrays, no-op functions, null).
+
+### Double borders / nested boxes
+
+Global card and panel rules live in `aiser-unified-design-system.css` and `aiser-aesthetic-enhancements.css`. Layout routes (chat, query editor, settings) are flattened in **`workspace-chrome.css`** (imported last in `globals.css`): one shell edge per workspace, leaf cards only.
+
+If you add a new full-page workspace, extend `workspace-chrome.css` rather than adding another global `.panel` border.
+
+### Docker dev: “Loading CSS chunk … failed”
+
+In the EE `client` service, Next.js logs:
+
+`Server is approaching the used memory threshold, restarting...`
+
+When that happens, the browser may still request CSS chunks from the **previous** dev build → `Loading CSS chunk _app-pages-browser_…ChatPanel_tsx.css failed` on `/chat`.
+
+**Fix:**
+
+1. Hard-refresh the tab (or close and reopen `http://localhost:3000/chat`).
+2. Tune dev memory in `deploy/.env`: `NEXT_DEV_TURBO=false`, `NODE_MAX_OLD_SPACE_SIZE=2048`, and optionally `CLIENT_DEV_MEM_LIMIT=3g`, then recreate the client. Keep the Node heap below Docker Desktop's available memory so V8 can collect before the container hits an OOM kill. On very small Docker Desktop memory limits, `NEXT_DEV_CPUS=2` can reduce peak memory, but it may slow first route compilation.
+3. If the stack is wedged: `make -C deploy dev-ee-down && make -C deploy dev-ee`.
+
+The ChatPanel stylesheet itself is fine (~100KB source); the failure is a stale/missing chunk during dev-server restart, not a CSS syntax error.
+
+---
 
 ### Checklist before committing
 

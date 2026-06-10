@@ -47,6 +47,7 @@ class AssetType(str, Enum):
     dashboard = "dashboard"
     chart = "chart"
     insight = "insight"
+    query = "query"
 
 
 class PublicationStatus(str, Enum):
@@ -54,6 +55,11 @@ class PublicationStatus(str, Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+
+
+class FeedRenderMode(str, Enum):
+    snapshot = "snapshot"
+    live = "live"
 
 
 class ReactionType(str, Enum):
@@ -101,7 +107,7 @@ class FeedMetrics(BaseModel):
 
 class FeedAssetPreview(BaseModel):
     type: str
-    data: Optional[List[int]] = None
+    data: Optional[List[float]] = None
     label: Optional[str] = None
 
 
@@ -109,8 +115,23 @@ class FeedAssetPayload(BaseModel):
     summary: str
     previewLabel: str
     previewType: Optional[str] = None
-    previewData: Optional[List[int]] = None
+    previewData: Optional[List[float]] = None
     previews: Optional[List[FeedAssetPreview]] = None
+    chartWidget: Optional[Dict[str, Any]] = None
+    dashboardId: Optional[str] = None
+    sourceQueryId: Optional[str] = None
+    excerpt: Optional[str] = None
+    questionTitle: Optional[str] = None
+    conversationId: Optional[str] = None
+    messageId: Optional[str] = None
+    snapshotPayload: Optional[Dict[str, Any]] = None
+    widgetCount: Optional[int] = None
+
+
+class FeedSnapshotInfo(BaseModel):
+    version: int = 0
+    capturedAt: Optional[str] = None
+    renderMode: FeedRenderMode = FeedRenderMode.live
 
 
 class FeedUserInteraction(BaseModel):
@@ -135,6 +156,9 @@ class FeedItemResponse(BaseModel):
     userInteraction: FeedUserInteraction
     recentComments: List[FeedComment]
     asset: FeedAssetPayload
+    renderMode: FeedRenderMode = FeedRenderMode.live
+    snapshot: Optional[FeedSnapshotInfo] = None
+    isOwner: bool = False
 
 
 class FeedResponse(BaseModel):
@@ -148,6 +172,7 @@ class FeedAssetCounts(BaseModel):
     dashboard: int = 0
     chart: int = 0
     insight: int = 0
+    query: int = 0
 
 
 class FeedFilterOptionsResponse(BaseModel):
@@ -170,6 +195,7 @@ class FeedSidebarCollection(BaseModel):
 
 class FeedSidebarActivity(BaseModel):
     id: str
+    postId: Optional[str] = None
     actor: FeedAuthor
     action: str
     assetType: AssetType
@@ -355,9 +381,15 @@ class DeleteCollectionResponse(BaseModel):
     success: bool
 
 
+class PublicationMode(str, Enum):
+    update = "update"
+    create_new = "create_new"
+
+
 class PublishAssetRequest(BaseModel):
-    asset_type: AssetType = Field(..., description="dashboard/chart")
-    asset_id: UUID
+    asset_type: AssetType = Field(..., description="dashboard/chart/insight/query")
+    asset_id: Optional[UUID] = None
+    source_query_id: Optional[str] = Field(None, description="Saved query id; resolves asset_id for query posts")
     organization_id: Optional[UUID] = None
     project_id: Optional[UUID] = None
     title: str = Field(..., min_length=1, max_length=255)
@@ -368,14 +400,114 @@ class PublishAssetRequest(BaseModel):
     featured: bool = False
     featured_until: Optional[datetime] = None
     public_access_level: Optional[str] = "results_only"
-    requires_login: bool = True
+    requires_login: bool = False
+    publication_mode: PublicationMode = PublicationMode.update
+    publication_id: Optional[UUID] = Field(
+        None,
+        description="Explicit post to update when publication_mode=update",
+    )
     rejection_reason: Optional[str] = None
+    preview_metadata: Optional[Dict[str, Any]] = None
+    render_mode: FeedRenderMode = FeedRenderMode.snapshot
+    snapshot_payload: Optional[Dict[str, Any]] = None
+
+
+class PublicationLookupResponse(BaseModel):
+    exists: bool
+    publication_id: Optional[str] = None
+    title: Optional[str] = None
+    published_at: Optional[datetime] = None
+    snapshot_version: int = 0
+    visibility: Optional[FeedVisibility] = None
+
+
+class PublicAuthorStats(BaseModel):
+    post_count: int = 0
+    total_views: int = 0
+    follower_count: int = 0
+
+
+class PublicAuthorProfileResponse(BaseModel):
+    author: FeedAuthor
+    stats: PublicAuthorStats
+    items: List[FeedItemResponse]
+    total: int
+    limit: int
+    offset: int
+    isFollowing: bool = False
+
+
+class DigestSubscribeRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320)
+
+
+class DigestSubscribeResponse(BaseModel):
+    success: bool
+    message: str
+
+
+class DigestPreviewItem(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    view_count: int = 0
+    reaction_count: int = 0
+    published_at: Optional[datetime] = None
+
+
+class DigestPreviewResponse(BaseModel):
+    items: List[DigestPreviewItem]
+    period_days: int = 7
+
+
+class DigestSendResponse(BaseModel):
+    success: bool
+    sent_count: int = 0
+    skipped: bool = False
+
+
+class UpdateSnapshotRequest(BaseModel):
+    snapshot_payload: Dict[str, Any] = Field(..., description="Full immutable snapshot payload")
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    preview_metadata: Optional[Dict[str, Any]] = None
 
 
 class PublishAssetResponse(BaseModel):
     success: bool
     publication_id: str
     status: PublicationStatus
+    snapshot_version: int = 0
+    render_mode: FeedRenderMode = FeedRenderMode.snapshot
+
+
+class PublishFromChatRequest(BaseModel):
+    conversation_id: str
+    message_id: str
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    visibility: FeedVisibility = FeedVisibility.private
+    organization_id: Optional[UUID] = None
+    project_id: Optional[UUID] = None
+    preview_metadata: Optional[Dict[str, Any]] = None
+    render_mode: FeedRenderMode = FeedRenderMode.snapshot
+    snapshot_payload: Optional[Dict[str, Any]] = None
+    requires_login: bool = False
+    publication_mode: PublicationMode = PublicationMode.update
+
+
+class ChatFeedDraftRequest(BaseModel):
+    conversation_id: str
+    message_id: str
+    draft: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatFeedDraftResponse(BaseModel):
+    success: bool
+    conversation_id: str
+    message_id: str
+    draft: Dict[str, Any]
 
 
 class ReactRequest(BaseModel):
@@ -450,6 +582,24 @@ class ReactCommentResponse(BaseModel):
 class TrackViewRequest(BaseModel):
     session_id: Optional[str] = None
     duration_seconds: Optional[int] = None
+    referral_code: Optional[str] = Field(None, max_length=100, description="?ref= attribution handle")
+
+
+class RemixFeedResponse(BaseModel):
+    success: bool
+    dashboard_id: str
+    open_path: str
+    title: str
+
+
+class RemixFeedRequest(BaseModel):
+    project_id: Optional[UUID] = None
+    referral_code: Optional[str] = Field(None, max_length=100)
+
+
+class PublicLeaderboardResponse(BaseModel):
+    items: List[FeedLeaderboardItem]
+    timeRange: LeaderboardTimeRange = LeaderboardTimeRange.week
 
 
 class TrackViewResponse(BaseModel):

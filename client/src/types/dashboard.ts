@@ -136,12 +136,14 @@ export interface DashboardWidget {
     };
 
     filter?: {
-        type: 'dropdown' | 'dateRange' | 'slider' | 'search' | 'checkbox';
+        type: 'dropdown' | 'dateRange' | 'date' | 'slider' | 'search' | 'checkbox';
         field: string;
         options?: any[];
         defaultValue?: any;
         isGlobal?: boolean;
         affects?: string[];
+        numericMin?: number;
+        numericMax?: number;
     };
 
     // Enhanced properties
@@ -160,12 +162,21 @@ export interface DashboardWidget {
 export interface DashboardFilter {
     id: string;
     name: string;
-    type: 'dropdown' | 'dateRange' | 'slider' | 'search' | 'checkbox';
+    type: 'dropdown' | 'dateRange' | 'date' | 'slider' | 'search' | 'checkbox';
     field: string;
     options?: any[];
     defaultValue?: any;
     isGlobal?: boolean;
     affects?: string[];
+    /** Data source used to load dynamic filter options. */
+    dataSourceId?: string;
+    /** Table name context for loading filter options. */
+    tableName?: string;
+    /** Slider / numeric range bounds (global filter bar). */
+    numericMin?: number;
+    numericMax?: number;
+    /** Control width in the report filter strip (builder-configurable). */
+    displayWidth?: 'sm' | 'md' | 'lg';
 }
 
 export interface DashboardTheme {

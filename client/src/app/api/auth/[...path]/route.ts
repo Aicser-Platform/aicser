@@ -6,63 +6,58 @@
  * can then read for route protection.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getBackendUrlForProxy } from '@/utils/backendUrl';
-
-const FALLBACK_BACKENDS = ['http://localhost:8000', 'http://chat2chart-server:8000'];
+import { fetchBackendUrlWithRetry } from '@/utils/backendFetch';
+import { appendUpstreamSetCookies, buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 async function handle(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
 ): Promise<NextResponse> {
   const { path } = await context.params;
-  const primaryBackend = getBackendUrlForProxy();
   const upstreamPath = path.join('/');
   const search = request.nextUrl.search;
+  const isAuthMutation = upstreamPath === 'login' || upstreamPath === 'register';
 
   const headers = new Headers();
   headers.set('content-type', request.headers.get('content-type') ?? 'application/json');
-  const cookie = request.headers.get('cookie');
-  if (cookie) headers.set('cookie', cookie);
-
-  // Read body once (streaming body can only be consumed once)
-  const bodyBuffer = request.method === 'GET' || request.method === 'HEAD'
-    ? undefined
-    : await request.arrayBuffer();
-
-  const candidates = [primaryBackend, ...FALLBACK_BACKENDS.filter(b => b !== primaryBackend)];
-
-  let upstream: Response | null = null;
-  for (const backend of candidates) {
-    const url = `${backend}/auth/${upstreamPath}${search}`;
-    try {
-      upstream = await fetch(url, {
-        method: request.method,
-        headers,
-        body: bodyBuffer,
-        // @ts-expect-error — duplex is required for streaming bodies in Node 18+
-        duplex: 'half',
-      });
-      break;
-    } catch {
-      // try next candidate
-    }
+  const authHeaders = buildProxyAuthHeaders(request);
+  for (const [key, value] of Object.entries(authHeaders)) {
+    headers.set(key, value);
   }
 
+  const bodyBuffer =
+    request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
+
+  const upstream = await fetchBackendUrlWithRetry(
+    (backend) => `${backend}/auth/${upstreamPath}${search}`,
+    {
+      method: request.method,
+      headers,
+      body: bodyBuffer,
+      // @ts-expect-error — duplex is required for streaming bodies in Node 18+
+      duplex: 'half',
+      timeoutMs: isAuthMutation ? 8_000 : 12_000,
+      retries: isAuthMutation ? 1 : 3,
+    },
+  );
+
   if (!upstream) {
-    return new NextResponse(JSON.stringify({ detail: 'Backend unreachable' }), {
-      status: 502,
-      headers: { 'content-type': 'application/json' },
-    });
+    return new NextResponse(
+      JSON.stringify({
+        detail: 'Backend unreachable',
+        message: 'The server is starting or temporarily unavailable. Wait a moment and try again.',
+      }),
+      {
+        status: 502,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
   }
 
   const responseHeaders = new Headers();
-  for (const [key, value] of upstream.headers.entries()) {
-    if (key.toLowerCase() === 'set-cookie') {
-      responseHeaders.append('set-cookie', value);
-    } else if (key.toLowerCase() === 'content-type') {
-      responseHeaders.set('content-type', value);
-    }
-  }
+  appendUpstreamSetCookies(upstream, responseHeaders);
+  const contentType = upstream.headers.get('content-type');
+  if (contentType) responseHeaders.set('content-type', contentType);
 
   const responseBody = await upstream.text();
   return new NextResponse(responseBody, {

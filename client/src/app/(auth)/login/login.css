@@ -1,0 +1,511 @@
+/**
+ * Login — industry-standard responsive auth layout.
+ * - Mobile: flat form, full width within safe gutters (Vercel/Linear style)
+ * - Tablet+: elevated card, fluid max-width (~360–400px)
+ * - Desktop split: centered column; light = flat, dark = subtle card
+ * Uses container queries on the form panel where supported.
+ */
+
+.login-page {
+  --login-page-bg: var(--ant-color-bg-layout, var(--color-bg-base, #ffffff));
+  --login-panel-bg: var(--ant-color-bg-layout, var(--color-bg-base, #ffffff));
+  --login-surface-bg: var(--ant-color-bg-container, var(--color-bg-container, #f8f9fa));
+  --login-surface-border: var(--ant-color-border-secondary, var(--color-border, #e1e4e8));
+  --login-text: var(--ant-color-text, var(--color-text-primary, #24292f));
+  --login-text-secondary: var(--ant-color-text-secondary, var(--color-text-secondary, #57606a));
+  --login-text-tertiary: var(--ant-color-text-tertiary, var(--color-text-tertiary, #8b949e));
+  --login-link: var(--ant-color-link, var(--ant-color-primary, var(--color-primary, #00c2cb)));
+  --login-brand-start: #1e293b;
+  --login-brand-end: #334155;
+  --login-brand-text: #f8fafc;
+  --login-brand-subtext: #cbd5e1;
+  --login-gutter: clamp(0.75rem, 4vw, 2rem);
+  --login-card-max: clamp(18rem, 92vw, 25rem);
+
+  width: 100%;
+  max-width: 100vw;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  background: var(--login-page-bg);
+  color: var(--login-text);
+  font-family: var(--font-sans);
+}
+
+html.dark .login-page,
+html[data-theme='dark'] .login-page {
+  --login-panel-bg: var(--ant-color-bg-layout, var(--color-bg-base, #0d1117));
+  --login-surface-bg: var(--ant-color-bg-elevated, var(--color-bg-elevated, #1c2128));
+  --login-surface-border: var(--ant-color-border, var(--color-border, #30363d));
+}
+
+.login-form-section {
+  container-type: inline-size;
+  container-name: login-panel;
+
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding-top: max(clamp(0.75rem, 3vw, 1.5rem), env(safe-area-inset-top, 0px));
+  padding-right: max(var(--login-gutter), env(safe-area-inset-right, 0px));
+  padding-bottom: max(clamp(1rem, 3vw, 1.5rem), env(safe-area-inset-bottom, 0px));
+  padding-left: max(var(--login-gutter), env(safe-area-inset-left, 0px));
+  background: var(--login-panel-bg);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.login-auth-panel {
+  width: min(100%, var(--login-card-max));
+  min-width: 0;
+  margin: auto;
+  box-sizing: border-box;
+}
+
+.login-branding-section {
+  display: none;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  margin-bottom: clamp(0.875rem, 2.5vw, 1.25rem);
+  text-decoration: none;
+  color: inherit;
+  transition: opacity 0.15s ease;
+}
+
+.logo-section:hover {
+  opacity: 0.85;
+  text-decoration: none;
+}
+
+.logo-name {
+  font-size: clamp(1.125rem, 3.5vw, 1.25rem);
+  font-weight: 600;
+  color: var(--login-text);
+  letter-spacing: -0.01em;
+}
+
+/* Mobile-first: flat form (no card chrome) */
+.form-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.form-subtitle {
+  font-size: clamp(0.8125rem, 2.5vw, 0.875rem);
+  color: var(--login-text-secondary);
+  margin: 0 0 clamp(0.875rem, 2.5vw, 1.25rem);
+  text-align: center;
+  line-height: 1.45;
+}
+
+.login-error-alert {
+  margin-bottom: 1rem;
+  max-width: 100%;
+}
+
+.login-error-alert .ant-alert-message {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.login-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.375rem 0 0.75rem;
+}
+
+.login-inline-link {
+  background: none;
+  border: none;
+  padding: 0.25rem 0;
+  min-height: 2.75rem;
+  color: var(--login-link);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.login-inline-link:hover {
+  color: var(--ant-color-link-hover, var(--login-link));
+  text-decoration: underline;
+}
+
+.login-submit-item {
+  margin-bottom: 0 !important;
+  margin-top: 0.25rem;
+}
+
+.login-page .login-submit-item .ant-btn {
+  min-height: 2.75rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+.login-divider {
+  margin: 1.25rem 0 !important;
+  font-size: 0.8125rem !important;
+  color: var(--login-text-tertiary) !important;
+}
+
+.login-divider::before,
+.login-divider::after {
+  border-color: var(--login-surface-border) !important;
+}
+
+.login-sso-btn {
+  border-color: var(--login-surface-border) !important;
+  background: var(--ant-color-bg-container, var(--color-bg-container)) !important;
+  color: var(--login-text) !important;
+  min-height: 2.75rem;
+  height: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  white-space: normal;
+  line-height: 1.35;
+  padding-top: 0.625rem !important;
+  padding-bottom: 0.625rem !important;
+}
+
+.login-sso-btn:hover:not(:disabled) {
+  border-color: var(--ant-color-primary) !important;
+  color: var(--login-link) !important;
+  background: var(--ant-color-primary-bg, rgba(0, 194, 203, 0.08)) !important;
+}
+
+.terms-privacy-text {
+  margin: clamp(0.875rem, 2.5vw, 1.25rem) 0 0;
+  font-size: 0.75rem;
+  color: var(--login-text-tertiary);
+  text-align: center;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.terms-privacy-text a {
+  color: var(--login-text-tertiary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.terms-privacy-text a:hover {
+  color: var(--login-text-secondary);
+}
+
+.login-modal-text {
+  color: var(--login-text-secondary);
+  margin-bottom: 1rem;
+}
+
+.branding-content {
+  text-align: center;
+  width: 100%;
+  max-width: min(100%, 28rem);
+  padding: 0 clamp(0.5rem, 2vw, 1rem);
+  box-sizing: border-box;
+}
+
+.branding-title {
+  font-size: clamp(1.375rem, 3vw, 1.75rem);
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  color: var(--login-brand-text);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.branding-subtitle {
+  font-size: clamp(0.9375rem, 2vw, 1rem);
+  color: var(--login-brand-subtext);
+  margin: 0 0 clamp(1rem, 3vw, 1.5rem);
+  line-height: 1.5;
+}
+
+.demo-image {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Elevated card on tablet+ (phones stay flat — Vercel/Linear pattern) */
+@supports (container-type: inline-size) {
+  @container login-panel (min-width: 40rem) {
+    .login-page .form-card {
+      padding: clamp(1.25rem, 3cqi, 2rem);
+      border-radius: clamp(0.75rem, 2cqi, 1rem);
+      border: 1px solid var(--login-surface-border);
+      background: var(--login-surface-bg);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+
+    html.dark .login-page .form-card,
+    html[data-theme='dark'] .login-page .form-card {
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+}
+
+/* Fallback without container queries */
+@supports not (container-type: inline-size) {
+  @media (min-width: 40rem) {
+    .login-page .form-card {
+      padding: clamp(1.25rem, 3vw, 2rem);
+      border-radius: 1rem;
+      border: 1px solid var(--login-surface-border);
+      background: var(--login-surface-bg);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+
+    html.dark .login-page .form-card,
+    html[data-theme='dark'] .login-page .form-card {
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+}
+
+/* Ant Design overrides */
+.login-page .auth-mode-tabs.ant-segmented {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 0.75rem;
+  background: var(--ant-color-fill-tertiary, var(--color-bg-elevated, #f1f3f5));
+}
+
+.login-page .auth-mode-tabs.ant-segmented .ant-segmented-group {
+  display: flex;
+  width: 100%;
+  align-items: stretch;
+}
+
+.login-page .auth-mode-tabs.ant-segmented .ant-segmented-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+html.dark .login-page .auth-mode-tabs.ant-segmented,
+html[data-theme='dark'] .login-page .auth-mode-tabs.ant-segmented {
+  background: var(--ant-color-fill-quaternary, rgba(255, 255, 255, 0.06));
+}
+
+.login-page .auth-mode-tabs .ant-segmented-item-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.5rem;
+  font-size: clamp(0.8125rem, 2.5vw, 0.875rem);
+  line-height: 1.2;
+  text-align: center;
+}
+
+.login-page .auth-mode-tabs .ant-segmented-item-selected {
+  background: var(--ant-color-bg-elevated, var(--color-bg-elevated)) !important;
+  color: var(--login-text) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+html.dark .login-page .auth-mode-tabs .ant-segmented-item-selected,
+html[data-theme='dark'] .login-page .auth-mode-tabs .ant-segmented-item-selected {
+  background: var(--ant-color-bg-container, var(--color-bg-container)) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.login-page .ant-form {
+  width: 100%;
+  max-width: 100%;
+}
+
+.login-page .ant-form-item {
+  margin-bottom: clamp(0.625rem, 2vw, 1rem);
+  max-width: 100%;
+}
+
+.login-page .ant-form-item-label > label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--login-text) !important;
+  height: auto !important;
+}
+
+.login-page .ant-form-item-label > label.ant-form-item-required:not(.ant-form-item-required-mark-hidden)::before {
+  color: var(--ant-color-error, #ff4d4f) !important;
+  margin-inline-end: 4px;
+}
+
+.login-page .ant-form-item-control-input,
+.login-page .ant-form-item-control-input-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.login-page .ant-input,
+.login-page .ant-input-affix-wrapper,
+.login-page .ant-input-password {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  background: var(--ant-color-bg-container, var(--color-bg-container)) !important;
+  border-color: var(--login-surface-border) !important;
+  color: var(--login-text) !important;
+  font-size: 16px !important;
+}
+
+.login-page .ant-input-lg,
+.login-page .ant-input-affix-wrapper-lg,
+.login-page .ant-input-password-large {
+  min-height: 2.75rem;
+}
+
+.login-page .ant-input::placeholder,
+.login-page .ant-input-affix-wrapper input::placeholder {
+  color: var(--login-text-tertiary) !important;
+}
+
+.login-page .ant-input-affix-wrapper .anticon,
+.login-page .ant-input-password-icon {
+  color: var(--login-text-tertiary) !important;
+}
+
+.login-page .ant-input-affix-wrapper:hover,
+.login-page .ant-input-affix-wrapper-focused,
+.login-page .ant-input:hover,
+.login-page .ant-input:focus {
+  border-color: var(--ant-color-primary) !important;
+}
+
+/* Fluid card width by viewport */
+@media (min-width: 480px) {
+  .login-page {
+    --login-card-max: min(25rem, calc(100vw - 2 * var(--login-gutter)));
+    --login-gutter: clamp(1rem, 5vw, 1.5rem);
+  }
+}
+
+@media (min-width: 640px) {
+  .login-page {
+    --login-card-max: 25rem;
+    --login-gutter: clamp(1.25rem, 4vw, 2rem);
+  }
+}
+
+/* Short viewports — scroll from top, tighter spacing */
+@media (max-height: 700px) and (max-width: 1023px) {
+  .login-form-section {
+    justify-content: flex-start;
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  }
+
+  .logo-section {
+    margin-bottom: 0.625rem;
+  }
+
+  .login-page .ant-form-item {
+    margin-bottom: 0.5rem;
+  }
+}
+
+/* Desktop split layout */
+@media (min-width: 1024px) {
+  .login-page {
+    flex-direction: row;
+    overflow: hidden;
+    --login-card-max: clamp(20rem, 90%, 25rem);
+    --login-gutter: clamp(1.5rem, 3vw, 2.5rem);
+  }
+
+  .login-form-section {
+    flex: 1 1 50%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    align-self: stretch;
+  }
+
+  .login-auth-panel {
+    width: min(100%, var(--login-card-max));
+  }
+
+  /* Light desktop: flat form in column (Stripe / GitHub style) */
+  html:not(.dark):not([data-theme='dark']) .login-form-section {
+    --login-panel-bg: #ffffff;
+  }
+
+  html:not(.dark):not([data-theme='dark']) .login-page .form-card {
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    overflow: visible;
+  }
+
+  /* Dark desktop: subtle elevated card centered in column */
+  html.dark .login-page .form-card,
+  html[data-theme='dark'] .login-page .form-card {
+    padding: clamp(1.5rem, 2.5cqi, 2rem);
+    border-radius: 1rem;
+    border: 1px solid var(--login-surface-border);
+    background: var(--login-surface-bg);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.28);
+    overflow: hidden;
+  }
+
+  .login-branding-section {
+    flex: 1 1 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    padding: var(--login-gutter);
+    padding-left: max(var(--login-gutter), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--login-gutter), env(safe-area-inset-right, 0px));
+    overflow-y: auto;
+    background: linear-gradient(135deg, var(--login-brand-start) 0%, var(--login-brand-end) 100%);
+  }
+}
+
+@media (min-width: 1280px) {
+  .login-page {
+    --login-card-max: 26.25rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .login-page {
+    --login-gutter: 3rem;
+    --login-card-max: 27rem;
+  }
+}

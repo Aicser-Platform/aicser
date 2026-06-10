@@ -5,7 +5,7 @@ import { fetchApi } from '@/utils/api';
 export type FeedVisibility = 'private' | 'project' | 'organization' | 'public' | 'following';
 export type FeedScope = 'private' | 'organization' | 'project' | 'public' | 'following';
 export type FeedSort = 'recommended' | 'trending' | 'recent';
-export type AssetType = 'dashboard' | 'chart' | 'insight';
+export type AssetType = 'dashboard' | 'chart' | 'insight' | 'query';
 export type ReactionType = 'like' | 'insightful' | 'love' | 'applause' | 'funny' | 'celebrate';
 export type FeedPreviewType = 'bar' | 'pie' | 'line' | 'dashboard';
 export type LeaderboardTimeRange = 'today' | 'week' | 'month' | 'all';
@@ -50,6 +50,14 @@ export interface FeedAssetPreview {
   label?: string;
 }
 
+export type FeedRenderMode = 'snapshot' | 'live';
+
+export interface FeedSnapshotInfo {
+  version: number;
+  capturedAt?: string;
+  renderMode: FeedRenderMode;
+}
+
 export interface FeedItem {
   id: string;
   assetType: AssetType;
@@ -69,12 +77,30 @@ export interface FeedItem {
     isFollowingAuthor?: boolean;
   };
   recentComments: FeedComment[];
+  renderMode?: FeedRenderMode;
+  snapshot?: FeedSnapshotInfo;
+  isOwner?: boolean;
   asset: {
     summary: string;
     previewLabel: string;
     previewType?: FeedPreviewType;
     previewData?: number[];
     previews?: FeedAssetPreview[];
+    dashboardId?: string;
+    sourceQueryId?: string;
+    snapshotPayload?: Record<string, unknown>;
+    snapshotCapturedAt?: string;
+    widgetCount?: number;
+    chartWidget?: {
+      chartType: string;
+      chartData?: Record<string, unknown>;
+      chartOptions?: Record<string, unknown>;
+      chartQuery?: Record<string, unknown>;
+    };
+    excerpt?: string;
+    questionTitle?: string;
+    conversationId?: string;
+    messageId?: string;
   };
 }
 
@@ -100,6 +126,7 @@ export interface FeedAssetCounts {
   dashboard: number;
   chart: number;
   insight: number;
+  query?: number;
 }
 
 export interface FeedFilterOptions {
@@ -150,7 +177,7 @@ export interface FeedSidebarData {
   }[];
   trendingTags: { tag: string; count: number }[];
   collections: { id: string; name: string; count: number; color: string }[];
-  activity: { id: string; actor: FeedAuthor; action: string; assetType: AssetType; title: string; time: string }[];
+  activity: { id: string; postId?: string; actor: FeedAuthor; action: string; assetType: AssetType; title: string; time: string }[];
 }
 
 export interface FeedSidebarQuery {
@@ -218,7 +245,8 @@ export interface FeedDeleteItemResult {
 
 export interface PublishAssetRequest {
   asset_type: AssetType;
-  asset_id: string;
+  asset_id?: string;
+  source_query_id?: string;
   organization_id?: string;
   project_id?: string;
   title: string;
@@ -227,15 +255,127 @@ export interface PublishAssetRequest {
   visibility?: FeedVisibility;
   status?: 'draft' | 'pending' | 'approved' | 'rejected';
   requires_login?: boolean;
+  publication_mode?: 'update' | 'create_new';
+  publication_id?: string;
   public_access_level?: 'results_only' | 'full_access';
   featured?: boolean;
   featured_until?: string;
+  preview_metadata?: Record<string, unknown>;
+  render_mode?: FeedRenderMode;
+  snapshot_payload?: Record<string, unknown>;
+}
+
+export interface PublishFromChatRequest {
+  conversation_id: string;
+  message_id: string;
+  title: string;
+  description?: string;
+  tags?: string[];
+  visibility?: FeedVisibility;
+  organization_id?: string;
+  project_id?: string;
+  preview_metadata?: Record<string, unknown>;
+  render_mode?: FeedRenderMode;
+  snapshot_payload?: Record<string, unknown>;
+  requires_login?: boolean;
+  publication_mode?: 'update' | 'create_new';
+}
+
+export interface PublicationLookupResult {
+  exists: boolean;
+  publication_id?: string;
+  title?: string;
+  published_at?: string;
+  snapshot_version?: number;
+  visibility?: FeedVisibility;
+}
+
+export interface PublicAuthorStats {
+  post_count: number;
+  total_views: number;
+  follower_count: number;
+}
+
+export interface PublicAuthorProfile {
+  author: FeedAuthor;
+  stats: PublicAuthorStats;
+  items: FeedItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  isFollowing?: boolean;
+}
+
+export interface DigestPreviewItem {
+  id: string;
+  title: string;
+  description?: string;
+  view_count: number;
+  reaction_count: number;
+  published_at?: string;
+}
+
+export interface DigestPreviewResult {
+  items: DigestPreviewItem[];
+  period_days: number;
+}
+
+export interface FeedNotificationItem {
+  id: string;
+  type: string;
+  actor?: FeedAuthor;
+  postId?: string;
+  commentId?: string;
+  metadata?: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface FeedNotificationsResult {
+  items: FeedNotificationItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RemixFeedResult {
+  success: boolean;
+  dashboard_id: string;
+  open_path: string;
+  title: string;
+}
+
+export interface PublicLeaderboardResult {
+  items: FeedLeaderboardItem[];
+  timeRange: string;
+}
+
+export interface FeedLeaderboardItem {
+  id: string;
+  rank: number;
+  postId: string;
+  assetType: AssetType;
+  title: string;
+  creator: FeedAuthor;
+  viewCount: number;
+  voteCount: number;
+  commentCount: number;
+  engagementScore: number;
+}
+
+export interface UpdateSnapshotRequest {
+  snapshot_payload: Record<string, unknown>;
+  title?: string;
+  description?: string;
+  preview_metadata?: Record<string, unknown>;
 }
 
 export interface PublishAssetResponse {
   success: boolean;
   publication_id: string;
   status: 'draft' | 'pending' | 'approved' | 'rejected';
+  snapshot_version?: number;
+  render_mode?: FeedRenderMode;
 }
 
 export interface ApprovalQueueItem {
@@ -306,6 +446,133 @@ class SocialFeedService {
   async getFeed(query: FeedQuery): Promise<FeedResponse> {
     const queryString = this.buildQuery(query);
     return this.request<FeedResponse>(`feed?${queryString}`);
+  }
+
+  /** Anonymous public gallery — no auth required. */
+  async getPublicFeed(
+    query: Pick<FeedQuery, 'sort' | 'tags' | 'search' | 'authorId' | 'assetType' | 'limit' | 'offset'> = {},
+  ): Promise<FeedResponse> {
+    const params = new URLSearchParams();
+    params.set('sort', query.sort || 'recommended');
+    params.set('limit', String(query.limit ?? 20));
+    params.set('offset', String(query.offset ?? 0));
+    if (query.search) params.set('search', query.search);
+    if (query.authorId) params.set('authorId', query.authorId);
+    if (query.assetType) params.set('assetType', query.assetType);
+    if (query.tags?.length) query.tags.forEach((tag) => params.append('tags', tag));
+    return this.request<FeedResponse>(`feed/public?${params.toString()}`);
+  }
+
+  async getPublicTrendingFeed(
+    query: Pick<FeedQuery, 'tags' | 'authorId' | 'assetType' | 'limit' | 'offset'> & {
+      timeWindowDays?: number;
+    } = {},
+  ): Promise<FeedResponse> {
+    const params = new URLSearchParams();
+    params.set('limit', String(query.limit ?? 8));
+    params.set('offset', String(query.offset ?? 0));
+    if (query.authorId) params.set('authorId', query.authorId);
+    if (query.assetType) params.set('assetType', query.assetType);
+    if (query.timeWindowDays) params.set('timeWindowDays', String(query.timeWindowDays));
+    if (query.tags?.length) query.tags.forEach((tag) => params.append('tags', tag));
+    return this.request<FeedResponse>(`feed/public/trending?${params.toString()}`);
+  }
+
+  async getPublicLeaderboard(limit = 8): Promise<PublicLeaderboardResult> {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('timeRange', 'week');
+    params.set('sortBy', 'popular');
+    return this.request<PublicLeaderboardResult>(`feed/public/leaderboard?${params.toString()}`);
+  }
+
+  async remixFeedPost(
+    itemId: string,
+    body: { project_id?: string; referral_code?: string } = {},
+  ): Promise<RemixFeedResult> {
+    return this.request<RemixFeedResult>(`feed/public/${itemId}/remix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getFeedNotifications(
+    query: { unreadOnly?: boolean; limit?: number; offset?: number } = {},
+  ): Promise<FeedNotificationsResult> {
+    const params = new URLSearchParams();
+    params.set('limit', String(query.limit ?? 20));
+    params.set('offset', String(query.offset ?? 0));
+    if (query.unreadOnly) params.set('unreadOnly', 'true');
+    return this.request<FeedNotificationsResult>(`feed/notifications?${params.toString()}`);
+  }
+
+  async markNotificationRead(notificationId: string): Promise<{ success: boolean }> {
+    return this.request(`feed/notifications/${notificationId}/read`, { method: 'POST' });
+  }
+
+  async getPublicAuthorProfile(
+    username: string,
+    query: { limit?: number; offset?: number } = {},
+  ): Promise<PublicAuthorProfile> {
+    const handle = encodeURIComponent(username.replace(/^@/, ''));
+    const params = new URLSearchParams();
+    params.set('limit', String(query.limit ?? 20));
+    params.set('offset', String(query.offset ?? 0));
+    return this.request<PublicAuthorProfile>(`feed/public/authors/${handle}?${params.toString()}`);
+  }
+
+  async lookupPublication(assetType: AssetType, assetId: string): Promise<PublicationLookupResult> {
+    const params = new URLSearchParams();
+    params.set('assetType', assetType);
+    params.set('assetId', assetId);
+    return this.request<PublicationLookupResult>(`feed/publications/lookup?${params.toString()}`);
+  }
+
+  async getDigestPreview(periodDays = 7, limit = 8): Promise<DigestPreviewResult> {
+    const params = new URLSearchParams();
+    params.set('periodDays', String(periodDays));
+    params.set('limit', String(limit));
+    return this.request<DigestPreviewResult>(`feed/public/digest/preview?${params.toString()}`);
+  }
+
+  async subscribeDigest(email: string): Promise<{ success: boolean; message: string }> {
+    return this.request(`feed/public/digest/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async unsubscribeDigest(token: string): Promise<{ success: boolean; message: string }> {
+    const params = new URLSearchParams();
+    params.set('token', token);
+    return this.request(`feed/public/digest/unsubscribe?${params.toString()}`, {
+      method: 'POST',
+    });
+  }
+
+  async getPublicItemById(itemId: string): Promise<FeedItem | null> {
+    try {
+      return await this.request<FeedItem>(`feed/public/${itemId}`);
+    } catch {
+      return null;
+    }
+  }
+
+  async trackPublicView(itemId: string, referralCode?: string | null): Promise<void> {
+    try {
+      const body: Record<string, unknown> = {};
+      const ref = referralCode?.trim().replace(/^@/, '');
+      if (ref) body.referral_code = ref;
+      await this.request(`feed/public/${itemId}/views`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      /* best-effort analytics */
+    }
   }
 
   async getSavedFeed(query: Pick<FeedQuery, 'sort' | 'limit' | 'offset'> = {}): Promise<FeedResponse> {
@@ -447,6 +714,48 @@ class SocialFeedService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+  }
+
+  async publishFromChat(payload: PublishFromChatRequest): Promise<PublishAssetResponse> {
+    return this.request<PublishAssetResponse>('feed/publications/from-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updatePublicationSnapshot(
+    postId: string,
+    payload: UpdateSnapshotRequest,
+  ): Promise<PublishAssetResponse> {
+    return this.request<PublishAssetResponse>(`feed/publications/${postId}/snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async saveChatFeedDraft(params: {
+    conversation_id: string;
+    message_id: string;
+    draft: Record<string, unknown>;
+  }): Promise<{ success: boolean; draft: Record<string, unknown> }> {
+    return this.request('feed/drafts/chat', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+  }
+
+  async getChatFeedDraft(
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ success: boolean; draft: Record<string, unknown> }> {
+    const query = new URLSearchParams({
+      conversationId,
+      messageId,
+    });
+    return this.request(`feed/drafts/chat?${query.toString()}`);
   }
 
   async getApprovalQueue(params: {

@@ -324,9 +324,201 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       },
     ],
   },
+  heatmap: {
+    label: 'Heatmap',
+    fields: [
+      {
+        key: 'x',
+        type: 'select',
+        label: 'X-axis',
+        required: true,
+      },
+      {
+        key: 'groupField',
+        type: 'select',
+        label: 'Y-axis (rows)',
+        required: true,
+      },
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Values',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  stat: {
+    label: 'KPI / Stat',
+    fields: [
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Metric',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
   text: {
     label: 'Text Block',
-    fields: [], // We'll handle custom text fields in ChartSpecificFields or a new component
+    fields: [],
+  },
+  slicer: {
+    label: 'Slicer',
+    fields: [
+      {
+        key: 'field',
+        type: 'select',
+        label: 'Filter field',
+        required: true,
+      },
+    ],
+  },
+  gauge: {
+    label: 'Gauge',
+    fields: [
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Value',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  treemap: {
+    label: 'Treemap',
+    fields: [
+      {
+        key: 'x',
+        type: 'select',
+        label: 'Category',
+        required: true,
+      },
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Size',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  waterfall: {
+    label: 'Waterfall',
+    fields: [
+      {
+        key: 'x',
+        type: 'select',
+        label: 'Category / Stage',
+        required: true,
+      },
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Value (delta)',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  bullet: {
+    label: 'Bullet Chart',
+    fields: [
+      {
+        key: 'x',
+        type: 'select',
+        label: 'Category',
+        required: true,
+      },
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Actual Value',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'yMetricsSecondary',
+        type: 'metric-list',
+        label: 'Target Value',
+        required: false,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  divider: {
+    label: 'Section Divider',
+    fields: [],
+  },
+  image: {
+    label: 'Image',
+    fields: [],
+  },
+  geo: {
+    label: 'Geo Map',
+    fields: [
+      {
+        key: 'x',
+        type: 'select',
+        label: 'Country / Region (names)',
+        required: true,
+      },
+      {
+        key: 'yMetrics',
+        type: 'metric-list',
+        label: 'Value',
+        required: true,
+        maxCount: 1,
+      },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+      },
+    ],
+  },
+  embed: {
+    label: 'Embed / iframe',
+    fields: [],
   },
 };
 

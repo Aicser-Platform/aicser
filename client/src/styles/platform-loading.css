@@ -1,0 +1,52 @@
+/**
+ * Platform-wide loading states (auth gate, full page, dashboard sections)
+ */
+
+.app-loading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ant-color-text-secondary);
+  box-sizing: border-box;
+}
+
+.app-loading-indicator--inline {
+  min-height: 240px;
+  width: 100%;
+  padding: 32px 24px;
+}
+
+.app-loading-indicator--full {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  background: var(--ant-color-bg-layout, var(--color-bg-base, #fff));
+}
+
+.app-loading-indicator__tip {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  max-width: 28ch;
+  color: var(--ant-color-text-secondary);
+}
+
+.app-loading-indicator .ant-spin-dot-item {
+  background-color: var(--ant-color-primary) !important;
+}
+
+.page-state-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  width: 100%;
+  padding: 32px 24px;
+}

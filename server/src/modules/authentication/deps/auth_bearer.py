@@ -128,6 +128,31 @@ def get_public_key_from_jwks(jwks: Dict, kid: str) -> Optional[str]:
 get_bearer_token = HTTPBearer(auto_error=False)
 
 
+def _should_try_supabase_jwks(token: str, supabase_url: str) -> bool:
+    """Skip Supabase JWKS for Keycloak-issued tokens when Keycloak SSO is enabled."""
+    if not supabase_url:
+        return False
+    try:
+        from src.modules.authentication.keycloak_service import get_keycloak_issuer, is_keycloak_enabled
+
+        if not is_keycloak_enabled():
+            return True
+        claims = jose_jwt.get_unverified_claims(token)
+        iss = str(claims.get("iss") or "")
+        if supabase_url.rstrip("/") in iss:
+            return True
+        if iss.startswith(get_keycloak_issuer()):
+            return False
+        return False
+    except Exception:
+        try:
+            from src.modules.authentication.keycloak_service import is_keycloak_enabled
+
+            return not is_keycloak_enabled()
+        except Exception:
+            return True
+
+
 known_tokens = set(["api_token_abc123"])
 
 
@@ -151,22 +176,22 @@ def verify_supabase_token(token: str) -> dict:
     """
     Verify JWT token. Tries in order:
     1. Keycloak OIDC (if KEYCLOAK_URL is set)
-    2. HS256 with JWT_SECRET (Supabase Docker mode)
-    3. JWKS RS256 (Supabase production)
+    2. HS256 with JWT_SECRET (Supabase Docker mode / CE session)
+    3. JWKS RS256 (Supabase production — skipped for Keycloak issuers)
     4. Unverified claims (development only)
     """
     try:
         from src.core.config import settings
 
-        # 0. Try Keycloak OIDC verification first (if configured)
+        # 1. Keycloak OIDC (sync path — used by extract_user_id_from_token)
         try:
-            from src.modules.authentication.keycloak_service import verify_keycloak_token, is_keycloak_enabled
+            from src.modules.authentication.keycloak_service import (
+                is_keycloak_enabled,
+                verify_keycloak_token_sync,
+            )
+
             if is_keycloak_enabled():
-                import asyncio
-                loop = asyncio.get_event_loop()
-                kc_result = loop.run_until_complete(verify_keycloak_token(token)) if not loop.is_running() else None
-                # In async context, we can't run_until_complete; skip Keycloak sync path
-                # Keycloak tokens are also verified in JWTCookieBearer async path below
+                kc_result = verify_keycloak_token_sync(token)
                 if kc_result and kc_result.get("id"):
                     return kc_result
         except Exception:
@@ -175,7 +200,7 @@ def verify_supabase_token(token: str) -> dict:
         jwt_secret = getattr(settings, "JWT_SECRET", None) or ""
         jwt_secret_ok = jwt_secret and jwt_secret.strip() and jwt_secret != "your-jwt-secret-here"
 
-        # 1. Try HS256 first when JWT_SECRET is set — avoids JWKS "did not contain any keys" in Docker
+        # 2. HS256 when JWT_SECRET is set — Supabase Docker / shared secret tokens
         if jwt_secret_ok:
             try:
                 claims = jose_jwt.decode(
@@ -205,17 +230,21 @@ def verify_supabase_token(token: str) -> dict:
             except JWTError:
                 pass  # Fall through to JWKS or unverified
 
-        # 2. Try JWKS (RS256) if SUPABASE_URL is set
+        # 3. Supabase JWKS (RS256) — not for Keycloak-issued tokens
         supabase_url = getattr(settings, "SUPABASE_URL", None) or ""
-        if supabase_url:
+        if supabase_url and _should_try_supabase_jwks(token, supabase_url):
             try:
                 import jwt
                 from jwt import PyJWKClient
 
+                header = jwt.get_unverified_header(token)
+                kid = header.get("kid")
+                if not kid:
+                    raise jwt.InvalidTokenError("JWT header missing kid")
+
                 jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
                 jwks_client = PyJWKClient(jwks_url)
-                header = jwt.get_unverified_header(token)
-                key = jwks_client.get_signing_key(header["kid"]).key
+                key = jwks_client.get_signing_key(kid).key
                 claims = jwt.decode(
                     token,
                     key,
@@ -244,9 +273,9 @@ def verify_supabase_token(token: str) -> dict:
             except (jwt.InvalidTokenError, Exception) as e:
                 if time.time() - _auth_fallback_log_time[0] > AUTH_FALLBACK_LOG_INTERVAL:
                     _auth_fallback_log_time[0] = time.time()
-                    logger.warning("JWKS verification failed: %s", e)
+                    logger.warning("Supabase JWKS verification failed: %s", e)
 
-        # 3. Final fallback: unverified claims in development
+        # 4. Final fallback: unverified claims in development
         if getattr(settings, "ENVIRONMENT", "development") in ("development", "dev", "local", "test"):
             if time.time() - _auth_fallback_log_time[0] > AUTH_FALLBACK_LOG_INTERVAL:
                 _auth_fallback_log_time[0] = time.time()
@@ -508,7 +537,21 @@ class JWTCookieBearer(HTTPBearer):
         except Exception:
             pass
 
-        # Extract payload from token
+        # Keycloak OIDC (async path — proper signature verification before sync fallbacks)
+        try:
+            from src.modules.authentication.keycloak_service import (
+                is_keycloak_enabled,
+                verify_keycloak_token,
+            )
+
+            if is_keycloak_enabled():
+                kc_payload = await verify_keycloak_token(token)
+                if kc_payload:
+                    return kc_payload
+        except Exception:
+            pass
+
+        # Extract payload from token (HS256 / Supabase JWKS / dev fallback)
         payload = extract_user_id_from_token(token)
         if payload:
             return payload

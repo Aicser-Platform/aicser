@@ -1,0 +1,350 @@
+/* Workspace: canvas + filter panel side-by-side */
+.dashboard-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-workspace-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dashboard-workspace-viewer {
+  min-height: 0;
+}
+
+/* Right-side filter panel (Power BI–style) */
+.dashboard-filter-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-card-bg, var(--ant-color-bg-container));
+  overflow: hidden;
+}
+
+.dashboard-filter-panel--panel {
+  width: 280px;
+  border-left: 1px solid var(--studio-border, var(--ant-color-border));
+  transition: width 200ms ease, border-color 200ms ease, background-color 200ms ease;
+}
+
+.dashboard-filter-panel--panel.is-closed {
+  width: 0;
+  border-left-color: transparent;
+}
+
+.dashboard-filter-panel--panel .dashboard-filter-panel-header,
+.dashboard-filter-panel--panel .dashboard-filter-panel-body {
+  opacity: 1;
+  transition: opacity 140ms ease;
+}
+
+.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-header,
+.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-body {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-filter-panel--toolbar {
+  width: 100%;
+  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+  padding: 10px 0 12px;
+  background: transparent;
+}
+
+.dashboard-filter-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  flex-shrink: 0;
+}
+
+.dashboard-filter-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--studio-text-main, var(--ant-color-text));
+}
+
+.dashboard-filter-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 14px 14px;
+}
+
+.dashboard-filter-panel--toolbar .dashboard-filter-panel-body {
+  padding: 0;
+  overflow: visible;
+}
+
+/* Panel layout — stacked filters with horizontal dividers */
+.report-filter-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.report-filter-panel-item {
+  padding: 12px 0;
+}
+
+.report-filter-panel-footer {
+  padding: 4px 0 0;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.report-filter-hrule {
+  display: block;
+  height: 0;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+}
+
+/* Toolbar layout — horizontal row with Ant vertical dividers */
+.report-filter-toolbar {
+  width: 100%;
+}
+
+.report-filter-toolbar-track {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.report-filter-toolbar-item {
+  flex: 0 1 auto;
+  min-width: 140px;
+  max-width: 240px;
+  padding: 0 4px;
+}
+
+.report-filter-toolbar-actions {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 4px 2px;
+  margin-left: auto;
+}
+
+.report-filter-vdivider {
+  align-self: stretch;
+  height: auto !important;
+  min-height: 44px;
+  margin: 0 8px !important;
+  border-color: var(--studio-border, var(--ant-color-border)) !important;
+  top: 0;
+}
+
+.gfb-filter-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gfb-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.gfb-field-label-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gfb-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--studio-text-secondary, var(--ant-color-text-secondary)) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gfb-filter-control-body {
+  min-width: 0;
+}
+
+.gfb-slider-value {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.filter-field-clear-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: var(--ant-color-primary);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.filter-field-clear-link:hover:not(:disabled) {
+  color: var(--ant-color-primary-hover);
+  text-decoration: underline;
+}
+
+.filter-field-clear-link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.filter-select-all-row {
+  padding: 4px 8px 2px;
+  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+}
+
+.filter-field-numeric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.filter-field-slicer .filter-field-numeric-header {
+  margin-bottom: 6px;
+}
+
+/* Date range — flat inline, no nested card */
+.gfb-daterange-control-wrap .gfb-daterange-control,
+.report-filter-toolbar .gfb-daterange-control {
+  border: none;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  min-width: 0;
+  max-width: none;
+}
+
+.report-filter-toolbar .gfb-daterange-control:hover {
+  border: none;
+  background: transparent;
+}
+
+.dashboard-page-chrome-presentation {
+  padding: 6px 24px 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+.dashboard-page-chrome-presentation .studio-context {
+  margin-bottom: 4px;
+}
+
+.dashboard-page-chrome-presentation .studio-context-row {
+  min-height: 28px;
+}
+
+.studio-presentation-exit-icon {
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  color: var(--studio-text-secondary) !important;
+}
+
+.studio-presentation-exit-icon:hover {
+  color: var(--studio-text-main) !important;
+  background: var(--ant-color-fill-quaternary) !important;
+}
+
+.data-model-graph {
+  width: 100%;
+}
+
+.data-model-graph-compact .data-model-graph-svg {
+  max-height: 220px;
+}
+
+.data-model-graph-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.data-model-graph-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.data-model-graph-loading,
+.data-model-graph-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 16px;
+}
+
+.data-model-edge line {
+  stroke: var(--ant-color-border);
+  stroke-width: 1.5;
+}
+
+.data-model-edge.dimmed line {
+  opacity: 0.25;
+}
+
+.data-model-edge-label {
+  font-size: 9px;
+  fill: var(--ant-color-text-tertiary);
+  pointer-events: none;
+}
+
+.data-model-node-fact {
+  fill: color-mix(in srgb, var(--ant-color-primary) 18%, var(--ant-color-bg-container));
+  stroke: var(--ant-color-primary);
+  stroke-width: 1.5;
+}
+
+.data-model-node-dim {
+  fill: var(--ant-color-bg-container);
+  stroke: var(--ant-color-border);
+  stroke-width: 1.5;
+}
+
+.data-model-node.active .data-model-node-fact,
+.data-model-node.active .data-model-node-dim {
+  stroke-width: 2.5;
+  stroke: var(--ant-color-primary);
+}
+
+.data-model-node.dimmed {
+  opacity: 0.35;
+}
+
+.data-model-node-label {
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--ant-color-text);
+  pointer-events: none;
+}
+
+.studio-canvas-scroll {
+  flex: 1;
+  min-height: 0;
+}

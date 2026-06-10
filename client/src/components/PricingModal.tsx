@@ -1,20 +1,17 @@
 'use client';
-import dynamic from 'next/dynamic';
+
 import type { ComponentType } from 'react';
+import type { PricingModalProps } from './PricingModal.types';
+// Direct path — not @/ee barrel (TrialExpiryBanner cycle). CE builds alias this to PricingModal.noop.
+import PricingModalEE from '@/ee/components/PricingModal';
 
-interface PricingModalProps {
-  visible?: boolean;
-  onClose?: () => void;
-  onUpgrade?: (planType: string, isYearly: boolean) => void;
-  currentPlan?: string;
-  loading?: boolean;
-  [key: string]: unknown;
-}
+export type { PricingModalProps } from './PricingModal.types';
 
-const PricingModal = dynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.PricingModalEE }))) as any,
-  { ssr: false }
-) as ComponentType<PricingModalProps>;
+const NoopPricingModal: ComponentType<PricingModalProps> = () => null;
+
+const edition = (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase();
+
+const PricingModal: ComponentType<PricingModalProps> =
+  edition === 'enterprise' || edition === 'ee' ? PricingModalEE : NoopPricingModal;
 
 export default PricingModal;

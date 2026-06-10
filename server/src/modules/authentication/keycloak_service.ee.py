@@ -67,12 +67,35 @@ async def get_jwks() -> Optional[Dict]:
         return _JWKS_CACHE  # Return stale cache on failure
 
 
-async def verify_keycloak_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify a Keycloak JWT token and return claims.
+def _normalize_keycloak_claims(claims: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = claims.get("sub", "")
+    email = claims.get("email", "")
+    preferred_username = claims.get("preferred_username", "")
+    realm_roles = claims.get("realm_access", {}).get("roles", [])
+    resource_roles = claims.get("resource_access", {}).get(KEYCLOAK_CLIENT_ID, {}).get("roles", [])
+    all_roles = list(set(realm_roles + resource_roles))
 
-    Returns normalized user dict or None if invalid.
-    """
+    aiser_role = "viewer"
+    if "aiser-admin" in all_roles or "realm-management" in realm_roles:
+        aiser_role = "admin"
+    elif "aiser-editor" in all_roles or "aiser-analyst" in all_roles:
+        aiser_role = "editor"
+
+    return {
+        "id": user_id,
+        "user_id": user_id,
+        "sub": user_id,
+        "email": email,
+        "username": preferred_username,
+        "role": aiser_role,
+        "keycloak_roles": all_roles,
+        "organization_id": claims.get("organization_id") or claims.get("org_id"),
+        "auth_provider": "keycloak",
+    }
+
+
+def verify_keycloak_token_sync(token: str) -> Optional[Dict[str, Any]]:
+    """Verify a Keycloak JWT (sync — for auth_bearer and other sync call sites)."""
     if not is_keycloak_enabled():
         return None
 
@@ -80,48 +103,33 @@ async def verify_keycloak_token(token: str) -> Optional[Dict[str, Any]]:
         import jwt as _jwt
         from jwt import PyJWKClient
 
-        jwks_client = PyJWKClient(get_jwks_url())
         header = _jwt.get_unverified_header(token)
-        key = jwks_client.get_signing_key(header["kid"]).key
+        kid = header.get("kid")
+        if not kid:
+            return None
 
+        jwks_client = PyJWKClient(get_jwks_url())
+        key = jwks_client.get_signing_key(kid).key
         claims = _jwt.decode(
             token,
             key,
             algorithms=["RS256", "ES256"],
             issuer=get_keycloak_issuer(),
-            options={"verify_aud": False},  # Audience varies by client setup
+            options={"verify_aud": False},
         )
-
-        # Map Keycloak claims to Aiser user dict
-        user_id = claims.get("sub", "")
-        email = claims.get("email", "")
-        preferred_username = claims.get("preferred_username", "")
-        realm_roles = claims.get("realm_access", {}).get("roles", [])
-        resource_roles = claims.get("resource_access", {}).get(KEYCLOAK_CLIENT_ID, {}).get("roles", [])
-        all_roles = list(set(realm_roles + resource_roles))
-
-        # Map Keycloak roles to Aiser role
-        aiser_role = "viewer"
-        if "aiser-admin" in all_roles or "realm-management" in realm_roles:
-            aiser_role = "admin"
-        elif "aiser-editor" in all_roles or "aiser-analyst" in all_roles:
-            aiser_role = "editor"
-
-        return {
-            "id": user_id,
-            "user_id": user_id,
-            "sub": user_id,
-            "email": email,
-            "username": preferred_username,
-            "role": aiser_role,
-            "keycloak_roles": all_roles,
-            "organization_id": claims.get("organization_id") or claims.get("org_id"),
-            "auth_provider": "keycloak",
-        }
-
+        return _normalize_keycloak_claims(claims)
     except Exception as e:
-        logger.debug(f"Keycloak token verification failed: {e}")
+        logger.debug("Keycloak token verification failed: %s", e)
         return None
+
+
+async def verify_keycloak_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Verify a Keycloak JWT token and return claims.
+
+    Returns normalized user dict or None if invalid.
+    """
+    return verify_keycloak_token_sync(token)
 
 
 async def get_keycloak_user_info(token: str) -> Optional[Dict[str, Any]]:

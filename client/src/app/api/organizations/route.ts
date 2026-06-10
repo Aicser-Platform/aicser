@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
+import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,11 +9,7 @@ export async function GET(request: NextRequest) {
       'Content-Type': 'application/json',
     };
 
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-
-    const cookieHeader = request.headers.get('cookie');
-    if (cookieHeader) headers['cookie'] = cookieHeader;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const response = await fetch(`${backendUrl}/api/organizations`, {
       method: 'GET',
@@ -38,11 +35,7 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/json',
     };
 
-    const authHeader = request.headers.get('Authorization');
-    if (authHeader) headers['Authorization'] = authHeader;
-
-    const cookieHeader = request.headers.get('cookie');
-    if (cookieHeader) headers['cookie'] = cookieHeader;
+    Object.assign(headers, buildProxyAuthHeaders(request));
 
     const response = await fetch(`${backendUrl}/api/organizations`, {
       method: 'POST',

@@ -115,6 +115,95 @@ class RAGRetrievalService:
 
     def __init__(self, session: AsyncSession):
         self._session = session
+        self._pgvector_available: Optional[bool] = None
+
+    async def _pgvector_available_check(self) -> bool:
+        if self._pgvector_available is not None:
+            return self._pgvector_available
+        try:
+            ext = await self._session.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
+            )
+            col = await self._session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'document_chunks' AND column_name = 'embedding_vector' LIMIT 1"
+                )
+            )
+            self._pgvector_available = ext.first() is not None and col.first() is not None
+        except Exception:
+            self._pgvector_available = False
+        return self._pgvector_available
+
+    async def _retrieve_pgvector(
+        self,
+        query: str,
+        query_embedding: Optional[List[float]],
+        data_source_id: str,
+        top_k: int,
+        schema_table_names: Optional[List[str]] = None,
+    ) -> Optional[List[RetrievedChunk]]:
+        if not query_embedding or not await self._pgvector_available_check():
+            return None
+        try:
+            vec_literal = "[" + ",".join(str(float(v)) for v in query_embedding) + "]"
+            ann = await self._session.execute(
+                text(
+                    """
+                    SELECT dc.id, dc.document_id, dc.content, dc.token_count, dc.chunk_metadata,
+                           kd.filename,
+                           (dc.embedding_vector <=> :qvec::vector) AS dist
+                    FROM document_chunks dc
+                    JOIN knowledge_documents kd ON kd.id = dc.document_id
+                    WHERE dc.data_source_id = :ds_id
+                      AND kd.status = 'ready'
+                      AND dc.embedding_vector IS NOT NULL
+                    ORDER BY dc.embedding_vector <=> :qvec::vector
+                    LIMIT :limit
+                    """
+                ),
+                {"qvec": vec_literal, "ds_id": data_source_id, "limit": max(top_k, RAG_RERANK_TOP_N)},
+            )
+            rows = ann.fetchall()
+            if not rows:
+                return None
+        except Exception as exc:
+            logger.debug("pgvector retrieval unavailable, falling back to JSONB: %s", exc)
+            return None
+
+        schema_tables_lower: Set[str] = set()
+        if schema_table_names:
+            schema_tables_lower = {t.strip().lower() for t in schema_table_names if t and isinstance(t, str)}
+
+        candidates: List[RetrievedChunk] = []
+        for row in rows:
+            chunk_id, document_id, content, token_count, chunk_meta, doc_filename, dist = row
+            score = max(0.0, min(1.0, 1.0 - float(dist or 1.0)))
+            kw = _keyword_score(query, content or "")
+            final_score = 0.85 * score + 0.15 * kw
+            if schema_tables_lower and isinstance(chunk_meta, dict):
+                meta_tables = chunk_meta.get("table_names") or chunk_meta.get("tables") or []
+                if isinstance(meta_tables, str):
+                    meta_tables = [meta_tables]
+                for t in meta_tables:
+                    if t and isinstance(t, str) and t.strip().lower() in schema_tables_lower:
+                        final_score = min(1.0, final_score + 0.05)
+                        break
+            candidates.append(
+                RetrievedChunk(
+                    chunk_id=str(chunk_id),
+                    document_id=str(document_id),
+                    content=content,
+                    score=round(final_score, 4),
+                    token_count=token_count or 0,
+                    metadata=chunk_meta,
+                    document_filename=doc_filename,
+                )
+            )
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        if USE_RAG_RERANK and len(candidates) > top_k:
+            candidates = _rerank_chunks(candidates, query)
+        return candidates[:top_k]
 
     async def retrieve(
         self,
@@ -132,6 +221,18 @@ class RAGRetrievalService:
         """
         if not query or not query.strip():
             return []
+
+        query_embedding = await get_embedding(query, instruction_prefix=QUERY_INSTRUCTION_PREFIX)
+
+        pgvector_hits = await self._retrieve_pgvector(
+            query,
+            query_embedding,
+            data_source_id,
+            top_k,
+            schema_table_names,
+        )
+        if pgvector_hits is not None:
+            return pgvector_hits
 
         # 1. Load all chunks for this data source (with document filenames)
         stmt = (
@@ -154,9 +255,6 @@ class RAGRetrievalService:
         if not rows:
             logger.debug("No ready chunks found for data_source_id=%s", data_source_id)
             return []
-
-        # 2. Get query embedding
-        query_embedding = await get_embedding(query, instruction_prefix=QUERY_INSTRUCTION_PREFIX)
 
         schema_tables_lower: Set[str] = set()
         if schema_table_names:
@@ -214,6 +312,40 @@ class RAGRetrievalService:
             candidates = _rerank_chunks(candidates, query)
         return candidates[:top_k]
 
+    async def retrieve_multi(
+        self,
+        query: str,
+        data_source_ids: List[str],
+        top_k_per_source: int = 5,
+        global_top_k: int = 8,
+        schema_table_names: Optional[List[str]] = None,
+    ) -> List[RetrievedChunk]:
+        """Retrieve from multiple knowledge bases, dedupe by chunk_id, return global top-k."""
+        if not query or not query.strip() or not data_source_ids:
+            return []
+
+        merged: Dict[str, RetrievedChunk] = {}
+        for ds_id in data_source_ids:
+            if not ds_id:
+                continue
+            try:
+                chunks = await self.retrieve(
+                    query,
+                    str(ds_id),
+                    top_k=top_k_per_source,
+                    schema_table_names=schema_table_names,
+                )
+            except Exception as exc:
+                logger.warning("retrieve_multi failed for data_source_id=%s: %s", ds_id, exc)
+                continue
+            for ch in chunks:
+                existing = merged.get(ch.chunk_id)
+                if existing is None or ch.score > existing.score:
+                    merged[ch.chunk_id] = ch
+
+        ranked = sorted(merged.values(), key=lambda c: c.score, reverse=True)
+        return ranked[:global_top_k]
+
     async def has_documents(self, data_source_id: str) -> bool:
         """Check if a data source has any ready knowledge documents."""
         stmt = (
@@ -224,3 +356,67 @@ class RAGRetrievalService:
         result = await self._session.execute(stmt)
         count = result.scalar() or 0
         return count > 0
+
+    async def retrieval_health(self) -> Dict[str, Any]:
+        """Report pgvector availability, chunk stats, and optional probe latency."""
+        import time
+
+        pgvector_ext = False
+        embedding_vector_column = False
+        try:
+            ext_row = await self._session.execute(
+                text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
+            )
+            pgvector_ext = ext_row.first() is not None
+        except Exception:
+            pgvector_ext = False
+
+        try:
+            col_row = await self._session.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'document_chunks' AND column_name = 'embedding_vector' LIMIT 1"
+                )
+            )
+            embedding_vector_column = col_row.first() is not None
+        except Exception:
+            embedding_vector_column = False
+
+        stats_row = await self._session.execute(
+            text(
+                "SELECT COUNT(*) AS total, "
+                "COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS with_json_embedding "
+                "FROM document_chunks"
+            )
+        )
+        stats = stats_row.mappings().first() or {}
+        total_chunks = int(stats.get("total") or 0)
+        with_json = int(stats.get("with_json_embedding") or 0)
+
+        backend = "pgvector" if pgvector_ext and embedding_vector_column else "jsonb_hybrid"
+        probe_ms: Optional[float] = None
+        if total_chunks > 0:
+            ds_row = await self._session.execute(
+                select(DocumentChunk.data_source_id)
+                .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
+                .where(KnowledgeDocument.status == "ready")
+                .limit(1)
+            )
+            ds_id = ds_row.scalar()
+            if ds_id:
+                t0 = time.perf_counter()
+                try:
+                    await self.retrieve("health check probe", str(ds_id), top_k=1)
+                    probe_ms = round((time.perf_counter() - t0) * 1000, 2)
+                except Exception as exc:
+                    logger.debug("retrieval_health probe failed: %s", exc)
+
+        return {
+            "backend": backend,
+            "pgvector_extension": pgvector_ext,
+            "embedding_vector_column": embedding_vector_column,
+            "total_chunks": total_chunks,
+            "chunks_with_json_embedding": with_json,
+            "probe_latency_ms": probe_ms,
+            "healthy": total_chunks == 0 or with_json > 0 or (pgvector_ext and embedding_vector_column),
+        }

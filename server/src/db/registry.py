@@ -19,7 +19,8 @@ from src.modules.knowledge.models import (
 from src.modules.feed.models import (
     FeedPost, FeedComment, FeedCommentReaction, FeedInteraction,
     FeedAuthorFollow, FeedEvent, FeedView, FeedCollection,
-    FeedCollectionItem, FeedNotification, FeedShare
+    FeedCollectionItem, FeedNotification, FeedShare, FeedSnapshot,
+    FeedChatDraft, FeedDigestSubscription,
 )
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────

@@ -36,14 +36,17 @@ import uuid
 import json
 import hashlib
 import os
+import logging
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.charts.models import Chart
 from src.modules.data.models import DataSource
-from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService
+from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
 
 class ChartService:
@@ -151,6 +154,60 @@ class ChartService:
             
         return None, "public"
 
+    def _resolve_table_from_chart(self, chart_query: Optional[Dict], schema_info: Any) -> tuple[Optional[str], str]:
+        """Prefer explicit chart_query.tableName over schema default table."""
+        cq = chart_query or {}
+        explicit = cq.get("tableName")
+        if explicit and isinstance(explicit, str) and explicit.strip():
+            raw = explicit.strip().strip('"')
+            if "." in raw:
+                schema_part, table_part = raw.split(".", 1)
+                return table_part.strip(), schema_part.strip() or "public"
+            return raw, "public"
+        return self._resolve_table_and_schema(schema_info)
+
+    def _build_from_clause(self, base_table: str, joins: Optional[List[Dict]]) -> str:
+        if not joins:
+            return base_table
+        clause = base_table
+        for join in joins:
+            if not isinstance(join, dict):
+                continue
+            join_table = join.get("table") or join.get("alias")
+            if not join_table:
+                continue
+            join_type = str(join.get("type") or "LEFT").upper()
+            if join_type not in ("LEFT", "RIGHT", "INNER", "FULL", "OUTER"):
+                join_type = "LEFT"
+            on = join.get("on")
+            if isinstance(on, dict):
+                left = on.get("left")
+                right = on.get("right")
+                if not left or not right:
+                    continue
+                on_sql = f"{left} = {right}"
+            elif isinstance(on, str) and on.strip():
+                on_sql = on.strip()
+            else:
+                continue
+            clause += f" {join_type} JOIN {join_table} ON {on_sql}"
+        return clause
+
+    async def _load_saved_query_sql(self, saved_query_id: str) -> Optional[str]:
+        try:
+            qid = uuid.UUID(str(saved_query_id))
+        except (ValueError, TypeError):
+            return None
+        res = await self.db.execute(
+            text("SELECT sql FROM saved_queries WHERE id = :id LIMIT 1"),
+            {"id": str(qid)},
+        )
+        row = res.first()
+        if not row:
+            return None
+        sql = row[0] if isinstance(row, tuple) else row.sql
+        return str(sql).strip() if sql else None
+
     async def _ensure_data_source_schema(self, data_source: DataSource) -> None:
         """Lazily fetch schema for types that might not have it pre-populated (database, sample_duckdb, google_sheets)."""
         # If schema already exists and has tables, we're good
@@ -207,6 +264,16 @@ class ChartService:
         if chart.chart_type == 'text':
             return {"x": [], "y": [], "series": []}
 
+        from src.modules.data.services.semantic_context_service import resolve_semantic_chart_query
+
+        if chart.chart_query:
+            chart.chart_query = await resolve_semantic_chart_query(self.db, dict(chart.chart_query))
+
+        chart_query = chart.chart_query or {}
+        compiled_sql = chart_query.get("compiled_semantic_sql")
+        if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip():
+            return await self._execute_with_sample_sql(chart, compiled_sql)
+
         # Template charts store a pre-built JOIN query in chart_options.sample_sql.
         # Use it directly so JOINed fields (e.g. status_name) render correctly.
         chart_options = chart.chart_options or {}
@@ -220,6 +287,12 @@ class ChartService:
             return await self._execute_with_sample_sql(chart, sample_sql)
 
         chart_query = chart.chart_query or {}
+        saved_query_id = chart_query.get("saved_query_id")
+        if saved_query_id:
+            saved_sql = await self._load_saved_query_sql(str(saved_query_id))
+            if saved_sql:
+                return await self._execute_with_sample_sql(chart, saved_sql)
+
         filters = chart_query.get("filters", [])
         metric_filters = chart_query.get("metricFilters", [])
 
@@ -317,7 +390,7 @@ class ChartService:
             await self._ensure_data_source_schema(data_source)
 
             if data_source.type == "file":
-                return self._execute_scatter_file(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
             else:
                 try:
                     return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
@@ -342,15 +415,27 @@ class ChartService:
         # Lazily fetch schema for databases/sample_duckdb if missing
         await self._ensure_data_source_schema(data_source)
 
+        # File sources use MultiEngine (DuckDB) — same path as databases
         if data_source.type == "file":
-            result = self._execute_file_source(
-                data_source, x_field, aggregate, y_metric, y_metrics_list,
-                has_y_metrics_defined, group_field, sort_by, sort_order,
-                group_sort_by, group_order, n_primary=n_primary,
-                x_grain=x_grain, filters=filters,
-                metric_filters=metric_filters, limit=limit,
-                series_limit=series_limit
-            )
+            try:
+                result = await self._execute_db_source(
+                    data_source, x_field, aggregate, y_metric, y_metrics_list,
+                    has_y_metrics_defined, group_field, order_clause,
+                    n_primary=n_primary, x_grain=x_grain,
+                    filters=filters, metric_filters=metric_filters,
+                    limit=limit, series_limit=series_limit,
+                    chart_query=chart_query,
+                )
+            except Exception as file_err:
+                logger.warning("File MultiEngine chart path failed, falling back: %s", file_err)
+                result = self._execute_file_source(
+                    data_source, x_field, aggregate, y_metric, y_metrics_list,
+                    has_y_metrics_defined, group_field, sort_by, sort_order,
+                    group_sort_by, group_order, n_primary=n_primary,
+                    x_grain=x_grain, filters=filters,
+                    metric_filters=metric_filters, limit=limit,
+                    series_limit=series_limit,
+                )
         else:
             try:
                 result = await self._execute_db_source(
@@ -359,7 +444,8 @@ class ChartService:
                     n_primary=n_primary, x_grain=x_grain,
                     filters=filters, metric_filters=metric_filters,
                     limit=limit,
-                    series_limit=series_limit
+                    series_limit=series_limit,
+                    chart_query=chart_query,
                 )
             except Exception:
                 if data_source.type == "sample_duckdb":
@@ -368,12 +454,29 @@ class ChartService:
 
         # Stat charts must return {"value": N}. Normalize if the execution path
         # returned the generic {"x": [...], "y": [...]} shape instead.
+        # Preserve series/y for sparklines and period-over-period on KPI cards.
         if chart.chart_type == "stat" and "value" not in result:
             y_data = result.get("y") or []
             series = result.get("series") or []
-            val = y_data[0] if y_data else (series[0]["data"][0] if series and series[0].get("data") else None)
+            series_data = series[0].get("data") if series and isinstance(series[0], dict) else []
+            val = None
+            if y_data:
+                val = y_data[-1]
+            elif series_data:
+                val = series_data[-1]
             if val is not None:
-                result = {"value": val}
+                normalized: Dict[str, Any] = {"value": val}
+                if y_data:
+                    normalized["y"] = y_data
+                if series:
+                    normalized["series"] = series
+                if len(y_data) >= 2:
+                    normalized["comparisonValue"] = y_data[-2]
+                    normalized["comparisonLabel"] = "prior period"
+                elif len(series_data) >= 2:
+                    normalized["comparisonValue"] = series_data[-2]
+                    normalized["comparisonLabel"] = "prior period"
+                result = normalized
 
         return result
 
@@ -435,7 +538,7 @@ class ChartService:
             "user_id": str(data_source.user_id) if data_source.user_id else None
         }
         
-        multi = MultiEngineQueryService()
+        multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict)
         
         if not exec_res.get("success"):
@@ -559,6 +662,20 @@ class ChartService:
     # SAMPLE SQL EXECUTION (template charts with JOINs)
     # =========================================================
     async def _execute_with_sample_sql(self, chart: Chart, sample_sql: str) -> Dict[str, Any]:
+        chart_query = chart.chart_query or {}
+        filters = chart_query.get("filters") or []
+        metric_filters = chart_query.get("metricFilters") or []
+        sql = sample_sql.strip().rstrip(";")
+        where_clause = self._apply_filters_db(filters if isinstance(filters, list) else [])
+        having_clause = self._apply_metric_filters_db(metric_filters if isinstance(metric_filters, list) else [])
+        if where_clause or having_clause:
+            wrapped = f"SELECT * FROM ({sql}) AS _aicser_saved"
+            if where_clause:
+                wrapped += f" {where_clause}"
+            if having_clause:
+                wrapped += f" {having_clause}"
+            sql = wrapped
+
         stmt = select(DataSource).where(DataSource.id == chart.data_source_id)
         res = await self.db.execute(stmt)
         data_source = res.scalar_one_or_none()
@@ -576,8 +693,8 @@ class ChartService:
             "user_id": str(data_source.user_id) if data_source.user_id else None,
         }
 
-        multi = MultiEngineQueryService()
-        exec_res = await multi.execute_query(sample_sql, ds_dict)
+        multi = get_multi_engine_query_service()
+        exec_res = await multi.execute_query(sql, ds_dict)
         if not exec_res.get("success"):
             if data_source.type == "sample_duckdb":
                 return self._sample_template_fallback_result(chart)
@@ -658,15 +775,18 @@ class ChartService:
         filters: List[Dict] = [],
         metric_filters: List[Dict] = [],
         limit: int = 5000,
-        series_limit: Optional[int] = None
+        series_limit: Optional[int] = None,
+        chart_query: Optional[Dict] = None,
     ) -> Dict[str, Any]:
+        chart_query = chart_query or {}
         schema_info = data_source.schema or {}
-        table, schema = self._resolve_table_and_schema(schema_info)
+        table, schema = self._resolve_table_from_chart(chart_query, schema_info)
 
         if not table:
             raise ValueError("Table name missing in data source schema")
 
-        table_name = f"{schema}.{table}"
+        joins = chart_query.get("joins") if isinstance(chart_query.get("joins"), list) else []
+        from_clause = self._build_from_clause(f"{schema}.{table}", joins)
         
         # USE MultiEngineQueryService for external databases
         ds_dict = {
@@ -679,7 +799,7 @@ class ChartService:
             "project_id": str(data_source.project_id),
             "user_id": str(data_source.user_id) if data_source.user_id else None
         }
-        multi = MultiEngineQueryService()
+        multi = get_multi_engine_query_service()
 
         # If we have multiple y_metrics and no x_field, we calculate them as standalone values
         if not x_field and y_metrics:
@@ -692,7 +812,7 @@ class ChartService:
             
             where_clause = self._apply_filters_db(filters)
             having_clause = self._apply_metric_filters_db(metric_filters)
-            sql = f"SELECT {', '.join(select_fields)} FROM {table_name} {where_clause} {having_clause}"
+            sql = f"SELECT {', '.join(select_fields)} FROM {from_clause} {where_clause} {having_clause}"
             exec_res = await multi.execute_query(sql, ds_dict)
             if not exec_res.get("success"):
                 raise Exception(f"Query execution failed: {exec_res.get('error')}")
@@ -777,7 +897,7 @@ class ChartService:
         where_clause = self._apply_filters_db(filters)
         having_clause = self._apply_metric_filters_db(metric_filters)
 
-        sql = f"SELECT {select_clause} FROM {table_name} {where_clause} {group_by_clause} {having_clause} {order_clause} LIMIT {limit}"
+        sql = f"SELECT {select_clause} FROM {from_clause} {where_clause} {group_by_clause} {having_clause} {order_clause} LIMIT {limit}"
 
 
         exec_res = await multi.execute_query(sql, ds_dict)
