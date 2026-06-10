@@ -16,7 +16,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import nextDynamic from 'next/dynamic';
-import { Typography, Tooltip } from 'antd';
+import { Tooltip } from 'antd';
 import {
   UserOutlined,
   SecurityScanOutlined,
@@ -39,7 +39,6 @@ import {
   ApartmentOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -61,14 +60,12 @@ const OrganizationTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
-const TeamTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.TeamSettingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
-const IntegrationTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
+const TeamTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.TeamSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const IntegrationTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
 const SubscriptionTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
   { ssr: false }
@@ -82,21 +79,22 @@ const AgentSkillsTab = nextDynamic(
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const AgentWorkflowsTab = nextDynamic(
-  () => import('@/ee/app/(dashboard)/settings/components/AgentWorkflowsTab').then((m) => ({ default: m.AgentWorkflowsTab })),
+  () =>
+    import('@/ee/app/(dashboard)/settings/components/AgentWorkflowsTab').then((m) => ({
+      default: m.AgentWorkflowsTab,
+    })),
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const BriefingsTab = nextDynamic(
   () => import('@/ee/app/(dashboard)/settings/components/BriefingsTab').then((m) => ({ default: m.BriefingsTab })),
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
-const EmbedTab = nextDynamic(
-  () => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })),
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
-const AuditLogTab = nextDynamic(
-  () => import('./components/AuditLogTab').then((m) => ({ default: m.default })),
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
+const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AuditLogTab = nextDynamic(() => import('./components/AuditLogTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
 
 /** Props passed to every tab so it can register an action button with the page header. */
 export interface TabComponentProps {
@@ -104,7 +102,6 @@ export interface TabComponentProps {
   onSetAction?: (node: React.ReactNode) => void;
 }
 
-const { Text } = Typography;
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 export const dynamic = 'force-dynamic';
@@ -128,53 +125,160 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Account',
     items: [
-      { key: 'profile',       label: 'Profile',        icon: <UserOutlined />,           component: ProfileTab,        description: 'Name, avatar, preferences' },
-      { key: 'security',      label: 'Security',        icon: <LockOutlined />,           component: SecurityTab,       description: '2FA, sessions, password' },
-      { key: 'notifications', label: 'Notifications',   icon: <BellOutlined />,           component: NotificationsTab,  description: 'Email and push alerts' },
+      {
+        key: 'profile',
+        label: 'Profile',
+        icon: <UserOutlined />,
+        component: ProfileTab,
+        description: 'Name, avatar, preferences',
+      },
+      {
+        key: 'security',
+        label: 'Security',
+        icon: <LockOutlined />,
+        component: SecurityTab,
+        description: '2FA, sessions, password',
+      },
+      {
+        key: 'notifications',
+        label: 'Notifications',
+        icon: <BellOutlined />,
+        component: NotificationsTab,
+        description: 'Email and push alerts',
+      },
     ],
   },
   {
     label: 'Workspace',
     items: [
-      { key: 'general',       label: 'General',         icon: <SettingOutlined />,        component: GeneralTab,        description: 'Language, timezone, theme' },
-      { key: 'project',       label: 'Project',         icon: <ProjectOutlined />,        component: ProjectTab,        description: 'Name, description, project settings' },
-      { key: 'organization',  label: 'Organization',    icon: <BankOutlined />,  eeOnly: true, component: OrganizationTab, description: 'Logo, name, branding' },
-      { key: 'team',          label: 'Team',            icon: <TeamOutlined />,  eeOnly: true, component: TeamTab,          description: 'Members and invitations' },
-      { key: 'roles',         label: 'Roles & Access',  icon: <SecurityScanOutlined />, eeOnly: true, component: RolesTab, description: 'Permissions and RBAC' },
-      { key: 'billing-subscription', label: 'Billing',  icon: <CreditCardOutlined />, eeOnly: true, component: SubscriptionTab, description: 'Plan, usage, invoices' },
+      {
+        key: 'general',
+        label: 'General',
+        icon: <SettingOutlined />,
+        component: GeneralTab,
+        description: 'Language, timezone, theme',
+      },
+      {
+        key: 'project',
+        label: 'Project',
+        icon: <ProjectOutlined />,
+        component: ProjectTab,
+        description: 'Name, description, project settings',
+      },
+      {
+        key: 'organization',
+        label: 'Organization',
+        icon: <BankOutlined />,
+        eeOnly: true,
+        component: OrganizationTab,
+        description: 'Logo, name, branding',
+      },
+      {
+        key: 'team',
+        label: 'Team',
+        icon: <TeamOutlined />,
+        eeOnly: true,
+        component: TeamTab,
+        description: 'Members and invitations',
+      },
+      {
+        key: 'roles',
+        label: 'Roles & Access',
+        icon: <SecurityScanOutlined />,
+        eeOnly: true,
+        component: RolesTab,
+        description: 'Permissions and RBAC',
+      },
+      {
+        key: 'billing-subscription',
+        label: 'Billing',
+        icon: <CreditCardOutlined />,
+        eeOnly: true,
+        component: SubscriptionTab,
+        description: 'Plan, usage, invoices',
+      },
     ],
   },
   {
     label: 'Data & Integrations',
     items: [
-      { key: 'data-sources',  label: 'Data Sources',    icon: <DatabaseOutlined />,       component: DataSourcesTab,    description: 'Connected databases and files' },
-      { key: 'integrations',  label: 'Integrations',    icon: <LinkOutlined />,  eeOnly: true, component: IntegrationTab, description: 'Slack, Jira, Salesforce…' },
+      {
+        key: 'data-sources',
+        label: 'Data Sources',
+        icon: <DatabaseOutlined />,
+        component: DataSourcesTab,
+        description: 'Connected databases and files',
+      },
+      {
+        key: 'integrations',
+        label: 'Integrations',
+        icon: <LinkOutlined />,
+        eeOnly: true,
+        component: IntegrationTab,
+        description: 'Slack, Jira, Salesforce…',
+      },
     ],
   },
   {
     label: 'Developer',
     items: [
-      { key: 'api-keys',      label: 'API Keys',        icon: <KeyOutlined />,            component: ApiKeysTab,        description: 'Programmatic access tokens' },
-      { key: 'embed',         label: 'Embed',           icon: <CodeOutlined />,           component: EmbedTab,          description: 'Embed charts in your apps' },
-      { key: 'audit',         label: 'Audit Log',       icon: <AuditOutlined />,          component: AuditLogTab,       description: 'Activity history' },
+      {
+        key: 'api-keys',
+        label: 'API Keys',
+        icon: <KeyOutlined />,
+        component: ApiKeysTab,
+        description: 'Programmatic access tokens',
+      },
+      {
+        key: 'embed',
+        label: 'Embed',
+        icon: <CodeOutlined />,
+        component: EmbedTab,
+        description: 'Embed charts in your apps',
+      },
+      {
+        key: 'audit',
+        label: 'Audit Log',
+        icon: <AuditOutlined />,
+        component: AuditLogTab,
+        description: 'Activity history',
+      },
     ],
   },
   {
     label: 'AI Agent',
     items: [
-      { key: 'agent-skills',  label: 'Skills',          icon: <ThunderboltOutlined />, eeOnly: true, component: AgentSkillsTab, description: 'Custom tool integrations' },
-      { key: 'agent-workflows', label: 'Workflows',     icon: <ApartmentOutlined />, eeOnly: true, component: AgentWorkflowsTab, description: 'Multi-step agent plans' },
-      { key: 'briefings',     label: 'Briefings',       icon: <FileTextOutlined />,   eeOnly: true, component: BriefingsTab,   description: 'Scheduled AI reports' },
+      {
+        key: 'agent-skills',
+        label: 'Skills',
+        icon: <ThunderboltOutlined />,
+        eeOnly: true,
+        component: AgentSkillsTab,
+        description: 'Custom tool integrations',
+      },
+      {
+        key: 'agent-workflows',
+        label: 'Workflows',
+        icon: <ApartmentOutlined />,
+        eeOnly: true,
+        component: AgentWorkflowsTab,
+        description: 'Multi-step agent plans',
+      },
+      {
+        key: 'briefings',
+        label: 'Briefings',
+        icon: <FileTextOutlined />,
+        eeOnly: true,
+        component: BriefingsTab,
+        description: 'Scheduled AI reports',
+      },
     ],
   },
 ];
 
 const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
-function resolveSettingsTab(
-  tabParam: string | null | undefined,
-  eeEnabled: boolean
-): string {
+function resolveSettingsTab(tabParam: string | null | undefined, eeEnabled: boolean): string {
   const visibleItems = ALL_ITEMS.filter((item) => !item.eeOnly || eeEnabled);
   const visibleKeys = new Set(visibleItems.map((item) => item.key));
   if (tabParam && visibleKeys.has(tabParam)) return tabParam;
@@ -184,7 +288,6 @@ function resolveSettingsTab(
 // ── Component ──────────────────────────────────────────────────────────────────
 
 const SettingsPage: React.FC = () => {
-  const t = useTranslations('settings');
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentProject } = useProjectStore();
@@ -194,20 +297,9 @@ const SettingsPage: React.FC = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pageAction, setPageAction] = useState<React.ReactNode>(null);
 
-  const searchParamsString = searchParams?.toString() ?? '';
+  const activeTab = resolveSettingsTab(searchParams?.get('tab'), isEE);
 
-  const activeTab = useMemo(
-    () => resolveSettingsTab(searchParams?.get('tab'), isEE),
-    [searchParamsString, searchParams]
-  );
-
-  const {
-    setActiveTab,
-    loadSettingsByTab,
-    loadApiKeys,
-    loadTeamMembers,
-    loadDataSources,
-  } = useSettingsStore();
+  const { setActiveTab, loadSettingsByTab, loadApiKeys, loadTeamMembers, loadDataSources } = useSettingsStore();
 
   // Keep store in sync for any legacy consumers
   useEffect(() => {
@@ -215,7 +307,9 @@ const SettingsPage: React.FC = () => {
   }, [activeTab, setActiveTab]);
 
   // Clear the action button when switching tabs
-  useEffect(() => { setPageAction(null); }, [activeTab]);
+  useEffect(() => {
+    setPageAction(null);
+  }, [activeTab]);
 
   // Load overview data and subscription on mount
   useEffect(() => {
@@ -223,17 +317,20 @@ const SettingsPage: React.FC = () => {
     loadTeamMembers(currentOrganization?.id);
     loadDataSources(currentProject?.id as string | undefined);
     void initSubscription();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id]);
 
   useEffect(() => {
     loadSettingsByTab(activeTab, currentOrganization?.id, { projectId: currentProject?.id as string | undefined });
   }, [activeTab, loadSettingsByTab, currentOrganization?.id, currentProject?.id]);
 
-  const handleNav = useCallback((key: string) => {
-    router.replace(`/settings?tab=${key}`, { scroll: false });
-    setMobileSidebarOpen(false);
-  }, [router]);
+  const handleNav = useCallback(
+    (key: string) => {
+      router.replace(`/settings?tab=${key}`, { scroll: false });
+      setMobileSidebarOpen(false);
+    },
+    [router]
+  );
 
   const handleSetAction = useCallback((node: React.ReactNode) => {
     setPageAction(node);
@@ -244,22 +341,14 @@ const SettingsPage: React.FC = () => {
 
   // ── Sidebar nav ──────────────────────────────────────────────────────────────
   const SidebarNav = () => (
-    <nav style={{ width: '100%' }}>
+    <nav className="w-full">
       {NAV_GROUPS.map((group) => {
         const visibleItems = group.items.filter((item) => !item.eeOnly || isEE);
         if (!visibleItems.length) return null;
         return (
-          <div key={group.label} style={{ marginBottom: 18 }}>
+          <div key={group.label} className="mb-[18px]">
             {/* Group label — matches main sidebar's section label style */}
-            <div style={{
-              fontSize: 11,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.07em',
-              color: 'var(--ant-color-text-quaternary)',
-              padding: '0 8px',
-              marginBottom: 2,
-            }}>
+            <div className="mb-0.5 px-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ant-color-text-quaternary)]">
               {group.label}
             </div>
             {visibleItems.map((item) => {
@@ -269,54 +358,20 @@ const SettingsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleNav(item.key)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      width: '100%',
-                      padding: '6px 8px',
-                      borderRadius: 6,
-                      border: 'none',
-                      background: isActive ? 'var(--ant-color-primary-bg)' : 'transparent',
-                      color: isActive ? 'var(--ant-color-primary)' : 'var(--ant-color-text-secondary)',
-                      fontWeight: isActive ? 600 : 400,
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      transition: 'background 0.12s ease, color 0.12s ease',
-                      textAlign: 'left',
-                      position: 'relative',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) {
-                        /* --nav-hover from main sidebar CSS */
-                        (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-fill-tertiary, rgba(0,0,0,0.05))';
-                        (e.currentTarget as HTMLElement).style.color = 'var(--ant-color-text)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) {
-                        (e.currentTarget as HTMLElement).style.background = 'transparent';
-                        (e.currentTarget as HTMLElement).style.color = 'var(--ant-color-text-secondary)';
-                      }
-                    }}
+                    className={[
+                      'relative flex w-full cursor-pointer items-center gap-2 rounded-md border-0 px-2 py-1.5 text-left text-[13px]',
+                      'transition-colors duration-150',
+                      isActive
+                        ? 'bg-[var(--ant-color-primary-bg)] font-semibold text-[var(--ant-color-primary)]'
+                        : 'bg-transparent font-normal text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-text)]',
+                    ].join(' ')}
                   >
-                                  {/* Active bar — matches main sidebar: border-radius 0 2px 2px 0, height 18px */}
+                    {/* Active bar — matches main sidebar: border-radius 0 2px 2px 0, height 18px */}
                     {isActive && (
-                      <span style={{
-                        position: 'absolute',
-                        left: 0,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 3,
-                        height: 18,
-                        borderRadius: '0 2px 2px 0',
-                        background: 'var(--ant-color-primary)',
-                      }} />
+                      <span className="absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-sm bg-[var(--ant-color-primary)]" />
                     )}
-                    <span style={{ fontSize: 14, flexShrink: 0, marginLeft: isActive ? 4 : 0 }}>
-                      {item.icon}
-                    </span>
-                    <span style={{ lineHeight: 1.3 }}>{item.label}</span>
+                    <span className={`shrink-0 text-sm ${isActive ? 'ml-1' : ''}`}>{item.icon}</span>
+                    <span className="leading-[1.3]">{item.label}</span>
                   </button>
                 </Tooltip>
               );
@@ -328,39 +383,24 @@ const SettingsPage: React.FC = () => {
   );
 
   return (
-    <DashboardPageShell maxWidth={1280} className="settings-page">
-      <div className="settings-layout">
-
+    <DashboardPageShell className="settings-page">
+      <div className="flex w-full min-h-0 flex-1 flex-col items-stretch md:flex-row md:items-start">
         {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
-        <aside
-          className="settings-sidebar"
-          style={{
-            width: 210,
-            flexShrink: 0,
-            borderRight: '1px solid var(--ant-color-border)',
-            padding: '20px 8px 20px 0',
-          }}
-        >
-          <div style={{ padding: '0 8px', marginBottom: 16 }}>
-            <Text style={{ fontWeight: 700, fontSize: 14, color: 'var(--ant-color-text)' }}>
-              Settings
-            </Text>
+        <aside className="sticky top-0 hidden w-[210px] shrink-0 flex-col self-start border-r border-[var(--ant-color-border)] py-5 pl-0 pr-2 md:flex">
+          <div className="mb-4 px-2">
+            <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
           </div>
           <SidebarNav />
         </aside>
 
         {/* ── Mobile header bar ──────────────────────────────────────────── */}
-        <div className="settings-mobile-bar">
+        <div className="sticky top-0 z-10 flex w-full items-center justify-between gap-2.5 border-b border-[var(--ant-color-border)] bg-[var(--ant-color-bg-container)] px-4 py-3 md:hidden">
           <button
             type="button"
             onClick={() => setMobileSidebarOpen(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: 'var(--ant-color-text)', fontSize: 13, fontWeight: 600,
-            }}
+            className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent text-[13px] font-semibold text-[var(--ant-color-text)]"
           >
-            <MenuOutlined style={{ fontSize: 15 }} />
+            <MenuOutlined className="text-[15px]" />
             <span>{activeItem?.label || 'Settings'}</span>
           </button>
           {pageAction}
@@ -368,17 +408,19 @@ const SettingsPage: React.FC = () => {
 
         {/* ── Mobile drawer ────────────────────────────────────────────────── */}
         {mobileSidebarOpen && (
-          <div
-            style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.4)' }}
-            onClick={() => setMobileSidebarOpen(false)}
-          >
+          <div className="fixed inset-0 z-[1000] bg-black/40 md:hidden" onClick={() => setMobileSidebarOpen(false)}>
             <div
-              style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 250, background: 'var(--ant-color-bg-container)', padding: '20px 8px', overflowY: 'auto' }}
+              className="absolute inset-y-0 left-0 w-[250px] overflow-y-auto bg-[var(--ant-color-bg-container)] px-2 py-5 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, padding: '0 8px' }}>
-                <Text style={{ fontWeight: 700, fontSize: 14 }}>Settings</Text>
-                <button type="button" onClick={() => setMobileSidebarOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ant-color-text-tertiary)', fontSize: 16 }}>
+              <div className="mb-4 flex items-center justify-between px-2">
+                <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
+                <button
+                  type="button"
+                  aria-label="Close settings navigation"
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="cursor-pointer border-0 bg-transparent text-base text-[var(--ant-color-text-tertiary)] hover:text-[var(--ant-color-text)]"
+                >
                   <CloseOutlined />
                 </button>
               </div>
@@ -388,31 +430,24 @@ const SettingsPage: React.FC = () => {
         )}
 
         {/* ── Main content ─────────────────────────────────────────────────── */}
-        <main className="settings-main">
+        <main className="w-full min-w-0 flex-1 overflow-visible px-4 py-4 sm:px-5 md:w-0 md:px-7 md:py-6 lg:px-8">
           {/*
            * Page header: Icon + Title (left) | Action button (right)
            * Description below title, ONE divider.
            * This is the standard Vercel/Linear/GitHub settings header.
            */}
           {activeItem && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-              }}>
+            <div className="mb-5">
+              <div className="flex items-center justify-between gap-3">
                 {/* Left: icon + title + description */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 }}>
-                  <span style={{ fontSize: 18, color: 'var(--ant-color-primary)', flexShrink: 0, marginTop: 2 }}>
-                    {activeItem.icon}
-                  </span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--ant-color-text)', lineHeight: 1.3 }}>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="mt-0.5 shrink-0 text-lg text-[var(--ant-color-primary)]">{activeItem.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-base font-bold leading-[1.3] text-[var(--ant-color-text)]">
                       {activeItem.label}
                     </div>
                     {activeItem.description && (
-                      <div style={{ fontSize: 12, color: 'var(--ant-color-text-tertiary)', marginTop: 2, lineHeight: 1.4 }}>
+                      <div className="mt-0.5 text-xs leading-[1.4] text-[var(--ant-color-text-tertiary)]">
                         {activeItem.description}
                       </div>
                     )}
@@ -420,15 +455,11 @@ const SettingsPage: React.FC = () => {
                 </div>
 
                 {/* Right: tab action button — registered by each tab via onSetAction */}
-                {pageAction && (
-                  <div style={{ flexShrink: 0 }}>
-                    {pageAction}
-                  </div>
-                )}
+                {pageAction && <div className="hidden shrink-0 md:block">{pageAction}</div>}
               </div>
 
               {/* Single divider — tabs must NOT add their own */}
-              <div style={{ borderBottom: '1px solid var(--ant-color-border)', marginTop: 14 }} />
+              <div className="mt-3.5 border-b border-[var(--ant-color-border)]" />
             </div>
           )}
 
@@ -436,31 +467,6 @@ const SettingsPage: React.FC = () => {
           <ActiveComponent key={activeTab} onSetAction={handleSetAction} />
         </main>
       </div>
-
-      {/* Responsive CSS */}
-      <style jsx global>{`
-        .settings-sidebar { display: flex !important; flex-direction: column; }
-        .settings-mobile-bar {
-          display: none;
-          width: 100%;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 12px 16px;
-          border-bottom: 1px solid var(--ant-color-border);
-          background: var(--ant-color-bg-container);
-          position: sticky;
-          top: 0;
-          z-index: 10;
-        }
-        @media (max-width: 768px) {
-          .settings-sidebar { display: none !important; }
-          .settings-mobile-bar { display: flex !important; }
-        }
-        @media (min-width: 769px) {
-          .settings-mobile-bar { display: none !important; }
-        }
-      `}</style>
 
       <PricingModal
         visible={pricingModalVisible}

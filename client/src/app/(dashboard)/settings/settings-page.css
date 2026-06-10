@@ -1,45 +1,3 @@
-/* Settings — single scroll container (page-wrapper only, no nested panes) */
-
-.page-wrapper.settings-page {
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  gap: 0 !important;
-}
-
-.page-wrapper.settings-page > .page-shell-inner {
-  display: flex;
-  flex-direction: column;
-  flex: none !important;
-  min-height: 0;
-  height: auto !important;
-  overflow: visible !important;
-}
-
-.settings-layout {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: flex-start;
-  min-height: 0;
-  width: 100%;
-}
-
-.settings-sidebar {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  overflow: visible;
-}
-
-.settings-main {
-  flex: 1;
-  min-width: 0;
-  padding: 24px 28px;
-  overflow: visible !important;
-}
-
 /* Inner subtabs (billing, API keys) — flat, no nested scroll traps */
 .settings-page .settings-subtabs.ant-tabs {
   background: transparent !important;
@@ -94,16 +52,4 @@
 
 .settings-subtabs .ant-tabs-content-holder {
   padding-top: 0 !important;
-}
-
-@media (max-width: 768px) {
-  .settings-main {
-    padding: 16px;
-  }
-
-  .settings-sidebar {
-    position: static;
-    max-height: none;
-    overflow: visible;
-  }
 }

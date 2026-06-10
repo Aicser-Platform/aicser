@@ -49,13 +49,13 @@
   margin-right: 0 !important;
   margin-bottom: 0 !important;
   padding: 0 !important;
-  
+
   /* Borders - None */
   border: none !important;
   border-width: 0 !important;
   border-style: none !important;
   outline: none !important;
-  
+
   /* Layout properties - Flex pattern - Use Ant Design tokens */
   /* CRITICAL: Full-width background extends to all edges */
   background: var(--ant-color-bg-layout) !important;
@@ -64,17 +64,17 @@
   box-sizing: border-box !important;
   position: relative !important;
   overflow: hidden !important;
-  
+
   /* Flex properties for proper layout */
   flex: 1 1 auto !important;
   min-height: 0 !important;
   min-width: 0 !important;
-  
+
   /* Dimensions — height/offset in page-shell.css (.layout-page-content) */
   width: 100% !important;
   display: flex !important;
   flex-direction: column !important;
-  
+
   /* NOTE: header offset via .layout-main-column padding-top in page-shell.css */
 }
 
@@ -530,12 +530,12 @@ div.page-container,
     padding: 12px 0 0 12px !important; /* Further reduced: 12px, bottom: 0 to extend to edge */
     padding-left: 12px !important; /* Explicit left padding on small mobile */
   }
-  
+
   .page-header {
     padding-right: 0 !important; /* Extend to scrollbar on small mobile too */
     margin-bottom: 16px !important;
   }
-  
+
   .page-wrapper .ant-row,
   .page-wrapper .content-card,
   .page-wrapper .page-divider,
@@ -543,7 +543,7 @@ div.page-container,
     margin-right: 0 !important; /* Extend to scrollbar on small mobile too */
     margin-bottom: 0 !important; /* Extend to bottom edge */
   }
-  
+
   .page-wrapper > *:not(.page-header):not(.ant-row):not(.content-card):not(.page-divider):not(.page-toolbar) {
     padding-right: 0 !important; /* Extend to scrollbar on small mobile too */
     padding-bottom: 0 !important; /* Extend to bottom edge */
@@ -562,14 +562,6 @@ div.page-container,
 /* ========================================
    SETTINGS PAGE & TABS — FULLY RESPONSIVE
    ======================================== */
-.settings-page {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  box-sizing: border-box;
-  overflow-x: hidden;
-}
-
 /* Settings tabs: proper spacing and scroll on mobile — scoped to legacy settings-tabs only */
 .settings-page .settings-tabs.ant-tabs,
 .settings-page .ant-tabs.settings-tabs {
