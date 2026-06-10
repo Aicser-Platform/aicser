@@ -27,7 +27,6 @@
       }
     ],
     "paths": {
-      "@/ee/chat-page": ["./src/ee-chat-page-fallback.tsx"],
       "@/ee":   ["./src/ee/index.ts"],
       "@/ee/*": ["./ee/src/ee/*"],
       "@/*":   ["./src/*"]

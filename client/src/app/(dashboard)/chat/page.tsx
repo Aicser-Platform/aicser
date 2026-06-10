@@ -5,11 +5,6 @@ import { Spin } from 'antd';
 
 const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
 
-const EEChatPage = dynamic(
-  () => import('@/ee/chat-page'),
-  { ssr: false }
-);
-
 function ChatPageFallback() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
@@ -17,6 +12,11 @@ function ChatPageFallback() {
     </div>
   );
 }
+
+const EEChatPage = dynamic(
+  () => import('../../../ee/chat-page'),
+  { ssr: false, loading: ChatPageFallback }
+);
 
 export default function ChatPage() {
   if (!isEE) redirect('/dashboards');
