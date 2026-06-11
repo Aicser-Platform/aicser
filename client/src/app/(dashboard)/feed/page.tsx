@@ -38,7 +38,6 @@ import { ApiError } from '@/utils/api';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
-import './styles.css';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 10;
@@ -623,7 +622,7 @@ const SocialFeedPage: React.FC = () => {
   }, [assetLabel, hasSearchFilter, hasTagFilters, scopeLabel, searchQuery, showContextualEmptyState, t]);
 
   return (
-    <DashboardPageShell innerRef={wrapperRef} maxWidth={1400} className="feed-page">
+  <DashboardPageShell className="w-full">
       <div className="feed-page-sticky-bar">
         <DashboardPageHeader
           icon={<CompassOutlined />}
@@ -638,7 +637,7 @@ const SocialFeedPage: React.FC = () => {
         ) : null}
       </div>
 
-      <div className="page-body">
+      <div className="page-body mt-5">
       <div className="flex flex-1 w-full pb-10 relative">
         <div className="flex-1 min-w-0 pt-2 flex flex-col items-center">
           <div className="w-full max-w-3xl">

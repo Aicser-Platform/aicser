@@ -97,6 +97,7 @@ export default function NewDashboardStudio() {
   const seedDashboardStarterLayout = useDashboardStore((s) => s.seedDashboardStarterLayout);
   const deleteChart = useDashboardStore((s) => s.deleteChart);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const loadDashboardById = useDashboardStore((s) => s.loadDashboardById);
   const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const updateWidgetFromStore = useDashboardStore((s) => s.updateWidget);
   const updateChartLayout = useDashboardStore((s) => s.updateChartLayout);
@@ -323,22 +324,32 @@ export default function NewDashboardStudio() {
     }
   }, [mounted, currentProjectId, fetchDashboards]);
 
-  // Restore dashboard from URL after list loads (e.g. returning from preview)
+  // Restore dashboard from URL after list loads (e.g. returning from preview,
+  // or opening a chat-generated dashboard via deep link)
   useEffect(() => {
     if (!hasLoadedDashboards || !requestedDashboardId) return;
     if (appliedDashboardIdRef.current === requestedDashboardId) return;
-    const match = dashboards.find((d) => String(d.id) === String(requestedDashboardId));
-    if (!match) return;
     appliedDashboardIdRef.current = requestedDashboardId;
-    if (String(activeDashboardId) !== String(requestedDashboardId)) {
-      setActiveDashboardId(requestedDashboardId);
+    const match = dashboards.find((d) => String(d.id) === String(requestedDashboardId));
+    if (match) {
+      if (String(activeDashboardId) !== String(requestedDashboardId)) {
+        setActiveDashboardId(requestedDashboardId);
+      }
+      return;
     }
+    // Not in the current project's list (e.g. just created from chat) —
+    // fetch it directly so the deep link never silently opens another dashboard.
+    void loadDashboardById(requestedDashboardId).then((loaded) => {
+      if (!loaded) message.warning(t('dashboard_not_found'));
+    });
   }, [
     hasLoadedDashboards,
     requestedDashboardId,
     dashboards,
     activeDashboardId,
     setActiveDashboardId,
+    loadDashboardById,
+    t,
   ]);
 
   // Load sample dashboard templates for empty-state onboarding.

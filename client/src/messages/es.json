@@ -5900,7 +5900,8 @@
     "build_live_title": "La IA está construyendo este panel",
     "build_live_subtitle": "Los widgets aparecen en el lienzo tras validarse.",
     "build_live_syncing": "Sincronizando",
-    "build_live_connected": "En vivo"
+    "build_live_connected": "En vivo",
+    "dashboard_not_found": "Panel no encontrado o sin acceso."
   },
   "billing_page": {
     "loading": "Cargando...",

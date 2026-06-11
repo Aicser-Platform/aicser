@@ -5902,7 +5902,8 @@
     "build_live_title": "AI 正在构建此仪表板",
     "build_live_subtitle": "组件在校验并创建后会出现在画布上。",
     "build_live_syncing": "同步中",
-    "build_live_connected": "实时"
+    "build_live_connected": "实时",
+    "dashboard_not_found": "未找到仪表板或您无权访问。"
   },
   "billing_page": {
     "loading": "加载中...",

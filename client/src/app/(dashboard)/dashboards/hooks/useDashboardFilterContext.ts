@@ -10,6 +10,7 @@ import { chartService } from '../services/chartService';
 import { buildDefaultRuntimeFilters } from '../utils/filterOperators';
 import { mergeFilterDefaults } from '../utils/filterConfigMerge';
 import { detectFilterFieldConflicts } from '../utils/filterConflicts';
+import { filterVisibleLayout, filterVisibleWidgets } from '../utils/dashboardViewerScope';
 import { useDashboardChartRefresh } from './useDashboardChartRefresh';
 import { enrichFiltersWithTableNames } from '../utils/filterSchemaColumns';
 import { useDataSources } from '@/hooks/useDataSources';
@@ -332,36 +333,14 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     router.replace(`?${next}`, { scroll: false });
   }, [activeDashboardId, activePageId, runtimeFilters, widgetDrillState, router]);
 
-  const visibleWidgetIds = useMemo(() => {
-    if (!pages.length || !activePageId) return new Set(widgets.map((w) => w.id));
-    const defaultPage = defaultPageIdRef.current || pages[0]?.id;
-    const ids = new Set<string>();
-    widgets.forEach((w) => {
-      const li = layout.find((l) => l.i === w.id);
-      const pageId = li?.pageId;
-      if (pageId === activePageId) ids.add(w.id);
-      else if (!pageId && activePageId === defaultPage) ids.add(w.id);
-    });
-    return ids;
-  }, [widgets, layout, activePageId, pages]);
-
-  const pageWidgets = useMemo(() => {
-    const filtered = widgets.filter((w) => visibleWidgetIds.has(w.id));
-    if (filtered.length === 0 && widgets.length > 0 && pages.length > 0 && activePageId) {
-      const defaultPage = defaultPageIdRef.current || pages[0]?.id;
-      const onDefaultPage = widgets.filter((w) => {
-        const li = layout.find((l) => l.i === w.id);
-        return !li?.pageId;
-      });
-      if (onDefaultPage.length > 0 && activePageId === defaultPage) return onDefaultPage;
-      return widgets;
-    }
-    return filtered;
-  }, [widgets, visibleWidgetIds, pages.length, activePageId, layout]);
-  const pageLayout = useMemo(() => {
-    const ids = new Set(pageWidgets.map((w) => w.id));
-    return layout.filter((l) => ids.has(l.i));
-  }, [layout, pageWidgets]);
+  // Same scoping rules as the shared viewer: widgets on the active page only,
+  // unassigned/stale-page widgets on the default page, empty pages stay empty
+  // (no fallback to all widgets — that made new tabs look identical to page 1).
+  const pageWidgets = useMemo(
+    () => filterVisibleWidgets(widgets, layout, activePageId, pages, defaultPageIdRef.current),
+    [widgets, layout, activePageId, pages]
+  );
+  const pageLayout = useMemo(() => filterVisibleLayout(layout, pageWidgets), [layout, pageWidgets]);
 
   const getVisibleTargetIds = useCallback(
     () =>

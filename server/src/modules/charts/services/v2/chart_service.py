@@ -805,10 +805,10 @@ class ChartService:
         if not x_field and y_metrics:
             select_fields = []
             for i, ym in enumerate(y_metrics):
-                agg_type = ym.get("aggregation", "count")
-                field = ym.get("field")
-                agg_func = self._get_aggregate_func(agg_type, field)
-                select_fields.append(f"{agg_func} AS val_{i}")
+                expr = self._build_metric_sql(ym)
+                if not expr:  # malformed/unsafe computed metric → fail closed
+                    expr = "0"
+                select_fields.append(f"{expr} AS val_{i}")
             
             where_clause = self._apply_filters_db(filters)
             having_clause = self._apply_metric_filters_db(metric_filters)
@@ -876,9 +876,11 @@ class ChartService:
             for i, ym in enumerate(y_metrics):
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                agg_func = self._get_aggregate_func(agg_type, field)
+                expr = self._build_metric_sql(ym)
+                if not expr:  # malformed/unsafe computed metric → fail closed
+                    expr = "0"
                 alias = f"y_{i}"
-                select_fields.append(f"{agg_func} AS {alias}")
+                select_fields.append(f"{expr} AS {alias}")
                 metric_aliases.append({
                     "alias": alias,
                     "name": field if field else agg_type.capitalize()
@@ -997,7 +999,18 @@ class ChartService:
             for ym in y_metrics:
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                
+
+                if ym.get("computed"):
+                    try:
+                        cm = self._compute_metric_pandas(df, ym, group_by=[])
+                        col = ym.get("field", "value")
+                        val = float(cm[col].iloc[0]) if col in cm.columns and len(cm) else 0
+                    except Exception:
+                        val = 0
+                    labels.append(field or "Ratio")
+                    values.append(val)
+                    continue
+
                 val = 0
                 if agg_type == "count":
                     val = len(df)
@@ -1074,12 +1087,23 @@ class ChartService:
                 # Multiple metrics
                 agg_map = {}
                 numeric_fields_to_cast = set()
+                computed_metrics = []  # (alias, ym) — merged after grouping
 
                 for i, ym in enumerate(y_metrics):
                     agg_type = ym.get("aggregation", "count")
                     field = ym.get("field")
                     alias = f"y_{i}"
-                    
+
+                    if ym.get("computed"):
+                        computed_metrics.append((alias, ym))
+                        output_metrics.append({
+                            "alias": alias,
+                            "name": field if field else "Ratio",
+                            "field": field,
+                            "aggregation": "computed",
+                        })
+                        continue
+
                     if agg_type == "count":
                         # If field is provided, count non-nulls. Otherwise count all rows (size).
                         agg_map[alias] = (field, "count") if field and field in df.columns else (df.columns[0], "size")
@@ -1128,6 +1152,20 @@ class ChartService:
                             # Since it's the same grouping, we can just assign the values from a size() call
                             sizes = df.groupby(group_by_fields).size().values
                             grouped[alias] = sizes
+
+                # Merge computed (ratio) metrics, aligned on the same grouping keys
+                for alias, ym in computed_metrics:
+                    try:
+                        cm_df = self._compute_metric_pandas(df, ym, group_by_fields)
+                        value_col = ym.get("field", "value")
+                        cm_df = cm_df.rename(columns={value_col: alias})
+                        if alias in grouped.columns:
+                            grouped = grouped.drop(columns=[alias])
+                        grouped = grouped.merge(cm_df, on=group_by_fields, how="left")
+                        grouped[alias] = grouped[alias].fillna(0)
+                    except Exception:
+                        if alias not in grouped.columns:
+                            grouped[alias] = 0
         else:
             # Fallback for no-x if y_metrics didn't handle it (handled by early return in _execute_file_source)
             grouped = pd.DataFrame([{"x": "Total", "y": len(df)}])
@@ -1331,6 +1369,94 @@ class ChartService:
         # If no y_metric but agg_type is a function that needs it, 
         # it might be that agg_type itself is "count" or we fallback
         return "COUNT(*)"
+
+    # =========================================================
+    # COMPUTED (RATIO) METRICS — structured, injection-safe
+    # =========================================================
+    def _build_metric_side_sql(self, side: Dict[str, Any]) -> Optional[str]:
+        """SQL for one side of a computed metric: AGG(field) [FILTER (WHERE ...)].
+
+        Returns None (fail-closed) if the field is invalid, so the caller drops
+        the whole metric rather than emitting partial/unsafe SQL.
+        """
+        if not isinstance(side, dict):
+            return None
+        agg = side.get("aggregation", "sum")
+        field = side.get("field")
+        if not field or not self._is_valid_field_name(field):
+            return None
+        agg_sql = self._get_aggregate_func(agg, field)
+        # Reuse the existing safe filter compiler (whitelisted ops, escaped values).
+        side_filters = side.get("filter") or []
+        where = self._apply_filters_db(side_filters if isinstance(side_filters, list) else [])
+        if where:
+            return f"{agg_sql} FILTER ({where})"
+        return agg_sql
+
+    def _build_metric_sql(self, ym: Dict[str, Any]) -> Optional[str]:
+        """SQL expression for a yMetric entry. Supports plain {field,aggregation}
+        and computed ratio metrics. Returns None when a computed metric is
+        malformed/unsafe (caller should skip that metric)."""
+        if not isinstance(ym, dict):
+            return None
+        computed = ym.get("computed")
+        if computed:
+            if not isinstance(computed, dict) or computed.get("type") != "ratio":
+                return None
+            num = self._build_metric_side_sql(computed.get("numerator") or {})
+            den = self._build_metric_side_sql(computed.get("denominator") or {})
+            if not num or not den:
+                return None
+            mult = computed.get("multiplier", 1)
+            if mult not in (1, 100):
+                mult = 1
+            expr = f"{num} / NULLIF({den}, 0)"
+            return f"{expr} * {mult}" if mult != 1 else expr
+        return self._get_aggregate_func(ym.get("aggregation", "count"), ym.get("field"))
+
+    def _compute_metric_pandas(self, df, ym: Dict[str, Any], group_by: List[str]):
+        """Compute a ratio metric over a (optionally grouped) DataFrame.
+
+        Returns a DataFrame: grouped -> columns [*group_by, alias]; ungrouped ->
+        single column [alias]. Mirrors _build_metric_sql semantics for file sources.
+        """
+        import pandas as pd
+
+        computed = ym.get("computed") or {}
+        alias = ym.get("field", "value")
+        mult = computed.get("multiplier", 1)
+        if mult not in (1, 100):
+            mult = 1
+
+        agg_map = {
+            "sum": "sum", "avg": "mean", "min": "min", "max": "max",
+            "count": "count", "distinct_count": "nunique",
+        }
+
+        def _side(side: Dict[str, Any]):
+            sub = self._apply_filters_pandas(df, side.get("filter") or [])
+            field = side.get("field")
+            pagg = agg_map.get(side.get("aggregation", "sum"), "sum")
+            if group_by:
+                all_idx = df.groupby(group_by).size().index
+                if field and field in sub.columns and len(sub):
+                    g = sub.groupby(group_by)[field].agg(pagg)
+                else:
+                    g = pd.Series(dtype=float)
+                return g.reindex(all_idx).fillna(0)
+            series = sub[field] if (field and field in sub.columns) else pd.Series(dtype=float)
+            value = getattr(series, pagg)() if len(series) else 0
+            return pd.Series([value])
+
+        num = _side(computed.get("numerator") or {})
+        den = _side(computed.get("denominator") or {})
+        ratio = (num / den.replace(0, pd.NA)).fillna(0) * mult
+
+        if group_by:
+            out = ratio.reset_index()
+            out.columns = list(group_by) + [alias]
+            return out
+        return pd.DataFrame({alias: list(ratio)})
 
     def _get_aggregate_func(self, aggregate: Any, y_metric: Optional[str] = None) -> str:
         """Generate SQL aggregate function based on aggregate type and metric field."""

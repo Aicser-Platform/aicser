@@ -21,9 +21,13 @@ export function filterVisibleWidgets(
   }
 
   const defaultPage = defaultPageId || pages[0]?.id;
+  const knownPageIds = new Set(pages.map((p) => String(p.id)));
   return widgets.filter((w) => {
     const li = layout.find((l) => l.i === w.id);
-    const pid = li?.pageId;
+    // A pageId referencing a deleted/unknown page would hide the widget on
+    // every tab — treat it as unassigned so it surfaces on the default page.
+    const rawPid = li?.pageId;
+    const pid = rawPid && knownPageIds.has(String(rawPid)) ? rawPid : undefined;
     return pid === activePageId || (!pid && activePageId === defaultPage);
   });
 }

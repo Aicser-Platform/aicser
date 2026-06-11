@@ -140,10 +140,6 @@
   font-weight: 500;
 }
 
-.sidebar-nav-group-trigger.is-pinned.is-open {
-  background: color-mix(in srgb, var(--nav-accent) 8%, transparent);
-}
-
 .sidebar-nav-group-trigger.is-popover-open {
   background: var(--nav-active-bg);
   color: var(--nav-accent);
@@ -220,21 +216,20 @@
   height: 16px;
 }
 
-/* ─── Collapsed: unified popover layer (rail + panel = one hover zone) ───── */
+/* ─── Collapsed: click-triggered submenu popover ─────────────────────────── */
 .sidebar-nav-popover-layer {
   position: fixed;
   left: 0;
   display: flex;
   align-items: flex-start;
   z-index: 1102;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .sidebar-nav-popover-rail {
   width: 80px;
   flex-shrink: 0;
   align-self: stretch;
-  pointer-events: auto;
 }
 
 .sidebar-nav-popover-panel {
@@ -246,6 +241,7 @@
   background: var(--color-bg-navigation-sider, var(--ant-color-bg-elevated));
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.14);
   animation: nav-popover-in 0.16s ease;
+  pointer-events: auto;
 }
 
 @keyframes nav-popover-in {

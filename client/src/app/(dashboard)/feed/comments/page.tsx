@@ -13,7 +13,6 @@ import { useTranslations } from 'next-intl';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
-import '../styles.css';
 
 const COMMENTED_FETCH_PAGE_SIZE = 100;
 const COMMENTED_FETCH_MAX_ITEMS = 200;

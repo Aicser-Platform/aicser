@@ -5902,7 +5902,8 @@
     "build_live_title": "AI sedang membangun dashboard ini",
     "build_live_subtitle": "Widget muncul di kanvas setelah divalidasi.",
     "build_live_syncing": "Menyinkronkan",
-    "build_live_connected": "Langsung"
+    "build_live_connected": "Langsung",
+    "dashboard_not_found": "Dasbor tidak ditemukan atau Anda tidak memiliki akses."
   },
   "billing_page": {
     "loading": "Memuat...",

@@ -6098,7 +6098,8 @@
     "filter_preset_search": "Search",
     "layout_preset_scaffolds_added": "Added {count} placeholder slots",
     "layout_preset_hint": "Apply a layout and add empty slots for missing widgets.",
-    "layout_preset_slots": "{count} slots"
+    "layout_preset_slots": "{count} slots",
+    "dashboard_not_found": "Dashboard not found or you do not have access to it."
   },
   "billing_page": {
     "loading": "Loading...",

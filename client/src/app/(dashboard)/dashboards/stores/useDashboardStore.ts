@@ -53,6 +53,50 @@ export type {
 };
 export { scopedFiltersForWidget, isNonDataWidget };
 
+type ChartWithLayout = Chart & {
+  layout?: { x?: number; y?: number; w?: number; h?: number; page_id?: string | null };
+};
+
+/** Map backend chart records to studio widgets + grid layout (page assignment included). */
+function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
+  widgets: WidgetInstance[];
+  layout: LayoutItem[];
+} {
+  const widgets: WidgetInstance[] = [];
+  const layout: LayoutItem[] = [];
+
+  charts.forEach((chart) => {
+    const widgetId = `widget-${chart.id}`;
+
+    const baseWidget: WidgetInstance = {
+      id: widgetId,
+      chartId: chart.id,
+      dataSourceId: chart.dataSourceId ?? undefined,
+      title: chart.title || '',
+      chartType: (chart.chartType as WidgetType) || 'bar',
+      chartQuery: chart.chartQuery,
+      chartOptions: chart.chartOptions,
+      chartData: undefined,
+      isLoading: false,
+      error: null,
+    };
+
+    widgets.push(hydrateRemixWidget(baseWidget));
+
+    const chartLayout = chart.layout || {};
+    layout.push({
+      i: widgetId,
+      x: chartLayout.x ?? 0,
+      y: chartLayout.y ?? 0,
+      w: chartLayout.w ?? 4,
+      h: chartLayout.h ?? 5,
+      ...(chartLayout.page_id ? { pageId: String(chartLayout.page_id) } : {}),
+    });
+  });
+
+  return { widgets, layout };
+}
+
 // ─── Version history (named snapshots, stored in localStorage) ────────────────
 const MAX_VERSIONS = 20;
 const VERSION_STORAGE_KEY = (dashId: string) => `aicser_dash_versions_${dashId}`;
@@ -125,6 +169,7 @@ interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
   restoreVersionSnapshot: (versionId: string) => void;
   deleteVersionSnapshot: (versionId: string) => void;
   fetchDashboards: () => Promise<void>;
+  loadDashboardById: (id: string) => Promise<boolean>;
 
   // Dashboard management
   addDashboard: (name?: string) => Promise<string>;
@@ -333,40 +378,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
           try {
             // Fetch charts for this dashboard
             const charts = await chartService.listCharts(d.id);
-
-            // Convert charts to widgets and extract layout
-            const widgets: WidgetInstance[] = [];
-            const layout: LayoutItem[] = [];
-
-            charts.forEach((chart: any) => {
-              const widgetId = `widget-${chart.id}`;
-
-              const baseWidget: WidgetInstance = {
-                id: widgetId,
-                chartId: chart.id,
-                dataSourceId: chart.dataSourceId,
-                title: chart.title || '',
-                chartType: (chart.chartType as WidgetType) || 'bar',
-                chartQuery: chart.chartQuery,
-                chartOptions: chart.chartOptions,
-                chartData: undefined,
-                isLoading: false,
-                error: null,
-              };
-
-              widgets.push(hydrateRemixWidget(baseWidget));
-
-              // Extract layout if it exists, otherwise use defaults
-              const chartLayout = chart.layout || {};
-              layout.push({
-                i: widgetId,
-                x: chartLayout.x ?? 0,
-                y: chartLayout.y ?? 0,
-                w: chartLayout.w ?? 4,
-                h: chartLayout.h ?? 5,
-                ...(chartLayout.page_id ? { pageId: String(chartLayout.page_id) } : {}),
-              });
-            });
+            const { widgets, layout } = chartsToWidgetsAndLayout(charts);
 
             const cfg = d.config || {};
             return {
@@ -433,6 +445,40 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         hasLoadedDashboards: true,
         dashboardError: errorMessage,
       });
+    }
+  },
+
+  loadDashboardById: async (id) => {
+    const dashboardId = String(id);
+    if (get().dashboards.some((d) => String(d.id) === dashboardId)) {
+      get().setActiveDashboardId(dashboardId);
+      return true;
+    }
+
+    try {
+      const [dash, charts] = await Promise.all([
+        chartService.getDashboard(dashboardId),
+        chartService.listCharts(dashboardId),
+      ]);
+      const { widgets, layout } = chartsToWidgetsAndLayout(charts);
+
+      const cfg = dash.config || {};
+      const loaded: Dashboard = {
+        id: dash.id,
+        name: dash.title,
+        description: dash.description || '',
+        config: cfg,
+        tags: Array.isArray((cfg as { tags?: string[] }).tags) ? (cfg as { tags: string[] }).tags : [],
+        widgets,
+        layout,
+      };
+
+      set((state) => ({ dashboards: [...state.dashboards, loaded] }));
+      get().setActiveDashboardId(loaded.id);
+      return true;
+    } catch (error) {
+      console.error(`Failed to load dashboard ${dashboardId}:`, error);
+      return false;
     }
   },
 
