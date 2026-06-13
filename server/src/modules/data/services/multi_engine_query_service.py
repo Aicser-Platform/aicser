@@ -34,6 +34,38 @@ logger = logging.getLogger(__name__)
 
 _multi_engine_service: Optional["MultiEngineQueryService"] = None
 
+# date_trunc('grain', <simple column>) — only a bare or double-quoted identifier
+# is matched, so expressions (CAST(...), col + 1, CURRENT_DATE - INTERVAL ...) are
+# left alone and the rewrite stays idempotent (already-cast args contain parens).
+_DATE_TRUNC_COL_RE = re.compile(
+    r"date_trunc\(\s*('[^']*')\s*,\s*(\"?[A-Za-z_][\w]*\"?)\s*\)",
+    re.IGNORECASE,
+)
+_DATE_KEYWORDS = {"CURRENT_DATE", "CURRENT_TIMESTAMP", "NOW", "TODAY", "LOCALTIMESTAMP"}
+
+
+def cast_date_trunc_args_for_duckdb(query: str) -> str:
+    """Wrap the date argument of ``date_trunc(...)`` in ``TRY_CAST(... AS TIMESTAMP)``.
+
+    DuckDB's ``date_trunc`` requires a TIMESTAMP/DATE argument, but file-backed
+    (CSV/Excel) data sources store date columns as VARCHAR, so queries such as
+    ``date_trunc('month', disbursement_date)`` fail with
+    ``Binder Error: No function matches 'date_trunc(VARCHAR, VARCHAR)'`` and the
+    time-series widget gets dropped to the heuristic fallback. Casting lets the
+    query run for ISO-style date strings while remaining a no-op for columns that
+    are already DATE/TIMESTAMP. Only simple column identifiers are wrapped.
+    """
+    if not query or "date_trunc(" not in query.lower():
+        return query
+
+    def _wrap(match: "re.Match[str]") -> str:
+        grain, col = match.group(1), match.group(2)
+        if col.upper().strip('"') in _DATE_KEYWORDS:
+            return match.group(0)
+        return f"date_trunc({grain}, TRY_CAST({col} AS TIMESTAMP))"
+
+    return _DATE_TRUNC_COL_RE.sub(_wrap, query)
+
 
 def get_multi_engine_query_service() -> "MultiEngineQueryService":
     """Process-wide singleton so query caches survive across chart refreshes."""
@@ -778,6 +810,15 @@ class DuckDBEngine(BaseQueryEngine):
                 duckdb_query = re.sub(r'DATE_TRUNC\s*\(', 'date_trunc(', query, flags=re.IGNORECASE)
                 if duckdb_query != query:
                     logger.info(f"🔄 Converted DATE_TRUNC to date_trunc for DuckDB compatibility")
+
+            # CRITICAL: file-backed sources store date columns as VARCHAR, so
+            # date_trunc(grain, col) errors with date_trunc(VARCHAR, VARCHAR).
+            # Cast the date argument so time-series widgets render instead of
+            # being dropped to the heuristic fallback.
+            _casted = cast_date_trunc_args_for_duckdb(duckdb_query)
+            if _casted != duckdb_query:
+                logger.info("🔄 Wrapped date_trunc date arg in TRY_CAST(... AS TIMESTAMP) for DuckDB")
+                duckdb_query = _casted
             
             # CRITICAL: Convert ClickHouse SUBSTRING syntax to DuckDB syntax
             # ClickHouse: SUBSTRING("Email" FROM "@" + 1)

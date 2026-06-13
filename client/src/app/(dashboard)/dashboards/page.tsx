@@ -891,6 +891,10 @@ export default function NewDashboardStudio() {
               flexDirection: 'column',
               display: 'flex',
               padding: 0,
+              // Reserve room for the absolute properties panel (300px) so its overlay
+              // never hides the right end of the toolbar / widget edges.
+              paddingRight: isEditMode && !isPropertiesCollapsed ? 300 : 0,
+              transition: 'padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
             {/* Dashboard Selector Tabs & Toolbar — Hidden in Fullscreen */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -24,6 +24,7 @@ import { chartService } from '../../dashboards/services/chartService';
 import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
 import { FeedPostViewer } from './FeedPostViewer';
+import { FeedDashboardChartGrid } from './FeedDashboardChartGrid';
 
 interface FeedPreviewVisualProps {
   item: FeedItem;
@@ -357,6 +358,12 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
   const previews = useMemo(() => normalizePreviews(item), [item]);
 
   if (item.assetType === 'dashboard') {
+    // Overview card → render the REAL dashboard charts (top N) via the same renderer the
+    // Studio uses. Snapshot capture is empty and the embedded live viewer rendered blank
+    // in the card slot, so we fetch + render the actual charts directly here.
+    if (item.asset.dashboardId) {
+      return <FeedDashboardChartGrid item={item} maxWidgets={typeof maxPreviews === 'number' ? maxPreviews : 4} />;
+    }
     return <DashboardLivePreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
   }
 

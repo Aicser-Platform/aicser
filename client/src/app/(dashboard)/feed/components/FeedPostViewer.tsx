@@ -19,11 +19,10 @@ export function FeedPostViewer({ item, variant = 'detail', maxWidgets, onReady }
     [item.renderMode, item.asset.snapshotPayload],
   );
 
-  if (isSnapshot) {
-    return <FeedSnapshotViewer item={item} variant={variant} maxWidgets={maxWidgets} />;
-  }
-
-  if (item.assetType === 'dashboard') {
+  // Dashboards render LIVE from the real board (multi-widget snapshot capture is unreliable —
+  // it often serialises widgets without data, producing an empty "KEY METRIC 0" card).
+  // FeedDashboardViewer fetches the published dashboard and renders its actual charts.
+  if (item.assetType === 'dashboard' && item.assetId) {
     return (
       <FeedDashboardViewer
         dashboardId={item.assetId}
@@ -32,6 +31,10 @@ export function FeedPostViewer({ item, variant = 'detail', maxWidgets, onReady }
         onReady={onReady}
       />
     );
+  }
+
+  if (isSnapshot) {
+    return <FeedSnapshotViewer item={item} variant={variant} maxWidgets={maxWidgets} />;
   }
 
   return <FeedSnapshotViewer item={item} variant={variant} maxWidgets={maxWidgets} />;

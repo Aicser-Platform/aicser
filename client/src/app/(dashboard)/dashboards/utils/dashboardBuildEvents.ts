@@ -9,7 +9,8 @@ export type DashboardBuildWidget = {
   status?: string;
   error?: string;
   chart_id?: string;
-  preview?: Record<string, unknown>; // ECharts option for in-chat thumbnail
+  preview?: Record<string, unknown>; // executed chart data ({x, y, series}) for the in-chat thumbnail
+  chart_query?: Record<string, unknown>; // widget query, passed to WidgetRenderer alongside preview data
 };
 
 export type DashboardBuildProgress = {

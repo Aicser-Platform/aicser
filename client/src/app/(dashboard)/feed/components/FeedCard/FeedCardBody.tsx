@@ -60,7 +60,7 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({ item, compact, previewClick
       </div>
 
       <div
-        className={`relative ${item.assetType === 'dashboard' ? 'aspect-[4/3]' : 'aspect-[16/9]'} w-full bg-[var(--ant-color-bg-container)] border-y border-[var(--ant-color-border-secondary)] overflow-hidden group/media ${
+        className={`relative ${item.assetType === 'dashboard' ? 'min-h-[300px] px-3 pb-3 pt-12' : 'aspect-[16/9]'} w-full bg-[var(--ant-color-bg-container)] border-y border-[var(--ant-color-border-secondary)] overflow-hidden group/media ${
           previewClickable ? 'cursor-pointer' : ''
         }`}
         role={previewClickable ? 'button' : undefined}
@@ -89,7 +89,11 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({ item, compact, previewClick
             </span>
           </div>
         )}
-        <FeedPreviewVisual item={item} maxPreviews={compact ? 4 : undefined} showOverflowBadge={compact} />
+        <FeedPreviewVisual
+          item={item}
+          maxPreviews={item.assetType === 'dashboard' ? 6 : compact ? 4 : undefined}
+          showOverflowBadge={compact}
+        />
       </div>
     </div>
   );

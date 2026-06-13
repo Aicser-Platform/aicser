@@ -701,20 +701,63 @@ class ChartService:
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
+        return self._map_sql_rows_to_chart_data(rows, chart.chart_type)
+
+    def _map_sql_rows_to_chart_data(
+        self, rows: List[Dict[str, Any]], chart_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Map raw SQL result rows to the renderer's {x, y, series} / {value} shape.
+
+        compiled_semantic_sql (AI planner) and saved/template SQL return columns
+        under their real aliased names — e.g. `SELECT "product_type", SUM(...) AS
+        total` — NOT the literal columns ``x``/``y`` the dashboard renderer reads.
+        Reading ``row["x"]`` there yields ``None`` for every row, which is why
+        such widgets rendered all-``null`` categories / empty bars. We map by
+        position instead:
+
+          * stat            -> single headline value (``value``/``y`` alias, else first column)
+          * legacy x/y SQL  -> honor explicit ``x``/``y`` aliases (template charts)
+          * grouped result  -> first column = category (x), remaining columns = series
+        """
         if not rows:
             return {"x": [], "y": [], "series": []}
 
         first_row = rows[0]
-        if "value" in first_row:
+        columns = list(first_row.keys())
+
+        # Stat KPIs come from a single-row aggregate with no category dimension,
+        # so positional "first column = x" would consume the headline metric.
+        if chart_type == "stat":
+            if "value" in first_row:
+                return {"value": first_row["value"]}
+            if "y" in columns:
+                y_vals = [row.get("y") for row in rows]
+                return {"value": y_vals[-1] if y_vals else None}
+            primary = columns[0] if columns else None
+            return {"value": first_row.get(primary) if primary else None}
+
+        # Template / saved SQL that already aliases its output as x / y.
+        if "x" in columns or "y" in columns:
+            x_vals = [row.get("x") for row in rows]
+            y_vals = [row.get("y") for row in rows]
+            return {"x": x_vals, "y": y_vals, "series": [{"name": "Value", "data": y_vals}]}
+
+        # Single explicit value column (e.g. gauge SQL aliased as `value`).
+        if len(columns) == 1 and "value" in first_row:
             return {"value": first_row["value"]}
 
-        x_vals = [row.get("x") for row in rows]
-        y_vals = [row.get("y") for row in rows]
-        return {
-            "x": x_vals,
-            "y": y_vals,
-            "series": [{"name": "Value", "data": y_vals}],
-        }
+        # Generic GROUP BY result: first column is the category dimension,
+        # each remaining column becomes a numeric series.
+        x_col = columns[0]
+        series_cols = columns[1:]
+        x_vals = [row.get(x_col) for row in rows]
+        if not series_cols:
+            return {"x": x_vals, "y": [], "series": []}
+        series = [
+            {"name": str(col), "data": [row.get(col) for row in rows]}
+            for col in series_cols
+        ]
+        return {"x": x_vals, "y": series[0]["data"], "series": series}
 
     def _sample_template_fallback_result(self, chart: Chart) -> Dict[str, Any]:
         """
@@ -1244,7 +1287,11 @@ class ChartService:
         sort_by = self._normalize_sort_by(sort_by)
         sort_order = self._normalize_sort_order(sort_order)
         if sort_by == "x" and x_field:
-            return f"ORDER BY {x_field} {'ASC' if sort_order == 'asc' else 'DESC'}"
+            # Order by the "x" output alias, not the raw column: when date
+            # bucketing (x_grain) is applied, SELECT/GROUP BY use date_trunc(...)
+            # AS x, and ordering by the raw column breaks on engines (DuckDB)
+            # that require it to appear in GROUP BY. The alias matches both cases.
+            return f"ORDER BY x {'ASC' if sort_order == 'asc' else 'DESC'}"
         if sort_by == "y":
             # If multiple metrics, sort by the first one y_0, else y
             alias = "y_0" if has_y_metrics else "y"

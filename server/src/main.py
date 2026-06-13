@@ -7,6 +7,20 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# ── Logging ────────────────────────────────────────────────────────────────────
+# Configure the root logger BEFORE importing app modules so their logger.info()
+# output (Supervisor routing, per-node model, node timings, post_query_brain scores)
+# reaches stdout/docker logs. Without this, the root logger has no handler and
+# Python's "last resort" handler only emits WARNING+, silently dropping all INFO.
+# uvicorn configures its own (uvicorn.*) loggers, so this does not duplicate access logs.
+_LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware

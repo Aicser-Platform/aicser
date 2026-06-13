@@ -1,6 +1,7 @@
 """Application lifespan — startup checks and shutdown cleanup."""
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -79,6 +80,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         else:
             logger.info("Predictive stack OK: prophet, pmdarima, statsmodels")
+
+        # Warn when accuracy-critical ("strong"-tier) nodes will silently run on a mini model.
+        # model_tiering routes nl2sql / insight_synthesizer / error_correction to the "strong"
+        # tier, which falls back to the default (often *-mini) model when no reasoning/strong
+        # model is configured — a common cause of low analysis accuracy.
+        try:
+            _strong = os.getenv("AISER_STRONG_MODEL", "").strip()
+            _reasoning = os.getenv("REASONING_MODEL_DEPLOYMENT_NAME", "").strip()
+            _default_models = (
+                os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "")
+                + " "
+                + os.getenv("OPENAI_MODEL_ID", "")
+            ).lower()
+            _default_mini = any(
+                tok in _default_models for tok in ("mini", "nano", "haiku", "flash")
+            )
+            if not _strong and not _reasoning and _default_mini:
+                logger.warning(
+                    "⚠️ No platform-wide strong/reasoning model configured (AISER_STRONG_MODEL / "
+                    "REASONING_MODEL_DEPLOYMENT_NAME unset). For users WITHOUT a BYOK key, "
+                    "accuracy-critical nodes (nl2sql, insight_synthesizer, error_correction) will "
+                    "run on the default mini model — SQL correctness and analysis quality will "
+                    "suffer. Users WITH a BYOK key serve the strong tier from their own key "
+                    "(get_model_for_tier resolves BYOK before the mini default). For a platform "
+                    "default, configure a capable model (e.g. GPT-4o / GPT-4.1 / Claude Sonnet / Gemini)."
+                )
+        except Exception as _strong_chk_exc:
+            logger.debug("Strong-model tier check skipped: %s", _strong_chk_exc)
 
         # Register models with SQLAlchemy metadata (required for Alembic autogenerate)
         try:
