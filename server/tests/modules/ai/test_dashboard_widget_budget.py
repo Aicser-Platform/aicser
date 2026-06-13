@@ -67,3 +67,31 @@ def test_build_kpi_sections_honors_explicit_list_first():
     explicit = [s for s in sections if s.get("type") == "explicit"]
     assert len(explicit) == 2
     assert sections[0]["type"] == "explicit"
+
+
+def test_budget_respects_plan_max_widgets():
+    # Rich schema would compute high, but plan cap must clamp it down.
+    cols = _cols(
+        numeric=["loan", "repaid", "par30", "term", "rate"],
+        temporal=["disbursement_date"],
+        categorical=["branch", "product", "officer"],
+    )
+    assert compute_widget_budget(cols, prompt="executive", max_widgets=10) == 10
+    assert compute_widget_budget(cols, prompt="executive", max_widgets=6) == 6
+
+
+def test_budget_unlimited_when_plan_max_negative():
+    # max_widgets = -1 means unlimited → fall back to the global ceiling.
+    cols = _cols(
+        numeric=[f"m{i}" for i in range(12)],
+        temporal=["d1"],
+        categorical=[f"c{i}" for i in range(10)],
+    )
+    assert compute_widget_budget(cols, prompt="x", max_widgets=-1) == 16
+    assert compute_widget_budget(cols, prompt="x", max_widgets=None) == 16
+
+
+def test_budget_plan_cap_below_floor():
+    # A plan cap below the normal minimum is still respected (never plan more than allowed).
+    cols = _cols(numeric=["a", "b"], temporal=[], categorical=["c"])
+    assert compute_widget_budget(cols, prompt="x", max_widgets=2) == 2
