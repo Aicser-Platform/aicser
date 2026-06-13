@@ -9,6 +9,7 @@ export type DashboardBuildWidget = {
   status?: string;
   error?: string;
   chart_id?: string;
+  preview?: Record<string, unknown>; // ECharts option for in-chat thumbnail
 };
 
 export type DashboardBuildProgress = {
