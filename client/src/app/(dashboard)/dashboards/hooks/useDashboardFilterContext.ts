@@ -17,16 +17,13 @@ import { useDataSources } from '@/hooks/useDataSources';
 import { useDashboardRefresh } from './useDashboardRefresh';
 import { isDataWidget } from '../utils/dashboardRefresh';
 import { decodeDrillStateParam, encodeDrillStateParam, getDrillPath, getInteractionMode } from '../utils/drillDownHelpers';
+import { normalizeDashboardFilters } from '../utils/normalizeDashboardFilters';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { DashboardPageItem } from '../components/DashboardPageTabs';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
-
-function mergeFilterDefaultsFromConfigs(...configs: DashboardFilter[][]) {
-  return mergeFilterDefaults(...configs);
-}
 
 export function useDashboardFilterContext(projectId?: string | number | null) {
   const t = useTranslations('dashboards');
@@ -137,7 +134,17 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           }));
         }
 
-        let cfgFilters = (dash?.config?.global_filters as DashboardFilter[]) || [];
+        const filterSourceWidget = useDashboardStore
+          .getState()
+          .widgets.find((widget) => widget.dataSourceId);
+        const filterDataContext = {
+          dataSourceId: filterSourceWidget?.dataSourceId,
+          tableName: filterSourceWidget?.chartQuery?.tableName,
+        };
+        let cfgFilters = normalizeDashboardFilters(
+          dash?.config?.global_filters,
+          filterDataContext,
+        );
 
         // ── AI-seeded global filters (from chat dashboard creation) ──────────────
         // When a dashboard is opened immediately after AI generation, check sessionStorage
@@ -152,20 +159,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
                 JSON.parse(aiFiltersRaw);
               if (Array.isArray(aiFilters) && aiFilters.length > 0 && cfgFilters.length === 0) {
                 // Convert AI filter descriptors to DashboardFilter format
-                const mapped: DashboardFilter[] = aiFilters.map((f, i) => ({
-                  id: `ai_filter_${i}_${f.field}`,
-                  field: f.field,
-                  name: f.label,
-                  type: f.type === 'date_range' || f.type === 'dateRange'
-                    ? ('dateRange' as const)
-                    : f.type === 'date'
-                      ? ('date' as const)
-                      : f.type === 'slider' || f.type === 'numeric_range'
-                        ? ('slider' as const)
-                        : f.multi
-                          ? ('checkbox' as const)
-                          : ('dropdown' as const),
-                }));
+                const mapped = normalizeDashboardFilters(aiFilters, filterDataContext);
                 cfgFilters = mapped;
                 // Persist to dashboard config so filters survive future opens
                 try {
@@ -207,7 +201,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           pageList = rawPages.map((p: { id: string; name: string; filters?: DashboardFilter[] }) => ({
             id: String(p.id),
             name: p.name,
-            filters: p.filters || [],
+            filters: normalizeDashboardFilters(p.filters, filterDataContext),
           }));
 
           if (pageList.length === 0) {
@@ -217,7 +211,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
               {
                 id: String(created.id),
                 name: created.name || 'Page 1',
-                filters: (created.filters as DashboardFilter[]) || [],
+                filters: normalizeDashboardFilters(created.filters, filterDataContext),
               },
             ];
             await chartService.setDefaultPage(activeDashboardId, pageList[0].id);

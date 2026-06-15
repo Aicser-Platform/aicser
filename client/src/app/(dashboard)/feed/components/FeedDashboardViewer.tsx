@@ -28,10 +28,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
     onReady,
   });
 
-  const widgets =
-    variant === 'card' && maxWidgets
-      ? viewer.visibleWidgets.slice(0, maxWidgets)
-      : viewer.visibleWidgets;
+  const widgets = variant === 'card' && maxWidgets ? viewer.visibleWidgets.slice(0, maxWidgets) : viewer.visibleWidgets;
 
   const layout =
     variant === 'card' && maxWidgets
@@ -99,6 +96,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         onRetryWidget={viewer.handleRetryWidget}
         refreshing={viewer.refreshing}
         canvasMinHeight={variant === 'card' ? '280px' : '480px'}
+        layoutMode={variant === 'detail' ? 'preview' : 'preserve'}
       />
     </div>
   );

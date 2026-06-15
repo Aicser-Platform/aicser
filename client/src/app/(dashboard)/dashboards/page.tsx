@@ -197,6 +197,7 @@ export default function NewDashboardStudio() {
         pageFilters: filterCtx.pageFiltersConfig,
         pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
         runtimeFilters: filterCtx.runtimeFilters,
+        colorPalette: activeDashboard.config?.default_color_palette as string | undefined,
       });
       const fingerprint = computeStudioSnapshotFingerprint({
         widgets: filterCtx.pageWidgets,

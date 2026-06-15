@@ -33,6 +33,7 @@ import type { DashboardFilter } from '@/types/dashboard';
 import type { DashboardPageItem } from '../components/DashboardPageTabs';
 import type { LayoutItem, WidgetInstance } from '../stores/useDashboardStore';
 import type { DashboardViewerMeta } from '../components/viewer/DashboardViewerShell';
+import { normalizeDashboardFilters } from '../utils/normalizeDashboardFilters';
 
 export type DashboardViewerMode = 'auth' | 'embed';
 
@@ -72,7 +73,7 @@ export function useDashboardViewerState(
   const pageIdParam = searchParams?.get('page') || searchParams?.get('page_id') || '';
   const filtersParam = searchParams?.get('filters') || '';
   const embedToken = embedTokenOption || searchParams?.get('token') || '';
-  const accessOpts = embedToken ? { embedToken } : undefined;
+  const accessOpts = useMemo(() => (embedToken ? { embedToken } : undefined), [embedToken]);
 
   const [meta, setMeta] = useState<DashboardViewerMeta | null>(null);
   const [widgets, setWidgets] = useState<WidgetInstance[]>([]);
@@ -209,7 +210,7 @@ export function useDashboardViewerState(
         (p: { id: string; name: string; filters?: DashboardFilter[] }) => ({
           id: String(p.id),
           name: p.name,
-          filters: p.filters || [],
+          filters: normalizeDashboardFilters(p.filters),
         }),
       );
       setPages(normalized);
@@ -227,15 +228,26 @@ export function useDashboardViewerState(
     setIsLoading(true);
     setError(null);
     try {
-      const charts = await chartService.listCharts(dashboardId, accessOpts).catch(() => {
-        throw new Error(t('load_content_failed'));
-      });
+      const [charts, dashInfo, pageList] = await Promise.all([
+        chartService.listCharts(dashboardId, accessOpts).catch(() => {
+          throw new Error(t('load_content_failed'));
+        }),
+        chartService.getDashboard(dashboardId, accessOpts).catch(() => null),
+        loadPages(),
+      ]);
 
-      let dashInfo: { title?: string; name?: string; description?: string; config?: Record<string, unknown> } | null =
-        null;
       try {
-        dashInfo = await chartService.getDashboard(dashboardId, accessOpts);
+        if (!dashInfo) throw new Error(t('load_failed'));
         const cfg = dashInfo.config || {};
+        const filterSourceChart = charts.find(
+          (chart: Record<string, unknown>) => chart.dataSourceId,
+        ) as Record<string, unknown> | undefined;
+        const filterSourceQuery =
+          (filterSourceChart?.chartQuery as Record<string, unknown> | undefined) || {};
+        const filterDataContext = {
+          dataSourceId: filterSourceChart?.dataSourceId as string | undefined,
+          tableName: filterSourceQuery.tableName as string | undefined,
+        };
         const execMeta = executiveMetaFromConfig(cfg);
         setMeta({
           id: dashboardId,
@@ -244,7 +256,7 @@ export function useDashboardViewerState(
           keyInsight: execMeta.keyInsight,
           storyArc: execMeta.storyArc,
         });
-        const gf = (cfg.global_filters as DashboardFilter[]) || [];
+        const gf = normalizeDashboardFilters(cfg.global_filters, filterDataContext);
         setGlobalFilters(gf);
 
         if (!filtersParam) {
@@ -255,7 +267,6 @@ export function useDashboardViewerState(
           }
         }
 
-        const pageList = await loadPages();
         const defaultPage = String(cfg.default_page_id || pageList[0]?.id || '');
         setDefaultPageId(defaultPage || null);
         if (!pageIdParam && defaultPage) setActivePageId(defaultPage);
@@ -323,7 +334,7 @@ export function useDashboardViewerState(
     try {
       const data = await fetchEmbedDashboardPayload(dashboardId, { token: embedToken || undefined });
       const cfg = data.config || {};
-      const gf = data.global_filters || cfg.global_filters || [];
+      const gf = normalizeDashboardFilters(data.global_filters || cfg.global_filters);
       setGlobalFilters(gf);
       const execMeta = executiveMetaFromConfig(cfg);
       setMeta({

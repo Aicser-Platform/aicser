@@ -46,11 +46,54 @@ class FeedServicePreviewMixin:
                 payload[key] = meta[key]
         return _normalize_asset_payload(payload)
 
-    def _payload_from_snapshot(self, post: FeedPost, snapshot: FeedSnapshot) -> Dict[str, Any]:
+    def _payload_from_snapshot(
+        self,
+        post: FeedPost,
+        snapshot: FeedSnapshot,
+        *,
+        max_widgets: Optional[int] = None,
+    ) -> Dict[str, Any]:
         raw = snapshot.payload or {}
         narrative = raw.get("narrative") or {}
         visuals = raw.get("visuals") or {}
         widgets = visuals.get("widgets") or []
+        rendered_raw = raw
+        if max_widgets is not None and len(widgets) > max_widgets:
+            presentation = visuals.get("presentation") or {}
+            featured_ids = presentation.get("featuredWidgetIds") or []
+            widget_by_id = {
+                str(widget.get("id")): widget
+                for widget in widgets
+                if isinstance(widget, dict) and widget.get("id") is not None
+            }
+            rendered_widgets = []
+            rendered_widget_ids = set()
+            for widget_id in featured_ids:
+                widget = widget_by_id.get(str(widget_id))
+                if widget is not None and str(widget_id) not in rendered_widget_ids:
+                    rendered_widgets.append(widget)
+                    rendered_widget_ids.add(str(widget_id))
+            for widget in widgets:
+                widget_id = str(widget.get("id")) if isinstance(widget, dict) else ""
+                if widget_id not in rendered_widget_ids:
+                    rendered_widgets.append(widget)
+                    rendered_widget_ids.add(widget_id)
+            rendered_widgets = rendered_widgets[:max_widgets]
+            rendered_ids = {
+                str(widget.get("id"))
+                for widget in rendered_widgets
+                if isinstance(widget, dict) and widget.get("id") is not None
+            }
+            rendered_visuals = {**visuals, "widgets": rendered_widgets}
+            layout = visuals.get("layout")
+            if isinstance(layout, list) and rendered_ids:
+                rendered_visuals["layout"] = [
+                    item
+                    for item in layout
+                    if isinstance(item, dict) and str(item.get("i")) in rendered_ids
+                ]
+            rendered_raw = {**raw, "visuals": rendered_visuals}
+
         asset_type = _enum_value(post.asset_type)
         title = narrative.get("title") or post.title or "Insight"
         description = narrative.get("description") or post.description or ""
@@ -61,7 +104,7 @@ class FeedServicePreviewMixin:
             "previewType": raw.get("previewType") or ("dashboard" if asset_type == "dashboard" else "insight"),
             "previewData": raw.get("previewData") or [],
             "previews": raw.get("previews") or [],
-            "snapshotPayload": raw,
+            "snapshotPayload": rendered_raw,
             "snapshotCapturedAt": snapshot.captured_at.isoformat() if snapshot.captured_at else raw.get("capturedAt"),
             "widgetCount": len(widgets),
             "excerpt": narrative.get("answerExcerpt") or narrative.get("description"),
@@ -87,7 +130,12 @@ class FeedServicePreviewMixin:
 
         return _normalize_asset_payload(payload)
 
-    async def _load_preview_payloads(self, posts: Sequence[FeedPost]) -> Dict[UUID, Dict[str, Any]]:
+    async def _load_preview_payloads(
+        self,
+        posts: Sequence[FeedPost],
+        *,
+        max_snapshot_widgets: Optional[int] = None,
+    ) -> Dict[UUID, Dict[str, Any]]:
         if not posts:
             return {}
 
@@ -110,7 +158,11 @@ class FeedServicePreviewMixin:
             for post in snapshot_posts:
                 snap = snap_map.get(post.current_snapshot_id)
                 if snap:
-                    payloads[post.id] = self._payload_from_snapshot(post, snap)
+                    payloads[post.id] = self._payload_from_snapshot(
+                        post,
+                        snap,
+                        max_widgets=max_snapshot_widgets,
+                    )
 
         posts = live_posts
         if not posts:

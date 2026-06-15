@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { DashboardWidgetCell } from '../DashboardWidgetCell';
 import { shouldShowWidgetHeader } from '../../utils/widgetCardHelpers';
@@ -14,16 +14,61 @@ type Props = {
   dashboardId: string;
   runtimeFilters: RuntimeFilter[];
   onCrossFilter: (field: string, value: unknown) => void;
-  onWidgetChartClick?: (
-    widget: WidgetInstance,
-    field: string,
-    value: unknown,
-    shiftKey: boolean,
-  ) => void;
+  onWidgetChartClick?: (widget: WidgetInstance, field: string, value: unknown, shiftKey: boolean) => void;
   onRetryWidget?: (widgetId: string) => void;
   refreshing?: boolean;
   canvasMinHeight?: string;
+  layoutMode?: 'preserve' | 'preview';
 };
+
+function getPreviewWidgetHeight(widget: WidgetInstance, sourceLayout?: LayoutItem): number {
+  if (widget.chartType === 'divider') return 2;
+  if (widget.chartType === 'stat') return 4;
+  if (widget.chartType === 'text' || widget.chartType === 'image') return 5;
+  return Math.min(8, Math.max(6, sourceLayout?.h || 7));
+}
+
+function buildPreviewLayout(
+  widgets: WidgetInstance[],
+  sourceLayout: LayoutItem[],
+  columns: number,
+  columnCount: number
+): LayoutItem[] {
+  const sourceById = new Map(sourceLayout.map((item) => [item.i, item]));
+  const orderedWidgets = [...widgets].sort((left, right) => {
+    const leftPosition = sourceById.get(left.id);
+    const rightPosition = sourceById.get(right.id);
+
+    if (!leftPosition && !rightPosition) return 0;
+    if (!leftPosition) return 1;
+    if (!rightPosition) return -1;
+
+    return leftPosition.y - rightPosition.y || leftPosition.x - rightPosition.x;
+  });
+  const itemWidth = Math.floor(columns / columnCount);
+  const result: LayoutItem[] = [];
+  let rowY = 0;
+
+  for (let index = 0; index < orderedWidgets.length; index += columnCount) {
+    const rowWidgets = orderedWidgets.slice(index, index + columnCount);
+    const rowHeight = Math.max(
+      ...rowWidgets.map((widget) => getPreviewWidgetHeight(widget, sourceById.get(widget.id)))
+    );
+
+    rowWidgets.forEach((widget, columnIndex) => {
+      result.push({
+        i: widget.id,
+        x: columnIndex * itemWidth,
+        y: rowY,
+        w: itemWidth,
+        h: rowHeight,
+      });
+    });
+    rowY += rowHeight;
+  }
+
+  return result;
+}
 
 export function DashboardViewerGrid({
   widgets,
@@ -35,18 +80,39 @@ export function DashboardViewerGrid({
   onRetryWidget,
   refreshing = false,
   canvasMinHeight = 'calc(100vh - 180px)',
+  layoutMode = 'preserve',
 }: Props) {
+  const responsiveLayouts = useMemo(() => {
+    if (layoutMode === 'preserve') {
+      return {
+        lg: layout,
+        md: layout,
+        sm: layout,
+        xs: layout,
+        xxs: layout,
+      };
+    }
+
+    return {
+      lg: buildPreviewLayout(widgets, layout, 12, 2),
+      md: buildPreviewLayout(widgets, layout, 10, 2),
+      sm: buildPreviewLayout(widgets, layout, 6, 1),
+      xs: buildPreviewLayout(widgets, layout, 4, 1),
+      xxs: buildPreviewLayout(widgets, layout, 2, 1),
+    };
+  }, [layout, layoutMode, widgets]);
+
   return (
     <div className="dashboard-canvas-wrapper dashboard-viewer-canvas" style={{ minHeight: canvasMinHeight }}>
       <ResponsiveGridLayout
         className="layout"
         style={{ opacity: refreshing ? 0.72 : 1, transition: 'opacity 0.2s ease' }}
         layouts={{
-          lg: layout.map((item) => ({ ...item, static: true })),
-          md: layout.map((item) => ({ ...item, static: true })),
-          sm: layout.map((item) => ({ ...item, static: true })),
-          xs: layout.map((item) => ({ ...item, static: true })),
-          xxs: layout.map((item) => ({ ...item, static: true })),
+          lg: responsiveLayouts.lg.map((item) => ({ ...item, static: true })),
+          md: responsiveLayouts.md.map((item) => ({ ...item, static: true })),
+          sm: responsiveLayouts.sm.map((item) => ({ ...item, static: true })),
+          xs: responsiveLayouts.xs.map((item) => ({ ...item, static: true })),
+          xxs: responsiveLayouts.xxs.map((item) => ({ ...item, static: true })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
         cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
@@ -62,14 +128,11 @@ export function DashboardViewerGrid({
 
           return (
             <div key={widget.id}>
-              <div
-                className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}
-              >
+              <div className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}>
                 {showHeader && (
                   <div className="widget-card-header widget-card-header-stack">
                     <span className="widget-card-title">{widget.title}</span>
-                    {typeof widget.chartOptions?.subtitle === 'string' &&
-                    widget.chartOptions.subtitle.trim() ? (
+                    {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
                       <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
                     ) : null}
                   </div>

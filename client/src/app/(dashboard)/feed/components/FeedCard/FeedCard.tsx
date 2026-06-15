@@ -30,6 +30,7 @@ interface FeedCardProps {
     deleting?: boolean;
   };
   compact?: boolean;
+  hidePreview?: boolean;
   hideInteractions?: boolean;
   highlighted?: boolean;
   /** Detail link base — default `/feed` for app feed; `/discover` for public. */
@@ -46,6 +47,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
   onCommentDeleted,
   interactionState,
   compact = false,
+  hidePreview = false,
   hideInteractions = false,
   highlighted = false,
   detailBasePath = '/feed',
@@ -174,6 +176,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
       <FeedCardBody
         item={item}
         compact={compact}
+        hidePreview={hidePreview}
         previewClickable={canOpenAsset}
         onPreviewClick={handlePreviewOpen}
       />
