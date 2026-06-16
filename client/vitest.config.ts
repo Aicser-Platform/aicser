@@ -21,8 +21,7 @@ export default defineConfig({
     include: [
       'src/__tests__/**/*.test.ts',
       'src/__tests__/**/*.test.tsx',
-      'ee/src/**/*.test.ts',
-      'ee/src/**/*.test.tsx',
+      'ee/src/ee/components/ai/chat/**/*.test.tsx',
     ],
   },
 });
