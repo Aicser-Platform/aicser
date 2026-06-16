@@ -323,12 +323,12 @@
   display: inline-flex;
   align-items: center;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 9px;
   font-size: 11px;
   font-weight: 500;
   border-radius: 11px;
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
+  border: 1px solid transparent;
+  background: var(--ant-color-fill-tertiary);
   color: var(--ant-color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
@@ -337,7 +337,7 @@
 }
 
 .gfb-preset-chip:hover {
-  border-color: var(--ant-color-primary);
+  border-color: transparent;
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }
