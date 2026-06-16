@@ -5901,7 +5901,8 @@
     "build_live_title": "AI กำลังสร้างแดชบอร์ดนี้",
     "build_live_subtitle": "วิดเจ็ตจะปรากฏบนผืนผ้าใบเมื่อตรวจสอบแล้ว",
     "build_live_syncing": "กำลังซิงค์",
-    "build_live_connected": "สด"
+    "build_live_connected": "สด",
+    "dashboard_not_found": "ไม่พบแดชบอร์ดหรือคุณไม่มีสิทธิ์เข้าถึง"
   },
   "billing_page": {
     "loading": "กำลังโหลด...",

@@ -94,6 +94,10 @@ class FeedServiceSerializationMixin:
         maybe_name = (getattr(user, "name", None) or "").strip()
         if maybe_name:
             return maybe_name
+        # Prefer a real identifier (email) over the synthetic "User <id>" fallback.
+        email = (getattr(user, "email", None) or "").strip()
+        if email:
+            return email
         return fallback
 
     def _to_author(self, user: Optional[User], fallback_user_id: Optional[UUID]) -> FeedAuthor:

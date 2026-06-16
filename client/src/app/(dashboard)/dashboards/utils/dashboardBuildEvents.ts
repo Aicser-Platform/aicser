@@ -9,6 +9,8 @@ export type DashboardBuildWidget = {
   status?: string;
   error?: string;
   chart_id?: string;
+  preview?: Record<string, unknown>; // executed chart data ({x, y, series}) for the in-chat thumbnail
+  chart_query?: Record<string, unknown>; // widget query, passed to WidgetRenderer alongside preview data
 };
 
 export type DashboardBuildProgress = {
@@ -66,13 +68,18 @@ export function mergeDashboardWidgetReady(
   const widgetStatus =
     eventType === 'dashboard_widget_failed' ? 'failed' : String(raw.status || 'ready');
   const widgetIndex = Number(raw.widget_index ?? raw.index ?? prevReady.length);
+  const existing = prevReady.find((w) => w.index === widgetIndex);
+  const preview = asRecord(raw.preview) ?? existing?.preview;
+  const chartQuery = asRecord(raw.chart_query) ?? existing?.chart_query;
   const entry: DashboardBuildWidget = {
     index: widgetIndex,
-    title: String(raw.title || 'Widget'),
-    chart_type: String(raw.chart_type || 'bar'),
+    title: String(raw.title || existing?.title || 'Widget'),
+    chart_type: String(raw.chart_type || existing?.chart_type || 'bar'),
     status: widgetStatus,
-    error: typeof raw.error === 'string' ? raw.error : undefined,
-    chart_id: typeof raw.chart_id === 'string' ? raw.chart_id : undefined,
+    error: typeof raw.error === 'string' ? raw.error : existing?.error,
+    chart_id: typeof raw.chart_id === 'string' ? raw.chart_id : existing?.chart_id,
+    preview,
+    chart_query: chartQuery,
   };
   return [...prevReady.filter((w) => w.index !== widgetIndex), entry].sort(
     (a, b) => a.index - b.index,

@@ -5899,7 +5899,8 @@
     "build_live_title": "AI កំពុងបង្កើត dashboard",
     "build_live_subtitle": "Widgets បង្ហាញលើ canvas បន្ទាប់ពីផ្ទៀងផ្ទាត់",
     "build_live_syncing": "កំពុង sync",
-    "build_live_connected": "Live"
+    "build_live_connected": "Live",
+    "dashboard_not_found": "រកមិនឃើញផ្ទាំងគ្រប់គ្រង ឬអ្នកគ្មានសិទ្ធិចូលប្រើ។"
   },
   "billing_page": {
     "loading": "កំពុងផ្ទុក...",

@@ -5902,7 +5902,8 @@
     "build_live_title": "AI がダッシュボードを構築中",
     "build_live_subtitle": "検証されたウィジェットがキャンバスに順次表示されます。",
     "build_live_syncing": "同期中",
-    "build_live_connected": "ライブ"
+    "build_live_connected": "ライブ",
+    "dashboard_not_found": "ダッシュボードが見つからないか、アクセス権がありません。"
   },
   "billing_page": {
     "loading": "読み込み中...",

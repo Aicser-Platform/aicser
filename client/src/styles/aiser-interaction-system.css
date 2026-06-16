@@ -230,14 +230,6 @@
   transition: none !important;
 }
 
-/* ── Inputs ── */
-
-.ant-input:hover,
-.ant-input-affix-wrapper:hover,
-.ant-select:not(.ant-select-disabled):hover .ant-select-selector {
-  transform: none !important;
-}
-
 /* Workspace filter inputs — single border ring */
 .chat-page-container .schema-explorer-toolbar .ant-input-affix-wrapper,
 .query-editor-workspace .schema-explorer-toolbar .ant-input-affix-wrapper {

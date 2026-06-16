@@ -112,6 +112,69 @@ def test_materialize_text_widget_content():
 
 
 @pytest.mark.asyncio
+async def test_llm_refine_hydrates_user_byok_before_completion(monkeypatch):
+    """The planner must register the user's BYOK key on the LiteLLM service before
+    generating. Otherwise a user-selected BYOK model (e.g. ``byok_google``) is
+    reported "not configured" and silently falls back to the Azure default — which
+    is exactly why a configured Gemini key was never used during generation.
+    """
+    from src.modules.ai.services import dashboard_llm_planner as planner_mod
+    import src.modules.ai.services.litellm_service as litellm_mod
+
+    calls: list = []
+
+    class FakeLiteLLM:
+        async def hydrate_user_byok_models(self, user_id):
+            calls.append(("hydrate", user_id))
+
+        async def generate_completion(self, **kwargs):
+            calls.append(("complete", kwargs.get("model_id")))
+            return {"success": False, "content": ""}
+
+    monkeypatch.setattr(litellm_mod, "LiteLLMService", FakeLiteLLM)
+
+    seed = _heuristic_to_llm_seed("Revenue dashboard", SALES_SCHEMA, "sales")
+    await planner_mod._llm_refine_dashboard_plan(
+        seed,
+        prompt="Revenue dashboard",
+        schema_summary="",
+        data_source_name="Sales DB",
+        tables_info=[],
+        model_id="byok_google",
+        user_id="user-123",
+    )
+
+    assert ("hydrate", "user-123") in calls, "BYOK key was never hydrated for the user"
+    # Hydration must happen BEFORE the completion call, or the BYOK model is unknown.
+    assert calls.index(("hydrate", "user-123")) < calls.index(("complete", "byok_google"))
+
+
+@pytest.mark.asyncio
+async def test_plan_dashboard_with_llm_threads_user_id_to_refine(monkeypatch):
+    """``user_id`` must flow from the public entrypoint into the refine step so the
+    BYOK key can be hydrated for the right user."""
+    from src.modules.ai.services import dashboard_llm_planner as planner_mod
+
+    seen: dict = {}
+
+    async def _capture(seed, **kwargs):
+        seen.update(kwargs)
+        return seed
+
+    monkeypatch.setattr(planner_mod, "_llm_refine_dashboard_plan", _capture)
+
+    await planner_mod.plan_dashboard_with_llm(
+        "Sales KPI dashboard",
+        SALES_SCHEMA,
+        data_source_name="Sales DB",
+        use_llm=True,
+        model_id="byok_google",
+        user_id="user-123",
+    )
+    assert seen.get("user_id") == "user-123"
+
+
+@pytest.mark.asyncio
 async def test_plan_dashboard_with_llm_skips_live_call_when_disabled(monkeypatch):
     from src.modules.ai.services import dashboard_llm_planner as planner_mod
 

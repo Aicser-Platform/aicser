@@ -307,7 +307,7 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, posts)
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
-        previews = await self._load_preview_payloads(posts)
+        previews = await self._load_preview_payloads(posts, max_snapshot_widgets=6)
 
         items = [
             self._build_item_response(

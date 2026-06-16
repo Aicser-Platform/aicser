@@ -10,7 +10,6 @@ import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/Das
 import ShareInsightComposer from '@/components/Feed/ShareInsightComposer';
 import { readChatFeedDraft, type ChatFeedDraft } from '@/components/Feed/chatFeedDraft';
 import { socialFeedService } from '@/services/socialFeedService';
-import '../styles.css';
 
 export default function FeedPublishPage() {
   const t = useTranslations('feed_publish_page');

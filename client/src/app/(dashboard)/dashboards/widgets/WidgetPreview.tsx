@@ -18,6 +18,7 @@ export const WidgetPreview: React.FC<{
   dashboardId?: string;
   runtimeFilters?: RuntimeFilter[];
   onFilter?: (field: string, value: unknown) => void;
+  compactPreview?: boolean;
 }> = ({
   widget,
   onChartReady,
@@ -29,6 +30,7 @@ export const WidgetPreview: React.FC<{
   dashboardId,
   runtimeFilters = [],
   onFilter,
+  compactPreview = false,
 }) => {
   const dashboardDefaultPalette = useDashboardStore((s) => {
     const dash = s.dashboards.find((d) => d.id === s.activeDashboardId);
@@ -42,6 +44,18 @@ export const WidgetPreview: React.FC<{
       dashboardDefaultPalette,
     ),
     dashboardDefaultPalette,
+    ...(compactPreview
+      ? {
+          isDashboardWidget: true,
+          isFeedPreview: true,
+          axisLabelFontSize: 9,
+          hAxisFontSize: 9,
+          vAxisFontSize: 9,
+          legendFontSize: 9,
+          fontSize: widget.chartType === 'stat' ? 24 : widget.chartOptions?.fontSize,
+          layout: widget.chartType === 'stat' ? 'compact' : widget.chartOptions?.layout,
+        }
+      : {}),
   };
 
   return (

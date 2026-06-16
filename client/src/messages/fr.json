@@ -5902,7 +5902,8 @@
     "build_live_title": "L'IA construit ce tableau de bord",
     "build_live_subtitle": "Les widgets apparaissent après validation.",
     "build_live_syncing": "Synchronisation",
-    "build_live_connected": "En direct"
+    "build_live_connected": "En direct",
+    "dashboard_not_found": "Tableau de bord introuvable ou accès refusé."
   },
   "billing_page": {
     "loading": "Chargement...",

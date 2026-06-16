@@ -5902,7 +5902,8 @@
     "build_live_title": "AI đang xây dashboard này",
     "build_live_subtitle": "Widget xuất hiện trên canvas khi được xác thực.",
     "build_live_syncing": "Đang đồng bộ",
-    "build_live_connected": "Trực tiếp"
+    "build_live_connected": "Trực tiếp",
+    "dashboard_not_found": "Không tìm thấy bảng điều khiển hoặc bạn không có quyền truy cập."
   },
   "billing_page": {
     "loading": "Đang tải...",

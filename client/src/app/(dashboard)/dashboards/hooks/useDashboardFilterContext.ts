@@ -10,22 +10,20 @@ import { chartService } from '../services/chartService';
 import { buildDefaultRuntimeFilters } from '../utils/filterOperators';
 import { mergeFilterDefaults } from '../utils/filterConfigMerge';
 import { detectFilterFieldConflicts } from '../utils/filterConflicts';
+import { filterVisibleLayout, filterVisibleWidgets } from '../utils/dashboardViewerScope';
 import { useDashboardChartRefresh } from './useDashboardChartRefresh';
 import { enrichFiltersWithTableNames } from '../utils/filterSchemaColumns';
 import { useDataSources } from '@/hooks/useDataSources';
 import { useDashboardRefresh } from './useDashboardRefresh';
 import { isDataWidget } from '../utils/dashboardRefresh';
 import { decodeDrillStateParam, encodeDrillStateParam, getDrillPath, getInteractionMode } from '../utils/drillDownHelpers';
+import { normalizeDashboardFilters } from '../utils/normalizeDashboardFilters';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { DashboardPageItem } from '../components/DashboardPageTabs';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
-
-function mergeFilterDefaultsFromConfigs(...configs: DashboardFilter[][]) {
-  return mergeFilterDefaults(...configs);
-}
 
 export function useDashboardFilterContext(projectId?: string | number | null) {
   const t = useTranslations('dashboards');
@@ -136,7 +134,17 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           }));
         }
 
-        let cfgFilters = (dash?.config?.global_filters as DashboardFilter[]) || [];
+        const filterSourceWidget = useDashboardStore
+          .getState()
+          .widgets.find((widget) => widget.dataSourceId);
+        const filterDataContext = {
+          dataSourceId: filterSourceWidget?.dataSourceId,
+          tableName: filterSourceWidget?.chartQuery?.tableName,
+        };
+        let cfgFilters = normalizeDashboardFilters(
+          dash?.config?.global_filters,
+          filterDataContext,
+        );
 
         // ── AI-seeded global filters (from chat dashboard creation) ──────────────
         // When a dashboard is opened immediately after AI generation, check sessionStorage
@@ -151,20 +159,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
                 JSON.parse(aiFiltersRaw);
               if (Array.isArray(aiFilters) && aiFilters.length > 0 && cfgFilters.length === 0) {
                 // Convert AI filter descriptors to DashboardFilter format
-                const mapped: DashboardFilter[] = aiFilters.map((f, i) => ({
-                  id: `ai_filter_${i}_${f.field}`,
-                  field: f.field,
-                  name: f.label,
-                  type: f.type === 'date_range' || f.type === 'dateRange'
-                    ? ('dateRange' as const)
-                    : f.type === 'date'
-                      ? ('date' as const)
-                      : f.type === 'slider' || f.type === 'numeric_range'
-                        ? ('slider' as const)
-                        : f.multi
-                          ? ('checkbox' as const)
-                          : ('dropdown' as const),
-                }));
+                const mapped = normalizeDashboardFilters(aiFilters, filterDataContext);
                 cfgFilters = mapped;
                 // Persist to dashboard config so filters survive future opens
                 try {
@@ -206,7 +201,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           pageList = rawPages.map((p: { id: string; name: string; filters?: DashboardFilter[] }) => ({
             id: String(p.id),
             name: p.name,
-            filters: p.filters || [],
+            filters: normalizeDashboardFilters(p.filters, filterDataContext),
           }));
 
           if (pageList.length === 0) {
@@ -216,7 +211,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
               {
                 id: String(created.id),
                 name: created.name || 'Page 1',
-                filters: (created.filters as DashboardFilter[]) || [],
+                filters: normalizeDashboardFilters(created.filters, filterDataContext),
               },
             ];
             await chartService.setDefaultPage(activeDashboardId, pageList[0].id);
@@ -332,36 +327,14 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     router.replace(`?${next}`, { scroll: false });
   }, [activeDashboardId, activePageId, runtimeFilters, widgetDrillState, router]);
 
-  const visibleWidgetIds = useMemo(() => {
-    if (!pages.length || !activePageId) return new Set(widgets.map((w) => w.id));
-    const defaultPage = defaultPageIdRef.current || pages[0]?.id;
-    const ids = new Set<string>();
-    widgets.forEach((w) => {
-      const li = layout.find((l) => l.i === w.id);
-      const pageId = li?.pageId;
-      if (pageId === activePageId) ids.add(w.id);
-      else if (!pageId && activePageId === defaultPage) ids.add(w.id);
-    });
-    return ids;
-  }, [widgets, layout, activePageId, pages]);
-
-  const pageWidgets = useMemo(() => {
-    const filtered = widgets.filter((w) => visibleWidgetIds.has(w.id));
-    if (filtered.length === 0 && widgets.length > 0 && pages.length > 0 && activePageId) {
-      const defaultPage = defaultPageIdRef.current || pages[0]?.id;
-      const onDefaultPage = widgets.filter((w) => {
-        const li = layout.find((l) => l.i === w.id);
-        return !li?.pageId;
-      });
-      if (onDefaultPage.length > 0 && activePageId === defaultPage) return onDefaultPage;
-      return widgets;
-    }
-    return filtered;
-  }, [widgets, visibleWidgetIds, pages.length, activePageId, layout]);
-  const pageLayout = useMemo(() => {
-    const ids = new Set(pageWidgets.map((w) => w.id));
-    return layout.filter((l) => ids.has(l.i));
-  }, [layout, pageWidgets]);
+  // Same scoping rules as the shared viewer: widgets on the active page only,
+  // unassigned/stale-page widgets on the default page, empty pages stay empty
+  // (no fallback to all widgets — that made new tabs look identical to page 1).
+  const pageWidgets = useMemo(
+    () => filterVisibleWidgets(widgets, layout, activePageId, pages, defaultPageIdRef.current),
+    [widgets, layout, activePageId, pages]
+  );
+  const pageLayout = useMemo(() => filterVisibleLayout(layout, pageWidgets), [layout, pageWidgets]);
 
   const getVisibleTargetIds = useCallback(
     () =>

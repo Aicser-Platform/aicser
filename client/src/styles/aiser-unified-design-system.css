@@ -388,44 +388,6 @@
 }
 
 /* ========================================
-   INPUTS - CLEAN & MODERN
-   ======================================== */
-
-.ant-input,
-.ant-input-affix-wrapper,
-.ant-select-selector,
-.ant-picker,
-textarea.ant-input {
-  border-radius: var(--radius-md) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-sm) var(--spacing-md) !important;
-  transition: all var(--transition-base) !important;
-  background: var(--ant-color-bg-container) !important;
-  color: var(--ant-color-text) !important;
-  font-size: var(--font-size-sm) !important;
-}
-
-.ant-input:hover,
-.ant-input-affix-wrapper:hover,
-.ant-select-selector:hover {
-  border-color: var(--ant-color-primary) !important;
-}
-
-.ant-input:focus,
-.ant-input-affix-wrapper-focused,
-.ant-select-focused .ant-select-selector,
-.ant-picker-focused {
-  border-color: var(--ant-color-primary) !important;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1) !important;
-  outline: none !important;
-}
-
-.ant-input::placeholder,
-textarea.ant-input::placeholder {
-  color: var(--ant-color-text-quaternary) !important;
-}
-
-/* ========================================
    FORMS - CONSISTENT SPACING
    ======================================== */
 
@@ -1252,4 +1214,3 @@ textarea[class*="ant-input"] {
 .billing-plan-card:hover {
   box-shadow: var(--shadow-md) !important;
 }
-

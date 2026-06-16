@@ -1,6 +1,10 @@
+import os
+
 import pytest
 
-from src.modules.ai.service import analyze_service
+os.environ["DEBUG"] = "false"
+
+from src.modules.ai.services import analyze_service
 
 
 @pytest.mark.asyncio
@@ -14,6 +18,12 @@ async def test_run_langgraph_sync_propagates_failure_success_flag(monkeypatch):
                 "success": False,
                 "error": "simulated orchestrator failure",
                 "message": "workflow failed",
+                "sql_query": "SELECT 1",
+                "query_result": [{"value": 1}],
+                "query_result_data": [{"value": 1}],
+                "query_result_row_count": 1,
+                "query_result_columns": ["value"],
+                "chart_config": {"series": []},
                 "execution_metadata": {"status": "error"},
             }
 
@@ -23,9 +33,9 @@ async def test_run_langgraph_sync_propagates_failure_success_flag(monkeypatch):
     class _FakeMultiEngineQueryService:
         pass
 
-    from src.modules.ai.service import langgraph_orchestrator
-    from src.modules.data.service import data_connectivity_service
-    from src.modules.data.service import multi_engine_query_service
+    from src.modules.ai.services import langgraph_orchestrator
+    from src.modules.data.services import data_connectivity_service
+    from src.modules.data.services import multi_engine_query_service
 
     monkeypatch.setattr(
         langgraph_orchestrator,
@@ -39,8 +49,8 @@ async def test_run_langgraph_sync_propagates_failure_success_flag(monkeypatch):
     )
     monkeypatch.setattr(
         multi_engine_query_service,
-        "MultiEngineQueryService",
-        _FakeMultiEngineQueryService,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
     )
 
     result = await analyze_service._run_langgraph_sync(
@@ -55,3 +65,8 @@ async def test_run_langgraph_sync_propagates_failure_success_flag(monkeypatch):
         analytics_type="descriptive",
     )
     assert result.get("success") is False
+    assert result.get("sql_query") == "SELECT 1"
+    assert result.get("query_result_data") == [{"value": 1}]
+    assert result.get("query_result_row_count") == 1
+    assert result.get("chart_config") == {"series": []}
+    assert result.get("message") == "workflow failed"

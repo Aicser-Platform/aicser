@@ -76,6 +76,8 @@ export default function NewDashboardStudio() {
   const t = useTranslations('dashboards_page');
   const searchParams = useSearchParams();
   const requestedDashboardId = searchParams?.get('id');
+  const requestedStudioMode = searchParams?.get('mode');
+  const fromChatMessageId = searchParams?.get('from_chat');
   const liveBuildParam = searchParams?.get('live') === '1';
   const appliedDashboardIdRef = useRef<string | null>(null);
   const dashboards = useDashboardStore((s) => s.dashboards);
@@ -97,6 +99,7 @@ export default function NewDashboardStudio() {
   const seedDashboardStarterLayout = useDashboardStore((s) => s.seedDashboardStarterLayout);
   const deleteChart = useDashboardStore((s) => s.deleteChart);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const loadDashboardById = useDashboardStore((s) => s.loadDashboardById);
   const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const updateWidgetFromStore = useDashboardStore((s) => s.updateWidget);
   const updateChartLayout = useDashboardStore((s) => s.updateChartLayout);
@@ -105,6 +108,7 @@ export default function NewDashboardStudio() {
   const isFullscreen = useDashboardStore((s) => s.isFullscreen);
   const setIsFullscreenState = useDashboardStore((s) => s.setIsFullscreen);
   const studioMode = useDashboardStore((s) => s.studioMode);
+  const setStudioMode = useDashboardStore((s) => s.setStudioMode);
   const isEditMode = studioMode === 'edit' && !isFullscreen;
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
 
@@ -124,6 +128,19 @@ export default function NewDashboardStudio() {
     if (!hasNewWidgets || !liveBuildDashboardId) return;
     void fetchDashboards();
   }, [hasNewWidgets, liveBuildDashboardId, fetchDashboards]);
+
+  useEffect(() => {
+    if (!activeDashboardId) return;
+    const requestedMode =
+      requestedStudioMode === 'edit' || requestedStudioMode === 'view'
+        ? requestedStudioMode
+        : fromChatMessageId
+          ? 'view'
+          : null;
+    if (requestedMode && studioMode !== requestedMode) {
+      setStudioMode(requestedMode);
+    }
+  }, [activeDashboardId, fromChatMessageId, requestedStudioMode, setStudioMode, studioMode]);
 
   const collabRoomId = useDashboardCollaborationRoom(activeDashboardId, isEditMode);
   const {
@@ -196,6 +213,7 @@ export default function NewDashboardStudio() {
         pageFilters: filterCtx.pageFiltersConfig,
         pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
         runtimeFilters: filterCtx.runtimeFilters,
+        colorPalette: activeDashboard.config?.default_color_palette as string | undefined,
       });
       const fingerprint = computeStudioSnapshotFingerprint({
         widgets: filterCtx.pageWidgets,
@@ -323,22 +341,32 @@ export default function NewDashboardStudio() {
     }
   }, [mounted, currentProjectId, fetchDashboards]);
 
-  // Restore dashboard from URL after list loads (e.g. returning from preview)
+  // Restore dashboard from URL after list loads (e.g. returning from preview,
+  // or opening a chat-generated dashboard via deep link)
   useEffect(() => {
     if (!hasLoadedDashboards || !requestedDashboardId) return;
     if (appliedDashboardIdRef.current === requestedDashboardId) return;
-    const match = dashboards.find((d) => String(d.id) === String(requestedDashboardId));
-    if (!match) return;
     appliedDashboardIdRef.current = requestedDashboardId;
-    if (String(activeDashboardId) !== String(requestedDashboardId)) {
-      setActiveDashboardId(requestedDashboardId);
+    const match = dashboards.find((d) => String(d.id) === String(requestedDashboardId));
+    if (match) {
+      if (String(activeDashboardId) !== String(requestedDashboardId)) {
+        setActiveDashboardId(requestedDashboardId);
+      }
+      return;
     }
+    // Not in the current project's list (e.g. just created from chat) —
+    // fetch it directly so the deep link never silently opens another dashboard.
+    void loadDashboardById(requestedDashboardId).then((loaded) => {
+      if (!loaded) message.warning(t('dashboard_not_found'));
+    });
   }, [
     hasLoadedDashboards,
     requestedDashboardId,
     dashboards,
     activeDashboardId,
     setActiveDashboardId,
+    loadDashboardById,
+    t,
   ]);
 
   // Load sample dashboard templates for empty-state onboarding.
@@ -880,6 +908,10 @@ export default function NewDashboardStudio() {
               flexDirection: 'column',
               display: 'flex',
               padding: 0,
+              // Reserve room for the absolute properties panel (300px) so its overlay
+              // never hides the right end of the toolbar / widget edges.
+              paddingRight: isEditMode && !isPropertiesCollapsed ? 300 : 0,
+              transition: 'padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
             {/* Dashboard Selector Tabs & Toolbar — Hidden in Fullscreen */}

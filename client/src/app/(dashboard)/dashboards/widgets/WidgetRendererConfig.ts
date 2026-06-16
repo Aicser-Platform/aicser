@@ -238,6 +238,8 @@ export interface ChartConfig {
   showHAxisLine?: boolean;
   /** Dashboard grid tiles — tighter chrome so axes/labels survive small card sizes */
   isDashboardWidget?: boolean;
+  /** Extra-dense rendering used by immutable dashboard snapshots in feed cards. */
+  isFeedPreview?: boolean;
   /**
    * Value display format applied to tooltips and (optionally) axis labels.
    * 'compact' → 1.2K / 3.4M
@@ -387,6 +389,7 @@ export const getCartesianEmphasis = (
 
 export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: ChartConfig) => {
   const position = config?.legendPosition || (showLegend ? 'top' : 'hide');
+  const feedPreview = config?.isFeedPreview === true;
 
   if (position === 'hide') {
     return { show: false };
@@ -395,9 +398,9 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
   const base = {
     show: true,
     icon: 'circle',
-    itemWidth: 10,
-    itemHeight: 10,
-    itemGap: 24,
+    itemWidth: feedPreview ? 7 : 10,
+    itemHeight: feedPreview ? 7 : 10,
+    itemGap: feedPreview ? 10 : 24,
     textStyle: {
       color:
         config?.axisLabelColor === 'default'
@@ -410,7 +413,7 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
   };
 
   const layoutMap = {
-    top: { top: 5, left: 10, orient: 'horizontal' },
+    top: { top: feedPreview ? 0 : 5, left: feedPreview ? 4 : 10, orient: 'horizontal' },
     bottom: { bottom:5, left: 10, orient: 'horizontal' },
     left: { left: 5, top: 'middle', orient: 'vertical' },
     right: { right: 5, top: 'middle', orient: 'vertical' },
@@ -426,6 +429,7 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
 
 export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
+  const feedPreview = config.isFeedPreview === true;
   const legendPos = config.legendPosition || (config.showLegend !== false ? 'top' : 'hide');
   const showXAxisLabels = (config.showHAxisLabels ?? config.showAxis) !== false;
   const showYAxisLabels = (config.showVAxisLabels ?? config.showAxis) !== false;
@@ -448,11 +452,12 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   // Base distances — slightly leaner in dashboard tiles; containLabel still expands for labels
   const pad = compact ? 4 : 0;
   const baseBottom =
-    (legendPos === 'bottom' ? 40 : config.xAxisLabel ? 45 : compact ? 22 : 20) + pad;
+    (legendPos === 'bottom' ? 40 : config.xAxisLabel ? 45 : feedPreview ? 14 : compact ? 22 : 20) + pad;
   const baseLeft =
     (legendPos === 'left' ? 80 : config.yAxisLabel ? 50 : compact ? 16 : 20) + pad;
-  const baseTop = (legendPos === 'top' ? (compact ? 38 : 45) : compact ? 14 : 20) + pad;
-  const baseRight = (legendPos === 'right' ? 80 : compact ? 14 : 20) + pad;
+  const baseTop =
+    (legendPos === 'top' ? (feedPreview ? 20 : compact ? 38 : 45) : feedPreview ? 4 : compact ? 14 : 20) + pad;
+  const baseRight = (legendPos === 'right' ? 80 : feedPreview ? 6 : compact ? 14 : 20) + pad;
 
   const extraBottom = showXAxisLabels ? (xAxisLabelSlanted ? (compact ? 18 : 14) : compact ? 10 : 8) : 0;
   const extraLeft = showYAxisLabels

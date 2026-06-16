@@ -35,10 +35,8 @@ import type {
   LeaderboardTimeRange,
 } from '@/services/socialFeedService';
 import { ApiError } from '@/utils/api';
-import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
-import './styles.css';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 10;
@@ -75,6 +73,7 @@ const SocialFeedPage: React.FC = () => {
 
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialFeedResolved, setInitialFeedResolved] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [filterOptions, setFilterOptions] = useState<FeedFilterOptions>(EMPTY_FILTER_OPTIONS);
   const [sidebarData, setSidebarData] = useState<FeedSidebarData>(EMPTY_SIDEBAR_DATA);
@@ -101,6 +100,17 @@ const SocialFeedPage: React.FC = () => {
     tags: [],
     search: '',
   });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const requestFilters = useMemo(
+    () => ({
+      scope: filters.scope,
+      assetType: filters.assetType,
+      sort: filters.sort,
+      tags: filters.tags,
+      search: debouncedSearch,
+    }),
+    [debouncedSearch, filters.assetType, filters.scope, filters.sort, filters.tags]
+  );
 
   const itemsRef = useRef<FeedItem[]>([]);
   const loadingRef = useRef(false);
@@ -158,11 +168,11 @@ const SocialFeedPage: React.FC = () => {
       try {
         const offset = reset ? 0 : itemsRef.current.length;
         const response = await socialFeedService.getFeed({
-          scope: filters.scope,
-          sort: filters.sort,
-          tags: filters.tags,
-          search: (filters.search || '').trim() || undefined,
-          assetType: filters.assetType === 'all' ? undefined : filters.assetType,
+          scope: requestFilters.scope,
+          sort: requestFilters.sort,
+          tags: requestFilters.tags,
+          search: (requestFilters.search || '').trim() || undefined,
+          assetType: requestFilters.assetType === 'all' ? undefined : requestFilters.assetType,
           limit: PAGE_SIZE,
           offset,
         });
@@ -185,9 +195,10 @@ const SocialFeedPage: React.FC = () => {
         if (requestId !== requestIdRef.current) return;
         loadingRef.current = false;
         setLoading(false);
+        if (reset) setInitialFeedResolved(true);
       }
     },
-    [filters]
+    [requestFilters, t]
   );
 
   const handleScrollToTop = useCallback(async () => {
@@ -217,7 +228,7 @@ const SocialFeedPage: React.FC = () => {
     } catch (error) {
       message.error(errorMessage(error, t('failed_load_filters')));
     }
-  }, [filters.scope]);
+  }, [filters.scope, t]);
 
   const loadSidebar = useCallback(async () => {
     setSidebarLoading(true);
@@ -308,7 +319,7 @@ const SocialFeedPage: React.FC = () => {
       setLoadingApprovals(false);
       setApprovalAccessResolved(true);
     }
-  }, []);
+  }, [t]);
 
   // ─── Track latest post id after initial load for new-posts polling ────────
   useEffect(() => {
@@ -318,6 +329,13 @@ const SocialFeedPage: React.FC = () => {
   }, [items]);
 
   // Poll every 60s for new posts and show a banner
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(filters.search || '');
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [filters.search]);
+
   useEffect(() => {
     if (!filters.scope) return;
     const interval = window.setInterval(async () => {
@@ -348,11 +366,7 @@ const SocialFeedPage: React.FC = () => {
     const handleKey = (e: KeyboardEvent) => {
       // Ignore when typing in inputs
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
       if (e.key === 'j' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -383,20 +397,23 @@ const SocialFeedPage: React.FC = () => {
   }, [focusedPostIndex, router]);
 
   useEffect(() => {
+    if (!initialFeedResolved) return;
     loadFilterOptions();
-  }, [loadFilterOptions]);
+  }, [initialFeedResolved, loadFilterOptions]);
 
   useEffect(() => {
+    if (!initialFeedResolved) return;
     loadSidebar();
-  }, [loadSidebar]);
+  }, [initialFeedResolved, loadSidebar]);
 
   useEffect(() => {
+    if (!initialFeedResolved) return;
     loadApprovalQueue();
-  }, [loadApprovalQueue, user?.id]);
+  }, [initialFeedResolved, loadApprovalQueue, user?.id]);
 
   useEffect(() => {
     loadFeed(true);
-  }, [filters, loadFeed]);
+  }, [loadFeed]);
 
   useEffect(() => {
     if (!highlightPostId) return;
@@ -558,7 +575,7 @@ const SocialFeedPage: React.FC = () => {
       setRejectSubmitting(false);
       setApprovalPendingState(queueItemId, 'rejecting', false);
     }
-  }, [rejectReason, rejectTargetId, removeApprovalQueueItem, setApprovalPendingState]);
+  }, [rejectReason, rejectTargetId, removeApprovalQueueItem, setApprovalPendingState, t]);
 
   const handleExploreAction = useCallback((action: FeedExploreAction) => {
     if (action.type !== 'filters') return;
@@ -623,13 +640,19 @@ const SocialFeedPage: React.FC = () => {
   }, [assetLabel, hasSearchFilter, hasTagFilters, scopeLabel, searchQuery, showContextualEmptyState, t]);
 
   return (
-    <DashboardPageShell innerRef={wrapperRef} maxWidth={1400} className="feed-page">
-      <div className="feed-page-sticky-bar">
-        <DashboardPageHeader
-          icon={<CompassOutlined />}
-          title={t('page_title')}
-          extra={<FeedPageActions onDiscover={() => setDiscoveryOpen(true)} />}
-        />
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-4 text-[var(--ant-color-text)]">
+      <div className="sticky top-0 z-40 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-layout)] pb-4">
+        <div className="mb-4 flex min-h-10 flex-wrap items-center justify-between gap-4 md:flex-nowrap">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ant-color-primary-bg)] text-xl text-[var(--ant-color-primary)]">
+              <CompassOutlined />
+            </span>
+            <h1 className="m-0 truncate text-2xl font-semibold leading-tight">{t('page_title')}</h1>
+          </div>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <FeedPageActions onDiscover={() => setDiscoveryOpen(true)} />
+          </div>
+        </div>
         <div className="w-full">
           <FeedFilters value={filters} options={filterOptions} onChange={handleFiltersChange} />
         </div>
@@ -638,220 +661,209 @@ const SocialFeedPage: React.FC = () => {
         ) : null}
       </div>
 
-      <div className="page-body">
-      <div className="flex flex-1 w-full pb-10 relative">
-        <div className="flex-1 min-w-0 pt-2 flex flex-col items-center">
-          <div className="w-full max-w-3xl">
-            {/* New posts available banner */}
-            {newPostsCount > 0 && !loading && (
-              <button
-                type="button"
-                className="feed-new-posts-banner"
-                onClick={() => {
-                  setNewPostsCount(0);
-                  latestItemIdRef.current = null;
-                  void loadFeed(true);
-                }}
-              >
-                <ArrowDownOutlined />
-                <span>
-                  {newPostsCount === 1
-                    ? t('one_new_post')
-                    : t('n_new_posts', { count: newPostsCount })}
-                </span>
-              </button>
-            )}
+      <div className="mt-5 flex min-w-0 flex-col">
+        <div className="relative flex w-full flex-1 pb-10">
+          <div className="flex min-w-0 flex-1 flex-col items-center pt-2">
+            <div className="w-full max-w-3xl">
+              {/* New posts available banner */}
+              {newPostsCount > 0 && !loading && (
+                <button
+                  type="button"
+                  className="feed-new-posts-banner"
+                  onClick={() => {
+                    setNewPostsCount(0);
+                    latestItemIdRef.current = null;
+                    void loadFeed(true);
+                  }}
+                >
+                  <ArrowDownOutlined />
+                  <span>{newPostsCount === 1 ? t('one_new_post') : t('n_new_posts', { count: newPostsCount })}</span>
+                </button>
+              )}
 
-            {!loading && items.length > 0 && (
-              <FeedExploreStrip
-                variant="compact"
-                onAction={handleExploreAction}
-              />
-            )}
-            {approvalAccessResolved && canModerateApprovals && (
-              <section className="feed-approvals mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">{t('pending_approvals')}</h2>
-                  {approvalQueue.length > 0 ? (
-                    <Tag color="gold" className="m-0 border-0">
-                      {approvalQueue.length}
-                    </Tag>
-                  ) : null}
-                </div>
-
-                {loadingApprovals && (
-                  <div className="feed-approvals-empty">{t('loading_approval_queue')}</div>
-                )}
-
-                {!loadingApprovals && approvalQueue.length === 0 && (
-                  <div className="feed-approvals-empty">{t('no_pending_publications')}</div>
-                )}
-
-                {!loadingApprovals && approvalQueue.length > 0 && (
-                  <div className="flex flex-col gap-4">
-                    {approvalQueue.map((entry) => {
-                      const pending = approvalPending[entry.id] || { approving: false, rejecting: false };
-                      const submittedText = formatTimeAgo(entry.submittedAt);
-                      const visibilityLabel = entry.visibility.charAt(0).toUpperCase() + entry.visibility.slice(1);
-                      return (
-                        <div
-                          key={`approval-${entry.id}`}
-                          className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-warning-border)] rounded-xl shadow-sm overflow-hidden flex flex-col relative group"
-                        >
-                          <div className="absolute top-0 left-0 w-1 h-full bg-[var(--ant-color-warning)]"></div>
-                          <div className="pl-4">
-                            <FeedCard item={entry.item} compact hideInteractions />
-                          </div>
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--ant-color-bg-layout)] border-t border-[var(--ant-color-border-secondary)] mt-2">
-                            <div className="flex items-center gap-2 text-sm text-[var(--ant-color-text-secondary)]">
-                              <span className="font-medium text-[var(--ant-color-text)]">
-                                {t('submitted_time', { submittedText })}
-                              </span>
-                              <span className="text-[var(--ant-color-text-description)]">&middot;</span>
-                              <span className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] px-2 py-0.5 rounded text-xs font-semibold">
-                                {visibilityLabel}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                className="font-medium h-9 px-5 rounded-md hover:bg-[var(--ant-color-border-secondary)] transition-colors"
-                                loading={Boolean(pending.rejecting)}
-                                disabled={Boolean(pending.approving)}
-                                onClick={() => openRejectModal(entry.id)}
-                              >
-                                {t('reject')}
-                              </Button>
-                              <Button
-                                type="primary"
-                                className="bg-[var(--ant-color-primary)] hover:bg-[var(--ant-color-primary-hover)] font-medium h-9 px-5 rounded-md transition-colors shadow-sm"
-                                loading={Boolean(pending.approving)}
-                                disabled={Boolean(pending.rejecting)}
-                                onClick={() => void handleApprovePublication(entry.id)}
-                              >
-                                {t('approve')}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+              {!loading && items.length > 0 && <FeedExploreStrip variant="compact" onAction={handleExploreAction} />}
+              {approvalAccessResolved && canModerateApprovals && (
+                <section className="feed-approvals mb-6">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">
+                      {t('pending_approvals')}
+                    </h2>
+                    {approvalQueue.length > 0 ? (
+                      <Tag color="gold" className="m-0 border-0">
+                        {approvalQueue.length}
+                      </Tag>
+                    ) : null}
                   </div>
-                )}
-              </section>
-            )}
 
-            {items.length === 0 && !loading && (
-              <div className="feed-empty-state">
-                <FeedExploreStrip
-                  variant="empty"
-                  onAction={handleExploreAction}
-                  onDiscover={() => setDiscoveryOpen(true)}
-                />
-                <div className="feed-empty-state-copy">
-                  <p className="feed-empty-state-title">{emptyStateTitle}</p>
-                  {showContextualEmptyState ? (
-                    <p className="feed-empty-state-sub">{emptyStateSubtitle}</p>
-                  ) : null}
-                </div>
-                <div className="feed-empty-state-actions">
-                  <Button
-                    type="primary"
-                    icon={<MessageOutlined />}
-                    onClick={() =>
-                      router.push(getChatHref({ prompt: t('explore_prompt_question') }))
-                    }
-                  >
-                    {t('empty_cta_explore_ai')}
-                  </Button>
-                  <Button icon={<DashboardOutlined />} onClick={() => router.push('/dashboards')}>
-                    {t('build_dashboard')}
-                  </Button>
-                  {!user ? (
-                    <Button icon={<UserAddOutlined />} onClick={() => router.push('/login')}>
-                      {t('sign_in_to_save')}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            )}
-            <div className="flex flex-col gap-4 pb-16">
-              {items.map((item, idx) => (
-                <FeedCard
-                  key={item.id}
-                  item={item}
-                  highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
-                  onReact={handleReact}
-                  onSave={handleSave}
-                  onAddComment={handleAddComment}
-                  onToggleFollow={handleToggleFollow}
-                  onDeleteItem={handleDeleteItem}
-                  onCommentDeleted={handleCommentDeleted}
-                  interactionState={pendingInteractions[item.id]}
-                  compact
-                />
-              ))}
-              {loading &&
-                Array.from({ length: items.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT }).map(
-                  (_, index) => (
-                    <FeedCardSkeleton
-                      key={`feed-skeleton-${items.length === 0 ? 'initial' : 'append'}-${index}`}
-                      compact
-                    />
-                  )
-                )}
-              <div ref={sentinelRef} className="h-4" />
-              {!hasMore && items.length > 0 && !loading && (
-                <div ref={endFeedActionRef} className="feed-end-action-wrap">
-                  <div className={`feed-end-action-shell ${showEndFeedAction ? 'is-visible' : ''}`}>
-                    <div className="feed-end-action-divider">
-                      <span className="feed-end-action-divider-line" />
-                      <span>{t('end_of_feed')}</span>
-                      <span className="feed-end-action-divider-line" />
+                  {loadingApprovals && <div className="feed-approvals-empty">{t('loading_approval_queue')}</div>}
+
+                  {!loadingApprovals && approvalQueue.length === 0 && (
+                    <div className="feed-approvals-empty">{t('no_pending_publications')}</div>
+                  )}
+
+                  {!loadingApprovals && approvalQueue.length > 0 && (
+                    <div className="flex flex-col gap-4">
+                      {approvalQueue.map((entry) => {
+                        const pending = approvalPending[entry.id] || { approving: false, rejecting: false };
+                        const submittedText = formatTimeAgo(entry.submittedAt);
+                        const visibilityLabel = entry.visibility.charAt(0).toUpperCase() + entry.visibility.slice(1);
+                        return (
+                          <div
+                            key={`approval-${entry.id}`}
+                            className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-warning-border)] rounded-xl shadow-sm overflow-hidden flex flex-col relative group"
+                          >
+                            <div className="absolute top-0 left-0 w-1 h-full bg-[var(--ant-color-warning)]"></div>
+                            <div className="pl-4">
+                              <FeedCard item={entry.item} compact hideInteractions />
+                            </div>
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-[var(--ant-color-bg-layout)] border-t border-[var(--ant-color-border-secondary)] mt-2">
+                              <div className="flex items-center gap-2 text-sm text-[var(--ant-color-text-secondary)]">
+                                <span className="font-medium text-[var(--ant-color-text)]">
+                                  {t('submitted_time', { submittedText })}
+                                </span>
+                                <span className="text-[var(--ant-color-text-description)]">&middot;</span>
+                                <span className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] px-2 py-0.5 rounded text-xs font-semibold">
+                                  {visibilityLabel}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  className="font-medium h-9 px-5 rounded-md hover:bg-[var(--ant-color-border-secondary)] transition-colors"
+                                  loading={Boolean(pending.rejecting)}
+                                  disabled={Boolean(pending.approving)}
+                                  onClick={() => openRejectModal(entry.id)}
+                                >
+                                  {t('reject')}
+                                </Button>
+                                <Button
+                                  type="primary"
+                                  className="bg-[var(--ant-color-primary)] hover:bg-[var(--ant-color-primary-hover)] font-medium h-9 px-5 rounded-md transition-colors shadow-sm"
+                                  loading={Boolean(pending.approving)}
+                                  disabled={Boolean(pending.rejecting)}
+                                  onClick={() => void handleApprovePublication(entry.id)}
+                                >
+                                  {t('approve')}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <button
-                      type="button"
-                      disabled={refreshingFromEndAction}
-                      aria-busy={refreshingFromEndAction}
-                      className={`feed-end-action-button ${
-                        refreshingFromEndAction ? 'is-refreshing' : ''
-                      } ${showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted ? 'feed-end-action-button--pulse' : ''}`}
-                      onMouseEnter={() => setEndFeedActionInteracted(true)}
-                      onFocus={() => setEndFeedActionInteracted(true)}
-                      onClick={() => {
-                        setEndFeedActionInteracted(true);
-                        void handleScrollToTop();
-                      }}
+                  )}
+                </section>
+              )}
+
+              {items.length === 0 && !loading && (
+                <div className="feed-empty-state">
+                  <FeedExploreStrip
+                    variant="empty"
+                    onAction={handleExploreAction}
+                    onDiscover={() => setDiscoveryOpen(true)}
+                  />
+                  <div className="feed-empty-state-copy">
+                    <p className="feed-empty-state-title">{emptyStateTitle}</p>
+                    {showContextualEmptyState ? <p className="feed-empty-state-sub">{emptyStateSubtitle}</p> : null}
+                  </div>
+                  <div className="feed-empty-state-actions">
+                    <Button
+                      type="primary"
+                      icon={<MessageOutlined />}
+                      onClick={() => router.push(getChatHref({ prompt: t('explore_prompt_question') }))}
                     >
-                      <span className={`feed-end-action-button-icon ${refreshingFromEndAction ? 'is-refreshing' : ''}`}>
-                        <ArrowUpOutlined />
-                      </span>
-                      <span className="feed-end-action-button-label">
-                        {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
-                      </span>
-                    </button>
+                      {t('empty_cta_explore_ai')}
+                    </Button>
+                    <Button icon={<DashboardOutlined />} onClick={() => router.push('/dashboards')}>
+                      {t('build_dashboard')}
+                    </Button>
+                    {!user ? (
+                      <Button icon={<UserAddOutlined />} onClick={() => router.push('/login')}>
+                        {t('sign_in_to_save')}
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               )}
+              <div className="flex flex-col gap-4 pb-16">
+                {items.map((item, idx) => (
+                  <FeedCard
+                    key={item.id}
+                    item={item}
+                    highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
+                    onReact={handleReact}
+                    onSave={handleSave}
+                    onAddComment={handleAddComment}
+                    onToggleFollow={handleToggleFollow}
+                    onDeleteItem={handleDeleteItem}
+                    onCommentDeleted={handleCommentDeleted}
+                    interactionState={pendingInteractions[item.id]}
+                    compact
+                  />
+                ))}
+                {loading &&
+                  Array.from({ length: items.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT }).map(
+                    (_, index) => (
+                      <FeedCardSkeleton
+                        key={`feed-skeleton-${items.length === 0 ? 'initial' : 'append'}-${index}`}
+                        compact
+                      />
+                    )
+                  )}
+                <div ref={sentinelRef} className="h-4" />
+                {!hasMore && items.length > 0 && !loading && (
+                  <div ref={endFeedActionRef} className="feed-end-action-wrap">
+                    <div className={`feed-end-action-shell ${showEndFeedAction ? 'is-visible' : ''}`}>
+                      <div className="feed-end-action-divider">
+                        <span className="feed-end-action-divider-line" />
+                        <span>{t('end_of_feed')}</span>
+                        <span className="feed-end-action-divider-line" />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={refreshingFromEndAction}
+                        aria-busy={refreshingFromEndAction}
+                        className={`feed-end-action-button ${
+                          refreshingFromEndAction ? 'is-refreshing' : ''
+                        } ${showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted ? 'feed-end-action-button--pulse' : ''}`}
+                        onMouseEnter={() => setEndFeedActionInteracted(true)}
+                        onFocus={() => setEndFeedActionInteracted(true)}
+                        onClick={() => {
+                          setEndFeedActionInteracted(true);
+                          void handleScrollToTop();
+                        }}
+                      >
+                        <span
+                          className={`feed-end-action-button-icon ${refreshingFromEndAction ? 'is-refreshing' : ''}`}
+                        >
+                          <ArrowUpOutlined />
+                        </span>
+                        <span className="feed-end-action-button-label">
+                          {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
+          <div className="hidden w-[320px] shrink-0 border-l border-[var(--ant-color-border-secondary)] pb-16 pl-6 md:block lg:w-[380px] lg:pl-10">
+            <FeedSidebar
+              data={sidebarData}
+              loading={sidebarLoading}
+              timeRange={sidebarControls.timeRange}
+              contentType={sidebarControls.contentType}
+              sortBy={sidebarControls.sortBy}
+              onChangeTimeRange={handleSidebarTimeRangeChange}
+              onChangeContentType={handleSidebarContentTypeChange}
+              onChangeSortBy={handleSidebarSortChange}
+              onOpenItem={(postId) => router.push(`/feed/${postId}`)}
+              onLikeItem={(postId) => void handleReact(postId, 'like')}
+              onSaveItem={(postId) => void handleSave(postId)}
+              onTagClick={handleTagFilter}
+            />
+          </div>
         </div>
-        <div className="w-[320px] lg:w-[380px] shrink-0 hidden md:block border-l border-[var(--ant-color-border-secondary)] pl-6 lg:pl-10 pb-16">
-          <FeedSidebar
-            data={sidebarData}
-            loading={sidebarLoading}
-            timeRange={sidebarControls.timeRange}
-            contentType={sidebarControls.contentType}
-            sortBy={sidebarControls.sortBy}
-            onChangeTimeRange={handleSidebarTimeRangeChange}
-            onChangeContentType={handleSidebarContentTypeChange}
-            onChangeSortBy={handleSidebarSortChange}
-            onOpenItem={(postId) => router.push(`/feed/${postId}`)}
-            onLikeItem={(postId) => void handleReact(postId, 'like')}
-            onSaveItem={(postId) => void handleSave(postId)}
-            onTagClick={handleTagFilter}
-          />
-        </div>
-      </div>
       </div>
       <FeedDiscoveryDrawer
         open={discoveryOpen}
@@ -911,7 +923,7 @@ const SocialFeedPage: React.FC = () => {
           {rejectReason.length}/500
         </div>
       </Modal>
-    </DashboardPageShell>
+    </div>
   );
 };
 

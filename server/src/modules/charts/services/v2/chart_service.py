@@ -37,6 +37,7 @@ import json
 import hashlib
 import os
 import logging
+import re
 from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -497,22 +498,28 @@ class ChartService:
         
         select_fields, group_by = [], []
         if legend_field:
-            select_fields.append(f"{legend_field} as legend")
-            if not is_fully_raw: group_by.append(legend_field)
+            legend_sql = self._quote_identifier(legend_field)
+            select_fields.append(f"{legend_sql} as legend")
+            if not is_fully_raw:
+                group_by.append(legend_sql)
 
         # X column/agg
         if is_x_agg:
             select_fields.append(f"{self._get_aggregate_func(x_agg, x_field)} as x")
         else:
-            select_fields.append(f"{x_field} as x")
-            if not is_fully_raw: group_by.append(x_field)
+            x_sql = self._quote_identifier(x_field)
+            select_fields.append(f"{x_sql} as x")
+            if not is_fully_raw:
+                group_by.append(x_sql)
 
         # Y column/agg
         if is_y_agg:
             select_fields.append(f"{self._get_aggregate_func(y_agg, y_field)} as y")
         else:
-            select_fields.append(f"{y_field} as y")
-            if not is_fully_raw: group_by.append(y_field)
+            y_sql = self._quote_identifier(y_field)
+            select_fields.append(f"{y_sql} as y")
+            if not is_fully_raw:
+                group_by.append(y_sql)
 
         schema_info = data_source.schema or {}
         table, schema = self._resolve_table_and_schema(schema_info)
@@ -666,6 +673,8 @@ class ChartService:
         filters = chart_query.get("filters") or []
         metric_filters = chart_query.get("metricFilters") or []
         sql = sample_sql.strip().rstrip(";")
+        if isinstance(filters, list):
+            filters = self._filters_projected_by_saved_sql(filters, sql)
         where_clause = self._apply_filters_db(filters if isinstance(filters, list) else [])
         having_clause = self._apply_metric_filters_db(metric_filters if isinstance(metric_filters, list) else [])
         if where_clause or having_clause:
@@ -701,20 +710,63 @@ class ChartService:
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
+        return self._map_sql_rows_to_chart_data(rows, chart.chart_type)
+
+    def _map_sql_rows_to_chart_data(
+        self, rows: List[Dict[str, Any]], chart_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Map raw SQL result rows to the renderer's {x, y, series} / {value} shape.
+
+        compiled_semantic_sql (AI planner) and saved/template SQL return columns
+        under their real aliased names — e.g. `SELECT "product_type", SUM(...) AS
+        total` — NOT the literal columns ``x``/``y`` the dashboard renderer reads.
+        Reading ``row["x"]`` there yields ``None`` for every row, which is why
+        such widgets rendered all-``null`` categories / empty bars. We map by
+        position instead:
+
+          * stat            -> single headline value (``value``/``y`` alias, else first column)
+          * legacy x/y SQL  -> honor explicit ``x``/``y`` aliases (template charts)
+          * grouped result  -> first column = category (x), remaining columns = series
+        """
         if not rows:
             return {"x": [], "y": [], "series": []}
 
         first_row = rows[0]
-        if "value" in first_row:
+        columns = list(first_row.keys())
+
+        # Stat KPIs come from a single-row aggregate with no category dimension,
+        # so positional "first column = x" would consume the headline metric.
+        if chart_type == "stat":
+            if "value" in first_row:
+                return {"value": first_row["value"]}
+            if "y" in columns:
+                y_vals = [row.get("y") for row in rows]
+                return {"value": y_vals[-1] if y_vals else None}
+            primary = columns[0] if columns else None
+            return {"value": first_row.get(primary) if primary else None}
+
+        # Template / saved SQL that already aliases its output as x / y.
+        if "x" in columns or "y" in columns:
+            x_vals = [row.get("x") for row in rows]
+            y_vals = [row.get("y") for row in rows]
+            return {"x": x_vals, "y": y_vals, "series": [{"name": "Value", "data": y_vals}]}
+
+        # Single explicit value column (e.g. gauge SQL aliased as `value`).
+        if len(columns) == 1 and "value" in first_row:
             return {"value": first_row["value"]}
 
-        x_vals = [row.get("x") for row in rows]
-        y_vals = [row.get("y") for row in rows]
-        return {
-            "x": x_vals,
-            "y": y_vals,
-            "series": [{"name": "Value", "data": y_vals}],
-        }
+        # Generic GROUP BY result: first column is the category dimension,
+        # each remaining column becomes a numeric series.
+        x_col = columns[0]
+        series_cols = columns[1:]
+        x_vals = [row.get(x_col) for row in rows]
+        if not series_cols:
+            return {"x": x_vals, "y": [], "series": []}
+        series = [
+            {"name": str(col), "data": [row.get(col) for row in rows]}
+            for col in series_cols
+        ]
+        return {"x": x_vals, "y": series[0]["data"], "series": series}
 
     def _sample_template_fallback_result(self, chart: Chart) -> Dict[str, Any]:
         """
@@ -805,10 +857,10 @@ class ChartService:
         if not x_field and y_metrics:
             select_fields = []
             for i, ym in enumerate(y_metrics):
-                agg_type = ym.get("aggregation", "count")
-                field = ym.get("field")
-                agg_func = self._get_aggregate_func(agg_type, field)
-                select_fields.append(f"{agg_func} AS val_{i}")
+                expr = self._build_metric_sql(ym)
+                if not expr:  # malformed/unsafe computed metric → fail closed
+                    expr = "0"
+                select_fields.append(f"{expr} AS val_{i}")
             
             where_clause = self._apply_filters_db(filters)
             having_clause = self._apply_metric_filters_db(metric_filters)
@@ -849,9 +901,9 @@ class ChartService:
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 group_by_fields.append(transformed_x)
             else:
-                group_by_fields.append(x_field)
+                group_by_fields.append(self._quote_identifier(x_field))
         if group_field and group_field != x_field:
-            group_by_fields.append(group_field)
+            group_by_fields.append(self._quote_identifier(group_field))
         
         group_by_clause = f"GROUP BY {', '.join(group_by_fields)}" if group_by_fields else ""
 
@@ -863,12 +915,12 @@ class ChartService:
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 select_fields.append(f"{transformed_x} AS x")
             else:
-                select_fields.append(f"{x_field} AS x")
+                select_fields.append(f"{self._quote_identifier(x_field)} AS x")
         else:
             select_fields.append("'Total' AS x")
             
         if group_field and group_field != x_field:
-            select_fields.append(f"{group_field} AS group_field")
+            select_fields.append(f"{self._quote_identifier(group_field)} AS group_field")
             
         # Support multiple metrics
         metric_aliases = []
@@ -876,9 +928,11 @@ class ChartService:
             for i, ym in enumerate(y_metrics):
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                agg_func = self._get_aggregate_func(agg_type, field)
+                expr = self._build_metric_sql(ym)
+                if not expr:  # malformed/unsafe computed metric → fail closed
+                    expr = "0"
                 alias = f"y_{i}"
-                select_fields.append(f"{agg_func} AS {alias}")
+                select_fields.append(f"{expr} AS {alias}")
                 metric_aliases.append({
                     "alias": alias,
                     "name": field if field else agg_type.capitalize()
@@ -997,7 +1051,18 @@ class ChartService:
             for ym in y_metrics:
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                
+
+                if ym.get("computed"):
+                    try:
+                        cm = self._compute_metric_pandas(df, ym, group_by=[])
+                        col = ym.get("field", "value")
+                        val = float(cm[col].iloc[0]) if col in cm.columns and len(cm) else 0
+                    except Exception:
+                        val = 0
+                    labels.append(field or "Ratio")
+                    values.append(val)
+                    continue
+
                 val = 0
                 if agg_type == "count":
                     val = len(df)
@@ -1074,12 +1139,23 @@ class ChartService:
                 # Multiple metrics
                 agg_map = {}
                 numeric_fields_to_cast = set()
+                computed_metrics = []  # (alias, ym) — merged after grouping
 
                 for i, ym in enumerate(y_metrics):
                     agg_type = ym.get("aggregation", "count")
                     field = ym.get("field")
                     alias = f"y_{i}"
-                    
+
+                    if ym.get("computed"):
+                        computed_metrics.append((alias, ym))
+                        output_metrics.append({
+                            "alias": alias,
+                            "name": field if field else "Ratio",
+                            "field": field,
+                            "aggregation": "computed",
+                        })
+                        continue
+
                     if agg_type == "count":
                         # If field is provided, count non-nulls. Otherwise count all rows (size).
                         agg_map[alias] = (field, "count") if field and field in df.columns else (df.columns[0], "size")
@@ -1128,6 +1204,20 @@ class ChartService:
                             # Since it's the same grouping, we can just assign the values from a size() call
                             sizes = df.groupby(group_by_fields).size().values
                             grouped[alias] = sizes
+
+                # Merge computed (ratio) metrics, aligned on the same grouping keys
+                for alias, ym in computed_metrics:
+                    try:
+                        cm_df = self._compute_metric_pandas(df, ym, group_by_fields)
+                        value_col = ym.get("field", "value")
+                        cm_df = cm_df.rename(columns={value_col: alias})
+                        if alias in grouped.columns:
+                            grouped = grouped.drop(columns=[alias])
+                        grouped = grouped.merge(cm_df, on=group_by_fields, how="left")
+                        grouped[alias] = grouped[alias].fillna(0)
+                    except Exception:
+                        if alias not in grouped.columns:
+                            grouped[alias] = 0
         else:
             # Fallback for no-x if y_metrics didn't handle it (handled by early return in _execute_file_source)
             grouped = pd.DataFrame([{"x": "Total", "y": len(df)}])
@@ -1198,15 +1288,102 @@ class ChartService:
     # HELPERS
     # =========================================================
     def _is_valid_field_name(self, field_name: str) -> bool:
-        if not field_name or not isinstance(field_name, str): return False
-        import re
-        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_.-]*$', field_name))
+        if not field_name or not isinstance(field_name, str):
+            return False
+        # Uploaded files and spreadsheets commonly contain display-style column
+        # names ("Units Sold", "Manufacturing Price"). Allow those names, but
+        # reject SQL syntax and quoting characters.
+        return bool(re.match(r"^[A-Za-z0-9_][A-Za-z0-9_ .-]*$", field_name.strip()))
+
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote a validated table/column identifier, preserving dotted paths."""
+        if not self._is_valid_field_name(identifier):
+            raise ValueError(f"Invalid field name: {identifier}")
+        parts = [part.strip() for part in str(identifier).split(".") if part.strip()]
+        return ".".join(f'"{part.replace(chr(34), chr(34) + chr(34))}"' for part in parts)
+
+    def _projected_sql_columns(self, sql: str) -> set[str]:
+        """Best-effort output-column extraction for saved SQL filter safety."""
+        text_sql = (sql or "").strip().rstrip(";")
+        match = re.match(r"(?is)^\s*select\s+(.*?)\s+from\s+", text_sql)
+        if not match:
+            return set()
+
+        select_clause = match.group(1)
+        columns: set[str] = set()
+        depth = 0
+        quote: Optional[str] = None
+        token = []
+        parts: List[str] = []
+        for ch in select_clause:
+            if quote:
+                token.append(ch)
+                if ch == quote:
+                    quote = None
+                continue
+            if ch in ("'", '"', "`"):
+                quote = ch
+                token.append(ch)
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append("".join(token).strip())
+                token = []
+            else:
+                token.append(ch)
+        if token:
+            parts.append("".join(token).strip())
+
+        for part in parts:
+            if part == "*":
+                return set()
+            alias_match = re.search(r'(?is)\s+as\s+("([^"]+)"|`([^`]+)`|\[([^\]]+)\]|([A-Za-z_][A-Za-z0-9_ .-]*))\s*$', part)
+            if alias_match:
+                alias = next((g for g in alias_match.groups()[1:] if g), "")
+                if alias:
+                    columns.add(alias.strip())
+                continue
+            simple_match = re.match(r'(?is)^(?:"([^"]+)"|`([^`]+)`|([A-Za-z_][A-Za-z0-9_ .-]*))(?:\s*)$', part)
+            if simple_match:
+                name = next((g for g in simple_match.groups() if g), "")
+                if name:
+                    columns.add(name.split(".")[-1].strip())
+        return columns
+
+    def _filters_projected_by_saved_sql(self, filters: List[Dict], sql: str) -> List[Dict]:
+        projected = self._projected_sql_columns(sql)
+        if not projected:
+            return filters
+        cleaned: List[Dict] = []
+        for f in filters or []:
+            if not isinstance(f, dict):
+                continue
+            if f.get("type") == "sql":
+                logger.info("Skipping raw SQL runtime filter for saved chart SQL")
+                continue
+            field = str(f.get("field") or "").strip()
+            if not field or field in projected or field.split(".")[-1] in projected:
+                cleaned.append(f)
+            else:
+                logger.info(
+                    "Skipping runtime filter %s for saved chart SQL; projected columns=%s",
+                    field,
+                    sorted(projected),
+                )
+        return cleaned
     
     def _build_order_clause(self, sort_by: str, sort_order: str, x_field: Optional[str], has_y_metrics: bool = False) -> str:
         sort_by = self._normalize_sort_by(sort_by)
         sort_order = self._normalize_sort_order(sort_order)
         if sort_by == "x" and x_field:
-            return f"ORDER BY {x_field} {'ASC' if sort_order == 'asc' else 'DESC'}"
+            # Order by the "x" output alias, not the raw column: when date
+            # bucketing (x_grain) is applied, SELECT/GROUP BY use date_trunc(...)
+            # AS x, and ordering by the raw column breaks on engines (DuckDB)
+            # that require it to appear in GROUP BY. The alias matches both cases.
+            return f"ORDER BY x {'ASC' if sort_order == 'asc' else 'DESC'}"
         if sort_by == "y":
             # If multiple metrics, sort by the first one y_0, else y
             alias = "y_0" if has_y_metrics else "y"
@@ -1234,6 +1411,7 @@ class ChartService:
 
             if not field or not self._is_valid_field_name(field):
                 continue
+            field_sql = self._quote_identifier(field)
             
             if f_type == 'sql' and f.get('sql'):
                 clauses.append(f"({f.get('sql')})")
@@ -1246,9 +1424,9 @@ class ChartService:
             
             # Format value
             if operator == "is_null":
-                clauses.append(f"{field} IS NULL")
+                clauses.append(f"{field_sql} IS NULL")
             elif operator == "is_not_null":
-                clauses.append(f"{field} IS NOT NULL")
+                clauses.append(f"{field_sql} IS NOT NULL")
             elif operator in ("in", "not_in"):
                 # Expecting a comma-separated string or list
                 if isinstance(value, str):
@@ -1267,16 +1445,16 @@ class ChartService:
                         formatted_vals.append(f"'{safe_v}'")
                 
                 op_sql = "IN" if operator == "in" else "NOT IN"
-                clauses.append(f"{field} {op_sql} ({', '.join(formatted_vals)})")
+                clauses.append(f"{field_sql} {op_sql} ({', '.join(formatted_vals)})")
             elif operator in ("like", "like_case"):
                 val_str = str(value).replace("'", "''")
-                clauses.append(f"{field} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
+                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
             else:
                 if isinstance(value, (int, float)):
-                    clauses.append(f"{field} {operator} {value}")
+                    clauses.append(f"{field_sql} {operator} {value}")
                 else:
                     val_str = str(value).replace("'", "''")
-                    clauses.append(f"{field} {operator} '{val_str}'")
+                    clauses.append(f"{field_sql} {operator} '{val_str}'")
         
         if not clauses:
             return ""
@@ -1332,6 +1510,94 @@ class ChartService:
         # it might be that agg_type itself is "count" or we fallback
         return "COUNT(*)"
 
+    # =========================================================
+    # COMPUTED (RATIO) METRICS — structured, injection-safe
+    # =========================================================
+    def _build_metric_side_sql(self, side: Dict[str, Any]) -> Optional[str]:
+        """SQL for one side of a computed metric: AGG(field) [FILTER (WHERE ...)].
+
+        Returns None (fail-closed) if the field is invalid, so the caller drops
+        the whole metric rather than emitting partial/unsafe SQL.
+        """
+        if not isinstance(side, dict):
+            return None
+        agg = side.get("aggregation", "sum")
+        field = side.get("field")
+        if not field or not self._is_valid_field_name(field):
+            return None
+        agg_sql = self._get_aggregate_func(agg, field)
+        # Reuse the existing safe filter compiler (whitelisted ops, escaped values).
+        side_filters = side.get("filter") or []
+        where = self._apply_filters_db(side_filters if isinstance(side_filters, list) else [])
+        if where:
+            return f"{agg_sql} FILTER ({where})"
+        return agg_sql
+
+    def _build_metric_sql(self, ym: Dict[str, Any]) -> Optional[str]:
+        """SQL expression for a yMetric entry. Supports plain {field,aggregation}
+        and computed ratio metrics. Returns None when a computed metric is
+        malformed/unsafe (caller should skip that metric)."""
+        if not isinstance(ym, dict):
+            return None
+        computed = ym.get("computed")
+        if computed:
+            if not isinstance(computed, dict) or computed.get("type") != "ratio":
+                return None
+            num = self._build_metric_side_sql(computed.get("numerator") or {})
+            den = self._build_metric_side_sql(computed.get("denominator") or {})
+            if not num or not den:
+                return None
+            mult = computed.get("multiplier", 1)
+            if mult not in (1, 100):
+                mult = 1
+            expr = f"{num} / NULLIF({den}, 0)"
+            return f"{expr} * {mult}" if mult != 1 else expr
+        return self._get_aggregate_func(ym.get("aggregation", "count"), ym.get("field"))
+
+    def _compute_metric_pandas(self, df, ym: Dict[str, Any], group_by: List[str]):
+        """Compute a ratio metric over a (optionally grouped) DataFrame.
+
+        Returns a DataFrame: grouped -> columns [*group_by, alias]; ungrouped ->
+        single column [alias]. Mirrors _build_metric_sql semantics for file sources.
+        """
+        import pandas as pd
+
+        computed = ym.get("computed") or {}
+        alias = ym.get("field", "value")
+        mult = computed.get("multiplier", 1)
+        if mult not in (1, 100):
+            mult = 1
+
+        agg_map = {
+            "sum": "sum", "avg": "mean", "min": "min", "max": "max",
+            "count": "count", "distinct_count": "nunique",
+        }
+
+        def _side(side: Dict[str, Any]):
+            sub = self._apply_filters_pandas(df, side.get("filter") or [])
+            field = side.get("field")
+            pagg = agg_map.get(side.get("aggregation", "sum"), "sum")
+            if group_by:
+                all_idx = df.groupby(group_by).size().index
+                if field and field in sub.columns and len(sub):
+                    g = sub.groupby(group_by)[field].agg(pagg)
+                else:
+                    g = pd.Series(dtype=float)
+                return g.reindex(all_idx).fillna(0)
+            series = sub[field] if (field and field in sub.columns) else pd.Series(dtype=float)
+            value = getattr(series, pagg)() if len(series) else 0
+            return pd.Series([value])
+
+        num = _side(computed.get("numerator") or {})
+        den = _side(computed.get("denominator") or {})
+        ratio = (num / den.replace(0, pd.NA)).fillna(0) * mult
+
+        if group_by:
+            out = ratio.reset_index()
+            out.columns = list(group_by) + [alias]
+            return out
+        return pd.DataFrame({alias: list(ratio)})
+
     def _get_aggregate_func(self, aggregate: Any, y_metric: Optional[str] = None) -> str:
         """Generate SQL aggregate function based on aggregate type and metric field."""
         # Normalize aggregate type if it's a boolean or string "true"/"false"
@@ -1352,15 +1618,16 @@ class ChartService:
             agg_type = "count"
             
         if agg_type == "count":
-            return f"COUNT({y_metric})" if y_metric else "COUNT(*)"
+            return f"COUNT({self._quote_identifier(y_metric)})" if y_metric else "COUNT(*)"
         if agg_type == "distinct_count":
-            return f"COUNT(DISTINCT {y_metric})" if y_metric else "COUNT(*)"
+            return f"COUNT(DISTINCT {self._quote_identifier(y_metric)})" if y_metric else "COUNT(*)"
             
         if y_metric and self._is_valid_field_name(y_metric):
-            if agg_type == "sum": return f"SUM({y_metric})"
-            if agg_type == "avg": return f"AVG({y_metric})"
-            if agg_type == "max": return f"MAX({y_metric})"
-            if agg_type == "min": return f"MIN({y_metric})"
+            field_sql = self._quote_identifier(y_metric)
+            if agg_type == "sum": return f"SUM({field_sql})"
+            if agg_type == "avg": return f"AVG({field_sql})"
+            if agg_type == "max": return f"MAX({field_sql})"
+            if agg_type == "min": return f"MIN({field_sql})"
             
         # If no y_metric but agg_type is a function that needs it, 
         # it might be that agg_type itself is "count" or we fallback
@@ -1453,16 +1720,17 @@ class ChartService:
         return df
 
     def _get_date_trunc(self, field: str, grain: str, db_type: str) -> str:
+        field_sql = self._quote_identifier(field)
         if db_type == "postgres":
-            return f"DATE_TRUNC('{grain}', {field})"
+            return f"DATE_TRUNC('{grain}', {field_sql})"
         if db_type == "mysql":
-            if grain == "year": return f"DATE_FORMAT({field}, '%Y-01-01')"
-            if grain == "month": return f"DATE_FORMAT({field}, '%Y-%m-01')"
-            if grain == "day": return f"DATE_FORMAT({field}, '%Y-%m-%d')"
-            return field
+            if grain == "year": return f"DATE_FORMAT({field_sql}, '%Y-01-01')"
+            if grain == "month": return f"DATE_FORMAT({field_sql}, '%Y-%m-01')"
+            if grain == "day": return f"DATE_FORMAT({field_sql}, '%Y-%m-%d')"
+            return field_sql
         if db_type == "sqlite":
-            if grain == "year": return f"strftime('%Y-01-01', {field})"
-            if grain == "month": return f"strftime('%Y-%m-01', {field})"
-            if grain == "day": return f"strftime('%Y-%m-%d', {field})"
-            return field
-        return field
+            if grain == "year": return f"strftime('%Y-01-01', {field_sql})"
+            if grain == "month": return f"strftime('%Y-%m-01', {field_sql})"
+            if grain == "day": return f"strftime('%Y-%m-%d', {field_sql})"
+            return field_sql
+        return field_sql

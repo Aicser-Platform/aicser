@@ -5902,7 +5902,8 @@
     "build_live_title": "KI erstellt dieses Dashboard",
     "build_live_subtitle": "Widgets erscheinen nach Validierung auf der Leinwand.",
     "build_live_syncing": "Synchronisiert",
-    "build_live_connected": "Live"
+    "build_live_connected": "Live",
+    "dashboard_not_found": "Dashboard nicht gefunden oder kein Zugriff."
   },
   "billing_page": {
     "loading": "Laden...",

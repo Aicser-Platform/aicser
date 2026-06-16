@@ -31,6 +31,42 @@ def test_plan_dashboard_widgets_includes_kpi_and_charts():
     assert drill_widgets, "Expected at least one widget with drillPath"
 
 
+def test_classify_columns_recognizes_jsonschema_number_type():
+    """File-uploaded schemas use JSON-schema types: 'number' floats must be numeric, not categorical."""
+    schema = {
+        "columns": [
+            {"name": "Quantity", "type": "integer"},
+            {"name": "UnitPrice", "type": "number"},
+            {"name": "TotalPrice", "type": "number"},
+            {"name": "Region", "type": "string"},
+        ]
+    }
+    cols = _classify_columns(schema, "data")
+    assert "UnitPrice" in cols["numeric"]
+    assert "TotalPrice" in cols["numeric"]
+    assert "Quantity" in cols["numeric"]
+    assert "UnitPrice" not in cols["categorical"]
+
+
+def test_classify_columns_detects_date_named_string_columns_as_temporal():
+    """File inference types dates as 'string'; date-named columns must still be temporal."""
+    schema = {
+        "columns": [
+            {"name": "OrderDate", "type": "string"},
+            {"name": "DeliveryDate", "type": "string"},
+            {"name": "Region", "type": "string"},
+            {"name": "CustomerName", "type": "string"},
+        ]
+    }
+    cols = _classify_columns(schema, "data")
+    assert "OrderDate" in cols["temporal"]
+    assert "DeliveryDate" in cols["temporal"]
+    assert "OrderDate" not in cols["categorical"]
+    # Non-date strings stay categorical
+    assert "Region" in cols["categorical"]
+    assert "CustomerName" in cols["categorical"]
+
+
 def test_classify_columns_skips_uuid_style_names():
     schema = {
         "tables": [

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -24,6 +24,8 @@ import { chartService } from '../../dashboards/services/chartService';
 import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
 import { FeedPostViewer } from './FeedPostViewer';
+import { FeedDashboardChartGrid } from './FeedDashboardChartGrid';
+import { FeedPreviewEmpty } from './FeedPreviewEmpty';
 
 interface FeedPreviewVisualProps {
   item: FeedItem;
@@ -32,7 +34,7 @@ interface FeedPreviewVisualProps {
 }
 
 const PIE_COLORS = ['#1877f2', '#38bdf8', '#f59e0b', '#10b981'];
-const DASHBOARD_PREVIEW_LIMIT = 4;
+const DASHBOARD_PREVIEW_LIMIT = 6;
 const INSIGHT_CHART_MIN_HEIGHT = 200;
 
 type ChartPoint = {
@@ -77,7 +79,11 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
   const showTooltip = !compact;
   const showAxes = !compact;
   if (series.length === 0) {
-    return <div className={`${chartClass} feed-card-chart--empty`}>No preview data yet</div>;
+    return (
+      <div className={`${chartClass} flex items-center justify-center text-xs text-[var(--ant-color-text-tertiary)]`}>
+        No preview data yet
+      </div>
+    );
   }
 
   if (preview.type === 'dashboard') {
@@ -194,7 +200,9 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
       <div className={chartClass}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-            {!compact && <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />}
+            {!compact && (
+              <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
+            )}
             <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
             <YAxis hide />
             {showTooltip && <Tooltip cursor={false} contentStyle={tooltipStyle} />}
@@ -204,7 +212,9 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
               stroke="var(--ant-color-primary)"
               strokeWidth={compact ? 2 : 3}
               dot={false}
-              activeDot={compact ? false : { r: 4, fill: 'var(--ant-color-primary)', stroke: '#ffffff', strokeWidth: 2 }}
+              activeDot={
+                compact ? false : { r: 4, fill: 'var(--ant-color-primary)', stroke: '#ffffff', strokeWidth: 2 }
+              }
             />
           </LineChart>
         </ResponsiveContainer>
@@ -216,7 +226,9 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
     <div className={chartClass}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-          {!compact && <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />}
+          {!compact && (
+            <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
+          )}
           <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
           <YAxis hide />
           {showTooltip && <Tooltip cursor={{ fill: 'var(--ant-color-primary-bg)' }} contentStyle={tooltipStyle} />}
@@ -238,7 +250,10 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
   useEffect(() => {
     const dashboardId = item.asset.dashboardId;
     const chartId = item.assetId;
-    if (!dashboardId || !chartId) { setLoading(false); return; }
+    if (!dashboardId || !chartId) {
+      setLoading(false);
+      return;
+    }
 
     let cancelled = false;
     Promise.all([
@@ -247,7 +262,7 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     ])
       .then(([chart, execution]) => {
         if (cancelled) return;
-        const chartOptions = { ...(chart.chartOptions || {}), ...DASHBOARD_PREVIEW_CHART_CONFIG };
+        const chartOptions = { ...(chart.chartOptions || {}) };
         setWidget({
           id: `feed-chart-${item.id}`,
           title: chart.title || item.title,
@@ -260,10 +275,16 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
           error: null,
         } as WidgetInstance);
       })
-      .catch(() => { if (!cancelled) setWidget(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch(() => {
+        if (!cancelled) setWidget(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [item.assetId, item.asset.dashboardId, item.id, item.title]);
 
   if (loading) {
@@ -274,7 +295,7 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     );
   }
 
-  if (!widget) return null;
+  if (!widget) return <FeedPreviewEmpty label={item.asset.previewLabel || item.title} />;
 
   return (
     <div className="w-full h-full min-h-[200px] p-3">
@@ -308,12 +329,20 @@ const InsightChartPreview: React.FC<{ item: FeedItem }> = ({ item }) => {
   return null;
 };
 
-const DashboardLivePreview: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews, showOverflowBadge = false }) => {
+const DashboardSnapshotPreview: React.FC<FeedPreviewVisualProps> = ({
+  item,
+  maxPreviews,
+  showOverflowBadge = false,
+}) => {
   const router = useRouter();
   const t = useTranslations('feed');
   const previewLimit =
     typeof maxPreviews === 'number' ? Math.min(maxPreviews, DASHBOARD_PREVIEW_LIMIT) : DASHBOARD_PREVIEW_LIMIT;
-  const [totalWidgets, setTotalWidgets] = useState<number | null>(null);
+  const capturedWidgetCount = (item.asset.snapshotPayload as { visuals?: { widgets?: unknown[] } } | undefined)?.visuals
+    ?.widgets?.length;
+  const [totalWidgets, setTotalWidgets] = useState<number | null>(
+    capturedWidgetCount ?? item.asset.widgetCount ?? null
+  );
 
   const handleViewDashboard = (event?: React.MouseEvent | React.KeyboardEvent) => {
     event?.stopPropagation();
@@ -324,7 +353,7 @@ const DashboardLivePreview: React.FC<FeedPreviewVisualProps> = ({ item, maxPrevi
   const overflow = totalWidgets != null ? Math.max(0, totalWidgets - previewLimit) : 0;
 
   return (
-    <div className="feed-dashboard-card-preview relative">
+    <div className="feed-dashboard-card-preview">
       <FeedPostViewer
         item={item}
         variant="card"
@@ -332,22 +361,15 @@ const DashboardLivePreview: React.FC<FeedPreviewVisualProps> = ({ item, maxPrevi
         onReady={({ widgetCount }) => setTotalWidgets(widgetCount)}
       />
       {showOverflowBadge && overflow > 0 ? (
-        <div
-          className="feed-dashboard-card-preview-overflow"
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
+          className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--ant-color-text-secondary)] transition-colors hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-primary)]"
           onClick={handleViewDashboard}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              handleViewDashboard(event);
-            }
-          }}
         >
-          <span className="feed-dashboard-card-preview-overflow-title">{t('view_full_dashboard')}</span>
-          <span className="feed-dashboard-card-preview-overflow-meta">
-            {t('dashboard_overflow_charts', { count: overflow })}
-          </span>
-        </div>
+          <span>{t('dashboard_overflow_charts', { count: overflow })}</span>
+          <span aria-hidden>&middot;</span>
+          <span>{t('view_full_dashboard')}</span>
+        </button>
       ) : null}
     </div>
   );
@@ -357,7 +379,15 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
   const previews = useMemo(() => normalizePreviews(item), [item]);
 
   if (item.assetType === 'dashboard') {
-    return <DashboardLivePreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
+    if (item.renderMode === 'snapshot') {
+      return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
+    }
+
+    // Legacy live posts do not carry captured chart data, so fetch a bounded preview.
+    if (item.asset.dashboardId) {
+      return <FeedDashboardChartGrid item={item} maxWidgets={typeof maxPreviews === 'number' ? maxPreviews : 4} />;
+    }
+    return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
   }
 
   // `chart` type — render live interactive chart via ECharts

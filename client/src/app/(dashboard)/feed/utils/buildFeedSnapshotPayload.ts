@@ -28,6 +28,10 @@ export type FeedSnapshotPayload = {
       config?: DashboardFilter[];
       runtimeState?: unknown[];
     };
+    presentation?: {
+      featuredWidgetIds?: string[];
+      colorPalette?: string;
+    };
   };
   provenance: {
     sourcePath: '/chat' | '/chart-designer' | '/dashboards' | '/query-editor' | '/feed';
@@ -88,6 +92,7 @@ export function buildDashboardSnapshotPayload(params: {
   pageFilters?: DashboardFilter[];
   pages?: { id: string; name: string }[];
   runtimeFilters?: unknown[];
+  colorPalette?: string;
 }): FeedSnapshotPayload {
   const {
     dashboardId,
@@ -99,7 +104,33 @@ export function buildDashboardSnapshotPayload(params: {
     pageFilters = [],
     pages = [],
     runtimeFilters = [],
+    colorPalette,
   } = params;
+  const positionById = new Map(layout.map((item) => [item.i, item]));
+  const featuredWidgetIds = [...widgets]
+    .sort((left, right) => {
+      const score = (widget: WidgetInstance) => {
+        const position = positionById.get(widget.id);
+        const typeScore =
+          widget.chartType === 'stat'
+            ? 5
+            : ['line', 'area', 'bar', 'pie', 'donut', 'gauge'].includes(widget.chartType)
+              ? 4
+              : widget.chartType === 'table'
+                ? 2
+                : 1;
+        const dataScore = widget.chartData ? 2 : 0;
+        const sizeScore = position ? Math.min(2, (position.w * position.h) / 24) : 0;
+        return typeScore + dataScore + sizeScore;
+      };
+      const scoreDifference = score(right) - score(left);
+      if (scoreDifference) return scoreDifference;
+      const leftPosition = positionById.get(left.id);
+      const rightPosition = positionById.get(right.id);
+      return (leftPosition?.y ?? 0) - (rightPosition?.y ?? 0) || (leftPosition?.x ?? 0) - (rightPosition?.x ?? 0);
+    })
+    .slice(0, 6)
+    .map((widget) => widget.id);
 
   return {
     schemaVersion: 1,
@@ -120,6 +151,10 @@ export function buildDashboardSnapshotPayload(params: {
       filters: {
         config: [...globalFilters, ...pageFilters],
         runtimeState: runtimeFilters,
+      },
+      presentation: {
+        featuredWidgetIds,
+        colorPalette,
       },
     },
     provenance: {
@@ -174,7 +209,9 @@ export function buildInsightSnapshotPayload(params: {
   };
 }
 
-export function snapshotWidgetsFromPayload(payload?: FeedSnapshotPayload | Record<string, unknown> | null): WidgetInstance[] {
+export function snapshotWidgetsFromPayload(
+  payload?: FeedSnapshotPayload | Record<string, unknown> | null
+): WidgetInstance[] {
   if (!payload || typeof payload !== 'object') return [];
   const visuals = (payload as FeedSnapshotPayload).visuals;
   if (!visuals?.widgets?.length) return [];
@@ -182,7 +219,15 @@ export function snapshotWidgetsFromPayload(payload?: FeedSnapshotPayload | Recor
     id: w.id,
     title: w.title || 'Widget',
     chartType: (w.chartType || 'bar') as WidgetInstance['chartType'],
-    chartOptions: w.chartOptions,
+    chartOptions: {
+      ...(w.chartOptions || {}),
+      ...(visuals.presentation?.colorPalette && !w.chartOptions?.colorPalette
+        ? {
+            colorPalette: visuals.presentation.colorPalette,
+            dashboardDefaultPalette: visuals.presentation.colorPalette,
+          }
+        : {}),
+    },
     chartData: w.chartData,
     chartQuery: w.chartQuery,
     isLoading: false,
@@ -190,7 +235,9 @@ export function snapshotWidgetsFromPayload(payload?: FeedSnapshotPayload | Recor
   }));
 }
 
-export function snapshotLayoutFromPayload(payload?: FeedSnapshotPayload | Record<string, unknown> | null): LayoutItem[] {
+export function snapshotLayoutFromPayload(
+  payload?: FeedSnapshotPayload | Record<string, unknown> | null
+): LayoutItem[] {
   if (!payload || typeof payload !== 'object') return [];
   const visuals = (payload as FeedSnapshotPayload).visuals;
   return (visuals?.layout || []) as LayoutItem[];

@@ -80,18 +80,18 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
   };
 
   return (
-    <div className="page-panel-toolbar feed-filters-toolbar">
-      <div className="page-panel-toolbar__filters flex flex-col gap-1">
-        <Segmented
-          value={value.scope}
-          options={scopeOptions}
-          onChange={(next) => update({ scope: next as FeedScope })}
-          aria-label={t('feed_scope_aria')}
-        />
-      </div>
+    <div className="flex flex-col gap-3">
+      {/* Scope tabs */}
+      <Segmented
+        value={value.scope}
+        options={scopeOptions}
+        onChange={(next) => update({ scope: next as FeedScope })}
+        aria-label={t('feed_scope_aria')}
+      />
 
-      <div className="page-panel-toolbar__row">
-        <div className="page-panel-toolbar__actions flex flex-wrap gap-2">
+      {/* Filters row: selects on the left, search on the right — wraps cleanly on narrow widths */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select
             value={value.sort}
             onChange={(next) => update({ sort: next as FeedSort })}
@@ -124,12 +124,13 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
           value={value.search || ''}
           onChange={(event) => update({ search: event.target.value })}
           prefix={<SearchOutlined />}
-          className="page-panel-toolbar__search"
+          className="w-full sm:w-64"
         />
       </div>
 
+      {/* Quick tag chips */}
       {quickTags.length > 0 && (
-        <div className="page-panel-toolbar__filters flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {quickTags.map((tag) => {
             const selected = value.tags.includes(tag);
             return (

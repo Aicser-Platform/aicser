@@ -1053,36 +1053,53 @@ export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({
       : 'default';
   const inheritPalette = CHART_PALETTE_CATALOG.find((p) => p.id === inheritPaletteId);
 
+  const renderSwatches = (colors: readonly string[]) =>
+    colors.length > 0 ? (
+      <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+        {colors.map((color: string, idx: number) => (
+          <div
+            key={idx}
+            style={{
+              width: 12,
+              height: 12,
+              backgroundColor: color,
+              borderRadius: 2,
+              border: '1px solid #e0e0e0',
+            }}
+          />
+        ))}
+      </div>
+    ) : null;
+
+  // Label + swatches share one row; the label truncates with an ellipsis so it
+  // never overflows the narrow (300px) properties panel and overlaps the swatches.
+  const paletteRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 };
+  const paletteLabelStyle: React.CSSProperties = {
+    fontSize: '12px',
+    flex: '1 1 auto',
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+
   const renderPalette = (palette: { labelKey?: string; label?: string; colors: readonly string[] }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: '12px', minWidth: '72px' }}>
+    <div style={paletteRowStyle}>
+      <span style={paletteLabelStyle}>
         {palette.labelKey ? t(palette.labelKey as 'palette_default') : palette.label}
       </span>
-      {palette.colors.length > 0 && (
-        <div style={{ display: 'flex', gap: 2 }}>
-          {palette.colors.map((color: string, idx: number) => (
-            <div
-              key={idx}
-              style={{
-                width: 12,
-                height: 12,
-                backgroundColor: color,
-                borderRadius: 2,
-                border: '1px solid #e0e0e0',
-              }}
-            />
-          ))}
-        </div>
-      )}
+      {renderSwatches(palette.colors)}
     </div>
   );
 
   const paletteOptions = [
     {
+      // Inherit option: a single "Inherit dashboard brand" label + the brand
+      // swatches. The nested palette name was redundant and caused the overlap.
       label: (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '12px', minWidth: '72px' }}>{t('palette_inherit_dashboard')}</span>
-          {inheritPalette ? renderPalette(inheritPalette) : null}
+        <div style={paletteRowStyle}>
+          <span style={paletteLabelStyle}>{t('palette_inherit_dashboard')}</span>
+          {inheritPalette ? renderSwatches(inheritPalette.colors) : null}
         </div>
       ),
       value: WIDGET_PALETTE_INHERIT,

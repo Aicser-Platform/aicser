@@ -14,6 +14,7 @@ import {
   getInteractionMode,
 } from '../utils/drillDownHelpers';
 import { hasDrillThrough } from '../utils/drillThroughHelpers';
+import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 import type { RuntimeFilter } from '../utils/filterOperators';
 import type { WidgetInstance } from '../stores/useDashboardStore';
 import { useDashboardStore } from '../stores/useDashboardStore';
@@ -65,6 +66,7 @@ export function DashboardWidgetCell({
   const interactionMode = getInteractionMode(widget);
   const drillThroughActive = hasDrillThrough(widget);
   const chartInteractionMode = drillThroughActive ? 'drill' : interactionMode;
+  const friendlyError = getFriendlyWidgetError(widget.error);
 
   const chartReady =
     onCrossFilter || onWidgetChartClick || chartInteractionMode === 'drill'
@@ -94,8 +96,17 @@ export function DashboardWidgetCell({
         />
       ) : null}
       {widget.error && onRetryWidget ? (
-        <div className="widget-center widget-error-retry">
-          <Empty description={widget.error} image={Empty.PRESENTED_IMAGE_SIMPLE}>
+        <div className="widget-center widget-error-retry" title={friendlyError.technicalDetail}>
+          <Empty
+            description={
+              <span>
+                <strong>{friendlyError.title}</strong>
+                <br />
+                {friendlyError.detail}
+              </span>
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
             <Button
               size="small"
               icon={<ReloadOutlined />}

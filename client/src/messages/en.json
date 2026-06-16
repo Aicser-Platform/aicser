@@ -2736,6 +2736,7 @@
     "collab_comments_dashboard_scope": "Showing all dashboard comments",
     "collab_comments_anonymous": "Teammate",
     "monitor_kpi": "Monitor this KPI",
+    "publish_chart_to_feed": "Publish chart to feed",
     "monitor_kpi_success": "Alert rule created — open Alerts to configure notifications",
     "monitor_kpi_no_sql": "Connect a table and metric before creating a monitor",
     "feed_snapshot_updated": "Feed snapshot updated",
@@ -5717,6 +5718,7 @@
     "stack_mode": "Stack Mode",
     "line_type": "Line Type",
     "color_palette": "Color Palette",
+    "widget_color_palette": "Chart colors (this widget)",
     "primary_color": "Primary Color",
     "drill_path": "Drill-down path",
     "drill_path_placeholder": "Select dimensions in drill order (e.g. Year, Quarter, Region)",
@@ -6098,7 +6100,8 @@
     "filter_preset_search": "Search",
     "layout_preset_scaffolds_added": "Added {count} placeholder slots",
     "layout_preset_hint": "Apply a layout and add empty slots for missing widgets.",
-    "layout_preset_slots": "{count} slots"
+    "layout_preset_slots": "{count} slots",
+    "dashboard_not_found": "Dashboard not found or you do not have access to it."
   },
   "billing_page": {
     "loading": "Loading...",

@@ -2,6 +2,11 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  oxc: {
+    jsx: {
+      runtime: 'automatic',
+    },
+  },
   resolve: {
     alias: [
       // @/ee must come before @ so the more-specific alias wins
@@ -12,6 +17,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    include: ['src/__tests__/**/*.test.ts', 'src/__tests__/**/*.test.tsx'],
+    setupFiles: ['./src/__tests__/setup.ts'],
+    include: [
+      'src/__tests__/**/*.test.ts',
+      'src/__tests__/**/*.test.tsx',
+      'ee/src/ee/components/ai/chat/**/*.test.tsx',
+      'ee/src/ee/components/ai/chat/**/*.test.ts',
+    ],
   },
 });
