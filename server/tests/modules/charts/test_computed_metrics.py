@@ -36,8 +36,8 @@ def test_build_metric_sql_ratio_with_filter():
     }
     sql = svc._build_metric_sql(ym)
     assert sql == (
-        "SUM(outstanding_balance_usd) FILTER (WHERE max_days_late >= 30) "
-        "/ NULLIF(SUM(outstanding_balance_usd), 0) * 100"
+        'SUM("outstanding_balance_usd") FILTER (WHERE "max_days_late" >= 30) '
+        '/ NULLIF(SUM("outstanding_balance_usd"), 0) * 100'
     )
 
 
@@ -52,12 +52,12 @@ def test_build_metric_sql_ratio_no_multiplier():
         },
     }
     sql = svc._build_metric_sql(ym)
-    assert sql == "SUM(total_repaid_usd) / NULLIF(SUM(loan_amount_usd), 0)"
+    assert sql == 'SUM("total_repaid_usd") / NULLIF(SUM("loan_amount_usd"), 0)'
 
 
 def test_build_metric_sql_plain_falls_back():
     svc = _svc()
-    assert svc._build_metric_sql({"field": "amount", "aggregation": "sum"}) == "SUM(amount)"
+    assert svc._build_metric_sql({"field": "amount", "aggregation": "sum"}) == 'SUM("amount")'
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ def test_computed_metric_clamps_bad_multiplier():
         },
     }
     # multiplier not in {1, 100} → clamped to 1 (no '* N' suffix), never errors
-    assert svc._build_metric_sql(ym) == "SUM(a) / NULLIF(SUM(b), 0)"
+    assert svc._build_metric_sql(ym) == 'SUM("a") / NULLIF(SUM("b"), 0)'
 
 
 # ---------------------------------------------------------------------------

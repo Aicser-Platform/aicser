@@ -15,6 +15,7 @@ import { getColorsFromPalette } from './WidgetRendererConfig';
 import { hasRenderableChartData } from '@/components/charts/chartDesignerBridge';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
+import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 
 const GeoMapWidget = dynamic(
   () => import('./GeoMapWidget').then((m) => m.GeoMapWidget),
@@ -124,9 +125,18 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
   // Error state
   if (error) {
+    const friendlyError = getFriendlyWidgetError(error);
     return (
-      <div className="widget-center">
-        <Empty description={`Error: ${error}`} />
+      <div className="widget-center" title={friendlyError.technicalDetail}>
+        <Empty
+          description={
+            <span>
+              <strong>{friendlyError.title}</strong>
+              <br />
+              {friendlyError.detail}
+            </span>
+          }
+        />
       </div>
     );
   }

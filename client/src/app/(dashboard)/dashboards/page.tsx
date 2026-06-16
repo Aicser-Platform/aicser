@@ -76,6 +76,8 @@ export default function NewDashboardStudio() {
   const t = useTranslations('dashboards_page');
   const searchParams = useSearchParams();
   const requestedDashboardId = searchParams?.get('id');
+  const requestedStudioMode = searchParams?.get('mode');
+  const fromChatMessageId = searchParams?.get('from_chat');
   const liveBuildParam = searchParams?.get('live') === '1';
   const appliedDashboardIdRef = useRef<string | null>(null);
   const dashboards = useDashboardStore((s) => s.dashboards);
@@ -106,6 +108,7 @@ export default function NewDashboardStudio() {
   const isFullscreen = useDashboardStore((s) => s.isFullscreen);
   const setIsFullscreenState = useDashboardStore((s) => s.setIsFullscreen);
   const studioMode = useDashboardStore((s) => s.studioMode);
+  const setStudioMode = useDashboardStore((s) => s.setStudioMode);
   const isEditMode = studioMode === 'edit' && !isFullscreen;
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
 
@@ -125,6 +128,19 @@ export default function NewDashboardStudio() {
     if (!hasNewWidgets || !liveBuildDashboardId) return;
     void fetchDashboards();
   }, [hasNewWidgets, liveBuildDashboardId, fetchDashboards]);
+
+  useEffect(() => {
+    if (!activeDashboardId) return;
+    const requestedMode =
+      requestedStudioMode === 'edit' || requestedStudioMode === 'view'
+        ? requestedStudioMode
+        : fromChatMessageId
+          ? 'view'
+          : null;
+    if (requestedMode && studioMode !== requestedMode) {
+      setStudioMode(requestedMode);
+    }
+  }, [activeDashboardId, fromChatMessageId, requestedStudioMode, setStudioMode, studioMode]);
 
   const collabRoomId = useDashboardCollaborationRoom(activeDashboardId, isEditMode);
   const {

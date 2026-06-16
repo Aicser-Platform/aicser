@@ -68,3 +68,23 @@ def test_empty_rows_returns_empty_shape():
         "y": [],
         "series": [],
     }
+
+
+def test_spaced_column_names_are_valid_and_quoted():
+    svc = _svc()
+    assert svc._is_valid_field_name("Units Sold") is True
+    assert svc._get_aggregate_func("sum", "Units Sold") == 'SUM("Units Sold")'
+    assert svc._apply_filters_db(
+        [{"field": "Manufacturing Price", "operator": ">=", "value": 10}]
+    ) == 'WHERE "Manufacturing Price" >= 10'
+
+
+def test_saved_sql_runtime_filters_only_use_projected_columns():
+    svc = _svc()
+    sql = 'SELECT "Segment", SUM("Sales") AS total FROM "data" GROUP BY "Segment"'
+    filters = [
+        {"field": "Date", "operator": "<=", "value": "2026-06-16"},
+        {"field": "Segment", "operator": "in", "value": ["Government"]},
+    ]
+
+    assert svc._filters_projected_by_saved_sql(filters, sql) == [filters[1]]

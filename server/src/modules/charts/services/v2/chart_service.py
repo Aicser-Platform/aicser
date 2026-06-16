@@ -37,6 +37,7 @@ import json
 import hashlib
 import os
 import logging
+import re
 from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -497,22 +498,28 @@ class ChartService:
         
         select_fields, group_by = [], []
         if legend_field:
-            select_fields.append(f"{legend_field} as legend")
-            if not is_fully_raw: group_by.append(legend_field)
+            legend_sql = self._quote_identifier(legend_field)
+            select_fields.append(f"{legend_sql} as legend")
+            if not is_fully_raw:
+                group_by.append(legend_sql)
 
         # X column/agg
         if is_x_agg:
             select_fields.append(f"{self._get_aggregate_func(x_agg, x_field)} as x")
         else:
-            select_fields.append(f"{x_field} as x")
-            if not is_fully_raw: group_by.append(x_field)
+            x_sql = self._quote_identifier(x_field)
+            select_fields.append(f"{x_sql} as x")
+            if not is_fully_raw:
+                group_by.append(x_sql)
 
         # Y column/agg
         if is_y_agg:
             select_fields.append(f"{self._get_aggregate_func(y_agg, y_field)} as y")
         else:
-            select_fields.append(f"{y_field} as y")
-            if not is_fully_raw: group_by.append(y_field)
+            y_sql = self._quote_identifier(y_field)
+            select_fields.append(f"{y_sql} as y")
+            if not is_fully_raw:
+                group_by.append(y_sql)
 
         schema_info = data_source.schema or {}
         table, schema = self._resolve_table_and_schema(schema_info)
@@ -666,6 +673,8 @@ class ChartService:
         filters = chart_query.get("filters") or []
         metric_filters = chart_query.get("metricFilters") or []
         sql = sample_sql.strip().rstrip(";")
+        if isinstance(filters, list):
+            filters = self._filters_projected_by_saved_sql(filters, sql)
         where_clause = self._apply_filters_db(filters if isinstance(filters, list) else [])
         having_clause = self._apply_metric_filters_db(metric_filters if isinstance(metric_filters, list) else [])
         if where_clause or having_clause:
@@ -892,9 +901,9 @@ class ChartService:
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 group_by_fields.append(transformed_x)
             else:
-                group_by_fields.append(x_field)
+                group_by_fields.append(self._quote_identifier(x_field))
         if group_field and group_field != x_field:
-            group_by_fields.append(group_field)
+            group_by_fields.append(self._quote_identifier(group_field))
         
         group_by_clause = f"GROUP BY {', '.join(group_by_fields)}" if group_by_fields else ""
 
@@ -906,12 +915,12 @@ class ChartService:
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 select_fields.append(f"{transformed_x} AS x")
             else:
-                select_fields.append(f"{x_field} AS x")
+                select_fields.append(f"{self._quote_identifier(x_field)} AS x")
         else:
             select_fields.append("'Total' AS x")
             
         if group_field and group_field != x_field:
-            select_fields.append(f"{group_field} AS group_field")
+            select_fields.append(f"{self._quote_identifier(group_field)} AS group_field")
             
         # Support multiple metrics
         metric_aliases = []
@@ -1279,9 +1288,92 @@ class ChartService:
     # HELPERS
     # =========================================================
     def _is_valid_field_name(self, field_name: str) -> bool:
-        if not field_name or not isinstance(field_name, str): return False
-        import re
-        return bool(re.match(r'^[a-zA-Z_][a-zA-Z0-9_.-]*$', field_name))
+        if not field_name or not isinstance(field_name, str):
+            return False
+        # Uploaded files and spreadsheets commonly contain display-style column
+        # names ("Units Sold", "Manufacturing Price"). Allow those names, but
+        # reject SQL syntax and quoting characters.
+        return bool(re.match(r"^[A-Za-z0-9_][A-Za-z0-9_ .-]*$", field_name.strip()))
+
+    def _quote_identifier(self, identifier: str) -> str:
+        """Quote a validated table/column identifier, preserving dotted paths."""
+        if not self._is_valid_field_name(identifier):
+            raise ValueError(f"Invalid field name: {identifier}")
+        parts = [part.strip() for part in str(identifier).split(".") if part.strip()]
+        return ".".join(f'"{part.replace(chr(34), chr(34) + chr(34))}"' for part in parts)
+
+    def _projected_sql_columns(self, sql: str) -> set[str]:
+        """Best-effort output-column extraction for saved SQL filter safety."""
+        text_sql = (sql or "").strip().rstrip(";")
+        match = re.match(r"(?is)^\s*select\s+(.*?)\s+from\s+", text_sql)
+        if not match:
+            return set()
+
+        select_clause = match.group(1)
+        columns: set[str] = set()
+        depth = 0
+        quote: Optional[str] = None
+        token = []
+        parts: List[str] = []
+        for ch in select_clause:
+            if quote:
+                token.append(ch)
+                if ch == quote:
+                    quote = None
+                continue
+            if ch in ("'", '"', "`"):
+                quote = ch
+                token.append(ch)
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")" and depth > 0:
+                depth -= 1
+            if ch == "," and depth == 0:
+                parts.append("".join(token).strip())
+                token = []
+            else:
+                token.append(ch)
+        if token:
+            parts.append("".join(token).strip())
+
+        for part in parts:
+            if part == "*":
+                return set()
+            alias_match = re.search(r'(?is)\s+as\s+("([^"]+)"|`([^`]+)`|\[([^\]]+)\]|([A-Za-z_][A-Za-z0-9_ .-]*))\s*$', part)
+            if alias_match:
+                alias = next((g for g in alias_match.groups()[1:] if g), "")
+                if alias:
+                    columns.add(alias.strip())
+                continue
+            simple_match = re.match(r'(?is)^(?:"([^"]+)"|`([^`]+)`|([A-Za-z_][A-Za-z0-9_ .-]*))(?:\s*)$', part)
+            if simple_match:
+                name = next((g for g in simple_match.groups() if g), "")
+                if name:
+                    columns.add(name.split(".")[-1].strip())
+        return columns
+
+    def _filters_projected_by_saved_sql(self, filters: List[Dict], sql: str) -> List[Dict]:
+        projected = self._projected_sql_columns(sql)
+        if not projected:
+            return filters
+        cleaned: List[Dict] = []
+        for f in filters or []:
+            if not isinstance(f, dict):
+                continue
+            if f.get("type") == "sql":
+                logger.info("Skipping raw SQL runtime filter for saved chart SQL")
+                continue
+            field = str(f.get("field") or "").strip()
+            if not field or field in projected or field.split(".")[-1] in projected:
+                cleaned.append(f)
+            else:
+                logger.info(
+                    "Skipping runtime filter %s for saved chart SQL; projected columns=%s",
+                    field,
+                    sorted(projected),
+                )
+        return cleaned
     
     def _build_order_clause(self, sort_by: str, sort_order: str, x_field: Optional[str], has_y_metrics: bool = False) -> str:
         sort_by = self._normalize_sort_by(sort_by)
@@ -1319,6 +1411,7 @@ class ChartService:
 
             if not field or not self._is_valid_field_name(field):
                 continue
+            field_sql = self._quote_identifier(field)
             
             if f_type == 'sql' and f.get('sql'):
                 clauses.append(f"({f.get('sql')})")
@@ -1331,9 +1424,9 @@ class ChartService:
             
             # Format value
             if operator == "is_null":
-                clauses.append(f"{field} IS NULL")
+                clauses.append(f"{field_sql} IS NULL")
             elif operator == "is_not_null":
-                clauses.append(f"{field} IS NOT NULL")
+                clauses.append(f"{field_sql} IS NOT NULL")
             elif operator in ("in", "not_in"):
                 # Expecting a comma-separated string or list
                 if isinstance(value, str):
@@ -1352,16 +1445,16 @@ class ChartService:
                         formatted_vals.append(f"'{safe_v}'")
                 
                 op_sql = "IN" if operator == "in" else "NOT IN"
-                clauses.append(f"{field} {op_sql} ({', '.join(formatted_vals)})")
+                clauses.append(f"{field_sql} {op_sql} ({', '.join(formatted_vals)})")
             elif operator in ("like", "like_case"):
                 val_str = str(value).replace("'", "''")
-                clauses.append(f"{field} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
+                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
             else:
                 if isinstance(value, (int, float)):
-                    clauses.append(f"{field} {operator} {value}")
+                    clauses.append(f"{field_sql} {operator} {value}")
                 else:
                     val_str = str(value).replace("'", "''")
-                    clauses.append(f"{field} {operator} '{val_str}'")
+                    clauses.append(f"{field_sql} {operator} '{val_str}'")
         
         if not clauses:
             return ""
@@ -1525,15 +1618,16 @@ class ChartService:
             agg_type = "count"
             
         if agg_type == "count":
-            return f"COUNT({y_metric})" if y_metric else "COUNT(*)"
+            return f"COUNT({self._quote_identifier(y_metric)})" if y_metric else "COUNT(*)"
         if agg_type == "distinct_count":
-            return f"COUNT(DISTINCT {y_metric})" if y_metric else "COUNT(*)"
+            return f"COUNT(DISTINCT {self._quote_identifier(y_metric)})" if y_metric else "COUNT(*)"
             
         if y_metric and self._is_valid_field_name(y_metric):
-            if agg_type == "sum": return f"SUM({y_metric})"
-            if agg_type == "avg": return f"AVG({y_metric})"
-            if agg_type == "max": return f"MAX({y_metric})"
-            if agg_type == "min": return f"MIN({y_metric})"
+            field_sql = self._quote_identifier(y_metric)
+            if agg_type == "sum": return f"SUM({field_sql})"
+            if agg_type == "avg": return f"AVG({field_sql})"
+            if agg_type == "max": return f"MAX({field_sql})"
+            if agg_type == "min": return f"MIN({field_sql})"
             
         # If no y_metric but agg_type is a function that needs it, 
         # it might be that agg_type itself is "count" or we fallback
@@ -1626,16 +1720,17 @@ class ChartService:
         return df
 
     def _get_date_trunc(self, field: str, grain: str, db_type: str) -> str:
+        field_sql = self._quote_identifier(field)
         if db_type == "postgres":
-            return f"DATE_TRUNC('{grain}', {field})"
+            return f"DATE_TRUNC('{grain}', {field_sql})"
         if db_type == "mysql":
-            if grain == "year": return f"DATE_FORMAT({field}, '%Y-01-01')"
-            if grain == "month": return f"DATE_FORMAT({field}, '%Y-%m-01')"
-            if grain == "day": return f"DATE_FORMAT({field}, '%Y-%m-%d')"
-            return field
+            if grain == "year": return f"DATE_FORMAT({field_sql}, '%Y-01-01')"
+            if grain == "month": return f"DATE_FORMAT({field_sql}, '%Y-%m-01')"
+            if grain == "day": return f"DATE_FORMAT({field_sql}, '%Y-%m-%d')"
+            return field_sql
         if db_type == "sqlite":
-            if grain == "year": return f"strftime('%Y-01-01', {field})"
-            if grain == "month": return f"strftime('%Y-%m-01', {field})"
-            if grain == "day": return f"strftime('%Y-%m-%d', {field})"
-            return field
-        return field
+            if grain == "year": return f"strftime('%Y-01-01', {field_sql})"
+            if grain == "month": return f"strftime('%Y-%m-01', {field_sql})"
+            if grain == "day": return f"strftime('%Y-%m-%d', {field_sql})"
+            return field_sql
+        return field_sql
