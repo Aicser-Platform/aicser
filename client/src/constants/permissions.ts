@@ -57,3 +57,25 @@ export enum Permission {
   USER_EDIT_PROFILE = 'user:edit_profile',
   USER_MANAGE_API_KEYS = 'user:manage_api_keys',
 }
+
+/** Default permissions for CE self-host when workspace RBAC is unavailable or not yet provisioned. */
+export const CE_BASELINE_PERMISSIONS: Permission[] = [
+  Permission.ORG_VIEW,
+  Permission.PROJECT_VIEW,
+  Permission.PROJECT_EDIT,
+  Permission.DATA_VIEW,
+  Permission.DATA_CONNECT,
+  Permission.DATA_UPLOAD,
+  Permission.DASHBOARD_VIEW,
+  Permission.DASHBOARD_CREATE,
+  Permission.DASHBOARD_EDIT,
+  Permission.CHART_VIEW,
+  Permission.CHART_EDIT,
+  Permission.QUERY_EXECUTE,
+  Permission.QUERY_SAVE,
+  Permission.KNOWLEDGE_VIEW,
+  Permission.KNOWLEDGE_SEARCH,
+  Permission.AI_USE,
+  Permission.EMBED_VIEW,
+  Permission.AGENT_USE,
+];

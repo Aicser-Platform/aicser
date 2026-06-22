@@ -174,7 +174,7 @@ const data_source_modal_km = {
   err_kafka_servers: 'ត្រូវការ Kafka bootstrap servers',
   err_es_url: 'ត្រូវការ URL Elasticsearch',
   toast_connected_plain: 'បានភ្ជាប់ {name} ដោយជោគជ័យ',
-  toast_connected_rich: '✅ បានភ្ជាប់ {name} ដោយជោគជ័យ!',
+  toast_connected_rich: បានភ្ជាប់ {name} ដោយជោគជ័យ!',
   err_save_ds: 'រក្សាទុកប្រភពទិន្នន័យមិនបានជោគជ័យ',
   err_save_ds_retry: 'រក្សាទុកមិនបានជោគជ័យ។ សូមព្យាយាមម្តងទៀត។',
   warn_kb_name_files: 'សូមបញ្ចូលឈ្មោះ និងជ្រើសយ៉ាងហោចណាស់មួយឯកសារ',

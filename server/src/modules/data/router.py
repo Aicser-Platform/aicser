@@ -72,6 +72,7 @@ except ImportError:
 from src.modules.authentication.deps.auth_bearer import current_user_payload
 from src.modules.data.schemas import DataSourceUpdate, BusinessMetadataUpdate
 from src.modules.data.services.data_sources_crud import DataSourcesCRUD
+from src.modules.data.utils.masking import public_connection_config
 from src.modules.project.service import ProjectService
 # OrganizationService removed - organization context removed
 from src.modules.pricing.feature_gate import (
@@ -794,7 +795,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=public_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -866,7 +867,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=public_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -909,7 +910,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=public_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -1026,7 +1027,7 @@ async def create_data_source(
                 "type": result.type,
                 "format": result.format,
                 "description": result.description,
-                "connection_config": result.connection_config,
+                "connection_config": public_connection_config(result.connection_config),
                 "is_active": result.is_active,
             },
         }
@@ -1555,7 +1556,7 @@ async def update_data_source(
                 "format": getattr(updated, "format", None),
                 "db_type": getattr(updated, "db_type", None),
                 "description": getattr(updated, "description", None),
-                "connection_config": getattr(updated, "connection_config", None),
+                "connection_config": public_connection_config(getattr(updated, "connection_config", None)),
                 "is_active": updated.is_active,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
@@ -1732,7 +1733,7 @@ async def create_data_source_via_project_path(
                 "type": result.type,
                 "format": result.format,
                 "description": result.description,
-                "connection_config": result.connection_config,
+                "connection_config": public_connection_config(result.connection_config),
                 "is_active": result.is_active,
             },
         }
@@ -1837,6 +1838,11 @@ async def chat_to_chart_workflow(
     Uses the same AI workflow as /api/ai/analyze: route → nl2sql → validate → execute → unified chart+insights.
     Response shape is kept for backward compatibility with existing callers.
     """
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Chat-to-chart requires Enterprise Edition.",
+        )
     import uuid
     try:
         logger.info(f"💬 Chat-to-chart request: \"{request.natural_language_query}\" for data source {request.data_source_id}")

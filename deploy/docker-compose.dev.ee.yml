@@ -47,12 +47,17 @@ services:
     depends_on:
       keycloak:
         condition: service_started
+    healthcheck:
+      # EE first boot: alembic (many heads) + RBAC/org seeds before uvicorn listens.
+      start_period: 240s
 
   client:
     image: aiser-client:dev-ee
     build:
       args:
         EDITION: enterprise
+    ports:
+      - "${DEV_CLIENT_PORT:-3000}:3000"
     environment:
       EDITION: enterprise
       NEXT_PUBLIC_EDITION: enterprise

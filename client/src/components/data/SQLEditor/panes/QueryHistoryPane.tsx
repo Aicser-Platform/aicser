@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Input, Select, Table, Tooltip, message } from 'antd';
 import { DeleteOutlined, EditOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { QueryEngineIcon } from '@/utils/queryEngineIcon';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -18,24 +19,7 @@ export interface QueryHistoryPaneProps {
 }
 
 function getEngineIcon(engine: string) {
-  switch (engine) {
-    case 'duckdb':
-      return '🦆';
-    case 'cube':
-      return '📊';
-    case 'spark':
-      return '⚡';
-    case 'direct_sql':
-      return '🗄️';
-    case 'pandas':
-      return '🐼';
-    case 'demo':
-      return '🎯';
-    case 'error':
-      return '❌';
-    default:
-      return '🔧';
-  }
+  return <QueryEngineIcon engine={engine} />;
 }
 
 export function QueryHistoryPane({

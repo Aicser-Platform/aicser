@@ -235,11 +235,24 @@ async def get_bulk_profiles(
 
 # ─── User settings (user_settings table) ────────────────────────────────────
 
+_SECRET_SETTING_KEYS = frozenset({
+    "platform_api_keys",
+    "embed_jwt_tokens",
+    "preferred_ai_model",
+})
+
+
+def _is_secret_setting_key(key: str) -> bool:
+    if key.startswith("provider_key."):
+        return True
+    return key in _SECRET_SETTING_KEYS
+
+
 @router.get("/settings")
 async def get_user_settings(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """Get all general user settings (language, timezone, theme, etc.) for the current user."""
+    """Get general user settings (language, timezone, theme, etc.). Secret keys are excluded."""
     user_id = None
     if isinstance(current_token, dict):
         user_id = current_token.get("id") or current_token.get("user_id") or current_token.get("sub")
@@ -247,10 +260,11 @@ async def get_user_settings(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID not found in token")
     try:
         all_kv = await _user_settings_repo.get_all_settings(str(user_id))
-        # Coerce booleans for known keys
         bool_keys = {"autoSave", "notifications", "emailUpdates", "marketingEmails", "dataSharing"}
         out = {}
         for k, v in all_kv.items():
+            if _is_secret_setting_key(k):
+                continue
             if k in bool_keys and v is not None:
                 out[k] = str(v).lower() in ("true", "1", "yes")
             else:
@@ -397,9 +411,13 @@ async def get_ai_provider_keys(
             provider = k.split(".", 2)[1]
             try:
                 data = json.loads(v)
-                if isinstance(data, dict) and "api_key" in data:
-                    data["api_key"] = mask_key(data["api_key"])
-                result[provider] = data
+                if isinstance(data, dict):
+                    from src.modules.data.utils.credentials import decrypt_credentials
+
+                    data = decrypt_credentials(data)
+                    if "api_key" in data:
+                        data["api_key"] = mask_key(str(data["api_key"]))
+                    result[provider] = data
             except Exception:
                 pass
     return result
@@ -423,6 +441,9 @@ async def save_ai_provider_key(
     if existing_raw and existing_raw.value:
         try:
             existing = json.loads(existing_raw.value)
+            from src.modules.data.utils.credentials import decrypt_credentials
+
+            existing = decrypt_credentials(existing)
         except Exception:
             pass
     if api_key_val and not api_key_val.startswith("••••"):

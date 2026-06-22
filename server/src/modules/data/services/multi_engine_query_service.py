@@ -19,7 +19,7 @@ import sqlalchemy as sa
 # DuckDB for local analytics
 import duckdb
 import shutil
-from src.modules.ai.data_source_capabilities import (
+from src.modules.data.capabilities import (
     uses_duckdb_for_execution,
     is_file_upload_duckdb,
     is_single_table_source,

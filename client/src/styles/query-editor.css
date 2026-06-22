@@ -141,6 +141,33 @@
   border-radius: 6px !important;
 }
 
+.query-editor-workspace .qe-ai-bar .qe-ai-model-wrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  max-width: min(200px, 32vw);
+}
+
+.query-editor-workspace .qe-ai-bar .qe-ai-model-wrap .model-selector-compact.model-selector-composer-embed.ant-select {
+  min-width: 88px;
+  max-width: 200px;
+}
+
+.query-editor-workspace .qe-ai-bar .qe-ai-model-wrap .model-selector-compact.model-selector-composer-embed .ant-select-selector {
+  height: var(--qe-control-h) !important;
+  min-height: var(--qe-control-h) !important;
+  padding: 0 8px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--ant-color-border) !important;
+  background: var(--ant-color-bg-container) !important;
+}
+
+.query-editor-workspace .qe-ai-bar .qe-ai-model-wrap .ant-btn {
+  width: auto !important;
+  min-width: auto !important;
+  padding-inline: 10px !important;
+}
+
 /* Query tabs row — line tabs (not editable-card) */
 .query-editor-workspace .qe-query-tabs-row {
   flex-shrink: 0;

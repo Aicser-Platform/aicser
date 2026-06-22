@@ -1,0 +1,36 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "00000000-0000-0000-0000-aicserembed01",
+  "packageName": "com.aicser.embed",
+  "developer": {
+    "name": "Aicser",
+    "websiteUrl": "https://aicser.com",
+    "privacyUrl": "https://aicser.com/privacy",
+    "termsOfUseUrl": "https://aicser.com/terms"
+  },
+  "name": {
+    "short": "Aicser Dashboards",
+    "full": "Aicser Embedded Analytics"
+  },
+  "description": {
+    "short": "Embed Aicser dashboards in Microsoft Teams",
+    "full": "View shared Aicser dashboards inside Teams tabs using secure embed URLs."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#00c2cb",
+  "staticTabs": [
+    {
+      "entityId": "aicser-dashboard",
+      "name": "Dashboard",
+      "contentUrl": "https://YOUR_APP_HOST/embed/dashboard/YOUR_DASHBOARD_ID",
+      "websiteUrl": "https://YOUR_APP_HOST/shared/dashboards",
+      "scopes": ["personal", "team"]
+    }
+  ],
+  "validDomains": ["YOUR_APP_HOST", "*.YOUR_APP_HOST"]
+}

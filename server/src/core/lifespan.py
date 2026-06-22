@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from src.core.cache import cache
 from src.core.edition import is_ee_enabled
+from src.core.rbac_seed import maybe_seed_rbac
 
 logger = logging.getLogger(__name__)
 
@@ -133,26 +134,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("Failed to start retention cleanup: %s", e)
 
-        if is_ee_enabled():
-            # Auto-seed RBAC roles/permissions if table is empty
-            try:
-                from sqlalchemy import select, func
-                from src.db.session import async_session
-                from src.modules.authentication.rbac.models import Role
-                async with async_session() as _db:
-                    count = (await _db.execute(select(func.count()).select_from(Role))).scalar() or 0
-                if count == 0:
-                    logger.info("RBAC roles table is empty — running seed_rbac...")
-                    from ee.scripts.seed_rbac import seed_permissions, seed_roles
-                    await seed_permissions()
-                    await seed_roles()
-                    logger.info("RBAC seed complete")
-                else:
-                    logger.info("RBAC roles already seeded (%d roles)", count)
-            except Exception as e:
-                logger.warning("RBAC auto-seed failed: %s", e)
+        await maybe_seed_rbac()
 
-            # Auto-seed subscription plans if table is empty
+        if is_ee_enabled():
             try:
                 from sqlalchemy import select, func
                 from src.db.session import async_session

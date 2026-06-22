@@ -12,7 +12,11 @@ import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 
 export { Permission } from '@/constants/permissions';
-import { Permission } from '@/constants/permissions';
+import { Permission, CE_BASELINE_PERMISSIONS } from '@/constants/permissions';
+
+const IS_COMMUNITY_EDITION = !['enterprise', 'ee'].includes(
+  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
+);
 
 interface UsePermissionsOptions {
   organizationId?: string | number;
@@ -108,6 +112,10 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
           setPermissions([]);
           return;
         }
+        if (IS_COMMUNITY_EDITION && response.status === 404) {
+          setPermissions(CE_BASELINE_PERMISSIONS);
+          return;
+        }
         throw new Error(`Failed to fetch permissions: ${response.status}`);
       }
 
@@ -115,11 +123,15 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
       const permissionValues = (Array.isArray(data?.permissions) ? data.permissions : []).map(
         (p: string) => p as Permission
       );
-      setPermissions(permissionValues);
+      if (IS_COMMUNITY_EDITION && permissionValues.length === 0) {
+        setPermissions(CE_BASELINE_PERMISSIONS);
+      } else {
+        setPermissions(permissionValues);
+      }
     } catch (err) {
       console.error('Error fetching permissions:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch permissions');
-      setPermissions([]);
+      setPermissions(IS_COMMUNITY_EDITION ? CE_BASELINE_PERMISSIONS : []);
     } finally {
       setLoading(false);
     }

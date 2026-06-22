@@ -53,6 +53,7 @@ import {
   FileOutlined,
   FileTextOutlined,
   BulbOutlined,
+  RobotOutlined,
   RocketOutlined,
   BarChartOutlined,
   SyncOutlined,
@@ -62,6 +63,7 @@ import {
   QuestionCircleOutlined,
   ScissorOutlined,
   FormatPainterOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
@@ -73,6 +75,17 @@ import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistory
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
+import {
+  NL2SQL_EXPLAIN,
+  NL2SQL_GENERATE,
+  NL2SQL_OPTIMIZE,
+  NL2SQL_PATTERNS,
+} from '@/config/nl2sqlApi';
+import {
+  isQueryEditorAiSetupDismissed,
+  QueryEditorAiSetupModal,
+} from '@/components/data/SQLEditor/QueryEditorAiSetupModal';
+import type { ModelInfo } from '@/components/ai/ModelSelector/ModelSelector';
 import {
   isSameQueryName,
   resolveQueryTabSaveName,
@@ -117,6 +130,47 @@ const AnimatedAIAvatar = dynamic(
   (() => import('@/ee').then((m) => ({ default: m.AnimatedAIAvatar }))) as any,
   { ssr: false }
 ) as React.ComponentType<{ size?: number; isSpeaking?: boolean; isThinking?: boolean }>;
+
+const ModelSelector = dynamic(
+  () => import('@/components/ai/ModelSelector/ModelSelector').then((m) => m.ModelSelector),
+  { ssr: false, loading: () => <Spin size="small" /> },
+);
+
+/** Omit model when Auto — backend picks default / user preference. */
+function nl2sqlModelField(modelId: string | null | undefined): { model?: string } {
+  if (!modelId || modelId === 'auto') return {};
+  return { model: modelId };
+}
+
+function isAiAuthError(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes('authentication') || m.includes('api key') || m.includes('401') || m.includes('incorrect api key');
+}
+
+function QueryEditorAIAvatar({
+  size = 22,
+  isSpeaking,
+  isThinking,
+}: {
+  size?: number;
+  isSpeaking?: boolean;
+  isThinking?: boolean;
+}) {
+  if (IS_EE) {
+    return (
+      <AnimatedAIAvatar size={size} isSpeaking={!!isSpeaking} isThinking={!!isThinking} />
+    );
+  }
+  return (
+    <RobotOutlined
+      style={{
+        fontSize: size,
+        color: isThinking ? 'var(--ant-color-primary)' : 'var(--ant-color-text-secondary)',
+      }}
+    />
+  );
+}
+
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { buildSQLCompletionItems, SQL_LANGUAGE_CONFIG } from '../../../utils/sqlCompletion';
 import type { SchemaTable } from '../../../utils/sqlCompletion';
@@ -489,12 +543,17 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [selectedView, setSelectedView] = useState<string>('');
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
+  const lastAiPromptRef = useRef<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [aiOptimizing, setAiOptimizing] = useState(false);
+  const [selectedAiModel, setSelectedAiModel] = useState<string>('auto');
+  const [aiModelsReloadNonce, setAiModelsReloadNonce] = useState(0);
+  const [hasConfiguredAiModel, setHasConfiguredAiModel] = useState(true);
+  const [aiSetupModalOpen, setAiSetupModalOpen] = useState(false);
   // Optimize diff state — show before/after instead of silent overwrite
   const [optimizeDiffOpen, setOptimizeDiffOpen] = useState(false);
   const [optimizeOriginalSQL, setOptimizeOriginalSQL] = useState('');
@@ -529,6 +588,24 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     const openConnectDataModal = () => setShowConnectDataModal(true);
     window.addEventListener('query-editor-open-connect-data', openConnectDataModal);
     return () => window.removeEventListener('query-editor-open-connect-data', openConnectDataModal);
+  }, []);
+
+  useEffect(() => {
+    const onFocus = () => setAiModelsReloadNonce((n) => n + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  const handleAiModelsLoaded = useCallback(({ models }: { models: ModelInfo[]; defaultModel: string }) => {
+    const hasUsable = models.some((m) => m.available !== false);
+    setHasConfiguredAiModel(hasUsable);
+    if (hasUsable) {
+      setAiSetupModalOpen(false);
+      return;
+    }
+    if (!isQueryEditorAiSetupDismissed()) {
+      setAiSetupModalOpen(true);
+    }
   }, []);
 
   const [editorHeight, setEditorHeight] = useState<number>(() => {
@@ -1824,13 +1901,14 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     })();
 
     try {
-      const result = await authenticatedFetch('/api/ai/query-editor/explain-sql', {
+      const result = await authenticatedFetch(NL2SQL_EXPLAIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sql,
           data_source_id: selectedDataSourceId,
           schema_context: schemaContext || undefined,
+          ...nl2sqlModelField(selectedAiModel),
         }),
       }) as { success: boolean; explanation?: string };
       setAiExplainContent(result.explanation || t('explain_sql_no_result'));
@@ -1848,12 +1926,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     if (!selectedDataSourceId) { message.warning(t('select_ds_first')); return; }
     setAiOptimizing(true);
     try {
-      const result = await authenticatedFetch('/api/ai/query-editor/optimize-sql', {
+      const result = await authenticatedFetch(NL2SQL_OPTIMIZE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sql,
           data_source_id: selectedDataSourceId,
+          ...nl2sqlModelField(selectedAiModel),
         }),
       }) as { success: boolean; optimized_sql?: string; improvements?: string };
       if (result.success && result.optimized_sql) {
@@ -1897,10 +1976,21 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       return;
     }
 
+    if (!hasConfiguredAiModel) {
+      setAiSetupModalOpen(true);
+      message.warning(t('ai_no_model_configured'));
+      return;
+    }
+
+    if (editorLanguage !== 'sql') {
+      message.warning(t('ai_sql_only'));
+      return;
+    }
+
     setAiGenerating(true);
+    lastAiPromptRef.current = aiAssistantInput.trim();
     try {
-      // authenticatedFetch (fetchApi) returns parsed JSON on success or throws on error
-      const result = await authenticatedFetch('/api/ai/query-editor/generate-code', {
+      const result = await authenticatedFetch(NL2SQL_GENERATE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1908,10 +1998,19 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         body: JSON.stringify({
           query: aiAssistantInput.trim(),
           data_source_id: selectedDataSourceId,
-          language: editorLanguage, // 'sql' or 'python'
-          current_sql: sqlQuery.trim() || undefined, // Send current SQL from editor
+          current_sql: sqlQuery.trim() || undefined,
+          ...nl2sqlModelField(selectedAiModel),
         }),
-      });
+      }) as {
+        success?: boolean;
+        code?: string;
+        language?: string;
+        validation_warning?: string;
+        error?: string;
+        detail?: string;
+        model_id?: string;
+        model_name?: string;
+      };
       console.log('AI generation result (Query Editor):', {
         success: result.success,
         hasCode: !!result.code,
@@ -1934,7 +2033,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           });
         }
 
-        console.log('✅ Generated code received from backend (already validated and cleaned):', {
+        console.log('Generated code received from backend (already validated and cleaned):', {
           codeLength: generatedCode.length,
           language: desiredLanguage,
           hasValidationWarning: !!result.validation_warning,
@@ -1985,8 +2084,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }
 
         // Show simple success message - code is ready to run
+        const modelLabel = result.model_name || result.model_id;
         message.success({
-          content: `Generated ${result.language?.toUpperCase() || 'SQL'} code successfully! Ready to run.`,
+          content: modelLabel
+            ? t('ai_generated_with_model', { model: modelLabel })
+            : `Generated ${result.language?.toUpperCase() || 'SQL'} code successfully! Ready to run.`,
           duration: 3,
         });
 
@@ -2000,10 +2102,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           t('ai_assistant_hint'),
         );
         console.error('AI generation failed:', result);
-        message.error({
-          content: errorMsg,
-          duration: 5,
-        });
+        if (isAiAuthError(errorMsg)) {
+          message.error({ content: t('ai_auth_error'), duration: 6 });
+          setAiSetupModalOpen(true);
+        } else {
+          message.error({
+            content: errorMsg,
+            duration: 5,
+          });
+        }
       }
     } catch (error: unknown) {
       console.error('AI generation error:', error);
@@ -2089,7 +2196,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       }
     } catch (err: any) {
       const errorMessage = err?.message || err?.toString() || 'Failed to execute Python script';
-      console.error('❌ Python execution error:', err);
+      console.error('Python execution error:', err);
       setError(errorMessage);
       setExecutionStatus('Python execution failed');
       message.error(formatError({ message: errorMessage }, 'generic', t('python_exec_failed')));
@@ -2153,7 +2260,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       }
 
       // Log for debugging - include full context
-      console.log('🔍 Executing query:', {
+      console.log('Executing query:', {
         sql: executedSql.substring(0, 200),
         dataSourceId: dsId,
         dataSourceName: selectedDataSource?.name,
@@ -2177,7 +2284,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             .filter(Boolean)
             .join(', ');
           console.warn(
-            `⚠️ Query references table '${referencedTable}' which may not exist in data source '${selectedDataSource?.name}'. Available tables: ${availableTableNames}`
+            `Query references table '${referencedTable}' which may not exist in data source '${selectedDataSource?.name}'. Available tables: ${availableTableNames}`
           );
         }
       }
@@ -2205,11 +2312,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
         // Handle case where data might not be an array
         if (!Array.isArray(resultData)) {
-          console.warn('⚠️ Result data is not an array, converting:', typeof resultData, resultData);
+          console.warn('Result data is not an array, converting:', typeof resultData, resultData);
           resultData = resultData ? [resultData] : [];
         }
 
-        console.log('✅ Query result received:', {
+        console.log('Query result received:', {
           success: result.success,
           dataLength: resultData.length,
           dataType: Array.isArray(resultData) ? 'array' : typeof resultData,
@@ -2221,7 +2328,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
         // Log if data is empty but success is true
         if (resultData.length === 0) {
-          console.warn('⚠️ Query executed successfully but returned no data rows');
+          console.warn('Query executed successfully but returned no data rows');
           message.info(t('query_no_results_success'));
         }
 
@@ -2283,6 +2390,17 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             })
           });
         } catch (_) { /* persist best-effort */ }
+        if (lastAiPromptRef.current && selectedDataSourceId) {
+          void authenticatedFetch(NL2SQL_PATTERNS, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nl_query: lastAiPromptRef.current,
+              sql: executedSql,
+              data_source_id: selectedDataSourceId,
+            }),
+          }).catch(() => undefined);
+        }
         if (appendedLimit) {
           const limitLabel = Number(rowLimit).toLocaleString();
           message.info(`Applied row limit of ${limitLabel} rows.`);
@@ -2490,9 +2608,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           height: '100%',
           maxHeight: '100%'
         }}>
-          {IS_EE && (
           <div className="qe-ai-bar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <Tooltip
                 title={
                   <div>
@@ -2516,8 +2633,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     justifyContent: 'center',
                     cursor: 'pointer',
                   }}
+                  onClick={() => {
+                    if (!hasConfiguredAiModel) setAiSetupModalOpen(true);
+                  }}
                 >
-                  <AnimatedAIAvatar
+                  <QueryEditorAIAvatar
                     size={22}
                     isSpeaking={!!aiAssistantInput && !aiGenerating}
                     isThinking={aiGenerating}
@@ -2526,26 +2646,63 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               </Tooltip>
               <Input
                 placeholder={t('ai_assistant_placeholder')}
-                style={{ flex: 1, height: '32px', borderRadius: '6px' }}
+                style={{ flex: 1, minWidth: 160, height: '32px', borderRadius: '6px' }}
                 size="middle"
                 value={aiAssistantInput}
                 onChange={(e) => setAiAssistantInput(e.target.value)}
                 onPressEnter={handleAIGenerate}
                 disabled={aiGenerating}
               />
-              <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
+              <span className="qe-ai-model-wrap">
+                {hasConfiguredAiModel ? (
+                  <ModelSelector
+                    value={selectedAiModel}
+                    onChange={setSelectedAiModel}
+                    persistPreference
+                    compact
+                    composerEmbed
+                    settingsLinkInDropdown
+                    reloadNonce={aiModelsReloadNonce}
+                    onModelsLoaded={handleAiModelsLoaded}
+                    hideUnavailable
+                    disabled={aiGenerating}
+                  />
+                ) : (
+                  <Tooltip title={t('ai_no_model_configured')}>
+                    <Button
+                      size="small"
+                      icon={<KeyOutlined />}
+                      onClick={() => setAiSetupModalOpen(true)}
+                    >
+                      {t('ai_connect_ai')}
+                    </Button>
+                  </Tooltip>
+                )}
+              </span>
+              <Tooltip
+                title={
+                  !hasConfiguredAiModel
+                    ? t('ai_no_model_configured')
+                    : !selectedDataSourceId
+                      ? t('select_ds_first')
+                      : t('generate_sql')
+                }
+              >
                 <Button
                   size="small"
                   type="primary"
                   icon={<RocketOutlined />}
                   onClick={handleAIGenerate}
                   loading={aiGenerating}
-                  disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
+                  disabled={
+                    !selectedDataSourceId
+                    || !aiAssistantInput.trim()
+                    || !hasConfiguredAiModel
+                  }
                 />
               </Tooltip>
             </div>
           </div>
-          )}
 
           {/* Query workspace: two panels at same level - (1) Editor+Run (2) Results - resize between them */}
           <div
@@ -2646,7 +2803,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     <Tooltip title={t('tooltip_saved_queries_snapshots')}>
                       <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
                     </Tooltip>
-                    {IS_EE && editorLanguage === 'sql' && (
+                    {editorLanguage === 'sql' && (
                       <>
                         <Divider type="vertical" style={{ margin: '0 2px' }} />
                         <Tooltip title={t('explain_sql_tooltip')}>
@@ -3495,7 +3652,6 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         </div>
       </Modal>
 
-      {IS_EE && (
       <>
       {/* ── AI Optimize Diff Modal ─────────────────────────────────── */}
       <Modal
@@ -3606,7 +3762,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         )}
       </Modal>
       </>
-      )}
+      <QueryEditorAiSetupModal
+        open={aiSetupModalOpen}
+        onClose={() => setAiSetupModalOpen(false)}
+      />
     </div>
   );
 };

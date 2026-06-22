@@ -4,6 +4,9 @@
 #   --profile warehouse
 #   --profile worker
 #   --profile observability
+#
+# Observability: start with `make dev-ee-observability`, then set OTEL_ENABLED=true and
+# OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces in deploy/.env and recreate server.
 
 services:
   clickhouse:

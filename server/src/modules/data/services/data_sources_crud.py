@@ -22,10 +22,18 @@ from src.modules.organizations.models import Organization
 from src.modules.project.models import Project
 from src.core.real_data_sources import real_data_source_manager
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
+from src.modules.data.utils.masking import merge_incoming_connection_config, public_connection_config
 from src.core.metrics import DS_CREATE_COUNTER, DS_UPDATE_COUNTER, DS_DELETE_COUNTER, CONNECTION_TEST_COUNTER
 from src.core.edition import is_ee_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _public_conn(raw: Any) -> Optional[Dict[str, Any]]:
+    if raw is None:
+        return None
+    return public_connection_config(raw)
+
 
 @dataclass
 class DataSourceCreate:
@@ -179,7 +187,7 @@ class DataSourcesCRUD:
                 format=data_source.format,
                 db_type=data_source.db_type,
                 description=data_source.description,
-                connection_config=data_source.connection_config,
+                connection_config=_public_conn(data_source.connection_config),
                 project_id=data_source_data.project_id,
                 is_active=data_source.is_active,
                 created_at=data_source.created_at,
@@ -256,7 +264,7 @@ class DataSourcesCRUD:
                 format=data_source.format,
                 db_type=data_source.db_type,
                 description=data_source.description,
-                connection_config=data_source.connection_config,
+                connection_config=_public_conn(data_source.connection_config),
                 project_id=None,  # Would need to join with project_data_source table
                 is_active=data_source.is_active,
                 created_at=data_source.created_at,
@@ -327,7 +335,7 @@ class DataSourcesCRUD:
                     format=data_source.format,
                     db_type=data_source.db_type,
                     description=data_source.description,
-                    connection_config=data_source.connection_config,
+                    connection_config=_public_conn(data_source.connection_config),
                     project_id=str(data_source.project_id),
                     is_active=data_source.is_active,
                     created_at=data_source.created_at,
@@ -440,15 +448,7 @@ class DataSourcesCRUD:
                 existing = decrypt_credentials(existing)
             except Exception:
                 pass
-            incoming = update_data.connection_config
-            sensitive_keys = {'password', 'pass', 'api_key', 'secret_key', 'secret', 'credentials', 'token', 'secret_access_key', 'access_key_id'}
-            merged = dict(existing)
-            for k, v in (incoming or {}).items():
-                if k in sensitive_keys and (v is None or (isinstance(v, str) and not v.strip())):
-                    if k in existing:
-                        merged[k] = existing.get(k)
-                        continue
-                merged[k] = v
+            merged = merge_incoming_connection_config(existing, update_data.connection_config)
             try:
                 merged = encrypt_credentials(merged)
             except Exception:
@@ -484,7 +484,7 @@ class DataSourcesCRUD:
             format=data_source.format,
             db_type=data_source.db_type,
             description=data_source.description,
-            connection_config=data_source.connection_config,
+            connection_config=_public_conn(data_source.connection_config),
             project_id=None,
             is_active=data_source.is_active,
             created_at=data_source.created_at,

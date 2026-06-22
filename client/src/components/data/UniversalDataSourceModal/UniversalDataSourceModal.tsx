@@ -43,6 +43,7 @@ import {
   ExperimentOutlined,
 } from '@ant-design/icons';
 import { fetchApi, handlePlanLimitError, ApiError } from '@/utils/api';
+import { isRedactedCredential, stripRedactedSecrets } from '@/utils/credentials';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useProjectStore } from '@/stores/useProjectStore';
 
@@ -164,6 +165,9 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   const [connectionUrlEditable, setConnectionUrlEditable] = useState(true); // Editable by default
   const [customConnectionUrl, setCustomConnectionUrl] = useState('');
   const { currentProject } = useProjectStore();
+  /** CE may have no project in the header store; backend resolves project_id when omitted. */
+  const resolveProjectId = (): string | undefined =>
+    currentProject?.id != null ? String(currentProject.id) : undefined;
   // Store normalizes to camelCase; Project type uses snake_case — support both
   const currentOrgId = currentProject
     ? (currentProject as { organization_id?: string; organizationId?: string }).organization_id ??
@@ -806,7 +810,13 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             authType,
             apiBasicUsername:
               authType === 'basic' ? (conn.username ?? prev.apiBasicUsername) : (prev.apiBasicUsername ?? ''),
-            password: conn.bearer_token ?? conn.api_key ?? conn.password ?? prev.password ?? '',
+            password: isRedactedCredential(conn.bearer_token)
+              ? isRedactedCredential(conn.api_key)
+                ? isRedactedCredential(conn.password)
+                  ? ''
+                  : String(conn.password ?? '')
+                : String(conn.api_key ?? '')
+              : String(conn.bearer_token ?? conn.api_key ?? conn.password ?? ''),
             apiHeaders:
               conn.headers != null
                 ? typeof conn.headers === 'string'
@@ -833,7 +843,13 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             port: typeof portVal === 'number' ? portVal : parseInt(portVal, 10) || prev.port,
             database: databaseVal || prev.database,
             username: conn.username || conn.user || custom.username || prev.username,
-            password: conn.password || conn.pass || custom.password || '',
+            password: isRedactedCredential(conn.password)
+              ? isRedactedCredential(conn.pass)
+                ? isRedactedCredential(custom.password)
+                  ? ''
+                  : String(custom.password ?? '')
+                : String(conn.pass ?? '')
+              : String(conn.password || conn.pass || custom.password || ''),
             sslMode: sslVal || prev.sslMode,
             connectionPool: prev.connectionPool,
             minConnections: prev.minConnections,
@@ -1535,10 +1551,10 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                   type: 'google_sheets',
                   description: dataSourceConfig.description || undefined,
                   connection_config: connectionConfigSheets,
-                  project_id: String(currentProject!.id),
+                  ...(resolveProjectId() ? { project_id: resolveProjectId() } : {}),
                 }),
               });
-              if (result?.success && result?.data_source) {
+              if (result?.success && result?.data_source?.id) {
                 const ds = {
                   id: result.data_source.id,
                   name: result.data_source.name,
@@ -1692,7 +1708,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             const updatePayload = {
               name: dataSourceConfig.name,
               description: dataSourceConfig.description || undefined,
-              connection_config: connectionConfigApi,
+              connection_config: stripRedactedSecrets(connectionConfigApi),
             };
             const result = await authenticatedFetch(`/api/data/sources/${existingDataSource.id}`, {
               method: 'PATCH',
@@ -1789,10 +1805,10 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 type: 'sample_duckdb',
                 description: dataSourceConfig.description || undefined,
                 connection_config: connectionConfigSample,
-                project_id: String(currentProject!.id),
+                ...(resolveProjectId() ? { project_id: resolveProjectId() } : {}),
               }),
             });
-            if (result?.success && result?.data_source) {
+            if (result?.success && result?.data_source?.id) {
               const ds = {
                 id: result.data_source.id,
                 name: result.data_source.name,
@@ -1851,7 +1867,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           const updatePayload = {
             name: dataSourceConfig.name,
             description: dataSourceConfig.description || undefined,
-            connection_config: conn,
+            connection_config: stripRedactedSecrets(conn),
           };
           try {
             const updateUrl = `/api/data/sources/${existingDataSource.id}`;
@@ -2090,8 +2106,8 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         }
 
         // Inject project_id so the backend assigns the connection to the currently selected project
-        if (currentProject?.id) {
-          requestBody = { ...requestBody, project_id: String(currentProject.id) };
+        if (resolveProjectId()) {
+          requestBody = { ...requestBody, project_id: resolveProjectId() };
         }
 
         const result = await fetchApi(endpoint, {

@@ -12,6 +12,8 @@ services:
     build:
       args:
         EDITION: community
+    ports:
+      - "${DEV_CLIENT_PORT:-3000}:3000"
     environment:
       EDITION: community
       NEXT_PUBLIC_EDITION: community

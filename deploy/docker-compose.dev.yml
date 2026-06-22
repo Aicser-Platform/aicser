@@ -15,7 +15,7 @@ x-client-command: &client-command
     export NEXT_PUBLIC_EDITION="$${NEXT_PUBLIC_EDITION:-$${EDITION}}";
     if [ ! -x ./node_modules/.bin/next ]; then
       echo "[dev] node_modules volume is empty; installing dependencies...";
-      npm install --no-audit --no-fund;
+      npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000;
     fi;
     node scripts/setup-ee.js;
     if [ "$${NEXT_DEV_TURBO}" = "true" ]; then
@@ -142,10 +142,11 @@ services:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-aiser_warehouse}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-aiser}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-aiser_warehouse_password}
-      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      # Dev default: OTEL off unless observability profile is running (see make dev-*-observability).
+      OTEL_ENABLED: "false"
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-aiser-api}
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      OTEL_TRACES_CONSOLE: ${OTEL_TRACES_CONSOLE:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_TRACES_CONSOLE: "false"
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
@@ -181,8 +182,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 180s
     restart: unless-stopped
 
   client:

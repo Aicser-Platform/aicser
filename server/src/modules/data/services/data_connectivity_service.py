@@ -24,6 +24,7 @@ except ImportError:
     AISchemaService = None  # type: ignore
 from src.db.session import async_operation_lock
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
+from src.modules.data.utils.masking import public_connection_config
 from src.core.edition import is_ee_enabled
 from src.shared.query_limits import (
     DEFAULT_PAGE_LIMIT,
@@ -994,7 +995,7 @@ class DataConnectivityService:
                         'db_type': source.db_type,
                         'size': source.size,
                         'row_count': source.row_count,
-                        'schema': source.schema,
+                        'schema': _parse_json_field(source.schema) if source.schema else {},
                         'user_id': str(source.user_id) if getattr(source, 'user_id', None) else None,
                         'project_id': str(source.project_id) if getattr(source, 'project_id', None) else None,
                         'tenant_id': str(source.tenant_id) if getattr(source, 'tenant_id', None) else None,
@@ -1104,7 +1105,7 @@ class DataConnectivityService:
                         'db_type': source.db_type,
                         'size': source.size,
                         'row_count': source.row_count,
-                        'schema': source.schema,
+                        'schema': _parse_json_field(source.schema) if source.schema else {},
                         'created_at': source.created_at.isoformat() if source.created_at else None,
                         'updated_at': source.updated_at.isoformat() if source.updated_at else None,
                         'is_active': source.is_active,
@@ -2567,13 +2568,8 @@ class DataConnectivityService:
                     try:
                         if db_source.connection_config:
                             config = json.loads(db_source.connection_config) if isinstance(db_source.connection_config, str) else db_source.connection_config
-                            try:
-                                from src.modules.data.utils.credentials import decrypt_credentials
-                                config = decrypt_credentials(config)
-                            except Exception:
-                                pass
-                            data_source_dict['config'] = config
-                            data_source_dict['connection_config'] = config
+                            data_source_dict['config'] = public_connection_config(config)
+                            data_source_dict['connection_config'] = public_connection_config(config)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to parse connection_config: {e}")
                     

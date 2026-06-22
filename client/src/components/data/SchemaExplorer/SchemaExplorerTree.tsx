@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Tree, Tooltip } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { InfoCircleOutlined, TableOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, TableOutlined, WarningOutlined } from '@ant-design/icons';
 import type { DataSource as ContextDataSource, SchemaInfo as ContextSchemaInfo } from '@/stores/useDataSourceStore';
 import { useTranslations } from 'next-intl';
 import { abbreviateSqlType, ColumnTypeIcon } from './columnTypeMeta';
@@ -196,7 +196,12 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
     if (!compact && schema.warning) {
       nodes.push({
         key: `${dataSource.id}_warning`,
-        title: <span className="schema-explorer-name">⚠️ {schema.warning}</span>,
+        title: (
+          <span className="schema-explorer-name">
+            <WarningOutlined style={{ color: 'var(--ant-color-warning)', marginRight: 6 }} />
+            {schema.warning}
+          </span>
+        ),
         isLeaf: true,
       });
     }

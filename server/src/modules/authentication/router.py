@@ -25,12 +25,8 @@ def _set_auth_cookie(response: Response, token: str) -> None:
     set_auth_token_cookie(response, token)
 
 
-async def _ensure_ee_workspace(user: User) -> None:
-    """Join deployment org / create personal org after CE email-password auth (EE only)."""
-    from src.core.edition import is_ee_enabled
-
-    if not is_ee_enabled():
-        return
+async def _ensure_auth_workspace(user: User) -> None:
+    """Provision org/project membership + RBAC roles after email-password auth (CE + EE)."""
     try:
         from src.modules.organizations.user_workspace import ensure_user_workspace
 
@@ -47,7 +43,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Invalid email or password")
-    await _ensure_ee_workspace(user)
+    await _ensure_auth_workspace(user)
     token = create_access_token(str(user.id), user.email)
     _set_auth_cookie(response, token)
     return UserResponse.model_validate(user, from_attributes=True).model_copy(update={"access_token": token})
@@ -59,7 +55,7 @@ async def register(body: RegisterRequest, response: Response, db: AsyncSession =
         user = await register_user(db, body.email, body.username, body.password)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    await _ensure_ee_workspace(user)
+    await _ensure_auth_workspace(user)
     token = create_access_token(str(user.id), user.email)
     _set_auth_cookie(response, token)
     return UserResponse.model_validate(user, from_attributes=True).model_copy(update={"access_token": token})
@@ -97,6 +93,7 @@ async def me(request: Request, db: AsyncSession = Depends(get_async_session)):
     user = await get_user_by_id(db, user_payload["sub"])
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    await _ensure_auth_workspace(user)
     raw = request.cookies.get(COOKIE_NAME)
     base = UserResponse.model_validate(user, from_attributes=True)
     if raw:

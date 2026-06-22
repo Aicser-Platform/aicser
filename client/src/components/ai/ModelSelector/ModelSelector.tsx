@@ -30,6 +30,8 @@ import {
     DownOutlined,
 } from '@ant-design/icons';
 import { fetchApi } from '@/utils/api';
+import { getAiModelStatusApiPath, getAiModelsApiPath } from '@/config/nl2sqlApi';
+import { SETTINGS_API_KEYS_PROVIDERS_PATH, navigateToAiProviderSettings } from '@/config/settingsLinks';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import { useTranslations } from 'next-intl';
 
@@ -55,6 +57,8 @@ export interface ModelSelectorProps {
   onModelChange?: (modelId: string) => void;
   /** Alias for onModelChange — used by InlineModeSelector */
   onChange?: (modelId: string) => void;
+  /** Fired after models are loaded from the API */
+  onModelsLoaded?: (payload: { models: ModelInfo[]; defaultModel: string }) => void;
   showCostInfo?: boolean;
   compact?: boolean;
   defaultModel?: string;
@@ -66,8 +70,12 @@ export interface ModelSelectorProps {
   persistPreference?: boolean;
   /** Increment to refetch models (e.g. after saving a provider API key in Settings) */
   reloadNonce?: number;
-    /** Chat composer: pill shape + chevron (compact toolbar) */
-    composerEmbed?: boolean;
+  /** Chat composer: pill shape + chevron (compact toolbar) */
+  composerEmbed?: boolean;
+  /** Show Settings link footer in compact dropdown (Query Editor) */
+  settingsLinkInDropdown?: boolean;
+  /** Hide operator/platform models that fail connection checks (Query Editor) */
+  hideUnavailable?: boolean;
 }
 
 // ─── Provider styles ──────────────────────────────────────────────────────────
@@ -149,6 +157,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   value,
   onModelChange,
   onChange,
+  onModelsLoaded,
   showCostInfo = true,
   compact = false,
   defaultModel = 'auto',
@@ -157,7 +166,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   persist = false,
   persistPreference = false,
   reloadNonce = 0,
-    composerEmbed = false,
+  composerEmbed = false,
+  settingsLinkInDropdown = false,
+  hideUnavailable = false,
 }) => {
     const t = useTranslations('settings');
   const shouldPersist = persist || persistPreference;
@@ -168,6 +179,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     const [selectedModel, setSelectedModel] = useState<string>(value || defaultModel || 'auto');
     const [loading, setLoading] = useState(() => !(compact && composerEmbed));
     const [modelStatus, setModelStatus] = useState<Record<string, { success?: boolean; available?: boolean }>>({});
+    const onModelsLoadedRef = useRef(onModelsLoaded);
+    onModelsLoadedRef.current = onModelsLoaded;
     const valueRef = useRef(value);
     valueRef.current = value;
 
@@ -208,10 +221,18 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
         const hideLoadingUi = compact && composerEmbed;
         if (!hideLoadingUi) setLoading(true);
         try {
-            const data = await fetchApi('ai/models');
+            const data = await fetchApi(getAiModelsApiPath());
             const { list, def } = normalizeModels(data);
             setModels(list);
             setServerDefault(def);
+            setModelStatus(
+              Object.fromEntries(
+                list.map((m) => [
+                  m.id,
+                  { success: m.available !== false, available: m.available !== false },
+                ]),
+              ),
+            );
 
             // Determine initial selection: persisted backend > localStorage > (server default only outside composer embed) > defaultModel
             let initial = value || '';
@@ -238,12 +259,28 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             setSelectedModel(nextId);
             if (!fromParent) handleChange?.(initial);
 
-            // Probe connection status for each available model
-            for (const m of list) {
-                if (m.available) testModelConnection(m.id);
+            onModelsLoadedRef.current?.({ models: list, defaultModel: def });
+
+            const probeTargets = list.filter((m) => m.id.startsWith('byok_'));
+            if (probeTargets.length > 0) {
+              const statusResults: Record<string, { success?: boolean; available?: boolean }> = {};
+              await Promise.all(
+                probeTargets.map(async (m) => {
+                  try {
+                    statusResults[m.id] = await fetchApi(getAiModelStatusApiPath(m.id));
+                  } catch {
+                    statusResults[m.id] = { success: false, available: false };
+                  }
+                }),
+              );
+              const updated = applyStatusToModels(list, statusResults);
+              setModels(updated);
+              setModelStatus((prev) => ({ ...prev, ...statusResults }));
+              onModelsLoadedRef.current?.({ models: updated, defaultModel: def });
             }
         } catch (err: any) {
             const msg = err?.message || t('failed_load_ai_models');
+            onModelsLoaded?.({ models: [], defaultModel: '' });
             if (!composerEmbed) {
                 message.error(msg.length > 80 ? `${msg.slice(0, 80)}…` : msg);
             }
@@ -263,12 +300,23 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Connection probe ──────────────────────────────────────────────────────
+  const applyStatusToModels = useCallback(
+    (list: ModelInfo[], statusMap: Record<string, { success?: boolean; available?: boolean }>) =>
+      list.map((m) => {
+        const st = statusMap[m.id];
+        if (st === undefined) return m;
+        const ok = st.available !== false && st.success !== false;
+        return { ...m, available: ok };
+      }),
+    [],
+  );
+
   const testModelConnection = async (modelId: string) => {
     try {
-      const data = await fetchApi(`/ai/model-status?model_id=${modelId}`);
+      const data = await fetchApi(getAiModelStatusApiPath(modelId));
       setModelStatus((prev) => ({ ...prev, [modelId]: data }));
     } catch {
-      setModelStatus((prev) => ({ ...prev, [modelId]: { success: true } }));
+      setModelStatus((prev) => ({ ...prev, [modelId]: { success: false, available: false } }));
     }
   };
 
@@ -303,12 +351,45 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   };
 
-  const allModels = useMemo(() => [AUTO_MODEL, ...models], [models]);
+  const visibleModels = useMemo(() => {
+    const filtered = hideUnavailable ? models.filter((m) => m.available !== false) : models;
+    return filtered;
+  }, [models, hideUnavailable]);
+
+  const allModels = useMemo(() => {
+    if (visibleModels.length === 0) return [];
+    return [AUTO_MODEL, ...visibleModels];
+  }, [visibleModels]);
+
+  useEffect(() => {
+    if (allModels.length === 0) return;
+    const ids = new Set(allModels.map((m) => m.id));
+    if (!ids.has(selectedModel)) {
+      const fallback = allModels[0]?.id ?? 'auto';
+      setSelectedModel(fallback);
+      handleChange?.(fallback);
+    }
+  }, [allModels, selectedModel, handleChange]);
   const selectedData = allModels.find((m) => m.id === selectedModel);
+
+  const compactSettingsFooter = settingsLinkInDropdown ? (
+    <div style={{ padding: '8px', borderTop: '1px solid var(--ant-color-border-secondary)' }}>
+      <Button
+        type="link"
+        size="small"
+        icon={<SettingOutlined />}
+        onClick={() => { navigateToAiProviderSettings(); }}
+        style={{ width: '100%' }}
+      >
+        {t('ai_model_settings')}
+      </Button>
+    </div>
+  ) : null;
 
     // ── Compact mode (chat toolbar) ───────────────────────────────────────────
     if (compact) {
         if (loading && !composerEmbed) return <Spin size="small" style={{ margin: '0 8px' }} />;
+        if (allModels.length === 0) return null;
         // Composer embed: always show pill (Auto + options) — no blocking spinner or select loading affordance
         const sd = selectedData ?? AUTO_MODEL;
         const toolbarName = composerEmbed ? shortComposerModelDisplayName(sd.name) : sd.name;
@@ -361,6 +442,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 optionLabelProp="label"
                 popupMatchSelectWidth={false}
                 classNames={{ popup: { root: 'model-selector-dropdown' } }}
+                popupRender={compactSettingsFooter ? (menu) => (
+                  <div>
+                    {menu}
+                    {compactSettingsFooter}
+                  </div>
+                ) : undefined}
                 variant="borderless"
                 suffixIcon={
                     composerEmbed ? (
@@ -450,7 +537,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                                     type="link"
                                     size="small"
                                     icon={<SettingOutlined />}
-                                    onClick={() => window.location.href = '/settings?tab=api-keys'}
+                                    onClick={() => navigateToAiProviderSettings()}
                                     style={{ width: '100%' }}
                                 >
                                     {t('ai_model_settings')}
@@ -552,7 +639,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                         description={
                             <>
                                 {t('update_key_model_under')}{' '}
-                                <a href="/settings?tab=api-keys">Settings → API Keys → AI Provider Keys</a>.
+                                <a href={SETTINGS_API_KEYS_PROVIDERS_PATH}>Settings → API Keys → AI Provider Keys</a>.
                             </>
                         }
                     />

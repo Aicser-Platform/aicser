@@ -2,7 +2,7 @@
 
 Aicser (AI Data Scientist) is an open-source data analytics and visualization platform. Connect data sources, build interactive charts and dashboards, and run SQL queries.
 
-**Community Edition (CE)** is a SQL-first analytics studio: data connections, query editor, chart designer, dashboards, knowledge search, and social feed.
+**Community Edition (CE)** is a AI-native analytics studio: data connections, query editor (with NL→SQL AI copilot, explain, and optimize), chart designer, dashboards, knowledge search, and social feed.
 
 **Enterprise Edition (EE)** adds conversational analytics: ask questions in natural language via the AI Engine (`/chat`), LangGraph orchestration, multi-tenancy, RBAC, billing, alerts, and the data platform. Natural-language Q&A requires EE; CE does not include the AI chat backend or UI.
 
@@ -19,7 +19,7 @@ The public monorepo ships the Community Edition. Enterprise features live in pri
 
 ## CE vs EE
 
-**Community Edition** includes dashboards, chart designer, data connections, SQL query editor, knowledge bases (document upload and search), notifications, feed, and user management. It does **not** include the AI Engine chat or NL-to-SQL APIs.
+**Community Edition** includes dashboards, chart designer, data connections, SQL query editor with **NL→SQL AI copilot** (BYOK + env keys), knowledge bases (document upload and search), notifications, feed, and user management. It does **not** include the AI Engine chat or LangGraph orchestration APIs.
 
 **Enterprise Edition** adds multi-tenancy, RBAC custom roles, billing, alerts (with agent investigate flow), scheduled AI briefings, data platform (semantic layer, catalog, lakehouse, BI sync to Power BI/Tableau), SharePoint/Confluence KB connectors, Telegram and Teams bots, embed SDK, AI chat (LangGraph), collaboration, audit logs, and other paid features. CE code never imports EE modules directly — EE overrides CE via `__path__` shims and optional frontend wrappers that dynamic-import from `@/ee`.
 

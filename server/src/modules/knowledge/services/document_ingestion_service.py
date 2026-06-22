@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import settings
 from src.modules.knowledge.models import DocumentChunk, KnowledgeDocument
-from src.modules.ai.utils.embedding_service import get_embedding
+from src.shared.embedding import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -552,18 +552,12 @@ class DocumentIngestionService:
 
         for batch_start in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
             batch = chunks[batch_start : batch_start + EMBEDDING_BATCH_SIZE]
-            embeddings = await asyncio.gather(
-                *(get_embedding(c.content) for c in batch),
-                return_exceptions=True,
-            )
+            embeddings = await get_embedding_service().embed_texts([c.content for c in batch])
 
             for chunk, emb_result in zip(batch, embeddings):
-                embedding = None
-                if isinstance(emb_result, list):
-                    embedding = emb_result
-                elif isinstance(emb_result, Exception):
-                    logger.warning("Embedding failed for chunk %d: %s", chunk.chunk_index, emb_result)
-                # get_embedding returns None on failure; chunk stored without embedding (keyword-only retrieval)
+                embedding = emb_result if isinstance(emb_result, list) else None
+                if emb_result is None:
+                    logger.warning("Embedding failed for chunk %d", chunk.chunk_index)
 
                 row = DocumentChunk(
                     id=uuid.uuid4(),

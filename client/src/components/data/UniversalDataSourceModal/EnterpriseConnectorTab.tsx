@@ -27,11 +27,24 @@ import {
     ThunderboltOutlined,
     DatabaseOutlined,
 } from '@ant-design/icons';
+import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { enhancedDataService, EnterpriseConnectionConfig } from '@/services/enhancedDataService';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 const { Panel } = Collapse;
+
+function connectorIconProps(connectorType: string): { type: string; dbType?: string } {
+  const dbTypes = new Set(['postgresql', 'mysql', 'sqlserver', 'snowflake', 'bigquery', 'redshift', 'databricks']);
+  if (dbTypes.has(connectorType)) return { type: 'database', dbType: connectorType };
+  if (connectorType === 'rest_api' || connectorType === 'graphql_api') return { type: 'api' };
+  return { type: 'database', dbType: connectorType };
+}
+
+function ConnectorTypeIcon({ connectorType, size = 24 }: { connectorType: string; size?: number }) {
+  const props = connectorIconProps(connectorType);
+  return <DataSourceIcon type={props.type} dbType={props.dbType} size={size} />;
+}
 
 interface EnterpriseConnectorTabProps {
     onConnectionCreated: (dataSource: any) => void;
@@ -180,7 +193,9 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
                             onClick={() => form.setFieldsValue({ type: connector.type })}
                         >
                             <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '24px', marginBottom: 8 }}>{connector.icon}</div>
+                                <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'center' }}>
+                                  <ConnectorTypeIcon connectorType={connector.type} size={28} />
+                                </div>
                                 <Title level={5} style={{ margin: 0 }}>{connector.name}</Title>
                                 <Text type="secondary" style={{ fontSize: '12px' }}>
                                     {connector.description}
@@ -210,7 +225,7 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
                                 {supportedConnectors.map((connector) => (
                                     <Option key={connector.type} value={connector.type}>
                                         <Space>
-                                            <span>{connector.icon}</span>
+                                            <ConnectorTypeIcon connectorType={connector.type} size={16} />
                                             <span>{connector.name}</span>
                                         </Space>
                                     </Option>

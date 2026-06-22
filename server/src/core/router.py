@@ -7,6 +7,7 @@ from typing import Union
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.core.edition import is_ee_enabled
+from src.core.workspace_routes import include_workspace_routes
 from src.core.config import settings
 
 # ── CE imports (always loaded) ────────────────────────────────────────────────
@@ -22,6 +23,7 @@ from src.modules.notifications.router import router as notifications_router
 from src.modules.onboarding.router import router as onboarding_router
 from src.modules.pricing.router import router as pricing_router
 from src.modules.queries.router import router as queries_router
+from src.modules.nl2sql.router import router as nl2sql_router
 from src.modules.translations.router import router as translations_router
 from src.modules.user.router import router as user_router
 from src.modules.debug.router import router as debug_router
@@ -49,6 +51,7 @@ api_router.include_router(visual_charts_router, prefix="/charts", tags=["charts"
 api_router.include_router(data_router, prefix="/data", tags=["data"])
 api_router.include_router(onboarding_router, prefix="/api/onboarding", tags=["onboarding"])
 api_router.include_router(queries_router, prefix="/api/queries", tags=["queries"])
+api_router.include_router(nl2sql_router, prefix="/api/nl2sql", tags=["nl2sql"])
 api_router.include_router(feed_router, prefix="/api/feed", tags=["feed"])
 api_router.include_router(charts_router, prefix="/api/dashboards/{dashboard_id}/charts", tags=["charts"])
 api_router.include_router(dashboards_router, prefix="/api/dashboards", tags=["dashboards"])
@@ -70,6 +73,10 @@ async def get_data_source_proxy(
         return await get_data_source(data_source_id, current_token)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# Workspace foundation (RBAC, orgs, projects) — required for CE self-host when ee/ is on disk.
+include_workspace_routes(api_router)
 
 
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
@@ -111,28 +118,10 @@ if is_ee_enabled():
         logger.warning("EE auth token exchange not loaded: %s", _err)
 
     try:
-        from ee.modules.authentication.rbac.router import router as rbac_router
-        api_router.include_router(rbac_router, prefix="/api/rbac", tags=["RBAC"])
-    except Exception as _err:
-        logger.warning("RBAC router not loaded: %s", _err)
-
-    try:
-        from ee.modules.organizations.router import router as organizations_router
-        api_router.include_router(organizations_router, prefix="/api/organizations", tags=["organizations"])
-    except Exception as _err:
-        logger.warning("Organizations router not loaded: %s", _err)
-
-    try:
         from ee.modules.invitations.router import router as invitations_router
         api_router.include_router(invitations_router, prefix="/api/invitations", tags=["invitations"])
     except Exception as _err:
         logger.warning("Invitations router not loaded: %s", _err)
-
-    try:
-        from ee.modules.project.router import router as project_router
-        api_router.include_router(project_router, prefix="/api/projects", tags=["projects"])
-    except Exception as _err:
-        logger.warning("Projects router not loaded: %s", _err)
 
     try:
         from ee.modules.platform.router import router as platform_intelligence_router

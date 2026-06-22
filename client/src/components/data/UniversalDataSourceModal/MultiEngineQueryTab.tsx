@@ -24,6 +24,7 @@ import {
     CheckCircleOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService } from '@/services/enhancedDataService';
+import { QueryEngineIcon } from '@/utils/queryEngineIcon';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -57,22 +58,7 @@ const MultiEngineQueryTab: React.FC = () => {
         }
     };
 
-    const getEngineIcon = (type: string) => {
-        switch (type) {
-            case 'duckdb':
-                return '🦆';
-            case 'cube':
-                return '📊';
-            case 'spark':
-                return '⚡';
-            case 'direct_sql':
-                return '🗄️';
-            case 'pandas':
-                return '🐼';
-            default:
-                return '🔧';
-        }
-    };
+    const getEngineIcon = (type: string) => <QueryEngineIcon engine={type} style={{ fontSize: 24, marginRight: 0 }} />;
 
     const getEngineColor = (type: string) => {
         switch (type) {
