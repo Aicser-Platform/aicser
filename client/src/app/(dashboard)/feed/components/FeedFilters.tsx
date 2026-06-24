@@ -47,6 +47,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
       { label: t('scope_following'), value: 'following' },
       { label: t('scope_organization'), value: 'organization' },
       { label: t('scope_project'), value: 'project' },
+      { label: t('scope_public'), value: 'public' },
     ]
     : [
       { label: t('scope_private'), value: 'private' },

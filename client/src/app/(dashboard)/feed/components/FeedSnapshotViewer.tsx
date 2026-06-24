@@ -1,16 +1,62 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { Card, Empty } from 'antd';
+import React, { useCallback, useMemo } from 'react';
+import { Empty } from 'antd';
 import { useTranslations } from 'next-intl';
 import { WidgetPreview } from '@/app/(dashboard)/dashboards/widgets/WidgetPreview';
+import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
 import { shouldShowWidgetHeader } from '@/app/(dashboard)/dashboards/utils/widgetCardHelpers';
 import type { FeedItem } from '@/services/socialFeedService';
+import type { WidgetInstance } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
+// Same stylesheet the dashboard canvas and shared/embed viewers load (see
+// FeedDashboardViewer.tsx) — needed here too, since this snapshot path renders
+// widgets through the .widget-card / .widget-card-body structure below.
+import '@/app/(dashboard)/dashboards/DashboardStudio.css';
 import {
   snapshotLayoutFromPayload,
   snapshotWidgetsFromPayload,
   type FeedSnapshotPayload,
 } from '../utils/buildFeedSnapshotPayload';
+
+/**
+ * Renders one widget using the exact same `.widget-card` / `.widget-card-header` /
+ * `.widget-card-body` structure as `DashboardViewerGrid` (the canvas's read-only
+ * grid). Reusing that structure — not an ad-hoc Ant `Card` — is what lets
+ * `WidgetPreview`'s flex-fill chart sizing (`.widget-content-root` /
+ * `.widget-chart-shell`) work, and keeps snapshots visually identical to the canvas.
+ * The wrapper gets an explicit pixel height (snapshots aren't on a react-grid-layout
+ * track, so there's no row height to inherit `height: 100%` from).
+ */
+function SnapshotWidgetCard({
+  widget,
+  minHeight,
+  compactPreview = false,
+}: {
+  widget: WidgetInstance;
+  minHeight: number;
+  compactPreview?: boolean;
+}) {
+  const showHeader = shouldShowWidgetHeader(widget);
+
+  return (
+    <div
+      className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}
+      style={{ height: minHeight }}
+    >
+      {showHeader && (
+        <div className="widget-card-header widget-card-header-stack">
+          <span className="widget-card-title">{widget.title}</span>
+          {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
+            <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
+          ) : null}
+        </div>
+      )}
+      <div className="widget-card-body no-drag">
+        <WidgetPreview widget={widget} readOnly compactPreview={compactPreview} />
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   item: FeedItem;
@@ -23,6 +69,7 @@ type Props = {
  */
 export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Props) {
   const t = useTranslations('feed');
+  const noopCrossFilter = useCallback(() => {}, []);
 
   const payload = (item.asset.snapshotPayload || null) as FeedSnapshotPayload | null;
   const allWidgets = useMemo(() => snapshotWidgetsFromPayload(payload), [payload]);
@@ -55,6 +102,13 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
     const candidates = [...featured, ...orderedWidgets.filter((widget) => !featuredSet.has(widget.id))];
     return maxWidgets ? candidates.slice(0, maxWidgets) : candidates;
   }, [maxWidgets, orderedWidgets, payload?.visuals.presentation?.featuredWidgetIds, variant]);
+
+  const layoutForWidgets = useMemo(
+    () => allLayout.filter((position) => widgets.some((widget) => widget.id === position.i)),
+    [allLayout, widgets]
+  );
+  const dashboardId = payload?.provenance?.dashboardId || item.assetId || item.id;
+
   if (!payload || !widgets.length) {
     return (
       <div className="feed-snapshot-viewer feed-snapshot-viewer--empty">
@@ -69,58 +123,28 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
     return (
       <div className="relative min-h-[420px] overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)] bg-gradient-to-br from-[var(--ant-color-primary-bg)] via-[var(--ant-color-bg-container)] to-[var(--ant-color-fill-quaternary)] p-1.5 shadow-inner">
         <div className={`grid min-h-0 grid-cols-2 gap-1.5 ${widgets.length === 1 ? 'grid-cols-1' : ''}`}>
-          {widgets.map((widget) => {
-            const showHeader = shouldShowWidgetHeader(widget);
-
-            return (
-              <Card
-                key={widget.id}
-                size="small"
-                title={showHeader ? widget.title : undefined}
-                className="min-w-0 overflow-hidden rounded-lg border-[var(--ant-color-border-secondary)] bg-[color-mix(in_srgb,var(--ant-color-bg-container)_94%,transparent)] shadow-sm transition-shadow group-hover/media:shadow-md"
-                classNames={{
-                  header: 'min-h-7 px-2 py-0',
-                  title: 'truncate py-1 text-xs font-semibold leading-5',
-                  body: 'min-w-0 p-0.5',
-                }}
-              >
-                <div className="w-full min-w-0 overflow-hidden rounded-md">
-                  <WidgetPreview widget={widget} readOnly compactPreview minHeight={widgetMinHeight} />
-                </div>
-              </Card>
-            );
-          })}
+          {widgets.map((widget) => (
+            <SnapshotWidgetCard key={widget.id} widget={widget} minHeight={widgetMinHeight} compactPreview />
+          ))}
         </div>
       </div>
     );
   }
 
   if (variant === 'detail') {
-    const widgetMinHeight = widgets.length === 1 ? 360 : 260;
-
+    // 'preserve' uses the widgets' actual saved x/y/w/h, so the snapshot lands in
+    // the same place and at the same size as the original dashboard design —
+    // the same grid component and layout mode the live dashboard path uses.
     return (
-      <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] items-stretch gap-4">
-        {widgets.map((widget) => {
-          const showHeader = shouldShowWidgetHeader(widget);
-
-          return (
-            <Card
-              key={widget.id}
-              size="small"
-              title={showHeader ? widget.title : undefined}
-              className="h-full min-w-0 overflow-hidden border-[var(--ant-color-border-secondary)] shadow-none"
-              classNames={{
-                header: 'min-h-11 px-4',
-                body: 'min-w-0 p-3',
-              }}
-            >
-              <div className="w-full min-w-0 overflow-hidden rounded-md">
-                <WidgetPreview widget={widget} readOnly minHeight={widgetMinHeight} />
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+      <DashboardViewerGrid
+        widgets={widgets}
+        layout={layoutForWidgets}
+        dashboardId={dashboardId}
+        runtimeFilters={[]}
+        onCrossFilter={noopCrossFilter}
+        canvasMinHeight="480px"
+        layoutMode="preserve"
+      />
     );
   }
 }
