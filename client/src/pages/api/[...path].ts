@@ -64,7 +64,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Handle multipart/form-data specifically for /data/upload and /users/profile/avatar
     // Parse with formidable and reconstruct using form-data package with streams
     // FastAPI's File() dependency needs proper multipart/form-data format
-    if ((pathSegment === 'data/upload' || pathSegment === 'users/profile/avatar' || pathSegment === 'organizations/me/logo') && req.method === 'POST') {
+    if ((pathSegment === 'data/upload' || pathSegment === 'users/profile/avatar' || pathSegment === 'organizations/me/logo' || pathSegment === 'media/feed-thumbnails') && req.method === 'POST') {
         const backendUrl = target;
         console.log('📤 Proxy: Handling file upload to backend:', backendUrl);
 

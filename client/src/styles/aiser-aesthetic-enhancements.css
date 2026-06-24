@@ -814,39 +814,9 @@ div.page-wrapper,
   box-shadow: none !important;
 }
 
-/* Menu items - Premium hover effects */
-.ant-menu-item,
-.ant-menu-submenu-title {
-  transition: all var(--transition-smooth) !important;
-  position: relative !important;
-  overflow: hidden !important;
-}
-
-.ant-menu-item::before,
-.ant-menu-submenu-title::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--ant-color-primary);
-  transform: scaleY(0);
-  transform-origin: bottom;
-  transition: transform var(--transition-smooth);
-}
-
-.ant-menu-item:hover::before,
-.ant-menu-submenu-title:hover::before,
-.ant-menu-item-selected::before {
-  transform: scaleY(1);
-  transform-origin: top;
-}
-
-.ant-menu-item-selected {
-  background: linear-gradient(90deg, var(--ant-color-primary-bg) 0%, transparent 100%) !important;
-  box-shadow: inset 0 0 20px rgba(37, 99, 235, 0.1) !important;
-}
+/* Menu item colors (background, selected state, hover) are owned by
+   Ant Design ConfigProvider component tokens in ThemeProvider.tsx
+   (components.Menu) — no CSS override here. */
 
 /* ========================================
    ACCESSIBILITY - REDUCED MOTION

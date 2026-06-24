@@ -770,6 +770,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <Select
                           size="small"
+                          popupClassName="properties-panel-dropdown"
                           value={chartOptions.borderWidth ?? 0}
                           onChange={(v) => updateChartOption('borderWidth', v)}
                           style={{ width: 72 }}
@@ -806,6 +807,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                       <span className="field-label-sm">Box Shadow</span>
                       <Select
                         size="small"
+                        popupClassName="properties-panel-dropdown"
                         value={chartOptions.boxShadow || 'none'}
                         onChange={(v) => updateChartOption('boxShadow', v === 'none' ? undefined : v)}
                         options={[
@@ -1080,6 +1082,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                             <Select
                               size="small"
                               variant="borderless"
+                              popupClassName="properties-panel-dropdown"
                               value={chartOptions.vAxisFontSize || 10}
                               onChange={(val) => updateChartOption('vAxisFontSize', val)}
                               style={{ flex: 1 }}
@@ -1217,6 +1220,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                             <Select
                               size="small"
                               variant="borderless"
+                              popupClassName="properties-panel-dropdown"
                               value={chartOptions.hAxisFontSize || 10}
                               onChange={(val) => updateChartOption('hAxisFontSize', val)}
                               style={{ flex: 1 }}
@@ -1382,6 +1386,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           renderMode="snapshot"
           projectId={currentProjectId != null ? String(currentProjectId) : undefined}
           organizationId={publishOrganizationId}
+          captureSelector={`[data-widget-id="${selectedWidget.id}"]`}
           onCancel={() => setPublishChartOpen(false)}
           onSuccess={() => setPublishChartOpen(false)}
         />

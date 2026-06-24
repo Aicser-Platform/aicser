@@ -23,22 +23,34 @@
 
 :root {
   /* Light Mode - 5 Colors Only (Default) */
-  --color-bg-base: #ffffff;           /* 1. Page background (lightest) */
-  --color-bg-container: #f8f9fa;       /* 2. Cards, panels, containers */
-  --color-bg-elevated: #f1f3f5;        /* 3. Modals, dropdowns, elevated */
-  --color-bg-navigation: #fafafa;      /* Legacy fallback */
-  --color-bg-navigation-sider: #eef1f5; /* Sidebar/menu tone */
-  --color-bg-navigation-header: #ffffff; /* Header tone */
-  --color-bg-navigation-header-glow: #dfe4ec; /* Header gradient accent */
-  --color-border: #e1e4e8;             /* 5. Borders, dividers */
-  
+  --color-bg-base: #ffffff;
+  /* 1. Page background (lightest) */
+  --color-bg-container: #f8f9fa;
+  /* 2. Cards, panels, containers */
+  --color-bg-elevated: #f1f3f5;
+  /* 3. Modals, dropdowns, elevated */
+  --color-bg-navigation: #fafafa;
+  /* Legacy fallback */
+  --color-bg-navigation-sider: #eef1f5;
+  /* Sidebar/menu tone */
+  --color-bg-navigation-header: #ffffff;
+  /* Header tone */
+  --color-bg-navigation-header-glow: #dfe4ec;
+  /* Header gradient accent */
+  --color-border: #e1e4e8;
+  /* 5. Borders, dividers */
+
   /* Text Colors - Derived from backgrounds */
-  --color-text-primary: #24292f;       /* Primary text on light */
-  --color-text-secondary: #57606a;    /* Secondary text */
-  --color-text-tertiary: #8b949e;     /* Tertiary text */
-  
+  --color-text-primary: #24292f;
+  /* Primary text on light */
+  --color-text-secondary: #57606a;
+  /* Secondary text */
+  --color-text-tertiary: #8b949e;
+  /* Tertiary text */
+
   /* Accent Colors - Minimal */
-  --color-primary: #00c2cb;             /* Primary action */
+  --color-primary: #00c2cb;
+  /* Primary action */
   --color-primary-hover: #058990;
   --color-primary-active: #1e777c;
 }
@@ -48,19 +60,30 @@ html.dark,
 html[data-theme="dark"],
 [data-theme="dark"] {
   /* Dark Mode - 5 Colors Only */
-  --color-bg-base: #0d1117;           /* 1. Page background (darkest) */
-  --color-bg-container: #161b22;       /* 2. Cards, panels, containers */
-  --color-bg-elevated: #1c2128;        /* 3. Modals, dropdowns, elevated */
-  --color-bg-navigation: #030712;       /* Legacy fallback */
-  --color-bg-navigation-sider: #030712; /* Sidebar/menu tone */
-  --color-bg-navigation-header: #10131c; /* Header tone */
-  --color-bg-navigation-header-glow: #1c2432; /* Header gradient accent */
-  --color-border: #30363d;             /* 5. Borders, dividers */
-  
+  --color-bg-base: #0d1117;
+  /* 1. Page background (darkest) */
+  --color-bg-container: #161b22;
+  /* 2. Cards, panels, containers */
+  --color-bg-elevated: #1c2128;
+  /* 3. Modals, dropdowns, elevated */
+  --color-bg-navigation: #030712;
+  /* Legacy fallback */
+  --color-bg-navigation-sider: #030712;
+  /* Sidebar/menu tone */
+  --color-bg-navigation-header: #10131c;
+  /* Header tone */
+  --color-bg-navigation-header-glow: #1c2432;
+  /* Header gradient accent */
+  --color-border: #30363d;
+  /* 5. Borders, dividers */
+
   /* Text Colors - Derived from backgrounds */
-  --color-text-primary: #e6edf3;      /* Primary text on dark */
-  --color-text-secondary: #8b949e;     /* Secondary text */
-  --color-text-tertiary: #6e7681;      /* Tertiary text */
+  --color-text-primary: #e6edf3;
+  /* Primary text on dark */
+  --color-text-secondary: #8b949e;
+  /* Secondary text */
+  --color-text-tertiary: #6e7681;
+  /* Tertiary text */
 }
 
 /* ========================================
@@ -79,41 +102,9 @@ body,
 }
 
 /* Navigation - Brand Color */
-.ant-layout-header,
-header.ant-layout-header,
-[class*="ant-layout-header"],
-[class*="LayoutHeader"],
-[class*="layout-header"],
-div[class*="ant-layout-header"] {
-  background: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
-  background-color: var(--color-bg-navigation-header, var(--color-bg-navigation)) !important;
-  border-bottom: 1px solid var(--color-border) !important;
-}
-
-.ant-layout-sider,
-aside.ant-layout-sider,
-[class*="ant-layout-sider"],
-.ant-layout-sider-dark,
-.ant-layout-sider-light,
-.ant-layout-sider-collapsed,
-div[class*="ant-layout-sider"] {
-  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-  border-right: 1px solid var(--color-border) !important;
-}
-
-.ant-menu,
-.ant-menu-root,
-.ant-menu-inline,
-.ant-menu-vertical,
-.ant-menu-dark,
-.ant-menu-light,
-ul.ant-menu,
-ul.ant-menu-root,
-ul.ant-menu-inline {
-  background: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-  background-color: var(--color-bg-navigation-sider, var(--color-bg-navigation)) !important;
-}
+/* Header background is owned by aiser-navigation-unified.css.
+   Sidebar/Menu colors are owned by ConfigProvider component tokens in
+   ThemeProvider.tsx (components.Layout / components.Menu) — no CSS here. */
 
 /* Cards & Panels - Container Color */
 .ant-card,
@@ -143,19 +134,18 @@ ul.ant-menu-inline {
   background: var(--color-bg-container) !important;
 }
 
-.ant-table-thead > tr > th {
+.ant-table-thead>tr>th {
   background: var(--color-bg-elevated) !important;
   border-bottom: 1px solid var(--color-border) !important;
 }
 
-.ant-table-tbody > tr > td {
+.ant-table-tbody>tr>td {
   border-bottom: 1px solid var(--color-border) !important;
 }
 
 /* Forms - Container Color */
 .ant-form,
 .ant-form-item,
-.ant-input,
 .ant-input-affix-wrapper,
 .ant-select-selector,
 .ant-picker,
@@ -165,7 +155,6 @@ textarea.ant-input {
   color: var(--color-text-primary) !important;
 }
 
-.ant-input:focus,
 .ant-input-affix-wrapper-focused,
 .ant-select-focused .ant-select-selector {
   border-color: var(--color-primary) !important;
@@ -200,7 +189,12 @@ textarea.ant-input {
 .ant-typography-title,
 .ant-typography-text,
 .ant-typography-paragraph,
-h1, h2, h3, h4, h5, h6,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
 .page-title,
 .page-description {
   color: var(--color-text-primary) !important;
@@ -210,23 +204,6 @@ h1, h2, h3, h4, h5, h6,
 .text-secondary,
 .page-description {
   color: var(--color-text-secondary) !important;
-}
-
-/* Menu Items - Navigation Colors */
-.ant-menu-item,
-.ant-menu-submenu-title {
-  color: var(--color-text-primary) !important;
-}
-
-.ant-menu-item:hover,
-.ant-menu-submenu-title:hover {
-  background: var(--color-bg-elevated) !important;
-  color: var(--color-primary) !important;
-}
-
-.ant-menu-item-selected {
-  background: var(--color-primary) !important;
-  color: #ffffff !important;
 }
 
 /* Scrollbars - Subtle */
@@ -241,4 +218,3 @@ h1, h2, h3, h4, h5, h6,
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary) !important;
 }
-

@@ -15,7 +15,7 @@ import {
   BellOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
-import { Layout, Tooltip } from 'antd';
+import { Layout } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import React from 'react';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
@@ -69,15 +69,22 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   settings: <SettingOutlined />,
 };
 
+const SETTINGS_ITEMS: NavItemDef[] = [
+  { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
+];
+
+const SETTINGS_ICONS: SidebarNavIconMap = {
+  settings: <SettingOutlined />,
+};
+
 function isNavOverlayTarget(target: Node | null): boolean {
   if (!target || !(target instanceof Element)) return false;
-  return !!target.closest('.sidebar-nav-popover-layer, .app-navigation-sider');
+  return !!target.closest('.ant-menu-submenu-popup, .app-navigation-sider');
 }
 
 const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const sidebarNavRef = React.useRef<SidebarNavHandle>(null);
-  const t = useTranslations('nav');
   const t_common = useTranslations('common');
   const brandText = isEnterpriseEdition ? t_common('brand_name') : `${t_common('brand_name')} Community Edition`;
 
@@ -161,12 +168,6 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   React.useEffect(() => setIsDarkMode(!!isDarkModeContext), [isDarkModeContext]);
 
-  const sidebarGradient = isDarkMode
-    ? 'linear-gradient(135deg, var(--color-bg-navigation-sider, var(--color-bg-navigation)) 0%, var(--color-bg-navigation-sider-glow, rgba(24, 144, 255, 0.15)) 100%)'
-    : 'linear-gradient(135deg, var(--color-bg-navigation-sider, var(--color-bg-navigation)) 0%, var(--color-bg-navigation-sider-glow, rgba(255,255,255,0.25)) 100%)';
-
-  const settingsActive = selectedKey === 'settings';
-
   return (
     <Sider
       ref={ref}
@@ -180,7 +181,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
       className={`app-navigation-sider${isDarkMode ? ' app-navigation-sider--dark' : ''}`}
       style={{
         transition: 'min-width 0.2s ease, width 0.2s ease, transform 0.22s cubic-bezier(0.4,0,0.2,1)',
-        background: sidebarGradient,
+        background: 'var(--color-bg-navigation-sider, var(--color-bg-navigation))',
         ...(isMobile
           ? {
             top: 64,
@@ -191,12 +192,14 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
           : {}),
       }}
     >
-      <div className="app-navigation-sider-inner">
-        <div className="app-navigation-brand">
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          className={`box-border flex h-[var(--app-header-height,64px)] min-h-[var(--app-header-height,64px)] max-h-[var(--app-header-height,64px)] min-w-0 shrink-0 items-center overflow-hidden border-b border-[var(--ant-color-border)] p-3 ${isRailMode ? 'justify-center' : ''}`}
+        >
           <AicserLogo size={isRailMode ? 32 : 36} showText={!isRailMode} text={brandText} />
         </div>
 
-        <div className="app-navigation-scroll">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-0 pb-2 pt-1">
           <SidebarNav
             ref={sidebarNavRef}
             items={isEnterpriseEdition ? enterpriseItems : communityItems}
@@ -205,34 +208,20 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
             railCollapsed={isRailMode}
             onNavigate={onNavigate}
             icons={isEnterpriseEdition ? ENTERPRISE_ICONS : COMMUNITY_ICONS}
+            theme={isDarkMode ? 'dark' : 'light'}
           />
         </div>
 
-        <div className="app-navigation-footer">
-          {isRailMode ? (
-            <Tooltip title={t('settings')} placement="right" mouseEnterDelay={0.35}>
-              <button
-                type="button"
-                className={`sidebar-nav-link sidebar-nav-link--footer${settingsActive ? ' is-active' : ''}`}
-                onClick={() => onNavigate(NAV_ROUTES.settings)}
-              >
-                <span className="sidebar-nav-link-icon">
-                  <SettingOutlined />
-                </span>
-              </button>
-            </Tooltip>
-          ) : (
-            <button
-              type="button"
-              className={`sidebar-nav-link sidebar-nav-link--footer${settingsActive ? ' is-active' : ''}`}
-              onClick={() => onNavigate(NAV_ROUTES.settings)}
-            >
-              <span className="sidebar-nav-link-icon">
-                <SettingOutlined />
-              </span>
-              <span className="sidebar-nav-link-label">{t('settings')}</span>
-            </button>
-          )}
+        <div className="shrink-0 border-t border-[var(--ant-color-border)] px-0 pb-2 pt-1">
+          <SidebarNav
+            items={SETTINGS_ITEMS}
+            selectedKey={selectedKey}
+            routeOpenGroups={[]}
+            railCollapsed={isRailMode}
+            onNavigate={onNavigate}
+            icons={SETTINGS_ICONS}
+            theme={isDarkMode ? 'dark' : 'light'}
+          />
         </div>
       </div>
     </Sider>

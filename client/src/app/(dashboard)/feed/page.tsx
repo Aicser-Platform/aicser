@@ -5,103 +5,74 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Modal, Tag, message, Alert } from 'antd';
 import {
   ArrowUpOutlined,
-  CompassOutlined,
   DashboardOutlined,
   MessageOutlined,
   UserAddOutlined,
   ArrowDownOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { getChatHref, isEnterpriseEdition } from '@/utils/appPaths';
+import { DashboardPageHeader } from '@/components/layout/DashboardPageShell';
 
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
-import FeedFilters, { FeedFiltersValue } from './components/FeedFilters';
-import FeedPageActions from './components/FeedPageActions';
+import { useFeedFiltersStore } from '@/stores/useFeedFiltersStore';
+import FeedFilters from './components/FeedFilters';
 import FeedExploreStrip, { type FeedExploreAction } from './components/FeedExploreStrip';
 import FeedCard from './components/FeedCard';
-import FeedSidebar from './components/FeedSidebar';
+import FeedGridCard from './components/FeedGridCard';
 import FeedCardSkeleton from './components/FeedCardSkeleton';
 import FeedDiscoveryDrawer from '@/components/Feed/FeedDiscoveryDrawer';
 import { formatTimeAgo, socialFeedService } from '@/services/socialFeedService';
 import { consumeFeedHighlight, resolveFeedHighlightPostId } from '@/components/Feed/feedHighlight';
-import type {
-  ApprovalQueueItem,
-  AssetType,
-  FeedFilterOptions,
-  FeedItem,
-  FeedSidebarData,
-  LeaderboardSortBy,
-  LeaderboardTimeRange,
-} from '@/services/socialFeedService';
-import { ApiError } from '@/utils/api';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import {
+  EMPTY_FILTER_OPTIONS,
+  EMPTY_SIDEBAR_DATA,
+  feedKeys,
+  useApprovalQueueQuery,
+  useApprovePublicationMutation,
+  useFeedFilterOptionsQuery,
+  useFeedItemsCacheSetter,
+  useFeedListQuery,
+  useFeedSidebarQuery,
+  useRejectPublicationMutation,
+  usePrependFeedItem,
+  type FeedRequestFilters,
+} from '@/hooks/feed/useFeedQueries';
 import { useTranslations } from 'next-intl';
 
-const PAGE_SIZE = 10;
-const APPROVAL_QUEUE_PAGE_SIZE = 20;
-const EMPTY_FILTER_OPTIONS: FeedFilterOptions = {
-  tags: [],
-  authors: [],
-  assetCounts: { dashboard: 0, chart: 0, insight: 0, query: 0 },
-};
-const EMPTY_SIDEBAR_DATA: FeedSidebarData = {
-  leaderboard: [],
-  topContributors: [],
-  recommended: [],
-  trendingTags: [],
-  collections: [],
-  activity: [],
-};
-type SidebarControls = {
-  timeRange: LeaderboardTimeRange;
-  contentType: AssetType | 'all';
-  sortBy: LeaderboardSortBy;
-};
 const FEED_SKELETON_COUNT = 4;
 const FEED_SKELETON_APPEND_COUNT = 2;
-type ApprovalDecisionAction = 'approving' | 'rejecting';
 
 const SocialFeedPage: React.FC = () => {
   const t = useTranslations('feed_page');
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const queryPostId = searchParams.get('post') || '';
   const highlightPostId = useMemo(() => resolveFeedHighlightPostId(queryPostId), [queryPostId]);
   const { user } = useAuth();
 
-  const [items, setItems] = useState<FeedItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [initialFeedResolved, setInitialFeedResolved] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [filterOptions, setFilterOptions] = useState<FeedFilterOptions>(EMPTY_FILTER_OPTIONS);
-  const [sidebarData, setSidebarData] = useState<FeedSidebarData>(EMPTY_SIDEBAR_DATA);
-  const [sidebarLoading, setSidebarLoading] = useState(false);
-  const [sidebarControls, setSidebarControls] = useState<SidebarControls>({
-    timeRange: 'week',
-    contentType: 'all',
-    sortBy: 'popular',
-  });
-  const [discoveryOpen, setDiscoveryOpen] = useState(false);
-  const [approvalQueue, setApprovalQueue] = useState<ApprovalQueueItem[]>([]);
-  const [loadingApprovals, setLoadingApprovals] = useState(false);
-  const [canModerateApprovals, setCanModerateApprovals] = useState(false);
-  const [approvalAccessResolved, setApprovalAccessResolved] = useState(false);
-  const [approvalPending, setApprovalPending] = useState<Record<string, Record<ApprovalDecisionAction, boolean>>>({});
-  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  // ─── Shared filter/sidebar-control UI state (Zustand — read by FeedFilters,
+  // FeedDiscoveryDrawer, FeedExploreStrip) ───────────────────────────────────
+  const filters = useFeedFiltersStore((s) => s.filters);
+  const sidebarControls = useFeedFiltersStore((s) => s.sidebarControls);
+  const setFilters = useFeedFiltersStore((s) => s.setFilters);
+  const addTagFilter = useFeedFiltersStore((s) => s.addTagFilter);
+  const setSidebarTimeRange = useFeedFiltersStore((s) => s.setSidebarTimeRange);
+  const setSidebarContentType = useFeedFiltersStore((s) => s.setSidebarContentType);
+  const setSidebarSortBy = useFeedFiltersStore((s) => s.setSidebarSortBy);
 
-  const [filters, setFilters] = useState<FeedFiltersValue>({
-    scope: isEnterpriseEdition() ? 'organization' : 'public',
-    assetType: 'all',
-    sort: 'recommended',
-    tags: [],
-    search: '',
-  });
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const requestFilters = useMemo(
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(filters.search || ''), 300);
+    return () => window.clearTimeout(timeout);
+  }, [filters.search]);
+
+  const requestFilters: FeedRequestFilters = useMemo(
     () => ({
       scope: filters.scope,
       assetType: filters.assetType,
@@ -112,21 +83,50 @@ const SocialFeedPage: React.FC = () => {
     [debouncedSearch, filters.assetType, filters.scope, filters.sort, filters.tags]
   );
 
-  const itemsRef = useRef<FeedItem[]>([]);
-  const loadingRef = useRef(false);
+  // ─── Server data (React Query) ────────────────────────────────────────────
+  const feedQuery = useFeedListQuery(requestFilters);
+  const { items } = feedQuery;
+  const loading = feedQuery.isLoading || feedQuery.isFetchingNextPage;
+
+  const filterOptionsQuery = useFeedFilterOptionsQuery(filters.scope);
+  const filterOptions = filterOptionsQuery.data ?? EMPTY_FILTER_OPTIONS;
+
+  const sidebarQuery = useFeedSidebarQuery(filters.scope, sidebarControls);
+  const sidebarData = sidebarQuery.data ?? EMPTY_SIDEBAR_DATA;
+
+  const refreshSidebar = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: feedKeys.sidebar(filters.scope, sidebarControls) });
+  }, [filters.scope, queryClient, sidebarControls]);
+
+  const { pendingInteractions, handleReact, handleSave, handleToggleFollow, handleDeleteItem } = useFeedInteractions(
+    items,
+    useFeedItemsCacheSetter(requestFilters),
+    { onSidebarRefresh: refreshSidebar }
+  );
+
+  const { approvalQueue, canModerateApprovals, accessResolved: approvalAccessResolved, isLoading: loadingApprovals } =
+    useApprovalQueueQuery();
+  const approveMutation = useApprovePublicationMutation();
+  const rejectMutation = useRejectPublicationMutation();
+
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const itemsRef = useRef<typeof items>([]);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const [focusedPostIndex, setFocusedPostIndex] = useState<number>(-1);
   const [newPostsCount, setNewPostsCount] = useState(0);
   const latestItemIdRef = useRef<string | null>(null);
   const endFeedActionRef = useRef<HTMLDivElement | null>(null);
-  const requestIdRef = useRef(0);
   const [showEndFeedAction, setShowEndFeedAction] = useState(false);
   const [refreshingFromEndAction, setRefreshingFromEndAction] = useState(false);
   const [endFeedActionInteracted, setEndFeedActionInteracted] = useState(false);
   const [resolvedHighlightId, setResolvedHighlightId] = useState<string | null>(null);
   const highlightScrolledRef = useRef(false);
   const highlightFetchRef = useRef<string | null>(null);
+  const prependFeedItem = usePrependFeedItem(requestFilters);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -139,75 +139,17 @@ const SocialFeedPage: React.FC = () => {
     document.body?.scrollTo?.({ top: 0, behavior });
   }, []);
 
-  const handleFiltersChange = useCallback((next: FeedFiltersValue) => {
-    setFilters(next);
-  }, []);
-
-  const handleTagFilter = useCallback((tag: string) => {
-    setFilters((prev) => {
-      const tags = prev.tags.includes(tag) ? prev.tags : [...prev.tags, tag];
-      return { ...prev, tags };
-    });
-  }, []);
-
-  const loadFeed = useCallback(
-    async (reset: boolean) => {
-      if (loadingRef.current && !reset) return;
-
-      const requestId = ++requestIdRef.current;
-      loadingRef.current = true;
-      setLoading(true);
-
-      if (reset) {
-        itemsRef.current = [];
-        setItems([]);
-        setHasMore(true);
-        wrapperRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-
-      try {
-        const offset = reset ? 0 : itemsRef.current.length;
-        const response = await socialFeedService.getFeed({
-          scope: requestFilters.scope,
-          sort: requestFilters.sort,
-          tags: requestFilters.tags,
-          search: (requestFilters.search || '').trim() || undefined,
-          assetType: requestFilters.assetType === 'all' ? undefined : requestFilters.assetType,
-          limit: PAGE_SIZE,
-          offset,
-        });
-
-        if (requestId !== requestIdRef.current) return;
-
-        const items = response.items ?? [];
-        const nextItems = reset ? items : [...itemsRef.current, ...items];
-        itemsRef.current = nextItems;
-        setItems(nextItems);
-        const hasValidTotal =
-          typeof response.total === 'number' && Number.isFinite(response.total) && response.total >= 0;
-        const hasMoreByTotal = hasValidTotal ? nextItems.length < response.total : true;
-        const hasMoreByPage = items.length >= PAGE_SIZE;
-        setHasMore(hasMoreByTotal && hasMoreByPage);
-      } catch (error) {
-        if (requestId !== requestIdRef.current) return;
-        message.error(errorMessage(error, t('failed_load_feed')));
-      } finally {
-        if (requestId !== requestIdRef.current) return;
-        loadingRef.current = false;
-        setLoading(false);
-        if (reset) setInitialFeedResolved(true);
-      }
-    },
-    [requestFilters, t]
-  );
+  const resetFeedToFirstPage = useCallback(() => {
+    return queryClient.resetQueries({ queryKey: feedKeys.list(requestFilters) });
+  }, [queryClient, requestFilters]);
 
   const handleScrollToTop = useCallback(async () => {
-    if (refreshingFromEndAction || loadingRef.current) return;
+    if (refreshingFromEndAction || loading) return;
     setRefreshingFromEndAction(true);
     setShowEndFeedAction(false);
     scrollFeedToTop('smooth');
     try {
-      await loadFeed(true);
+      await resetFeedToFirstPage();
       requestAnimationFrame(() => {
         scrollFeedToTop('auto');
         setTimeout(() => scrollFeedToTop('auto'), 80);
@@ -215,111 +157,14 @@ const SocialFeedPage: React.FC = () => {
     } finally {
       setRefreshingFromEndAction(false);
     }
-  }, [loadFeed, refreshingFromEndAction, scrollFeedToTop]);
+  }, [loading, refreshingFromEndAction, resetFeedToFirstPage, scrollFeedToTop]);
 
-  const loadFilterOptions = useCallback(async () => {
-    try {
-      const response = await socialFeedService.getFilterOptions(filters.scope);
-      setFilterOptions({
-        tags: response.tags ?? [],
-        authors: response.authors ?? [],
-        assetCounts: response.assetCounts ?? { dashboard: 0, chart: 0, insight: 0 },
-      });
-    } catch (error) {
-      message.error(errorMessage(error, t('failed_load_filters')));
-    }
-  }, [filters.scope, t]);
-
-  const loadSidebar = useCallback(async () => {
-    setSidebarLoading(true);
-    try {
-      const response = await socialFeedService.getSidebarData(filters.scope, {
-        timeRange: sidebarControls.timeRange,
-        contentType: sidebarControls.contentType,
-        sortBy: sidebarControls.sortBy,
-        leaderboardLimit: 8,
-      });
-      setSidebarData({
-        leaderboard: response.leaderboard ?? [],
-        topContributors: response.topContributors ?? [],
-        recommended: response.recommended ?? [],
-        trendingTags: response.trendingTags ?? [],
-        collections: response.collections ?? [],
-        activity: response.activity ?? [],
-      });
-    } catch (error) {
-      message.error(errorMessage(error, t('failed_load_sidebar')));
-    } finally {
-      setSidebarLoading(false);
-    }
-  }, [filters.scope, sidebarControls.contentType, sidebarControls.sortBy, sidebarControls.timeRange, t]);
-
-  const {
-    pendingInteractions,
-    handleReact,
-    handleSave,
-    handleAddComment,
-    handleToggleFollow,
-    handleDeleteItem,
-    handleCommentDeleted,
-  } = useFeedInteractions(items, setItems, { onSidebarRefresh: loadSidebar });
-
-  const handleSidebarTimeRangeChange = useCallback((value: LeaderboardTimeRange) => {
-    setSidebarControls((prev) => ({ ...prev, timeRange: value }));
-  }, []);
-
-  const handleSidebarContentTypeChange = useCallback((value: AssetType | 'all') => {
-    setSidebarControls((prev) => ({ ...prev, contentType: value }));
-  }, []);
-
-  const handleSidebarSortChange = useCallback((value: LeaderboardSortBy) => {
-    setSidebarControls((prev) => ({ ...prev, sortBy: value }));
-  }, []);
-
-  const setApprovalPendingState = useCallback((itemId: string, action: ApprovalDecisionAction, value: boolean) => {
-    setApprovalPending((prev) => {
-      const current = prev[itemId] || { approving: false, rejecting: false };
-      const next = { ...current, [action]: value };
-      if (!next.approving && !next.rejecting) {
-        const rest = { ...prev };
-        delete rest[itemId];
-        return rest;
-      }
-      return { ...prev, [itemId]: next };
-    });
-  }, []);
-
-  const removeApprovalQueueItem = useCallback((queueItemId: string) => {
-    setApprovalQueue((prev) => prev.filter((entry) => entry.id !== queueItemId));
-    setApprovalPending((prev) => {
-      if (!(queueItemId in prev)) return prev;
-      const rest = { ...prev };
-      delete rest[queueItemId];
-      return rest;
-    });
-  }, []);
-
-  const loadApprovalQueue = useCallback(async () => {
-    setLoadingApprovals(true);
-    try {
-      const response = await socialFeedService.getApprovalQueue({
-        limit: APPROVAL_QUEUE_PAGE_SIZE,
-        offset: 0,
-      });
-      setApprovalQueue(response.items ?? []);
-      setCanModerateApprovals(true);
-    } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-        setCanModerateApprovals(false);
-        setApprovalQueue([]);
-      } else {
-        message.error(errorMessage(error, t('failed_load_approval_queue')));
-      }
-    } finally {
-      setLoadingApprovals(false);
-      setApprovalAccessResolved(true);
-    }
-  }, [t]);
+  const handleTagFilter = useCallback(
+    (tag: string) => {
+      addTagFilter(tag);
+    },
+    [addTagFilter]
+  );
 
   // ─── Track latest post id after initial load for new-posts polling ────────
   useEffect(() => {
@@ -328,18 +173,12 @@ const SocialFeedPage: React.FC = () => {
     }
   }, [items]);
 
-  // Poll every 60s for new posts and show a banner
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      setDebouncedSearch(filters.search || '');
-    }, 300);
-    return () => window.clearTimeout(timeout);
-  }, [filters.search]);
-
+  // Poll every 60s for new posts and show a banner (deliberately a lightweight
+  // background check, not a refetch of the main list — keeps reading position stable).
   useEffect(() => {
     if (!filters.scope) return;
     const interval = window.setInterval(async () => {
-      if (loadingRef.current || !latestItemIdRef.current) return;
+      if (!latestItemIdRef.current) return;
       try {
         const response = await socialFeedService.getFeed({
           scope: filters.scope,
@@ -349,7 +188,6 @@ const SocialFeedPage: React.FC = () => {
         });
         const newItems = response.items ?? [];
         if (newItems.length > 0 && newItems[0].id !== latestItemIdRef.current) {
-          // Count how many are newer than our current top
           const existingIds = new Set(itemsRef.current.map((i) => i.id));
           const fresh = newItems.filter((i) => !existingIds.has(i.id));
           if (fresh.length > 0) setNewPostsCount(fresh.length);
@@ -364,7 +202,6 @@ const SocialFeedPage: React.FC = () => {
   // ─── Keyboard navigation: j=next, k=prev, o=open post ────────────────────
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
@@ -395,25 +232,6 @@ const SocialFeedPage: React.FC = () => {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [focusedPostIndex, router]);
-
-  useEffect(() => {
-    if (!initialFeedResolved) return;
-    loadFilterOptions();
-  }, [initialFeedResolved, loadFilterOptions]);
-
-  useEffect(() => {
-    if (!initialFeedResolved) return;
-    loadSidebar();
-  }, [initialFeedResolved, loadSidebar]);
-
-  useEffect(() => {
-    if (!initialFeedResolved) return;
-    loadApprovalQueue();
-  }, [initialFeedResolved, loadApprovalQueue, user?.id]);
-
-  useEffect(() => {
-    loadFeed(true);
-  }, [loadFeed]);
 
   useEffect(() => {
     if (!highlightPostId) return;
@@ -456,11 +274,7 @@ const SocialFeedPage: React.FC = () => {
       .getItemById(highlightPostId)
       .then((post) => {
         if (!active || !post) return;
-        setItems((prev) => {
-          if (prev.some((item) => item.id === post.id)) return prev;
-          return [post, ...prev];
-        });
-        itemsRef.current = [post, ...itemsRef.current.filter((item) => item.id !== post.id)];
+        prependFeedItem(post);
         window.setTimeout(() => scrollToPost(post.id), 120);
       })
       .catch(() => {});
@@ -468,7 +282,7 @@ const SocialFeedPage: React.FC = () => {
     return () => {
       active = false;
     };
-  }, [highlightPostId, items, loading, queryPostId, router]);
+  }, [highlightPostId, items, loading, prependFeedItem, queryPostId, router]);
 
   useEffect(() => {
     const root = wrapperRef.current;
@@ -477,8 +291,8 @@ const SocialFeedPage: React.FC = () => {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingRef.current) {
-          loadFeed(false);
+        if (entries[0].isIntersecting && feedQuery.hasNextPage && !feedQuery.isFetchingNextPage) {
+          void feedQuery.fetchNextPage();
         }
       },
       { root, rootMargin: '200px 0px', threshold: 0 }
@@ -486,13 +300,13 @@ const SocialFeedPage: React.FC = () => {
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, loadFeed]);
+  }, [feedQuery]);
 
   useEffect(() => {
-    if (hasMore || items.length === 0 || loading) {
+    if (feedQuery.hasNextPage || items.length === 0 || loading) {
       setShowEndFeedAction(false);
     }
-  }, [hasMore, items.length, loading]);
+  }, [feedQuery.hasNextPage, items.length, loading]);
 
   useEffect(() => {
     if (showEndFeedAction && !refreshingFromEndAction) {
@@ -503,42 +317,34 @@ const SocialFeedPage: React.FC = () => {
   useEffect(() => {
     const root = wrapperRef.current;
     const endAction = endFeedActionRef.current;
-    if (!root || !endAction || hasMore || items.length === 0 || loading) return;
+    if (!root || !endAction || feedQuery.hasNextPage || items.length === 0 || loading) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
         setShowEndFeedAction(Boolean(entry?.isIntersecting));
       },
-      {
-        root,
-        threshold: 0.15,
-      }
+      { root, threshold: 0.15 }
     );
 
     observer.observe(endAction);
     return () => observer.disconnect();
-  }, [hasMore, items.length, loading]);
+  }, [feedQuery.hasNextPage, items.length, loading]);
 
   const handleApprovePublication = useCallback(
-    async (queueItemId: string) => {
-      if (approvalPending[queueItemId]?.approving) return;
-      setApprovalPendingState(queueItemId, 'approving', true);
-      try {
-        const entry = approvalQueue.find((item) => item.id === queueItemId);
-        await socialFeedService.approvePublication(queueItemId);
-        removeApprovalQueueItem(queueItemId);
-        message.success(t('publication_approved'));
-        if (entry?.item?.id) {
-          router.push(`/feed?post=${encodeURIComponent(entry.item.id)}`);
-        }
-      } catch (error) {
-        message.error(errorMessage(error, t('unable_approve_publication')));
-      } finally {
-        setApprovalPendingState(queueItemId, 'approving', false);
-      }
+    (queueItemId: string) => {
+      const entry = approvalQueue.find((item) => item.id === queueItemId);
+      approveMutation.mutate(queueItemId, {
+        onSuccess: () => {
+          message.success(t('publication_approved'));
+          if (entry?.item?.id) {
+            router.push(`/feed?post=${encodeURIComponent(entry.item.id)}`);
+          }
+        },
+        onError: (error) => message.error(errorMessage(error, t('unable_approve_publication'))),
+      });
     },
-    [approvalPending, approvalQueue, removeApprovalQueueItem, router, setApprovalPendingState, t]
+    [approvalQueue, approveMutation, router, t]
   );
 
   const openRejectModal = useCallback((queueItemId: string) => {
@@ -547,12 +353,12 @@ const SocialFeedPage: React.FC = () => {
   }, []);
 
   const closeRejectModal = useCallback(() => {
-    if (rejectSubmitting) return;
+    if (rejectMutation.isPending) return;
     setRejectTargetId(null);
     setRejectReason('');
-  }, [rejectSubmitting]);
+  }, [rejectMutation.isPending]);
 
-  const handleRejectPublication = useCallback(async () => {
+  const handleRejectPublication = useCallback(() => {
     const queueItemId = rejectTargetId;
     if (!queueItemId) return;
     const reason = rejectReason.trim();
@@ -561,26 +367,26 @@ const SocialFeedPage: React.FC = () => {
       return;
     }
 
-    setRejectSubmitting(true);
-    setApprovalPendingState(queueItemId, 'rejecting', true);
-    try {
-      await socialFeedService.rejectPublication(queueItemId, reason);
-      removeApprovalQueueItem(queueItemId);
-      message.success(t('publication_rejected'));
-      setRejectTargetId(null);
-      setRejectReason('');
-    } catch (error) {
-      message.error(errorMessage(error, t('unable_reject_publication')));
-    } finally {
-      setRejectSubmitting(false);
-      setApprovalPendingState(queueItemId, 'rejecting', false);
-    }
-  }, [rejectReason, rejectTargetId, removeApprovalQueueItem, setApprovalPendingState, t]);
+    rejectMutation.mutate(
+      { queueItemId, reason },
+      {
+        onSuccess: () => {
+          message.success(t('publication_rejected'));
+          setRejectTargetId(null);
+          setRejectReason('');
+        },
+        onError: (error) => message.error(errorMessage(error, t('unable_reject_publication'))),
+      }
+    );
+  }, [rejectMutation, rejectReason, rejectTargetId, t]);
 
-  const handleExploreAction = useCallback((action: FeedExploreAction) => {
-    if (action.type !== 'filters') return;
-    setFilters((prev) => ({ ...prev, ...action.patch }));
-  }, []);
+  const handleExploreAction = useCallback(
+    (action: FeedExploreAction) => {
+      if (action.type !== 'filters') return;
+      setFilters({ ...filters, ...action.patch });
+    },
+    [filters, setFilters]
+  );
 
   const searchQuery = (filters.search || '').trim();
   const hasSearchFilter = searchQuery.length > 0;
@@ -640,79 +446,75 @@ const SocialFeedPage: React.FC = () => {
   }, [assetLabel, hasSearchFilter, hasTagFilters, scopeLabel, searchQuery, showContextualEmptyState, t]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-4 text-[var(--ant-color-text)]">
-      <div className="sticky top-0 z-40 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-layout)] pb-4">
-        <div className="mb-4 flex min-h-10 flex-wrap items-center justify-between gap-4 md:flex-nowrap">
-          <div className="flex min-w-0 flex-1 items-center gap-4">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-[var(--ant-color-primary-bg)] text-xl text-[var(--ant-color-primary)]">
-              <CompassOutlined />
-            </span>
-            <h1 className="m-0 truncate text-2xl font-semibold leading-tight">{t('page_title')}</h1>
-          </div>
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <FeedPageActions onDiscover={() => setDiscoveryOpen(true)} />
-          </div>
-        </div>
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-4 sm:px-6 text-[var(--ant-color-text)]">
+      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-4">
         <div className="w-full">
-          <FeedFilters value={filters} options={filterOptions} onChange={handleFiltersChange} />
+          <FeedFilters value={filters} options={filterOptions} onChange={setFilters} />
         </div>
         {highlightPostId && !resolvedHighlightId ? (
           <Alert type="info" showIcon message={t('finding_post')} className="mt-3" />
         ) : null}
       </div>
 
-      <div className="mt-5 flex min-w-0 flex-col">
-        <div className="relative flex w-full flex-1 pb-10">
-          <div className="flex min-w-0 flex-1 flex-col items-center pt-2">
-            <div className="w-full max-w-3xl">
+      <div className="mt-5 flex min-w-0 flex-col pb-10">
+        <div className="w-full max-w-[1600px] mx-auto">
               {/* New posts available banner */}
               {newPostsCount > 0 && !loading && (
-                <button
-                  type="button"
-                  className="feed-new-posts-banner"
-                  onClick={() => {
-                    setNewPostsCount(0);
-                    latestItemIdRef.current = null;
-                    void loadFeed(true);
-                  }}
-                >
-                  <ArrowDownOutlined />
-                  <span>{newPostsCount === 1 ? t('one_new_post') : t('n_new_posts', { count: newPostsCount })}</span>
-                </button>
+                <div className="mb-4 flex justify-center">
+                  <Button
+                    type="primary"
+                    icon={<ArrowDownOutlined />}
+                    className="flex items-center gap-2 rounded-full px-5 py-2 h-auto text-sm font-medium shadow-sm transition-all hover:translate-y-[-1px]"
+                    onClick={() => {
+                      setNewPostsCount(0);
+                      latestItemIdRef.current = null;
+                      void resetFeedToFirstPage();
+                    }}
+                  >
+                    {newPostsCount === 1 ? t('one_new_post') : t('n_new_posts', { count: newPostsCount })}
+                  </Button>
+                </div>
               )}
 
-              {!loading && items.length > 0 && <FeedExploreStrip variant="compact" onAction={handleExploreAction} />}
-              {approvalAccessResolved && canModerateApprovals && (
-                <section className="feed-approvals mb-6">
+              {/* {!loading && items.length > 0 && <FeedExploreStrip variant="compact" onAction={handleExploreAction} />} */}
+              {/* {approvalAccessResolved && canModerateApprovals && (
+                <div className="mb-6 rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">
                       {t('pending_approvals')}
                     </h2>
                     {approvalQueue.length > 0 ? (
-                      <Tag color="gold" className="m-0 border-0">
+                      <Tag color="gold" className="m-0 border-0 font-medium">
                         {approvalQueue.length}
                       </Tag>
                     ) : null}
                   </div>
 
-                  {loadingApprovals && <div className="feed-approvals-empty">{t('loading_approval_queue')}</div>}
+                  {loadingApprovals && (
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm text-[var(--ant-color-text-secondary)] bg-[var(--ant-color-bg-layout)] border border-dashed border-[var(--ant-color-border-secondary)] rounded-xl">
+                      {t('loading_approval_queue')}
+                    </div>
+                  )}
 
                   {!loadingApprovals && approvalQueue.length === 0 && (
-                    <div className="feed-approvals-empty">{t('no_pending_publications')}</div>
+                    <div className="flex flex-col items-center justify-center p-6 text-center text-sm text-[var(--ant-color-text-secondary)] bg-[var(--ant-color-bg-layout)] border border-dashed border-[var(--ant-color-border-secondary)] rounded-xl">
+                      {t('no_pending_publications')}
+                    </div>
                   )}
 
                   {!loadingApprovals && approvalQueue.length > 0 && (
                     <div className="flex flex-col gap-4">
                       {approvalQueue.map((entry) => {
-                        const pending = approvalPending[entry.id] || { approving: false, rejecting: false };
+                        const isApproving = approveMutation.isPending && approveMutation.variables === entry.id;
+                        const isRejecting = rejectMutation.isPending && rejectMutation.variables?.queueItemId === entry.id;
                         const submittedText = formatTimeAgo(entry.submittedAt);
                         const visibilityLabel = entry.visibility.charAt(0).toUpperCase() + entry.visibility.slice(1);
                         return (
                           <div
                             key={`approval-${entry.id}`}
-                            className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-warning-border)] rounded-xl shadow-sm overflow-hidden flex flex-col relative group"
+                            className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm overflow-hidden flex flex-col relative group"
                           >
-                            <div className="absolute top-0 left-0 w-1 h-full bg-[var(--ant-color-warning)]"></div>
+                            <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>
                             <div className="pl-4">
                               <FeedCard item={entry.item} compact hideInteractions />
                             </div>
@@ -728,19 +530,19 @@ const SocialFeedPage: React.FC = () => {
                               </div>
                               <div className="flex items-center gap-2">
                                 <Button
-                                  className="font-medium h-9 px-5 rounded-md hover:bg-[var(--ant-color-border-secondary)] transition-colors"
-                                  loading={Boolean(pending.rejecting)}
-                                  disabled={Boolean(pending.approving)}
+                                  className="h-9 rounded-lg font-medium"
+                                  loading={isRejecting}
+                                  disabled={isApproving}
                                   onClick={() => openRejectModal(entry.id)}
                                 >
                                   {t('reject')}
                                 </Button>
                                 <Button
                                   type="primary"
-                                  className="bg-[var(--ant-color-primary)] hover:bg-[var(--ant-color-primary-hover)] font-medium h-9 px-5 rounded-md transition-colors shadow-sm"
-                                  loading={Boolean(pending.approving)}
-                                  disabled={Boolean(pending.rejecting)}
-                                  onClick={() => void handleApprovePublication(entry.id)}
+                                  className="h-9 rounded-lg font-medium"
+                                  loading={isApproving}
+                                  disabled={isRejecting}
+                                  onClick={() => handleApprovePublication(entry.id)}
                                 >
                                   {t('approve')}
                                 </Button>
@@ -751,53 +553,65 @@ const SocialFeedPage: React.FC = () => {
                       })}
                     </div>
                   )}
-                </section>
-              )}
+                </div>
+              )} */}
 
               {items.length === 0 && !loading && (
-                <div className="feed-empty-state">
+                <div className="flex flex-col items-center justify-center p-8 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">
                   <FeedExploreStrip
                     variant="empty"
                     onAction={handleExploreAction}
                     onDiscover={() => setDiscoveryOpen(true)}
                   />
-                  <div className="feed-empty-state-copy">
-                    <p className="feed-empty-state-title">{emptyStateTitle}</p>
-                    {showContextualEmptyState ? <p className="feed-empty-state-sub">{emptyStateSubtitle}</p> : null}
+                  <div className="mt-4 mb-6 text-center">
+                    <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
+                      {emptyStateTitle}
+                    </h3>
+                    {showContextualEmptyState && (
+                      <p className="mt-1.5 mb-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
+                        {emptyStateSubtitle}
+                      </p>
+                    )}
                   </div>
-                  <div className="feed-empty-state-actions">
+                  <div className="flex flex-wrap items-center justify-center gap-3">
                     <Button
                       type="primary"
                       icon={<MessageOutlined />}
+                      className="rounded-lg font-medium"
                       onClick={() => router.push(getChatHref({ prompt: t('explore_prompt_question') }))}
                     >
                       {t('empty_cta_explore_ai')}
                     </Button>
-                    <Button icon={<DashboardOutlined />} onClick={() => router.push('/dashboards')}>
+                    <Button
+                      icon={<DashboardOutlined />}
+                      className="rounded-lg font-medium"
+                      onClick={() => router.push('/dashboards')}
+                    >
                       {t('build_dashboard')}
                     </Button>
-                    {!user ? (
-                      <Button icon={<UserAddOutlined />} onClick={() => router.push('/login')}>
+                    {!user && (
+                      <Button
+                        icon={<UserAddOutlined />}
+                        className="rounded-lg font-medium"
+                        onClick={() => router.push('/login')}
+                      >
                         {t('sign_in_to_save')}
                       </Button>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               )}
-              <div className="flex flex-col gap-4 pb-16">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">
                 {items.map((item, idx) => (
-                  <FeedCard
+                  <FeedGridCard
                     key={item.id}
                     item={item}
                     highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
                     onReact={handleReact}
                     onSave={handleSave}
-                    onAddComment={handleAddComment}
                     onToggleFollow={handleToggleFollow}
                     onDeleteItem={handleDeleteItem}
-                    onCommentDeleted={handleCommentDeleted}
                     interactionState={pendingInteractions[item.id]}
-                    compact
                   />
                 ))}
                 {loading &&
@@ -809,73 +623,51 @@ const SocialFeedPage: React.FC = () => {
                       />
                     )
                   )}
-                <div ref={sentinelRef} className="h-4" />
-                {!hasMore && items.length > 0 && !loading && (
-                  <div ref={endFeedActionRef} className="feed-end-action-wrap">
-                    <div className={`feed-end-action-shell ${showEndFeedAction ? 'is-visible' : ''}`}>
-                      <div className="feed-end-action-divider">
-                        <span className="feed-end-action-divider-line" />
-                        <span>{t('end_of_feed')}</span>
-                        <span className="feed-end-action-divider-line" />
-                      </div>
-                      <button
-                        type="button"
-                        disabled={refreshingFromEndAction}
-                        aria-busy={refreshingFromEndAction}
-                        className={`feed-end-action-button ${
-                          refreshingFromEndAction ? 'is-refreshing' : ''
-                        } ${showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted ? 'feed-end-action-button--pulse' : ''}`}
-                        onMouseEnter={() => setEndFeedActionInteracted(true)}
-                        onFocus={() => setEndFeedActionInteracted(true)}
-                        onClick={() => {
-                          setEndFeedActionInteracted(true);
-                          void handleScrollToTop();
-                        }}
-                      >
-                        <span
-                          className={`feed-end-action-button-icon ${refreshingFromEndAction ? 'is-refreshing' : ''}`}
-                        >
-                          <ArrowUpOutlined />
-                        </span>
-                        <span className="feed-end-action-button-label">
-                          {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
-                        </span>
-                      </button>
+                <div ref={sentinelRef} className="col-span-full h-4" />
+                {!feedQuery.hasNextPage && items.length > 0 && !loading && (
+                  <div
+                    ref={endFeedActionRef}
+                    className={`col-span-full flex flex-col items-center gap-4 py-8 transition-all duration-300 ${
+                      showEndFeedAction ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 w-full max-w-xs text-[11px] text-[var(--ant-color-text-secondary)] font-semibold uppercase tracking-wider">
+                      <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />
+                      <span>{t('end_of_feed')}</span>
+                      <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />
                     </div>
+                    <Button
+                      icon={<ArrowUpOutlined className={refreshingFromEndAction ? 'animate-spin' : ''} />}
+                      loading={refreshingFromEndAction}
+                      disabled={refreshingFromEndAction}
+                      onMouseEnter={() => setEndFeedActionInteracted(true)}
+                      onFocus={() => setEndFeedActionInteracted(true)}
+                      onClick={() => {
+                        setEndFeedActionInteracted(true);
+                        void handleScrollToTop();
+                      }}
+                      className={`rounded-full h-10 px-6 font-medium shadow-sm transition-all hover:-translate-y-0.5 ${
+                        showEndFeedAction && !refreshingFromEndAction && !endFeedActionInteracted ? 'animate-pulse' : ''
+                      }`}
+                    >
+                      {refreshingFromEndAction ? t('refreshing_feed') : t('back_to_top_and_refresh')}
+                    </Button>
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-          <div className="hidden w-[320px] shrink-0 border-l border-[var(--ant-color-border-secondary)] pb-16 pl-6 md:block lg:w-[380px] lg:pl-10">
-            <FeedSidebar
-              data={sidebarData}
-              loading={sidebarLoading}
-              timeRange={sidebarControls.timeRange}
-              contentType={sidebarControls.contentType}
-              sortBy={sidebarControls.sortBy}
-              onChangeTimeRange={handleSidebarTimeRangeChange}
-              onChangeContentType={handleSidebarContentTypeChange}
-              onChangeSortBy={handleSidebarSortChange}
-              onOpenItem={(postId) => router.push(`/feed/${postId}`)}
-              onLikeItem={(postId) => void handleReact(postId, 'like')}
-              onSaveItem={(postId) => void handleSave(postId)}
-              onTagClick={handleTagFilter}
-            />
-          </div>
         </div>
       </div>
       <FeedDiscoveryDrawer
         open={discoveryOpen}
         onClose={() => setDiscoveryOpen(false)}
         data={sidebarData}
-        loading={sidebarLoading}
+        loading={sidebarQuery.isLoading}
         timeRange={sidebarControls.timeRange}
         contentType={sidebarControls.contentType}
         sortBy={sidebarControls.sortBy}
-        onChangeTimeRange={handleSidebarTimeRangeChange}
-        onChangeContentType={handleSidebarContentTypeChange}
-        onChangeSortBy={handleSidebarSortChange}
+        onChangeTimeRange={setSidebarTimeRange}
+        onChangeContentType={setSidebarContentType}
+        onChangeSortBy={setSidebarSortBy}
         onOpenItem={(postId) => router.push(`/feed/${postId}`)}
         onLikeItem={(postId) => void handleReact(postId, 'like')}
         onSaveItem={(postId) => void handleSave(postId)}
@@ -899,9 +691,9 @@ const SocialFeedPage: React.FC = () => {
           className: 'bg-[var(--ant-color-error)] hover:bg-[var(--ant-color-error-hover)] h-9 font-medium shadow-sm',
         }}
         cancelButtonProps={{ className: 'h-9 font-medium hover:bg-[var(--ant-color-bg-layout)] transition-colors' }}
-        confirmLoading={rejectSubmitting}
+        confirmLoading={rejectMutation.isPending}
         onCancel={closeRejectModal}
-        onOk={() => void handleRejectPublication()}
+        onOk={handleRejectPublication}
         className="rounded-xl overflow-hidden"
       >
         <p className="text-sm font-medium text-[var(--ant-color-text)] mb-2 mt-4">{t('reason_for_rejection')}</p>
@@ -914,11 +706,9 @@ const SocialFeedPage: React.FC = () => {
           className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-error)] hover:border-[var(--ant-color-border-secondary)] text-sm py-2 px-3"
         />
         <div
-          className="text-right mt-1.5"
-          style={{
-            color: rejectReason.length > 450 ? 'var(--ant-color-error)' : 'var(--ant-color-text-description)',
-            fontSize: '12px',
-          }}
+          className={`text-right mt-1.5 text-xs ${
+            rejectReason.length > 450 ? 'text-[var(--ant-color-error)]' : 'text-[var(--ant-color-text-description)]'
+          }`}
         >
           {rejectReason.length}/500
         </div>

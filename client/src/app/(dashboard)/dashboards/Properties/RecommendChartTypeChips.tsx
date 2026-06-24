@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Tag, Space, Typography } from 'antd';
+import { ConfigProvider, Tag, Space, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { recommendChartTypes, type ColumnHint } from '../utils/chartRecommendations';
 import type { WidgetType } from '../stores/useDashboardStore';
@@ -25,18 +25,20 @@ export function RecommendChartTypeChips({ chartType, xField, yFields = [], colum
       <Typography.Text type="secondary" style={{ fontSize: 12, marginRight: 8 }}>
         {t('recommend_chart_type')}
       </Typography.Text>
-      <Space size={4} wrap>
-        {recs.slice(0, 3).map((type) => (
-          <Tag
-            key={type}
-            color="processing"
-            style={{ cursor: 'pointer' }}
-            onClick={() => onSelect(type as WidgetType)}
-          >
-            {t(`chart_type_${type}` as 'line')}
-          </Tag>
-        ))}
-      </Space>
+      <ConfigProvider wave={{ disabled: true }}>
+        <Space size={4} wrap>
+          {recs.slice(0, 3).map((type) => (
+            <Tag
+              key={type}
+              color="processing"
+              style={{ cursor: 'pointer' }}
+              onClick={() => onSelect(type as WidgetType)}
+            >
+              {t(`chart_type_${type}` as 'line')}
+            </Tag>
+          ))}
+        </Space>
+      </ConfigProvider>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { getAffectedWidgetIds } from '../utils/affectedWidgetIds';
 import { mergeFilterConfigs } from '../utils/filterConfigMerge';
 import type { RuntimeFilter } from '../utils/filterOperators';
@@ -26,9 +26,16 @@ export function useDashboardChartRefresh(params: {
   const { widgets, runtimeFilters, globalFilters, pageFilters, refreshCharts, enabled = true, resetKey } = params;
   const prevFiltersRef = useRef<RuntimeFilter[]>([]);
 
-  const combinedFiltersConfig = mergeFilterConfigs(globalFilters, pageFilters, {
-    markPageAsNonGlobal: true,
-  });
+  // Keyed by content, not the (unstable) array references, so this stays a
+  // stable object across re-renders unless the filters actually changed —
+  // otherwise every consumer downstream (fetchFilterOptions, load effects)
+  // sees a "new" value every render and refetches in a tight loop.
+  const filtersContentKey = JSON.stringify({ globalFilters, pageFilters });
+  const combinedFiltersConfig = useMemo(
+    () => mergeFilterConfigs(globalFilters, pageFilters, { markPageAsNonGlobal: true }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed by content, not array refs
+    [filtersContentKey],
+  );
 
   useEffect(() => {
     prevFiltersRef.current = [];

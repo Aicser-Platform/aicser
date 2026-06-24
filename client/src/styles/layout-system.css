@@ -33,8 +33,9 @@
 
 /* ========================================
    SIDEBAR & HEADER GEOMETRY
-   Owned by page-shell.css (.app-navigation-sider, .layout-app-header)
-   and Navigation.css (.app-navigation-brand, .sidebar-nav).
+   Owned by page-shell.css (.app-navigation-sider, .layout-app-header).
+   Sidebar nav is Ant Design <Menu> + Tailwind utility classes in
+   Navigation.tsx/SidebarNav.tsx (no dedicated Navigation.css anymore).
    Do NOT add legacy Ant Menu / sider-children > div:first-child rules here.
    ======================================== */
 

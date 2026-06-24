@@ -45,11 +45,9 @@
   box-shadow: var(--overlay-shadow) !important;
 }
 
-.ant-modal-content {
-  border: var(--overlay-border) !important;
-  box-shadow: var(--overlay-shadow) !important;
-  background: var(--ant-color-bg-elevated) !important;
-}
+/* Modal background/border/shadow are owned by antd's own defaults +
+   the ConfigProvider Modal component tokens (colorBgElevated, colorBorder)
+   in ThemeProvider.tsx — no CSS override here. */
 
 .ant-drawer-content {
   background: var(--ant-color-bg-elevated) !important;

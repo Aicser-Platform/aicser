@@ -26,6 +26,19 @@ function readEffectiveDarkFromStorage(): boolean {
     }
 }
 
+/** Reads the brand color overrides set by the (EE) ThemeCustomizer, if any. */
+function readBrandTokens(isDarkMode: boolean): Record<string, string> {
+    if (typeof window === 'undefined') return {};
+    try {
+        const stored = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY);
+        if (!stored) return {};
+        const parsed = JSON.parse(stored);
+        return parsed.light && parsed.dark ? (isDarkMode ? parsed.dark : parsed.light) : parsed;
+    } catch {
+        return {};
+    }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => readEffectiveDarkFromStorage());
 
@@ -70,6 +83,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         const value = getComputedStyle(document.documentElement).getPropertyValue(varName)?.trim();
         return value || fallback;
     };
+
+    // Brand color overrides from the (EE) ThemeCustomizer — falls back to the Aiser teal.
+    const brandTokens = useMemo(() => readBrandTokens(isDarkMode), [isDarkMode]);
+    const primaryColor = brandTokens['--ant-primary-color'] || '#00c2cb';
+    const primaryColorHover = brandTokens['--ant-primary-color-hover'] || '#00a5af';
+    const primaryColorActive = brandTokens['--ant-primary-color-active'] || '#008b95';
+    const primaryColorOutline =
+        brandTokens['--ant-primary-color-outline'] ||
+        (isDarkMode ? 'rgba(0, 194, 203, 0.22)' : 'rgba(0, 194, 203, 0.14)');
 
     const navigationSiderBg = useMemo(
         () => resolveCSSVar('--color-bg-navigation-sider', isDarkMode ? '#030712' : '#eef1f5'),
@@ -122,20 +144,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // Simplified 5-color system for clear hierarchy
         // All variables are synchronized - no duplicates or conflicts
         
-        // When custom brand theme exists, read it for Layout tokens to avoid flash.
-        // Supports { light, dark } (presets) or flat Record (legacy).
-        let brandTokens: Record<string, string> = {};
-        try {
-            const stored = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                brandTokens = parsed.light && parsed.dark
-                    ? (isDarkMode ? parsed.dark : parsed.light)
-                    : (parsed as Record<string, string>);
-            }
-        } catch {
-            // ignore
-        }
         const themeDefaultNav = isDarkMode ? '#030712' : '#fafafa';
         const themeDefaultSider = isDarkMode ? '#030712' : '#eef1f5';
         const themeDefaultHeader = isDarkMode ? '#10131c' : '#ffffff';
@@ -176,18 +184,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             '--color-text-tertiary': isDarkMode ? '#6e7681' : '#8b949e',
             '--ant-color-text-quaternary': isDarkMode ? '#6b7280' : '#bfbfbf',
             
-            // Primary Color - Consistent (all variants synchronized)
-            '--ant-color-primary': '#00c2cb',
-            '--color-primary': '#00c2cb',
-            '--ant-primary-color': '#00c2cb', // Ant Design alias
-            '--ant-color-primary-hover': '#00a5af',
-            '--color-primary-hover': '#00a5af',
-            '--ant-primary-color-hover': '#00a5af', // Ant Design alias
-            '--ant-color-primary-active': '#008b95',
-            '--color-primary-active': '#008b95',
-            '--ant-primary-color-active': '#008b95', // Ant Design alias
-            '--ant-color-primary-bg': isDarkMode ? 'rgba(0, 194, 203, 0.22)' : 'rgba(0, 194, 203, 0.14)',
-            '--ant-primary-color-outline': isDarkMode ? 'rgba(0, 194, 203, 0.22)' : 'rgba(0, 194, 203, 0.14)',
+            // Primary Color - Consistent (all variants synchronized), driven by brand overrides
+            '--ant-color-primary': primaryColor,
+            '--color-primary': primaryColor,
+            '--ant-primary-color': primaryColor, // Ant Design alias
+            '--ant-color-primary-hover': primaryColorHover,
+            '--color-primary-hover': primaryColorHover,
+            '--ant-primary-color-hover': primaryColorHover, // Ant Design alias
+            '--ant-color-primary-active': primaryColorActive,
+            '--color-primary-active': primaryColorActive,
+            '--ant-primary-color-active': primaryColorActive, // Ant Design alias
+            '--ant-color-primary-bg': primaryColorOutline,
+            '--ant-primary-color-outline': primaryColorOutline,
             
             // Functional Colors - Minimal usage
             '--ant-color-success': '#16a34a',
@@ -216,8 +224,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         deprecatedVars.forEach(key => {
             root.style.removeProperty(key);
         });
-    }, [isDarkMode]);
-    
+    }, [isDarkMode, brandTokens, primaryColor, primaryColorHover, primaryColorActive, primaryColorOutline]);
+
     // Wrapper to ensure persistence on every change
     const setDarkModeWithPersistence = (value: boolean | ((prev: boolean) => boolean)) => {
         setIsDarkMode(prev => {
@@ -238,8 +246,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                 theme={{
                     algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
                     token: {
-                        // Core brand colors
-                        colorPrimary: '#00c2cb',
+                        // Core brand colors - follows the (EE) ThemeCustomizer's brand overrides
+                        colorPrimary: primaryColor,
+                        colorPrimaryHover: primaryColorHover,
+                        colorPrimaryActive: primaryColorActive,
+                        controlOutline: primaryColorOutline,
                         colorSuccess: '#16a34a',
                         colorWarning: '#f97316',
                         colorError: '#dc2626',
@@ -273,20 +284,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         lineHeightHeading2: 1.3,
                         lineHeightHeading3: 1.4,
                         
-                        // Spacing and borders
-                        borderRadius: 6,
-                        borderRadiusLG: 8,
-                        borderRadiusSM: 4,
-                        
+                        // Spacing and borders - shadcn-flavored rounding
+                        borderRadius: 10,
+                        borderRadiusXS: 2,
+                        borderRadiusSM: 6,
+                        borderRadiusLG: 14,
+
                         // Control heights
                         controlHeight: 32,
                         controlHeightLG: 40,
                         controlHeightSM: 24,
-                        
+
                         // Motion
                         motionDurationSlow: '0.3s',
                         motionDurationMid: '0.2s',
                         motionDurationFast: '0.1s',
+
+                        // Flat shadcn-style shadows
+                        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
+                        boxShadowSecondary:
+                            '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
                     },
                     components: {
                         Layout: {
@@ -298,7 +315,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         Menu: {
                             // Menu uses navigation color (matches sidebar/header)
                             itemBg: navigationSiderBg, // 4. Navigation (uses custom value if set)
-                            itemSelectedBg: '#00c2cb', // Primary color
+                            itemSelectedBg: primaryColor, // Primary color (follows brand override)
                             itemSelectedColor: '#ffffff',
                             itemHoverBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
                             itemColor: isDarkMode ? '#e6edf3' : '#24292f', // Text primary
@@ -326,6 +343,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             controlHeightLG: 40,
                             controlHeightSM: 24,
                             fontWeight: 500,
+                            borderRadius: 6,
+                            // Flat shadcn look: no drop shadow on any button variant
+                            primaryShadow: 'none',
+                            defaultShadow: 'none',
+                            dangerShadow: 'none',
+                            defaultColor: isDarkMode ? '#e6edf3' : '#24292f', // Text primary
+                            defaultBg: isDarkMode ? '#161b22' : '#ffffff',
+                            defaultBorderColor: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            defaultHoverColor: isDarkMode ? '#e6edf3' : '#24292f',
+                            defaultHoverBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
+                            defaultHoverBorderColor: isDarkMode ? '#30363d' : '#e1e4e8',
+                            defaultActiveBg: isDarkMode ? '#0d1117' : '#e1e4e8',
+                            defaultActiveBorderColor: isDarkMode ? '#30363d' : '#e1e4e8',
                         },
                         Input: {
                             controlHeight: 32,
@@ -333,12 +363,43 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             controlHeightSM: 24,
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
                             colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            borderRadius: 6,
+                            activeShadow: 'none',
+                            hoverBorderColor: primaryColor,
+                            activeBorderColor: primaryColor,
                         },
                         Select: {
                             controlHeight: 32,
                             controlHeightLG: 40,
                             controlHeightSM: 24,
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
+                            borderRadius: 6,
+                            optionSelectedBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
+                            optionActiveBg: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
+                            optionSelectedFontWeight: 500,
+                        },
+                        Progress: {
+                            defaultColor: primaryColor,
+                            remainingColor: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
+                        },
+                        Switch: {
+                            trackHeight: 24,
+                            trackMinWidth: 44,
+                            innerMinMargin: 4,
+                            innerMaxMargin: 24,
+                        },
+                        Checkbox: {
+                            borderRadiusSM: 4,
+                        },
+                        Slider: {
+                            trackBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
+                            trackHoverBg: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            handleSize: 18,
+                            handleSizeHover: 20,
+                            railSize: 6,
+                        },
+                        ColorPicker: {
+                            borderRadius: 6,
                         },
                         Dropdown: {
                             // Dropdowns use elevated color
@@ -349,6 +410,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             // Modals use elevated color
                             colorBgElevated: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
                             colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            borderRadiusLG: 12,
+                        },
+                        Alert: {
+                            borderRadiusLG: 8,
                         },
                         Drawer: {
                             // Drawers use elevated color

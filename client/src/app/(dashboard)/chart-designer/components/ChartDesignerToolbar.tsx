@@ -42,6 +42,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const [publishTitle, setPublishTitle] = useState('');
   const [publishPreviewMetadata, setPublishPreviewMetadata] = useState<Record<string, unknown> | undefined>();
   const [publishSnapshotPayload, setPublishSnapshotPayload] = useState<Record<string, unknown> | undefined>();
+  const [publishCaptureSelector, setPublishCaptureSelector] = useState<string | undefined>();
   const [preparing, setPreparing] = useState(false);
   const [embedOpen, setEmbedOpen] = useState(false);
   const [embedUrl, setEmbedUrl] = useState('');
@@ -102,6 +103,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
           dashboardId: selectedWidget.dashboardId ? String(selectedWidget.dashboardId) : undefined,
         }) as unknown as Record<string, unknown>,
       );
+      setPublishCaptureSelector(`[data-widget-id="${selectedWidget.id}"]`);
       setPublishOpen(true);
     } catch (error) {
       message.error(formatFeedPublishError(error, t('share_save_required')));
@@ -188,17 +190,20 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
           projectId={projectId}
           organizationId={organizationId}
           modalTitle={t('share_to_feed_modal_title')}
+          captureSelector={publishCaptureSelector}
           onCancel={() => {
             setPublishOpen(false);
             setPublishChartId(undefined);
             setPublishPreviewMetadata(undefined);
             setPublishSnapshotPayload(undefined);
+            setPublishCaptureSelector(undefined);
           }}
           onSuccess={() => {
             setPublishOpen(false);
             setPublishChartId(undefined);
             setPublishPreviewMetadata(undefined);
             setPublishSnapshotPayload(undefined);
+            setPublishCaptureSelector(undefined);
           }}
         />
       )}

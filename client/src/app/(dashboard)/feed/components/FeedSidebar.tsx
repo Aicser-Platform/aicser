@@ -111,7 +111,7 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
   const cardStylesProp = { header: cardHeadStyles, body: cardBodyStyles };
 
   return (
-    <div className="flex flex-col gap-4 w-full sticky top-4 feed-sidebar">
+    <div className="flex flex-col gap-4 w-full sticky top-4">
       {/* Leaderboard Card */}
       <Card
         className={cardStyles}
@@ -231,8 +231,7 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       {showRecommended && (data.recommended ?? []).length > 0 && (
         <Card
           className={cardStyles}
-          headStyle={cardHeadStyles}
-          bodyStyle={cardBodyStyles}
+          styles={cardStylesProp}
           title={<span className="font-medium text-[var(--ant-color-text)]">{t('recommended_for_you')}</span>}
         >
           <List

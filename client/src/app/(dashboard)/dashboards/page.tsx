@@ -37,7 +37,8 @@ import {
   isFeedSnapshotOutdated,
 } from '@/app/(dashboard)/feed/utils/dashboardFeedBridge';
 import { buildDashboardSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
-import { socialFeedService } from '@/services/socialFeedService';
+import { socialFeedService, uploadFeedThumbnail } from '@/services/socialFeedService';
+import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/constants/permissions';
 import { applyPresetWithScaffolds } from './utils/layoutScaffolds';
@@ -222,10 +223,23 @@ export default function NewDashboardStudio() {
         pageFilters: filterCtx.pageFiltersConfig,
         pages: filterCtx.pages.map((p) => ({ id: p.id, name: p.name })),
       });
+      // Best-effort thumbnail re-capture — never blocks the snapshot update;
+      // a missing thumbnail just leaves the previous one in place.
+      let thumbnailUrl: string | undefined;
+      const screenshot = await captureElementScreenshot('.dashboard-container', {
+        toggleClassName: 'dashboard-export-light',
+      });
+      if (screenshot) {
+        thumbnailUrl = (await uploadFeedThumbnail(screenshot)) ?? undefined;
+      } else {
+        message.warning(td('feed_snapshot_thumbnail_failed'));
+      }
+
       const result = await socialFeedService.updatePublicationSnapshot(linkedFeedPostId, {
         snapshot_payload: snapshotPayload as unknown as Record<string, unknown>,
         title: activeDashboard.name,
         description: activeDashboard.description,
+        thumbnail_url: thumbnailUrl,
       });
       await useDashboardStore.getState().updateDashboardMeta(activeDashboardId, {
         config: {

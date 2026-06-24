@@ -1104,6 +1104,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         organizationId={resolvedOrganizationId || undefined}
         projectId={resolvedProjectId || undefined}
         modalTitle={t('publish_dashboard_to_feed')}
+        captureSelector=".dashboard-container"
         onCancel={() => setIsPublishOpen(false)}
         onSuccess={handlePublishSuccess}
       />

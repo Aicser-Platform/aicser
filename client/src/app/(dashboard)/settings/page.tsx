@@ -20,7 +20,6 @@ import { Tooltip } from 'antd';
 import {
   UserOutlined,
   SecurityScanOutlined,
-  BellOutlined,
   KeyOutlined,
   TeamOutlined,
   DatabaseOutlined,
@@ -45,12 +44,10 @@ import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import PricingModal from '@/components/PricingModal';
 import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
-import './settings-page.css';
 
 // ── Tab components ─────────────────────────────────────────────────────────────
 import { ProfileTab } from './components/ProfileTab';
 import { SecurityTab } from './components/SecurityTab';
-import { NotificationsTab } from './components/NotificationsTab';
 import { ApiKeysTab } from './components/ApiKeysTab';
 import { DataSourcesTab } from './components/DataSourcesTab';
 import { GeneralTab } from './components/GeneralTab';
@@ -138,13 +135,6 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <LockOutlined />,
         component: SecurityTab,
         description: '2FA, sessions, password',
-      },
-      {
-        key: 'notifications',
-        label: 'Notifications',
-        icon: <BellOutlined />,
-        component: NotificationsTab,
-        description: 'Email and push alerts',
       },
     ],
   },
@@ -366,11 +356,7 @@ const SettingsPage: React.FC = () => {
                         : 'bg-transparent font-normal text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-text)]',
                     ].join(' ')}
                   >
-                    {/* Active bar — matches main sidebar: border-radius 0 2px 2px 0, height 18px */}
-                    {isActive && (
-                      <span className="absolute left-0 top-1/2 h-[18px] w-[3px] -translate-y-1/2 rounded-r-sm bg-[var(--ant-color-primary)]" />
-                    )}
-                    <span className={`shrink-0 text-sm ${isActive ? 'ml-1' : ''}`}>{item.icon}</span>
+                    <span className="shrink-0 text-sm">{item.icon}</span>
                     <span className="leading-[1.3]">{item.label}</span>
                   </button>
                 </Tooltip>

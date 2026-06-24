@@ -40,7 +40,6 @@ function setStoredLayoutSidebarCollapsed(collapsed: boolean): void {
 }
 import { useTranslations } from 'next-intl';
 import { OnboardingBootstrap } from '@/components/onboarding/OnboardingBootstrap';
-import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
 import { CE_ONBOARDING_AWAITING_DATA, CE_ONBOARDING_DATA_CONNECTED } from '@/components/onboarding/CeOnboardingModal';
 
 const { useBreakpoint } = Grid;
@@ -116,7 +115,6 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
       }}
       hasSider={!isBreakpoint}
     >
-      <SkipToContentLink />
       {!isBreakpoint && (
         <Navigation
           collapsed={collapsed}

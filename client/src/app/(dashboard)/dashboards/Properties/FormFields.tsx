@@ -153,6 +153,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
     <SectionLabel label={label} required={required} hint={hint} />
     <Select
       style={{ width: '100%' }}
+      popupClassName="properties-panel-dropdown"
       value={value}
       onChange={onChange}
       options={options}
@@ -420,6 +421,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
         {!isLimitReached && (
           <Select
             style={{ width: '100%', marginTop: metrics.length > 0 ? 4 : 0 }}
+            popupClassName="properties-panel-dropdown"
             placeholder={placeholder}
             loading={isLoading}
             onChange={handleAddField}
@@ -533,6 +535,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Column</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={columnOptions.map(opt => {
               const isNumeric = (opt.type || '').toLowerCase().includes('int') || 
@@ -561,6 +564,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={FILTER_OPERATORS}
             value={tempFilter.operator}
@@ -771,6 +775,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Metric</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={metricOptions.map(opt => ({
               label: opt.label,
@@ -788,6 +793,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={[
               { label: 'Equal (=)', value: '=' },
@@ -1118,6 +1124,7 @@ export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({
       <SectionLabel label={label} />
       <Select
         style={{ width: '100%' }}
+        popupClassName="properties-panel-dropdown"
         value={selectValue}
         onChange={(val) => {
           if (onUpdateChartOptions) {

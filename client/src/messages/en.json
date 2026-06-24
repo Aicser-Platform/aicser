@@ -2740,6 +2740,7 @@
     "monitor_kpi_success": "Alert rule created — open Alerts to configure notifications",
     "monitor_kpi_no_sql": "Connect a table and metric before creating a monitor",
     "feed_snapshot_updated": "Feed snapshot updated",
+    "feed_snapshot_thumbnail_failed": "Snapshot updated, but the thumbnail couldn't be captured",
     "untitled_chart": "Untitled chart",
     "preset_two_col": "Two columns",
     "preset_analytics": "Analytics view",

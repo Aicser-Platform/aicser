@@ -156,48 +156,48 @@
 }
 
 /* Switch customization to use primary color */
-.ant-switch-checked {
+.properties-panel .ant-switch-checked {
   background-color: var(--studio-primary) !important;
 }
 
 /* Segmented Control Overrides */
-.ant-segmented {
+.properties-panel .ant-segmented {
   background: rgba(0, 0, 0, 0.04) !important;
   padding: 2px !important;
   border-radius: 6px !important;
 }
 
-.dark .ant-segmented {
+.dark .properties-panel .ant-segmented {
   background: rgba(255, 255, 255, 0.08) !important;
 }
 
-.ant-segmented-thumb {
+.properties-panel .ant-segmented-thumb {
   background: #ffffff !important;
   box-shadow: 0 1px 4px rgba(31, 35, 41, 0.08) !important;
   border-radius: 4px !important;
 }
 
-.dark .ant-segmented-thumb {
+.dark .properties-panel .ant-segmented-thumb {
   background: rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
-.ant-segmented-item {
+.properties-panel .ant-segmented-item {
   transition: all 0.2s !important;
 }
 
-.ant-segmented-item-label {
+.properties-panel .ant-segmented-item-label {
   font-size: 12px !important;
   color: var(--studio-text-secondary) !important;
   padding: 0 8px !important;
 }
 
-.ant-segmented-item-selected {
+.properties-panel .ant-segmented-item-selected {
   background: #ffffff !important; /* Ensure the selected item area is white */
   border-radius: 4px !important;
 }
 
-.ant-segmented-item-selected .ant-segmented-item-label {
+.properties-panel .ant-segmented-item-selected .ant-segmented-item-label {
   color: var(--studio-primary) !important;
   font-weight: 500 !important;
 }
@@ -214,7 +214,7 @@
   color: var(--studio-text-main) !important;
 }
 
-.ant-checkbox-checked .ant-checkbox-inner {
+.properties-panel .ant-checkbox-checked .ant-checkbox-inner {
   background-color: var(--studio-primary) !important;
   border-color: var(--studio-primary) !important;
 }
@@ -238,9 +238,9 @@
   margin-top: 4px;
 }
 
-.ant-select-selector,
-.ant-input,
-.ant-input-number {
+.properties-panel .ant-select-selector,
+.properties-panel .ant-input,
+.properties-panel .ant-input-number {
   border-color: var(--studio-border) !important;
   border-radius: 6px !important;
   background: #ffffff !important;
@@ -252,11 +252,11 @@
   align-items: center !important;
 }
 
-.ant-select-selector,
-.ant-input,
-.ant-input-number,
-.ant-input-number-input-wrap,
-.ant-input-number-input {
+.properties-panel .ant-select-selector,
+.properties-panel .ant-input,
+.properties-panel .ant-input-number,
+.properties-panel .ant-input-number-input-wrap,
+.properties-panel .ant-input-number-input {
   border-radius: 6px !important;
   font-size: 12px !important;
   height: 28px !important;
@@ -264,79 +264,79 @@
   align-items: center !important;
 }
 
-.ant-select-selection-item,
-.ant-select-selection-placeholder {
+.properties-panel .ant-select-selection-item,
+.properties-panel .ant-select-selection-placeholder {
   line-height: 28px !important;
   font-size: 12px !important;
 }
 
-.ant-input-number {
+.properties-panel .ant-input-number {
   padding: 0 !important;
 }
 
-.ant-input-number-input {
+.properties-panel .ant-input-number-input {
   width: 100% !important;
   padding: 0 10px !important;
 }
 
-.dark .ant-select-selector,
-.dark .ant-input,
-.dark .ant-input-number {
+.dark .properties-panel .ant-select-selector,
+.dark .properties-panel .ant-input,
+.dark .properties-panel .ant-input-number {
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   color: var(--studio-text-main) !important;
 }
 
-.ant-select-focused .ant-select-selector,
-.ant-input:focus {
+.properties-panel .ant-select-focused .ant-select-selector,
+.properties-panel .ant-input:focus {
   border-color: var(--studio-primary) !important;
   box-shadow: 0 0 0 2px var(--studio-primary-light) !important;
   background: #ffffff !important;
 }
 
-.dark .ant-select-focused .ant-select-selector,
-.dark .ant-input:focus {
+.dark .properties-panel .ant-select-focused .ant-select-selector,
+.dark .properties-panel .ant-input:focus {
   background: rgba(255, 255, 255, 0.12) !important;
   border-color: var(--studio-primary) !important;
   box-shadow: 0 0 0 2px rgba(0, 194, 203, 0.2) !important;
 }
 
 /* Select Dropdown styling */
-.ant-select-item-option-selected {
+.properties-panel-dropdown .ant-select-item-option-selected {
   background-color: #ffffff !important; /* White background for selected option */
   color: var(--studio-primary) !important; /* Primary text for selected option */
   font-weight: 500 !important;
 }
 
-.dark .ant-select-item-option-selected {
+.dark .properties-panel-dropdown .ant-select-item-option-selected {
   background-color: rgba(0, 194, 203, 0.15) !important;
   color: var(--studio-primary) !important;
 }
 
-.ant-select-item-option-active {
+.properties-panel-dropdown .ant-select-item-option-active {
   background-color: var(--studio-primary-light) !important;
 }
 
-.dark .ant-select-item-option-active {
+.dark .properties-panel-dropdown .ant-select-item-option-active {
   background-color: rgba(0, 194, 203, 0.1) !important;
 }
 
 /* Input placeholder text in dark mode */
-.dark .ant-input::placeholder {
+.dark .properties-panel .ant-input::placeholder {
   color: rgba(255, 255, 255, 0.45) !important;
 }
 
-.dark .ant-select-item {
+.dark .properties-panel-dropdown .ant-select-item {
   color: var(--studio-text-main) !important;
 }
 
-.dark .ant-input-number {
+.dark .properties-panel .ant-input-number {
   background: rgba(255, 255, 255, 0.08) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   color: var(--studio-text-main) !important;
 }
 
-.dark .ant-input-number:focus {
+.dark .properties-panel .ant-input-number:focus {
   background: rgba(255, 255, 255, 0.12) !important;
   border-color: var(--studio-primary) !important;
 }
@@ -658,79 +658,79 @@
   color: var(--studio-text-secondary);
 }
 
-/* Modal and Tabs Overrides for Dashboard Studio */
-.ant-modal-content {
+/* Modal Overrides for the panel's Publish-to-Feed modal */
+.feed-publish-modal .ant-modal-content {
   background: var(--studio-card-bg) !important;
   border: 1px solid var(--studio-border) !important;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2) !important;
 }
 
-.ant-modal-header {
+.feed-publish-modal .ant-modal-header {
   background: transparent !important;
   padding: 16px 24px 0 24px !important;
   border-bottom: none !important;
 }
 
-.ant-modal-title {
+.feed-publish-modal .ant-modal-title {
   color: var(--studio-text-main) !important;
   font-size: 16px !important;
   font-weight: 600 !important;
 }
 
-.ant-modal-close {
+.feed-publish-modal .ant-modal-close {
   color: var(--studio-text-secondary) !important;
 }
 
-.ant-modal-footer {
+.feed-publish-modal .ant-modal-footer {
   padding: 0 24px 16px 24px !important;
   border-top: none !important;
 }
 
-.ant-tabs-nav::before {
+.properties-panel .ant-tabs-nav::before {
   border-bottom: 1px solid var(--studio-border) !important;
 }
 
-.ant-tabs-tab-btn {
+.properties-panel .ant-tabs-tab-btn {
   color: var(--studio-text-secondary) !important;
   font-size: 13px !important;
 }
 
-.ant-tabs-tab-active .ant-tabs-tab-btn {
+.properties-panel .ant-tabs-tab-active .ant-tabs-tab-btn {
   color: var(--studio-primary) !important;
   font-weight: 600 !important;
 }
 
-.ant-tabs-ink-bar {
+.properties-panel .ant-tabs-ink-bar {
   background: var(--studio-primary) !important;
 }
 
 /* Filter Dropdown Styling (Teal Accents) */
-.ant-select-dropdown {
+.properties-panel-dropdown.ant-select-dropdown {
   background-color: var(--studio-card-bg) !important;
   border: 1px solid var(--studio-border) !important;
   padding: 4px !important;
 }
 
-.ant-select-item-option-selected {
+.properties-panel-dropdown .ant-select-item-option-selected {
   background-color: rgba(0, 194, 203, 0.2) !important;
   color: var(--studio-primary) !important;
 }
 
-.ant-select-item-option-active:not(.ant-select-item-option-selected) {
+.properties-panel-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected) {
   background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
-.dark .ant-select-item-option-active:not(.ant-select-item-option-selected) {
+.dark .properties-panel-dropdown .ant-select-item-option-active:not(.ant-select-item-option-selected) {
   background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
-.ant-select-focused .ant-select-selector {
+.properties-panel .ant-select-focused .ant-select-selector {
   border-color: var(--studio-primary) !important;
   box-shadow: 0 0 0 2px rgba(0, 194, 203, 0.1) !important;
 }
 
 /* Custom icon for selected state in dropdown */
-.ant-select-item-option-selected .ant-select-item-option-state {
+.properties-panel-dropdown .ant-select-item-option-selected .ant-select-item-option-state {
   color: var(--studio-primary) !important;
 }
 

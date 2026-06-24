@@ -1,118 +1,132 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Card, Form, Input, Button, message, Typography, Empty, Tag } from 'antd';
-import { SaveOutlined, FolderOutlined, ProjectOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, Empty, Skeleton, Space, Typography, message } from 'antd';
+import { AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { useQueryClient, useQueries } from '@tanstack/react-query';
+import { useProjects } from '@/hooks/useProjects';
 import { useProjectStore } from '@/stores/useProjectStore';
-import { useUpdateProject } from '@/hooks/useProjects';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import { useConversationStore } from '@/stores/useConversationStore';
+import { dataSourceKeys } from '@/hooks/dataSourceKeys';
+import { listProjectMembers } from '@/api/projects';
+import { listDataSources } from '@/api/dataSources';
+import { ProjectCard, type ProjectCardStats } from '@/components/Project/ProjectCard';
+import type { Project } from '@/types/project';
 import type { TabComponentProps } from '../page';
 
-const { Text } = Typography;
+const { Title, Text } = Typography;
+
+const SKELETON_COUNT = 6;
+const STATS_STALE_TIME = 5 * 60 * 1000;
+
+const projectStatsQueryKey = (projectId: string) => ['project-stats', projectId] as const;
+
+const fetchProjectStats = async (projectId: string): Promise<ProjectCardStats> => {
+  const [membersResult, dataSourcesResult] = await Promise.allSettled([
+    listProjectMembers(projectId),
+    listDataSources(projectId),
+  ]);
+  return {
+    members: membersResult.status === 'fulfilled' ? membersResult.value.total : 'error',
+    dataSources: dataSourcesResult.status === 'fulfilled' ? dataSourcesResult.value.data_sources.length : 'error',
+  };
+};
 
 export const ProjectTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
-  const t = useTranslations('settings');
-  const [form] = Form.useForm();
-  const { currentProject } = useProjectStore();
-  const updateProjectMutation = useUpdateProject();
-  const [saving, setSaving] = useState(false);
+  const t = useTranslations('header');
+  const queryClient = useQueryClient();
 
+  const organizationId = useOrganizationStore((s) => s.currentOrganization?.id);
+  const { currentProject, selectProject } = useProjectStore();
+  const { projects, isLoading } = useProjects(organizationId);
+
+  const [layout, setLayout] = useState<'grid' | 'list'>('grid');
+
+  // No primary action for this tab — clear whatever the previous tab registered.
   useEffect(() => {
-    if (currentProject) {
-      form.setFieldsValue({
-        name: currentProject.name || '',
-        description: (currentProject as any).description || '',
-      });
-    }
-  }, [currentProject, form]);
+    onSetAction?.(null);
+  }, [onSetAction]);
 
-  // Register Save button in page header
-  useEffect(() => {
-    if (!currentProject) { onSetAction?.(null); return; }
-    onSetAction?.(
-      <Button type="primary" icon={<SaveOutlined />} onClick={() => form.submit()} loading={saving}>
-        {t('save_changes')}
-      </Button>
-    );
-  }, [saving, currentProject, onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  const statsQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: projectStatsQueryKey(project.id),
+      queryFn: () => fetchProjectStats(project.id),
+      staleTime: STATS_STALE_TIME,
+    })),
+  });
 
-  const onFinish = async (values: any) => {
-    if (!currentProject?.id) return;
-    setSaving(true);
-    try {
-      await updateProjectMutation.mutateAsync({ id: currentProject.id, data: values });
-      message.success('Project updated.');
-    } catch {
-      message.error('Failed to update project.');
-    } finally {
-      setSaving(false);
-    }
+  const handleSelectProject = (project: Project) => {
+    message.loading({ content: t('switching_project'), key: 'project-switch' });
+    selectProject(project);
+    useDataSourceStore.getState().select(null);
+    void queryClient.invalidateQueries({ queryKey: dataSourceKeys.all });
+    void useConversationStore.getState().loadConversations(String(project.id));
+    message.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
   };
 
-  if (!currentProject) {
+  const skeletonCards = useMemo(
+    () =>
+      Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+        <Skeleton key={i} active paragraph={{ rows: 2 }} className="rounded-xl border border-[var(--ant-color-border)] p-4" />
+      )),
+    []
+  );
+
+  const cards = projects.map((project, i) => {
+    const query = statsQueries[i];
+    const stats: ProjectCardStats = query?.data ?? { members: 'error', dataSources: 'error' };
     return (
-      <Empty
-        image={<FolderOutlined style={{ fontSize: 48, color: 'var(--ant-color-text-tertiary)' }} />}
-        description={
-          <Text type="secondary">No project selected. Choose a project from the header to manage its settings.</Text>
-        }
-        style={{ padding: '48px 0' }}
+      <ProjectCard
+        key={project.id}
+        project={project}
+        layout={layout}
+        isActive={String(currentProject?.id) === String(project.id)}
+        stats={stats}
+        loadingStats={query?.isLoading ?? false}
+        onSelect={handleSelectProject}
       />
     );
-  }
+  });
 
   return (
-    <Card
-      size="small"
-      bordered={false}
-      style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-    >
-      {/* Project header — same pattern as Profile/Organization */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 14,
-        marginBottom: 24,
-        paddingBottom: 20,
-        borderBottom: '1px solid var(--ant-color-border-secondary)',
-      }}>
-        <div style={{
-          width: 64,
-          height: 64,
-          borderRadius: 10,
-          background: 'var(--ant-color-primary-bg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '2px solid var(--ant-color-border)',
-          flexShrink: 0,
-        }}>
-          <ProjectOutlined style={{ fontSize: 28, color: 'var(--ant-color-primary)' }} />
-        </div>
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ant-color-text)', lineHeight: 1.3 }}>
-            {currentProject.name}
-          </div>
-          <div style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>
-              ID: {String(currentProject.id).slice(0, 8)}…
-            </Tag>
-          </div>
+          <Title level={4} style={{ marginBottom: 4 }}>
+            Projects
+          </Title>
+          <Text type="secondary">All projects in this organization</Text>
         </div>
+        <Space.Compact>
+          <Button
+            type={layout === 'grid' ? 'primary' : 'default'}
+            icon={<AppstoreOutlined />}
+            onClick={() => setLayout('grid')}
+          />
+          <Button
+            type={layout === 'list' ? 'primary' : 'default'}
+            icon={<BarsOutlined />}
+            onClick={() => setLayout('list')}
+          />
+        </Space.Compact>
       </div>
 
-      <Form form={form} layout="vertical" onFinish={onFinish}>
-        <Form.Item
-          name="name"
-          label="Project name"
-          rules={[{ required: true, message: 'Project name is required' }]}
-        >
-          <Input placeholder="My Project" />
-        </Form.Item>
-        <Form.Item name="description" label="Description">
-          <Input.TextArea rows={3} placeholder="What this project is for…" />
-        </Form.Item>
-      </Form>
-    </Card>
+      {isLoading ? (
+        layout === 'grid' ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{skeletonCards}</div>
+        ) : (
+          <div className="flex flex-col gap-2">{skeletonCards}</div>
+        )
+      ) : projects.length === 0 ? (
+        <Empty description="No projects in this organization" style={{ padding: '48px 0' }} />
+      ) : layout === 'grid' ? (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{cards}</div>
+      ) : (
+        <div className="flex flex-col gap-2">{cards}</div>
+      )}
+    </div>
   );
 };

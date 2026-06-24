@@ -126,6 +126,7 @@ class FeedAssetPayload(BaseModel):
     messageId: Optional[str] = None
     snapshotPayload: Optional[Dict[str, Any]] = None
     widgetCount: Optional[int] = None
+    thumbnailUrl: Optional[str] = None
 
 
 class FeedSnapshotInfo(BaseModel):
@@ -410,6 +411,7 @@ class PublishAssetRequest(BaseModel):
     preview_metadata: Optional[Dict[str, Any]] = None
     render_mode: FeedRenderMode = FeedRenderMode.snapshot
     snapshot_payload: Optional[Dict[str, Any]] = None
+    thumbnail_url: Optional[str] = None
 
 
 class PublicationLookupResponse(BaseModel):
@@ -471,6 +473,7 @@ class UpdateSnapshotRequest(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     preview_metadata: Optional[Dict[str, Any]] = None
+    thumbnail_url: Optional[str] = None
 
 
 class PublishAssetResponse(BaseModel):
@@ -493,6 +496,7 @@ class PublishFromChatRequest(BaseModel):
     preview_metadata: Optional[Dict[str, Any]] = None
     render_mode: FeedRenderMode = FeedRenderMode.snapshot
     snapshot_payload: Optional[Dict[str, Any]] = None
+    thumbnail_url: Optional[str] = None
     requires_login: bool = False
     publication_mode: PublicationMode = PublicationMode.update
 
