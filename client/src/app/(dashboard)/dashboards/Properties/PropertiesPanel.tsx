@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Tabs, Input, Select, Checkbox, Button, Tooltip } from 'antd';
+import { Tabs, Input, Select, Button, Tooltip } from 'antd';
 import {
   LineChartOutlined,
   BarChartOutlined,
@@ -27,7 +27,7 @@ interface PropertiesPanelProps {
   removeWidget: (id: string) => void;
   isCollapsed: boolean;
   isDesigner?: boolean;
-  // Dashboard pages — passed through to ChartSpecificFields (advanced tab)
+  // Dashboard pages — passed through to ChartSpecificFields (analytics tab)
   dashboardPages?: { id: string; name: string }[];
   // Filters tab props
   globalFiltersConfig?: DashboardFilter[];
@@ -47,8 +47,6 @@ const CHART_TYPES: { type: string; icon: React.ReactNode; label: string }[] = [
   { type: 'scatter', icon: <RadarChartOutlined />, label: 'Scatter' },
   { type: 'heatmap', icon: <HeatMapOutlined />, label: 'Heatmap' },
 ];
-
-const DEFAULT_PALETTE = ['#00c2cb', '#5b8ff9', '#5ad8a6', '#f6bd16', '#e8684a'];
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedWidget,
@@ -72,7 +70,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     isLoading,
     updateWidgetRoot,
     updateChartQuery,
-    applyWidgetChanges,
     applySlicerChanges,
     schemaLoading,
   } = useWidgetProperties({ selectedWidget, selectedWidgetId, widgets, setWidgets, isDesigner });
@@ -90,12 +87,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   // Local pending state — committed on Apply Changes
   const [pendingTitle, setPendingTitle] = useState<string>('');
   const [pendingChartType, setPendingChartType] = useState<string>('bar');
-  const [pendingXAxis, setPendingXAxis] = useState<string | undefined>(undefined);
-  const [pendingYAxis, setPendingYAxis] = useState<string | undefined>(undefined);
-  const [pendingYAggregation, setPendingYAggregation] = useState<string>('count');
-  const [pendingShowLabels, setPendingShowLabels] = useState(false);
-  const [pendingShowGridlines, setPendingShowGridlines] = useState(true);
-  const [pendingColorPalette, setPendingColorPalette] = useState<string>('');
   // Slicer-specific pending state
   const [pendingSlicerField, setPendingSlicerField] = useState<string | undefined>(undefined);
   const [pendingSlicerMode, setPendingSlicerMode] = useState<string>('single');
@@ -107,13 +98,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     if (!selectedWidget) return;
     setPendingTitle(selectedWidget.title || '');
     setPendingChartType(selectedWidget.chartType || 'bar');
-    setPendingXAxis(selectedWidget.chartQuery?.x);
-    // Prefer yMetrics[0] as the source of truth; fall back to legacy y field
-    setPendingYAxis(selectedWidget.chartQuery?.yMetrics?.[0]?.field || selectedWidget.chartQuery?.y);
-    setPendingYAggregation(selectedWidget.chartQuery?.yMetrics?.[0]?.aggregation || 'count');
-    setPendingShowLabels(selectedWidget.chartOptions?.showDataLabels ?? false);
-    setPendingShowGridlines(selectedWidget.chartOptions?.showGridlines ?? true);
-    setPendingColorPalette(selectedWidget.chartOptions?.colorPalette || DEFAULT_PALETTE[0]);
     // Slicer
     setPendingSlicerField((selectedWidget.chartQuery as any)?.field || selectedWidget.chartQuery?.x);
     setPendingSlicerMode((selectedWidget.chartQuery as any)?.mode || 'single');
@@ -132,30 +116,20 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       return;
     }
 
-    // Chart widgets: single atomic update — avoids stale-closure overwrite where
-    // calling updateChartQuery('x') then updateChartQuery('y') separately caused
-    // the second call to read stale chartQuery and lose the x value.
-    applyWidgetChanges({
-      title: pendingTitle,
-      chartType: pendingChartType,
-      x: pendingXAxis,
-      y: pendingYAxis,
-      yAggregation: pendingYAggregation,
-      chartOptions: {
-        ...(selectedWidget.chartOptions || {}),
-        showDataLabels: pendingShowLabels,
-        showGridlines: pendingShowGridlines,
-        colorPalette: pendingColorPalette,
-      },
-    });
+    // Only commit title (chart type is applied immediately on click)
+    if (pendingTitle !== selectedWidget.title) {
+      updateWidgetRoot('title', pendingTitle);
+    }
   };
 
-  const generalTab = (
+  // ── Build tab ────────────────────────────────────────────────────────────────
+  const buildTab = (
     <div className="properties-panel-body">
       {!hasWidget ? (
         <div className="pp-empty-state">Select a widget to edit its properties</div>
       ) : (
         <>
+          {/* Title */}
           <div>
             <div className="pp-section-label">Widget Title</div>
             <Input
@@ -258,7 +232,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     <Tooltip key={type} title={label} placement="top">
                       <button
                         className={`pp-chart-type-btn${pendingChartType === type ? ' active' : ''}`}
-                        onClick={() => setPendingChartType(type)}
+                        onClick={() => {
+                          setPendingChartType(type);
+                          // Commit chart type immediately (no data change, just visual)
+                          updateWidgetRoot('chartType', type);
+                        }}
                         aria-label={label}
                       >
                         {icon}
@@ -268,92 +246,20 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
               </div>
 
-              <div>
-                <div className="pp-section-label">X-Axis</div>
-                <Select
-                  size="small"
-                  style={{ width: '100%' }}
-                  value={pendingXAxis}
-                  onChange={setPendingXAxis}
-                  options={columnOptions}
-                  placeholder="Select column"
-                  loading={schemaLoading}
-                  allowClear
-                  showSearch
-                  filterOption={(input, opt) =>
-                    String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                />
-              </div>
-
-              <div>
-                <div className="pp-section-label">Y-Axis (Values)</div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <Select
-                    size="small"
-                    style={{ flex: 1, minWidth: 0 }}
-                    value={pendingYAxis}
-                    onChange={setPendingYAxis}
-                    options={columnOptions}
-                    placeholder="Select column"
-                    loading={schemaLoading}
-                    allowClear
-                    showSearch
-                    filterOption={(input, opt) =>
-                      String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                  />
-                  <Select
-                    size="small"
-                    style={{ width: 90, flexShrink: 0 }}
-                    value={pendingYAggregation}
-                    onChange={setPendingYAggregation}
-                    options={[
-                      { label: 'Count', value: 'count' },
-                      { label: 'Sum', value: 'sum' },
-                      { label: 'Avg', value: 'avg' },
-                      { label: 'Min', value: 'min' },
-                      { label: 'Max', value: 'max' },
-                      { label: 'None', value: 'none' },
-                    ]}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="pp-section-label">Visual Options</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <Checkbox
-                    checked={pendingShowLabels}
-                    onChange={(e) => setPendingShowLabels(e.target.checked)}
-                  >
-                    Show Data Labels
-                  </Checkbox>
-                  <Checkbox
-                    checked={pendingShowGridlines}
-                    onChange={(e) => setPendingShowGridlines(e.target.checked)}
-                  >
-                    Show Gridlines
-                  </Checkbox>
-                </div>
-              </div>
-
-              <div>
-                <div className="pp-section-label">Color Palette</div>
-                <div className="pp-palette-row">
-                  {DEFAULT_PALETTE.map((color) => (
-                    <div
-                      key={color}
-                      className={`pp-palette-swatch${pendingColorPalette === color ? ' active' : ''}`}
-                      style={{ background: color }}
-                      title={color}
-                      onClick={() => setPendingColorPalette(color)}
-                      role="button"
-                      tabIndex={0}
-                    />
-                  ))}
-                </div>
-              </div>
+              {/* Full field mapping — renders the correct fields for each chart type */}
+              <ChartSpecificFields
+                chartType={selectedWidget.chartType || pendingChartType || 'bar'}
+                chartQuery={selectedWidget.chartQuery || {}}
+                selectedWidget={selectedWidget}
+                selectedTableColumns={selectedTableColumns || []}
+                isLoading={schemaLoading}
+                onUpdateChartQuery={updateChartQuery}
+                chartOptions={selectedWidget.chartOptions || {}}
+                onUpdateChartOption={(key, val) =>
+                  updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
+                }
+                mode="mapping"
+              />
             </>
           )}
         </>
@@ -361,6 +267,63 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     </div>
   );
 
+  // ── Format tab ───────────────────────────────────────────────────────────────
+  const formatTab = (
+    <div className="properties-panel-body">
+      {!hasWidget ? (
+        <div className="pp-empty-state">Select a widget to edit its properties</div>
+      ) : isSlicer ? (
+        <div style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 12, padding: 8 }}>
+          Format options not available for slicers.
+        </div>
+      ) : (
+        <>
+          <ChartSpecificFields
+            chartType={selectedWidget.chartType || 'bar'}
+            chartQuery={selectedWidget.chartQuery || {}}
+            selectedWidget={selectedWidget}
+            selectedTableColumns={selectedTableColumns || []}
+            isLoading={schemaLoading}
+            onUpdateChartQuery={updateChartQuery}
+            chartOptions={selectedWidget.chartOptions || {}}
+            onUpdateChartOption={(key, val) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
+            }
+            onUpdateChartOptions={(updates) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
+            }
+            mode="customize"
+          />
+          <ChartSpecificFields
+            chartType={selectedWidget.chartType || 'bar'}
+            chartQuery={selectedWidget.chartQuery || {}}
+            selectedWidget={selectedWidget}
+            selectedTableColumns={selectedTableColumns || []}
+            isLoading={schemaLoading}
+            onUpdateChartQuery={updateChartQuery}
+            chartOptions={selectedWidget.chartOptions || {}}
+            onUpdateChartOption={(key, val) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
+            }
+            onUpdateChartOptions={(updates) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
+            }
+            mode="colors"
+          />
+          <ChartOptions
+            chartType={selectedWidget.chartType || 'bar'}
+            chartOptions={selectedWidget.chartOptions || {}}
+            chartQuery={selectedWidget.chartQuery || {}}
+            onUpdateChartOption={(key, value) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: value })
+            }
+          />
+        </>
+      )}
+    </div>
+  );
+
+  // ── Filters tab — unchanged ──────────────────────────────────────────────────
   const allFilters = [...globalFiltersConfig, ...pageFiltersConfig];
 
   const filtersTab = (
@@ -432,35 +395,28 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     </div>
   );
 
-  const advancedTab = (
+  // ── Analytics tab ────────────────────────────────────────────────────────────
+  const analyticsTab = (
     <div className="properties-panel-body">
-      {!hasWidget ? (
-        <div className="pp-empty-state">Select a widget to edit its properties</div>
+      {!hasWidget || isSlicer ? (
+        <div className="pp-empty-state">
+          {isSlicer ? 'Analytics not applicable to slicers.' : 'Select a widget to edit its properties'}
+        </div>
       ) : (
-        <>
-          <ChartOptions
-            chartType={selectedWidget.chartType || 'bar'}
-            chartOptions={selectedWidget.chartOptions || {}}
-            chartQuery={selectedWidget.chartQuery || {}}
-            onUpdateChartOption={(key: string, value: boolean) => {
-              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: value });
-            }}
-          />
-          <ChartSpecificFields
-            chartType={selectedWidget.chartType || 'bar'}
-            chartQuery={selectedWidget.chartQuery || {}}
-            selectedWidget={selectedWidget}
-            selectedTableColumns={selectedTableColumns || []}
-            isLoading={schemaLoading}
-            onUpdateChartQuery={updateChartQuery}
-            chartOptions={selectedWidget.chartOptions || {}}
-            onUpdateChartOption={(key: string, value: unknown) => {
-              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: value });
-            }}
-            mode="advanced"
-            dashboardPages={dashboardPages}
-          />
-        </>
+        <ChartSpecificFields
+          chartType={selectedWidget.chartType || 'bar'}
+          chartQuery={selectedWidget.chartQuery || {}}
+          selectedWidget={selectedWidget}
+          selectedTableColumns={selectedTableColumns || []}
+          isLoading={schemaLoading}
+          onUpdateChartQuery={updateChartQuery}
+          chartOptions={selectedWidget.chartOptions || {}}
+          onUpdateChartOption={(key, val) =>
+            updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
+          }
+          mode="advanced"
+          dashboardPages={dashboardPages}
+        />
       )}
     </div>
   );
@@ -473,9 +429,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         className="properties-panel-tabs"
         size="small"
         items={[
-          { key: 'general', label: 'General', children: generalTab },
-          { key: 'filters', label: 'Filters', children: filtersTab },
-          { key: 'advanced', label: 'Advanced', children: advancedTab },
+          { key: 'build',     label: 'Build',     children: buildTab },
+          { key: 'format',    label: 'Format',    children: formatTab },
+          { key: 'filters',   label: 'Filters',   children: filtersTab },
+          { key: 'analytics', label: 'Analytics', children: analyticsTab },
         ]}
       />
       <div className="properties-panel-footer">
