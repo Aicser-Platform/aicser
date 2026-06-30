@@ -12,6 +12,11 @@ describe('buildRelationshipGraphLayout', () => {
         to_table: 'customers',
         to_column: 'id',
         join_type: 'LEFT',
+        cardinality: 'one_to_many',
+        cross_filter_direction: 'single',
+        is_active: true,
+        assume_integrity: false,
+        created_at: null,
       },
       {
         id: '2',
@@ -21,6 +26,11 @@ describe('buildRelationshipGraphLayout', () => {
         to_table: 'products',
         to_column: 'id',
         join_type: 'LEFT',
+        cardinality: 'one_to_many',
+        cross_filter_direction: 'single',
+        is_active: true,
+        assume_integrity: false,
+        created_at: null,
       },
     ]);
     expect(layout.modelHint).toBe('star');
@@ -38,6 +48,11 @@ describe('buildRelationshipGraphLayout', () => {
         to_table: 'customers',
         to_column: 'id',
         join_type: 'LEFT',
+        cardinality: 'one_to_many',
+        cross_filter_direction: 'single',
+        is_active: true,
+        assume_integrity: false,
+        created_at: null,
       },
       {
         id: '2',
@@ -47,6 +62,11 @@ describe('buildRelationshipGraphLayout', () => {
         to_table: 'regions',
         to_column: 'id',
         join_type: 'LEFT',
+        cardinality: 'one_to_many',
+        cross_filter_direction: 'single',
+        is_active: true,
+        assume_integrity: false,
+        created_at: null,
       },
     ]);
     expect(layout.modelHint).toBe('snowflake');

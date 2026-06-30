@@ -68,6 +68,10 @@ export function DataModelRelationships({ dataSourceId, compact = false, showPlat
         to_table: values.to_table,
         to_column: values.to_column,
         join_type: values.join_type || 'LEFT',
+        cardinality: values.cardinality || 'one_to_many',
+        cross_filter_direction: 'single',
+        is_active: true,
+        assume_integrity: false,
       });
       message.success(t('relationship_added'));
       setAddOpen(false);
