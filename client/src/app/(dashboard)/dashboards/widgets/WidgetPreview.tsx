@@ -44,6 +44,9 @@ export const WidgetPreview: React.FC<{
       dashboardDefaultPalette,
     ),
     dashboardDefaultPalette,
+    // Expose widget-root dataSourceId so WidgetRenderer can fall back to it for
+    // SlicerWidget when query.dataSourceId is not yet populated (before Apply Changes).
+    __widgetDataSourceId: widget.dataSourceId,
     ...(compactPreview
       ? {
           isDashboardWidget: true,
