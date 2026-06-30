@@ -848,16 +848,19 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
   createChartAndFetchData: async (widget: WidgetInstance) => {
     try {
-      // Ensure chartQuery has default values
+      // Ensure chartQuery has default values.
+      // When yMetrics is set, clear stale yMetricsSecondary — prevents ghost series
+      // from prior configurations surviving into a fresh chart create.
+      const hasYMetrics = (widget.chartQuery?.yMetrics?.length ?? 0) > 0;
       const chartQuery = {
         ...widget.chartQuery,
         x: widget.chartQuery?.x || '',
         yMetric: (widget.chartQuery?.yMetric || 'count') as 'count' | 'sum',
         yMetrics: widget.chartQuery?.yMetrics || [],
-        yMetricsSecondary: widget.chartQuery?.yMetricsSecondary || [],
+        yMetricsSecondary: hasYMetrics ? [] : (widget.chartQuery?.yMetricsSecondary || []),
         y: widget.chartQuery?.y || '',
         legend: widget.chartQuery?.legend || '',
-        sortBy: widget.chartQuery?.sortBy || 'x', 
+        sortBy: widget.chartQuery?.sortBy || 'x',
         limit: widget.chartQuery?.limit,
         seriesLimit: widget.chartQuery?.seriesLimit,
         sortOrder: widget.chartQuery?.sortOrder,
@@ -950,12 +953,18 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       // Build complete chartQuery with defaults
       const mergedChartQuery = { ...widget.chartQuery, ...updates.chartQuery };
+      // When yMetrics is explicitly in the update, clear stale secondary unless secondary
+      // was also explicitly set — prevents ghost series from prior configurations.
+      const yMetricsExplicitlyUpdated = updates.chartQuery && 'yMetrics' in updates.chartQuery;
+      const yMetricsSecondaryExplicitlyUpdated = updates.chartQuery && 'yMetricsSecondary' in updates.chartQuery;
       const chartQuery = {
         ...mergedChartQuery,
         x: mergedChartQuery.x || '',
         yMetric: (mergedChartQuery.yMetric || 'count') as 'count' | 'sum',
         yMetrics: mergedChartQuery.yMetrics || [],
-        yMetricsSecondary: mergedChartQuery.yMetricsSecondary || [],
+        yMetricsSecondary: (yMetricsExplicitlyUpdated && !yMetricsSecondaryExplicitlyUpdated)
+          ? []
+          : (mergedChartQuery.yMetricsSecondary || []),
         y: mergedChartQuery.y || '',
         legend: mergedChartQuery.legend || '',
         sortBy: mergedChartQuery.sortBy || 'x',
