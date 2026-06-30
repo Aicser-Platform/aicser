@@ -31,9 +31,9 @@ export function DashboardDataModelButton({
   return (
     <>
       <Button
-        size="small"
         type="text"
-        className="studio-context-btn"
+        block
+        className="!justify-start !text-left text-text-secondary"
         icon={<ApartmentOutlined />}
         onClick={() => {
           if (!modelSourceId && dataSourceIds[0]) setModelSourceId(dataSourceIds[0]);

@@ -92,6 +92,8 @@ export type WidgetInstance = {
   isLocked?: boolean;
   /** Client-only LWW timestamp for collaborative edits */
   collabTs?: number;
+  /** Visual filter values applied to this widget (field → selected values) */
+  visualFilters?: Record<string, string[]>;
 };
 
 export interface Dashboard {

@@ -98,7 +98,6 @@ export function AddDashboardDrawer({
       open={open}
       onClose={onClose}
       destroyOnClose
-      className="add-dashboard-drawer"
     >
       {tab === 'blocks' ? (
         <Input
@@ -107,12 +106,12 @@ export function AddDashboardDrawer({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
-          className="add-dashboard-drawer-search"
+          className="!mb-3"
         />
       ) : null}
       <Tabs activeKey={tab} onChange={setTab} items={tabItems} size="small" />
       {onOpenFilterManager ? (
-        <Space className="add-dashboard-drawer-footer">
+        <Space className="!mt-4 w-full !justify-center">
           <Button type="link" size="small" onClick={onOpenFilterManager}>
             {t('add_drawer_manage_filters')}
           </Button>

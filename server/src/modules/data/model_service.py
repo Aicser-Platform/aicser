@@ -15,11 +15,16 @@ def _serialize_relationship(rel: DataModelRelationship) -> dict:
     return {
         "id": str(rel.id),
         "data_source_id": rel.data_source_id,
+        "to_data_source_id": rel.to_data_source_id,
         "from_table": rel.from_table,
         "from_column": rel.from_column,
         "to_table": rel.to_table,
         "to_column": rel.to_column,
         "join_type": rel.join_type or "LEFT",
+        "cardinality": rel.cardinality or "one_to_many",
+        "cross_filter_direction": rel.cross_filter_direction or "single",
+        "is_active": bool(rel.is_active),
+        "assume_integrity": bool(rel.assume_integrity),
         "created_at": rel.created_at.isoformat() if rel.created_at else None,
     }
 
@@ -77,13 +82,31 @@ class DataModelService:
     async def create_relationship(self, data_source_id: str, payload: dict) -> dict:
         rel = DataModelRelationship(
             data_source_id=data_source_id,
+            to_data_source_id=payload.get("to_data_source_id"),
             from_table=payload["from_table"],
             from_column=payload["from_column"],
             to_table=payload["to_table"],
             to_column=payload["to_column"],
             join_type=(payload.get("join_type") or "LEFT").upper(),
+            cardinality=payload.get("cardinality") or "one_to_many",
+            cross_filter_direction=payload.get("cross_filter_direction") or "single",
+            is_active=payload.get("is_active", True),
+            assume_integrity=payload.get("assume_integrity", False),
         )
         self.db.add(rel)
+        await self.db.commit()
+        await self.db.refresh(rel)
+        return _serialize_relationship(rel)
+
+    async def update_relationship(
+        self, data_source_id: str, relationship_id: UUID, payload: dict
+    ) -> Optional[dict]:
+        rel = await self.db.get(DataModelRelationship, relationship_id)
+        if not rel or rel.data_source_id != data_source_id:
+            return None
+        for field in ("cardinality", "cross_filter_direction", "is_active", "assume_integrity", "join_type"):
+            if field in payload:
+                setattr(rel, field, payload[field])
         await self.db.commit()
         await self.db.refresh(rel)
         return _serialize_relationship(rel)
@@ -171,6 +194,10 @@ class DataModelService:
                 to_table=item["to_table"],
                 to_column=item["to_column"],
                 join_type=item.get("join_type", "LEFT"),
+                cardinality="one_to_many",
+                cross_filter_direction="single",
+                is_active=True,
+                assume_integrity=False,
             )
             self.db.add(rel)
             await self.db.flush()

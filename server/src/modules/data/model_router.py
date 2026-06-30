@@ -22,6 +22,19 @@ class RelationshipCreateRequest(BaseModel):
     to_table: str
     to_column: str
     join_type: str = Field(default="LEFT")
+    cardinality: Optional[str] = Field(default="one_to_many")
+    cross_filter_direction: Optional[str] = Field(default="single")
+    is_active: Optional[bool] = Field(default=True)
+    assume_integrity: Optional[bool] = Field(default=False)
+    to_data_source_id: Optional[str] = Field(default=None)
+
+
+class RelationshipUpdateRequest(BaseModel):
+    cardinality: Optional[str] = None
+    cross_filter_direction: Optional[str] = None
+    is_active: Optional[bool] = None
+    assume_integrity: Optional[bool] = None
+    join_type: Optional[str] = None
 
 
 @router.get("/relationships")
@@ -54,6 +67,25 @@ async def create_relationship(
         raise HTTPException(status_code=404, detail="Data source not found")
     rel = await svc.create_relationship(data_source_id, body.model_dump())
     return rel
+
+
+@router.put("/relationships/{relationship_id}")
+async def update_relationship(
+    data_source_id: str,
+    relationship_id: UUID,
+    body: RelationshipUpdateRequest,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: dict = Depends(JWTCookieBearer()),
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    svc = DataModelService(db)
+    updated = await svc.update_relationship(
+        data_source_id, relationship_id, body.model_dump(exclude_none=True)
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    return updated
 
 
 @router.delete("/relationships/{relationship_id}", status_code=204)

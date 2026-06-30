@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Typography, ConfigProvider, Button, Spin, message, Divider, Tag, Alert, Modal, Select } from 'antd';
+import { Typography, ConfigProvider, Button, Spin, message, Divider, Tag, Alert, Modal, Select, Drawer } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
@@ -28,7 +28,6 @@ import { useCollaboration } from '@/hooks/useCollaboration';
 import { useDashboardCollaborationRoom } from './hooks/useCollaborationFeature';
 import { DashboardCollabOverlay } from './components/DashboardCollabOverlay';
 import { DashboardCollabCommentsPanel } from './components/DashboardCollabCommentsPanel';
-import { DashboardFeedStudioBanner } from './components/DashboardFeedStudioBanner';
 import { DashboardRemixBanner } from './components/DashboardRemixBanner';
 import { remixConfigFromDashboard } from './utils/remixSnapshotHydration';
 import {
@@ -51,6 +50,15 @@ import { chartService, type DashboardTemplate } from './services/chartService';
 import { WIDGET_TEMPLATES } from './widgetTemplates';
 import { exitDocumentFullscreen } from './utils/studioNavigation';
 import { useChartImportFromChat } from './hooks/useChartImportFromChat';
+import { StudioSidebarRail, type SidebarSection } from './components/StudioSidebar/StudioSidebarRail';
+import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
+import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
+import { InsertSection } from './components/StudioSidebar/sections/InsertSection';
+import { DataSection } from './components/StudioSidebar/sections/DataSection';
+import { DataModelingSection } from './components/StudioSidebar/sections/DataModelingSection';
+import type { DataModelRelationship } from '@/api/dataModel';
+import { useCreateRelationship } from '@/hooks/useDataModelRelationships';
+import { RelationshipDetailsPanel } from './components/ERDCanvas/RelationshipDetailsPanel';
 import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
 import { DashboardBuildLiveBanner } from './components/DashboardBuildLiveBanner';
 import { isDashboardLiveBuild } from './utils/dashboardLiveBuildStorage';
@@ -302,6 +310,63 @@ export default function NewDashboardStudio() {
 
   const chartImport = useChartImportFromChat();
   const [mounted, setMounted] = useState(false);
+
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('studio_sidebar_state');
+      if (saved) {
+        const { section, open } = JSON.parse(saved) as { section: SidebarSection; open: boolean };
+        return open ? section : null;
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return null;
+  });
+
+  const handleSidebarSectionChange = useCallback((section: SidebarSection | null) => {
+    setSidebarSection(section);
+    try {
+      localStorage.setItem(
+        'studio_sidebar_state',
+        JSON.stringify({ section, open: section !== null }),
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+  const [selectedRelationship, setSelectedRelationship] = useState<DataModelRelationship | null>(null);
+  const [pendingConnection, setPendingConnection] = useState<{
+    fromTable: string;
+    fromColumn: string;
+    toTable: string;
+    toColumn: string;
+  } | null>(null);
+  const [modelingDataSourceId, setModelingDataSourceId] = useState<string | undefined>(undefined);
+  const [createCardinality, setCreateCardinality] = useState<
+    'one_to_one' | 'one_to_many' | 'many_to_many'
+  >('one_to_many');
+
+  const createRelMutation = useCreateRelationship(modelingDataSourceId ?? '');
+
+  const handleConfirmCreateRelationship = async () => {
+    if (!pendingConnection || !modelingDataSourceId) return;
+    await createRelMutation.mutateAsync({
+      from_table: pendingConnection.fromTable,
+      from_column: pendingConnection.fromColumn,
+      to_table: pendingConnection.toTable,
+      to_column: pendingConnection.toColumn,
+      cardinality: createCardinality,
+      cross_filter_direction: 'single',
+      is_active: true,
+      assume_integrity: false,
+      join_type: 'LEFT',
+    });
+    setPendingConnection(null);
+    setCreateCardinality('one_to_many');
+  };
+
   const [sampleTemplates, setSampleTemplates] = useState<DashboardTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
@@ -678,6 +743,8 @@ export default function NewDashboardStudio() {
     }
   };
 
+  const isFullPageSection = sidebarSection === 'data' || sidebarSection === 'modeling';
+
   if (!mounted) return null;
 
   // Show error state if fetching failed
@@ -924,7 +991,7 @@ export default function NewDashboardStudio() {
               padding: 0,
               // Reserve room for the absolute properties panel (300px) so its overlay
               // never hides the right end of the toolbar / widget edges.
-              paddingRight: isEditMode && !isPropertiesCollapsed ? 300 : 0,
+              // paddingRight: isEditMode && !isPropertiesCollapsed ? 300 : 0,
               transition: 'padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
@@ -947,24 +1014,36 @@ export default function NewDashboardStudio() {
                 collabConnected={collabConnected}
                 collabPeerCount={collabPeers}
                 collabActiveUsers={collabActiveUsers}
+                feedPostId={linkedFeedPostId || null}
+                snapshotOutdated={feedSnapshotOutdated}
+                snapshotVersion={linkedFeedSnapshotVersion || undefined}
+                onUpdateSnapshot={linkedFeedPostId ? () => void handleUpdateFeedSnapshot() : undefined}
+                updatingSnapshot={updatingFeedSnapshot}
               />
-              {linkedFeedPostId ? (
-                <DashboardFeedStudioBanner
-                  feedPostId={linkedFeedPostId}
-                  dashboardTitle={activeDashboard?.name}
-                  snapshotVersion={linkedFeedSnapshotVersion || undefined}
-                  snapshotOutdated={feedSnapshotOutdated}
-                  onUpdateSnapshot={() => void handleUpdateFeedSnapshot()}
-                  updatingSnapshot={updatingFeedSnapshot}
-                />
-              ) : remixSource ? (
+              {remixSource ? (
                 <DashboardRemixBanner remix={remixSource} dashboardTitle={activeDashboard?.name} />
               ) : null}
               </>
             )}
 
             <div className="dashboard-workspace">
-            <div className="dashboard-workspace-main">
+            <StudioSidebarRail
+              activeSection={sidebarSection}
+              onSectionChange={handleSidebarSectionChange}
+            />
+            <StudioSidebarPanel activeSection={sidebarSection} isFullPage={isFullPageSection}>
+              {sidebarSection === 'dashboards' && <DashboardsSection />}
+              {sidebarSection === 'data' && <DataSection />}
+              {sidebarSection === 'modeling' && (
+                <DataModelingSection
+                  onRelationshipSelect={setSelectedRelationship}
+                  onConnectionCreate={setPendingConnection}
+                  selectedRelationshipId={selectedRelationship?.id ?? null}
+                  onDataSourceChange={setModelingDataSourceId}
+                />
+              )}
+            </StudioSidebarPanel>
+            <div className="dashboard-workspace-main" style={{ display: isFullPageSection ? 'none' : undefined }}>
             <div
               className={`dashboard-page-chrome${isFullscreen ? ' dashboard-page-chrome-presentation' : ''}`}
             >
@@ -988,7 +1067,7 @@ export default function NewDashboardStudio() {
                 tableOptionsBySource={filterCtx.tableOptionsBySource}
                 widgetScopeOptions={filterCtx.widgetScopeOptions}
                 filterFieldConflicts={filterCtx.filterFieldConflicts}
-                dataSourcesForFilters={filterCtx.dataSourcesForFilters}
+                // dataSourcesForFilters={filterCtx.dataSourcesForFilters}
                 dashboardId={activeDashboardId ?? undefined}
                 studioWidgets={widgets}
                 onSaveGlobalFilters={filterCtx.saveGlobalFilters}
@@ -1189,22 +1268,26 @@ export default function NewDashboardStudio() {
           )}
 
           {/* Right Sidebar Properties — absolute overlay, does NOT push canvas */}
-          {isEditMode && (
+          {sidebarSection === 'modeling' && selectedRelationship ? (
+            <RelationshipDetailsPanel
+              relationship={selectedRelationship}
+              onClose={() => setSelectedRelationship(null)}
+            />
+          ) : isEditMode ? (
             <PropertiesPanel
               selectedWidget={selectedWidget}
               selectedWidgetId={selectedWidgetId}
               widgets={widgets}
               setWidgets={setWidgets}
               removeWidget={removeWidget}
-              isCollapsed={isPropertiesCollapsed}
-              dashboardPages={filterCtx.pages}
-              activeDashboardId={activeDashboardId}
-              peerEditingWidgetId={peerEditingWidgetId}
-              currentProjectId={currentProjectId}
-              filterFieldConflicts={filterCtx.filterFieldConflicts}
-              activeDashboardIdForFilters={activeDashboardId}
+              isCollapsed={isPropertiesCollapsed || sidebarSection === 'modeling'}
+              dashboardPages={filterCtx.pages.map((p) => ({ id: p.id, name: p.name }))}
+              globalFiltersConfig={filterCtx.globalFiltersConfig}
+              pageFiltersConfig={filterCtx.pageFiltersConfig}
+              runtimeFilters={filterCtx.runtimeFilters}
+              onRuntimeFiltersChange={filterCtx.handleRuntimeFiltersChange}
             />
-          )}
+          ) : null}
         </div>
       </div>
       <Modal
@@ -1241,6 +1324,75 @@ export default function NewDashboardStudio() {
           }
         }}
       />
+      <Drawer
+        title="Create Relationship"
+        placement="bottom"
+        height={260}
+        open={pendingConnection !== null}
+        onClose={() => setPendingConnection(null)}
+        footer={
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Button onClick={() => setPendingConnection(null)}>Cancel</Button>
+            <Button
+              type="primary"
+              loading={createRelMutation.isPending}
+              onClick={() => void handleConfirmCreateRelationship()}
+              disabled={!modelingDataSourceId}
+            >
+              Create
+            </Button>
+          </div>
+        }
+      >
+        {pendingConnection && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'var(--ant-color-fill-quaternary)',
+                borderRadius: 8,
+                padding: '10px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <span>
+                {pendingConnection.fromTable}.{pendingConnection.fromColumn}
+              </span>
+              <span style={{ color: 'var(--ant-color-text-secondary)' }}>→</span>
+              <span>
+                {pendingConnection.toTable}.{pendingConnection.toColumn}
+              </span>
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  color: 'var(--ant-color-text-secondary)',
+                  marginBottom: 6,
+                  letterSpacing: '0.05em',
+                }}
+              >
+                Cardinality
+              </div>
+              <Select
+                style={{ width: 240 }}
+                value={createCardinality}
+                onChange={setCreateCardinality}
+                options={[
+                  { value: 'one_to_one', label: 'One to One (1:1)' },
+                  { value: 'one_to_many', label: 'One to Many (1:*)' },
+                  { value: 'many_to_many', label: 'Many to Many (*:*)' },
+                ]}
+              />
+            </div>
+          </div>
+        )}
+      </Drawer>
     </ConfigProvider>
     </DashboardPageShell>
     </PermissionGuard>

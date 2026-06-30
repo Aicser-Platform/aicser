@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Empty } from 'antd';
 import { useTranslations } from 'next-intl';
 import { WidgetPreview } from '@/app/(dashboard)/dashboards/widgets/WidgetPreview';
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
+import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/DashboardPageTabs';
 import { shouldShowWidgetHeader } from '@/app/(dashboard)/dashboards/utils/widgetCardHelpers';
+import { filterVisibleWidgets, filterVisibleLayout } from '@/app/(dashboard)/dashboards/utils/dashboardViewerScope';
 import type { FeedItem } from '@/services/socialFeedService';
 import type { WidgetInstance } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
 // Same stylesheet the dashboard canvas and shared/embed viewers load (see
@@ -74,6 +76,16 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
   const payload = (item.asset.snapshotPayload || null) as FeedSnapshotPayload | null;
   const allWidgets = useMemo(() => snapshotWidgetsFromPayload(payload), [payload]);
   const allLayout = useMemo(() => snapshotLayoutFromPayload(payload), [payload]);
+  const pages = useMemo(() => payload?.visuals.pages || [], [payload]);
+  const defaultPageId = pages[0]?.id ?? null;
+  const [activePageId, setActivePageId] = useState<string | null>(defaultPageId);
+
+  // Pages are captured per-snapshot, so a different feed item (or a re-captured
+  // snapshot with a different first page) should reset the active tab instead
+  // of keeping whatever was selected for the previous payload.
+  useEffect(() => {
+    setActivePageId(defaultPageId);
+  }, [defaultPageId]);
 
   const orderedWidgets = useMemo(() => {
     const positionById = new Map(allLayout.map((layout) => [layout.i, layout]));
@@ -132,19 +144,33 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
   }
 
   if (variant === 'detail') {
+    // Multi-page dashboards capture every page's widgets into one payload, each
+    // page using its own x/y coordinate space — rendering them all on a single
+    // grid at once makes widgets from different pages overlap. Scope to the
+    // active page first, same as the live dashboard viewer does.
+    const pageWidgets = filterVisibleWidgets(widgets, layoutForWidgets, activePageId, pages, defaultPageId);
+    const pageLayout = filterVisibleLayout(layoutForWidgets, pageWidgets);
+
     // 'preserve' uses the widgets' actual saved x/y/w/h, so the snapshot lands in
     // the same place and at the same size as the original dashboard design —
     // the same grid component and layout mode the live dashboard path uses.
     return (
-      <DashboardViewerGrid
-        widgets={widgets}
-        layout={layoutForWidgets}
-        dashboardId={dashboardId}
-        runtimeFilters={[]}
-        onCrossFilter={noopCrossFilter}
-        canvasMinHeight="480px"
-        layoutMode="preserve"
-      />
+      <div className="feed-snapshot-viewer feed-snapshot-viewer--detail">
+        {pages.length > 1 ? (
+          <div className="mb-2">
+            <DashboardPageTabs pages={pages} activePageId={activePageId} onSelect={setActivePageId} readOnly showEmptyPlaceholder={false} />
+          </div>
+        ) : null}
+        <DashboardViewerGrid
+          widgets={pageWidgets}
+          layout={pageLayout}
+          dashboardId={dashboardId}
+          runtimeFilters={[]}
+          onCrossFilter={noopCrossFilter}
+          canvasMinHeight="480px"
+          layoutMode="preserve"
+        />
+      </div>
     );
   }
 }

@@ -532,7 +532,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     <div style={{ width: 280, padding: '4px 8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Column</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Column</div>
           <Select
             style={{ width: '100%' }}
             popupClassName="properties-panel-dropdown"
@@ -545,7 +545,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               return {
                 label: (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: 'var(--studio-primary)', fontSize: 13, minWidth: 14 }}>
+                    <span style={{ color: 'var(--ant-color-primary)', fontSize: 13, minWidth: 14 }}>
                       {isNumeric ? '#' : 'abc'}
                     </span>
                     {opt.label}
@@ -561,7 +561,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
             popupClassName="properties-panel-dropdown"
@@ -586,7 +586,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Value</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
           {['in', 'not_in'].includes(tempFilter.operator) ? (
             <Select
               mode="tags"
@@ -598,7 +598,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               tokenSeparators={[',']}
               dropdownStyle={{ display: 'none' }}
               allowClear
-              suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--studio-text-muted)' }} />}
+              suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--ant-color-text-tertiary)' }} />}
             />
           ) : (
             <Input
@@ -612,9 +612,9 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           )}
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--studio-border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--ant-color-border)', paddingTop: 12 }}>
         <Button size="small" onClick={() => setIsModalOpen(false)} style={{ borderRadius: 6 }}>Close</Button>
-        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--studio-primary)' }}>Save</Button>
+        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--ant-color-primary)' }}>Save</Button>
       </div>
     </div>
   );
@@ -628,7 +628,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <Popover
             key={index}
             content={filterConfigContent}
-            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--studio-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Edit Filter</div>}
+            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--ant-color-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Edit Filter</div>}
             trigger="click"
             open={isModalOpen && editingIndex === index}
             onOpenChange={(open) => {
@@ -689,7 +689,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               fontSize: '12px', 
               height: '32px', 
               borderRadius: '6px',
-              color: 'var(--studio-text-secondary)',
+              color: 'var(--ant-color-text-secondary)',
               borderColor: 'rgba(0,0,0,0.1)',
               background: 'transparent'
             }}
@@ -772,7 +772,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
     <div style={{ width: 280, padding: '4px 8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Metric</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Metric</div>
           <Select
             style={{ width: '100%' }}
             popupClassName="properties-panel-dropdown"
@@ -790,7 +790,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
             popupClassName="properties-panel-dropdown"
@@ -809,7 +809,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Value</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
           <Input
             size="small"
             className="premium-input"
@@ -820,9 +820,9 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--studio-border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--ant-color-border)', paddingTop: 12 }}>
         <Button size="small" onClick={() => setIsModalOpen(false)} style={{ borderRadius: 6 }}>Close</Button>
-        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--studio-primary)' }}>Save</Button>
+        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--ant-color-primary)' }}>Save</Button>
       </div>
     </div>
   );
@@ -893,7 +893,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
               fontSize: '12px', 
               height: '32px', 
               borderRadius: '6px',
-              color: 'var(--studio-text-secondary)',
+              color: 'var(--ant-color-text-secondary)',
               borderColor: 'rgba(0,0,0,0.1)',
               background: 'transparent'
             }}
@@ -1205,20 +1205,20 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
         padding: '8px 10px',
         borderRadius: '8px',
         cursor: 'pointer',
-        background: isActive ? 'var(--studio-primary-light)' : 'transparent',
-        border: `1px solid ${isActive ? 'var(--studio-primary)' : 'rgba(0,0,0,0.05)'}`,
+        background: isActive ? 'var(--color-brand-primary-light)' : 'transparent',
+        border: `1px solid ${isActive ? 'var(--ant-color-primary)' : 'rgba(0,0,0,0.05)'}`,
         transition: 'all 0.2s ease',
         margin: '2px 0'
       }}
       onClick={() => handleInversionChange(type)}
     >
-      <span style={{ fontSize: '11px', color: 'var(--studio-text-secondary)', width: 30, fontWeight: 500 }}>Less</span>
+      <span style={{ fontSize: '11px', color: 'var(--ant-color-text-secondary)', width: 30, fontWeight: 500 }}>Less</span>
       <div style={{ display: 'flex', gap: 3, flex: 1 }}>
         {paletteColors.map((c, i) => (
           <div key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: c, border: '1px solid rgba(0,0,0,0.05)' }} />
         ))}
       </div>
-      <span style={{ fontSize: '11px', color: 'var(--studio-text-secondary)', width: 30, fontWeight: 500 }}>More</span>
+      <span style={{ fontSize: '11px', color: 'var(--ant-color-text-secondary)', width: 30, fontWeight: 500 }}>More</span>
       <Radio checked={isActive} />
     </div>
   );
@@ -1237,7 +1237,7 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
               <div style={{ padding: 12 }}>{panel}</div>
               <Divider style={{ margin: 0 }} />
               <div style={{ padding: 16 }}>
-                <div style={{ marginBottom: 12, fontSize: '12px', fontWeight: 600, color: 'var(--studio-text-main)' }}>Palette Generation</div>
+                <div style={{ marginBottom: 12, fontSize: '12px', fontWeight: 600, color: 'var(--ant-color-text)' }}>Palette Generation</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {renderPaletteRow(palettes.normal, !inverted, false)}
                   {renderPaletteRow(palettes.reversed, inverted, true)}
@@ -1249,7 +1249,7 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
         <Button 
           type="link" 
           size="small" 
-          style={{ padding: 0, fontSize: '11px', color: 'var(--studio-text-secondary)' }}
+          style={{ padding: 0, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}
           onClick={() => handleBaseColorChange('#00c2cb')}
         >
           Reset

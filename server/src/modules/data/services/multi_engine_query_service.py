@@ -226,33 +226,79 @@ class MultiEngineQueryService:
             query_analysis = self._analyze_query(query, data_source)
 
             # CRITICAL: For file/sheet uploads (DuckDB single-table), validate and optionally rewrite table names
-            # Support THREE naming conventions:
+            # Support naming conventions:
             # 1. 'data' - backward compatible, single file
             # 2. 'file_XXXXX' - multi-file support, each file as separate table
-            # 3. Unrelated tables - rewrite to 'data' for backward compat (fallback)
+            # 3. Sheet/table names from multi-sheet Excel/CSV (stored in schema.duckdb_tables)
+            #    Keys = logical names (e.g. "dim_customer"), Values = actual DuckDB names (e.g. "sheet_1_dim_customer")
+            # 4. Unrelated tables - rewrite to 'data' for backward compat (fallback)
             if is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 import re
+                # Build lookup: bare_logical_name (lower) → actual DuckDB table name
+                _ds_schema = data_source.get("schema") or {}
+                _duckdb_tables_map = _ds_schema.get("duckdb_tables") or {}
+                # Keys are logical names users/queries reference; values are actual DuckDB table names
+                _logical_to_duckdb: dict = {
+                    str(k).lower(): str(v) for k, v in _duckdb_tables_map.items() if k and v
+                }
+                # Also include direct DuckDB table names as valid (already registered)
+                _direct_duckdb_names: set = set(str(v).lower() for v in _duckdb_tables_map.values() if v)
+                # Accept names listed in the tables[] array as logical names too
+                for _t in (_ds_schema.get("tables") or []):
+                    if isinstance(_t, dict) and _t.get("name"):
+                        _k = str(_t["name"]).lower()
+                        if _k not in _logical_to_duckdb:
+                            # No duckdb_tables mapping — assume name is used directly
+                            _logical_to_duckdb[_k] = _t["name"]
+
                 # Pattern to match: FROM "table" or FROM table or FROM "schema"."table"
-                # Handles both quoted identifiers (double quotes) and unquoted, including file_* patterns
                 table_pattern = r'(?i)(from|join)\s+(?:"([^"]+)"|`([^`]+)`|([a-zA-Z0-9_\.]+))'
                 matches = list(re.finditer(table_pattern, query))
-                table_names_found = []
+                table_names_found = []        # unknown → rewrite to 'data'
+                schema_translate_needed = []  # (full_ref, target_name, keyword) to normalise
                 for match in matches:
-                    # match.group(1) = FROM/JOIN keyword, match.group(2) = double-quoted, match.group(3) = backtick-quoted, match.group(4) = unquoted
                     table_name = match.group(2) or match.group(3) or match.group(4)
                     keyword = match.group(1).upper()
-                    # Only rewrite if table name is NOT one of:
-                    # - 'data' (backward compatible)
-                    # - 'file_*' (file ID for multi-file support)
-                    # - '_aiser_inline_df' (inline data)
-                    is_valid_file_table = (
-                        table_name.lower() in ("data", "_aiser_inline_df") or
-                        table_name.lower().startswith("file_")
-                    )
-                    if table_name and not is_valid_file_table:
-                        # This is an invalid table name - needs rewriting to 'data' or appropriate file_id
+                    if not table_name:
+                        continue
+                    # Strip schema prefix for lookup (e.g. "public.dim_customer" → "dim_customer")
+                    bare_name = table_name.split(".")[-1] if "." in table_name else table_name
+
+                    if table_name.lower() in ("data", "_aiser_inline_df") or table_name.lower().startswith("file_"):
+                        # Already a valid DuckDB name — leave as-is
+                        continue
+                    elif bare_name.lower() in _logical_to_duckdb:
+                        # Logical name → translate to actual DuckDB table name
+                        target = _logical_to_duckdb[bare_name.lower()]
+                        schema_translate_needed.append((table_name, target, keyword, match.start(), match.end()))
+                    elif bare_name.lower() in _direct_duckdb_names:
+                        # Direct DuckDB name but schema-qualified — just strip prefix
+                        if "." in table_name:
+                            schema_translate_needed.append((table_name, bare_name, keyword, match.start(), match.end()))
+                    else:
+                        # Unknown table — rewrite to 'data' for backward compat
                         table_names_found.append((table_name, keyword, match.start(), match.end()))
-                
+
+                # Translate/normalise known table references
+                if schema_translate_needed:
+                    try:
+                        import re as _re
+                        rewritten = query
+                        for full_ref, target_name, keyword, start, end in reversed(schema_translate_needed):
+                            segment = query[start:end]
+                            if '"' in segment:
+                                pattern = rf'(?i)({keyword})\s+"{_re.escape(full_ref)}"'
+                            else:
+                                pattern = rf'(?i)({keyword})\s+{_re.escape(full_ref)}\b'
+                            replacement = f'{keyword} "{target_name}"'
+                            rewritten = _re.sub(pattern, replacement, rewritten)
+                        if rewritten != query:
+                            logger.info(f"✅ Translated table refs for DuckDB:\nOriginal: {query}\nRewritten: {rewritten}")
+                            query_analysis['original_query'] = query
+                            query = rewritten
+                    except Exception as _e:
+                        logger.error(f"❌ Failed to translate table refs: {_e}", exc_info=True)
+
                 if table_names_found:
                     # Rewrite query to use 'data' table
                     logger.warning(f"🔄 File data source detected - rewriting table name(s) {[t[0] for t in table_names_found]} to 'data'")
@@ -276,9 +322,9 @@ class MultiEngineQueryService:
                                 # Unquoted identifier - use word boundary
                                 pattern = rf'(?i)({keyword})\s+{_re.escape(table_name)}\b'
                                 replacement = f'{keyword} "data"'
-                            
+
                             rewritten = _re.sub(pattern, replacement, rewritten)
-                        
+
                         if rewritten != query:
                             logger.info(f"✅ Rewritten query for file data source:\nOriginal: {query}\nRewritten: {rewritten}")
                             query_analysis['original_query'] = query

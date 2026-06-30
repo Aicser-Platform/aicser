@@ -51,7 +51,7 @@
 .studio-refresh-trigger-updated {
   font-size: 10px;
   font-weight: 400;
-  color: var(--studio-text-muted);
+  color: var(--ant-color-text-tertiary);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -66,7 +66,7 @@
 
 .studio-last-refreshed {
   font-size: 11px;
-  color: var(--studio-text-muted);
+  color: var(--ant-color-text-tertiary);
   white-space: nowrap;
   padding-left: 2px;
 }
@@ -75,20 +75,12 @@
   font-size: 12px !important;
 }
 
-.studio-context-btn-caret {
-  padding-inline: 6px !important;
-}
-
-.studio-filter-badge {
-  margin-left: 6px;
-}
-
 .studio-filters-panel {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--studio-border, var(--ant-color-border));
+  border: 1px solid var(--ant-color-border);
   border-radius: 8px;
-  background: var(--studio-surface, var(--ant-color-bg-container));
+  background: var(--ant-color-bg-container);
 }
 
 .studio-filters-panel-runtime {
@@ -148,15 +140,6 @@
   max-width: 100%;
 }
 
-.dashboard-page-chrome-presentation .gfb-preset-chips {
-  flex-wrap: wrap;
-}
-
-.dashboard-page-chrome-presentation .gfb-preset-chip {
-  padding: 2px 8px;
-  font-size: 11px;
-}
-
 .global-filters-bar-minimal .gfb-daterange-control {
   border: none;
   padding: 0;
@@ -188,7 +171,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--studio-text-secondary);
+  color: var(--ant-color-text-secondary);
   flex-shrink: 0;
   margin-top: 4px;
 }
@@ -242,7 +225,7 @@
 
 .filter-editor-row {
   padding: 8px 0;
-  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .filter-editor-row:last-of-type {
@@ -312,41 +295,6 @@
   margin-top: 2px;
 }
 
-/* ── Preset chips ──────────────────────────────────────────────────────────── */
-.gfb-preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.gfb-preset-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 11px;
-  border: 1px solid transparent;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
-  line-height: 1;
-}
-
-.gfb-preset-chip:hover {
-  border-color: transparent;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-}
-
-.gfb-preset-chip-active {
-  background: var(--ant-color-primary) !important;
-  border-color: var(--ant-color-primary) !important;
-  color: #fff !important;
-}
 
 /* ── Active filter chips summary row ──────────────────────────────────────── */
 .gfb-active-chips-row {
@@ -572,10 +520,11 @@ body.dashboard-print-mode .properties-panel {
     min-height: 50vh;
   }
 
-  .dashboard-tabs-bar {
+  .dashboard-studio-toolbar {
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 12px !important;
+    height: auto !important;
   }
 
   .widget-selection-grid {
@@ -588,14 +537,19 @@ body.dashboard-print-mode .properties-panel {
 }
 
 @media (max-width: 576px) {
-  .studio-toolbar {
+  .studio-context-row {
     flex-wrap: wrap;
     gap: 6px;
     padding: 8px !important;
   }
 
-  .studio-toolbar .ant-btn {
+  .studio-context-row .ant-btn {
     min-height: 36px;
+  }
+
+  /* Below 576px even the reduced primary-row item count can outgrow one line. */
+  .toolbar-actions {
+    flex-wrap: wrap !important;
   }
 
   .global-filters-bar {
@@ -651,7 +605,7 @@ body.dashboard-print-mode .properties-panel {
 }
 
 .dashboard-collab-comments-trigger {
-  box-shadow: var(--studio-shadow-sm);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .dashboard-collab-comments-scope {

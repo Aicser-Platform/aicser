@@ -20,75 +20,6 @@
   min-height: 0;
 }
 
-/* Right-side filter panel (Power BI–style) */
-.dashboard-filter-panel {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--studio-card-bg, var(--ant-color-bg-container));
-  overflow: hidden;
-}
-
-.dashboard-filter-panel--panel {
-  width: 280px;
-  border-left: 1px solid var(--studio-border, var(--ant-color-border));
-  transition: width 200ms ease, border-color 200ms ease, background-color 200ms ease;
-}
-
-.dashboard-filter-panel--panel.is-closed {
-  width: 0;
-  border-left-color: transparent;
-}
-
-.dashboard-filter-panel--panel .dashboard-filter-panel-header,
-.dashboard-filter-panel--panel .dashboard-filter-panel-body {
-  opacity: 1;
-  transition: opacity 140ms ease;
-}
-
-.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-header,
-.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-body {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.dashboard-filter-panel--toolbar {
-  width: 100%;
-  border-top: 1px solid var(--studio-border, var(--ant-color-border));
-  padding: 10px 0 12px;
-  background: transparent;
-}
-
-.dashboard-filter-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
-  flex-shrink: 0;
-}
-
-.dashboard-filter-panel-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--studio-text-main, var(--ant-color-text));
-}
-
-.dashboard-filter-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0 14px 14px;
-}
-
-.dashboard-filter-panel--toolbar .dashboard-filter-panel-body {
-  padding: 0;
-  overflow: visible;
-}
-
 /* Panel layout — stacked filters with horizontal dividers */
 .report-filter-panel {
   display: flex;
@@ -110,7 +41,7 @@
   height: 0;
   margin: 0;
   border: none;
-  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+  border-top: 1px solid var(--ant-color-border);
 }
 
 /* Toolbar layout — horizontal row with Ant vertical dividers */
@@ -144,7 +75,7 @@
   height: auto !important;
   min-height: 44px;
   margin: 0 8px !important;
-  border-color: var(--studio-border, var(--ant-color-border)) !important;
+  border-color: var(--ant-color-border) !important;
   top: 0;
 }
 
@@ -176,7 +107,7 @@
   line-height: 1.2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--studio-text-tertiary, var(--ant-color-text-tertiary)) !important;
+  color: var(--ant-color-text-tertiary) !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -213,7 +144,7 @@
 
 .filter-select-all-row {
   padding: 4px 8px 2px;
-  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .filter-field-numeric-header {
@@ -258,18 +189,6 @@
   min-height: 28px;
 }
 
-.studio-presentation-exit-icon {
-  width: 32px !important;
-  height: 32px !important;
-  padding: 0 !important;
-  border-radius: 8px !important;
-  color: var(--studio-text-secondary) !important;
-}
-
-.studio-presentation-exit-icon:hover {
-  color: var(--studio-text-main) !important;
-  background: var(--ant-color-fill-quaternary) !important;
-}
 
 .data-model-graph {
   width: 100%;

@@ -250,6 +250,38 @@ export const useWidgetProperties = ({
     updateLocalAndStore({ chartQuery: nextQuery });
   };
 
+  // Atomic apply — updates title, chartType, x, y, and chartOptions in one store write
+  // so the auto-sync effect sees a consistent state (no stale-closure overwrites).
+  const applyWidgetChanges = (changes: {
+    title: string;
+    chartType: string;
+    x: string | undefined;
+    y: string | undefined;
+    yAggregation?: string;
+    chartOptions: Record<string, unknown>;
+  }) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    // Translate the simple y picker into yMetrics so the backend v2 chart_service
+    // can consume it — it reads yMetrics[] not the plain y field for standard charts.
+    const existingAgg = currentQuery.yMetrics?.[0]?.aggregation || 'count';
+    const agg = changes.yAggregation || existingAgg;
+    const nextYMetrics = changes.y
+      ? [{ field: changes.y, aggregation: agg }]
+      : currentQuery.yMetrics;
+    const nextQuery = ensureChartQueryDefaults({
+      ...currentQuery,
+      x: changes.x,
+      y: changes.y,
+      yMetrics: nextYMetrics,
+    });
+    updateLocalAndStore({
+      title: changes.title,
+      chartType: changes.chartType,
+      chartQuery: nextQuery,
+      chartOptions: changes.chartOptions,
+    });
+  };
+
   const handleDataSourceChange = (dataSourceId: string) => {
     // Reset chart query when switching data source to avoid stale column selections
     updateLocalAndStore({
@@ -277,6 +309,27 @@ export const useWidgetProperties = ({
     });
   };
 
+  // Atomic apply for slicer widgets — single store write to avoid stale-closure issue
+  // where sequential updateChartQuery calls each read the pre-render state.
+  const applySlicerChanges = (changes: {
+    title: string;
+    field: string | undefined;
+    mode: string;
+  }) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    const nextQuery = {
+      ...currentQuery,
+      field: changes.field,
+      mode: changes.mode,
+      // Mirror dataSourceId into chartQuery so SlicerWidget can load filter options
+      dataSourceId: selectedWidget?.dataSourceId,
+    };
+    updateLocalAndStore({
+      title: changes.title,
+      chartQuery: nextQuery,
+    });
+  };
+
   return {
     dataSources,
     selectedTableColumns,
@@ -286,6 +339,8 @@ export const useWidgetProperties = ({
     schemaLoading,
     updateWidgetRoot,
     updateChartQuery,
+    applyWidgetChanges,
+    applySlicerChanges,
     handleDataSourceChange,
     handleRefreshData,
     handleDeleteChart,

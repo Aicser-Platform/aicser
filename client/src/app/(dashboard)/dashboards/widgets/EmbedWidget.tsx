@@ -33,9 +33,9 @@ export function EmbedWidget({ config = {} }: EmbedWidgetProps) {
   if (!url) {
     return (
       <div className="widget-center" style={{ flexDirection: 'column', gap: 8 }}>
-        <LinkOutlined style={{ fontSize: 28, color: 'var(--studio-text-muted)' }} />
+        <LinkOutlined style={{ fontSize: 28, color: 'var(--ant-color-text-tertiary)' }} />
         <Empty description="No embed URL set" imageStyle={{ height: 0 }} />
-        <span style={{ fontSize: 12, color: 'var(--studio-text-muted)' }}>Set URL in properties →</span>
+        <span style={{ fontSize: 12, color: 'var(--ant-color-text-tertiary)' }}>Set URL in properties →</span>
       </div>
     );
   }

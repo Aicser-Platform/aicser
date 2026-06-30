@@ -542,17 +542,18 @@ class ChartService:
             "schema": schema_info,
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
-            "user_id": str(data_source.user_id) if data_source.user_id else None
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
-        
+
         multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict)
-        
+
         if not exec_res.get("success"):
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
-            
+
         rows = exec_res.get("data", [])
-        
+
         # Apply series limit if requested
         if legend_field and series_limit:
             series_sums = {}
@@ -700,6 +701,7 @@ class ChartService:
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
             "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
 
         multi = get_multi_engine_query_service()
@@ -849,7 +851,8 @@ class ChartService:
             "schema": schema_info,
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
-            "user_id": str(data_source.user_id) if data_source.user_id else None
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
         multi = get_multi_engine_query_service()
 

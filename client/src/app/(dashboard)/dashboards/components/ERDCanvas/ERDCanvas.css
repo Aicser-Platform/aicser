@@ -1,0 +1,615 @@
+/* ─── Canvas wrapper ──────────────────────────────────────────────────────── */
+
+.erd-canvas-wrapper {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle, rgba(0, 105, 160, 0.13) 1px, transparent 1.2px) 0 0 / 24px 24px,
+    var(--ant-color-bg-container);
+}
+
+.erd-canvas-wrapper .react-flow {
+  padding-top: 58px;
+}
+
+.erd-canvas-wrapper .react-flow__controls {
+  margin: 18px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.erd-canvas-wrapper .react-flow__background {
+  opacity: 0;
+}
+
+/* ─── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.erd-toolbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 58px;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--ant-color-border);
+  background: color-mix(in srgb, var(--ant-color-bg-container) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.erd-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.erd-search {
+  width: min(320px, 32vw);
+}
+
+.erd-empty-state {
+  position: absolute;
+  inset: 58px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--ant-color-text-tertiary);
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* ─── DBdiagram-style table card ──────────────────────────────────────────── */
+
+.erd-table {
+  width: 310px;
+  background: var(--ant-color-bg-container);
+  border: 1.5px solid var(--ant-color-border);
+  border-radius: 8px;
+  /* overflow: visible — handles must protrude at each row edge */
+  overflow: visible;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.07),
+    0 12px 28px rgba(15, 23, 42, 0.1);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.erd-table.selected {
+  border-color: var(--ant-color-primary);
+  box-shadow:
+    0 0 0 2.5px color-mix(in srgb, var(--ant-color-primary) 20%, transparent),
+    0 14px 32px rgba(0, 108, 160, 0.18);
+}
+
+/* Colored header — like DBdiagram purple header but using brand color */
+.erd-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 10px 0 14px;
+  height: 40px;
+  background: var(--ant-color-primary);
+  border-radius: 6px 6px 0 0;
+  color: #fff;
+}
+
+.erd-table.selected .erd-table-header {
+  background: color-mix(in srgb, var(--ant-color-primary) 85%, #001529 15%);
+}
+
+.erd-table-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+
+.erd-table-menu {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: background 120ms;
+  padding: 0;
+}
+
+.erd-table-menu:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+/* Column count subtitle strip */
+.erd-table-subtitle {
+  padding: 3px 14px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-tertiary);
+  border-bottom: 1px solid var(--ant-color-border);
+  background: var(--ant-color-fill-quaternary);
+}
+
+/* Column list */
+.erd-table-body {
+  background: var(--ant-color-bg-container);
+  border-radius: 0 0 6px 6px;
+  /* Must be overflow: visible so handles aren't clipped */
+  overflow: visible;
+  max-height: 280px;
+  /* Scrollbar inside the body, but we need handles to escape.
+     Use overflow-y: auto with padding to allow handle dots at the edges. */
+  overflow-y: auto;
+  overflow-x: visible;
+}
+
+/* Individual column row */
+.erd-col {
+  position: relative;
+  display: grid;
+  /* key-icon | name | role-badge | type */
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  color: var(--ant-color-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent);
+  transition: background 100ms;
+}
+
+.erd-col:last-child {
+  border-bottom: none;
+  border-radius: 0 0 6px 6px;
+}
+
+.erd-col:hover {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 40%, var(--ant-color-bg-container));
+}
+
+/* PK row accent */
+.erd-col-pk {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 18%, var(--ant-color-bg-container));
+}
+
+.erd-col-pk:hover {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 50%, var(--ant-color-bg-container));
+}
+
+/* Key icon column — PK (gold) or FK (blue) */
+.erd-col-key {
+  width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.erd-col-key-pk {
+  color: #d48806;
+}
+
+.erd-col-key-fk {
+  color: var(--ant-color-primary);
+}
+
+/* FK row tint */
+.erd-col-fk {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 10%, var(--ant-color-bg-container));
+}
+
+.erd-col-fk:hover {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 42%, var(--ant-color-bg-container));
+}
+
+/* PK / FK role badge */
+.erd-col-role {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.erd-col-role-pk {
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  color: #d48806;
+}
+
+.erd-col-role-fk {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 80%, transparent);
+  border: 1px solid var(--ant-color-primary-border);
+  color: var(--ant-color-primary);
+}
+
+.erd-col-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+/* Type badge */
+.erd-col-type {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.erd-col-type-text {
+  background: color-mix(in srgb, #f6ffed 70%, var(--ant-color-bg-container));
+  border-color: #b7eb8f;
+  color: #237804;
+}
+
+.erd-col-type-number {
+  background: color-mix(in srgb, #e6f4ff 70%, var(--ant-color-bg-container));
+  border-color: #bae0ff;
+  color: #0958d9;
+}
+
+.erd-col-type-date {
+  background: color-mix(in srgb, #fff7e6 70%, var(--ant-color-bg-container));
+  border-color: #ffd591;
+  color: #ad6800;
+}
+
+.erd-col-type-bool {
+  background: color-mix(in srgb, #f9f0ff 70%, var(--ant-color-bg-container));
+  border-color: #d3adf7;
+  color: #722ed1;
+}
+
+.erd-col-type-id {
+  background: color-mix(in srgb, #fff1f0 70%, var(--ant-color-bg-container));
+  border-color: #ffa39e;
+  color: #a8071a;
+}
+
+/* ─── Column-level port handles (DBdiagram style) ─────────────────────────── */
+
+/*
+  These handles sit at the left/right edge of each .erd-col row.
+  They're always slightly visible so users know they can drag from here.
+  On hover of the row OR the handle itself they brighten and enlarge.
+
+  Because .erd-table uses overflow: visible, the handles can protrude
+  a few pixels outside the card edge without being clipped.
+*/
+
+.erd-port {
+  /* Override ReactFlow's default handle styles */
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  border: 2px solid #fff !important;
+  background: var(--ant-color-primary) !important;
+  opacity: 0.4;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease !important;
+  cursor: crosshair !important;
+}
+
+.erd-port-left {
+  left: -6px !important;
+}
+
+.erd-port-right {
+  right: -6px !important;
+}
+
+/* Brighten when hovering the row */
+.erd-col:hover .erd-port {
+  opacity: 0.85;
+}
+
+/* Full brightness when directly hovering or actively connecting */
+.erd-port:hover,
+.erd-port.react-flow__handle-connecting,
+.erd-port.react-flow__handle-valid {
+  opacity: 1 !important;
+  transform: scale(1.3) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--ant-color-primary) 25%, transparent) !important;
+}
+
+/* Valid drop target while dragging */
+.erd-port.react-flow__handle-valid {
+  background: #52c41a !important;
+  border-color: #fff !important;
+}
+
+/* ─── Legacy table-node classes (kept for backward compatibility) ─────────── */
+
+.table-node {
+  width: 286px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid color-mix(in srgb, var(--ant-color-border) 82%, var(--ant-color-text) 18%);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 14px 30px rgba(15, 23, 42, 0.09);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-node.selected {
+  border-color: var(--ant-color-primary);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 18%, transparent),
+    0 16px 34px rgba(0, 108, 160, 0.16);
+}
+
+.table-node-header {
+  background: linear-gradient(180deg, var(--ant-color-bg-container), var(--ant-color-fill-quaternary));
+  color: var(--ant-color-text);
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--ant-color-border);
+}
+
+.table-node.selected .table-node-header {
+  background: linear-gradient(
+    180deg,
+    var(--ant-color-primary),
+    color-mix(in srgb, var(--ant-color-primary) 82%, #001529 18%)
+  );
+  color: #fff;
+}
+
+.table-node-title-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+}
+
+.table-node-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--ant-color-fill-secondary);
+  color: var(--ant-color-primary);
+}
+
+.table-node.selected .table-node-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.table-node-title-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.table-node-schema {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ant-color-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.table-node.selected .table-node-schema {
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.table-node-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.table-node-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.table-node.selected .table-node-action {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.table-node-meta {
+  margin: 8px 0 0 38px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.table-node.selected .table-node-meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.table-node-columns {
+  max-height: 252px;
+  overflow-y: auto;
+  background: var(--ant-color-bg-container);
+}
+
+.table-node-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--ant-color-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 84%, transparent);
+  position: relative;
+}
+
+.table-node-col:last-child {
+  border-bottom: none;
+}
+
+.table-node-col:hover {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 34%, var(--ant-color-bg-container));
+}
+
+.table-node-col-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-node-col-glyph {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 11px;
+}
+
+.table-node-col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.table-node-col-type {
+  min-width: 64px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ant-color-text-secondary);
+  flex-shrink: 0;
+}
+
+.table-node-col-type-number {
+  background: color-mix(in srgb, #e6f4ff 72%, var(--ant-color-bg-container));
+  border-color: #bae0ff;
+  color: #0958d9;
+}
+
+.table-node-col-type-date {
+  background: color-mix(in srgb, #fff7e6 72%, var(--ant-color-bg-container));
+  border-color: #ffd591;
+  color: #ad6800;
+}
+
+.table-node-col-type-bool {
+  background: color-mix(in srgb, #f9f0ff 72%, var(--ant-color-bg-container));
+  border-color: #d3adf7;
+  color: #722ed1;
+}
+
+.table-node-col-type-text {
+  background: color-mix(in srgb, #f6ffed 62%, var(--ant-color-bg-container));
+  border-color: #b7eb8f;
+  color: #237804;
+}
+
+.table-node-table-handle {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.table-node-col-handle {
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--ant-color-bg-container);
+  background: var(--ant-color-primary);
+  opacity: 0.55;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ant-color-primary) 65%, transparent);
+  transition:
+    transform 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease;
+}
+
+.table-node-col-handle-source {
+  right: -4px;
+}
+
+.table-node-col-handle-target {
+  left: -4px;
+}
+
+.table-node-col:hover .table-node-col-handle,
+.table-node-col-handle:hover {
+  background: var(--ant-color-primary);
+  border-color: var(--ant-color-bg-container);
+  box-shadow:
+    0 0 0 1px var(--ant-color-primary),
+    0 0 0 5px color-mix(in srgb, var(--ant-color-primary) 14%, transparent);
+  opacity: 1;
+  transform: scale(1.18);
+}

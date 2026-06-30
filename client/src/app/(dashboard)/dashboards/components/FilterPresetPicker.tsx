@@ -72,23 +72,23 @@ export function FilterPresetPicker({ onSelect, onAdvanced }: Props) {
   ];
 
   return (
-    <div className="filter-preset-picker">
-      <p className="filter-preset-picker-hint">{t('filter_preset_hint')}</p>
-      <div className="filter-preset-grid">
+    <div>
+      <p className="text-xs text-text-secondary mb-3">{t('filter_preset_hint')}</p>
+      <div className="grid grid-cols-2 gap-2">
         {presets.map((p) => (
           <button
             key={p.key}
             type="button"
-            className="filter-preset-tile"
+            className="flex flex-col items-start gap-1.5 px-3 py-2.5 rounded-md border border-border-light bg-bg-container text-xs font-medium text-left transition-colors hover:border-brand hover:bg-brand-subtle"
             onClick={() => onSelect(p.build())}
           >
-            <span className="filter-preset-tile-icon">{p.icon}</span>
+            <span className="text-base text-brand">{p.icon}</span>
             <span>{t(p.labelKey as 'filter_preset_date_range')}</span>
           </button>
         ))}
       </div>
       {onAdvanced ? (
-        <Button type="link" block onClick={onAdvanced} style={{ marginTop: 12 }}>
+        <Button type="link" block onClick={onAdvanced} className="!mt-3">
           {t('add_drawer_manage_filters')}
         </Button>
       ) : null}

@@ -1,0 +1,281 @@
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Empty, Select, Spin, Tag, Typography } from 'antd';
+import {
+  AppstoreOutlined,
+  CheckOutlined,
+  DatabaseOutlined,
+  FieldStringOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
+import { useQueryClient } from '@tanstack/react-query';
+import { useDataSources, useDataSourceSchema, dataSourceKeys } from '@/hooks/useDataSources';
+
+const { Text } = Typography;
+
+type DisplayColumn = {
+  name: string;
+  type: string;
+  nullable?: boolean;
+  primary_key?: boolean;
+  foreign_key?: string;
+};
+
+type DisplayTable = {
+  id: string;
+  name: string;
+  schema?: string;
+  rowCount?: number | null;
+  columns: DisplayColumn[];
+};
+
+function normalizeType(type: string): string {
+  const upper = type.toUpperCase();
+  if (upper.includes('INT')) return 'Number';
+  if (upper.includes('DECIMAL') || upper.includes('NUMERIC') || upper.includes('DOUBLE') || upper.includes('FLOAT')) return 'Decimal';
+  if (upper.includes('DATE') || upper.includes('TIME')) return 'Date';
+  if (upper.includes('BOOL')) return 'Boolean';
+  return 'Text';
+}
+
+function tableId(table: { name?: string; schema?: string }): string {
+  const name = String(table.name || '').trim();
+  const schema = String(table.schema || '').trim();
+  if (!schema || schema === 'public' || schema === 'file') return name;
+  return `${schema}.${name}`;
+}
+
+function normalizeTables(schema: unknown): DisplayTable[] {
+  const rawTables = ((schema as { tables?: unknown[] } | null)?.tables ?? []) as Array<{
+    name?: string;
+    schema?: string;
+    rowCount?: number | null;
+    row_count?: number | null;
+    columns?: Array<DisplayColumn | string>;
+  }>;
+
+  return rawTables
+    .map((table) => {
+      const name = String(table.name || '').trim();
+      if (!name) return null;
+      const id = tableId(table);
+      return {
+        id,
+        name,
+        schema: table.schema,
+        rowCount: table.rowCount ?? table.row_count ?? null,
+        columns: (table.columns ?? [])
+          .map((column) => {
+            if (typeof column === 'string') {
+              return { name: column, type: 'string', nullable: true };
+            }
+            const columnName = String(column?.name || '').trim();
+            if (!columnName) return null;
+            return {
+              name: columnName,
+              type: String(column?.type || 'string'),
+              nullable: column?.nullable ?? true,
+              primary_key: column?.primary_key,
+              foreign_key: column?.foreign_key,
+            };
+          })
+          .filter((column): column is DisplayColumn => Boolean(column)),
+      };
+    })
+    .filter((table): table is DisplayTable => Boolean(table));
+}
+
+export function DataSection() {
+  const qc = useQueryClient();
+  const { dataSources, isLoading } = useDataSources();
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
+  const [activeTableId, setActiveTableId] = useState<string | null>(null);
+  const [selectedColumnName, setSelectedColumnName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeSourceId && dataSources[0]?.id) {
+      setActiveSourceId(dataSources[0].id);
+    }
+  }, [activeSourceId, dataSources]);
+
+  const { schema, isLoading: schemaLoading, error } = useDataSourceSchema(activeSourceId);
+  const tables = useMemo(() => normalizeTables(schema), [schema]);
+  const activeTable = tables.find((table) => table.id === activeTableId) ?? tables[0] ?? null;
+  const selectedColumn =
+    activeTable?.columns.find((column) => column.name === selectedColumnName) ??
+    activeTable?.columns[0] ??
+    null;
+
+  useEffect(() => {
+    if (activeTable && activeTable.id !== activeTableId) {
+      setActiveTableId(activeTable.id);
+      setSelectedColumnName(activeTable.columns[0]?.name ?? null);
+    }
+  }, [activeTable, activeTableId]);
+
+  if (isLoading) {
+    return (
+      <div className="data-workbench-loading">
+        <Spin size="small" />
+      </div>
+    );
+  }
+
+  if (dataSources.length === 0) {
+    return (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="No data sources connected"
+        style={{ padding: '24px 16px' }}
+      />
+    );
+  }
+
+  return (
+    <div className="data-workbench">
+      <aside className="data-workbench-sidebar">
+        <div className="data-workbench-source">
+          <Text className="data-workbench-kicker">Workspace</Text>
+          <Select
+            size="small"
+            value={activeSourceId ?? undefined}
+            onChange={(id) => {
+              setActiveSourceId(id);
+              setActiveTableId(null);
+              setSelectedColumnName(null);
+            }}
+            options={dataSources.map((source) => ({ value: source.id, label: source.name }))}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div className="data-workbench-sidebar-section">
+          <div className="data-workbench-sidebar-title">
+            <TableOutlined />
+            Tables
+          </div>
+          {schemaLoading ? (
+            <div className="data-workbench-loading-row">Loading schema...</div>
+          ) : error ? (
+            <Alert
+              type="warning"
+              showIcon
+              message="Schema unavailable"
+              description={error instanceof Error ? error.message : 'Unable to load schema'}
+            />
+          ) : tables.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tables" />
+          ) : (
+            <div className="data-workbench-table-list">
+              {tables.map((table) => (
+                <button
+                  key={table.id}
+                  className={`data-workbench-table-btn${activeTable?.id === table.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setActiveTableId(table.id);
+                    setSelectedColumnName(table.columns[0]?.name ?? null);
+                  }}
+                >
+                  <TableOutlined />
+                  <span>{table.id}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+
+      <main className="data-workbench-main">
+        <div className="data-workbench-toolbar">
+          <div>
+            <Text className="data-workbench-mode">Data View</Text>
+            <h2>{activeTable?.id || 'Select a table'}</h2>
+          </div>
+          <div className="data-workbench-actions">
+            <Button icon={<PlusOutlined />}>New Table</Button>
+            <Button icon={<AppstoreOutlined />}>Manage Columns</Button>
+            <Button
+              type="primary"
+              icon={<ReloadOutlined />}
+              onClick={() => activeSourceId && qc.invalidateQueries({ queryKey: dataSourceKeys.schema(activeSourceId) })}
+            >
+              Refresh Data
+            </Button>
+          </div>
+        </div>
+
+        <div className="data-workbench-formula">
+          <span>fx</span>
+          <div>{selectedColumn ? `${selectedColumn.name} : ${normalizeType(selectedColumn.type)}` : 'Select a column'}</div>
+          <CheckOutlined />
+        </div>
+
+        <div className="data-workbench-grid">
+          <div className="data-workbench-grid-head">
+            <span>#</span>
+            <span>Column</span>
+            <span>Datatype</span>
+            <span>Role</span>
+            <span>Nullable</span>
+          </div>
+          {activeTable?.columns.map((column, index) => (
+            <button
+              key={column.name}
+              className={`data-workbench-grid-row${selectedColumn?.name === column.name ? ' active' : ''}`}
+              onClick={() => setSelectedColumnName(column.name)}
+            >
+              <span>{index + 1}</span>
+              <strong>{column.name}</strong>
+              <span>{normalizeType(column.type)}</span>
+              <span>
+                {column.primary_key ? (
+                  <Tag color="blue">Primary key</Tag>
+                ) : column.foreign_key ? (
+                  <Tag color="cyan">Foreign key</Tag>
+                ) : (
+                  <Tag>Field</Tag>
+                )}
+              </span>
+              <span>{column.nullable === false ? 'No' : 'Yes'}</span>
+            </button>
+          ))}
+        </div>
+      </main>
+
+      <aside className="data-workbench-properties">
+        <div className="data-workbench-properties-title">Field Properties</div>
+        {selectedColumn ? (
+          <>
+            <Text className="data-workbench-kicker">Selected Column</Text>
+            <div className="data-workbench-selected-field">
+              <FieldStringOutlined />
+              <span>{selectedColumn.name}</span>
+            </div>
+            <Text className="data-workbench-kicker">Datatype</Text>
+            <Select
+              value={normalizeType(selectedColumn.type)}
+              options={[
+                { value: 'Text', label: 'Text' },
+                { value: 'Number', label: 'Number' },
+                { value: 'Decimal', label: 'Decimal' },
+                { value: 'Date', label: 'Date' },
+                { value: 'Boolean', label: 'Boolean' },
+              ]}
+              style={{ width: '100%' }}
+            />
+            <Text className="data-workbench-kicker">Source</Text>
+            <div className="data-workbench-source-note">
+              <DatabaseOutlined />
+              <span>{activeSourceId ? dataSources.find((source) => source.id === activeSourceId)?.name : 'Data source'}</span>
+            </div>
+          </>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select a column" />
+        )}
+      </aside>
+    </div>
+  );
+}

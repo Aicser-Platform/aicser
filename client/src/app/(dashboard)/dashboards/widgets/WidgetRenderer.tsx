@@ -153,11 +153,9 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     // chartQuery.dataSourceId until the user hits Apply Changes.
     // WidgetPreview already injects widget.dataSourceId into query, but fall back to
     // config.__widgetDataSourceId for any call sites that bypass WidgetPreview.
-    const resolvedDataSourceId = query.dataSourceId || config.__widgetDataSourceId;
-    const slicerQuery =
-      resolvedDataSourceId && !query.dataSourceId
-        ? { ...query, dataSourceId: resolvedDataSourceId }
-        : query;
+    const slicerQuery = (query as Record<string, unknown>).dataSourceId
+      ? query
+      : { ...query, dataSourceId: (config as Record<string, unknown>).__widgetDataSourceId };
     return (
       <SlicerWidget
         query={slicerQuery}
@@ -187,7 +185,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
             style={{
               fontSize: config.titleSize || 13,
               fontWeight: 600,
-              color: config.titleColor || 'var(--ant-color-text-secondary)',
+              color: config.titleColor || 'var(--studio-text-secondary)',
               textTransform: config.uppercase ? 'uppercase' : 'none',
               letterSpacing: config.uppercase ? '0.06em' : undefined,
             }}
@@ -222,7 +220,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       return (
         <div className="widget-center" style={{ flexDirection: 'column', gap: 8 }}>
           <Empty description="No image URL set" imageStyle={{ height: 40 }} />
-          <span style={{ fontSize: 12, color: 'var(--ant-color-text-tertiary)' }}>Set URL in properties →</span>
+          <span style={{ fontSize: 12, color: 'var(--studio-text-muted)' }}>Set URL in properties →</span>
         </div>
       );
     }

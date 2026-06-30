@@ -44,8 +44,8 @@ export const WidgetPreview: React.FC<{
       dashboardDefaultPalette,
     ),
     dashboardDefaultPalette,
-    // Expose widget-root dataSourceId so WidgetRenderer can fall back to it for
-    // SlicerWidget when query.dataSourceId is not yet populated (before Apply Changes).
+    // __widgetDataSourceId: slicer widgets read query.dataSourceId to fetch filter options;
+    // this ensures the widget-level dataSourceId is available even before Apply Changes is clicked.
     __widgetDataSourceId: widget.dataSourceId,
     ...(compactPreview
       ? {

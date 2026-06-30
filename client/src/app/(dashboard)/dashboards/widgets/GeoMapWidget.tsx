@@ -184,7 +184,7 @@ export function GeoMapWidget({ data, config = {}, onChartReady, minHeight }: Geo
   if (!data || ((!data.x || data.x.length === 0) && (!data.series || data.series.length === 0))) {
     return (
       <div className="widget-center" style={{ flexDirection: 'column', gap: 8 }}>
-        <GlobalOutlined style={{ fontSize: 32, color: 'var(--studio-text-muted)' }} />
+        <GlobalOutlined style={{ fontSize: 32, color: 'var(--ant-color-text-tertiary)' }} />
         <Empty description="No geographic data. Map country names to values in properties." imageStyle={{ height: 0 }} />
       </div>
     );

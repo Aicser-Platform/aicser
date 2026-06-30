@@ -283,7 +283,7 @@ export function DashboardViewerShell({
         )}
 
         {hasConfiguredFilters ? (
-          <div className="dashboard-filter-toolbar-strip">
+          <div className="w-full px-4 pt-2 border-b border-border-light shrink-0">
             <DashboardFilterPanel
               variant="toolbar"
               filters={combinedFiltersConfig}

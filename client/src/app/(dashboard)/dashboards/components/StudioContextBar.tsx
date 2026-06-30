@@ -14,6 +14,7 @@ import type { FilterFieldConflict } from '../utils/filterConflicts';
 import type { LayoutPreset } from './LayoutPresetsMenu';
 import { DashboardStyleMenu } from './DashboardStyleMenu';
 import { DashboardDataModelButton } from './DashboardDataModelButton';
+import { OverflowMenuButton } from './OverflowMenuButton';
 import type { ChartPaletteId } from '../utils/chartPaletteCatalog';
 import { AUTO_REFRESH_INTERVAL_OPTIONS } from '../hooks/useDashboardRefresh';
 
@@ -235,8 +236,8 @@ export function StudioContextBar({
 
   return (
     <div className={`studio-context${presentationMode ? ' studio-context-presentation' : ''}`}>
-      <div className="studio-context-row">
-        <div className="studio-context-pages">
+      <div className="studio-context-row flex items-center justify-between gap-3 flex-wrap">
+        <div className="studio-context-pages flex-1 min-w-0">
           <DashboardPageTabs
             pages={pages}
             activePageId={activePageId}
@@ -246,9 +247,9 @@ export function StudioContextBar({
           />
         </div>
 
-        <div className="studio-context-actions">
+        <div className="studio-context-actions flex items-center gap-2 shrink-0">
           {onRefresh && !presentationMode && (
-            <div className="studio-refresh-group">
+            <div className="studio-refresh-group flex items-center gap-1.5 shrink-0">
               <Dropdown
                 trigger={['click']}
                 menu={{
@@ -279,7 +280,7 @@ export function StudioContextBar({
           )}
 
           {!readOnly && !presentationMode && (
-          <Button.Group className="studio-filter-group">
+          <Button.Group>
             <Tooltip
               title={
                 hasConfiguredFilters
@@ -292,37 +293,46 @@ export function StudioContextBar({
                 type={filtersPanelOpen && hasConfiguredFilters ? 'primary' : 'default'}
                 ghost={filtersPanelOpen && hasConfiguredFilters}
                 icon={<FilterOutlined />}
-                className="studio-context-btn"
+                className="text-xs"
                 onClick={handleFilterClick}
               >
                 {t('filter_verb')}
                 {activeFilterCount > 0 && (
-                  <Badge count={activeFilterCount} size="small" className="studio-filter-badge" />
+                  <Badge count={activeFilterCount} size="small" className="!ml-1.5" />
                 )}
               </Button>
             </Tooltip>
             <Dropdown menu={{ items: filterMenuItems }} trigger={['click']}>
-              <Button size="small" icon={<DownOutlined />} className="studio-context-btn studio-context-btn-caret" />
+              <Button size="small" icon={<DownOutlined />} className="!px-1.5 text-xs" />
             </Dropdown>
           </Button.Group>
           )}
 
-          {!presentationMode && onDashboardColorPaletteChange ? (
-            <DashboardStyleMenu
-              currentPalette={dashboardColorPalette}
-              hideLayout={hideLayout}
-              widgetCount={widgetCount}
-              onApplyLayoutPreset={onApplyLayoutPreset}
-              onResetLayout={onResetLayout}
-              onPaletteChange={onDashboardColorPaletteChange}
-            />
-          ) : null}
+          {(!presentationMode && onDashboardColorPaletteChange) ||
+          (!readOnly && !presentationMode && dataSourceIds.length > 0) ? (
+            <OverflowMenuButton ariaLabel="More options" title="More options">
+              {() => (
+                <>
+                  {!presentationMode && onDashboardColorPaletteChange ? (
+                    <DashboardStyleMenu
+                      currentPalette={dashboardColorPalette}
+                      hideLayout={hideLayout}
+                      widgetCount={widgetCount}
+                      onApplyLayoutPreset={onApplyLayoutPreset}
+                      onResetLayout={onResetLayout}
+                      onPaletteChange={onDashboardColorPaletteChange}
+                    />
+                  ) : null}
 
-          {!readOnly && !presentationMode && dataSourceIds.length > 0 ? (
-            <DashboardDataModelButton
-              dataSourceIds={dataSourceIds}
-              dataSourceOptions={dataSourceOptions}
-            />
+                  {!readOnly && !presentationMode && dataSourceIds.length > 0 ? (
+                    <DashboardDataModelButton
+                      dataSourceIds={dataSourceIds}
+                      dataSourceOptions={dataSourceOptions}
+                    />
+                  ) : null}
+                </>
+              )}
+            </OverflowMenuButton>
           ) : null}
 
           {presentationMode && onExitPresentation ? (
@@ -330,7 +340,7 @@ export function StudioContextBar({
               <Button
                 size="small"
                 type="text"
-                className="studio-context-btn studio-presentation-exit studio-presentation-exit-icon"
+                className="!w-8 !h-8 !p-0 !rounded-md shrink-0 text-text-secondary hover:!text-text hover:!bg-bg-elevated"
                 icon={<FullscreenExitOutlined />}
                 onClick={onExitPresentation}
                 aria-label={t('exit_fullscreen')}
