@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { SegmentedOption, METRIC_OPTIONS } from './PropertiesPanelConfig';
+import { SegmentedOption, METRIC_OPTIONS, ComputedMetric } from './PropertiesPanelConfig';
+import { ComputedMetricEditor } from './ComputedMetricEditor';
 
 const { Text } = Typography;
 
@@ -221,6 +222,8 @@ export const InputField: React.FC<InputFieldProps> = ({
 export interface MetricItem {
   field: string;
   aggregation: string;
+  label?: string;
+  computed?: ComputedMetric;
 }
 
 interface MetricListFieldProps extends FieldProps {
@@ -248,6 +251,8 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   chartType,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [computedEditorOpen, setComputedEditorOpen] = useState(false);
+  const [editingComputedIndex, setEditingComputedIndex] = useState<number | null>(null);
 
   const isLimitReached = maxItems !== undefined && metrics.length >= maxItems;
 
@@ -359,25 +364,43 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
               return ['count', 'distinct_count'].includes(valString);
             });
 
-          const menuItems: MenuProps['items'] = [
-            {
-              key: 'remove',
-              label: 'Remove field',
-              danger: true,
-              onClick: () => handleRemoveField(index),
-            },
-            { type: 'divider' },
-            ...allowedAggregations.map((opt) => ({
-              key: opt.value as string,
-              label: (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  {opt.label}
-                  {item.aggregation === opt.value && <CheckOutlined style={{ fontSize: '12px' }} />}
-                </div>
-              ),
-              onClick: () => handleUpdateAggregation(index, opt.value as string),
-            })),
-          ];
+          const menuItems: MenuProps['items'] = item.computed
+            ? [
+                {
+                  key: 'fx-edit',
+                  label: 'Edit computed metric (fx)',
+                  onClick: () => {
+                    setEditingComputedIndex(index);
+                    setComputedEditorOpen(true);
+                  },
+                },
+                { type: 'divider' },
+                {
+                  key: 'remove',
+                  label: 'Remove field',
+                  danger: true,
+                  onClick: () => handleRemoveField(index),
+                },
+              ]
+            : [
+                {
+                  key: 'remove',
+                  label: 'Remove field',
+                  danger: true,
+                  onClick: () => handleRemoveField(index),
+                },
+                { type: 'divider' },
+                ...allowedAggregations.map((opt) => ({
+                  key: opt.value as string,
+                  label: (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {opt.label}
+                      {item.aggregation === opt.value && <CheckOutlined style={{ fontSize: '12px' }} />}
+                    </div>
+                  ),
+                  onClick: () => handleUpdateAggregation(index, opt.value as string),
+                })),
+              ];
 
           return (
             <div
@@ -397,12 +420,29 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                       style={{ fontSize: '11px' }}
                       className="metric-item-label"
                       ellipsis
-                      title={item.aggregation === 'none' ? String(getFieldLabel(item.field)) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
+                      title={item.computed ? `fx ${item.label || item.field}` : item.aggregation === 'none' ? String(getFieldLabel(item.field)) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
                     >
-                      {item.aggregation === 'none' ? getFieldLabel(item.field) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
+                      {item.computed ? (
+                        <><span style={{ color: '#722ed1', fontWeight: 700, marginRight: 2 }}>fx</span>{item.label || item.field}</>
+                      ) : (
+                        item.aggregation === 'none' ? getFieldLabel(item.field) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`
+                      )}
                     </Text>
                   </div>
                   <div className="metric-item-actions">
+                    {item.computed && (
+                      <span
+                        style={{ fontSize: 9, color: '#722ed1', fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}
+                        title="Computed metric — click to edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingComputedIndex(index);
+                          setComputedEditorOpen(true);
+                        }}
+                      >
+                        fx
+                      </span>
+                    )}
                     <DownOutlined style={{ fontSize: 8 }} />
                     <CloseOutlined
                       style={{ fontSize: 10 }}
@@ -419,21 +459,64 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
         })}
 
         {!isLimitReached && (
-          <Select
-            style={{ width: '100%', marginTop: metrics.length > 0 ? 4 : 0 }}
-            popupClassName="properties-panel-dropdown"
-            placeholder={placeholder}
-            loading={isLoading}
-            onChange={handleAddField}
-            value={null}
-            options={availableOptions}
-            showSearch
-            optionFilterProp="label"
-            size="small"
-            dropdownStyle={{ zIndex: 10000 }}
-            getPopupContainer={() => document.body}
-          />
+          <div style={{ display: 'flex', gap: 4, marginTop: metrics.length > 0 ? 4 : 0, alignItems: 'center' }}>
+            <Select
+              style={{ flex: 1 }}
+              popupClassName="properties-panel-dropdown"
+              placeholder={placeholder}
+              loading={isLoading}
+              onChange={handleAddField}
+              value={null}
+              options={availableOptions}
+              showSearch
+              optionFilterProp="label"
+              size="small"
+              dropdownStyle={{ zIndex: 10000 }}
+              getPopupContainer={() => document.body}
+            />
+            <button
+              type="button"
+              style={{
+                fontSize: 11,
+                color: '#722ed1',
+                cursor: 'pointer',
+                background: 'none',
+                border: '1px solid #d3b4f7',
+                borderRadius: 4,
+                padding: '2px 8px',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => {
+                setEditingComputedIndex(null);
+                setComputedEditorOpen(true);
+              }}
+              title="Add a computed metric (ratio/formula)"
+            >
+              fx
+            </button>
+          </div>
         )}
+
+        <ComputedMetricEditor
+          open={computedEditorOpen}
+          initial={editingComputedIndex != null ? metrics[editingComputedIndex] : undefined}
+          columnOptions={columnOptions}
+          onSave={(metric) => {
+            if (editingComputedIndex != null) {
+              const updated = [...metrics];
+              updated[editingComputedIndex] = metric;
+              onChange(updated);
+            } else {
+              onChange([...metrics, metric]);
+            }
+            setComputedEditorOpen(false);
+            setEditingComputedIndex(null);
+          }}
+          onCancel={() => {
+            setComputedEditorOpen(false);
+            setEditingComputedIndex(null);
+          }}
+        />
       </div>
     </div>
   );

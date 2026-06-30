@@ -25,6 +25,19 @@ export interface SegmentedOption {
   value: string | boolean;
 }
 
+export interface ComputedMetricSide {
+  field: string;
+  aggregation: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinct_count';
+  filter?: Array<{ field: string; operator: string; value: unknown }>;
+}
+
+export interface ComputedMetric {
+  type: 'ratio';
+  numerator: ComputedMetricSide;
+  denominator: ComputedMetricSide;
+  multiplier: 1 | 100;
+}
+
 export const METRIC_OPTIONS: SegmentedOption[] = [
   { label: "Don't summarize", value: 'none' },
   { label: 'Count', value: 'count' },
