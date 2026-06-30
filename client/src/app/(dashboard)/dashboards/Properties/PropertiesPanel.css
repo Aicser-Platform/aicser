@@ -145,6 +145,26 @@
   border-color: var(--ant-color-primary);
 }
 
+.field-drop-target-active,
+.pp-field-drop-shell {
+  border-radius: 6px;
+}
+
+.field-drop-target-active {
+  outline: 1.5px dashed var(--ant-color-primary);
+  outline-offset: 3px;
+  background: var(--ant-color-primary-bg);
+}
+
+.pp-field-drop-shell {
+  transition: outline-color 0.15s, background 0.15s;
+}
+
+.pp-field-drop-shell:hover {
+  outline: 1px dashed var(--ant-color-border);
+  outline-offset: 3px;
+}
+
 /* drop-zone styling for MetricListField */
 .metric-drop-zone {
   border: 1.5px dashed var(--ant-color-border);

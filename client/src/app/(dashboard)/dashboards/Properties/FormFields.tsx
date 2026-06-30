@@ -6,6 +6,11 @@ import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleO
 import { useTranslations } from 'next-intl';
 import { SegmentedOption, METRIC_OPTIONS, ComputedMetric } from './PropertiesPanelConfig';
 import { ComputedMetricEditor } from './ComputedMetricEditor';
+import {
+  getDashboardFieldDragData,
+  isDashboardFieldDrag,
+  type DashboardFieldDragPayload,
+} from '../utils/dashboardFieldDrag';
 
 const { Text } = Typography;
 
@@ -134,6 +139,7 @@ interface SelectFieldProps extends FieldProps {
   showSearch?: boolean;
   allowClear?: boolean;
   mode?: 'multiple' | 'tags';
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const SelectField: React.FC<SelectFieldProps> = ({
@@ -149,30 +155,60 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   showSearch = true,
   allowClear,
   mode,
-}) => (
-  <div className="panel-section">
-    <SectionLabel label={label} required={required} hint={hint} />
-    <Select
-      style={{ width: '100%' }}
-      popupClassName="properties-panel-dropdown"
-      value={value}
-      onChange={onChange}
-      options={options}
-      placeholder={placeholder}
-      disabled={disabled}
-      loading={isLoading}
-      size="small"
-      showSearch={showSearch}
-      optionFilterProp="label"
-      mode={mode}
-      allowClear={allowClear ?? !required}
-      styles={{
-        popup: { root: { zIndex: 10000, maxHeight: 300 } },
+  onFieldDrop,
+}) => {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  return (
+    <div
+      className={`panel-section${isDragOver ? ' field-drop-target-active' : ''}`}
+      onDragEnter={(event) => {
+        if (disabled || !isDashboardFieldDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        setIsDragOver(true);
       }}
-      getPopupContainer={() => document.body}
-    />
-  </div>
-);
+      onDragOver={(event) => {
+        if (disabled || !isDashboardFieldDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={(event) => {
+        if (disabled) return;
+        const field = getDashboardFieldDragData(event.dataTransfer);
+        if (!field) return;
+        event.preventDefault();
+        setIsDragOver(false);
+        if (onFieldDrop) {
+          onFieldDrop(field);
+          return;
+        }
+        onChange(field.columnName);
+      }}
+    >
+      <SectionLabel label={label} required={required} hint={hint} />
+      <Select
+        style={{ width: '100%' }}
+        popupClassName="properties-panel-dropdown"
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder={isDragOver ? 'Drop field here' : placeholder}
+        disabled={disabled}
+        loading={isLoading}
+        size="small"
+        showSearch={showSearch}
+        optionFilterProp="label"
+        mode={mode}
+        allowClear={allowClear ?? !required}
+        styles={{
+          popup: { root: { zIndex: 10000, maxHeight: 300 } },
+        }}
+        getPopupContainer={() => document.body}
+      />
+    </div>
+  );
+};
 
 /* =========================================================
  * Field: Input
@@ -235,6 +271,7 @@ interface MetricListFieldProps extends FieldProps {
   maxItems?: number;
   excludeFields?: string[];
   chartType?: string;
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const MetricListField: React.FC<MetricListFieldProps> = ({
@@ -249,8 +286,10 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   maxItems,
   excludeFields = [],
   chartType,
+  onFieldDrop,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isFieldDragOver, setIsFieldDragOver] = useState(false);
   const [computedEditorOpen, setComputedEditorOpen] = useState(false);
   const [editingComputedIndex, setEditingComputedIndex] = useState<number | null>(null);
 
@@ -273,6 +312,14 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
       if (isLimitReached) return;
       onChange([...metrics, newMetric]);
     }
+  };
+
+  const handleDroppedField = (field: DashboardFieldDragPayload) => {
+    if (onFieldDrop) {
+      onFieldDrop(field);
+      return;
+    }
+    handleAddField(field.columnName);
   };
 
   const handleUpdateAggregation = (index: number, agg: string) => {
@@ -343,7 +390,28 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
     <div className="panel-section">
       <SectionLabel label={label} required={required} hint={hint} />
 
-      <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <div
+        className={`metric-list-container${isFieldDragOver ? ' field-drop-target-active' : ''}`}
+        style={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+        onDragEnter={(event) => {
+          if (isLimitReached || !isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          setIsFieldDragOver(true);
+        }}
+        onDragOver={(event) => {
+          if (isLimitReached || !isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDragLeave={() => setIsFieldDragOver(false)}
+        onDrop={(event) => {
+          const field = getDashboardFieldDragData(event.dataTransfer);
+          if (!field || isLimitReached) return;
+          event.preventDefault();
+          setIsFieldDragOver(false);
+          handleDroppedField(field);
+        }}
+      >
         {metrics.map((item, index) => {
           const fieldInfo = columnOptions.find((opt) => opt.value === item.field);
           const type = (fieldInfo?.type || '').toLowerCase();
@@ -556,6 +624,7 @@ interface FilterListFieldProps extends FieldProps {
   columnOptions: { label: React.ReactNode; value: string; type?: string }[];
   isLoading?: boolean;
   placeholder?: string;
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const FilterListField: React.FC<FilterListFieldProps> = ({
@@ -566,6 +635,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   onChange,
   columnOptions,
   placeholder = 'Select columns here or click',
+  onFieldDrop,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -596,6 +666,22 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   const handleRemoveFilter = (index: number) => {
     const updated = filters.filter((_, i) => i !== index);
     onChange(updated);
+  };
+
+  const handleDroppedField = (field: DashboardFieldDragPayload) => {
+    if (onFieldDrop) {
+      onFieldDrop(field);
+      return;
+    }
+    onChange([
+      ...filters,
+      {
+        field: field.columnName,
+        operator: '=',
+        value: '',
+        type: 'simple',
+      },
+    ]);
   };
 
   const handleSaveFilter = () => {
@@ -706,7 +792,21 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     <div className="panel-section">
       <SectionLabel label={label} required={required} hint={hint} />
 
-      <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div
+        className="metric-list-container"
+        style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+        onDragOver={(event) => {
+          if (!isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(event) => {
+          const field = getDashboardFieldDragData(event.dataTransfer);
+          if (!field) return;
+          event.preventDefault();
+          handleDroppedField(field);
+        }}
+      >
         {filters.map((filter, index) => (
           <Popover
             key={index}

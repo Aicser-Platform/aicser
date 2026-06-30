@@ -5,6 +5,7 @@ import stableStringify from 'fast-json-stable-stringify';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { useChartDesignerStore } from '../../chart-designer/stores/useChartDesignerStore';
+import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 
 interface UseWidgetPropertiesParams {
   selectedWidget: any;
@@ -250,6 +251,87 @@ export const useWidgetProperties = ({
     updateLocalAndStore({ chartQuery: nextQuery });
   };
 
+  const metricAggregationForField = (field: DashboardFieldDragPayload) => {
+    const type = (field.columnType || '').toLowerCase();
+    const isNumeric =
+      type.includes('int') ||
+      type.includes('float') ||
+      type.includes('number') ||
+      type.includes('decimal') ||
+      type.includes('double') ||
+      type.includes('real') ||
+      type.includes('numeric');
+    return isNumeric ? 'sum' : 'count';
+  };
+
+  const appendMetric = (metrics: any[] = [], field: DashboardFieldDragPayload, replace = false) => {
+    const nextMetric = {
+      field: field.columnName,
+      aggregation: selectedWidget?.chartType === 'scatter' ? 'none' : metricAggregationForField(field),
+    };
+    if (replace) return [nextMetric];
+    if (metrics.some((metric) => metric.field === field.columnName)) return metrics;
+    return [...metrics, nextMetric];
+  };
+
+  const applyDroppedField = (targetKey: string, field: DashboardFieldDragPayload) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    let nextQuery = ensureChartQueryDefaults({
+      ...currentQuery,
+      ...(field.tableName ? { tableName: field.tableName } : {}),
+    });
+
+    if (targetKey === 'yMetrics' || targetKey === 'yMetricsSecondary') {
+      nextQuery = {
+        ...nextQuery,
+        [targetKey]: appendMetric(nextQuery[targetKey] || [], field),
+      };
+    } else if (targetKey === 'xMetrics') {
+      nextQuery = {
+        ...nextQuery,
+        xMetrics: appendMetric(nextQuery.xMetrics || [], field, true),
+      };
+    } else if (targetKey === 'filters') {
+      nextQuery = {
+        ...nextQuery,
+        filters: [
+          ...(nextQuery.filters || []),
+          {
+            field: field.columnName,
+            operator: '=',
+            value: '',
+            type: 'simple',
+          },
+        ],
+      };
+    } else if (targetKey === 'slicerField') {
+      nextQuery = {
+        ...nextQuery,
+        field: field.columnName,
+        x: field.columnName,
+        dataSourceId: field.dataSourceId,
+      };
+    } else {
+      nextQuery = {
+        ...nextQuery,
+        [targetKey]: field.columnName,
+      };
+
+      const hasNoMetrics = !nextQuery.yMetrics || nextQuery.yMetrics.length === 0;
+      if (targetKey === 'x' && hasNoMetrics && selectedWidget?.chartType !== 'scatter') {
+        nextQuery = {
+          ...nextQuery,
+          yMetrics: [{ field: field.columnName, aggregation: 'count' }],
+        };
+      }
+    }
+
+    updateLocalAndStore({
+      dataSourceId: field.dataSourceId || selectedWidget?.dataSourceId,
+      chartQuery: nextQuery,
+    });
+  };
+
   // Atomic apply — updates title, chartType, x, y, and chartOptions in one store write
   // so the auto-sync effect sees a consistent state (no stale-closure overwrites).
   const applyWidgetChanges = (changes: {
@@ -339,6 +421,7 @@ export const useWidgetProperties = ({
     schemaLoading,
     updateWidgetRoot,
     updateChartQuery,
+    applyDroppedField,
     applyWidgetChanges,
     applySlicerChanges,
     handleDataSourceChange,

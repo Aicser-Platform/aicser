@@ -17,6 +17,7 @@ import { ChartOptions } from './ChartOptions';
 import { ChartSpecificFields } from './ChartSpecificFields';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { RuntimeFilter } from '../utils/filterOperators';
+import { getDashboardFieldDragData, isDashboardFieldDrag } from '../utils/dashboardFieldDrag';
 import './PropertiesPanel.css';
 
 interface PropertiesPanelProps {
@@ -70,6 +71,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     isLoading,
     updateWidgetRoot,
     updateChartQuery,
+    applyDroppedField,
     applySlicerChanges,
     schemaLoading,
   } = useWidgetProperties({ selectedWidget, selectedWidgetId, widgets, setWidgets, isDesigner });
@@ -181,26 +183,42 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <>
               <div>
                 <div className="pp-section-label">Filter Field</div>
-                <Select
-                  size="small"
-                  style={{ width: '100%' }}
-                  value={pendingSlicerField}
-                  onChange={setPendingSlicerField}
-                  options={columnOptions}
-                  placeholder={
-                    !selectedWidget?.dataSourceId
-                      ? 'Select a data source first'
-                      : schemaLoading
-                      ? 'Loading columns…'
-                      : 'Select filter field'
-                  }
-                  loading={schemaLoading}
-                  allowClear
-                  showSearch
-                  filterOption={(input, opt) =>
-                    String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                />
+                <div
+                  className="pp-field-drop-shell"
+                  onDragOver={(event) => {
+                    if (!isDashboardFieldDrag(event.dataTransfer)) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                  }}
+                  onDrop={(event) => {
+                    const field = getDashboardFieldDragData(event.dataTransfer);
+                    if (!field) return;
+                    event.preventDefault();
+                    setPendingSlicerField(field.columnName);
+                    applyDroppedField('slicerField', field);
+                  }}
+                >
+                  <Select
+                    size="small"
+                    style={{ width: '100%' }}
+                    value={pendingSlicerField}
+                    onChange={setPendingSlicerField}
+                    options={columnOptions}
+                    placeholder={
+                      !selectedWidget?.dataSourceId
+                        ? 'Select a data source first'
+                        : schemaLoading
+                        ? 'Loading columns...'
+                        : 'Select filter field'
+                    }
+                    loading={schemaLoading}
+                    allowClear
+                    showSearch
+                    filterOption={(input, opt) =>
+                      String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                  />
+                </div>
               </div>
 
               <div>
@@ -254,6 +272,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 selectedTableColumns={selectedTableColumns || []}
                 isLoading={schemaLoading}
                 onUpdateChartQuery={updateChartQuery}
+                onFieldDrop={applyDroppedField}
                 chartOptions={selectedWidget.chartOptions || {}}
                 onUpdateChartOption={(key, val) =>
                   updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
@@ -285,6 +304,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             selectedTableColumns={selectedTableColumns || []}
             isLoading={schemaLoading}
             onUpdateChartQuery={updateChartQuery}
+            onFieldDrop={applyDroppedField}
             chartOptions={selectedWidget.chartOptions || {}}
             onUpdateChartOption={(key, val) =>
               updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
@@ -301,6 +321,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             selectedTableColumns={selectedTableColumns || []}
             isLoading={schemaLoading}
             onUpdateChartQuery={updateChartQuery}
+            onFieldDrop={applyDroppedField}
             chartOptions={selectedWidget.chartOptions || {}}
             onUpdateChartOption={(key, val) =>
               updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
@@ -410,6 +431,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           selectedTableColumns={selectedTableColumns || []}
           isLoading={schemaLoading}
           onUpdateChartQuery={updateChartQuery}
+          onFieldDrop={applyDroppedField}
           chartOptions={selectedWidget.chartOptions || {}}
           onUpdateChartOption={(key, val) =>
             updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })

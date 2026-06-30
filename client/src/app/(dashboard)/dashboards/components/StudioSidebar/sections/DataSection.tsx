@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDataSources, useDataSourceSchema, dataSourceKeys } from '@/hooks/useDataSources';
+import { setDashboardFieldDragData } from '../../../utils/dashboardFieldDrag';
 
 const { Text } = Typography;
 
@@ -58,32 +59,34 @@ function normalizeTables(schema: unknown): DisplayTable[] {
   }>;
 
   return rawTables
-    .map((table) => {
+    .map((table): DisplayTable | null => {
       const name = String(table.name || '').trim();
       if (!name) return null;
       const id = tableId(table);
-      return {
+      const normalizedTable: DisplayTable = {
         id,
         name,
-        schema: table.schema,
         rowCount: table.rowCount ?? table.row_count ?? null,
         columns: (table.columns ?? [])
-          .map((column) => {
+          .map((column): DisplayColumn | null => {
             if (typeof column === 'string') {
               return { name: column, type: 'string', nullable: true };
             }
             const columnName = String(column?.name || '').trim();
             if (!columnName) return null;
-            return {
+            const normalizedColumn: DisplayColumn = {
               name: columnName,
               type: String(column?.type || 'string'),
               nullable: column?.nullable ?? true,
-              primary_key: column?.primary_key,
-              foreign_key: column?.foreign_key,
             };
+            if (column?.primary_key !== undefined) normalizedColumn.primary_key = column.primary_key;
+            if (column?.foreign_key !== undefined) normalizedColumn.foreign_key = column.foreign_key;
+            return normalizedColumn;
           })
           .filter((column): column is DisplayColumn => Boolean(column)),
       };
+      if (table.schema !== undefined) normalizedTable.schema = table.schema;
+      return normalizedTable;
     })
     .filter((table): table is DisplayTable => Boolean(table));
 }
@@ -226,6 +229,20 @@ export function DataSection() {
               key={column.name}
               className={`data-workbench-grid-row${selectedColumn?.name === column.name ? ' active' : ''}`}
               onClick={() => setSelectedColumnName(column.name)}
+              draggable={Boolean(activeSourceId && activeTable)}
+              onDragStart={(event) => {
+                if (!activeSourceId || !activeTable) return;
+                setSelectedColumnName(column.name);
+                setDashboardFieldDragData(event.dataTransfer, {
+                  dataSourceId: activeSourceId,
+                  tableName: activeTable.name,
+                  tableId: activeTable.id,
+                  columnName: column.name,
+                  columnType: column.type,
+                  label: `${activeTable.id}.${column.name}`,
+                });
+              }}
+              title="Drag this field to a chart axis, metric, filter, or slicer"
             >
               <span>{index + 1}</span>
               <strong>{column.name}</strong>

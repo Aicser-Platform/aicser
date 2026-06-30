@@ -28,6 +28,7 @@ import { WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import { ConditionalFormattingEditor } from './ConditionalFormattingEditor';
 import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 import { TableColumnManager } from './TableColumnManager';
+import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 
 interface ChartFieldsProps {
   chartType: string;
@@ -40,6 +41,7 @@ interface ChartFieldsProps {
   chartOptions?: any;
   onUpdateChartOption?: (key: string, value: any) => void;
   onUpdateChartOptions?: (updates: Record<string, any>) => void;
+  onFieldDrop?: (targetKey: string, field: DashboardFieldDragPayload) => void;
   mode?: 'mapping' | 'customize' | 'colors' | 'advanced';
   dashboardPages?: { id: string; name: string }[];
 }
@@ -58,6 +60,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
   chartOptions,
   onUpdateChartOption,
   onUpdateChartOptions,
+  onFieldDrop,
   mode = 'mapping',
   dashboardPages = [],
 }) => {
@@ -122,6 +125,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 required={field.required}
                 value={chartQuery[field.key] || undefined}
                 onChange={(val) => onUpdateChartQuery(field.key, val)}
+                onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                 options={field.options || (field.key === 'yMetric' ? METRIC_OPTIONS : selectedTableColumns)}
                 placeholder={
                   !selectedWidget.dataSourceId
@@ -163,6 +167,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 required={field.required}
                 metrics={chartQuery[field.key] || []}
                 onChange={(val) => onUpdateChartQuery(field.key, val)}
+                onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                 columnOptions={selectedTableColumns}
                 placeholder={
                   !selectedWidget.dataSourceId
@@ -835,6 +840,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                     required={field.required}
                     filters={chartQuery[field.key] || []}
                     onChange={(val) => onUpdateChartQuery(field.key, val)}
+                    onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                     columnOptions={selectedTableColumns}
                     isLoading={isLoading}
                   />

@@ -295,6 +295,14 @@
   text-align: left;
 }
 
+.data-workbench-grid-row[draggable='true'] {
+  cursor: grab;
+}
+
+.data-workbench-grid-row[draggable='true']:active {
+  cursor: grabbing;
+}
+
 .data-workbench-grid-row:hover,
 .data-workbench-grid-row.active {
   background: var(--ant-color-fill-quaternary);
