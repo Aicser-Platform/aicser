@@ -74,7 +74,8 @@ function EChartWidgetCore({
     const hasData =
       (data.x && data.x.length > 0) ||
       (data.series && data.series.length > 0) ||
-      (data.y && data.y.length > 0);
+      (data.y && data.y.length > 0) ||
+      (type === 'gauge' && data.value != null);
     if (!hasData) return;
 
     if (!echartsInstance.current) {

@@ -551,9 +551,11 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
     });
   }
 
-  // Single series default
+  // Single series default — fall back to series[0].data when data.y is empty
+  // (data.y is deprecated in the backend; newer responses send series[0].data instead)
+  const yValues: any[] = data.y?.length ? data.y : (data.series?.[0]?.data ?? []);
   const pieData = (data?.x || []).map((label: string, idx: number) => ({
-    value: (data.y ?? [])[idx] ?? 0,
+    value: yValues[idx] ?? 0,
     name: String(label),
   }));
 

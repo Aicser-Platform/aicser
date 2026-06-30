@@ -280,7 +280,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         effectiveData.series.some((s: any) => Array.isArray(s.data) && s.data.length > 0)) ||
       (Array.isArray((effectiveData as { heatmap?: unknown[] }).heatmap) &&
         (effectiveData as { heatmap: unknown[] }).heatmap.length > 0) ||
-      (type === 'stat' && effectiveData.value !== undefined && effectiveData.value !== null));
+      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null));
 
   // Initial loading state (no data yet)
   if (isLoading && needsData && !hasData) {

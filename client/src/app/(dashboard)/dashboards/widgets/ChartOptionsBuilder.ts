@@ -110,8 +110,9 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     ((type === 'line' || type === 'area') && finalConfig.lineStackMode === 'stacked-100');
 
   if (type === 'pie' || type === 'donut') {
-    // Calculate total for percentage
-    const total = (data?.y || []).reduce((sum: number, val: number) => sum + (val || 0), 0);
+    // Calculate total for percentage — fall back to series[0].data when data.y is empty
+    const pieY: number[] = data?.y?.length ? data.y : (data?.series?.[0]?.data || []);
+    const total = pieY.reduce((sum: number, val: number) => sum + (val || 0), 0);
     const vf = (config as any).valueFormat as string | undefined;
     tooltipConfig = {
       ...tooltipConfig,
@@ -527,10 +528,13 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   // ─── Treemap ──────────────────────────────────────────────────────────────
   if (type === 'treemap') {
-    const treemapData = Array.isArray(data.x)
+    // Prefer x/y when both are present; fall back to series[0] when y is empty
+    // (data.y is deprecated; the series fallback was previously dead code because
+    //  data.x is always an array per the ChartData interface)
+    const treemapData = Array.isArray(data.x) && data.y?.length
       ? data.x.map((name: string, i: number) => ({ name: String(name), value: Number(data.y?.[i] ?? 0) }))
       : Array.isArray(data.series) && data.series[0]
-        ? data.series[0].data.map((v: number, i: number) => ({ name: String(data.categories?.[i] ?? i), value: v }))
+        ? data.series[0].data.map((v: number, i: number) => ({ name: String(data.categories?.[i] ?? data.x?.[i] ?? i), value: Number(v) }))
         : [];
     baseOptions.series = [{
       type: 'treemap',
@@ -551,7 +555,10 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   // ─── Waterfall chart ──────────────────────────────────────────────────────
   if (type === 'waterfall') {
     const cats = data.x || [];
-    const vals = Array.isArray(data.y) ? data.y.map(Number) : [];
+    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
+    const vals = Array.isArray(data.y) && data.y.length > 0
+      ? data.y.map(Number)
+      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
     // Build invisible + positive + negative series for waterfall
     let running = 0;
     const base: number[] = [];
@@ -577,7 +584,10 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   // Shows actual vs target in a compact horizontal bar with threshold bands.
   if (type === 'bullet') {
     const categories = Array.isArray(data.x) ? data.x : [];
-    const actuals: number[] = Array.isArray(data.y) ? data.y.map(Number) : [];
+    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
+    const actuals: number[] = Array.isArray(data.y) && data.y.length > 0
+      ? data.y.map(Number)
+      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
     // Target values come from series[0] if available, else config
     const targets: number[] = Array.isArray(data.series?.[0]?.data)
       ? data.series[0].data.map(Number)
