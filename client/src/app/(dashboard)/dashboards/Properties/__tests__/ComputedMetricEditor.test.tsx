@@ -34,7 +34,7 @@ describe('ComputedMetricEditor', () => {
     expect(okBtn).toBeDisabled();
   });
 
-  it('enables OK button after label is entered but still missing fields', () => {
+  it('remains disabled when only label is entered', () => {
     render(
       <ComputedMetricEditor
         open={true}

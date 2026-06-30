@@ -423,7 +423,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                       title={item.computed ? `fx ${item.label || item.field}` : item.aggregation === 'none' ? String(getFieldLabel(item.field)) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
                     >
                       {item.computed ? (
-                        <><span style={{ color: '#722ed1', fontWeight: 700, marginRight: 2 }}>fx</span>{item.label || item.field}</>
+                        <><span style={{ color: 'var(--ant-color-purple)', fontWeight: 700, marginRight: 2 }}>fx</span>{item.label || item.field}</>
                       ) : (
                         item.aggregation === 'none' ? getFieldLabel(item.field) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`
                       )}
@@ -432,7 +432,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                   <div className="metric-item-actions">
                     {item.computed && (
                       <span
-                        style={{ fontSize: 9, color: '#722ed1', fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}
+                        style={{ fontSize: 9, color: 'var(--ant-color-purple)', fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}
                         title="Computed metric — click to edit"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -478,10 +478,10 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
               type="button"
               style={{
                 fontSize: 11,
-                color: '#722ed1',
+                color: 'var(--ant-color-purple)',
                 cursor: 'pointer',
                 background: 'none',
-                border: '1px solid #d3b4f7',
+                border: '1px solid var(--ant-color-purple-border)',
                 borderRadius: 4,
                 padding: '2px 8px',
                 whiteSpace: 'nowrap',

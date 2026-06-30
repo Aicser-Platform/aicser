@@ -24,7 +24,41 @@ interface Props {
   onCancel: () => void;
 }
 
+interface SideEditorProps {
+  title: string;
+  value: ComputedMetricSide;
+  onChange: (v: ComputedMetricSide) => void;
+  stringOptions: { label: string; value: string }[];
+}
+
 const defaultSide = (): ComputedMetricSide => ({ field: '', aggregation: 'sum' });
+
+const SideEditor: React.FC<SideEditorProps> = ({ title, value, onChange, stringOptions }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <Text style={{ fontSize: 11, fontWeight: 600 }}>{title}</Text>
+    <div style={{ display: 'flex', gap: 6 }}>
+      <Select
+        size="small"
+        style={{ flex: 1 }}
+        placeholder="Field"
+        value={value.field || undefined}
+        onChange={(v: string) => onChange({ ...value, field: v })}
+        options={stringOptions}
+        showSearch
+        filterOption={(input, option) =>
+          String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+        }
+      />
+      <Select
+        size="small"
+        style={{ width: 110 }}
+        value={value.aggregation}
+        onChange={(v: ComputedMetricSide['aggregation']) => onChange({ ...value, aggregation: v })}
+        options={AGG_OPTIONS}
+      />
+    </div>
+  </div>
+);
 
 export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onCancel }: Props) {
   const existingComputed = initial?.computed;
@@ -56,44 +90,9 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
   };
 
   const stringOptions = columnOptions.map((opt) => ({
-    ...opt,
-    label: typeof opt.label === 'string' ? opt.label : String(opt.label ?? opt.value),
+    label: typeof opt.label === 'string' ? opt.label : String(opt.value),
+    value: String(opt.value),
   }));
-
-  const SideEditor = ({
-    title,
-    value,
-    onChange,
-  }: {
-    title: string;
-    value: ComputedMetricSide;
-    onChange: (v: ComputedMetricSide) => void;
-  }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <Text style={{ fontSize: 11, fontWeight: 600 }}>{title}</Text>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <Select
-          size="small"
-          style={{ flex: 1 }}
-          placeholder="Field"
-          value={value.field || undefined}
-          onChange={(v: string) => onChange({ ...value, field: v })}
-          options={stringOptions}
-          showSearch
-          filterOption={(input, option) =>
-            String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-          }
-        />
-        <Select
-          size="small"
-          style={{ width: 110 }}
-          value={value.aggregation}
-          onChange={(v: ComputedMetricSide['aggregation']) => onChange({ ...value, aggregation: v })}
-          options={AGG_OPTIONS}
-        />
-      </div>
-    </div>
-  );
 
   return (
     <Modal
@@ -104,7 +103,7 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
       okText="Add Metric"
       okButtonProps={{ disabled: !isValid }}
       width={420}
-      destroyOnClose
+      destroyOnHidden
     >
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
         <div>
@@ -126,8 +125,8 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
           Formula: Numerator ÷ Denominator
         </Divider>
 
-        <SideEditor title="Numerator" value={numerator} onChange={setNumerator} />
-        <SideEditor title="Denominator" value={denominator} onChange={setDenominator} />
+        <SideEditor title="Numerator" value={numerator} onChange={setNumerator} stringOptions={stringOptions} />
+        <SideEditor title="Denominator" value={denominator} onChange={setDenominator} stringOptions={stringOptions} />
 
         <div>
           <Text style={{ fontSize: 11, fontWeight: 600 }}>Result type</Text>
