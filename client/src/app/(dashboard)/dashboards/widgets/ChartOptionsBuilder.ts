@@ -588,10 +588,17 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     const actuals: number[] = Array.isArray(data.y) && data.y.length > 0
       ? data.y.map(Number)
       : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
-    // Target values come from series[0] if available, else config
-    const targets: number[] = Array.isArray(data.series?.[0]?.data)
-      ? data.series[0].data.map(Number)
-      : actuals.map(() => (config as any).bulletTarget ?? 0);
+    // Target values: legacy format uses series[0], new format uses series[1]
+    const hasLegacyY = Array.isArray(data.y) && data.y.length > 0;
+    const targets: number[] = hasLegacyY
+      // Legacy: data.y = actuals, series[0] = targets
+      ? (Array.isArray(data.series?.[0]?.data)
+          ? data.series![0].data.map(Number)
+          : actuals.map(() => (config as any).bulletTarget ?? 0))
+      // New format: series[0] = actuals, series[1] = targets
+      : (Array.isArray(data.series?.[1]?.data)
+          ? data.series![1].data.map(Number)
+          : actuals.map(() => (config as any).bulletTarget ?? 0));
 
     const bulletThresholdWarn: number = (config as any).bulletThresholdWarn ?? 60;
     const bulletThresholdOk: number = (config as any).bulletThresholdOk ?? 80;
