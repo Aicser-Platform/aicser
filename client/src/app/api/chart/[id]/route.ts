@@ -19,11 +19,12 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
     };
 
     if (request && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      const body = await request.json();
-      options.body = JSON.stringify(body);
+      // Forward the raw body verbatim (matches the /api/dashboards proxy). Avoid
+      // json()/re-stringify so we never alter or drop the request body.
+      const rawText = await request.text();
+      if (rawText) options.body = rawText;
     }
 
-    console.log(`[API Proxy ID] ${method} ${targetUrl}`);
     const response = await fetch(targetUrl, options);
 
     if (!response.ok) {

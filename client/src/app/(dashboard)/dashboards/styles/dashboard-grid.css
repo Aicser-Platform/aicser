@@ -398,11 +398,17 @@
   pointer-events: auto;
 }
 
-.widget-chart-canvas > div,
+.widget-chart-canvas > div:not(.dashboard-chart-tooltip),
 .widget-chart-canvas svg,
 .widget-chart-canvas canvas {
   width: 100% !important;
   height: 100% !important;
+}
+
+.widget-chart-canvas .dashboard-chart-tooltip {
+  width: auto !important;
+  height: auto !important;
+  max-width: min(320px, calc(100vw - 32px));
 }
 
 /* DOM watermark above canvas (dashboard); graphic fallback for canvas-only contexts */

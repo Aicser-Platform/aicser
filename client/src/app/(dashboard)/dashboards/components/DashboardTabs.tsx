@@ -915,7 +915,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   return (
     <div className="dashboard-studio-toolbar">
       <div className="toolbar-left">
-        <Dropdown popupRender={() => dashboardNavigator} trigger={['click']}>
+        <Dropdown popupRender={() => dashboardNavigator} trigger={[]} open={false}>
           <Button
             type="text"
             className="!w-8 !h-8 !rounded-md !bg-brand-subtle !text-brand hover:!bg-brand-subtle"

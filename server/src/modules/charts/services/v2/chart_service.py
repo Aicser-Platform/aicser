@@ -122,6 +122,14 @@ class ChartService:
         res = await self.db.execute(stmt)
         return res.scalars().all()
 
+    async def list_by_project_id(self, project_id: uuid.UUID) -> List[Chart]:
+        """EE: list all standalone charts in a project (project-scoped, shared across members)."""
+        if not isinstance(project_id, uuid.UUID):
+            project_id = uuid.UUID(str(project_id))
+        stmt = select(Chart).where(Chart.project_id == project_id)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+
     def _resolve_table_and_schema(self, schema_info: Any) -> tuple[Optional[str], str]:
         """Resolves (table, schema) from schema_info, supporting various formats."""
         if not schema_info:

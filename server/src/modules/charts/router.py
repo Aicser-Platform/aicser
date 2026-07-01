@@ -2958,7 +2958,22 @@ def _serialize_standalone_chart(chart) -> dict:
     }
 
 
-standalone_chart_router = APIRouter(dependencies=[Depends(legacy_charts_rbac_guard)])
+# NOTE: No router-level RBAC guard here. A router-level async dependency runs
+# *before* FastAPI resolves the request body param, and under the BaseHTTPMiddleware
+# stack that pre-body `await` drops the request body (payload arrives as None → 422).
+# Every endpoint below already enforces permissions via require_ee_permission(), so
+# the guard was redundant. See the dashboard charts router which is also guard-free.
+standalone_chart_router = APIRouter()
+
+
+def _enforce_standalone_chart_access(chart, user_id) -> None:
+    """CE: standalone charts are user-owned. EE: they are project resources
+    (access already gated by require_ee_permission), so any project member may
+    access them — skip the strict per-user ownership check."""
+    if is_ee_enabled():
+        return
+    if str(chart.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to access this chart")
 
 
 @standalone_chart_router.post("", status_code=status.HTTP_201_CREATED)
@@ -3015,8 +3030,10 @@ async def standalone_list_charts(
         raise HTTPException(status_code=400, detail="Project ID is required")
 
     service = ChartService(db)
+    # CE: scope charts by the creating user (project_id is NULL).
+    # EE: scope charts by project (shared across project members).
     charts = (
-        await service.list_by_user_id_and_project_id(user_uuid, project_uuid)
+        await service.list_by_project_id(project_uuid)
         if project_uuid
         else await service.list_by_user_id(user_uuid)
     )
@@ -3095,8 +3112,7 @@ async def standalone_get_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    if str(chart.user_id) != str(user_id):
-        raise HTTPException(status_code=403, detail="Not authorized to view this chart")
+    _enforce_standalone_chart_access(chart, user_id)
 
     return _serialize_standalone_chart(chart)
 
@@ -3122,8 +3138,7 @@ async def standalone_update_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    if str(chart.user_id) != str(user_id):
-        raise HTTPException(status_code=403, detail="Not authorized to update this chart")
+    _enforce_standalone_chart_access(chart, user_id)
 
     chart_payload, _ = _normalize_chart_payload(payload)
     update_data = {k: v for k, v in chart_payload.items() if v is not None}
@@ -3152,8 +3167,7 @@ async def standalone_delete_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    if str(chart.user_id) != str(user_id):
-        raise HTTPException(status_code=403, detail="Not authorized to delete this chart")
+    _enforce_standalone_chart_access(chart, user_id)
 
     await service.delete(chart)
     await db.commit()

@@ -92,6 +92,11 @@ function EChartWidgetCore({
     if (showWatermark) {
       options = addWatermarkToChart(options, planType, { isDark: isDarkMode, useOverlay: true });
     }
+    // Clear any active tooltip before a notMerge setOption. ECharts otherwise tries to
+    // restore/re-show the tooltip against freshly-rebuilt internals, which can throw
+    // "can't access property innerHTML, el is null" (TooltipHTMLContent) — reproducible
+    // when the chart re-renders (e.g. live preview) while the pointer is over a slice.
+    echartsInstance.current.dispatchAction({ type: 'hideTip' });
     echartsInstance.current.setOption(options, { notMerge: true, lazyUpdate: false });
 
     if (onChartReadyRef.current) {

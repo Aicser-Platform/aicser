@@ -1,7 +1,7 @@
 /* Redundant toolbar definition removed */
 
 .toolbar-left {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 8px;
   flex: 1;
@@ -46,6 +46,7 @@
 .toolbar-right {
   display: flex;
   align-items: center;
+  margin-left: auto;
   padding-left: 12px;
 }
 
@@ -81,6 +82,7 @@
 .dashboard-studio-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   height: 48px; /* High-density height */
   background: transparent;
   border-bottom: none;

@@ -136,10 +136,31 @@ class FeedServiceSerializationMixin:
         )
         users = result.scalars().all()
         user_map: Dict[UUID, User] = {}
+
+        def profile_score(user: User) -> int:
+            score = 0
+            if (getattr(user, "first_name", None) or "").strip():
+                score += 2
+            if (getattr(user, "last_name", None) or "").strip():
+                score += 2
+            if (getattr(user, "email", None) or "").strip():
+                score += 1
+            if (getattr(user, "username", None) or "").strip():
+                score += 1
+            if (getattr(user, "avatar_url", None) or "").strip():
+                score += 1
+            return score
+
+        def put_user(key: Optional[UUID], user: User) -> None:
+            if not key:
+                return
+            existing = user_map.get(key)
+            if existing is None or profile_score(user) > profile_score(existing):
+                user_map[key] = user
+
         for user in users:
-            user_map[user.id] = user
-            if user.user_id:
-                user_map[user.user_id] = user
+            put_user(user.id, user)
+            put_user(user.user_id, user)
         return user_map
 
     async def _load_user_reactions(

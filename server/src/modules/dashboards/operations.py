@@ -113,6 +113,43 @@ def _resolve_table_for_field(
     return "data"
 
 
+def _table_column_names(schema_info: dict, table_name: Optional[str]) -> set[str]:
+    """Return safe column identifiers for a schema table."""
+    if not table_name:
+        return set()
+    target = _safe_sql_ident(str(table_name).split(".")[-1])
+    names: set[str] = set()
+    for table in schema_info.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        raw_name = str(table.get("name") or "")
+        safe_name = _safe_sql_ident(raw_name)
+        bare_name = _safe_sql_ident(raw_name.split(".")[-1])
+        if safe_name != _safe_sql_ident(str(table_name)) and bare_name != target:
+            continue
+        for col in table.get("columns") or []:
+            col_name = col if isinstance(col, str) else (col.get("name") if isinstance(col, dict) else None)
+            safe_col = _safe_sql_ident(str(col_name or ""))
+            if safe_col:
+                names.add(safe_col)
+        break
+    return names
+
+
+def _runtime_filters_for_table(runtime_filters: Optional[List[dict]], allowed_fields: set[str]) -> List[dict]:
+    """Keep only cascade filters that can be applied to the target table."""
+    if not runtime_filters or not allowed_fields:
+        return []
+    kept: List[dict] = []
+    for rf in runtime_filters:
+        if not isinstance(rf, dict):
+            continue
+        safe_field = _safe_sql_ident(str(rf.get("field") or ""))
+        if safe_field in allowed_fields:
+            kept.append(rf)
+    return kept
+
+
 def _build_cascade_where_for_options(
     runtime_filters: Optional[List[dict]], exclude_field: Optional[str]
 ) -> str:
@@ -490,7 +527,9 @@ async def get_filter_options(
     if not safe_table:
         return []
 
-    cascade = _build_cascade_where_for_options(runtime_filters, exclude_field or field)
+    table_fields = _table_column_names(schema_info, table)
+    cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
+    cascade = _build_cascade_where_for_options(cascade_filters, exclude_field or field)
     where_parts = [f'"{safe_field}" IS NOT NULL']
     if cascade:
         where_parts.append(f"({cascade})")
@@ -541,7 +580,9 @@ async def get_filter_field_stats(
     if not safe_table:
         return {"min": None, "max": None}
 
-    cascade = _build_cascade_where_for_options(runtime_filters, field)
+    table_fields = _table_column_names(schema_info, table)
+    cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
+    cascade = _build_cascade_where_for_options(cascade_filters, field)
     where_parts = [f'"{safe_field}" IS NOT NULL']
     if cascade:
         where_parts.append(f"({cascade})")

@@ -83,8 +83,24 @@ export const useWidgetProperties = ({
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     const isScatter = selectedWidget?.chartType === 'scatter';
-    const hasX = isScatter ? !!selectedWidget?.chartQuery?.xMetrics?.[0]?.field : !!selectedWidget?.chartQuery?.x;
-    const hasY = isScatter ? !!selectedWidget?.chartQuery?.yMetrics?.[0]?.field : true;
+    const isMetricOnlyWidget =
+      selectedWidget?.chartType === 'stat' || selectedWidget?.chartType === 'gauge';
+    const firstMetric = selectedWidget?.chartQuery?.yMetrics?.[0];
+    const hasMetric =
+      Boolean(firstMetric?.field) ||
+      selectedWidget?.chartQuery?.yMetric === 'count' ||
+      Boolean(selectedWidget?.chartQuery?.aggregate);
+    const hasX = isScatter
+      ? !!selectedWidget?.chartQuery?.xMetrics?.[0]?.field
+      : isMetricOnlyWidget
+        ? true
+        : !!selectedWidget?.chartQuery?.x;
+    const hasY = isScatter
+      ? !!selectedWidget?.chartQuery?.yMetrics?.[0]?.field
+      : isMetricOnlyWidget
+        ? hasMetric
+        : true;
+    const hasTable = Boolean(selectedWidget?.chartQuery?.tableName);
 
     // Compute a hash of the current query only (not chartOptions)
     const currentQueryHash = stableStringify({
@@ -103,7 +119,12 @@ export const useWidgetProperties = ({
       selectedWidget?.lastFetchedQueryHash === currentQueryHash;
 
     const isTextWidget = selectedWidget?.chartType === 'text';
-    const canSync = isTextWidget || (selectedWidget?.dataSourceId && hasX && (!isScatter || hasY));
+    const canSync =
+      isTextWidget ||
+      (selectedWidget?.dataSourceId &&
+        hasX &&
+        hasY &&
+        (!isMetricOnlyWidget || hasTable));
 
     if (!selectedWidgetId || !canSync || hasValidData || hasFailedCurrentQuery) {
       return;
@@ -147,6 +168,7 @@ export const useWidgetProperties = ({
     };
   }, [
     selectedWidgetId,
+    selectedWidget?.chartType,
     selectedWidget?.dataSourceId,
     selectedWidget?.chartQuery?.x,
     selectedWidget?.chartQuery?.sortBy,

@@ -16,7 +16,7 @@ import { maxLayoutY } from '../../../utils/layoutSanitize';
 
 const WIDGET_ITEMS: { type: WidgetType; label: string; icon: React.ReactNode }[] = [
   { type: 'bar', label: 'Chart', icon: <BarChartOutlined /> },
-  { type: 'stat', label: 'Stat / KPI', icon: <NumberOutlined /> },
+  { type: 'stat', label: 'KPI Card', icon: <NumberOutlined /> },
   { type: 'table', label: 'Table', icon: <TableOutlined /> },
   { type: 'text', label: 'Text', icon: <FontSizeOutlined /> },
   { type: 'slicer', label: 'Slicer', icon: <FilterOutlined /> },
@@ -37,6 +37,8 @@ function buildChartOptionsForType(type: WidgetType, templateName: string): Recor
       return { imageUrl: '', objectFit: 'contain' };
     case 'gauge':
       return { gaugeMin: 0, gaugeMax: 100, showLegend: false };
+    case 'stat':
+      return { format: 'number', fontSize: 32, layout: 'compact', showSparkline: false };
     case 'pie':
     case 'donut':
       return { showLegend: true, showDataLabel: false, innerRadius: type === 'donut' ? 40 : 0 };
@@ -57,6 +59,8 @@ function buildChartQueryForType(type: WidgetType): WidgetInstance['chartQuery'] 
     case 'filter':
       // Filter widget defaults to a multi-select dashboard-wide control.
       return { mode: 'multi' as const };
+    case 'stat':
+      return { yMetric: 'count', yMetrics: [], sortBy: 'x' };
     default:
       return undefined;
   }

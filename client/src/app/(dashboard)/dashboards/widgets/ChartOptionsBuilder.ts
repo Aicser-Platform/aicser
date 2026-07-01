@@ -112,7 +112,8 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   }
 
   // Enhanced tooltip with better number formatting
-  let tooltipConfig: any = getBaseTooltipConfig(type, { appendToBody: isDashboardWidget });
+  const appendTooltipToBody = isDashboardWidget || Boolean((finalConfig as any).isDesigner);
+  let tooltipConfig: any = getBaseTooltipConfig(type, { appendToBody: appendTooltipToBody });
   const isPercentStacked =
     (type === 'bar' && finalConfig.barStackMode === 'stacked-100') ||
     ((type === 'line' || type === 'area') && finalConfig.lineStackMode === 'stacked-100');

@@ -516,6 +516,7 @@ export default function NewDashboardStudio() {
     const isFilterWidget = template.type === 'filter';
     const isDividerWidget = template.type === 'divider';
     const isImageWidget = template.type === 'image';
+    const isStatWidget = template.type === 'stat';
     const isNonDataWidget = isTextWidget || isSlicerWidget || isFilterWidget || isDividerWidget || isImageWidget;
 
     let defaultChartOptions;
@@ -550,6 +551,14 @@ export default function NewDashboardStudio() {
       };
     } else if (template.type === 'gauge') {
       defaultChartOptions = { gaugeMin: 0, gaugeMax: 100, showLegend: false };
+    } else if (isStatWidget) {
+      defaultChartOptions = {
+        format: 'number',
+        fontSize: 32,
+        layout: 'compact',
+        showSparkline: false,
+      };
+      defaultChartQuery = { yMetric: 'count', yMetrics: [], sortBy: 'x' };
     } else {
       defaultChartOptions = {
         showLegend: true,
@@ -562,7 +571,7 @@ export default function NewDashboardStudio() {
     const newWidget: WidgetInstance = {
       id: instanceId,
       dataSourceId: undefined,
-      chartQuery: isNonDataWidget ? defaultChartQuery : undefined,
+      chartQuery: defaultChartQuery,
       chartType: template.type as WidgetType,
       title: isTextWidget || isDividerWidget ? '' : template.name,
       chartOptions: defaultChartOptions,

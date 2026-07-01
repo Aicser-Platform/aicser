@@ -142,7 +142,7 @@ export const WIDGET_TEMPLATES = [
   {
     id: 't-stat',
     type: 'stat',
-    name: 'Metric',
+    name: 'KPI Card',
     icon: (
       <div className="anticon">
         <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
@@ -151,8 +151,8 @@ export const WIDGET_TEMPLATES = [
       </div>
     ),
     category: 'Indicators',
-    defaultSize: { w: 3, h: 3 },
-    description: 'Single KPI or metric card.',
+    defaultSize: { w: 3, h: 2 },
+    description: 'KPI stat card for one headline number.',
   },
   {
     id: 't-slicer',

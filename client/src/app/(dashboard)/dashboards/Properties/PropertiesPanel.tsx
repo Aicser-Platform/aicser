@@ -44,7 +44,7 @@ const CHART_TYPES: { type: string; icon: React.ReactNode; label: string }[] = [
   { type: 'pie', icon: <PieChartOutlined />, label: 'Pie' },
   { type: 'donut', icon: <PieChartOutlined />, label: 'Donut' },
   { type: 'table', icon: <TableOutlined />, label: 'Table' },
-  { type: 'stat', icon: <NumberOutlined />, label: 'Stat' },
+  { type: 'stat', icon: <NumberOutlined />, label: 'KPI Card' },
   { type: 'scatter', icon: <RadarChartOutlined />, label: 'Scatter' },
   { type: 'heatmap', icon: <HeatMapOutlined />, label: 'Heatmap' },
 ];
