@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { SegmentedOption, METRIC_OPTIONS, ComputedMetric } from './PropertiesPanelConfig';
+import { METRIC_OPTIONS } from './PropertiesPanelConfig';
+import type { SegmentedOption, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
 import { ComputedMetricEditor } from './ComputedMetricEditor';
 import {
   getDashboardFieldDragData,
@@ -260,6 +261,7 @@ export interface MetricItem {
   aggregation: string;
   label?: string;
   computed?: ComputedMetric;
+  valueFormat?: MetricValueFormat;
 }
 
 interface MetricListFieldProps extends FieldProps {
@@ -335,6 +337,21 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
 
   const getAggregationLabel = (val: string) => {
     return METRIC_OPTIONS.find((opt) => opt.value === val)?.label || val;
+  };
+
+  const getFormatBadge = (format?: MetricValueFormat) => {
+    switch (format) {
+      case 'percent':
+        return '%';
+      case 'compact':
+        return 'K';
+      case 'currency':
+        return '$';
+      case 'full':
+        return '1,234';
+      default:
+        return null;
+    }
   };
 
   // Helper to find column label from value
@@ -414,6 +431,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
       >
         {metrics.map((item, index) => {
           const fieldInfo = columnOptions.find((opt) => opt.value === item.field);
+          const formatBadge = getFormatBadge(item.valueFormat || item.computed?.format);
           const type = (fieldInfo?.type || '').toLowerCase();
           const isNumeric =
             type.includes('int') ||
@@ -509,6 +527,14 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                         }}
                       >
                         fx
+                      </span>
+                    )}
+                    {formatBadge && (
+                      <span
+                        style={{ fontSize: 9, color: 'var(--ant-color-text-secondary)', fontWeight: 700, lineHeight: 1 }}
+                        title={`Display format: ${item.valueFormat || item.computed?.format}`}
+                      >
+                        {formatBadge}
                       </span>
                     )}
                     <DownOutlined style={{ fontSize: 8 }} />

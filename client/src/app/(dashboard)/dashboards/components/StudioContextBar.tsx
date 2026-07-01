@@ -258,23 +258,22 @@ export function StudioContextBar({
                   onClick: handleRefreshMenuClick,
                 }}
               >
-                <Button
-                  size="small"
-                  className="studio-context-btn studio-refresh-dropdown-trigger"
-                  disabled={refreshing}
-                  aria-haspopup="menu"
-                  aria-label={t('refresh_menu_aria')}
-                  title={t('refresh_tooltip')}
+                <Tooltip
+                  title={
+                    lastRefreshedLabel
+                      ? `${t('refresh_data')} · ${lastRefreshedLabel}`
+                      : t('refresh_data')
+                  }
                 >
-                  <ReloadOutlined spin={refreshing} />
-                  <span className="studio-refresh-trigger-text">
-                    <span className="studio-refresh-trigger-title">{t('refresh_data')}</span>
-                    {lastRefreshedLabel ? (
-                      <span className="studio-refresh-trigger-updated">{lastRefreshedLabel}</span>
-                    ) : null}
-                  </span>
-                  <DownOutlined className="studio-refresh-trigger-caret" />
-                </Button>
+                  <Button
+                    size="small"
+                    className="studio-context-btn studio-refresh-dropdown-trigger"
+                    icon={<ReloadOutlined spin={refreshing} />}
+                    disabled={refreshing}
+                    aria-haspopup="menu"
+                    aria-label={t('refresh_menu_aria')}
+                  />
+                </Tooltip>
               </Dropdown>
             </div>
           )}
@@ -308,32 +307,18 @@ export function StudioContextBar({
           </Button.Group>
           )}
 
-          {(!presentationMode && onDashboardColorPaletteChange) ||
-          (!readOnly && !presentationMode && dataSourceIds.length > 0) ? (
-            <OverflowMenuButton ariaLabel="More options" title="More options">
-              {() => (
-                <>
-                  {!presentationMode && onDashboardColorPaletteChange ? (
-                    <DashboardStyleMenu
-                      currentPalette={dashboardColorPalette}
-                      hideLayout={hideLayout}
-                      widgetCount={widgetCount}
-                      onApplyLayoutPreset={onApplyLayoutPreset}
-                      onResetLayout={onResetLayout}
-                      onPaletteChange={onDashboardColorPaletteChange}
-                    />
-                  ) : null}
-
-                  {!readOnly && !presentationMode && dataSourceIds.length > 0 ? (
-                    <DashboardDataModelButton
-                      dataSourceIds={dataSourceIds}
-                      dataSourceOptions={dataSourceOptions}
-                    />
-                  ) : null}
-                </>
-              )}
-            </OverflowMenuButton>
-          ) : null}
+          <>
+            {!presentationMode && onDashboardColorPaletteChange ? (
+              <DashboardStyleMenu
+                currentPalette={dashboardColorPalette}
+                hideLayout={hideLayout}
+                widgetCount={widgetCount}
+                onApplyLayoutPreset={onApplyLayoutPreset}
+                onResetLayout={onResetLayout}
+                onPaletteChange={onDashboardColorPaletteChange}
+              />
+            ) : null}
+          </>
 
           {presentationMode && onExitPresentation ? (
             <Tooltip title={t('exit_fullscreen')}>

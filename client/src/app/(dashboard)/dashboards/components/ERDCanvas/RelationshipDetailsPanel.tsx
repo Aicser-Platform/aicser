@@ -15,6 +15,7 @@ import {
   useDeleteRelationship,
 } from '@/hooks/useDataModelRelationships';
 import type { DataModelRelationship } from '@/api/dataModel';
+import { useDashboardStore, type WidgetInstance } from '../../stores/useDashboardStore';
 
 const { Text } = Typography;
 
@@ -22,6 +23,82 @@ const { Text } = Typography;
 const UUID_PREFIX_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}__/i;
 function shortTableName(id: string): string {
   return id.replace(UUID_PREFIX_RE, '');
+}
+
+function bareTableName(value?: string | null): string {
+  if (!value) return '';
+  return value.split('.').pop()?.trim().toLowerCase() || value.trim().toLowerCase();
+}
+
+function fieldRefParts(value: unknown): [string, string] {
+  if (typeof value !== 'string') return ['', ''];
+  const parts = value.split('.').map((part) => part.trim().toLowerCase()).filter(Boolean);
+  if (parts.length < 2) return ['', parts[0] || ''];
+  return [bareTableName(parts[parts.length - 2]), parts[parts.length - 1]];
+}
+
+type RelationshipJoin = NonNullable<NonNullable<WidgetInstance['chartQuery']>['joins']>[number] & {
+  relationship_id?: string;
+};
+
+function joinMatchesRelationship(join: RelationshipJoin, relationship: DataModelRelationship): boolean {
+  if (!join || typeof join !== 'object') return false;
+  const relationshipId = join.relationshipId || join.relationship_id;
+  if (relationshipId && String(relationshipId) === String(relationship.id)) return true;
+
+  let left: unknown;
+  let right: unknown;
+  if (typeof join.on === 'string' && join.on.includes('=')) {
+    [left, right] = join.on.split('=').map((part: string) => part.trim());
+  } else if (join.on && typeof join.on === 'object') {
+    left = join.on.left;
+    right = join.on.right;
+  } else {
+    return false;
+  }
+
+  const fromRef: [string, string] = [
+    bareTableName(relationship.from_table),
+    relationship.from_column.trim().toLowerCase(),
+  ];
+  const toRef: [string, string] = [
+    bareTableName(relationship.to_table),
+    relationship.to_column.trim().toLowerCase(),
+  ];
+  const leftRef = fieldRefParts(left);
+  const rightRef = fieldRefParts(right);
+  return (
+    (leftRef[0] === fromRef[0] && leftRef[1] === fromRef[1] && rightRef[0] === toRef[0] && rightRef[1] === toRef[1]) ||
+    (leftRef[0] === toRef[0] && leftRef[1] === toRef[1] && rightRef[0] === fromRef[0] && rightRef[1] === fromRef[1])
+  );
+}
+
+function removeRelationshipJoinsFromOpenDashboard(relationship: DataModelRelationship) {
+  useDashboardStore.setState((state) => {
+    let changed = false;
+    const cleanWidget = (widget: WidgetInstance): WidgetInstance => {
+      const joins = widget.chartQuery?.joins;
+      if (!Array.isArray(joins) || joins.length === 0) return widget;
+      const nextJoins = joins.filter((join) => !joinMatchesRelationship(join, relationship));
+      if (nextJoins.length === joins.length) return widget;
+      changed = true;
+      return {
+        ...widget,
+        chartQuery: {
+          ...widget.chartQuery,
+          joins: nextJoins,
+        },
+      };
+    };
+
+    const widgets = state.widgets.map(cleanWidget);
+    const dashboards = state.dashboards.map((dashboard) => ({
+      ...dashboard,
+      widgets: dashboard.widgets.map(cleanWidget),
+    }));
+
+    return changed ? { widgets, dashboards } : state;
+  });
 }
 
 interface RelationshipDetailsPanelProps {
@@ -78,6 +155,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
       okButtonProps: { danger: true },
       onOk: async () => {
         await deleteMutation.mutateAsync(relationship.id);
+        removeRelationshipJoinsFromOpenDashboard(relationship);
         onClose();
       },
     });

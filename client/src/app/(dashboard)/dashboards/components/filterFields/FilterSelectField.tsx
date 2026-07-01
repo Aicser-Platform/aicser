@@ -5,6 +5,7 @@ import { Select, Button } from 'antd';
 import { FilterControlShell } from '../FilterControlShell';
 
 type Option = { label: string; value: string };
+const EMPTY_OPTION_VALUE = '__dashboard_filter_all__';
 
 type Props = {
   label: string;
@@ -18,6 +19,8 @@ type Props = {
   disabled?: boolean;
   onChange: (value: string | string[] | null) => void;
   variant?: 'report' | 'slicer';
+  showSearch?: boolean;
+  emptyOptionLabel?: string;
   showSelectAll?: boolean;
   selectAllLabel?: string;
   clearAllLabel?: string;
@@ -35,6 +38,8 @@ export function FilterSelectField({
   disabled = false,
   onChange,
   variant = 'report',
+  showSearch = true,
+  emptyOptionLabel,
   showSelectAll = false,
   selectAllLabel,
   clearAllLabel,
@@ -43,22 +48,38 @@ export function FilterSelectField({
   const selectedArr = Array.isArray(value) ? value : value ? [value] : [];
   const allValues = options.map((o) => o.value);
   const allSelected = allValues.length > 0 && allValues.every((v) => selectedArr.includes(v));
+  const effectiveOptions =
+    emptyOptionLabel && !isMulti
+      ? [{ label: emptyOptionLabel, value: EMPTY_OPTION_VALUE }, ...options]
+      : options;
+  const effectiveValue =
+    emptyOptionLabel && !isMulti && (value == null || value === '')
+      ? EMPTY_OPTION_VALUE
+      : value;
 
   const select = (
     <Select
       allowClear
-      showSearch
+      showSearch={showSearch}
       mode={isMulti ? 'multiple' : undefined}
       size="small"
       placeholder={placeholder}
       style={{ width: '100%' }}
       loading={loading}
       disabled={disabled}
-      value={value as string | string[] | undefined}
+      value={effectiveValue as string | string[] | undefined}
       maxTagCount={maxTagCount}
-      options={options}
+      options={effectiveOptions}
+      optionFilterProp="label"
+      getPopupContainer={() => document.body}
       notFoundContent={loading ? undefined : emptyLabel}
-      onChange={(v) => onChange((v as string | string[] | null) ?? (isMulti ? [] : null))}
+      onChange={(v) => {
+        if (!isMulti && v === EMPTY_OPTION_VALUE) {
+          onChange(null);
+          return;
+        }
+        onChange((v as string | string[] | null) ?? (isMulti ? [] : null));
+      }}
       dropdownRender={
         isMulti && showSelectAll && !disabled && options.length > 1
           ? (menu) => (

@@ -16,7 +16,7 @@ import './DashboardStudio.css';
 import { PropertiesPanel } from './Properties/PropertiesPanel';
 import DashboardCanvas from './Canvas/DashboardCanvas';
 import { DashboardViewerGrid } from './components/viewer/DashboardViewerGrid';
-import { useDashboardStore, type WidgetInstance, type LayoutItem, WidgetType, pushUndoSnapshot } from './stores/useDashboardStore';
+import { useDashboardStore, type WidgetInstance, type LayoutItem, type RuntimeFilter, WidgetType, pushUndoSnapshot } from './stores/useDashboardStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { DashboardTabs } from './components/DashboardTabs';
 import { StudioContextBar } from './components/StudioContextBar';
@@ -168,6 +168,19 @@ export default function NewDashboardStudio() {
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const td = useTranslations('dashboards');
   const filterCtx = useDashboardFilterContext(currentProjectId);
+  const { handleRuntimeFiltersChange, runRefresh } = filterCtx;
+  const handleToolbarRuntimeFiltersChange = useCallback(
+    (nextFilters: RuntimeFilter[]) => {
+      handleRuntimeFiltersChange(nextFilters);
+      window.setTimeout(() => {
+        void runRefresh(undefined, { silent: true });
+      }, 0);
+    },
+    [handleRuntimeFiltersChange, runRefresh],
+  );
+  const handleToolbarClearFilters = useCallback(() => {
+    handleToolbarRuntimeFiltersChange([]);
+  }, [handleToolbarRuntimeFiltersChange]);
 
   const activeDashboard = useDashboardStore((s) =>
     s.dashboards.find((d) => d.id === s.activeDashboardId),
@@ -1051,11 +1064,11 @@ export default function NewDashboardStudio() {
                   filterCtx.updatePageLayout(filterCtx.activePageId, reset, defaultPage);
                 }}
                 hideLayout={isFullscreen || !isEditMode}
-                onRefresh={isFullscreen ? undefined : filterCtx.handleManualRefresh}
+                onRefresh={isEditMode && !isFullscreen ? filterCtx.handleManualRefresh : undefined}
                 refreshing={filterCtx.refreshing}
-                lastRefreshedLabel={isFullscreen ? undefined : filterCtx.lastRefreshedLabel}
+                lastRefreshedLabel={isEditMode && !isFullscreen ? filterCtx.lastRefreshedLabel : undefined}
                 autoRefreshMinutes={filterCtx.autoRefreshMinutes}
-                onAutoRefreshIntervalChange={isFullscreen ? undefined : filterCtx.setAutoRefreshMinutes}
+                onAutoRefreshIntervalChange={isEditMode && !isFullscreen ? filterCtx.setAutoRefreshMinutes : undefined}
                 dashboardColorPalette={dashboardColorPalette}
                 onDashboardColorPaletteChange={
                   isEditMode && !isFullscreen
@@ -1110,11 +1123,14 @@ export default function NewDashboardStudio() {
                   variant="toolbar"
                   filters={filterCtx.combinedFiltersConfig}
                   runtimeFilters={filterCtx.runtimeFilters}
-                  onChange={filterCtx.handleRuntimeFiltersChange}
+                  onChange={handleToolbarRuntimeFiltersChange}
                   fetchOptions={filterCtx.fetchFilterOptions}
+                  fetchFieldStats={filterCtx.fetchFilterFieldStats}
                   minimal={!isEditMode || isFullscreen}
                   showHeader={false}
-                  onClearAll={() => filterCtx.handleRuntimeFiltersChange([])}
+                  onClearAll={handleToolbarClearFilters}
+                  onRefresh={filterCtx.handleManualRefresh}
+                  refreshing={filterCtx.refreshing}
                 />
               ) : null}
             </div>
@@ -1211,6 +1227,7 @@ export default function NewDashboardStudio() {
                 runtimeFilters={filterCtx.runtimeFilters}
                 onChange={filterCtx.handleRuntimeFiltersChange}
                 fetchOptions={filterCtx.fetchFilterOptions}
+                fetchFieldStats={filterCtx.fetchFilterFieldStats}
                 minimal={false}
                 open={filterCtx.filtersPanelOpen}
                 onClose={() => filterCtx.setFiltersPanelOpen(false)}

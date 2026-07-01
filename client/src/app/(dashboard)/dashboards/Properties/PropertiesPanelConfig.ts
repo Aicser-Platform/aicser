@@ -31,11 +31,14 @@ export interface ComputedMetricSide {
   filter?: Array<{ field: string; operator: string; value: unknown }>;
 }
 
+export type MetricValueFormat = 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+
 export interface ComputedMetric {
   type: 'ratio';
   numerator: ComputedMetricSide;
   denominator: ComputedMetricSide;
   multiplier: 1 | 100;
+  format?: MetricValueFormat;
 }
 
 export const METRIC_OPTIONS: SegmentedOption[] = [

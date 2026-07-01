@@ -5,6 +5,7 @@
 import {
   ChartConfig,
   ChartData,
+  type ChartValueFormat,
   CHART_COLORS,
   DEFAULT_CHART_CONFIG,
   getBaseTooltipConfig,
@@ -39,6 +40,13 @@ function fmtVal(v: unknown, valueFormat?: string): string {
     default:
       return num.toLocaleString();
   }
+}
+
+function valueFormatForSeries(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
+  const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
+  const metricFormats = config.metricFormats ? Object.values(config.metricFormats) : [];
+  const format = seriesFormat || (metricFormats.length === 1 ? metricFormats[0] : undefined) || config.valueFormat;
+  return format && format !== 'auto' ? format : undefined;
 }
 
 export const buildChartOptions = (type: string, data: ChartData, config: Partial<ChartConfig> = {}): any => {
@@ -113,12 +121,13 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     // Calculate total for percentage — fall back to series[0].data when data.y is empty
     const pieY: number[] = data?.y?.length ? data.y : (data?.series?.[0]?.data || []);
     const total = pieY.reduce((sum: number, val: number) => sum + (val || 0), 0);
-    const vf = (config as any).valueFormat as string | undefined;
     tooltipConfig = {
       ...tooltipConfig,
       formatter: (params: any) => {
         const percentage = total > 0 ? ((params.value / total) * 100).toFixed(2) : '0.00';
-        const rawValue = typeof params.value === 'number' ? fmtVal(params.value, vf) : params.value;
+        const rawValue = typeof params.value === 'number'
+          ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+          : params.value;
         const marker = params.marker || '';
         return `${marker} <strong>${params.name}</strong><br/>Value: ${rawValue}<br/>Share: ${percentage}%`;
       },
@@ -162,7 +171,9 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
           params.forEach((param: any) => {
             const rawValue = seriesData.find((s) => s.name === param.seriesName)?.data?.[dataIndex] || 0;
             const percentage = rawTotal > 0 ? ((rawValue / rawTotal) * 100).toFixed(2) : '0.00';
-            const formattedRawValue = typeof rawValue === 'number' ? rawValue.toLocaleString() : rawValue;
+            const formattedRawValue = typeof rawValue === 'number'
+              ? fmtVal(rawValue, valueFormatForSeries(finalConfig, param.seriesName))
+              : rawValue;
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${formattedRawValue} (${percentage}%)<br/>`;
           });
 
@@ -180,19 +191,22 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     };
   } else {
     // Enhanced tooltip for other chart types — respect valueFormat if set
-    const vf = (config as any).valueFormat as string | undefined;
     tooltipConfig = {
       ...tooltipConfig,
       formatter: (params: any) => {
         if (Array.isArray(params) && params.length > 0) {
           let tooltip = `<strong>${params[0].name || ''}</strong><br/>`;
           params.forEach((param: any) => {
-            const rawValue = typeof param.value === 'number' ? fmtVal(param.value, vf) : (param.value ?? '');
+            const rawValue = typeof param.value === 'number'
+              ? fmtVal(param.value, valueFormatForSeries(finalConfig, param.seriesName))
+              : (param.value ?? '');
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${rawValue}<br/>`;
           });
           return tooltip;
         } else if (params && !Array.isArray(params)) {
-          const rawValue = typeof params.value === 'number' ? fmtVal(params.value, vf) : (params.value ?? '');
+          const rawValue = typeof params.value === 'number'
+            ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+            : (params.value ?? '');
           return `<strong>${params.name || ''}</strong><br/>${params.marker || ''} ${params.seriesName || ''}: ${rawValue}`;
         }
         return '';
@@ -317,7 +331,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
               itemStyle: { color: '#ff4d4f', opacity: 0.85 },
               label: { show: false },
               tooltip: {
-                formatter: (p: any) => `<strong>Outlier</strong><br/>Value: ${fmtVal(p.value[1], (config as any).valueFormat)}`,
+                formatter: (p: any) => `<strong>Outlier</strong><br/>Value: ${fmtVal(p.value[1], valueFormatForSeries(finalConfig, p.seriesName))}`,
               },
             },
           };

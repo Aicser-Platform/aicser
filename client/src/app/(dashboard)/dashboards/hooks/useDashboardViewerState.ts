@@ -563,6 +563,22 @@ export function useDashboardViewerState(
     [dashboardId, combinedFiltersConfig, runtimeFilters, accessOpts],
   );
 
+  const fetchFilterFieldStats = useCallback(
+    (
+      field: string,
+      dataSourceId: string,
+      ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string },
+    ) => {
+      const filterDef = combinedFiltersConfig.find((f) => f.field === field);
+      return chartService.getFilterFieldStats(dashboardId, field, dataSourceId, {
+        embedToken: accessOpts?.embedToken,
+        tableName: ctx?.tableName || filterDef?.tableName,
+        runtimeFilters: ctx?.runtimeFilters ?? runtimeFilters,
+      });
+    },
+    [dashboardId, combinedFiltersConfig, runtimeFilters, accessOpts],
+  );
+
   return {
     meta,
     pages,
@@ -581,6 +597,7 @@ export function useDashboardViewerState(
     handleRetryWidget,
     handleManualRefresh,
     fetchFilterOptions,
+    fetchFilterFieldStats,
     autoRefreshMinutes,
     setAutoRefreshMinutes,
     lastRefreshedLabel,

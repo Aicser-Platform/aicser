@@ -82,6 +82,8 @@ export type WidgetInstance = {
       alias?: string;
       on: { left: string; right: string } | string;
       type: string;
+      relationshipId?: string;
+      modelJoin?: boolean;
     }[];
     drillPath?: string[];
     interactionMode?: 'drill' | 'cross_filter';

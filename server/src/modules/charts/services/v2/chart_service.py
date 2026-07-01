@@ -342,6 +342,62 @@ class ChartService:
                 }
         return None
 
+    def _field_ref_parts(self, value: Any) -> tuple[str, str]:
+        if not isinstance(value, str):
+            return "", ""
+        parts = [p.strip().lower() for p in value.split(".") if p.strip()]
+        if len(parts) < 2:
+            return "", parts[-1] if parts else ""
+        return self._bare_table_name(parts[-2]), parts[-1]
+
+    def _join_matches_relationship(self, join: Dict[str, Any], rel: DataModelRelationship) -> bool:
+        if not isinstance(join, dict):
+            return False
+
+        join_rel_id = join.get("relationshipId") or join.get("relationship_id")
+        if join_rel_id and str(join_rel_id) == str(rel.id):
+            return True
+
+        on = join.get("on")
+        if isinstance(on, str) and "=" in on:
+            left, right = [part.strip() for part in on.split("=", 1)]
+        elif isinstance(on, dict):
+            left = on.get("left")
+            right = on.get("right")
+        else:
+            return False
+
+        left_ref = self._field_ref_parts(left)
+        right_ref = self._field_ref_parts(right)
+        from_ref = (
+            self._bare_table_name(rel.from_table).lower(),
+            str(rel.from_column).strip().lower(),
+        )
+        to_ref = (
+            self._bare_table_name(rel.to_table).lower(),
+            str(rel.to_column).strip().lower(),
+        )
+        return (left_ref == from_ref and right_ref == to_ref) or (
+            left_ref == to_ref and right_ref == from_ref
+        )
+
+    def _relationship_for_join(
+        self,
+        join: Dict[str, Any],
+        relationships: List[DataModelRelationship],
+    ) -> Optional[DataModelRelationship]:
+        for rel in relationships:
+            if self._join_matches_relationship(join, rel):
+                return rel
+        return None
+
+    def _missing_relationship_error(self, base_table: str, target_tables: set[str]) -> ValueError:
+        tables = ", ".join(sorted(target_tables))
+        return ValueError(
+            "Missing active data model relationship for chart query. "
+            f"Create or activate a relationship from {base_table} to {tables}."
+        )
+
     def _field_table(self, field: Optional[str], base_table: str, column_tables: Dict[str, List[str]]) -> Optional[str]:
         if not field or not isinstance(field, str):
             return None
@@ -367,8 +423,9 @@ class ChartService:
         y_metrics: Optional[List[Dict[str, Any]]],
         y_metrics_secondary: Optional[List[Dict[str, Any]]],
         group_field: Optional[str],
+        filters: Optional[List[Dict[str, Any]]] = None,
     ) -> tuple[Dict[str, Any], Optional[str], Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Infer direct modeled joins and qualify fields for multi-table charts."""
+        """Apply active modeled joins and qualify fields for multi-table charts."""
         schema_info = data_source.schema or {}
         table, _schema = self._resolve_table_from_chart(chart_query, schema_info)
         base_table = self._bare_table_name(table)
@@ -410,20 +467,46 @@ class ChartService:
         next_y_metrics = qualify_metrics(y_metrics)
         next_y_metrics_secondary = qualify_metrics(y_metrics_secondary)
 
+        next_filters: Optional[List[Dict[str, Any]]] = None
+        if filters is not None:
+            next_filters = []
+            for flt in filters:
+                if not isinstance(flt, dict):
+                    next_filters.append(flt)
+                    continue
+                next_filter = dict(flt)
+                field = next_filter.get("field")
+                if field:
+                    next_filter["field"] = qualify_plain_field(field)
+                next_filters.append(next_filter)
+
+        rel_result = await self.db.execute(
+            select(DataModelRelationship).where(
+                DataModelRelationship.data_source_id == str(data_source.id),
+                DataModelRelationship.is_active == True,  # noqa: E712
+            )
+        )
+        relationships = list(rel_result.scalars().all())
+        type_map = self._schema_column_type_map(schema_info)
+
         existing_joins = next_query.get("joins") if isinstance(next_query.get("joins"), list) else []
-        joins = list(existing_joins)
+        joins: List[Dict[str, Any]] = []
+        for join in existing_joins:
+            if not isinstance(join, dict):
+                continue
+            rel = self._relationship_for_join(join, relationships)
+            if not rel:
+                continue
+            joins.append({
+                **join,
+                "relationshipId": str(rel.id),
+                "modelJoin": True,
+            })
+
         joined_tables = {self._bare_table_name(j.get("table")) for j in joins if isinstance(j, dict)}
         missing_tables = {t for t in needed_tables if t and t != base_table and t not in joined_tables}
 
         if missing_tables:
-            rel_result = await self.db.execute(
-                select(DataModelRelationship).where(
-                    DataModelRelationship.data_source_id == str(data_source.id),
-                    DataModelRelationship.is_active == True,  # noqa: E712
-                )
-            )
-            relationships = rel_result.scalars().all()
-            type_map = self._schema_column_type_map(schema_info)
             for target_table in sorted(missing_tables):
                 join_added = False
                 for rel in relationships:
@@ -450,6 +533,8 @@ class ChartService:
                         "table": joined,
                         "alias": joined,
                         "type": (rel.join_type or "LEFT").upper(),
+                        "relationshipId": str(rel.id),
+                        "modelJoin": True,
                         "on": {
                             "left": f"{from_table}.{rel.from_column}",
                             "right": f"{to_table}.{rel.to_column}",
@@ -458,9 +543,7 @@ class ChartService:
                     join_added = True
                     break
                 if not join_added:
-                    inferred_join = self._infer_join_from_schema(schema_info, base_table, target_table)
-                    if inferred_join:
-                        joins.append(inferred_join)
+                    raise self._missing_relationship_error(base_table, {target_table})
 
         next_query["joins"] = joins
         if next_x:
@@ -473,6 +556,8 @@ class ChartService:
             next_query["yMetrics"] = next_y_metrics
         if next_y_metrics_secondary is not None:
             next_query["yMetricsSecondary"] = next_y_metrics_secondary
+        if next_filters is not None:
+            next_query["filters"] = next_filters
 
         return next_query, next_x, next_y_metric, next_y_metrics, next_y_metrics_secondary, next_group_field
 
@@ -707,8 +792,10 @@ class ChartService:
                 y_metrics,
                 y_metrics_secondary,
                 group_field,
+                filters,
             )
         )
+        filters = chart_query.get("filters", filters)
         y_metrics_list = (y_metrics or []) + (y_metrics_secondary or [])
         n_primary = len(y_metrics) if y_metrics is not None else 1
         order_clause = self._build_order_clause(
@@ -1194,7 +1281,7 @@ class ChartService:
             for i, ym in enumerate(y_metrics):
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                label = f"{agg_type.capitalize()} of {field}" if field else "Count"
+                label = ym.get("label") or (f"{agg_type.capitalize()} of {field}" if field else "Count")
                 labels.append(label)
                 values.append(row.get(f"val_{i}", 0))
             
@@ -1250,7 +1337,7 @@ class ChartService:
                 select_fields.append(f"{expr} AS {alias}")
                 metric_aliases.append({
                     "alias": alias,
-                    "name": field if field else agg_type.capitalize()
+                    "name": ym.get("label") or field or agg_type.capitalize()
                 })
         elif has_y_metrics_defined:
             # yMetrics explicitly provided but empty - return 0s so we see labels but no values
@@ -1374,7 +1461,7 @@ class ChartService:
                         val = float(cm[col].iloc[0]) if col in cm.columns and len(cm) else 0
                     except Exception:
                         val = 0
-                    labels.append(field or "Ratio")
+                    labels.append(ym.get("label") or field or "Ratio")
                     values.append(val)
                     continue
 
@@ -1391,7 +1478,7 @@ class ChartService:
                         elif agg_type == "max": val = col_data.max()
                         elif agg_type == "min": val = col_data.min()
                 
-                label = f"{agg_type.capitalize()} of {field}" if field else "Count"
+                label = ym.get("label") or (f"{agg_type.capitalize()} of {field}" if field else "Count")
                 labels.append(label)
                 values.append(val)
             return {"x": labels, "y": values}
@@ -1465,7 +1552,7 @@ class ChartService:
                         computed_metrics.append((alias, ym))
                         output_metrics.append({
                             "alias": alias,
-                            "name": field if field else "Ratio",
+                            "name": ym.get("label") or field or "Ratio",
                             "field": field,
                             "aggregation": "computed",
                         })
@@ -1490,7 +1577,7 @@ class ChartService:
                     
                     output_metrics.append({
                         "alias": alias,
-                        "name": field if field else agg_type.capitalize(),
+                        "name": ym.get("label") or field or agg_type.capitalize(),
                         "field": field,
                         "aggregation": agg_type
                     })

@@ -159,7 +159,7 @@ export function SlicerWidget({
         runtimeFilters: runtimeFilters.filter((f) => f.field !== field),
       })
       .then((stats) => {
-        if (cancelled || stats.min == null || stats.max == null) return;
+        if (cancelled || typeof stats.min !== 'number' || typeof stats.max !== 'number') return;
         if (stats.min === stats.max) {
           setLoadedBounds({ min: stats.min - 1, max: stats.max + 1 });
         } else {

@@ -13,6 +13,8 @@ export type JoinSpec = {
   alias?: string;
   on: JoinOnSpec | string;
   type: string;
+  relationshipId?: string;
+  modelJoin?: boolean;
 };
 
 type Props = {
@@ -61,6 +63,8 @@ function buildJoinForBase(r: DataModelRelationship, baseTable?: string): JoinSpe
     table,
     alias: table,
     type: (r.join_type || 'LEFT').toUpperCase(),
+    relationshipId: r.id,
+    modelJoin: true,
     on: {
       left: `${fromTable}.${r.from_column}`,
       right: `${toTable}.${r.to_column}`,

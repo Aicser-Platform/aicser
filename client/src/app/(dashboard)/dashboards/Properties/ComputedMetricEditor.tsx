@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Select, Radio, Input, Space, Divider, Typography } from 'antd';
-import type { ComputedMetricSide, ComputedMetric } from './PropertiesPanelConfig';
+import type { ComputedMetricSide, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
 import type { MetricItem } from './FormFields';
 
 const { Text } = Typography;
@@ -14,6 +14,14 @@ const AGG_OPTIONS: { label: string; value: ComputedMetricSide['aggregation'] }[]
   { label: 'Average', value: 'avg' },
   { label: 'Min', value: 'min' },
   { label: 'Max', value: 'max' },
+];
+
+const FORMAT_OPTIONS: { label: string; value: MetricValueFormat }[] = [
+  { label: 'Auto', value: 'auto' },
+  { label: 'Percent (%)', value: 'percent' },
+  { label: 'Compact (1.2K)', value: 'compact' },
+  { label: 'Currency ($)', value: 'currency' },
+  { label: 'Full number', value: 'full' },
 ];
 
 interface Props {
@@ -70,6 +78,21 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
     existingComputed?.denominator ?? defaultSide()
   );
   const [multiplier, setMultiplier] = useState<1 | 100>(existingComputed?.multiplier ?? 1);
+  const [valueFormat, setValueFormat] = useState<MetricValueFormat>(
+    initial?.valueFormat || existingComputed?.format || (existingComputed?.multiplier === 100 ? 'percent' : 'auto')
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const nextComputed = initial?.computed;
+    setLabel(initial?.label ?? initial?.field ?? '');
+    setNumerator(nextComputed?.numerator ?? defaultSide());
+    setDenominator(nextComputed?.denominator ?? defaultSide());
+    setMultiplier(nextComputed?.multiplier ?? 1);
+    setValueFormat(
+      initial?.valueFormat || nextComputed?.format || (nextComputed?.multiplier === 100 ? 'percent' : 'auto')
+    );
+  }, [initial, open]);
 
   const isValid = !!numerator.field && !!denominator.field && !!label.trim();
 
@@ -80,13 +103,22 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
       numerator,
       denominator,
       multiplier,
+      format: valueFormat,
     };
     onSave({
       field: label.trim().replace(/\s+/g, '_').toLowerCase(),
       aggregation: 'ratio',
       label: label.trim(),
       computed,
+      valueFormat,
     });
+  };
+
+  const handleMultiplierChange = (nextMultiplier: 1 | 100) => {
+    setMultiplier(nextMultiplier);
+    if (nextMultiplier === 100 && valueFormat === 'auto') {
+      setValueFormat('percent');
+    }
   };
 
   const stringOptions = columnOptions.map((opt) => ({
@@ -132,13 +164,24 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
           <Text style={{ fontSize: 11, fontWeight: 600 }}>Result type</Text>
           <Radio.Group
             value={multiplier}
-            onChange={(e) => setMultiplier(e.target.value as 1 | 100)}
+            onChange={(e) => handleMultiplierChange(e.target.value as 1 | 100)}
             style={{ display: 'flex', gap: 12, marginTop: 4 }}
             size="small"
           >
             <Radio value={1}>Ratio (0–1)</Radio>
             <Radio value={100}>Percentage (×100)</Radio>
           </Radio.Group>
+        </div>
+
+        <div>
+          <Text style={{ fontSize: 11, fontWeight: 600 }}>Display format</Text>
+          <Select
+            size="small"
+            style={{ width: '100%', marginTop: 4 }}
+            value={valueFormat}
+            onChange={(v: MetricValueFormat) => setValueFormat(v)}
+            options={FORMAT_OPTIONS}
+          />
         </div>
 
         <div
@@ -159,6 +202,8 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
               ? `${denominator.aggregation}(${denominator.field})`
               : '…'}
             {multiplier === 100 ? ' × 100' : ''}
+            {' · '}
+            Format: {FORMAT_OPTIONS.find((option) => option.value === valueFormat)?.label || 'Auto'}
           </Text>
         </div>
       </Space>

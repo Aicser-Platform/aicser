@@ -75,6 +75,7 @@ function SharedDashboardContent() {
       onManualRefresh={viewer.handleManualRefresh}
       refreshing={viewer.refreshing}
       fetchFilterOptions={viewer.fetchFilterOptions}
+      fetchFilterFieldStats={viewer.fetchFilterFieldStats}
       autoRefreshMinutes={viewer.autoRefreshMinutes}
       onAutoRefreshIntervalChange={(m) => viewer.setAutoRefreshMinutes(m)}
       lastRefreshedLabel={viewer.lastRefreshedLabel}

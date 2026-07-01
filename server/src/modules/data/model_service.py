@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.charts.models import Chart
 from src.modules.data.models import DataModelRelationship, DataSource
 
 
@@ -128,14 +129,95 @@ class DataModelService:
         await self.db.refresh(rel)
         return _serialize_relationship(rel)
 
-    async def delete_relationship(self, data_source_id: str, relationship_id: UUID) -> bool:
-        stmt = delete(DataModelRelationship).where(
-            DataModelRelationship.id == relationship_id,
-            DataModelRelationship.data_source_id == data_source_id,
+    @staticmethod
+    def _bare_table_name(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        return str(value).split(".")[-1].strip().lower()
+
+    @staticmethod
+    def _field_ref_parts(value: Any) -> tuple[str, str]:
+        if not isinstance(value, str):
+            return "", ""
+        parts = [p.strip().lower() for p in value.split(".") if p.strip()]
+        if len(parts) < 2:
+            return "", parts[-1] if parts else ""
+        return parts[-2], parts[-1]
+
+    def _join_matches_relationship(self, join: Any, rel: DataModelRelationship) -> bool:
+        if not isinstance(join, dict):
+            return False
+
+        rel_id = str(rel.id)
+        join_rel_id = join.get("relationshipId") or join.get("relationship_id")
+        if join_rel_id and str(join_rel_id) == rel_id:
+            return True
+
+        on = join.get("on")
+        if isinstance(on, str) and "=" in on:
+            left, right = [part.strip() for part in on.split("=", 1)]
+        elif isinstance(on, dict):
+            left = on.get("left")
+            right = on.get("right")
+        else:
+            return False
+
+        left_ref = self._field_ref_parts(left)
+        right_ref = self._field_ref_parts(right)
+        from_ref = (
+            self._bare_table_name(rel.from_table),
+            str(rel.from_column).strip().lower(),
         )
-        result = await self.db.execute(stmt)
+        to_ref = (
+            self._bare_table_name(rel.to_table),
+            str(rel.to_column).strip().lower(),
+        )
+        return (left_ref == from_ref and right_ref == to_ref) or (
+            left_ref == to_ref and right_ref == from_ref
+        )
+
+    async def _remove_relationship_from_chart_queries(
+        self,
+        data_source_id: str,
+        rel: DataModelRelationship,
+    ) -> int:
+        result = await self.db.execute(select(Chart).where(Chart.data_source_id == data_source_id))
+        changed = 0
+        for chart in result.scalars().all():
+            chart_query = chart.chart_query if isinstance(chart.chart_query, dict) else {}
+            joins = chart_query.get("joins")
+            if not isinstance(joins, list) or not joins:
+                continue
+
+            next_joins = [
+                join for join in joins if not self._join_matches_relationship(join, rel)
+            ]
+            if len(next_joins) == len(joins):
+                continue
+
+            chart.chart_query = {**chart_query, "joins": next_joins}
+            self.db.add(chart)
+            changed += 1
+
+        if changed:
+            await self.db.flush()
+        return changed
+
+    async def delete_relationship(self, data_source_id: str, relationship_id: UUID) -> bool:
+        result = await self.db.execute(
+            select(DataModelRelationship).where(
+                DataModelRelationship.id == relationship_id,
+                DataModelRelationship.data_source_id == data_source_id,
+            )
+        )
+        rel = result.scalar_one_or_none()
+        if not rel:
+            return False
+
+        await self._remove_relationship_from_chart_queries(data_source_id, rel)
+        await self.db.delete(rel)
         await self.db.commit()
-        return result.rowcount > 0
+        return True
 
     async def auto_detect(self, data_source_id: str) -> List[dict]:
         ds = await self.get_data_source(data_source_id)

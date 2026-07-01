@@ -36,6 +36,8 @@ export interface ChartQuery {
     alias?: string;
     on: { left: string; right: string } | string;
     type: string;
+    relationshipId?: string;
+    modelJoin?: boolean;
   }[];
   drillPath?: string[];
   interactionMode?: 'drill' | 'cross_filter';
@@ -410,7 +412,7 @@ class ChartService {
       tableName?: string;
       runtimeFilters?: Array<{ field: string; operator: string; value: unknown; type?: string }>;
     }
-  ): Promise<{ min?: number | null; max?: number | null }> {
+  ): Promise<{ min?: number | string | null; max?: number | string | null }> {
     const qs = new URLSearchParams({ field, data_source_id: dataSourceId });
     if (opts?.tableName) qs.set('table_name', opts.tableName);
     if (opts?.embedToken) qs.set('token', opts.embedToken);
@@ -422,7 +424,7 @@ class ChartService {
       method: 'GET',
     });
     if (res && typeof res === 'object') {
-      const obj = res as { min?: number | null; max?: number | null };
+      const obj = res as { min?: number | string | null; max?: number | string | null };
       return { min: obj.min ?? null, max: obj.max ?? null };
     }
     return { min: null, max: null };

@@ -183,13 +183,12 @@
 .shared-dashboard-header-right .shared-dashboard-refresh-wrap {
   display: flex;
   align-items: center;
-  max-width: min(280px, 38vw);
 }
 
 .shared-dashboard-header-right .shared-dashboard-refresh-trigger.ant-btn {
-  height: auto;
-  min-height: 34px;
-  padding-block: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .shared-dashboard-container .widget-card {

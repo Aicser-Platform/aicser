@@ -49,12 +49,12 @@ export function useDashboardChartRefresh(params: {
         return;
       }
 
-      const changedFields = next
-        .filter((f) => {
-          const old = prev.find((p) => p.field === f.field);
-          return !old || JSON.stringify(old.value) !== JSON.stringify(f.value);
-        })
-        .map((f) => f.field);
+      const fields = new Set([...prev.map((f) => f.field), ...next.map((f) => f.field)]);
+      const changedFields = Array.from(fields).filter((field) => {
+        const old = prev.filter((p) => p.field === field).map((p) => ({ operator: p.operator, value: p.value }));
+        const current = next.filter((p) => p.field === field).map((p) => ({ operator: p.operator, value: p.value }));
+        return JSON.stringify(old) !== JSON.stringify(current);
+      });
 
       const affected = getAffectedWidgetIds(
         widgets,

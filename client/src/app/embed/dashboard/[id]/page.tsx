@@ -57,6 +57,7 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
       onManualRefresh={viewer.handleManualRefresh}
       refreshing={viewer.refreshing}
       fetchFilterOptions={viewer.fetchFilterOptions}
+      fetchFilterFieldStats={viewer.fetchFilterFieldStats}
       variant="embed"
       autoRefreshMinutes={viewer.autoRefreshMinutes}
       onAutoRefreshIntervalChange={viewer.setAutoRefreshMinutes}

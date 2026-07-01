@@ -3,13 +3,12 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { message, Button, Dropdown } from 'antd';
+import { message, Button, Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   AppstoreOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
-  DownOutlined,
   MoonOutlined,
   ReloadOutlined,
   SunOutlined,
@@ -60,6 +59,11 @@ type Props = {
     dataSourceId: string,
     ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string }
   ) => Promise<unknown[]>;
+  fetchFilterFieldStats: (
+    field: string,
+    dataSourceId: string,
+    ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string }
+  ) => Promise<{ min?: unknown; max?: unknown }>;
   variant?: 'shared' | 'embed';
   /** 0 = auto-refresh off; matches studio interval options when `onAutoRefreshIntervalChange` is set. */
   autoRefreshMinutes?: number;
@@ -94,6 +98,7 @@ export function DashboardViewerShell({
   onManualRefresh,
   refreshing = false,
   fetchFilterOptions,
+  fetchFilterFieldStats,
   variant = 'shared',
   autoRefreshMinutes = 0,
   onAutoRefreshIntervalChange,
@@ -206,23 +211,22 @@ export function DashboardViewerShell({
                     onClick: handleRefreshMenuClick,
                   }}
                 >
-                  <Button
-                    size="small"
-                    className="studio-context-btn studio-refresh-dropdown-trigger shared-dashboard-refresh-trigger"
-                    disabled={refreshing}
-                    aria-haspopup="menu"
-                    aria-label={td('refresh_menu_aria')}
-                    title={td('refresh_tooltip')}
+                  <Tooltip
+                    title={
+                      lastRefreshedLabel
+                        ? `${td('refresh_data')} · ${lastRefreshedLabel}`
+                        : td('refresh_data')
+                    }
                   >
-                    <ReloadOutlined spin={refreshing} />
-                    <span className="studio-refresh-trigger-text">
-                      <span className="studio-refresh-trigger-title">{td('refresh_data')}</span>
-                      {lastRefreshedLabel ? (
-                        <span className="studio-refresh-trigger-updated">{lastRefreshedLabel}</span>
-                      ) : null}
-                    </span>
-                    <DownOutlined className="studio-refresh-trigger-caret" />
-                  </Button>
+                    <Button
+                      size="small"
+                      className="studio-context-btn studio-refresh-dropdown-trigger shared-dashboard-refresh-trigger"
+                      icon={<ReloadOutlined spin={refreshing} />}
+                      disabled={refreshing}
+                      aria-haspopup="menu"
+                      aria-label={td('refresh_menu_aria')}
+                    />
+                  </Tooltip>
                 </Dropdown>
               </div>
             )}
@@ -290,9 +294,12 @@ export function DashboardViewerShell({
               runtimeFilters={runtimeFilters}
               onChange={onRuntimeFiltersChange}
               fetchOptions={fetchFilterOptions}
+              fetchFieldStats={fetchFilterFieldStats}
               minimal
               showHeader={false}
               onClearAll={() => onRuntimeFiltersChange([])}
+              onRefresh={onManualRefresh}
+              refreshing={refreshing}
             />
           </div>
         ) : null}

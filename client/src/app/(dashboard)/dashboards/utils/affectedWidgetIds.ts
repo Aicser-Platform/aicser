@@ -23,7 +23,16 @@ export function getAffectedWidgetIds(
       const scoped = resolveRuntimeFiltersForWidget(runtimeFilters, filterConfigs, w);
       if (!scoped.length && !fields.size) return false;
       if (!changedFields?.length) return true;
-      return scoped.some((f) => fields.has(f.field));
+      if (scoped.some((f) => fields.has(f.field))) return true;
+
+      const widgetKeys = new Set([w.id, w.chartId].filter(Boolean) as string[]);
+      const removedOrClearedConfig = filterConfigs.some((filter) => {
+        if (!fields.has(filter.field)) return false;
+        const scope = filter.affects;
+        if (!scope?.length) return true;
+        return scope.some((id) => widgetKeys.has(id));
+      });
+      return removedOrClearedConfig;
     })
     .map((w) => w.id);
 }

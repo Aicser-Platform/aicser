@@ -535,6 +535,21 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     [activeDashboardId, combinedFiltersConfig, runtimeFilters]
   );
 
+  const fetchFilterFieldStats = useCallback(
+    (field: string, dataSourceId: string, ctx?: { tableName?: string; runtimeFilters?: typeof runtimeFilters; excludeField?: string }) => {
+      const filterDef =
+        combinedFiltersConfig.find(
+          (f) => f.field === field && String(f.dataSourceId || '') === String(dataSourceId),
+        ) || combinedFiltersConfig.find((f) => f.field === field);
+      if (!activeDashboardId) return Promise.resolve({ min: null, max: null });
+      return chartService.getFilterFieldStats(activeDashboardId, field, dataSourceId, {
+        tableName: ctx?.tableName || filterDef?.tableName,
+        runtimeFilters: ctx?.runtimeFilters ?? runtimeFilters,
+      });
+    },
+    [activeDashboardId, combinedFiltersConfig, runtimeFilters]
+  );
+
   const handlePageLayoutChange = useCallback(
     (nextPageLayout: typeof layout) => {
       updatePageLayout(activePageId, nextPageLayout, defaultPageIdRef.current);
@@ -597,6 +612,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     filterFieldConflicts,
     dataSourcesForFilters: dataSources,
     fetchFilterOptions,
+    fetchFilterFieldStats,
     pages,
     setPages,
     activePageId,

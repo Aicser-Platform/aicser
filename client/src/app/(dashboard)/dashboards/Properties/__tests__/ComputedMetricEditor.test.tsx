@@ -19,6 +19,7 @@ describe('ComputedMetricEditor', () => {
       />
     );
     expect(screen.getByText('fx Computed Metric')).toBeTruthy();
+    expect(screen.getByText('Display format')).toBeTruthy();
   });
 
   it('disables the OK button when fields are not filled', () => {
@@ -108,6 +109,7 @@ describe('ComputedMetricEditor', () => {
     // Percentage radio should be selected
     const percentageRadio = screen.getByRole('radio', { name: /Percentage/i });
     expect(percentageRadio).toBeChecked();
+    expect(screen.getByText('Percent (%)')).toBeTruthy();
   });
 
   it('shows ratio radio selected by default', () => {

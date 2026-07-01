@@ -14,8 +14,9 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
+import { useTranslations } from 'next-intl';
 import { Button, Input, Segmented } from 'antd';
-import { ApartmentOutlined, PlusOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
 import { TableNode, type TableNodeData } from './TableNode';
 import { RelationshipEdge, type RelationshipEdgeData } from './RelationshipEdge';
 import type { DataModelRelationship } from '@/api/dataModel';
@@ -96,6 +97,7 @@ export function ERDCanvas({
   onConnectionCreate,
   selectedRelationshipId,
 }: ERDCanvasProps) {
+  const t = useTranslations('dashboards_page');
   const [search, setSearch] = useState('');
   const [pendingColumn, setPendingColumn] = useState<PendingColumnConnection | null>(null);
   const normalizedSearch = search.trim().toLowerCase();
@@ -340,19 +342,19 @@ export function ERDCanvas({
           <Segmented
             size="small"
             value="relationships"
-            options={[{ value: 'relationships', label: 'Relationship View' }, { value: 'details', label: 'Details' }]}
+            options={[
+              { value: 'relationships', label: t('erd_relationship_view') },
+              { value: 'details', label: t('erd_details') },
+            ]}
           />
-          <Button size="small" icon={<PlusOutlined />}>
-            New Table
-          </Button>
           <Button size="small" icon={<ApartmentOutlined />} onClick={handleAutoLayout}>
-            Auto Layout
+            {t('erd_auto_layout')}
           </Button>
         </div>
         <Input
           size="small"
           prefix={<SearchOutlined />}
-          placeholder="Search schema..."
+          placeholder={t('erd_search_schema')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
@@ -362,7 +364,7 @@ export function ERDCanvas({
       {filteredTables.length === 0 ? (
         <div className="erd-empty-state">
           <TableOutlined />
-          <span>No matching tables</span>
+          <span>{t('erd_no_matching_tables')}</span>
         </div>
       ) : null}
       <ReactFlow

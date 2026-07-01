@@ -551,6 +551,19 @@ async def get_filter_field_stats(
         f'SELECT MIN("{safe_field}") AS mn, MAX("{safe_field}") AS mx '
         f'FROM "{safe_table}" WHERE {where_sql}'
     )
+
+    def _serialize_stat_value(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return str(value)
+
     try:
         ds_dict = _ds_execution_dict(ds, schema_info)
         from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
@@ -564,7 +577,7 @@ async def get_filter_field_stats(
             mx = row.get("mx")
             if mn is None and mx is None:
                 return {"min": None, "max": None}
-            return {"min": float(mn) if mn is not None else None, "max": float(mx) if mx is not None else None}
+            return {"min": _serialize_stat_value(mn), "max": _serialize_stat_value(mx)}
     except Exception as e:
         logger.warning("filter-field-stats query failed: %s", e)
     return {"min": None, "max": None}

@@ -176,6 +176,8 @@ export const DEFAULT_CHART_CONFIG = {
   lineStackMode: 'none' as const, // Default line chart stack mode
 };
 
+export type ChartValueFormat = 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+
 /** Solid grey axis grid — used by dashboard widgets (not dashed/dotted). */
 export const CHART_GRID_LINE_STYLE = {
   color: CHART_COLORS.border.light,
@@ -248,7 +250,9 @@ export interface ChartConfig {
    * 'full' → 1,234,567  (no abbreviation)
    * undefined / 'auto' → compact (legacy default for axis), full for tooltips
    */
-  valueFormat?: 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+  valueFormat?: ChartValueFormat;
+  /** Optional per-series display formats, keyed by metric field/label/series name. */
+  metricFormats?: Record<string, ChartValueFormat>;
   /** Highlight statistical outliers (IQR method) with markPoints on line/bar/area/scatter charts. */
   showAnomalies?: boolean;
   /** Widget-level border width in pixels (0 = none) */

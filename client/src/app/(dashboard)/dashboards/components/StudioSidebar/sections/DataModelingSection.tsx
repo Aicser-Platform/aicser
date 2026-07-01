@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Spin, Empty, message } from 'antd';
+import { Select, Spin, Empty, message, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
@@ -9,6 +9,8 @@ import { useRelationships } from '@/hooks/useDataModelRelationships';
 import { createRelationship } from '@/api/dataModel';
 import { ERDCanvas } from '../../ERDCanvas/ERDCanvas';
 import type { DataModelRelationship } from '@/api/dataModel';
+
+const { Text } = Typography;
 
 // Coarse SQL type family — two columns can only be joined when they share one.
 function typeFamily(type: string): 'number' | 'date' | 'bool' | 'text' | 'unknown' {
@@ -121,11 +123,26 @@ export function DataModelingSection({
   const t = useTranslations('dashboards_page');
   const queryClient = useQueryClient();
   const { dataSources, isLoading: dsLoading } = useDataSources();
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   // Keys of creates currently in flight — prevents the ERD firing the same
   // connection twice (drag + click) from issuing two POSTs.
   const pendingKeys = React.useRef<Set<string>>(new Set());
 
-  const modelSources = dataSources;
+  useEffect(() => {
+    if (!dataSources.length) {
+      setActiveSourceId(null);
+      return;
+    }
+    if (!activeSourceId || !dataSources.some((source) => source.id === activeSourceId)) {
+      setActiveSourceId(dataSources[0].id);
+    }
+  }, [activeSourceId, dataSources]);
+
+  const selectedSource = useMemo(
+    () => dataSources.find((source) => source.id === activeSourceId) ?? null,
+    [activeSourceId, dataSources],
+  );
+  const modelSources = useMemo(() => (selectedSource ? [selectedSource] : []), [selectedSource]);
 
   const sourceDisplayNames = useMemo(() => {
     const names = modelSources.map((ds) => ds.name);
@@ -169,18 +186,16 @@ export function DataModelingSection({
   }, [modelSources]);
 
   const allTables = useMemo(() => {
-    const result: { id: string; name: string; label: string; schema?: string; sourceId: string; columns: { name: string; type: string }[] }[] = [];
-    loadedData.forEach(({ tables }) => result.push(...tables));
-    return result;
-  }, [loadedData]);
+    if (!activeSourceId) return [];
+    return loadedData.get(activeSourceId)?.tables ?? [];
+  }, [activeSourceId, loadedData]);
 
   const allRelationships = useMemo(() => {
-    const result: DataModelRelationship[] = [];
-    loadedData.forEach(({ relationships }) => result.push(...relationships));
-    return result;
-  }, [loadedData]);
+    if (!activeSourceId) return [];
+    return loadedData.get(activeSourceId)?.relationships ?? [];
+  }, [activeSourceId, loadedData]);
 
-  const isLoading = dsLoading || (modelSources.length > 0 && loadedData.size < modelSources.length);
+  const isLoading = dsLoading || Boolean(activeSourceId && !loadedData.has(activeSourceId));
 
   const columnType = useCallback(
     (sourceId: string, tableName: string, columnName: string): string | undefined => {
@@ -199,6 +214,12 @@ export function DataModelingSection({
       toColumn: string;
       toSourceId: string;
     }) => {
+      if (!activeSourceId) return;
+      if (conn.fromSourceId !== activeSourceId || conn.toSourceId !== activeSourceId) {
+        message.warning(t('modeling_same_source_only'));
+        return;
+      }
+
       // Ignore a column joined to itself.
       if (
         conn.fromSourceId === conn.toSourceId &&
@@ -241,7 +262,6 @@ export function DataModelingSection({
       pendingKeys.current.add(key);
 
       try {
-        const toDataSourceId = conn.fromSourceId !== conn.toSourceId ? conn.toSourceId : undefined;
         const newRel = await createRelationship(conn.fromSourceId, {
           from_table: conn.fromTable,
           from_column: conn.fromColumn,
@@ -252,7 +272,7 @@ export function DataModelingSection({
           cross_filter_direction: 'single',
           is_active: true,
           assume_integrity: false,
-          to_data_source_id: toDataSourceId ?? null,
+          to_data_source_id: null,
         });
         // Refresh the cached relationships so the new edge appears immediately.
         await queryClient.invalidateQueries({
@@ -266,7 +286,7 @@ export function DataModelingSection({
         pendingKeys.current.delete(key);
       }
     },
-    [allRelationships, columnType, onRelationshipSelect, queryClient, t],
+    [activeSourceId, allRelationships, columnType, onRelationshipSelect, queryClient, t],
   );
 
   if (dsLoading) {
@@ -289,6 +309,19 @@ export function DataModelingSection({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--ant-color-border)' }}>
+        <Text className="data-workbench-kicker">{t('data_source')}</Text>
+        <Select
+          size="small"
+          value={activeSourceId ?? undefined}
+          onChange={(id) => {
+            setActiveSourceId(id);
+            onRelationshipSelect(null);
+          }}
+          options={dataSources.map((source) => ({ value: source.id, label: source.name }))}
+          style={{ width: '100%', marginTop: 8 }}
+        />
+      </div>
       {modelSources.map((ds) => (
         <DataSourceModelLoader
           key={ds.id}
@@ -313,7 +346,7 @@ export function DataModelingSection({
           />
         ) : (
           <ERDCanvas
-            dataSourceId="all-sources"
+            dataSourceId={activeSourceId ?? 'no-source'}
             tables={allTables}
             relationships={allRelationships}
             onRelationshipSelect={onRelationshipSelect}

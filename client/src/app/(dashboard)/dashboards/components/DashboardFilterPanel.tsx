@@ -17,9 +17,16 @@ type Props = {
     dataSourceId: string,
     ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string },
   ) => Promise<unknown>;
+  fetchFieldStats?: (
+    field: string,
+    dataSourceId: string,
+    ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string },
+  ) => Promise<{ min?: unknown; max?: unknown }>;
   variant?: FilterBarLayout;
   minimal?: boolean;
   onClearAll?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   onClose?: () => void;
   showHeader?: boolean;
   open?: boolean;
@@ -34,9 +41,12 @@ export function DashboardFilterPanel({
   runtimeFilters,
   onChange,
   fetchOptions,
+  fetchFieldStats,
   variant = 'panel',
   minimal = false,
   onClearAll,
+  onRefresh,
+  refreshing = false,
   onClose,
   showHeader = true,
   open = true,
@@ -54,7 +64,7 @@ export function DashboardFilterPanel({
           ? `flex-shrink-0 flex flex-col bg-bg-container overflow-hidden border-l transition-[width,border-color,background-color] duration-200 ${
               open ? 'w-[280px] border-border-light' : 'w-0 border-transparent'
             }`
-          : 'flex-shrink-0 flex flex-col bg-transparent overflow-hidden w-full border-t border-border-light pt-2.5 pb-3'
+          : 'flex-shrink-0 flex flex-col bg-transparent overflow-visible w-full'
       }
       aria-label={t('dashboard_filter_strip_aria')}
     >
@@ -87,9 +97,12 @@ export function DashboardFilterPanel({
           runtimeFilters={runtimeFilters}
           onChange={onChange}
           fetchOptions={fetchOptions}
+          fetchFieldStats={fetchFieldStats}
           layout={variant}
           minimal={minimal}
           onClearAll={onClearAll}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
         />
       </div>
     </aside>
