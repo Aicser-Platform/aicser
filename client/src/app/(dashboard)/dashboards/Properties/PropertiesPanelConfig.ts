@@ -25,6 +25,22 @@ export interface SegmentedOption {
   value: string | boolean;
 }
 
+export interface ComputedMetricSide {
+  field: string;
+  aggregation: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'distinct_count';
+  filter?: Array<{ field: string; operator: string; value: unknown }>;
+}
+
+export type MetricValueFormat = 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+
+export interface ComputedMetric {
+  type: 'ratio';
+  numerator: ComputedMetricSide;
+  denominator: ComputedMetricSide;
+  multiplier: 1 | 100;
+  format?: MetricValueFormat;
+}
+
 export const METRIC_OPTIONS: SegmentedOption[] = [
   { label: "Don't summarize", value: 'none' },
   { label: 'Count', value: 'count' },
@@ -378,6 +394,17 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
   },
   slicer: {
     label: 'Slicer',
+    fields: [
+      {
+        key: 'field',
+        type: 'select',
+        label: 'Filter field',
+        required: true,
+      },
+    ],
+  },
+  filter: {
+    label: 'Filter',
     fields: [
       {
         key: 'field',

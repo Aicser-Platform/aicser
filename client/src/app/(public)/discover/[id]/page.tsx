@@ -16,7 +16,6 @@ import { socialFeedService, type FeedItem } from '@/services/socialFeedService';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useFeedItemInteractions } from '@/hooks/feed/useFeedInteractions';
 import { useDiscoverReferral, getStoredDiscoverReferral } from '@/hooks/discover/useDiscoverReferral';
-import '@/app/(dashboard)/feed/styles.css';
 
 function DiscoverDetailContent() {
   const t = useTranslations('discover');
@@ -36,6 +35,7 @@ function DiscoverDetailContent() {
     handleSave,
     handleAddComment,
     handleToggleFollow,
+    handleDeleteItem,
   } = useFeedItemInteractions(item, setItem);
 
   useEffect(() => {
@@ -95,6 +95,7 @@ function DiscoverDetailContent() {
           onSave={handleSave}
           onAddComment={handleAddComment}
           onToggleFollow={handleToggleFollow}
+          onDeleteItem={handleDeleteItem}
           interactionState={pendingInteractions[item.id]}
           compact={false}
         />

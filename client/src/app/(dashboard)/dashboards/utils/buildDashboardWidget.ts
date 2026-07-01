@@ -20,8 +20,10 @@ export function buildWidgetFromTemplate(
   const instanceId = generateWidgetId();
   const isPieChart = template.type === 'pie' || template.type === 'donut';
   const isTextWidget = template.type === 'text';
+  const isStatWidget = template.type === 'stat';
 
   let defaultChartOptions: Record<string, unknown>;
+  let defaultChartQuery: WidgetInstance['chartQuery'];
 
   if (isTextWidget) {
     defaultChartOptions = {
@@ -31,6 +33,15 @@ export function buildWidgetFromTemplate(
       color: 'inherit',
       textAlign: 'left',
     };
+    defaultChartQuery = {};
+  } else if (isStatWidget) {
+    defaultChartOptions = {
+      format: 'number',
+      fontSize: 32,
+      layout: 'compact',
+      showSparkline: false,
+    };
+    defaultChartQuery = { yMetric: 'count', yMetrics: [], sortBy: 'x' };
   } else if (isPieChart) {
     defaultChartOptions = {
       showLegend: true,
@@ -49,7 +60,7 @@ export function buildWidgetFromTemplate(
   const widget: WidgetInstance = {
     id: instanceId,
     dataSourceId: undefined,
-    chartQuery: isTextWidget ? {} : undefined,
+    chartQuery: defaultChartQuery,
     chartType: template.type as WidgetType,
     title: isTextWidget ? '' : template.name.trim(),
     chartOptions: defaultChartOptions,

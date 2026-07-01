@@ -45,6 +45,12 @@ const getLineStyleConfig = (config: ChartConfig) => {
 };
 
 export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
+  // If primary series is empty but secondary has data, treat secondary as primary.
+  // This handles stale yMetricsSecondary DB state after General-tab Apply Changes.
+  const effectiveData: ChartData = (!data.series?.length && data.secondarySeries?.length)
+    ? { ...data, series: data.secondarySeries, secondarySeries: [] }
+    : data;
+
   const seriesColors = colors || CHART_COLORS.secondary;
   const isHorizontalBar = config.barChartType === 'horizontal';
   const isComboLine = config.barChartType === 'combo-line';
@@ -65,10 +71,10 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
     });
   };
 
-  if ((data.series && data.series.length > 0) || (data.secondarySeries && data.secondarySeries.length > 0)) {
-    const allSeries = [...(data.series || []), ...(data.secondarySeries || [])];
+  if ((effectiveData.series && effectiveData.series.length > 0) || (effectiveData.secondarySeries && effectiveData.secondarySeries.length > 0)) {
+    const allSeries = [...(effectiveData.series || []), ...(effectiveData.secondarySeries || [])];
 
-    const primarySeries = (data.series || []).map((s, index) => ({
+    const primarySeries = (effectiveData.series || []).map((s, index) => ({
       name: s.name,
       type: 'bar',
       colorBy: allSeries.length === 1 ? 'data' : 'series',
@@ -105,7 +111,7 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
 
     // Only add secondary series as line charts for combo-line type
     const secondarySeries = isComboLine
-      ? (data.secondarySeries || []).map((s) => {
+      ? (effectiveData.secondarySeries || []).map((s) => {
           // Use shared line config logic
           const lineConfig = getLineStyleConfig(config);
 
@@ -170,6 +176,12 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
 };
 
 export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
+  // If primary series is empty but secondary has data, treat secondary as primary.
+  // This handles stale yMetricsSecondary DB state after General-tab Apply Changes.
+  const effectiveData: ChartData = (!data.series?.length && data.secondarySeries?.length)
+    ? { ...data, series: data.secondarySeries, secondarySeries: [] }
+    : data;
+
   // Use shared line config
   const lineConfig = getLineStyleConfig(config);
   const isStackedLine = config.lineStackMode === 'stacked' || config.lineStackMode === 'stacked-100';
@@ -189,10 +201,10 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
     });
   };
 
-  if ((data.series && data.series.length > 0) || (data.secondarySeries && data.secondarySeries.length > 0)) {
-    const allSeries = [...(data.series || []), ...(data.secondarySeries || [])];
+  if ((effectiveData.series && effectiveData.series.length > 0) || (effectiveData.secondarySeries && effectiveData.secondarySeries.length > 0)) {
+    const allSeries = [...(effectiveData.series || []), ...(effectiveData.secondarySeries || [])];
 
-    const primarySeries = (data.series || []).map((s) => ({
+    const primarySeries = (effectiveData.series || []).map((s) => ({
       name: s.name,
       type: 'line',
       smooth: lineConfig.smooth,
@@ -222,7 +234,7 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
       blur: getCartesianBlur(),
     }));
 
-    const secondarySeries = (data.secondarySeries || []).map((s) => ({
+    const secondarySeries = (effectiveData.secondarySeries || []).map((s) => ({
       name: s.name,
       type: 'line',
       smooth: lineConfig.smooth,
@@ -285,6 +297,12 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
 };
 
 export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
+  // If primary series is empty but secondary has data, treat secondary as primary.
+  // This handles stale yMetricsSecondary DB state after General-tab Apply Changes.
+  const effectiveData: ChartData = (!data.series?.length && data.secondarySeries?.length)
+    ? { ...data, series: data.secondarySeries, secondarySeries: [] }
+    : data;
+
   // Use shared line config
   const lineConfig = getLineStyleConfig(config);
   const isStackedArea = config.lineStackMode === 'stacked' || config.lineStackMode === 'stacked-100';
@@ -304,13 +322,13 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
     });
   };
 
-  if ((data.series && data.series.length > 0) || (data.secondarySeries && data.secondarySeries.length > 0)) {
-    const allSeries = [...(data.series || []), ...(data.secondarySeries || [])];
+  if ((effectiveData.series && effectiveData.series.length > 0) || (effectiveData.secondarySeries && effectiveData.secondarySeries.length > 0)) {
+    const allSeries = [...(effectiveData.series || []), ...(effectiveData.secondarySeries || [])];
 
     // Get colors from palette, fallback to default if not provided
     const seriesColors = colors || CHART_COLORS.secondary;
 
-    const primarySeries = (data.series || []).map((s, index) => {
+    const primarySeries = (effectiveData.series || []).map((s, index) => {
       const seriesColor = seriesColors[index % seriesColors.length];
       return {
         name: s.name,
@@ -357,8 +375,8 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
     });
 
     // Secondary series should also have area fills for area charts
-    const secondarySeries = (data.secondarySeries || []).map((s, index) => {
-      const seriesColor = seriesColors[(data.series?.length || 0) + index] || seriesColors[index % seriesColors.length];
+    const secondarySeries = (effectiveData.secondarySeries || []).map((s, index) => {
+      const seriesColor = seriesColors[(effectiveData.series?.length || 0) + index] || seriesColors[index % seriesColors.length];
       return {
         name: s.name,
         type: 'line',
@@ -533,9 +551,11 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
     });
   }
 
-  // Single series default
+  // Single series default — fall back to series[0].data when data.y is empty
+  // (data.y is deprecated in the backend; newer responses send series[0].data instead)
+  const yValues = data.y?.length ? data.y : (data.series?.[0]?.data ?? []);
   const pieData = (data?.x || []).map((label: string, idx: number) => ({
-    value: (data.y ?? [])[idx] ?? 0,
+    value: yValues[idx] ?? 0,
     name: String(label),
   }));
 

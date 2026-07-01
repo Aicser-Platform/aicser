@@ -74,7 +74,8 @@ function EChartWidgetCore({
     const hasData =
       (data.x && data.x.length > 0) ||
       (data.series && data.series.length > 0) ||
-      (data.y && data.y.length > 0);
+      (data.y && data.y.length > 0) ||
+      (type === 'gauge' && data.value != null);
     if (!hasData) return;
 
     if (!echartsInstance.current) {
@@ -91,6 +92,11 @@ function EChartWidgetCore({
     if (showWatermark) {
       options = addWatermarkToChart(options, planType, { isDark: isDarkMode, useOverlay: true });
     }
+    // Clear any active tooltip before a notMerge setOption. ECharts otherwise tries to
+    // restore/re-show the tooltip against freshly-rebuilt internals, which can throw
+    // "can't access property innerHTML, el is null" (TooltipHTMLContent) — reproducible
+    // when the chart re-renders (e.g. live preview) while the pointer is over a slice.
+    echartsInstance.current.dispatchAction({ type: 'hideTip' });
     echartsInstance.current.setOption(options, { notMerge: true, lazyUpdate: false });
 
     if (onChartReadyRef.current) {

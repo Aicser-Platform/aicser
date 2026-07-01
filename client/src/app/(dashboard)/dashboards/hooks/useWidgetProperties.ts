@@ -5,6 +5,7 @@ import stableStringify from 'fast-json-stable-stringify';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { useChartDesignerStore } from '../../chart-designer/stores/useChartDesignerStore';
+import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 
 interface UseWidgetPropertiesParams {
   selectedWidget: any;
@@ -82,8 +83,24 @@ export const useWidgetProperties = ({
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     const isScatter = selectedWidget?.chartType === 'scatter';
-    const hasX = isScatter ? !!selectedWidget?.chartQuery?.xMetrics?.[0]?.field : !!selectedWidget?.chartQuery?.x;
-    const hasY = isScatter ? !!selectedWidget?.chartQuery?.yMetrics?.[0]?.field : true;
+    const isMetricOnlyWidget =
+      selectedWidget?.chartType === 'stat' || selectedWidget?.chartType === 'gauge';
+    const firstMetric = selectedWidget?.chartQuery?.yMetrics?.[0];
+    const hasMetric =
+      Boolean(firstMetric?.field) ||
+      selectedWidget?.chartQuery?.yMetric === 'count' ||
+      Boolean(selectedWidget?.chartQuery?.aggregate);
+    const hasX = isScatter
+      ? !!selectedWidget?.chartQuery?.xMetrics?.[0]?.field
+      : isMetricOnlyWidget
+        ? true
+        : !!selectedWidget?.chartQuery?.x;
+    const hasY = isScatter
+      ? !!selectedWidget?.chartQuery?.yMetrics?.[0]?.field
+      : isMetricOnlyWidget
+        ? hasMetric
+        : true;
+    const hasTable = Boolean(selectedWidget?.chartQuery?.tableName);
 
     // Compute a hash of the current query only (not chartOptions)
     const currentQueryHash = stableStringify({
@@ -102,7 +119,12 @@ export const useWidgetProperties = ({
       selectedWidget?.lastFetchedQueryHash === currentQueryHash;
 
     const isTextWidget = selectedWidget?.chartType === 'text';
-    const canSync = isTextWidget || (selectedWidget?.dataSourceId && hasX && (!isScatter || hasY));
+    const canSync =
+      isTextWidget ||
+      (selectedWidget?.dataSourceId &&
+        hasX &&
+        hasY &&
+        (!isMetricOnlyWidget || hasTable));
 
     if (!selectedWidgetId || !canSync || hasValidData || hasFailedCurrentQuery) {
       return;
@@ -146,6 +168,7 @@ export const useWidgetProperties = ({
     };
   }, [
     selectedWidgetId,
+    selectedWidget?.chartType,
     selectedWidget?.dataSourceId,
     selectedWidget?.chartQuery?.x,
     selectedWidget?.chartQuery?.sortBy,
@@ -162,6 +185,7 @@ export const useWidgetProperties = ({
     selectedWidget?.chartQuery?.sortOrder,
     selectedWidget?.chartQuery?.limit,
     selectedWidget?.chartQuery?.seriesLimit,
+    JSON.stringify(selectedWidget?.chartQuery?.joins),
     selectedWidget?.title, // DEBOUNCE TITLE CHANGES
   ]);
 
@@ -169,26 +193,57 @@ export const useWidgetProperties = ({
    * Selectors
    * --------------------------------------*/
 
+  const selectedChartQuery = (selectedWidget as any)?.chartQuery;
+  const selectedTableName = selectedChartQuery?.tableName;
+  const selectedJoinsKey = JSON.stringify(selectedChartQuery?.joins || []);
+
   const selectedTableColumns = useMemo(() => {
     if (!selectedSchemaInfo || !selectedSchemaInfo.tables) return [];
 
-    const selectedTableName = (selectedWidget as any)?.chartQuery?.tableName;
+    const joins = JSON.parse(selectedJoinsKey);
+    const bareTableName = (table?: string) => table?.split('.').pop()?.trim() || table?.trim();
+    const findSchemaTable = (tableName?: string) => {
+      const bare = bareTableName(tableName);
+      return selectedSchemaInfo.tables.find((t: any) => bareTableName(t.name) === bare);
+    };
 
     // Find the specific table if selected, else default to 'data' or the first usable one
     const table =
-      (selectedTableName ? selectedSchemaInfo.tables.find((t: any) => t.name === selectedTableName) : null) ||
+      (selectedTableName ? findSchemaTable(selectedTableName) : null) ||
       selectedSchemaInfo.tables.find((t: any) => t.name === 'data') ||
       selectedSchemaInfo.tables.find((t: any) => t.columns && t.columns.length > 0) ||
       selectedSchemaInfo.tables[0];
 
-    return (
+    const baseColumns =
       table?.columns?.map((c: any) => ({
         label: c.name || c,
         value: c.name || c,
         type: c.type || 'string',
-      })) ?? []
-    );
-  }, [selectedSchemaInfo, (selectedWidget as any)?.chartQuery?.tableName]);
+      })) ?? [];
+
+    const relatedColumns = Array.isArray(joins)
+      ? joins.flatMap((join: any) => {
+          const joinTable = findSchemaTable(join?.table);
+          const alias = join?.alias || bareTableName(join?.table);
+          if (!joinTable?.columns || !alias) return [];
+          return joinTable.columns.map((c: any) => {
+            const columnName = c.name || c;
+            const qualifiedName = `${alias}.${columnName}`;
+            return {
+              label: qualifiedName,
+              value: qualifiedName,
+              type: c.type || 'string',
+            };
+          });
+        })
+      : [];
+
+    return [...baseColumns, ...relatedColumns];
+  }, [
+    selectedSchemaInfo,
+    selectedTableName,
+    selectedJoinsKey,
+  ]);
 
   /* ----------------------------------------
    * Public API
@@ -250,6 +305,124 @@ export const useWidgetProperties = ({
     updateLocalAndStore({ chartQuery: nextQuery });
   };
 
+  const metricAggregationForField = (field: DashboardFieldDragPayload) => {
+    const type = (field.columnType || '').toLowerCase();
+    const isNumeric =
+      type.includes('int') ||
+      type.includes('float') ||
+      type.includes('number') ||
+      type.includes('decimal') ||
+      type.includes('double') ||
+      type.includes('real') ||
+      type.includes('numeric');
+    return isNumeric ? 'sum' : 'count';
+  };
+
+  const appendMetric = (metrics: any[] = [], field: DashboardFieldDragPayload, replace = false) => {
+    const nextMetric = {
+      field: field.columnName,
+      aggregation: selectedWidget?.chartType === 'scatter' ? 'none' : metricAggregationForField(field),
+    };
+    if (replace) return [nextMetric];
+    if (metrics.some((metric) => metric.field === field.columnName)) return metrics;
+    return [...metrics, nextMetric];
+  };
+
+  const applyDroppedField = (targetKey: string, field: DashboardFieldDragPayload) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    let nextQuery = ensureChartQueryDefaults({
+      ...currentQuery,
+      ...(field.tableName ? { tableName: field.tableName } : {}),
+    });
+
+    if (targetKey === 'yMetrics' || targetKey === 'yMetricsSecondary') {
+      nextQuery = {
+        ...nextQuery,
+        [targetKey]: appendMetric(nextQuery[targetKey] || [], field),
+      };
+    } else if (targetKey === 'xMetrics') {
+      nextQuery = {
+        ...nextQuery,
+        xMetrics: appendMetric(nextQuery.xMetrics || [], field, true),
+      };
+    } else if (targetKey === 'filters') {
+      nextQuery = {
+        ...nextQuery,
+        filters: [
+          ...(nextQuery.filters || []),
+          {
+            field: field.columnName,
+            operator: '=',
+            value: '',
+            type: 'simple',
+          },
+        ],
+      };
+    } else if (targetKey === 'slicerField') {
+      const existingFields = Array.isArray(nextQuery.fields) ? nextQuery.fields.map(String).filter(Boolean) : [];
+      const fields = existingFields.includes(field.columnName)
+        ? existingFields
+        : [...existingFields, field.columnName];
+      nextQuery = {
+        ...nextQuery,
+        field: field.columnName,
+        fields,
+        x: field.columnName,
+        dataSourceId: field.dataSourceId,
+      };
+    } else {
+      nextQuery = {
+        ...nextQuery,
+        [targetKey]: field.columnName,
+      };
+
+      const hasNoMetrics = !nextQuery.yMetrics || nextQuery.yMetrics.length === 0;
+      if (targetKey === 'x' && hasNoMetrics && selectedWidget?.chartType !== 'scatter') {
+        nextQuery = {
+          ...nextQuery,
+          yMetrics: [{ field: field.columnName, aggregation: 'count' }],
+        };
+      }
+    }
+
+    updateLocalAndStore({
+      dataSourceId: field.dataSourceId || selectedWidget?.dataSourceId,
+      chartQuery: nextQuery,
+    });
+  };
+
+  // Atomic apply — updates title, chartType, x, y, and chartOptions in one store write
+  // so the auto-sync effect sees a consistent state (no stale-closure overwrites).
+  const applyWidgetChanges = (changes: {
+    title: string;
+    chartType: string;
+    x: string | undefined;
+    y: string | undefined;
+    yAggregation?: string;
+    chartOptions: Record<string, unknown>;
+  }) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    // Translate the simple y picker into yMetrics so the backend v2 chart_service
+    // can consume it — it reads yMetrics[] not the plain y field for standard charts.
+    const existingAgg = currentQuery.yMetrics?.[0]?.aggregation || 'count';
+    const agg = changes.yAggregation || existingAgg;
+    const nextYMetrics = changes.y
+      ? [{ field: changes.y, aggregation: agg }]
+      : currentQuery.yMetrics;
+    const nextQuery = ensureChartQueryDefaults({
+      ...currentQuery,
+      x: changes.x,
+      y: changes.y,
+      yMetrics: nextYMetrics,
+    });
+    updateLocalAndStore({
+      title: changes.title,
+      chartType: changes.chartType,
+      chartQuery: nextQuery,
+      chartOptions: changes.chartOptions,
+    });
+  };
+
   const handleDataSourceChange = (dataSourceId: string) => {
     // Reset chart query when switching data source to avoid stale column selections
     updateLocalAndStore({
@@ -277,6 +450,31 @@ export const useWidgetProperties = ({
     });
   };
 
+  // Atomic apply for slicer widgets — single store write to avoid stale-closure issue
+  // where sequential updateChartQuery calls each read the pre-render state.
+  const applySlicerChanges = (changes: {
+    title: string;
+    field: string | undefined;
+    fields?: string[];
+    mode: string;
+  }) => {
+    const currentQuery = selectedWidget?.chartQuery || {};
+    const fields = (changes.fields || []).filter(Boolean);
+    const nextQuery = {
+      ...currentQuery,
+      field: changes.field,
+      fields,
+      x: changes.field,
+      mode: changes.mode,
+      // Mirror dataSourceId into chartQuery so SlicerWidget can load filter options
+      dataSourceId: selectedWidget?.dataSourceId,
+    };
+    updateLocalAndStore({
+      title: changes.title,
+      chartQuery: nextQuery,
+    });
+  };
+
   return {
     dataSources,
     selectedTableColumns,
@@ -286,6 +484,9 @@ export const useWidgetProperties = ({
     schemaLoading,
     updateWidgetRoot,
     updateChartQuery,
+    applyDroppedField,
+    applyWidgetChanges,
+    applySlicerChanges,
     handleDataSourceChange,
     handleRefreshData,
     handleDeleteChart,

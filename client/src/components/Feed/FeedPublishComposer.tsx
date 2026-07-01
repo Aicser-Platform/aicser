@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import '@/app/(dashboard)/feed/styles.css';
 import { Button, Input, Radio, Switch, message } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -17,7 +16,8 @@ import { FeedPostPreview } from './FeedPostPreview';
 import { formatFeedPublishError } from './feedPublishUtils';
 import type { FeedPublishDraft } from './feedPublishDraft';
 import type { FeedVisibility, PublishAssetResponse } from '@/services/socialFeedService';
-import { socialFeedService } from '@/services/socialFeedService';
+import { socialFeedService, uploadFeedThumbnail } from '@/services/socialFeedService';
+import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 
@@ -156,6 +156,19 @@ export function FeedPublishComposer({
     setSubmitting(true);
     setPublishError(null);
     try {
+      // Best-effort thumbnail capture — never blocks or surfaces an error to
+      // the user; a missing thumbnail just means the feed card falls back
+      // to its placeholder visual.
+      let thumbnailUrl: string | undefined;
+      if (draft.captureSelector) {
+        const screenshot = await captureElementScreenshot(draft.captureSelector, {
+          toggleClassName: 'dashboard-export-light',
+        });
+        if (screenshot) {
+          thumbnailUrl = (await uploadFeedThumbnail(screenshot)) ?? undefined;
+        }
+      }
+
       let result: PublishAssetResponse;
 
       if (draft.source.mode === 'chat') {
@@ -171,6 +184,7 @@ export function FeedPublishComposer({
           preview_metadata: previewMetadata,
           render_mode: renderMode,
           snapshot_payload: snapshotPayload,
+          thumbnail_url: thumbnailUrl,
           requires_login: loginWall,
           publication_mode: publicationMode,
         });
@@ -189,6 +203,7 @@ export function FeedPublishComposer({
           preview_metadata: previewMetadata,
           render_mode: renderMode,
           snapshot_payload: snapshotPayload,
+          thumbnail_url: thumbnailUrl,
           requires_login: loginWall,
           publication_mode: publicationMode,
           publication_id:

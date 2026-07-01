@@ -12,22 +12,14 @@ import {
   shouldFetchDesignerChartData,
 } from '@/components/charts/chartDesignerBridge';
 import { ApiError } from '@/utils/api';
+import {
+  chartBuilderService,
+  normalizeProjectId,
+  ProjectRequiredError,
+} from '../services/chartBuilderService';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IS_ENTERPRISE_EDITION =
   process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
-
-const normalizeProjectId = (projectId?: string | number | null) => {
-  if (!IS_ENTERPRISE_EDITION) return null;
-  if (projectId == null) return null;
-  const value = String(projectId);
-  return UUID_PATTERN.test(value) ? value : null;
-};
-
-const standaloneChartEndpoint = (projectId?: string | number | null) => {
-  const normalizedProjectId = normalizeProjectId(projectId);
-  return normalizedProjectId ? `chart?project_id=${encodeURIComponent(normalizedProjectId)}` : 'chart';
-};
 
 export interface ChartDesignerWidget {
   id: string;
@@ -226,15 +218,15 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
     set({ isLoading: true });
     try {
-      const data = await fetchApi(`api/${standaloneChartEndpoint(activeProjectId)}`);
+      const charts = await chartBuilderService.listCharts(activeProjectId);
 
       // Safety check: if project changed while we were fetching, don't update state
       if (normalizeProjectId(useProjectStore.getState().currentProjectId) !== activeProjectId) {
         return;
       }
 
-      if (data && data.success && Array.isArray(data.charts)) {
-        let fetchedWidgets: ChartDesignerWidget[] = data.charts.map((c: any) => ({
+      {
+        let fetchedWidgets: ChartDesignerWidget[] = charts.map((c: any) => ({
           id: `w_saved_${c.id}`,
           chartId: c.id,
           dashboardId: c.dashboard_id || c.dashboardId,
@@ -247,7 +239,7 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
           isLoading: false,
         }));
 
-        let fetchedLayout: LayoutItem[] = data.charts.map((c: any) => {
+        let fetchedLayout: LayoutItem[] = charts.map((c: any) => {
           const options = c.config?.options || c.chartOptions || {};
           const savedLayout = c.layout || options.layout;
           return {
@@ -267,7 +259,7 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
           if (!pendingWidget) {
             try {
-              const chart = await fetchApi(`chart/${pendingChartId}`);
+              const chart = await chartBuilderService.getChart(pendingChartId);
               if (chart?.id) {
                 const mapped = mapApiChartToDesignerWidget(chart as Record<string, unknown>, userId);
                 if (!fetchedWidgets.some((w) => String(w.chartId) === String(chart.id))) {
@@ -363,24 +355,28 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
       // EE requires a project_id — validate before sending to avoid 400/422
       if (normalizeProjectId(projectId) === null && IS_ENTERPRISE_EDITION) {
-        throw new Error('Select a project before saving a chart. Choose one from the header.');
+        throw new ProjectRequiredError(
+          'Select a project before saving a chart. Choose one from the header.',
+        );
       }
 
       const payload = buildStandaloneChartSavePayload(widget);
+      // Sanitize (strip functions / circular refs) into a plain object before it
+      // reaches the service's JSON.stringify.
+      const cleanPayload = JSON.parse(safeStringify(payload));
 
-      const updateEndpoint =
-        widget.chartId && widget.dashboardId
-          ? `dashboards/${widget.dashboardId}/charts/${widget.chartId}`
-          : widget.chartId
-            ? `chart/${widget.chartId}`
-            : standaloneChartEndpoint(projectId);
-
-      const bodyStr = safeStringify(payload);
-
-      const response = await fetchApi(updateEndpoint, {
-        method: widget.chartId ? 'PUT' : 'POST',
-        body: bodyStr,
-      });
+      let response: any;
+      if (widget.chartId && widget.dashboardId) {
+        // Chart belongs to a dashboard — persist via the dashboard endpoint.
+        response = await fetchApi(`dashboards/${widget.dashboardId}/charts/${widget.chartId}`, {
+          method: 'PUT',
+          body: safeStringify(payload),
+        });
+      } else if (widget.chartId) {
+        response = await chartBuilderService.updateChart(widget.chartId, cleanPayload);
+      } else {
+        response = await chartBuilderService.createChart(cleanPayload, projectId);
+      }
 
       const chartId = response?.id ?? response?.chart?.id;
       if (chartId) {
@@ -404,20 +400,18 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
   createChartAndFetchData: async (widget) => {
     get().updateWidget(widget.id, { isLoading: true, error: null });
     try {
-      const payload = {
-        title: widget.title,
-        chartType: widget.chartType,
-        dataSourceId: widget.dataSourceId,
-        chartQuery: widget.chartQuery,
-        chartOptions: widget.chartOptions,
-      };
-
       const projectId = useProjectStore.getState().currentProjectId;
 
-      const response = await fetchApi(standaloneChartEndpoint(projectId), {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      const response = await chartBuilderService.createChart(
+        {
+          title: widget.title,
+          chartType: widget.chartType,
+          dataSourceId: widget.dataSourceId,
+          chartQuery: widget.chartQuery,
+          chartOptions: widget.chartOptions,
+        },
+        projectId,
+      );
 
       if (response && response.id) {
         get().updateWidget(widget.id, {
@@ -444,10 +438,13 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
     try {
       if (widget.chartId) {
-        const deleteEndpoint = widget.dashboardId
-          ? `dashboards/${widget.dashboardId}/charts/${widget.chartId}`
-          : `chart/${widget.chartId}`;
-        await fetchApi(deleteEndpoint, { method: 'DELETE' });
+        if (widget.dashboardId) {
+          await fetchApi(`dashboards/${widget.dashboardId}/charts/${widget.chartId}`, {
+            method: 'DELETE',
+          });
+        } else {
+          await chartBuilderService.deleteChart(widget.chartId);
+        }
 
         // IMPORTANT: Also remove from all dashboards in the dashboard store
         // to keep the Sidebar UI in sync (no refresh needed)
@@ -476,16 +473,14 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
           method: 'GET',
         });
       } else {
-        const payload = {
-          chartQuery: widget.chartQuery,
-          chartType: widget.chartType,
-          dataSourceId: widget.dataSourceId,
-        };
-
-        response = await fetchApi(`chart/execute`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
+        response = await chartBuilderService.executeAdhoc(
+          {
+            chartQuery: widget.chartQuery,
+            chartType: widget.chartType,
+            dataSourceId: widget.dataSourceId,
+          },
+          useProjectStore.getState().currentProjectId,
+        );
       }
 
       if (response && response.data) {
@@ -533,14 +528,14 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
           layout: get().layout.find((l) => l.i === widgetId),
         };
 
-        const updateEndpoint = updatedWidget.dashboardId
-          ? `dashboards/${updatedWidget.dashboardId}/charts/${updatedWidget.chartId}`
-          : `chart/${updatedWidget.chartId}`;
-
-        await fetchApi(updateEndpoint, {
-          method: 'PUT',
-          body: JSON.stringify(payload),
-        });
+        if (updatedWidget.dashboardId) {
+          await fetchApi(`dashboards/${updatedWidget.dashboardId}/charts/${updatedWidget.chartId}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          });
+        } else {
+          await chartBuilderService.updateChart(updatedWidget.chartId, payload);
+        }
       } catch (e) {
         console.error('Failed to sync chart to DB:', e);
       }
@@ -577,14 +572,14 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
         },
       };
 
-      const updateEndpoint = widget.dashboardId
-        ? `dashboards/${widget.dashboardId}/charts/${widget.chartId}`
-        : `chart/${widget.chartId}`;
-
-      await fetchApi(updateEndpoint, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
+      if (widget.dashboardId) {
+        await fetchApi(`dashboards/${widget.dashboardId}/charts/${widget.chartId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await chartBuilderService.updateChart(widget.chartId, payload);
+      }
     } catch (error) {
       console.error('Failed to update chart layout:', error);
     }

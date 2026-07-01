@@ -13,7 +13,7 @@ import FeedCardSkeleton from '@/app/(dashboard)/feed/components/FeedCardSkeleton
 import { socialFeedService, type FeedItem, type FeedLeaderboardItem } from '@/services/socialFeedService';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useDiscoverReferral } from '@/hooks/discover/useDiscoverReferral';
-import '@/app/(dashboard)/feed/styles.css';
+import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 
 const PAGE_SIZE = 10;
 
@@ -32,6 +32,7 @@ function DiscoverPageContent() {
   const [searchDraft, setSearchDraft] = useState('');
   const [digestEmail, setDigestEmail] = useState('');
   const [digestSubmitting, setDigestSubmitting] = useState(false);
+  const { pendingInteractions, handleDeleteItem } = useFeedInteractions(items, setItems);
 
   const loadPage = useCallback(async (offset: number, append: boolean) => {
     if (offset === 0) setLoading(true);
@@ -175,6 +176,8 @@ function DiscoverPageContent() {
               detailBasePath="/discover"
               hideInteractions={!isAuthenticated}
               compact={false}
+              onDeleteItem={isAuthenticated ? handleDeleteItem : undefined}
+              interactionState={pendingInteractions[item.id]}
             />
           ))}
           {hasMore ? (

@@ -610,50 +610,17 @@
    MODALS & DRAWERS - ELEVATED
    ======================================== */
 
-/* Modal wrap: above header (1001) and sidebar (1000) */
+/* Stacking only — sizing/padding/colors are owned by antd's own Modal
+   defaults + the ConfigProvider Modal component tokens in ThemeProvider.tsx
+   (colorBgElevated, colorBorder). Forcing padding/height here previously
+   stretched short modals (flex:1 on the body) and added extra outer margin,
+   making every modal feel oversized regardless of its actual content. */
 .ant-modal-wrap {
   z-index: 1050 !important;
 }
 
-/* Modal container: min/max size, margin so it doesn't touch header/sidebar */
-.ant-modal {
-  max-width: min(90vw, 960px) !important;
-  min-width: 280px !important;
-  max-height: calc(100vh - 48px) !important; /* Leave room for header */
-  margin: 24px auto !important;
-  padding-bottom: 24px !important;
-  top: 24px !important;
-}
-
-.ant-modal-content {
-  background: var(--ant-color-bg-elevated) !important;
-  border-radius: var(--radius-lg) !important;
-  max-height: calc(100vh - 96px) !important; /* header + top/bottom margin */
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-.ant-modal-header {
-  border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-lg) !important;
-  background: var(--ant-color-bg-container) !important;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
-  flex-shrink: 0 !important;
-}
-
-.ant-modal-body {
-  padding: var(--spacing-lg) !important;
-  overflow-y: auto !important;
-  max-height: calc(100vh - 200px) !important; /* header + footer + margins */
-  flex: 1 1 auto !important;
-}
-
-.ant-modal-footer {
-  border-top: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-md) var(--spacing-lg) !important;
-  background: var(--ant-color-bg-elevated) !important;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg) !important;
-  flex-shrink: 0 !important;
+.ant-modal-mask {
+  z-index: 1050 !important;
 }
 
 .ant-drawer-content {
@@ -661,28 +628,6 @@
   border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-xl) !important;
   border: var(--border-thin) solid var(--ant-color-border) !important;
-}
-
-/* Modal mask: same layer as wrap, above header/sidebar */
-.ant-modal-mask {
-  z-index: 1050 !important;
-}
-
-/* Responsive: modals on small screens */
-@media (max-width: 768px) {
-  .ant-modal {
-    max-width: calc(100vw - 24px) !important;
-    min-width: 0 !important;
-    margin: 12px !important;
-    top: 12px !important;
-    max-height: calc(100vh - 24px) !important;
-  }
-  .ant-modal-content {
-    max-height: calc(100vh - 48px) !important;
-  }
-  .ant-modal-body {
-    max-height: calc(100vh - 160px) !important;
-  }
 }
 
 /* ========================================

@@ -107,6 +107,7 @@ class FeedServicePreviewMixin:
             "snapshotPayload": rendered_raw,
             "snapshotCapturedAt": snapshot.captured_at.isoformat() if snapshot.captured_at else raw.get("capturedAt"),
             "widgetCount": len(widgets),
+            "thumbnailUrl": snapshot.thumbnail_url,
             "excerpt": narrative.get("answerExcerpt") or narrative.get("description"),
             "questionTitle": narrative.get("questionTitle"),
         }

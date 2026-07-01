@@ -99,6 +99,14 @@ def _schema_columns(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return schema.get("columns") or []
 
 
+def _ce_can_read_data_source(row: Any, user_id: str) -> bool:
+    """CE read access: creator-owned sources plus shared/sample sources."""
+    if is_ee_enabled():
+        return False
+    owner_id = getattr(row, "user_id", None)
+    return owner_id is None or str(owner_id) == user_id
+
+
 # logger should be available for functions defined below
 logger = logging.getLogger(__name__)
 
@@ -2952,17 +2960,19 @@ async def get_data_source_schema(
             )
             if not creator_ok:
                 if not is_ee_enabled():
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Not authorized to access this data source",
-                    )
-                user_projects, _ = await ProjectService.get_user_projects(user_id)
-                project_ids = [str(p.id) for p in user_projects]
-                if not (row.project_id is not None and str(row.project_id) in project_ids):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Not authorized to access this data source",
-                    )
+                    if not _ce_can_read_data_source(row, user_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to access this data source",
+                        )
+                else:
+                    user_projects, _ = await ProjectService.get_user_projects(user_id)
+                    project_ids = [str(p.id) for p in user_projects]
+                    if not (row.project_id is not None and str(row.project_id) in project_ids):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to access this data source",
+                        )
             data_source = row
 
             # If it's a database or warehouse, get live schema (uses stored connection_config for this data source)
@@ -3083,7 +3093,26 @@ async def get_data_source_schema(
                         schema = data_source.schema
                     elif isinstance(data_source.schema, str):
                         schema = json.loads(data_source.schema)
-                    
+
+                    # Rename legacy "data" table to the actual data source name
+                    if isinstance(schema, dict) and isinstance(schema.get("tables"), list):
+                        for tbl in schema["tables"]:
+                            if isinstance(tbl, dict) and tbl.get("name") == "data":
+                                tbl["name"] = data_source.name
+
+                    # Legacy Excel uploads: all_sheets present but no tables key — rebuild tables
+                    if isinstance(schema, dict) and not schema.get("tables") and schema.get("all_sheets"):
+                        rebuilt = []
+                        for sheet_key, info in schema["all_sheets"].items():
+                            sheet_cols = (info.get("schema") or {}).get("columns") or []
+                            rebuilt.append({
+                                "name": sheet_key,
+                                "columns": sheet_cols,
+                                "row_count": info.get("row_count", 0),
+                            })
+                        if rebuilt:
+                            schema["tables"] = rebuilt
+
                     # If no schema, try to extract from sample_data
                     if not schema or not schema.get('tables'):
                         sample_data = data_source.sample_data
@@ -3136,7 +3165,7 @@ async def get_data_source_schema(
                                     # Create schema structure (normalized shape: tables[{ name, columns, row_count? }])
                                     schema = {
                                         "tables": [{
-                                            "name": "data",
+                                            "name": data_source.name,
                                             "columns": columns,
                                             "row_count": len(sample_data)
                                         }],

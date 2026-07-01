@@ -97,7 +97,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
             onChange={(e) => setSnapshotLabel(e.target.value)}
             onPressEnter={handleSave}
             maxLength={80}
-            prefix={<SaveOutlined style={{ color: 'var(--studio-text-muted)' }} />}
+            prefix={<SaveOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
           />
           <Button type="primary" onClick={handleSave}>
             Save

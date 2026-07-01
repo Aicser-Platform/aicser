@@ -114,6 +114,7 @@ async def create_feed_snapshot(
     post: FeedPost,
     payload: Dict[str, Any],
     created_by: UUID,
+    thumbnail_url: Optional[str] = None,
 ) -> FeedSnapshot:
     validate_snapshot_payload(payload)
     next_version = await db.scalar(
@@ -133,6 +134,7 @@ async def create_feed_snapshot(
         filter_state=(payload.get("visuals") or {}).get("filters"),
         captured_at=captured_at,
         created_by=created_by,
+        thumbnail_url=thumbnail_url,
     )
     db.add(snapshot)
     await db.flush()

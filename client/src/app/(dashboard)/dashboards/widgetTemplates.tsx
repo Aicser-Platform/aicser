@@ -142,7 +142,7 @@ export const WIDGET_TEMPLATES = [
   {
     id: 't-stat',
     type: 'stat',
-    name: 'Metric',
+    name: 'KPI Card',
     icon: (
       <div className="anticon">
         <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
@@ -151,8 +151,8 @@ export const WIDGET_TEMPLATES = [
       </div>
     ),
     category: 'Indicators',
-    defaultSize: { w: 3, h: 3 },
-    description: 'Single KPI or metric card.',
+    defaultSize: { w: 3, h: 2 },
+    description: 'KPI stat card for one headline number.',
   },
   {
     id: 't-slicer',
@@ -168,6 +168,21 @@ export const WIDGET_TEMPLATES = [
     category: 'Content',
     defaultSize: { w: 3, h: 3 },
     description: 'Interactive filter dropdown for dashboard viewers.',
+  },
+  {
+    id: 't-filter',
+    type: 'filter',
+    name: 'Filter',
+    icon: (
+      <div className="anticon">
+        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
+          <path d="M880.1 154H143.9c-24.5 0-39.8 26.7-27.5 48L349 597.4V838c0 17.7 14.2 32 31.8 32h262.4c17.6 0 31.8-14.3 31.8-32V597.4L907.7 202c12.2-21.3-3.1-48-27.6-48z" />
+        </svg>
+      </div>
+    ),
+    category: 'Content',
+    defaultSize: { w: 6, h: 2 },
+    description: 'Dashboard-wide filter you can place anywhere on the canvas.',
   },
   {
     id: 't-gauge',

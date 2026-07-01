@@ -31,6 +31,8 @@ import {
   FolderAddOutlined,
   CaretRightOutlined,
   TeamOutlined,
+  SyncOutlined,
+  CompassOutlined,
 } from '@ant-design/icons';
 import { Dropdown, Button, Space, Modal, Input, Select, message, Spin, Divider, Tag, Tooltip } from 'antd';
 import { TagOutlined } from '@ant-design/icons';
@@ -42,6 +44,7 @@ import type { LayoutPreset } from './LayoutPresetsMenu';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 import { SchedulePublishModals } from './SchedulePublishModals';
 import { DashboardShareMenu } from './DashboardShareMenu';
+import { OverflowMenuButton } from './OverflowMenuButton';
 import { useAutomationManager } from '../hooks/useAutomationManager';
 import { exportDashboardCanvas } from '../services/exportDashboardService';
 import { maxLayoutY } from '../utils/layoutSanitize';
@@ -51,6 +54,7 @@ import type { CollabUser } from '../utils/collaborationTypes';
 import {
   buildDashboardFeedPreviewMetadata,
   computeStudioSnapshotFingerprint,
+  feedPostUrl,
 } from '@/app/(dashboard)/feed/utils/dashboardFeedBridge';
 import { buildDashboardSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
 import type { PublishAssetResponse } from '@/services/socialFeedService';
@@ -89,6 +93,12 @@ type DashboardTabsProps = {
   collabConnected?: boolean;
   collabPeerCount?: number;
   collabActiveUsers?: CollabUser[];
+  /** Feed snapshot — when set, shows an icon button next to + Add instead of a banner. */
+  feedPostId?: string | null;
+  snapshotOutdated?: boolean;
+  snapshotVersion?: number;
+  onUpdateSnapshot?: () => void;
+  updatingSnapshot?: boolean;
 };
 
 export const DashboardTabs: React.FC<DashboardTabsProps> = ({
@@ -104,6 +114,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   collabConnected = false,
   collabPeerCount = 0,
   collabActiveUsers = [],
+  feedPostId,
+  snapshotOutdated = false,
+  snapshotVersion,
+  onUpdateSnapshot,
+  updatingSnapshot = false,
 }) => {
   const t = useTranslations('dashboard_tabs');
   const td = useTranslations('dashboards');
@@ -111,6 +126,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const {
     dashboards,
     activeDashboardId,
+    isLoadingDashboards,
     layout,
     widgets,
     globalFiltersConfig,
@@ -558,17 +574,30 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const renderDashItem = (dash: { id: string; name: string; tags?: string[] }) => (
     <div
       key={dash.id}
-      className={`navigator-item ${dash.id === activeDashboardId ? 'active' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-current={dash.id === activeDashboardId ? 'page' : undefined}
+      className={`group flex items-center gap-3 px-4 py-2.5 cursor-pointer text-left transition-colors ${
+        dash.id === activeDashboardId
+          ? 'bg-brand-subtle text-brand font-semibold'
+          : 'text-text-secondary hover:bg-brand-subtle hover:text-brand'
+      }`}
       onClick={() => {
         if (editingDashboardId !== dash.id) setActiveDashboardId(dash.id);
       }}
+      onKeyDown={(e) => {
+        if (editingDashboardId === dash.id) return;
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        setActiveDashboardId(dash.id);
+      }}
     >
-      <DashboardOutlined className="item-icon" />
+      <DashboardOutlined className={`shrink-0 text-base ${dash.id === activeDashboardId ? 'text-brand' : 'text-text-tertiary'}`} />
       {editingDashboardId === dash.id ? (
         <Input
-          className="navigator-item-input"
           size="small"
           autoFocus
+          className="flex-1 h-7 text-[13px] rounded"
           value={newDashboardName}
           onChange={(e) => setNewDashboardName(e.target.value)}
           onBlur={() => handleConfirmRename(dash.id)}
@@ -577,14 +606,14 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         />
       ) : (
         <>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <span className="item-name">{dash.name}</span>
+          <div className="flex-1 min-w-0">
+            <span className="block text-sm truncate" title={dash.name}>{dash.name}</span>
             {(dash.tags || []).length > 0 && (
-              <div className="item-tag-chips">
+              <div className="flex flex-wrap gap-0.5 mt-0.5">
                 {(dash.tags || []).map((tag) => (
                   <Tag
                     key={tag}
-                    style={{ fontSize: 10, borderRadius: 8, padding: '0 5px', lineHeight: '16px', marginRight: 2 }}
+                    className="!text-[10px] !rounded-md !px-1.5 !leading-4 !mr-0"
                     onClick={(e) => { e.stopPropagation(); setActiveTagFilter(tag); }}
                   >
                     {tag}
@@ -593,68 +622,89 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               </div>
             )}
           </div>
-          <div className="item-actions">
+          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             <Button
               type="text" size="small"
               icon={starredDashboardIds.has(dash.id) ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
               onClick={(e) => { e.stopPropagation(); toggleStarDashboard(dash.id); }}
-              className="action-btn" title="Star / Unstar"
+              className="text-text-tertiary hover:text-brand" title={t('star_toggle')}
+              aria-label={t('star_toggle')}
             />
-            <Button
-              type="text" size="small" icon={<TagOutlined />}
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditTagsDashboardId(dash.id);
-                setPendingTags(dash.tags || []);
-                setTagInput('');
-              }}
-              className="action-btn" title="Edit tags"
-            />
-            {/* Move to folder */}
-            {folders.length > 0 && (
-              <Dropdown
-                trigger={['click']}
-                menu={{
-                  onClick: ({ key }) => {
-                    assignDashboard(dash.id, key === '__root' ? null : key);
-                  },
-                  items: [
-                    { key: '__root', label: '— No folder —' },
-                    ...folders.map((f) => ({ key: f.id, label: f.name, icon: <FolderOutlined /> })),
-                  ],
-                  selectedKeys: assignments[dash.id] ? [assignments[dash.id]] : ['__root'],
-                }}
-              >
-                <Button
-                  type="text" size="small" icon={<FolderOutlined />}
-                  className="action-btn" title="Move to folder"
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </Dropdown>
-            )}
             <Button
               type="text" size="small" icon={<EditOutlined />}
               onClick={(e) => handleOpenRename(e, { id: dash.id, name: dash.name })}
-              className="action-btn"
+              className="text-text-tertiary hover:text-brand" title={t('rename')}
+              aria-label={t('rename')}
             />
-            <Button
-              type="text" size="small" icon={<CopyOutlined />}
-              onClick={async (e) => {
-                e.stopPropagation();
-                try {
-                  await duplicateDashboard(dash.id);
-                  message.success('Dashboard duplicated');
-                } catch {
-                  message.error('Failed to duplicate dashboard');
-                }
-              }}
-              className="action-btn" title="Duplicate"
-            />
-            <Button
-              type="text" size="small" danger icon={<DeleteOutlined />}
-              onClick={(e) => handleOpenDelete(e, { id: dash.id, name: dash.name })}
-              className="action-btn"
-            />
+            <OverflowMenuButton ariaLabel={t('more_dashboard_actions')} title={t('more_actions')}>
+              {(closeOverflow) => (
+                <>
+                  <Button
+                    type="text" block icon={<TagOutlined />}
+                    className="!justify-start !text-left text-text-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTagsDashboardId(dash.id);
+                      setPendingTags(dash.tags || []);
+                      setTagInput('');
+                      closeOverflow();
+                    }}
+                  >
+                    {t('edit_tags')}
+                  </Button>
+                  {folders.length > 0 && (
+                    <Dropdown
+                      trigger={['click']}
+                      menu={{
+                        onClick: ({ key }) => {
+                          assignDashboard(dash.id, key === '__root' ? null : key);
+                          closeOverflow();
+                        },
+                        items: [
+                          { key: '__root', label: t('no_folder') },
+                          ...folders.map((f) => ({ key: f.id, label: f.name, icon: <FolderOutlined /> })),
+                        ],
+                        selectedKeys: assignments[dash.id] ? [assignments[dash.id]] : ['__root'],
+                      }}
+                    >
+                      <Button
+                        type="text" block icon={<FolderOutlined />}
+                        className="!justify-start !text-left text-text-secondary"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {t('move_to_folder')}
+                      </Button>
+                    </Dropdown>
+                  )}
+                  <Button
+                    type="text" block icon={<CopyOutlined />}
+                    className="!justify-start !text-left text-text-secondary"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      closeOverflow();
+                      try {
+                        await duplicateDashboard(dash.id);
+                        message.success(t('dashboard_duplicated'));
+                      } catch {
+                        message.error(t('dashboard_duplicate_failed'));
+                      }
+                    }}
+                  >
+                    {t('duplicate')}
+                  </Button>
+                  <Button
+                    type="text" block danger icon={<DeleteOutlined />}
+                    className="!justify-start !text-left"
+                    onClick={(e) => {
+                      closeOverflow();
+                      handleOpenDelete(e, { id: dash.id, name: dash.name });
+                    }}
+                  >
+                    {t('delete')}
+                  </Button>
+                </>
+              )}
+            </OverflowMenuButton>
           </div>
         </>
       )}
@@ -662,8 +712,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   );
 
   const dashboardNavigator = (
-    <div className="dashboard-navigator-dropdown">
-      <div className="navigator-new-dashboard-row">
+    <div className="flex flex-col overflow-hidden mt-1 w-80 rounded-lg border border-border-light bg-bg-container shadow-md">
+      <div className="flex flex-col gap-2 p-3 border-b border-border-light">
         <Button
           type="default"
           block
@@ -677,13 +727,13 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           {t('new_dashboard')}
         </Button>
         {isEnterpriseEdition ? (
-          <Link href={getChatHref({ mode: 'dashboard' })} className="navigator-new-ai-link" onClick={(e) => e.stopPropagation()}>
+          <Link href={getChatHref({ mode: 'dashboard' })} className="block w-full" onClick={(e) => e.stopPropagation()}>
             <Button type="default" block size="small" icon={<RobotOutlined />}>
               {t('new_dashboard_with_ai')}
             </Button>
           </Link>
         ) : null}
-        <Tooltip title="Create a new folder to organise dashboards">
+        <Tooltip title={t('new_folder_hint')}>
           <Button
             type="text"
             size="small"
@@ -694,29 +744,28 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               setEditingFolderId(id);
               setNewFolderName('New Folder');
             }}
-            title="New folder"
+            title={t('new_folder')}
+            aria-label={t('new_folder')}
           />
         </Tooltip>
       </div>
-      <div className="navigator-search">
+      <div className="p-3 border-b border-border-light">
         <Input
-          prefix={<SearchOutlined style={{ color: 'var(--studio-text-muted)' }} />}
+          prefix={<SearchOutlined className="text-text-tertiary" />}
           placeholder={t('search_dashboards')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onClick={(e) => e.stopPropagation()}
           variant="filled"
-          className="navigator-search-input"
           allowClear
         />
         {allTags.length > 0 && (
-          <div className="navigator-tag-filters">
+          <div className="flex flex-wrap gap-1 mt-1.5">
             {allTags.map((tag) => (
               <Tag
                 key={tag}
-                className={`navigator-tag-chip${activeTagFilter === tag ? ' active' : ''}`}
+                className={`!cursor-pointer !rounded-md !text-xs ${activeTagFilter === tag ? '!bg-brand !border-brand !text-white' : ''}`}
                 onClick={(e) => { e.stopPropagation(); setActiveTagFilter(activeTagFilter === tag ? null : tag); }}
-                style={{ cursor: 'pointer', borderRadius: 10 }}
               >
                 {tag}
               </Tag>
@@ -724,56 +773,69 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           </div>
         )}
       </div>
-      <div className="navigator-list">
+      <div className="max-h-80 overflow-y-auto py-1.5">
+        {isLoadingDashboards ? (
+          <div className="flex items-center justify-center gap-2 px-6 py-6 text-text-tertiary text-[13px]">
+            <Spin size="small" />
+            <span>{t('loading_dashboards')}</span>
+          </div>
+        ) : dashboards.length === 0 ? (
+          <div className="px-6 py-6 text-center text-text-tertiary text-[13px]">
+            {t('no_dashboards_yet')}
+          </div>
+        ) : null}
+
         {/* Folder hierarchy — only show when there are folders or search is not active */}
-        {folders.length > 0 && !searchTerm && !activeTagFilter && (
+        {!isLoadingDashboards && dashboards.length > 0 && folders.length > 0 && !searchTerm && !activeTagFilter && (
           <>
             {folders.map((folder) => {
               const folderDashes = filteredDashboards.filter((d) => assignments[d.id] === folder.id);
               const isCollapsed = collapsedFolderIds.has(folder.id);
               return (
-                <div key={folder.id} className="navigator-folder">
+                <div key={folder.id}>
                   {/* Folder header */}
                   <div
-                    className="navigator-folder-header"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer select-none hover:bg-bg-elevated"
                     onClick={(e) => { e.stopPropagation(); toggleCollapse(folder.id); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 8px', cursor: 'pointer', borderRadius: 6, userSelect: 'none' }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-fill-quaternary)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                   >
-                    <CaretRightOutlined style={{ fontSize: 10, color: 'var(--ant-color-text-description)', transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }} />
-                    {isCollapsed ? <FolderOutlined style={{ color: 'var(--ant-color-primary)', fontSize: 13 }} /> : <FolderOpenOutlined style={{ color: 'var(--ant-color-primary)', fontSize: 13 }} />}
+                    <CaretRightOutlined
+                      className="text-text-tertiary transition-transform"
+                      style={{ fontSize: 10, transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)' }}
+                    />
+                    {isCollapsed ? <FolderOutlined className="text-brand text-sm" /> : <FolderOpenOutlined className="text-brand text-sm" />}
                     {editingFolderId === folder.id ? (
                       <Input
                         size="small"
                         autoFocus
                         value={newFolderName}
-                        style={{ flex: 1, fontSize: 12 }}
+                        className="flex-1 text-xs"
                         onChange={(e) => setNewFolderName(e.target.value)}
                         onBlur={() => { if (newFolderName.trim()) renameFolder(folder.id, newFolderName); setEditingFolderId(null); }}
                         onPressEnter={() => { if (newFolderName.trim()) renameFolder(folder.id, newFolderName); setEditingFolderId(null); }}
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span style={{ flex: 1, fontSize: 12, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span className="flex-1 text-xs font-medium truncate">
                         {folder.name}
-                        <span style={{ marginLeft: 4, color: 'var(--ant-color-text-quaternary)', fontSize: 10 }}>({folderDashes.length})</span>
+                        <span className="ml-1 text-text-disabled text-[10px]">({folderDashes.length})</span>
                       </span>
                     )}
-                    <div className="item-actions" style={{ display: 'flex', gap: 1 }} onClick={(e) => e.stopPropagation()}>
-                      <Tooltip title="Rename folder">
-                        <Button type="text" size="small" icon={<EditOutlined />} className="action-btn"
+                    <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <Tooltip title={t('rename_folder')}>
+                        <Button type="text" size="small" icon={<EditOutlined />} className="text-text-tertiary"
                           onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setNewFolderName(folder.name); }}
+                          aria-label={t('rename_folder')}
                         />
                       </Tooltip>
-                      <Tooltip title="Delete folder (dashboards become unassigned)">
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />} className="action-btn"
+                      <Tooltip title={t('delete_folder_hint')}>
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          aria-label={t('delete_folder')}
                           onClick={(e) => {
                             e.stopPropagation();
                             Modal.confirm({
-                              title: `Delete folder "${folder.name}"?`,
-                              content: 'Dashboards in this folder will become unassigned.',
-                              okText: 'Delete',
+                              title: t('delete_folder_title', { name: folder.name }),
+                              content: t('delete_folder_body'),
+                              okText: t('delete'),
                               okType: 'danger',
                               onOk: () => deleteFolder(folder.id),
                             });
@@ -784,9 +846,9 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   </div>
                   {/* Folder contents */}
                   {!isCollapsed && (
-                    <div style={{ paddingLeft: 18 }}>
+                    <div className="pl-[18px]">
                       {folderDashes.length === 0 && (
-                        <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--ant-color-text-quaternary)' }}>Empty folder</div>
+                        <div className="px-3 py-1 text-[11px] text-text-disabled">{t('empty_folder')}</div>
                       )}
                       {folderDashes.map((dash) => renderDashItem(dash))}
                     </div>
@@ -796,24 +858,24 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             })}
             {/* Unassigned dashboards */}
             {filteredDashboards.filter((d) => !assignments[d.id]).length > 0 && folders.length > 0 && (
-              <div style={{ padding: '4px 8px 2px', fontSize: 10, color: 'var(--ant-color-text-quaternary)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                Unassigned
+              <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
+                {t('unassigned')}
               </div>
             )}
           </>
         )}
 
         {/* Flat list (when no folders, or when searching/filtering) */}
-        {(folders.length === 0 || searchTerm || activeTagFilter) && (
+        {!isLoadingDashboards && dashboards.length > 0 && (folders.length === 0 || searchTerm || activeTagFilter) && (
           filteredDashboards.length === 0 ? (
-            <div className="navigator-empty">{t('no_dashboards_found')}</div>
+            <div className="px-6 py-6 text-center text-text-tertiary text-[13px]">{t('no_dashboards_found')}</div>
           ) : (
             filteredDashboards.map((dash) => renderDashItem(dash))
           )
         )}
 
         {/* Unassigned dashboards when folders exist and no filter active */}
-        {folders.length > 0 && !searchTerm && !activeTagFilter && (
+        {!isLoadingDashboards && dashboards.length > 0 && folders.length > 0 && !searchTerm && !activeTagFilter && (
           filteredDashboards
             .filter((d) => !assignments[d.id])
             .map((dash) => renderDashItem(dash))
@@ -822,11 +884,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
 
       {(isLoadingTemplates || sampleTemplates.length > 0) && (
         <>
-          <Divider className="navigator-divider" />
-          <div className="navigator-samples">
-            <div className="navigator-samples-title">{t('sample_dashboards')}</div>
+          <Divider className="!my-0" />
+          <div className="px-3 py-2 max-h-40 overflow-y-auto">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-text-disabled mb-1.5">{t('sample_dashboards')}</div>
             {isLoadingTemplates ? (
-              <div className="navigator-samples-loading">
+              <div className="flex items-center gap-2 text-xs text-text-tertiary py-1">
                 <Spin size="small" />
                 <span>{t('loading_templates')}</span>
               </div>
@@ -835,12 +897,12 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                 <button
                   key={template.id}
                   type="button"
-                  className="navigator-sample-item"
+                  className="flex flex-col items-start w-full px-2.5 py-2 mb-1 rounded-md border border-border-light bg-bg-container text-left transition-colors hover:border-brand hover:bg-brand-subtle disabled:opacity-60 disabled:cursor-not-allowed"
                   disabled={!!creatingTemplateId}
                   onClick={() => createDashboardFromTemplate(template)}
                 >
-                  <span className="navigator-sample-name">{template.name}</span>
-                  <span className="navigator-sample-category">{template.category}</span>
+                  <span className="text-[13px] font-medium text-text">{template.name}</span>
+                  <span className="text-[11px] text-text-tertiary">{template.category}</span>
                 </button>
               ))
             )}
@@ -853,14 +915,19 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   return (
     <div className="dashboard-studio-toolbar">
       <div className="toolbar-left">
-        <Dropdown popupRender={() => dashboardNavigator} trigger={['click']}>
-          <Button type="text" className="toolbar-dash-switch" icon={<DashboardOutlined />} aria-label={t('dashboard')} />
+        <Dropdown popupRender={() => dashboardNavigator} trigger={[]} open={false}>
+          <Button
+            type="text"
+            className="!w-8 !h-8 !rounded-md !bg-brand-subtle !text-brand hover:!bg-brand-subtle"
+            icon={<DashboardOutlined />}
+            aria-label={t('dashboard')}
+          />
         </Dropdown>
 
-        <div className="toolbar-title-block">
+        <div className="flex flex-col gap-0 min-w-0 flex-1">
           {isEditMode && editingTitle ? (
             <Input
-              className="toolbar-title-input"
+              className="!px-1 !rounded text-base font-semibold !h-7"
               value={titleDraft}
               autoFocus
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -877,21 +944,21 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           ) : isEditMode ? (
             <button
               type="button"
-              className="toolbar-title-display"
+              className="border-none bg-transparent p-0 m-0 text-base font-semibold text-text text-left cursor-text truncate max-w-full"
               onClick={() => setEditingTitle(true)}
               title={t('click_edit_title')}
             >
               {activeDashboard?.name || t('dashboard')}
             </button>
           ) : (
-            <span className="toolbar-title-display toolbar-title-readonly">
+            <span className="border-none bg-transparent p-0 m-0 text-base font-semibold text-text text-left cursor-default truncate max-w-full">
               {activeDashboard?.name || t('dashboard')}
             </span>
           )}
 
           {isEditMode && editingSubtitle ? (
             <Input
-              className="toolbar-subtitle-input"
+              className="!px-1 !rounded text-xs !h-6 !mt-0.5"
               value={subtitleDraft}
               autoFocus
               onChange={(e) => setSubtitleDraft(e.target.value)}
@@ -908,14 +975,14 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           ) : isEditMode ? (
             <button
               type="button"
-              className={`toolbar-subtitle-display ${subtitleDraft ? '' : 'empty'}`}
+              className={`border-none bg-transparent p-0 m-0 text-xs text-left cursor-text truncate max-w-full ${subtitleDraft ? 'text-text-secondary' : 'text-text-tertiary italic'}`}
               onClick={() => setEditingSubtitle(true)}
               title={t('click_edit_subtitle')}
             >
               {subtitleDraft || t('subtitle_placeholder')}
             </button>
           ) : subtitleDraft ? (
-            <span className="toolbar-subtitle-display">{subtitleDraft}</span>
+            <span className="text-xs text-text-secondary truncate max-w-full">{subtitleDraft}</span>
           ) : null}
         </div>
       </div>
@@ -923,7 +990,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
       <div className="toolbar-right">
         <Space size={8} align="center" className="toolbar-actions">
           {isSaving && (
-            <div className="toolbar-saving">
+            <div className="flex items-center gap-2 text-text-tertiary text-[13px]">
               <Spin size="small" />
               <span>{t('saving')}</span>
             </div>
@@ -934,18 +1001,18 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               title={`${tp('live_sync')} · ${collabPeerCount + 1} ${tp('editors_online')}`}
             >
               <span
-                className="toolbar-collab-indicator"
+                className="inline-flex items-center gap-1 h-7 px-2 rounded-md text-xs font-medium text-[var(--ant-color-success)] bg-[var(--ant-color-success-bg)] border border-[var(--ant-color-success-border)] cursor-default select-none"
                 role="status"
                 aria-label={`${tp('live_sync')} · ${collabPeerCount + 1} ${tp('editors_online')}`}
               >
-                <span className="toolbar-collab-avatars">
+                <span className="inline-flex items-center -mr-0.5">
                   {collabActiveUsers.slice(0, 4).map((u) => {
                     const uid = u.user_id || u.id || u.email || 'user';
                     const label = u.username || u.name || u.email || '?';
                     return (
                       <span
                         key={String(uid)}
-                        className="toolbar-collab-avatar"
+                        className="inline-flex items-center justify-center w-[18px] h-[18px] -mr-1 rounded-full border border-bg-container text-white text-[10px] font-semibold leading-none"
                         style={{ background: u.color || 'var(--ant-color-primary)' }}
                         title={label}
                       >
@@ -955,84 +1022,103 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   })}
                 </span>
                 <TeamOutlined />
-                <span className="toolbar-collab-count">{collabPeerCount + 1}</span>
+                <span className="leading-none">{collabPeerCount + 1}</span>
               </span>
             </Tooltip>
           )}
 
-          {isEditMode && (
-            <div className="toolbar-history-btns">
-              <button
-                type="button"
-                className="toolbar-history-btn"
-                disabled={!canUndo}
-                onClick={() => undo?.()}
-                title="Undo (Ctrl+Z)"
-                aria-label="Undo"
-              >
-                <UndoOutlined />
-              </button>
-              <button
-                type="button"
-                className="toolbar-history-btn"
-                disabled={!canRedo}
-                onClick={() => redo?.()}
-                title="Redo (Ctrl+Y)"
-                aria-label="Redo"
-              >
-                <RedoOutlined />
-              </button>
-            </div>
-          )}
+          {/* Secondary tools: undo/redo, version history (edit mode), zoom (always) */}
+          <OverflowMenuButton ariaLabel={t('more_actions')} title={t('more_actions')}>
+            {(closeOverflow) => (
+              <>
+                {isEditMode && (
+                  <div className="flex items-center justify-between gap-2 px-1 py-1 text-sm text-text-secondary">
+                    <span>{t('undo_redo')}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-border-light bg-bg-container p-0.5">
+                      <button
+                        type="button"
+                        className="flex items-center justify-center w-7 h-7 rounded text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
+                        disabled={!canUndo}
+                        onClick={() => undo?.()}
+                        title={t('undo_shortcut')}
+                        aria-label={t('undo')}
+                      >
+                        <UndoOutlined />
+                      </button>
+                      <button
+                        type="button"
+                        className="flex items-center justify-center w-7 h-7 rounded text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
+                        disabled={!canRedo}
+                        onClick={() => redo?.()}
+                        title={t('redo_shortcut')}
+                        aria-label={t('redo')}
+                      >
+                        <RedoOutlined />
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-          {/* Version history */}
-          {isEditMode && (
-            <button
-              type="button"
-              className="toolbar-btn"
-              onClick={() => setVersionHistoryOpen(true)}
-              title="Version history"
-              aria-label="Version history"
-            >
-              <HistoryOutlined />
-            </button>
-          )}
+                {isEditMode && (
+                  <Button
+                    type="text"
+                    block
+                    icon={<HistoryOutlined />}
+                    className="!justify-start !text-left text-text-secondary"
+                    onClick={() => {
+                      setVersionHistoryOpen(true);
+                      closeOverflow();
+                    }}
+                  >
+                    {t('version_history')}
+                  </Button>
+                )}
 
-          {/* Zoom control */}
-          <div className="toolbar-zoom-control">
-            <button
-              type="button"
-              className="toolbar-zoom-btn"
-              onClick={zoomOut}
-              disabled={canvasZoom <= 25}
-              title="Zoom out"
-              aria-label="Zoom out"
-            >
-              <ZoomOutOutlined />
-            </button>
-            <button
-              type="button"
-              className="toolbar-zoom-label"
-              onClick={() => setCanvasZoom(100)}
-              title="Reset zoom to 100%"
-            >
-              {canvasZoom}%
-            </button>
-            <button
-              type="button"
-              className="toolbar-zoom-btn"
-              onClick={zoomIn}
-              disabled={canvasZoom >= 200}
-              title="Zoom in"
-              aria-label="Zoom in"
-            >
-              <ZoomInOutlined />
-            </button>
-          </div>
+                <div className="flex items-center justify-between gap-2 px-1 py-1 text-sm text-text-secondary">
+                  <span>{t('zoom')}</span>
+                  <div className="flex items-center h-8 rounded-md border border-border-light bg-bg-container overflow-hidden">
+                    <button
+                      type="button"
+                      className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                      onClick={zoomOut}
+                      disabled={canvasZoom <= 25}
+                      title={t('zoom_out')}
+                      aria-label={t('zoom_out')}
+                    >
+                      <ZoomOutOutlined />
+                    </button>
+                    <button
+                      type="button"
+                      className="flex items-center justify-center min-w-[42px] h-full border-x border-border-light text-text text-xs font-medium px-1 whitespace-nowrap transition-colors hover:bg-bg-elevated"
+                      onClick={() => setCanvasZoom(100)}
+                      title={t('reset_zoom')}
+                      aria-label={t('reset_zoom')}
+                    >
+                      {canvasZoom}%
+                    </button>
+                    <button
+                      type="button"
+                      className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                      onClick={zoomIn}
+                      disabled={canvasZoom >= 200}
+                      title={t('zoom_in')}
+                      aria-label={t('zoom_in')}
+                    >
+                      <ZoomInOutlined />
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </OverflowMenuButton>
 
           <button
             type="button"
-            className={`toolbar-mode-toggle ${isEditMode ? 'is-editing' : 'is-viewing'}`}
+            className={`inline-flex items-center gap-1.5 py-2 px-3 rounded-md border text-sm font-medium cursor-pointer shrink-0 transition-colors ${
+              isEditMode
+                ? 'border-brand/45 bg-brand-subtle text-brand'
+                : 'border-border-light bg-bg-container text-text hover:border-brand'
+            }`}
             onClick={() => setStudioMode(isEditMode ? 'view' : 'edit')}
             title={isEditMode ? t('switch_to_view') : t('switch_to_edit')}
             aria-pressed={isEditMode}
@@ -1040,6 +1126,38 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             {isEditMode ? <EditOutlined /> : <EyeOutlined />}
             <span>{isEditMode ? t('mode_editing') : t('mode_viewing')}</span>
           </button>
+
+          {feedPostId && (
+            <Tooltip
+              title={
+                snapshotOutdated
+                  ? t('snapshot_outdated', { version: snapshotVersion ? `v${snapshotVersion}` : '' })
+                  : t('feed_linked', { version: snapshotVersion ? `v${snapshotVersion}` : '' })
+              }
+            >
+              {onUpdateSnapshot && snapshotOutdated ? (
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<SyncOutlined spin={updatingSnapshot} style={{ color: '#f59e0b' }} />}
+                  loading={updatingSnapshot}
+                  onClick={onUpdateSnapshot}
+                  aria-label={t('update_feed_snapshot')}
+                  className="!w-8 !h-8 !p-0"
+                />
+              ) : (
+                <Link href={feedPostUrl(feedPostId)}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<CompassOutlined className="text-text-tertiary" />}
+                    aria-label={t('view_in_feed')}
+                    className="!w-8 !h-8 !p-0"
+                  />
+                </Link>
+              )}
+            </Tooltip>
+          )}
 
           {isEditMode && (
             <AddBlockPopover
@@ -1050,7 +1168,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               onOpenFilterPanel={onOpenFilterPanel}
               onOpenFilterManager={onOpenFilterManager}
             >
-              <Button icon={<PlusOutlined />} className="toolbar-btn toolbar-btn-primary">
+              <Button type="primary" icon={<PlusOutlined />}>
                 {t('add')}
               </Button>
             </AddBlockPopover>
@@ -1084,7 +1202,6 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           <Button
             type="text"
             icon={<ExpandOutlined />}
-            className="toolbar-btn toolbar-btn-icon"
             onClick={toggleFullscreen}
             title={isFullscreen ? t('exit_full_screen') : t('full_screen')}
             aria-label={isFullscreen ? t('exit_full_screen') : t('full_screen')}
@@ -1092,6 +1209,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         </Space>
       </div>
 
+      {/* Feed Modal to Public functions */}
       <PublishToFeedModal
         open={isPublishOpen}
         assetType="dashboard"
@@ -1104,6 +1222,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         organizationId={resolvedOrganizationId || undefined}
         projectId={resolvedProjectId || undefined}
         modalTitle={t('publish_dashboard_to_feed')}
+        captureSelector=".dashboard-container"
         onCancel={() => setIsPublishOpen(false)}
         onSuccess={handlePublishSuccess}
       />
@@ -1133,7 +1252,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <TagOutlined />
-            <span>Edit Tags</span>
+            <span>{t('edit_tags')}</span>
           </div>
         }
         open={!!editTagsDashboardId}
@@ -1144,38 +1263,38 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           }
           setEditTagsDashboardId(null);
         }}
-        okText="Save"
+        okText={t('save')}
         width={420}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <Input
-              placeholder="Type a tag and press Enter"
+              placeholder={t('tag_input_placeholder')}
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onPressEnter={() => {
-                const t = tagInput.trim().toLowerCase();
-                if (t && !pendingTags.includes(t)) {
-                  setPendingTags([...pendingTags, t]);
+                const nextTag = tagInput.trim().toLowerCase();
+                if (nextTag && !pendingTags.includes(nextTag)) {
+                  setPendingTags([...pendingTags, nextTag]);
                 }
                 setTagInput('');
               }}
             />
             <Button
               onClick={() => {
-                const t = tagInput.trim().toLowerCase();
-                if (t && !pendingTags.includes(t)) {
-                  setPendingTags([...pendingTags, t]);
+                const nextTag = tagInput.trim().toLowerCase();
+                if (nextTag && !pendingTags.includes(nextTag)) {
+                  setPendingTags([...pendingTags, nextTag]);
                 }
                 setTagInput('');
               }}
             >
-              Add
+              {t('add')}
             </Button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32 }}>
             {pendingTags.length === 0 && (
-              <span style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 13 }}>No tags yet</span>
+              <span style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 13 }}>{t('no_tags_yet')}</span>
             )}
             {pendingTags.map((tag) => (
               <Tag

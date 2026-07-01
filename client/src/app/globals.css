@@ -25,7 +25,6 @@
 @import '../styles/aiser-unified-design-system.css';
 @import '../styles/aiser-aesthetic-enhancements.css';
 @import '../styles/dashboard-page-visual-language.css';
-@import '../layouts/Navigation/Navigation.css';
 @import '../styles/page-shell.css';
 @import '../styles/aiser-interaction-system.css';
 @import '../styles/workspace-chrome.css';
@@ -290,13 +289,20 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    FOCUS AND ACCESSIBILITY
    ======================================== */
 
-*:focus {
-  outline: 2px solid var(--ant-color-primary);
-  outline-offset: 2px;
-}
 
-*:focus:not(:focus-visible) {
-  outline: none;
+
+/* AntD manages its own focus rings via box-shadow — suppress the browser outline on its inputs/selects.
+   Needs !important: the global `*:focus-visible` rule below also carries !important, and without it here
+   that rule wins regardless of specificity, stacking a second outline ring on top of AntD's box-shadow ring.
+   `.ant-select-selector` itself is never the focused element (its inner search input is), so it's targeted
+   directly rather than relying on a selector that never matches. */
+.ant-input:focus-visible,
+.ant-input-affix-wrapper:focus-visible,
+.ant-select-selector:focus-visible,
+.ant-select-selection-search-input:focus-visible,
+.ant-input-number-input:focus-visible,
+.ant-picker-input>input:focus-visible {
+  outline: none !important;
 }
 
 /* ========================================

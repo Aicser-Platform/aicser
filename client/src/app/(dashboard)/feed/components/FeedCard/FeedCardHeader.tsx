@@ -24,6 +24,8 @@ interface FeedCardHeaderProps {
   onDeletePost?: () => void;
   /** Link author name to public profile, e.g. `/discover/author`. */
   authorProfileBasePath?: string;
+  /** Grid-card header: smaller avatar, author title in place of the visibility tag. */
+  compact?: boolean;
 }
 
 const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
@@ -38,6 +40,7 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
   onCopyLink,
   onDeletePost,
   authorProfileBasePath,
+  compact = false,
 }) => {
   const t = useTranslations('feed');
   const publishedAtMs = new Date(item.publishedAt).getTime();
@@ -68,13 +71,18 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
     ...(onDeletePost ? [{ type: 'divider' as const }, { key: 'delete', danger: true, label: t('delete_post') }] : []),
   ];
 
+  const authorTitle = item.author.title?.trim();
+  const showAuthorTitle = compact && Boolean(authorTitle);
+
   return (
-    <div className="flex items-start justify-between px-4 py-3 border-b border-[var(--ant-color-border-secondary)]">
+    <div
+      className={`flex items-start justify-between border-b border-[var(--ant-color-border-secondary)] ${compact ? 'px-3 py-2' : 'px-4 py-3'}`}
+    >
       {/* Left: avatar + author info */}
       <div className="flex items-center gap-2.5">
         <Avatar
           className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
-          size={36}
+          size={compact ? 32 : 36}
           src={item.author.avatarUrl}
         >
           {item.author.name.charAt(0).toUpperCase()}
@@ -92,14 +100,22 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
             </Text>
           )}
           <div className="flex items-center text-xs text-[var(--ant-color-text-tertiary)] mt-0.5 gap-1.5 flex-wrap">
+            {showAuthorTitle ? (
+              <span className="truncate">{authorTitle}</span>
+            ) : null}
+            {showAuthorTitle ? <span className="opacity-40">&bull;</span> : null}
             <span>{activityTime}</span>
-            <span className="opacity-40">&bull;</span>
-            <Tag
-              className="m-0 rounded border-0 text-[10px] font-medium leading-none py-0 px-1.5"
-              color={visibilityColors[item.visibility]}
-            >
-              {visibilityLabel}
-            </Tag>
+            {!showAuthorTitle && (
+              <>
+                <span className="opacity-40">&bull;</span>
+                <Tag
+                  className="m-0 rounded border-0 text-[10px] font-medium leading-none py-0 px-1.5"
+                  color={visibilityColors[item.visibility]}
+                >
+                  {visibilityLabel}
+                </Tag>
+              </>
+            )}
             {hasUpdates && (
               <Tag className="m-0 rounded border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-layout)] text-[var(--ant-color-text-secondary)] text-[11px] font-medium tracking-wide shadow-sm">
                 {t('updated')}
@@ -117,12 +133,13 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: follow + more */}
+      {/* Right: follow + more — grid cards keep Follow in the "..." menu only, for a clean header */}
       <div className="flex items-center gap-2">
-        {canFollow && (
+        {canFollow && !compact && (
           <Button
             size="small"
-            className={`rounded-full px-3 text-xs font-semibold ${isFollowingAuthor ? 'bg-[var(--ant-color-bg-layout)] text-[var(--ant-color-text-secondary)] border-transparent' : 'text-[var(--ant-color-primary)] hover:text-[var(--ant-color-primary-hover)] bg-[var(--ant-color-primary-bg)] border-transparent'}`}
+            type="text"
+            className={`rounded-full border px-3 text-xs font-semibold transition-colors ${isFollowingAuthor ? 'border-[var(--ant-color-border)] text-[var(--ant-color-text-secondary)] hover:border-[var(--ant-color-border-secondary)]' : 'border-[var(--ant-color-border)] text-[var(--ant-color-text-secondary)] hover:border-[var(--ant-color-primary)] hover:text-[var(--ant-color-primary)]'}`}
             loading={followPending}
             disabled={followPending || deletePending}
             onClick={(event) => {

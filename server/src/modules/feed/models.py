@@ -113,6 +113,7 @@ class FeedSnapshot(Base):
     captured_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    thumbnail_url = Column(String(1024), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("post_id", "version", name="uq_feed_snapshots_post_version"),

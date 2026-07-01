@@ -1,6 +1,5 @@
-import React, { useCallback } from 'react';
-import { Button, Divider, Tooltip } from 'antd';
-import { BulbOutlined } from '@ant-design/icons';
+import React from 'react';
+import { Divider } from 'antd';
 import {
   SelectField,
   ToggleField,
@@ -29,6 +28,8 @@ import { WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import { ConditionalFormattingEditor } from './ConditionalFormattingEditor';
 import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 import { TableColumnManager } from './TableColumnManager';
+import { RelatedJoinsPicker } from './RelatedJoinsPicker';
+import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 
 interface ChartFieldsProps {
   chartType: string;
@@ -41,103 +42,9 @@ interface ChartFieldsProps {
   chartOptions?: any;
   onUpdateChartOption?: (key: string, value: any) => void;
   onUpdateChartOptions?: (updates: Record<string, any>) => void;
+  onFieldDrop?: (targetKey: string, field: DashboardFieldDragPayload) => void;
   mode?: 'mapping' | 'customize' | 'colors' | 'advanced';
   dashboardPages?: { id: string; name: string }[];
-}
-
-function resolveFieldLabel(
-  fieldKey: string,
-  fallback: string,
-  t: (key: string) => string
-): string {
-  const keyMap: Record<string, string> = {
-    x: 'field_category',
-    yMetrics: 'field_measure',
-    yMetricsSecondary: 'field_yMetricsSecondary',
-    xMetrics: 'field_xMetrics',
-    legend: 'field_legend',
-    size: 'field_size',
-    filters: 'field_filters',
-  };
-  const i18nKey = keyMap[fieldKey];
-  if (i18nKey) {
-    try {
-      return t(i18nKey);
-    } catch {
-      return fallback;
-    }
-  }
-  return fallback;
-}
-
-
-// ─── Heuristic field suggestion ───────────────────────────────────────────────
-
-/** Patterns for each role (order = priority). Case-insensitive substring match. */
-const TEMPORAL_PATTERNS = ['date', 'time', 'year', 'month', 'week', 'day', 'quarter', 'period', 'created_at', 'updated_at', 'timestamp'];
-const CATEGORY_PATTERNS = ['name', 'category', 'type', 'status', 'label', 'region', 'country', 'city', 'product', 'group', 'segment', 'department', 'brand', 'channel', 'source'];
-const METRIC_PATTERNS = ['amount', 'revenue', 'sales', 'total', 'value', 'price', 'quantity', 'profit', 'cost', 'rate', 'percent', 'score', 'volume', 'sum', 'budget', 'spend', 'earning', 'margin'];
-const COUNT_PATTERNS = ['count', 'num', 'number'];
-const LEGEND_PATTERNS = ['category', 'type', 'status', 'region', 'country', 'group', 'segment', 'department', 'brand', 'channel'];
-
-function matchPattern(col: string, patterns: string[]): boolean {
-  const lower = col.toLowerCase();
-  return patterns.some((p) => lower.includes(p));
-}
-
-function findBestColumn(columns: Array<{ value: string; label: string }>, ...patternGroups: string[][]): string | null {
-  for (const patterns of patternGroups) {
-    const found = columns.find((c) => matchPattern(c.value, patterns));
-    if (found) return found.value;
-  }
-  return null;
-}
-
-interface FieldSuggestion {
-  x?: string;
-  yMetrics?: Array<{ field: string; aggregation: string }>;
-  legend?: string;
-}
-
-function suggestFields(columns: Array<{ value: string; label: string }>, chartType: string): FieldSuggestion {
-  if (columns.length === 0) return {};
-  const suggestion: FieldSuggestion = {};
-
-  // X axis: temporal first, then category, then first column
-  const xCol = findBestColumn(columns, TEMPORAL_PATTERNS, CATEGORY_PATTERNS) ?? columns[0].value;
-  suggestion.x = xCol;
-
-  // Y metrics: numeric metric columns, then count
-  const metricCols = columns.filter((c) => matchPattern(c.value, METRIC_PATTERNS));
-  const countCols = columns.filter((c) => matchPattern(c.value, COUNT_PATTERNS));
-  const numericLike = [...metricCols, ...countCols];
-
-  if (numericLike.length > 0) {
-    const aggCol = numericLike[0];
-    const isCount = matchPattern(aggCol.value, COUNT_PATTERNS);
-    suggestion.yMetrics = [{ field: aggCol.value, aggregation: isCount ? 'count' : 'sum' }];
-  } else {
-    // Any non-x column — use COUNT
-    const other = columns.find((c) => c.value !== xCol);
-    if (other) {
-      suggestion.yMetrics = [{ field: other.value, aggregation: 'count' }];
-    }
-  }
-
-  // Legend: for bar/line/area with many columns, suggest a categorical field different from x
-  if (['bar', 'line', 'area', 'scatter'].includes(chartType)) {
-    const legendCol = columns.find(
-      (c) => c.value !== xCol && matchPattern(c.value, LEGEND_PATTERNS)
-    );
-    if (legendCol) suggestion.legend = legendCol.value;
-  }
-
-  // Pie / donut: just x + y, no legend
-  if (['pie', 'donut'].includes(chartType)) {
-    delete suggestion.legend;
-  }
-
-  return suggestion;
 }
 
 /**
@@ -154,6 +61,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
   chartOptions,
   onUpdateChartOption,
   onUpdateChartOptions,
+  onFieldDrop,
   mode = 'mapping',
   dashboardPages = [],
 }) => {
@@ -197,36 +105,8 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
     }
   };
 
-  // AI-style heuristic field suggestion
-  const canSuggest = selectedTableColumns.length > 0 && !isLoading && mode === 'mapping';
-  const handleSuggestFields = useCallback(() => {
-    const suggestion = suggestFields(selectedTableColumns, chartType);
-    if (suggestion.x) onUpdateChartQuery('x', suggestion.x);
-    if (suggestion.yMetrics) onUpdateChartQuery('yMetrics', suggestion.yMetrics);
-    if (suggestion.legend !== undefined) onUpdateChartQuery('legend', suggestion.legend);
-    else if (suggestion.legend === undefined) {
-      // only clear if currently set but suggestion has no opinion (don't clear user-set values)
-    }
-  }, [selectedTableColumns, chartType, onUpdateChartQuery]);
-
   return (
     <>
-      {/* Suggest fields button — only in mapping mode when columns are loaded */}
-      {canSuggest && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-          <Tooltip title="Auto-map fields based on column name patterns (date→X, amount→Y, etc.)">
-            <Button
-              size="small"
-              type="link"
-              icon={<BulbOutlined />}
-              style={{ fontSize: 11, padding: '0 4px', height: 'auto' }}
-              onClick={handleSuggestFields}
-            >
-              Suggest fields
-            </Button>
-          </Tooltip>
-        </div>
-      )}
       {mode === 'mapping' && config.fields.filter(f => !f.key.toLowerCase().includes('filter')).map((field) => {
         if (field.dependsOn && !isAggregate) {
           return null;
@@ -241,11 +121,12 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
             return (
               <SelectField
                 key={field.key}
-                label={resolveFieldLabel(field.key, field.label, t)}
+                label={field.label}
                 hint={resolvePropertyFieldHint(field.key, t)}
                 required={field.required}
                 value={chartQuery[field.key] || undefined}
                 onChange={(val) => onUpdateChartQuery(field.key, val)}
+                onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                 options={field.options || (field.key === 'yMetric' ? METRIC_OPTIONS : selectedTableColumns)}
                 placeholder={
                   !selectedWidget.dataSourceId
@@ -282,11 +163,12 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
             return (
               <MetricListField
                 key={field.key}
-                label={resolveFieldLabel(field.key, field.label, t)}
+                label={field.label}
                 hint={resolvePropertyFieldHint(field.key, t)}
                 required={field.required}
                 metrics={chartQuery[field.key] || []}
                 onChange={(val) => onUpdateChartQuery(field.key, val)}
+                onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                 columnOptions={selectedTableColumns}
                 placeholder={
                   !selectedWidget.dataSourceId
@@ -306,7 +188,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
             return (
               <ToggleField
                 key={field.key}
-                label={resolveFieldLabel(field.key, field.label, t)}
+                label={field.label}
                 checked={field.key === 'aggregate' ? isAggregate : !!chartQuery[field.key]}
                 onChange={(val) => {
                   if (field.key === 'aggregate') {
@@ -323,7 +205,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
             return (
               <SegmentedField
                 key={field.key}
-                label={resolveFieldLabel(field.key, field.label, t)}
+                label={field.label}
                 value={chartQuery[field.key] || 'x'}
                 onChange={(val) => onUpdateChartQuery(field.key, val)}
                 options={field.options || []}
@@ -737,7 +619,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
       )}
 
       {/* Legend sort / limit — applicable to multi-series chart types */}
-      {mode === 'customize' && !['table', 'embed', 'stat', 'text', 'divider', 'image', 'slicer'].includes(chartType) && onUpdateChartOption && (
+      {mode === 'customize' && !['table', 'embed', 'stat', 'text', 'divider', 'image', 'slicer', 'filter'].includes(chartType) && onUpdateChartOption && (
         <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           <Divider orientation="left" orientationMargin={0} style={{ fontSize: 12, margin: '8px 0 4px' }}>
             Legend / Series
@@ -944,6 +826,17 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
 
           <Divider className="panel-divider" style={{ margin: '16px 0' }} />
 
+          <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <RelatedJoinsPicker
+              dataSourceId={selectedWidget.dataSourceId}
+              baseTable={chartQuery.tableName}
+              joins={chartQuery.joins || []}
+              onChange={(joins) => onUpdateChartQuery('joins', joins)}
+            />
+          </div>
+
+          <Divider className="panel-divider" style={{ margin: '16px 0' }} />
+
           {config.fields.filter(f => f.key.toLowerCase().includes('filter')).map((field) => {
             if (field.conditionalRender && !field.conditionalRender(chartQuery, chartOptions)) {
               return null;
@@ -959,6 +852,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                     required={field.required}
                     filters={chartQuery[field.key] || []}
                     onChange={(val) => onUpdateChartQuery(field.key, val)}
+                    onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                     columnOptions={selectedTableColumns}
                     isLoading={isLoading}
                   />

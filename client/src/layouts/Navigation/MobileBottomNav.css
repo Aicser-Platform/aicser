@@ -55,18 +55,20 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
+    margin: 4px 6px;
     padding: 6px 4px 4px;
-    margin: 0;
     border: none;
+    border-radius: 6px;
     background: transparent;
     color: var(--ant-color-text-secondary);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    transition: color 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
   .mobile-bottom-nav__btn.is-active {
-    color: var(--ant-color-primary);
+    background: var(--color-bg-elevated, rgba(0, 0, 0, 0.06));
+    color: var(--ant-color-text);
   }
 
   .mobile-bottom-nav__icon {
@@ -114,7 +116,8 @@
     max-height: 100% !important;
   }
 
-  .mobile-more-drawer .sidebar-nav-link {
+  .mobile-more-drawer .ant-menu-item,
+  .mobile-more-drawer .ant-menu-submenu-title {
     min-height: 44px;
   }
 

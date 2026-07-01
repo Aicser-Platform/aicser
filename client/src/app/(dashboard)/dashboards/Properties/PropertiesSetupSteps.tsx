@@ -16,7 +16,7 @@ export function PropertiesSetupSteps({ widget, onFocusSection }: Props) {
 
   if (!widget || widget.chartType === 'text') return null;
 
-  const isSlicer = widget.chartType === 'slicer';
+  const isSlicer = widget.chartType === 'slicer' || widget.chartType === 'filter';
   const hasSource = Boolean(widget.dataSourceId || (widget.chartQuery as { dataSourceId?: string })?.dataSourceId);
   const hasTable = Boolean(widget.chartQuery?.tableName);
   const hasFields = Boolean(

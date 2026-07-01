@@ -200,7 +200,14 @@ interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
   updateChartLayout: (widgetId: string, layoutOverride?: LayoutItem) => Promise<void>;
   removeChartFromAllDashboards: (chartId: string) => void;
   partitionSeriesData: (data: ChartData, widget: WidgetInstance) => ChartData;
-  applyRemoteUpdate: (update: { type: string; id?: string; changes?: Record<string, unknown>; widget?: WidgetInstance }) => void;
+  applyRemoteUpdate: (update: {
+    type: string;
+    id?: string;
+    changes?: Record<string, unknown>;
+    widget?: WidgetInstance;
+    layout?: LayoutItem[];
+    layoutTs?: number;
+  }) => void;
   bulkDeleteWidgets: () => Promise<void>;
   updatePageLayout: (
     pageId: string | null,
@@ -848,16 +855,20 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
   createChartAndFetchData: async (widget: WidgetInstance) => {
     try {
-      // Ensure chartQuery has default values
+      // Ensure chartQuery has default values.
+      // When yMetrics is set, clear stale yMetricsSecondary — prevents ghost series
+      // from prior configurations surviving into a fresh chart create.
+      const hasYMetrics = (widget.chartQuery?.yMetrics?.length ?? 0) > 0;
       const chartQuery = {
         ...widget.chartQuery,
         x: widget.chartQuery?.x || '',
         yMetric: (widget.chartQuery?.yMetric || 'count') as 'count' | 'sum',
         yMetrics: widget.chartQuery?.yMetrics || [],
-        yMetricsSecondary: widget.chartQuery?.yMetricsSecondary || [],
+        yMetricsSecondary: hasYMetrics ? [] : (widget.chartQuery?.yMetricsSecondary || []),
         y: widget.chartQuery?.y || '',
         legend: widget.chartQuery?.legend || '',
-        sortBy: widget.chartQuery?.sortBy || 'x', 
+        sortBy: widget.chartQuery?.sortBy || 'x',
+        joins: widget.chartQuery?.joins || [],
         limit: widget.chartQuery?.limit,
         seriesLimit: widget.chartQuery?.seriesLimit,
         sortOrder: widget.chartQuery?.sortOrder,
@@ -895,7 +906,9 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) =>
-          w.id === widget.id ? { ...w, chartId: chart.id, isLoading: false } : w
+          w.id === widget.id
+            ? { ...w, chartId: chart.id, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false }
+            : w
         );
         const dashboards = state.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
@@ -917,7 +930,11 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         });
 
         set((state) => {
-          const nextWidgets = state.widgets.map((w) => (w.id === widget.id ? { ...w, chartData } : w));
+          const nextWidgets = state.widgets.map((w) =>
+            w.id === widget.id
+              ? { ...w, chartData, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
+              : w
+          );
           const dashboards = state.dashboards.map((d) =>
             d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
           );
@@ -925,7 +942,16 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         });
       } catch (dataError) {
         console.error('Failed to fetch data for chart:', dataError);
-        // Don't mark as error, chart is created successfully
+        const errorMessage = dataError instanceof Error ? dataError.message : 'Failed to fetch chart data';
+        set((state) => {
+          const nextWidgets = state.widgets.map((w) =>
+            w.id === widget.id ? { ...w, isLoading: false, error: errorMessage } : w
+          );
+          const dashboards = state.dashboards.map((d) =>
+            d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
+          );
+          return { widgets: nextWidgets, dashboards };
+        });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create chart';
@@ -950,15 +976,22 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       // Build complete chartQuery with defaults
       const mergedChartQuery = { ...widget.chartQuery, ...updates.chartQuery };
+      // When yMetrics is explicitly in the update, clear stale secondary unless secondary
+      // was also explicitly set — prevents ghost series from prior configurations.
+      const yMetricsExplicitlyUpdated = updates.chartQuery && 'yMetrics' in updates.chartQuery;
+      const yMetricsSecondaryExplicitlyUpdated = updates.chartQuery && 'yMetricsSecondary' in updates.chartQuery;
       const chartQuery = {
         ...mergedChartQuery,
         x: mergedChartQuery.x || '',
         yMetric: (mergedChartQuery.yMetric || 'count') as 'count' | 'sum',
         yMetrics: mergedChartQuery.yMetrics || [],
-        yMetricsSecondary: mergedChartQuery.yMetricsSecondary || [],
+        yMetricsSecondary: (yMetricsExplicitlyUpdated && !yMetricsSecondaryExplicitlyUpdated)
+          ? []
+          : (mergedChartQuery.yMetricsSecondary || []),
         y: mergedChartQuery.y || '',
         legend: mergedChartQuery.legend || '',
         sortBy: mergedChartQuery.sortBy || 'x',
+        joins: mergedChartQuery.joins || [],
         limit: mergedChartQuery.limit,
         seriesLimit: mergedChartQuery.seriesLimit,
         sortOrder: mergedChartQuery.sortOrder,
@@ -1175,11 +1208,12 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
   applyRemoteUpdate: (update) => {
     if (update.type === 'layout:update' && Array.isArray(update.layout)) {
-      const layoutTs = (update as { layoutTs?: number }).layoutTs ?? 0;
+      const layoutTs = update.layoutTs ?? 0;
+      const remoteLayout = update.layout;
       set((state) => {
         const localTs = state.layoutCollabTs ?? 0;
         if (layoutTs < localTs) return state;
-        const layout = update.layout as LayoutItem[];
+          const layout = remoteLayout;
         const dashboards = state.dashboards.map((d) =>
           d.id === state.activeDashboardId ? { ...d, layout } : d,
         );
@@ -1255,10 +1289,11 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
     const previousPalette = state.dashboards.find((d) => d.id === activeDashboardId)?.config
       ?.default_color_palette as string | undefined;
 
-    const shouldFollowDashboardPalette = (widgetPalette: string | undefined | null) => {
-      if (widgetPalette === 'custom') return false;
-      if (isWidgetPaletteInherited(widgetPalette)) return true;
-      if (!previousPalette || widgetPalette === previousPalette) return true;
+    const shouldFollowDashboardPalette = (widgetPalette: unknown) => {
+      const palette = typeof widgetPalette === 'string' ? widgetPalette : undefined;
+      if (palette === 'custom') return false;
+      if (isWidgetPaletteInherited(palette)) return true;
+      if (!previousPalette || palette === previousPalette) return true;
       return false;
     };
 
@@ -1271,7 +1306,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
           d.id === activeDashboardId ? { ...d, config: nextConfig } : d,
         ),
         widgets: s.widgets.map((w) => {
-          if (w.chartType === 'text' || w.chartType === 'slicer') return w;
+          if (w.chartType === 'text' || w.chartType === 'slicer' || w.chartType === 'filter') return w;
           if (!shouldFollowDashboardPalette(w.chartOptions?.colorPalette)) return w;
           const snapshot = w.chartOptions?.__echartsSnapshot;
           const nextOptions: Record<string, unknown> = {
@@ -1300,6 +1335,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         w.chartId &&
         w.chartType !== 'text' &&
         w.chartType !== 'slicer' &&
+        w.chartType !== 'filter' &&
         shouldFollowDashboardPalette(w.chartOptions?.colorPalette),
     );
 

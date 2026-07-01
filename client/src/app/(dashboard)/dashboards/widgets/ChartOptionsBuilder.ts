@@ -5,6 +5,7 @@
 import {
   ChartConfig,
   ChartData,
+  type ChartValueFormat,
   CHART_COLORS,
   DEFAULT_CHART_CONFIG,
   getBaseTooltipConfig,
@@ -39,6 +40,13 @@ function fmtVal(v: unknown, valueFormat?: string): string {
     default:
       return num.toLocaleString();
   }
+}
+
+function valueFormatForSeries(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
+  const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
+  const metricFormats = config.metricFormats ? Object.values(config.metricFormats) : [];
+  const format = seriesFormat || (metricFormats.length === 1 ? metricFormats[0] : undefined) || config.valueFormat;
+  return format && format !== 'auto' ? format : undefined;
 }
 
 export const buildChartOptions = (type: string, data: ChartData, config: Partial<ChartConfig> = {}): any => {
@@ -104,20 +112,23 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   }
 
   // Enhanced tooltip with better number formatting
-  let tooltipConfig: any = getBaseTooltipConfig(type, { appendToBody: isDashboardWidget });
+  const appendTooltipToBody = isDashboardWidget || Boolean((finalConfig as any).isDesigner);
+  let tooltipConfig: any = getBaseTooltipConfig(type, { appendToBody: appendTooltipToBody });
   const isPercentStacked =
     (type === 'bar' && finalConfig.barStackMode === 'stacked-100') ||
     ((type === 'line' || type === 'area') && finalConfig.lineStackMode === 'stacked-100');
 
   if (type === 'pie' || type === 'donut') {
-    // Calculate total for percentage
-    const total = (data?.y || []).reduce((sum: number, val: number) => sum + (val || 0), 0);
-    const vf = (config as any).valueFormat as string | undefined;
+    // Calculate total for percentage — fall back to series[0].data when data.y is empty
+    const pieY: number[] = data?.y?.length ? data.y : (data?.series?.[0]?.data || []);
+    const total = pieY.reduce((sum: number, val: number) => sum + (val || 0), 0);
     tooltipConfig = {
       ...tooltipConfig,
       formatter: (params: any) => {
         const percentage = total > 0 ? ((params.value / total) * 100).toFixed(2) : '0.00';
-        const rawValue = typeof params.value === 'number' ? fmtVal(params.value, vf) : params.value;
+        const rawValue = typeof params.value === 'number'
+          ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+          : params.value;
         const marker = params.marker || '';
         return `${marker} <strong>${params.name}</strong><br/>Value: ${rawValue}<br/>Share: ${percentage}%`;
       },
@@ -161,7 +172,9 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
           params.forEach((param: any) => {
             const rawValue = seriesData.find((s) => s.name === param.seriesName)?.data?.[dataIndex] || 0;
             const percentage = rawTotal > 0 ? ((rawValue / rawTotal) * 100).toFixed(2) : '0.00';
-            const formattedRawValue = typeof rawValue === 'number' ? rawValue.toLocaleString() : rawValue;
+            const formattedRawValue = typeof rawValue === 'number'
+              ? fmtVal(rawValue, valueFormatForSeries(finalConfig, param.seriesName))
+              : rawValue;
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${formattedRawValue} (${percentage}%)<br/>`;
           });
 
@@ -179,19 +192,22 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     };
   } else {
     // Enhanced tooltip for other chart types — respect valueFormat if set
-    const vf = (config as any).valueFormat as string | undefined;
     tooltipConfig = {
       ...tooltipConfig,
       formatter: (params: any) => {
         if (Array.isArray(params) && params.length > 0) {
           let tooltip = `<strong>${params[0].name || ''}</strong><br/>`;
           params.forEach((param: any) => {
-            const rawValue = typeof param.value === 'number' ? fmtVal(param.value, vf) : (param.value ?? '');
+            const rawValue = typeof param.value === 'number'
+              ? fmtVal(param.value, valueFormatForSeries(finalConfig, param.seriesName))
+              : (param.value ?? '');
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${rawValue}<br/>`;
           });
           return tooltip;
         } else if (params && !Array.isArray(params)) {
-          const rawValue = typeof params.value === 'number' ? fmtVal(params.value, vf) : (params.value ?? '');
+          const rawValue = typeof params.value === 'number'
+            ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+            : (params.value ?? '');
           return `<strong>${params.name || ''}</strong><br/>${params.marker || ''} ${params.seriesName || ''}: ${rawValue}`;
         }
         return '';
@@ -316,7 +332,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
               itemStyle: { color: '#ff4d4f', opacity: 0.85 },
               label: { show: false },
               tooltip: {
-                formatter: (p: any) => `<strong>Outlier</strong><br/>Value: ${fmtVal(p.value[1], (config as any).valueFormat)}`,
+                formatter: (p: any) => `<strong>Outlier</strong><br/>Value: ${fmtVal(p.value[1], valueFormatForSeries(finalConfig, p.seriesName))}`,
               },
             },
           };
@@ -527,10 +543,13 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   // ─── Treemap ──────────────────────────────────────────────────────────────
   if (type === 'treemap') {
-    const treemapData = Array.isArray(data.x)
+    // Prefer x/y when both are present; fall back to series[0] when y is empty
+    // (data.y is deprecated; the series fallback was previously dead code because
+    //  data.x is always an array per the ChartData interface)
+    const treemapData = Array.isArray(data.x) && data.y?.length
       ? data.x.map((name: string, i: number) => ({ name: String(name), value: Number(data.y?.[i] ?? 0) }))
       : Array.isArray(data.series) && data.series[0]
-        ? data.series[0].data.map((v: number, i: number) => ({ name: String(data.categories?.[i] ?? i), value: v }))
+        ? data.series[0].data.map((v: number, i: number) => ({ name: String(data.categories?.[i] ?? data.x?.[i] ?? i), value: Number(v) }))
         : [];
     baseOptions.series = [{
       type: 'treemap',
@@ -551,7 +570,10 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   // ─── Waterfall chart ──────────────────────────────────────────────────────
   if (type === 'waterfall') {
     const cats = data.x || [];
-    const vals = Array.isArray(data.y) ? data.y.map(Number) : [];
+    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
+    const vals = Array.isArray(data.y) && data.y.length > 0
+      ? data.y.map(Number)
+      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
     // Build invisible + positive + negative series for waterfall
     let running = 0;
     const base: number[] = [];
@@ -577,11 +599,21 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   // Shows actual vs target in a compact horizontal bar with threshold bands.
   if (type === 'bullet') {
     const categories = Array.isArray(data.x) ? data.x : [];
-    const actuals: number[] = Array.isArray(data.y) ? data.y.map(Number) : [];
-    // Target values come from series[0] if available, else config
-    const targets: number[] = Array.isArray(data.series?.[0]?.data)
-      ? data.series[0].data.map(Number)
-      : actuals.map(() => (config as any).bulletTarget ?? 0);
+    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
+    const actuals: number[] = Array.isArray(data.y) && data.y.length > 0
+      ? data.y.map(Number)
+      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
+    // Target values: legacy format uses series[0], new format uses series[1]
+    const hasLegacyY = Array.isArray(data.y) && data.y.length > 0;
+    const targets: number[] = hasLegacyY
+      // Legacy: data.y = actuals, series[0] = targets
+      ? (Array.isArray(data.series?.[0]?.data)
+          ? data.series![0].data.map(Number)
+          : actuals.map(() => (config as any).bulletTarget ?? 0))
+      // New format: series[0] = actuals, series[1] = targets
+      : (Array.isArray(data.series?.[1]?.data)
+          ? data.series![1].data.map(Number)
+          : actuals.map(() => (config as any).bulletTarget ?? 0));
 
     const bulletThresholdWarn: number = (config as any).bulletThresholdWarn ?? 60;
     const bulletThresholdOk: number = (config as any).bulletThresholdOk ?? 80;

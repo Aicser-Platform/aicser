@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as api from '@/api/dataSources';
+import { ApiError } from '@/utils/api';
 import type { DataSource } from '@/stores/useDataSourceStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import {
@@ -49,6 +50,12 @@ export const useDataSourceSchema = (id: string | null) => {
     queryKey: dataSourceKeys.schema(id!),
     queryFn: () => api.getDataSourceSchema(id!),
     enabled: !!id,
+    retry: (failureCount, err) => {
+      if (err instanceof ApiError && [400, 401, 403, 404].includes(err.status)) {
+        return false;
+      }
+      return failureCount < 1;
+    },
     select: (res) => res.schema,
   });
   return { schema: data ?? null, error, isLoading };

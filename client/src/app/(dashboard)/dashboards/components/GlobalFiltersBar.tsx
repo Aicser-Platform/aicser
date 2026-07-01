@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Tooltip, Divider } from 'antd';
-import { ClearOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Button, Tooltip } from 'antd';
+import { ClearOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { DashboardFilter } from '@/types/dashboard';
 import { resolveDatePresets } from '../utils/dateFilterPresets';
@@ -23,6 +23,7 @@ type FilterRowProps = {
   runtimeFilters: RuntimeFilter[];
   layout: FilterBarLayout;
   fetchOptions?: Props['fetchOptions'];
+  fetchFieldStats?: Props['fetchFieldStats'];
   onChange: (filters: RuntimeFilter[]) => void;
   searchDraft: string;
   onSearchDraft: (field: string, value: string) => void;
@@ -33,6 +34,7 @@ function ReportFilterRow({
   runtimeFilters,
   layout,
   fetchOptions,
+  fetchFieldStats,
   onChange,
   searchDraft,
   onSearchDraft,
@@ -48,6 +50,29 @@ function ReportFilterRow({
     runtimeFilters,
     { tableName: filter.tableName, id: filter.id, staticOptions: filter.options, enabled: needsOptions },
   );
+  const [fieldStats, setFieldStats] = useState<{ min?: unknown; max?: unknown }>({});
+
+  useEffect(() => {
+    if (layout !== 'toolbar' || filter.type !== 'dateRange' || !fetchFieldStats || !filter.field || !filter.dataSourceId) {
+      setFieldStats({});
+      return;
+    }
+    let cancelled = false;
+    fetchFieldStats(filter.field, filter.dataSourceId, {
+      tableName: filter.tableName,
+      runtimeFilters,
+      excludeField: filter.field,
+    })
+      .then((stats) => {
+        if (!cancelled) setFieldStats(stats || {});
+      })
+      .catch(() => {
+        if (!cancelled) setFieldStats({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchFieldStats, filter.dataSourceId, filter.field, filter.tableName, filter.type, layout, runtimeFilters]);
 
   const removeField = (field: string) => runtimeFilters.filter((f) => f.field !== field);
 
@@ -58,6 +83,8 @@ function ReportFilterRow({
         field={filter.field}
         runtimeFilters={runtimeFilters}
         presets={datePresets}
+        presentation={layout === 'toolbar' ? 'range' : 'presets'}
+        displayRange={layout === 'toolbar' ? [fieldStats.min, fieldStats.max] : undefined}
         onChange={(from, to) => {
           const next = removeField(filter.field);
           if (from) next.push({ field: filter.field, operator: '>=', value: from, type: 'date' });
@@ -120,10 +147,11 @@ function ReportFilterRow({
         label={label}
         mode="multi"
         maxTagCount={layout === 'panel' ? 4 : 2}
-        placeholder={t('filter_select_value')}
+        placeholder={layout === 'toolbar' ? t('filter_all_value') : t('filter_select_value')}
         options={options}
         loading={loading}
         emptyLabel={t('filter_options_empty')}
+        showSearch={layout !== 'toolbar'}
         value={multiVal}
         onChange={(vals) => {
           const next = removeField(filter.field);
@@ -140,10 +168,12 @@ function ReportFilterRow({
     return (
       <FilterSelectField
         label={label}
-        placeholder={t('filter_select_value')}
+        placeholder={layout === 'toolbar' ? t('filter_all_value') : t('filter_select_value')}
         options={options}
         loading={loading}
         emptyLabel={t('filter_options_empty')}
+        showSearch={layout !== 'toolbar'}
+        emptyOptionLabel={layout === 'toolbar' ? t('filter_all_value') : undefined}
         value={current?.value as string | undefined}
         onChange={(v) => {
           const next = removeField(filter.field);
@@ -189,9 +219,16 @@ type Props = {
     dataSourceId: string,
     ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string },
   ) => Promise<unknown>;
+  fetchFieldStats?: (
+    field: string,
+    dataSourceId: string,
+    ctx?: { tableName?: string; runtimeFilters?: RuntimeFilter[]; excludeField?: string },
+  ) => Promise<{ min?: unknown; max?: unknown }>;
   layout?: FilterBarLayout;
   minimal?: boolean;
   onClearAll?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 };
 
 export function GlobalFiltersBar({
@@ -199,9 +236,12 @@ export function GlobalFiltersBar({
   runtimeFilters,
   onChange,
   fetchOptions,
+  fetchFieldStats,
   layout = 'panel',
   minimal = false,
   onClearAll,
+  onRefresh,
+  refreshing = false,
 }: Props) {
   const t = useTranslations('dashboards');
   const [searchDrafts, setSearchDrafts] = useState<Record<string, string>>({});
@@ -246,6 +286,32 @@ export function GlobalFiltersBar({
     )
   ) : null;
 
+  const toolbarResetControl = (
+    <Button
+      type="default"
+      size="small"
+      icon={<ClearOutlined />}
+      onClick={() => (onClearAll ? onClearAll() : clearAll())}
+      disabled={!hasActive}
+      className="report-filter-reset-button"
+    >
+      {t('reset')}
+    </Button>
+  );
+  const toolbarRefreshControl = onRefresh ? (
+    <Tooltip title={t('refresh_tooltip')}>
+      <Button
+        type="default"
+        size="small"
+        icon={<ReloadOutlined spin={refreshing} />}
+        onClick={onRefresh}
+        disabled={refreshing}
+        className="report-filter-icon-button"
+        aria-label={t('refresh_data')}
+      />
+    </Tooltip>
+  ) : null;
+
   const rows = filters.map((filter) => (
     <ReportFilterRow
       key={filter.id || filter.field}
@@ -253,6 +319,7 @@ export function GlobalFiltersBar({
       runtimeFilters={runtimeFilters}
       layout={layout}
       fetchOptions={fetchOptions}
+      fetchFieldStats={fetchFieldStats}
       onChange={onChange}
       searchDraft={searchDrafts[filter.field] ?? ''}
       onSearchDraft={(field, value) => setSearchDrafts((prev) => ({ ...prev, [field]: value }))}
@@ -280,19 +347,17 @@ export function GlobalFiltersBar({
 
   return (
     <div className="report-filter-toolbar">
+      <div className="report-filter-toolbar-title">{t('global_filters_label')}:</div>
       <div className="report-filter-toolbar-track">
         {filters.map((filter, index) => (
-          <React.Fragment key={filter.id || filter.field}>
-            {index > 0 && <Divider type="vertical" className="report-filter-vdivider" />}
-            <div className="report-filter-toolbar-item">{rows[index]}</div>
-          </React.Fragment>
+          <div className="report-filter-toolbar-item" key={filter.id || filter.field}>
+            {rows[index]}
+          </div>
         ))}
-        {clearControl && (
-          <>
-            <Divider type="vertical" className="report-filter-vdivider" />
-            <div className="report-filter-toolbar-actions">{clearControl}</div>
-          </>
-        )}
+      </div>
+      <div className="report-filter-toolbar-actions">
+        {toolbarRefreshControl}
+        {toolbarResetControl}
       </div>
     </div>
   );

@@ -12,7 +12,7 @@ export function getWidgetSetupIssues(widget: WidgetInstance | null): SetupIssue[
   if (!widget || NON_DATA.has(widget.chartType)) return [];
 
   const issues: SetupIssue[] = [];
-  const isSlicer = widget.chartType === 'slicer';
+  const isSlicer = widget.chartType === 'slicer' || widget.chartType === 'filter';
   const isScatter = widget.chartType === 'scatter';
   const hasSource = Boolean(widget.dataSourceId);
   const hasTable = Boolean(widget.chartQuery?.tableName);

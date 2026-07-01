@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from src.core.router import api_router
 from src.core.cache import cache
@@ -99,6 +100,14 @@ if is_ee_enabled():
 
 app.add_middleware(PrometheusMiddleware)
 instrument_fastapi(app)
+
+# ── Static media (feed card thumbnails) ───────────────────────────────────────
+# Disk layout: <UPLOAD_DIR>/feed_thumbnails/<uuid>.webp
+# Public URL:  /media/feed-thumbnails/<uuid>.webp
+# StaticFiles raises at mount time if the directory doesn't exist, so create it eagerly.
+_feed_thumbnails_dir = os.path.join(settings.UPLOAD_DIR, "feed_thumbnails")
+os.makedirs(_feed_thumbnails_dir, exist_ok=True)
+app.mount("/media/feed-thumbnails", StaticFiles(directory=_feed_thumbnails_dir), name="feed-thumbnails")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(api_router)

@@ -68,6 +68,27 @@ def _safe_sql_ident(name: str) -> str:
     return cleaned
 
 
+def _ds_execution_dict(ds: Any, schema_info: dict) -> dict:
+    """Full data-source dict for the query engine.
+
+    Must include user_id/project_id/file_path so the engine can fetch a
+    multi-sheet file from storage and register every sheet table — without them
+    only the primary sheet loads and joins/filters on dimension tables fail with
+    "table ... does not exist". Mirrors the chart execution path.
+    """
+    return {
+        "id": str(ds.id),
+        "type": ds.type,
+        "db_type": getattr(ds, "db_type", None),
+        "format": ds.format,
+        "schema": schema_info,
+        "connection_config": ds.connection_config,
+        "project_id": str(ds.project_id) if getattr(ds, "project_id", None) else None,
+        "user_id": str(ds.user_id) if getattr(ds, "user_id", None) else None,
+        "file_path": getattr(ds, "file_path", None),
+    }
+
+
 def _resolve_table_for_field(
     schema_info: dict,
     field: str,
@@ -90,6 +111,43 @@ def _resolve_table_for_field(
     if tables and isinstance(tables[0], dict):
         return str(tables[0].get("name") or "data")
     return "data"
+
+
+def _table_column_names(schema_info: dict, table_name: Optional[str]) -> set[str]:
+    """Return safe column identifiers for a schema table."""
+    if not table_name:
+        return set()
+    target = _safe_sql_ident(str(table_name).split(".")[-1])
+    names: set[str] = set()
+    for table in schema_info.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        raw_name = str(table.get("name") or "")
+        safe_name = _safe_sql_ident(raw_name)
+        bare_name = _safe_sql_ident(raw_name.split(".")[-1])
+        if safe_name != _safe_sql_ident(str(table_name)) and bare_name != target:
+            continue
+        for col in table.get("columns") or []:
+            col_name = col if isinstance(col, str) else (col.get("name") if isinstance(col, dict) else None)
+            safe_col = _safe_sql_ident(str(col_name or ""))
+            if safe_col:
+                names.add(safe_col)
+        break
+    return names
+
+
+def _runtime_filters_for_table(runtime_filters: Optional[List[dict]], allowed_fields: set[str]) -> List[dict]:
+    """Keep only cascade filters that can be applied to the target table."""
+    if not runtime_filters or not allowed_fields:
+        return []
+    kept: List[dict] = []
+    for rf in runtime_filters:
+        if not isinstance(rf, dict):
+            continue
+        safe_field = _safe_sql_ident(str(rf.get("field") or ""))
+        if safe_field in allowed_fields:
+            kept.append(rf)
+    return kept
 
 
 def _build_cascade_where_for_options(
@@ -291,7 +349,7 @@ async def build_embed_payload(
             logger.warning("Embed chart execute failed for %s: %s", chart.id, exec_err)
 
         chart_type = chart.chart_type or "bar"
-        is_data_widget = chart_type not in ("text", "slicer") and chart.data_source_id
+        is_data_widget = chart_type not in ("text", "slicer", "filter") and chart.data_source_id
         if is_data_widget and not exec_error:
             if chart_data is None:
                 exec_error = "No data returned"
@@ -469,7 +527,9 @@ async def get_filter_options(
     if not safe_table:
         return []
 
-    cascade = _build_cascade_where_for_options(runtime_filters, exclude_field or field)
+    table_fields = _table_column_names(schema_info, table)
+    cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
+    cascade = _build_cascade_where_for_options(cascade_filters, exclude_field or field)
     where_parts = [f'"{safe_field}" IS NOT NULL']
     if cascade:
         where_parts.append(f"({cascade})")
@@ -480,14 +540,8 @@ async def get_filter_options(
         f"WHERE {where_sql} ORDER BY v LIMIT {int(limit)}"
     )
     try:
-        ds_dict = {
-            "id": str(ds.id),
-            "type": ds.type,
-            "format": ds.format,
-            "connection_config": ds.connection_config,
-            "schema": schema_info,
-        }
-        from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+        ds_dict = _ds_execution_dict(ds, schema_info)
+        from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()
         result = await engine.execute_query(query, ds_dict, {})
@@ -526,7 +580,9 @@ async def get_filter_field_stats(
     if not safe_table:
         return {"min": None, "max": None}
 
-    cascade = _build_cascade_where_for_options(runtime_filters, field)
+    table_fields = _table_column_names(schema_info, table)
+    cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
+    cascade = _build_cascade_where_for_options(cascade_filters, field)
     where_parts = [f'"{safe_field}" IS NOT NULL']
     if cascade:
         where_parts.append(f"({cascade})")
@@ -536,14 +592,21 @@ async def get_filter_field_stats(
         f'SELECT MIN("{safe_field}") AS mn, MAX("{safe_field}") AS mx '
         f'FROM "{safe_table}" WHERE {where_sql}'
     )
+
+    def _serialize_stat_value(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return str(value)
+
     try:
-        ds_dict = {
-            "id": str(ds.id),
-            "type": ds.type,
-            "format": ds.format,
-            "connection_config": ds.connection_config,
-            "schema": schema_info,
-        }
+        ds_dict = _ds_execution_dict(ds, schema_info)
         from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()
@@ -555,7 +618,7 @@ async def get_filter_field_stats(
             mx = row.get("mx")
             if mn is None and mx is None:
                 return {"min": None, "max": None}
-            return {"min": float(mn) if mn is not None else None, "max": float(mx) if mx is not None else None}
+            return {"min": _serialize_stat_value(mn), "max": _serialize_stat_value(mx)}
     except Exception as e:
         logger.warning("filter-field-stats query failed: %s", e)
     return {"min": None, "max": None}

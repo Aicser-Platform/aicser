@@ -374,23 +374,6 @@
   width: 100%;
 }
 
-.page-wrapper.feed-page .feed-page-sticky-bar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: var(--ant-color-bg-layout);
-  padding-bottom: var(--page-space-md);
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.page-wrapper.feed-page .feed-filters-toolbar {
-  margin-bottom: 0;
-}
-
-.page-wrapper.feed-page .page-body {
-  padding-top: var(--page-space-md);
-}
-
 /* ── Header: keep actions on the same row (md+) ─────────── */
 
 @media (min-width: 768px) {

@@ -20,13 +20,17 @@ export function FilterDatePresetChips({
   className,
 }: Props) {
   return (
-    <div className={className ?? 'gfb-preset-chips'}>
+    <div className={className ?? 'flex flex-wrap gap-1.5'}>
       {presets.map((preset) => (
         <button
           key={preset.key}
           type="button"
           disabled={disabled}
-          className={`gfb-preset-chip${activeKey === preset.key ? ' gfb-preset-chip-active' : ''}`}
+          className={`h-6 px-2.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            activeKey === preset.key
+              ? 'bg-brand border-brand text-white'
+              : 'bg-bg-container border-border-light text-text-secondary hover:border-brand hover:text-brand'
+          }`}
           onClick={() => onSelect(preset.key)}
         >
           {preset.label}

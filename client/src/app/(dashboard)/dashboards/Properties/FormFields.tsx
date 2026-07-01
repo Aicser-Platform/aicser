@@ -4,7 +4,14 @@ import React, { useState } from 'react';
 import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { SegmentedOption, METRIC_OPTIONS } from './PropertiesPanelConfig';
+import { METRIC_OPTIONS } from './PropertiesPanelConfig';
+import type { SegmentedOption, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
+import { ComputedMetricEditor } from './ComputedMetricEditor';
+import {
+  getDashboardFieldDragData,
+  isDashboardFieldDrag,
+  type DashboardFieldDragPayload,
+} from '../utils/dashboardFieldDrag';
 
 const { Text } = Typography;
 
@@ -133,6 +140,7 @@ interface SelectFieldProps extends FieldProps {
   showSearch?: boolean;
   allowClear?: boolean;
   mode?: 'multiple' | 'tags';
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const SelectField: React.FC<SelectFieldProps> = ({
@@ -148,29 +156,60 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   showSearch = true,
   allowClear,
   mode,
-}) => (
-  <div className="panel-section">
-    <SectionLabel label={label} required={required} hint={hint} />
-    <Select
-      style={{ width: '100%' }}
-      value={value}
-      onChange={onChange}
-      options={options}
-      placeholder={placeholder}
-      disabled={disabled}
-      loading={isLoading}
-      size="small"
-      showSearch={showSearch}
-      optionFilterProp="label"
-      mode={mode}
-      allowClear={allowClear ?? !required}
-      styles={{
-        popup: { root: { zIndex: 10000, maxHeight: 300 } },
+  onFieldDrop,
+}) => {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  return (
+    <div
+      className={`panel-section${isDragOver ? ' field-drop-target-active' : ''}`}
+      onDragEnter={(event) => {
+        if (disabled || !isDashboardFieldDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        setIsDragOver(true);
       }}
-      getPopupContainer={() => document.body}
-    />
-  </div>
-);
+      onDragOver={(event) => {
+        if (disabled || !isDashboardFieldDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={(event) => {
+        if (disabled) return;
+        const field = getDashboardFieldDragData(event.dataTransfer);
+        if (!field) return;
+        event.preventDefault();
+        setIsDragOver(false);
+        if (onFieldDrop) {
+          onFieldDrop(field);
+          return;
+        }
+        onChange(field.columnName);
+      }}
+    >
+      <SectionLabel label={label} required={required} hint={hint} />
+      <Select
+        style={{ width: '100%' }}
+        popupClassName="properties-panel-dropdown"
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder={isDragOver ? 'Drop field here' : placeholder}
+        disabled={disabled}
+        loading={isLoading}
+        size="small"
+        showSearch={showSearch}
+        optionFilterProp="label"
+        mode={mode}
+        allowClear={allowClear ?? !required}
+        styles={{
+          popup: { root: { zIndex: 10000, maxHeight: 300 } },
+        }}
+        getPopupContainer={() => document.body}
+      />
+    </div>
+  );
+};
 
 /* =========================================================
  * Field: Input
@@ -220,6 +259,9 @@ export const InputField: React.FC<InputFieldProps> = ({
 export interface MetricItem {
   field: string;
   aggregation: string;
+  label?: string;
+  computed?: ComputedMetric;
+  valueFormat?: MetricValueFormat;
 }
 
 interface MetricListFieldProps extends FieldProps {
@@ -231,6 +273,7 @@ interface MetricListFieldProps extends FieldProps {
   maxItems?: number;
   excludeFields?: string[];
   chartType?: string;
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const MetricListField: React.FC<MetricListFieldProps> = ({
@@ -245,8 +288,12 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   maxItems,
   excludeFields = [],
   chartType,
+  onFieldDrop,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isFieldDragOver, setIsFieldDragOver] = useState(false);
+  const [computedEditorOpen, setComputedEditorOpen] = useState(false);
+  const [editingComputedIndex, setEditingComputedIndex] = useState<number | null>(null);
 
   const isLimitReached = maxItems !== undefined && metrics.length >= maxItems;
 
@@ -269,6 +316,14 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
     }
   };
 
+  const handleDroppedField = (field: DashboardFieldDragPayload) => {
+    if (onFieldDrop) {
+      onFieldDrop(field);
+      return;
+    }
+    handleAddField(field.columnName);
+  };
+
   const handleUpdateAggregation = (index: number, agg: string) => {
     const updated = [...metrics];
     updated[index] = { ...updated[index], aggregation: agg };
@@ -282,6 +337,21 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
 
   const getAggregationLabel = (val: string) => {
     return METRIC_OPTIONS.find((opt) => opt.value === val)?.label || val;
+  };
+
+  const getFormatBadge = (format?: MetricValueFormat) => {
+    switch (format) {
+      case 'percent':
+        return '%';
+      case 'compact':
+        return 'K';
+      case 'currency':
+        return '$';
+      case 'full':
+        return '1,234';
+      default:
+        return null;
+    }
   };
 
   // Helper to find column label from value
@@ -337,9 +407,31 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
     <div className="panel-section">
       <SectionLabel label={label} required={required} hint={hint} />
 
-      <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <div
+        className={`metric-list-container${isFieldDragOver ? ' field-drop-target-active' : ''}`}
+        style={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+        onDragEnter={(event) => {
+          if (isLimitReached || !isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          setIsFieldDragOver(true);
+        }}
+        onDragOver={(event) => {
+          if (isLimitReached || !isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDragLeave={() => setIsFieldDragOver(false)}
+        onDrop={(event) => {
+          const field = getDashboardFieldDragData(event.dataTransfer);
+          if (!field || isLimitReached) return;
+          event.preventDefault();
+          setIsFieldDragOver(false);
+          handleDroppedField(field);
+        }}
+      >
         {metrics.map((item, index) => {
           const fieldInfo = columnOptions.find((opt) => opt.value === item.field);
+          const formatBadge = getFormatBadge(item.valueFormat || item.computed?.format);
           const type = (fieldInfo?.type || '').toLowerCase();
           const isNumeric =
             type.includes('int') ||
@@ -358,25 +450,43 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
               return ['count', 'distinct_count'].includes(valString);
             });
 
-          const menuItems: MenuProps['items'] = [
-            {
-              key: 'remove',
-              label: 'Remove field',
-              danger: true,
-              onClick: () => handleRemoveField(index),
-            },
-            { type: 'divider' },
-            ...allowedAggregations.map((opt) => ({
-              key: opt.value as string,
-              label: (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  {opt.label}
-                  {item.aggregation === opt.value && <CheckOutlined style={{ fontSize: '12px' }} />}
-                </div>
-              ),
-              onClick: () => handleUpdateAggregation(index, opt.value as string),
-            })),
-          ];
+          const menuItems: MenuProps['items'] = item.computed
+            ? [
+                {
+                  key: 'fx-edit',
+                  label: 'Edit computed metric (fx)',
+                  onClick: () => {
+                    setEditingComputedIndex(index);
+                    setComputedEditorOpen(true);
+                  },
+                },
+                { type: 'divider' },
+                {
+                  key: 'remove',
+                  label: 'Remove field',
+                  danger: true,
+                  onClick: () => handleRemoveField(index),
+                },
+              ]
+            : [
+                {
+                  key: 'remove',
+                  label: 'Remove field',
+                  danger: true,
+                  onClick: () => handleRemoveField(index),
+                },
+                { type: 'divider' },
+                ...allowedAggregations.map((opt) => ({
+                  key: opt.value as string,
+                  label: (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {opt.label}
+                      {item.aggregation === opt.value && <CheckOutlined style={{ fontSize: '12px' }} />}
+                    </div>
+                  ),
+                  onClick: () => handleUpdateAggregation(index, opt.value as string),
+                })),
+              ];
 
           return (
             <div
@@ -396,12 +506,37 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                       style={{ fontSize: '11px' }}
                       className="metric-item-label"
                       ellipsis
-                      title={item.aggregation === 'none' ? String(getFieldLabel(item.field)) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
+                      title={item.computed ? `fx ${item.label || item.field}` : item.aggregation === 'none' ? String(getFieldLabel(item.field)) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
                     >
-                      {item.aggregation === 'none' ? getFieldLabel(item.field) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`}
+                      {item.computed ? (
+                        <><span style={{ color: 'var(--ant-color-purple)', fontWeight: 700, marginRight: 2 }}>fx</span>{item.label || item.field}</>
+                      ) : (
+                        item.aggregation === 'none' ? getFieldLabel(item.field) : `${getAggregationLabel(item.aggregation)} of ${String(getFieldLabel(item.field))}`
+                      )}
                     </Text>
                   </div>
                   <div className="metric-item-actions">
+                    {item.computed && (
+                      <span
+                        style={{ fontSize: 9, color: 'var(--ant-color-purple)', fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}
+                        title="Computed metric — click to edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingComputedIndex(index);
+                          setComputedEditorOpen(true);
+                        }}
+                      >
+                        fx
+                      </span>
+                    )}
+                    {formatBadge && (
+                      <span
+                        style={{ fontSize: 9, color: 'var(--ant-color-text-secondary)', fontWeight: 700, lineHeight: 1 }}
+                        title={`Display format: ${item.valueFormat || item.computed?.format}`}
+                      >
+                        {formatBadge}
+                      </span>
+                    )}
                     <DownOutlined style={{ fontSize: 8 }} />
                     <CloseOutlined
                       style={{ fontSize: 10 }}
@@ -418,20 +553,64 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
         })}
 
         {!isLimitReached && (
-          <Select
-            style={{ width: '100%', marginTop: metrics.length > 0 ? 4 : 0 }}
-            placeholder={placeholder}
-            loading={isLoading}
-            onChange={handleAddField}
-            value={null}
-            options={availableOptions}
-            showSearch
-            optionFilterProp="label"
-            size="small"
-            dropdownStyle={{ zIndex: 10000 }}
-            getPopupContainer={() => document.body}
-          />
+          <div style={{ display: 'flex', gap: 4, marginTop: metrics.length > 0 ? 4 : 0, alignItems: 'center' }}>
+            <Select
+              style={{ flex: 1 }}
+              popupClassName="properties-panel-dropdown"
+              placeholder={placeholder}
+              loading={isLoading}
+              onChange={handleAddField}
+              value={null}
+              options={availableOptions}
+              showSearch
+              optionFilterProp="label"
+              size="small"
+              dropdownStyle={{ zIndex: 10000 }}
+              getPopupContainer={() => document.body}
+            />
+            <button
+              type="button"
+              style={{
+                fontSize: 11,
+                color: 'var(--ant-color-purple)',
+                cursor: 'pointer',
+                background: 'none',
+                border: '1px solid var(--ant-color-purple-border)',
+                borderRadius: 4,
+                padding: '2px 8px',
+                whiteSpace: 'nowrap',
+              }}
+              onClick={() => {
+                setEditingComputedIndex(null);
+                setComputedEditorOpen(true);
+              }}
+              title="Add a computed metric (ratio/formula)"
+            >
+              fx
+            </button>
+          </div>
         )}
+
+        <ComputedMetricEditor
+          open={computedEditorOpen}
+          initial={editingComputedIndex != null ? metrics[editingComputedIndex] : undefined}
+          columnOptions={columnOptions}
+          onSave={(metric) => {
+            if (editingComputedIndex != null) {
+              const updated = [...metrics];
+              updated[editingComputedIndex] = metric;
+              onChange(updated);
+            } else {
+              onChange([...metrics, metric]);
+            }
+            setComputedEditorOpen(false);
+            setEditingComputedIndex(null);
+          }}
+          onCancel={() => {
+            setComputedEditorOpen(false);
+            setEditingComputedIndex(null);
+          }}
+        />
       </div>
     </div>
   );
@@ -471,6 +650,7 @@ interface FilterListFieldProps extends FieldProps {
   columnOptions: { label: React.ReactNode; value: string; type?: string }[];
   isLoading?: boolean;
   placeholder?: string;
+  onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
 export const FilterListField: React.FC<FilterListFieldProps> = ({
@@ -481,6 +661,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   onChange,
   columnOptions,
   placeholder = 'Select columns here or click',
+  onFieldDrop,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -513,6 +694,22 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     onChange(updated);
   };
 
+  const handleDroppedField = (field: DashboardFieldDragPayload) => {
+    if (onFieldDrop) {
+      onFieldDrop(field);
+      return;
+    }
+    onChange([
+      ...filters,
+      {
+        field: field.columnName,
+        operator: '=',
+        value: '',
+        type: 'simple',
+      },
+    ]);
+  };
+
   const handleSaveFilter = () => {
     if (editingIndex !== null) {
       const updated = [...filters];
@@ -530,9 +727,10 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     <div style={{ width: 280, padding: '4px 8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Column</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Column</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={columnOptions.map(opt => {
               const isNumeric = (opt.type || '').toLowerCase().includes('int') || 
@@ -542,7 +740,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               return {
                 label: (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: 'var(--studio-primary)', fontSize: 13, minWidth: 14 }}>
+                    <span style={{ color: 'var(--ant-color-primary)', fontSize: 13, minWidth: 14 }}>
                       {isNumeric ? '#' : 'abc'}
                     </span>
                     {opt.label}
@@ -558,9 +756,10 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={FILTER_OPERATORS}
             value={tempFilter.operator}
@@ -582,7 +781,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Value</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
           {['in', 'not_in'].includes(tempFilter.operator) ? (
             <Select
               mode="tags"
@@ -594,7 +793,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               tokenSeparators={[',']}
               dropdownStyle={{ display: 'none' }}
               allowClear
-              suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--studio-text-muted)' }} />}
+              suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--ant-color-text-tertiary)' }} />}
             />
           ) : (
             <Input
@@ -608,9 +807,9 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           )}
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--studio-border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--ant-color-border)', paddingTop: 12 }}>
         <Button size="small" onClick={() => setIsModalOpen(false)} style={{ borderRadius: 6 }}>Close</Button>
-        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--studio-primary)' }}>Save</Button>
+        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--ant-color-primary)' }}>Save</Button>
       </div>
     </div>
   );
@@ -619,12 +818,26 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     <div className="panel-section">
       <SectionLabel label={label} required={required} hint={hint} />
 
-      <div className="metric-list-container" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div
+        className="metric-list-container"
+        style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+        onDragOver={(event) => {
+          if (!isDashboardFieldDrag(event.dataTransfer)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDrop={(event) => {
+          const field = getDashboardFieldDragData(event.dataTransfer);
+          if (!field) return;
+          event.preventDefault();
+          handleDroppedField(field);
+        }}
+      >
         {filters.map((filter, index) => (
           <Popover
             key={index}
             content={filterConfigContent}
-            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--studio-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Edit Filter</div>}
+            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--ant-color-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Edit Filter</div>}
             trigger="click"
             open={isModalOpen && editingIndex === index}
             onOpenChange={(open) => {
@@ -685,7 +898,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               fontSize: '12px', 
               height: '32px', 
               borderRadius: '6px',
-              color: 'var(--studio-text-secondary)',
+              color: 'var(--ant-color-text-secondary)',
               borderColor: 'rgba(0,0,0,0.1)',
               background: 'transparent'
             }}
@@ -768,9 +981,10 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
     <div style={{ width: 280, padding: '4px 8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Metric</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Metric</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={metricOptions.map(opt => ({
               label: opt.label,
@@ -785,9 +999,10 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Operator</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
+            popupClassName="properties-panel-dropdown"
             size="small"
             options={[
               { label: 'Equal (=)', value: '=' },
@@ -803,7 +1018,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--studio-text-secondary)' }}>Value</div>
+          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
           <Input
             size="small"
             className="premium-input"
@@ -814,9 +1029,9 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           />
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--studio-border)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--ant-color-border)', paddingTop: 12 }}>
         <Button size="small" onClick={() => setIsModalOpen(false)} style={{ borderRadius: 6 }}>Close</Button>
-        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--studio-primary)' }}>Save</Button>
+        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--ant-color-primary)' }}>Save</Button>
       </div>
     </div>
   );
@@ -887,7 +1102,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
               fontSize: '12px', 
               height: '32px', 
               borderRadius: '6px',
-              color: 'var(--studio-text-secondary)',
+              color: 'var(--ant-color-text-secondary)',
               borderColor: 'rgba(0,0,0,0.1)',
               background: 'transparent'
             }}
@@ -1118,6 +1333,7 @@ export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({
       <SectionLabel label={label} />
       <Select
         style={{ width: '100%' }}
+        popupClassName="properties-panel-dropdown"
         value={selectValue}
         onChange={(val) => {
           if (onUpdateChartOptions) {
@@ -1198,20 +1414,20 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
         padding: '8px 10px',
         borderRadius: '8px',
         cursor: 'pointer',
-        background: isActive ? 'var(--studio-primary-light)' : 'transparent',
-        border: `1px solid ${isActive ? 'var(--studio-primary)' : 'rgba(0,0,0,0.05)'}`,
+        background: isActive ? 'var(--color-brand-primary-light)' : 'transparent',
+        border: `1px solid ${isActive ? 'var(--ant-color-primary)' : 'rgba(0,0,0,0.05)'}`,
         transition: 'all 0.2s ease',
         margin: '2px 0'
       }}
       onClick={() => handleInversionChange(type)}
     >
-      <span style={{ fontSize: '11px', color: 'var(--studio-text-secondary)', width: 30, fontWeight: 500 }}>Less</span>
+      <span style={{ fontSize: '11px', color: 'var(--ant-color-text-secondary)', width: 30, fontWeight: 500 }}>Less</span>
       <div style={{ display: 'flex', gap: 3, flex: 1 }}>
         {paletteColors.map((c, i) => (
           <div key={i} style={{ flex: 1, height: 18, borderRadius: 3, backgroundColor: c, border: '1px solid rgba(0,0,0,0.05)' }} />
         ))}
       </div>
-      <span style={{ fontSize: '11px', color: 'var(--studio-text-secondary)', width: 30, fontWeight: 500 }}>More</span>
+      <span style={{ fontSize: '11px', color: 'var(--ant-color-text-secondary)', width: 30, fontWeight: 500 }}>More</span>
       <Radio checked={isActive} />
     </div>
   );
@@ -1230,7 +1446,7 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
               <div style={{ padding: 12 }}>{panel}</div>
               <Divider style={{ margin: 0 }} />
               <div style={{ padding: 16 }}>
-                <div style={{ marginBottom: 12, fontSize: '12px', fontWeight: 600, color: 'var(--studio-text-main)' }}>Palette Generation</div>
+                <div style={{ marginBottom: 12, fontSize: '12px', fontWeight: 600, color: 'var(--ant-color-text)' }}>Palette Generation</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {renderPaletteRow(palettes.normal, !inverted, false)}
                   {renderPaletteRow(palettes.reversed, inverted, true)}
@@ -1242,7 +1458,7 @@ export const ColorPickerField: React.FC<ColorPickerFieldProps> = ({
         <Button 
           type="link" 
           size="small" 
-          style={{ padding: 0, fontSize: '11px', color: 'var(--studio-text-secondary)' }}
+          style={{ padding: 0, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}
           onClick={() => handleBaseColorChange('#00c2cb')}
         >
           Reset

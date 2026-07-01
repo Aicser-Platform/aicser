@@ -90,6 +90,7 @@ export interface FeedItem {
     sourceQueryId?: string;
     snapshotPayload?: Record<string, unknown>;
     snapshotCapturedAt?: string;
+    thumbnailUrl?: string;
     widgetCount?: number;
     chartWidget?: {
       chartType: string;
@@ -263,6 +264,7 @@ export interface PublishAssetRequest {
   preview_metadata?: Record<string, unknown>;
   render_mode?: FeedRenderMode;
   snapshot_payload?: Record<string, unknown>;
+  thumbnail_url?: string;
 }
 
 export interface PublishFromChatRequest {
@@ -277,6 +279,7 @@ export interface PublishFromChatRequest {
   preview_metadata?: Record<string, unknown>;
   render_mode?: FeedRenderMode;
   snapshot_payload?: Record<string, unknown>;
+  thumbnail_url?: string;
   requires_login?: boolean;
   publication_mode?: 'update' | 'create_new';
 }
@@ -368,6 +371,7 @@ export interface UpdateSnapshotRequest {
   title?: string;
   description?: string;
   preview_metadata?: Record<string, unknown>;
+  thumbnail_url?: string;
 }
 
 export interface PublishAssetResponse {
@@ -417,6 +421,25 @@ export const formatTimeAgo = (iso: string) => {
   const years = Math.floor(months / 12);
   return `${years}y ago`;
 };
+
+/**
+ * Uploads a captured feed card thumbnail. Best-effort: any failure (network,
+ * validation, auth) resolves to `null` so publishing can proceed without one.
+ */
+export async function uploadFeedThumbnail(blob: Blob): Promise<string | null> {
+  try {
+    const formData = new FormData();
+    formData.append('file', blob, 'thumbnail.webp');
+    const result = await fetchApi('media/feed-thumbnails', {
+      method: 'POST',
+      body: formData,
+    });
+    return typeof result?.url === 'string' ? result.url : null;
+  } catch (error) {
+    console.warn('[uploadFeedThumbnail] upload failed', error);
+    return null;
+  }
+}
 
 class SocialFeedService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

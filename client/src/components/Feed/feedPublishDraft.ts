@@ -22,9 +22,11 @@ export interface FeedPublishDraft {
   /** When re-publishing an asset that already has a feed post. */
   existingPublicationId?: string;
   existingPublicationTitle?: string;
+  /** CSS selector for the live element to screenshot for the feed card thumbnail. */
+  captureSelector?: string;
 }
 
-export function chatDraftToPublishDraft(draft: ChatFeedDraft): FeedPublishDraft {
+export function chatDraftToPublishDraft(draft: ChatFeedDraft, captureSelector?: string): FeedPublishDraft {
   return {
     assetType: 'insight',
     source: { mode: 'chat', conversationId: draft.conversationId, messageId: draft.messageId },
@@ -38,6 +40,7 @@ export function chatDraftToPublishDraft(draft: ChatFeedDraft): FeedPublishDraft 
     previewMetadata: draft.previewMetadata,
     snapshotPayload: draft.snapshotPayload,
     renderMode: 'snapshot',
+    captureSelector,
   };
 }
 
@@ -55,6 +58,7 @@ export function assetPublishDraft(params: {
   chatPublish?: { conversationId: string; messageId: string };
   existingPublicationId?: string;
   existingPublicationTitle?: string;
+  captureSelector?: string;
 }): FeedPublishDraft {
   if (params.chatPublish) {
     return {
@@ -71,6 +75,7 @@ export function assetPublishDraft(params: {
       chartPreview: params.chartPreview,
       snapshotPayload: params.snapshotPayload,
       renderMode: params.renderMode ?? 'snapshot',
+      captureSelector: params.captureSelector,
     };
   }
 
@@ -93,5 +98,6 @@ export function assetPublishDraft(params: {
     hasSql: params.assetType === 'query',
     existingPublicationId: params.existingPublicationId,
     existingPublicationTitle: params.existingPublicationTitle,
+    captureSelector: params.captureSelector,
   };
 }

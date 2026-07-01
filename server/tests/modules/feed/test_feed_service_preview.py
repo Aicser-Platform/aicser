@@ -24,7 +24,7 @@ def test_snapshot_preview_can_limit_widgets_without_mutating_snapshot():
         },
     }
     post = SimpleNamespace(asset_type="dashboard", title="Portfolio", description="")
-    snapshot = SimpleNamespace(payload=raw, captured_at=None)
+    snapshot = SimpleNamespace(payload=raw, captured_at=None, thumbnail_url=None)
 
     payload = service._payload_from_snapshot(post, snapshot, max_widgets=2)
 

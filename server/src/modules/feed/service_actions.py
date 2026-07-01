@@ -399,6 +399,7 @@ class FeedServiceActionMixin:
         asset_type: str,
         title: str,
         description: Optional[str],
+        thumbnail_url: Optional[str] = None,
     ) -> Optional[FeedSnapshot]:
         mode = render_mode.value if hasattr(render_mode, "value") else str(render_mode)
         if mode != FeedRenderMode.snapshot.value:
@@ -423,6 +424,7 @@ class FeedServiceActionMixin:
             post=post,
             payload=payload,
             created_by=user_id,
+            thumbnail_url=thumbnail_url,
         )
 
     async def publish_asset(
@@ -617,6 +619,7 @@ class FeedServiceActionMixin:
             asset_type=request.asset_type.value,
             title=request.title,
             description=request.description,
+            thumbnail_url=request.thumbnail_url,
         )
         if status_value == PublicationStatus.pending.value:
             await self._log_event(
@@ -696,6 +699,7 @@ class FeedServiceActionMixin:
             post=post,
             payload=normalize_snapshot_payload(request.snapshot_payload),
             created_by=user_id,
+            thumbnail_url=request.thumbnail_url,
         )
         post.last_activity_at = _utcnow()
         await self.db.commit()
@@ -796,6 +800,7 @@ class FeedServiceActionMixin:
             preview_metadata=preview_metadata,
             render_mode=request.render_mode,
             snapshot_payload=request.snapshot_payload,
+            thumbnail_url=request.thumbnail_url,
             requires_login=request.requires_login,
             publication_mode=request.publication_mode,
         )

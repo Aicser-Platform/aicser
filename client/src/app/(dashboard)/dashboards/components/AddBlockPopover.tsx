@@ -10,7 +10,6 @@ import { LayoutPresetPicker } from './LayoutPresetPicker';
 import type { WidgetTemplate } from '../widgetTemplates';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutPreset } from './LayoutPresetsMenu';
-import './AddBlockPopover.css';
 
 interface AddBlockPopoverProps {
   children: React.ReactNode;
@@ -101,26 +100,26 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
   );
 
   const content = (
-    <div className="add-block-popover-content">
+    <div className="flex flex-col w-[340px]">
       {tab === 'blocks' ? (
-        <div className="popover-search">
+        <div className="px-2.5 py-2 border-b border-border-light">
           <Input
-            prefix={<SearchOutlined style={{ color: 'var(--studio-text-muted)' }} />}
+            prefix={<SearchOutlined className="text-text-tertiary" />}
             placeholder={t('search_block_type')}
             variant="borderless"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="search-input"
+            className="!bg-transparent !rounded-md !px-2 !py-0.5"
             autoFocus
           />
         </div>
       ) : null}
 
-      <div className="popover-scroll-area">
+      <div className="max-h-[460px] overflow-y-auto px-2 py-1.5 pb-2">
         <Tabs activeKey={tab} onChange={setTab} items={tabItems} size="small" />
       </div>
       {onOpenFilterPanel || onOpenFilterManager ? (
-        <Space className="add-block-popover-footer">
+        <Space className="px-2.5 py-1.5 pb-2 border-t border-border-light">
           {onOpenFilterPanel ? (
             <Button
               type="link"
@@ -163,7 +162,9 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
         }
       }}
       placement="bottomLeft"
-      classNames={{ root: 'add-block-popover-overlay' }}
+      classNames={{
+        root: '[&_.ant-popover-inner]:!p-0 [&_.ant-popover-inner]:!rounded-lg [&_.ant-popover-inner]:!overflow-hidden [&_.ant-popover-inner]:!shadow-md [&_.ant-popover-inner]:!border [&_.ant-popover-inner]:!border-border-light [&_.ant-popover-inner]:!bg-bg-container',
+      }}
       arrow={false}
     >
       {children}

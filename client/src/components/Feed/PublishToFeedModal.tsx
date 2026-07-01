@@ -23,6 +23,8 @@ export interface PublishToFeedModalProps {
   projectId?: string;
   chatPublish?: { conversationId: string; messageId: string };
   modalTitle?: string;
+  /** CSS selector for the live element to screenshot for the feed card thumbnail. */
+  captureSelector?: string;
   onCancel: () => void;
   onSuccess?: (result: PublishAssetResponse) => void;
 }
@@ -42,6 +44,7 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
   projectId,
   chatPublish,
   modalTitle,
+  captureSelector,
   onCancel,
   onSuccess,
 }) => {
@@ -70,8 +73,9 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
         snapshotPayload,
         renderMode,
         chatPublish,
+        captureSelector,
       }),
-    [assetType, assetId, sourceQueryId, defaultTitle, defaultDescription, defaultTags, previewMetadata, snapshotPayload, renderMode, chatPublish],
+    [assetType, assetId, sourceQueryId, defaultTitle, defaultDescription, defaultTags, previewMetadata, snapshotPayload, renderMode, chatPublish, captureSelector],
   );
 
   const titleKey =

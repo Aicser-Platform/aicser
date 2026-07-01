@@ -14,6 +14,7 @@ const config: Config = {
                     hover: 'var(--color-brand-primary-hover)',
                     active: 'var(--color-brand-primary-active)',
                     foreground: 'var(--color-brand-primary-foreground)',
+                    subtle: 'var(--color-brand-primary-light)',
                 },
                 bg: {
                     DEFAULT: 'var(--layout-background)',

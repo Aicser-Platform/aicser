@@ -13,7 +13,6 @@ import {
   FEATURED_WIDGET_TYPES,
   localizeWidgetTemplate,
 } from '../utils/localizeWidgetTemplate';
-import './WidgetBlockPicker.css';
 
 const { Text } = Typography;
 
@@ -50,12 +49,12 @@ function BlockTooltipContent({
   bestForLabel: string;
 }) {
   return (
-    <div className="widget-block-tooltip">
-      <div className="widget-block-tooltip-title">{name}</div>
-      <div className="widget-block-tooltip-desc">{description}</div>
+    <div className="max-w-[260px] text-xs leading-relaxed">
+      <div className="font-semibold mb-1">{name}</div>
+      <div className="opacity-90">{description}</div>
       {bestFor ? (
-        <div className="widget-block-tooltip-best">
-          <span className="widget-block-tooltip-best-label">{bestForLabel}</span> {bestFor}
+        <div className="mt-1.5 opacity-90 text-[11px]">
+          <span className="font-semibold">{bestForLabel}</span> {bestFor}
         </div>
       ) : null}
     </div>
@@ -88,12 +87,24 @@ function WidgetBlockTile({
     >
       <button
         type="button"
-        className={`widget-block-tile widget-block-tile--${variant}`}
+        className={
+          variant === 'popover'
+            ? 'flex flex-col items-center justify-center gap-1.5 w-full min-h-[58px] px-0.5 py-1.5 rounded-md text-inherit transition-colors hover:bg-brand-subtle focus-visible:bg-brand-subtle focus-visible:outline-none'
+            : 'flex flex-col items-center justify-center gap-1.5 w-full min-h-[88px] px-2 py-3 rounded-md border border-border-light bg-bg-container text-inherit transition-colors hover:border-brand hover:bg-brand-subtle focus-visible:border-brand focus-visible:bg-brand-subtle focus-visible:outline-none'
+        }
         onClick={() => onSelect(item)}
         aria-label={item.name}
       >
-        <span className="widget-block-tile-icon">{item.icon}</span>
-        <span className="widget-block-tile-name">{item.name}</span>
+        <span className={`flex items-center justify-center leading-none text-brand ${variant === 'popover' ? 'text-lg' : 'text-[22px]'}`}>
+          {item.icon}
+        </span>
+        <span
+          className={`block max-w-full truncate text-center leading-tight ${
+            variant === 'popover' ? 'text-[10px] font-medium text-text-secondary' : 'text-xs font-semibold text-text'
+          }`}
+        >
+          {item.name}
+        </span>
       </button>
     </Tooltip>
   );
@@ -152,11 +163,11 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
     const showFeaturedOnly = !normalizedSearch && !showExpanded;
 
     return (
-      <div className="widget-block-picker widget-block-picker--popover">
+      <div>
         {showFeaturedOnly && filteredFeatured.length > 0 && (
           <>
-            <div className="widget-block-picker-section-label">{t('blocks_featured')}</div>
-            <div className="widget-block-grid widget-block-grid--popover">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">{t('blocks_featured')}</div>
+            <div className="grid grid-cols-4 gap-0.5 px-1.5 pb-1">
               {filteredFeatured.map((item) => (
                 <WidgetBlockTile
                   key={item.id}
@@ -170,7 +181,7 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
             <Button
               type="link"
               size="small"
-              className="widget-block-more-btn"
+              className="block mx-auto mt-0.5 mb-1 text-[11px] px-2.5"
               icon={<DownOutlined />}
               onClick={() => setExpanded(true)}
             >
@@ -181,11 +192,11 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
 
         {(showExpanded || normalizedSearch) &&
           filteredSections.map((section) => (
-            <div key={section.title} className="widget-block-section">
-              <div className="widget-block-picker-section-label">
+            <div key={section.title} className="mt-1">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
                 {sectionLabel(section.title, t)}
               </div>
-              <div className="widget-block-grid widget-block-grid--popover">
+              <div className="grid grid-cols-4 gap-0.5 px-1.5 pb-1">
                 {section.items.map((item) => (
                   <WidgetBlockTile
                     key={item.id}
@@ -203,7 +214,7 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
           <Button
             type="link"
             size="small"
-            className="widget-block-more-btn"
+            className="block mx-auto mt-0.5 mb-1 text-[11px] px-2.5"
             icon={<UpOutlined />}
             onClick={() => setExpanded(false)}
           >
@@ -215,13 +226,13 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
   }
 
   return (
-    <div className="widget-block-picker widget-block-picker--canvas">
-      <Text type="secondary" className="widget-block-picker-hint">
+    <div className="w-full max-w-[720px] mx-auto text-center">
+      <Text type="secondary" className="!block !mb-5 text-base opacity-85">
         {hintText ?? t('empty_state_hint')}
       </Text>
 
-      <div className="widget-block-picker-section-label">{t('blocks_featured')}</div>
-      <div className="widget-block-grid widget-block-grid--canvas">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {filteredFeatured.map((item) => (
           <WidgetBlockTile
             key={item.id}
@@ -234,7 +245,7 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
       </div>
 
       {!normalizedSearch && !showExpanded ? (
-        <div className="widget-block-more-wrap">
+        <div className="mt-4">
           <Button type="default" icon={<DownOutlined />} onClick={() => setExpanded(true)}>
             {t('blocks_show_all')}
           </Button>
@@ -243,11 +254,11 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
 
       {showExpanded &&
         filteredSections.map((section) => (
-          <div key={section.title} className="widget-block-section">
-            <div className="widget-block-picker-section-label">
+          <div key={section.title} className="mt-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
               {sectionLabel(section.title, t)}
             </div>
-            <div className="widget-block-grid widget-block-grid--canvas-expanded">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 text-left">
               {section.items.map((item) => (
                 <WidgetBlockTile
                   key={item.id}
@@ -262,7 +273,7 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
         ))}
 
       {!normalizedSearch && showExpanded ? (
-        <div className="widget-block-more-wrap">
+        <div className="mt-4">
           <Button type="link" icon={<UpOutlined />} onClick={() => setExpanded(false)}>
             {t('blocks_show_less')}
           </Button>

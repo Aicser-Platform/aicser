@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Input, Segmented, Select } from 'antd';
+import { ConfigProvider, Input, Segmented, Select, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import type { AssetType, FeedFilterOptions, FeedScope, FeedSort } from '@/services/socialFeedService';
 import { useTranslations } from 'next-intl';
@@ -34,8 +34,8 @@ const ASSET_OPTION_DEFS: AssetOptionDef[] = [
   { labelKey: 'filter_asset_all', value: 'all' },
   { labelKey: 'filter_asset_dashboard', value: 'dashboard', countKey: 'dashboard' },
   { labelKey: 'filter_asset_chart', value: 'chart', countKey: 'chart' },
-  { labelKey: 'filter_asset_insight', value: 'insight', countKey: 'insight' },
-  { labelKey: 'filter_asset_query', value: 'query', countKey: 'query' },
+  // { labelKey: 'filter_asset_insight', value: 'insight', countKey: 'insight' },
+  // { labelKey: 'filter_asset_query', value: 'query', countKey: 'query' },
 ];
 
 const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) => {
@@ -43,15 +43,16 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
 
   const scopeOptions: { label: string; value: FeedScope }[] = isEnterpriseEdition
     ? [
-        { label: t('scope_private'), value: 'private' },
-        { label: t('scope_following'), value: 'following' },
-        { label: t('scope_organization'), value: 'organization' },
-        { label: t('scope_project'), value: 'project' },
-      ]
+      { label: t('scope_private'), value: 'private' },
+      { label: t('scope_following'), value: 'following' },
+      { label: t('scope_organization'), value: 'organization' },
+      { label: t('scope_project'), value: 'project' },
+      { label: t('scope_public'), value: 'public' },
+    ]
     : [
-        { label: t('scope_private'), value: 'private' },
-        { label: t('scope_public'), value: 'public' },
-      ];
+      { label: t('scope_private'), value: 'private' },
+      { label: t('scope_public'), value: 'public' },
+    ];
 
   const update = (patch: Partial<FeedFiltersValue>) => {
     onChange({ ...value, ...patch });
@@ -80,22 +81,25 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {/* Scope tabs */}
-      <Segmented
-        value={value.scope}
-        options={scopeOptions}
-        onChange={(next) => update({ scope: next as FeedScope })}
-        aria-label={t('feed_scope_aria')}
-      />
+      <div className="flex justify-start">
+        <Segmented
+          value={value.scope}
+          options={scopeOptions}
+          onChange={(next) => update({ scope: next as FeedScope })}
+          aria-label={t('feed_scope_aria')}
+          className="!rounded-lg p-0.5 bg-[var(--ant-color-bg-layout)] border border-[var(--ant-color-border-secondary)]"
+        />
+      </div>
 
-      {/* Filters row: selects on the left, search on the right — wraps cleanly on narrow widths */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Filters row: selects on the left, search on the right */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
+        <div className="flex flex-wrap items-center gap-2.5">
           <Select
             value={value.sort}
             onChange={(next) => update({ sort: next as FeedSort })}
-            className="min-w-[140px]"
+            className="min-w-[140px] [&>.ant-select-selector]:!rounded-lg"
             options={[
               { label: t('sort_recommended'), value: 'recommended' },
               { label: t('sort_trending'), value: 'trending' },
@@ -106,7 +110,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
             value={value.assetType}
             onChange={(next) => update({ assetType: next as 'all' | AssetType })}
             options={assetSelectOptions}
-            className="min-w-[160px]"
+            className="min-w-[160px] [&>.ant-select-selector]:!rounded-lg"
           />
           <Select
             mode="multiple"
@@ -114,7 +118,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
             value={value.tags}
             onChange={(next) => update({ tags: next })}
             options={(options.tags ?? []).map((tag) => ({ label: tag, value: tag }))}
-            className="min-w-[180px] flex-1 lg:flex-none lg:w-[260px]"
+            className="min-w-[180px] sm:min-w-[200px] lg:w-[260px] [&>.ant-select-selector]:!rounded-lg"
             maxTagCount={2}
           />
         </div>
@@ -123,32 +127,30 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
           placeholder={t('search_feed')}
           value={value.search || ''}
           onChange={(event) => update({ search: event.target.value })}
-          prefix={<SearchOutlined />}
-          className="w-full sm:w-64"
+          prefix={<SearchOutlined className="text-gray-400" />}
+          className="w-full sm:w-64 rounded-lg"
         />
       </div>
 
       {/* Quick tag chips */}
       {quickTags.length > 0 && (
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-          {quickTags.map((tag) => {
-            const selected = value.tags.includes(tag);
-            return (
-              <button
-                key={tag}
-                type="button"
-                className={`px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap border ${
-                  selected
-                    ? 'bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] border-[var(--ant-color-primary-border)]'
-                    : 'bg-[var(--ant-color-bg-container)] text-[var(--ant-color-text-secondary)] border-[var(--ant-color-border)] hover:border-[var(--ant-color-primary-border)]'
-                }`}
-                onClick={() => toggleQuickTag(tag)}
-              >
-                #{tag}
-              </button>
-            );
-          })}
-        </div>
+        <ConfigProvider wave={{ disabled: true }}>
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            {quickTags.map((tag) => {
+              const selected = value.tags.includes(tag);
+              return (
+                <Tag
+                  key={tag}
+                  color={selected ? 'blue' : 'default'}
+                  className="cursor-pointer px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap m-0 border border-[var(--ant-color-border)] hover:border-[var(--ant-color-primary-border)]"
+                  onClick={() => toggleQuickTag(tag)}
+                >
+                  #{tag}
+                </Tag>
+              );
+            })}
+          </div>
+        </ConfigProvider>
       )}
     </div>
   );

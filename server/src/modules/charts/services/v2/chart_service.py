@@ -46,7 +46,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.charts.models import Chart
-from src.modules.data.models import DataSource
+from src.modules.data.models import DataModelRelationship, DataSource
 from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
 
@@ -122,6 +122,14 @@ class ChartService:
         res = await self.db.execute(stmt)
         return res.scalars().all()
 
+    async def list_by_project_id(self, project_id: uuid.UUID) -> List[Chart]:
+        """EE: list all standalone charts in a project (project-scoped, shared across members)."""
+        if not isinstance(project_id, uuid.UUID):
+            project_id = uuid.UUID(str(project_id))
+        stmt = select(Chart).where(Chart.project_id == project_id)
+        res = await self.db.execute(stmt)
+        return res.scalars().all()
+
     def _resolve_table_and_schema(self, schema_info: Any) -> tuple[Optional[str], str]:
         """Resolves (table, schema) from schema_info, supporting various formats."""
         if not schema_info:
@@ -167,15 +175,34 @@ class ChartService:
             return raw, "public"
         return self._resolve_table_and_schema(schema_info)
 
+    def _is_valid_table_reference(self, ref: str) -> bool:
+        if not ref or not isinstance(ref, str):
+            return False
+        return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$", ref.strip()))
+
+    def _table_alias_from_ref(self, ref: str) -> str:
+        return ref.strip().split(".")[-1]
+
+    def _format_table_reference(self, ref: str, alias: Optional[str] = None) -> str:
+        clean_ref = str(ref or "").strip()
+        if not self._is_valid_table_reference(clean_ref):
+            raise ValueError(f"Invalid table reference: {ref}")
+        clean_alias = str(alias or self._table_alias_from_ref(clean_ref)).strip()
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", clean_alias):
+            clean_alias = self._table_alias_from_ref(clean_ref)
+        return f"{clean_ref} AS {clean_alias}" if clean_alias else clean_ref
+
     def _build_from_clause(self, base_table: str, joins: Optional[List[Dict]]) -> str:
         if not joins:
-            return base_table
-        clause = base_table
+            return self._format_table_reference(base_table)
+        clause = self._format_table_reference(base_table)
         for join in joins:
             if not isinstance(join, dict):
                 continue
             join_table = join.get("table") or join.get("alias")
             if not join_table:
+                continue
+            if not self._is_valid_table_reference(str(join_table)):
                 continue
             join_type = str(join.get("type") or "LEFT").upper()
             if join_type not in ("LEFT", "RIGHT", "INNER", "FULL", "OUTER"):
@@ -186,13 +213,361 @@ class ChartService:
                 right = on.get("right")
                 if not left or not right:
                     continue
-                on_sql = f"{left} = {right}"
+                if not self._is_valid_field_name(left) or not self._is_valid_field_name(right):
+                    continue
+                on_sql = f"{self._quote_identifier(left)} = {self._quote_identifier(right)}"
             elif isinstance(on, str) and on.strip():
                 on_sql = on.strip()
             else:
                 continue
-            clause += f" {join_type} JOIN {join_table} ON {on_sql}"
+            join_alias = join.get("alias") or self._table_alias_from_ref(str(join_table))
+            clause += f" {join_type} JOIN {self._format_table_reference(str(join_table), str(join_alias))} ON {on_sql}"
         return clause
+
+    def _bare_table_name(self, table: Optional[str]) -> str:
+        if not table:
+            return ""
+        return str(table).split(".")[-1].strip()
+
+    def _schema_column_table_map(self, schema_info: Any) -> Dict[str, List[str]]:
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        column_tables: Dict[str, List[str]] = {}
+        if not isinstance(tables, list):
+            return column_tables
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            table_name = self._bare_table_name(table.get("name"))
+            for col in table.get("columns") or []:
+                col_name = col.get("name") if isinstance(col, dict) else col
+                if not col_name:
+                    continue
+                column_tables.setdefault(str(col_name).lower(), []).append(table_name)
+        return column_tables
+
+    def _schema_table_columns_map(self, schema_info: Any) -> Dict[str, List[str]]:
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        table_columns: Dict[str, List[str]] = {}
+        if not isinstance(tables, list):
+            return table_columns
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            table_name = self._bare_table_name(table.get("name"))
+            columns: List[str] = []
+            for col in table.get("columns") or []:
+                col_name = col.get("name") if isinstance(col, dict) else col
+                if col_name:
+                    columns.append(str(col_name))
+            table_columns[table_name] = columns
+        return table_columns
+
+    def _schema_column_type_map(self, schema_info: Any) -> Dict[str, Dict[str, str]]:
+        """table -> {column_lower: normalized_type_family}."""
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        type_map: Dict[str, Dict[str, str]] = {}
+        if not isinstance(tables, list):
+            return type_map
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            table_name = self._bare_table_name(table.get("name"))
+            cols: Dict[str, str] = {}
+            for col in table.get("columns") or []:
+                if not isinstance(col, dict) or not col.get("name"):
+                    continue
+                cols[str(col["name"]).lower()] = self._type_family(col.get("type"))
+            type_map[table_name] = cols
+        return type_map
+
+    @staticmethod
+    def _type_family(raw_type: Any) -> str:
+        t = str(raw_type or "").upper()
+        if any(k in t for k in ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER")):
+            return "number"
+        if any(k in t for k in ("DATE", "TIME")):
+            return "date"
+        if "BOOL" in t:
+            return "bool"
+        if any(k in t for k in ("CHAR", "TEXT", "STRING", "UUID")):
+            return "text"
+        return "unknown"
+
+    def _join_columns_compatible(
+        self,
+        type_map: Dict[str, Dict[str, str]],
+        left_table: str,
+        left_col: str,
+        right_table: str,
+        right_col: str,
+    ) -> bool:
+        """A join is only sound when both sides share a comparable type family.
+
+        Unknown/missing types are treated as compatible so we never reject a join
+        just because the schema lacks type metadata — we only skip clear
+        mismatches (e.g. INT date_id joined to a TEXT order_id)."""
+        left = (type_map.get(left_table) or {}).get(left_col.lower())
+        right = (type_map.get(right_table) or {}).get(right_col.lower())
+        if not left or not right or "unknown" in (left, right):
+            return True
+        return left == right
+
+    def _infer_join_from_schema(self, schema_info: Any, base_table: str, target_table: str) -> Optional[Dict[str, Any]]:
+        table_columns = self._schema_table_columns_map(schema_info)
+        base_columns = table_columns.get(base_table) or []
+        target_columns = table_columns.get(target_table) or []
+        if not base_columns or not target_columns:
+            return None
+
+        base_by_lower = {c.lower(): c for c in base_columns}
+        target_by_lower = {c.lower(): c for c in target_columns}
+        common = set(base_by_lower).intersection(target_by_lower)
+
+        target_root = target_table
+        if target_root.startswith("dim_"):
+            target_root = target_root[4:]
+        preferred = [
+            f"{target_root}_id",
+            "id",
+            f"{target_table}_id",
+        ]
+        preferred.extend(sorted(c for c in common if c.endswith("_id")))
+        preferred.extend(sorted(common))
+
+        for candidate in preferred:
+            key = candidate.lower()
+            if key in common:
+                base_column = base_by_lower[key]
+                target_column = target_by_lower[key]
+                return {
+                    "table": target_table,
+                    "alias": target_table,
+                    "type": "LEFT",
+                    "on": {
+                        "left": f"{base_table}.{base_column}",
+                        "right": f"{target_table}.{target_column}",
+                    },
+                }
+        return None
+
+    def _field_ref_parts(self, value: Any) -> tuple[str, str]:
+        if not isinstance(value, str):
+            return "", ""
+        parts = [p.strip().lower() for p in value.split(".") if p.strip()]
+        if len(parts) < 2:
+            return "", parts[-1] if parts else ""
+        return self._bare_table_name(parts[-2]), parts[-1]
+
+    def _join_matches_relationship(self, join: Dict[str, Any], rel: DataModelRelationship) -> bool:
+        if not isinstance(join, dict):
+            return False
+
+        join_rel_id = join.get("relationshipId") or join.get("relationship_id")
+        if join_rel_id and str(join_rel_id) == str(rel.id):
+            return True
+
+        on = join.get("on")
+        if isinstance(on, str) and "=" in on:
+            left, right = [part.strip() for part in on.split("=", 1)]
+        elif isinstance(on, dict):
+            left = on.get("left")
+            right = on.get("right")
+        else:
+            return False
+
+        left_ref = self._field_ref_parts(left)
+        right_ref = self._field_ref_parts(right)
+        from_ref = (
+            self._bare_table_name(rel.from_table).lower(),
+            str(rel.from_column).strip().lower(),
+        )
+        to_ref = (
+            self._bare_table_name(rel.to_table).lower(),
+            str(rel.to_column).strip().lower(),
+        )
+        return (left_ref == from_ref and right_ref == to_ref) or (
+            left_ref == to_ref and right_ref == from_ref
+        )
+
+    def _relationship_for_join(
+        self,
+        join: Dict[str, Any],
+        relationships: List[DataModelRelationship],
+    ) -> Optional[DataModelRelationship]:
+        for rel in relationships:
+            if self._join_matches_relationship(join, rel):
+                return rel
+        return None
+
+    def _missing_relationship_error(self, base_table: str, target_tables: set[str]) -> ValueError:
+        tables = ", ".join(sorted(target_tables))
+        return ValueError(
+            "Missing active data model relationship for chart query. "
+            f"Create or activate a relationship from {base_table} to {tables}."
+        )
+
+    def _field_table(self, field: Optional[str], base_table: str, column_tables: Dict[str, List[str]]) -> Optional[str]:
+        if not field or not isinstance(field, str):
+            return None
+        clean = field.strip()
+        if "." in clean:
+            return self._bare_table_name(clean.rsplit(".", 1)[0])
+        candidates = column_tables.get(clean.lower()) or []
+        if base_table in candidates:
+            return base_table
+        return candidates[0] if candidates else None
+
+    def _qualify_field(self, field: Optional[str], table: Optional[str]) -> Optional[str]:
+        if not field or not table or "." in str(field):
+            return field
+        return f"{self._bare_table_name(table)}.{field}"
+
+    async def _apply_modeled_joins_to_chart_query(
+        self,
+        data_source: DataSource,
+        chart_query: Dict[str, Any],
+        x_field: Optional[str],
+        y_metric: Optional[str],
+        y_metrics: Optional[List[Dict[str, Any]]],
+        y_metrics_secondary: Optional[List[Dict[str, Any]]],
+        group_field: Optional[str],
+        filters: Optional[List[Dict[str, Any]]] = None,
+    ) -> tuple[Dict[str, Any], Optional[str], Optional[str], Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]], Optional[str]]:
+        """Apply active modeled joins and qualify fields for multi-table charts."""
+        schema_info = data_source.schema or {}
+        table, _schema = self._resolve_table_from_chart(chart_query, schema_info)
+        base_table = self._bare_table_name(table)
+        if not base_table:
+            return chart_query, x_field, y_metric, y_metrics, y_metrics_secondary, group_field
+
+        column_tables = self._schema_column_table_map(schema_info)
+        if not column_tables:
+            return chart_query, x_field, y_metric, y_metrics, y_metrics_secondary, group_field
+
+        needed_tables: set[str] = set()
+
+        def qualify_plain_field(field: Optional[str]) -> Optional[str]:
+            table_name = self._field_table(field, base_table, column_tables)
+            if table_name and table_name != base_table:
+                needed_tables.add(table_name)
+            return self._qualify_field(field, table_name)
+
+        next_query = dict(chart_query)
+        next_x = qualify_plain_field(x_field)
+        next_y_metric = qualify_plain_field(y_metric)
+        next_group_field = qualify_plain_field(group_field)
+
+        def qualify_metrics(metrics: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+            if metrics is None:
+                return None
+            next_metrics: List[Dict[str, Any]] = []
+            for metric in metrics:
+                if not isinstance(metric, dict):
+                    next_metrics.append(metric)
+                    continue
+                next_metric = dict(metric)
+                field = next_metric.get("field")
+                if field:
+                    next_metric["field"] = qualify_plain_field(field)
+                next_metrics.append(next_metric)
+            return next_metrics
+
+        next_y_metrics = qualify_metrics(y_metrics)
+        next_y_metrics_secondary = qualify_metrics(y_metrics_secondary)
+
+        next_filters: Optional[List[Dict[str, Any]]] = None
+        if filters is not None:
+            next_filters = []
+            for flt in filters:
+                if not isinstance(flt, dict):
+                    next_filters.append(flt)
+                    continue
+                next_filter = dict(flt)
+                field = next_filter.get("field")
+                if field:
+                    next_filter["field"] = qualify_plain_field(field)
+                next_filters.append(next_filter)
+
+        rel_result = await self.db.execute(
+            select(DataModelRelationship).where(
+                DataModelRelationship.data_source_id == str(data_source.id),
+                DataModelRelationship.is_active == True,  # noqa: E712
+            )
+        )
+        relationships = list(rel_result.scalars().all())
+        type_map = self._schema_column_type_map(schema_info)
+
+        existing_joins = next_query.get("joins") if isinstance(next_query.get("joins"), list) else []
+        joins: List[Dict[str, Any]] = []
+        for join in existing_joins:
+            if not isinstance(join, dict):
+                continue
+            rel = self._relationship_for_join(join, relationships)
+            if not rel:
+                continue
+            joins.append({
+                **join,
+                "relationshipId": str(rel.id),
+                "modelJoin": True,
+            })
+
+        joined_tables = {self._bare_table_name(j.get("table")) for j in joins if isinstance(j, dict)}
+        missing_tables = {t for t in needed_tables if t and t != base_table and t not in joined_tables}
+
+        if missing_tables:
+            for target_table in sorted(missing_tables):
+                join_added = False
+                for rel in relationships:
+                    from_table = self._bare_table_name(rel.from_table)
+                    to_table = self._bare_table_name(rel.to_table)
+                    connects = (from_table == base_table and to_table == target_table) or (
+                        to_table == base_table and from_table == target_table
+                    )
+                    if not connects:
+                        continue
+                    # Skip relationships whose columns have incompatible types — a
+                    # mis-modeled join (e.g. INT date_id = TEXT order_id) would make
+                    # the entire DuckDB query fail with a conversion error.
+                    if not self._join_columns_compatible(
+                        type_map, from_table, rel.from_column, to_table, rel.to_column
+                    ):
+                        logger.warning(
+                            "Skipping incompatible modeled join %s.%s = %s.%s (type mismatch)",
+                            from_table, rel.from_column, to_table, rel.to_column,
+                        )
+                        continue
+                    joined = to_table if from_table == base_table else from_table
+                    joins.append({
+                        "table": joined,
+                        "alias": joined,
+                        "type": (rel.join_type or "LEFT").upper(),
+                        "relationshipId": str(rel.id),
+                        "modelJoin": True,
+                        "on": {
+                            "left": f"{from_table}.{rel.from_column}",
+                            "right": f"{to_table}.{rel.to_column}",
+                        },
+                    })
+                    join_added = True
+                    break
+                if not join_added:
+                    raise self._missing_relationship_error(base_table, {target_table})
+
+        next_query["joins"] = joins
+        if next_x:
+            next_query["x"] = next_x
+        if next_y_metric:
+            next_query["yMetric"] = next_y_metric
+        if next_group_field:
+            next_query["groupField"] = next_group_field
+        if next_y_metrics is not None:
+            next_query["yMetrics"] = next_y_metrics
+        if next_y_metrics_secondary is not None:
+            next_query["yMetricsSecondary"] = next_y_metrics_secondary
+        if next_filters is not None:
+            next_query["filters"] = next_filters
+
+        return next_query, next_x, next_y_metric, next_y_metrics, next_y_metrics_secondary, next_group_field
 
     async def _load_saved_query_sql(self, saved_query_id: str) -> Optional[str]:
         try:
@@ -416,6 +791,28 @@ class ChartService:
         # Lazily fetch schema for databases/sample_duckdb if missing
         await self._ensure_data_source_schema(data_source)
 
+        chart_query, x_field, y_metric, y_metrics, y_metrics_secondary, group_field = (
+            await self._apply_modeled_joins_to_chart_query(
+                data_source,
+                chart_query,
+                x_field,
+                y_metric,
+                y_metrics,
+                y_metrics_secondary,
+                group_field,
+                filters,
+            )
+        )
+        filters = chart_query.get("filters", filters)
+        y_metrics_list = (y_metrics or []) + (y_metrics_secondary or [])
+        n_primary = len(y_metrics) if y_metrics is not None else 1
+        order_clause = self._build_order_clause(
+            sort_by,
+            sort_order,
+            x_field,
+            has_y_metrics=len(y_metrics_list) > 0,
+        )
+
         # File sources use MultiEngine (DuckDB) — same path as databases
         if data_source.type == "file":
             try:
@@ -429,6 +826,16 @@ class ChartService:
                 )
             except Exception as file_err:
                 logger.warning("File MultiEngine chart path failed, falling back: %s", file_err)
+                has_joined_query = bool(chart_query.get("joins"))
+                fields_for_fallback_check = [
+                    x_field,
+                    y_metric,
+                    group_field,
+                    *[m.get("field") for m in (y_metrics_list or []) if isinstance(m, dict)],
+                ]
+                has_qualified_fields = any("." in str(field) for field in fields_for_fallback_check if field)
+                if has_joined_query or has_qualified_fields:
+                    raise ValueError(str(file_err)) from file_err
                 result = self._execute_file_source(
                     data_source, x_field, aggregate, y_metric, y_metrics_list,
                     has_y_metrics_defined, group_field, sort_by, sort_order,
@@ -542,17 +949,18 @@ class ChartService:
             "schema": schema_info,
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
-            "user_id": str(data_source.user_id) if data_source.user_id else None
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
-        
+
         multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict)
-        
+
         if not exec_res.get("success"):
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
-            
+
         rows = exec_res.get("data", [])
-        
+
         # Apply series limit if requested
         if legend_field and series_limit:
             series_sums = {}
@@ -700,6 +1108,7 @@ class ChartService:
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
             "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
 
         multi = get_multi_engine_query_service()
@@ -849,7 +1258,8 @@ class ChartService:
             "schema": schema_info,
             "connection_config": data_source.connection_config,
             "project_id": str(data_source.project_id),
-            "user_id": str(data_source.user_id) if data_source.user_id else None
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
         }
         multi = get_multi_engine_query_service()
 
@@ -879,7 +1289,7 @@ class ChartService:
             for i, ym in enumerate(y_metrics):
                 agg_type = ym.get("aggregation", "count")
                 field = ym.get("field")
-                label = f"{agg_type.capitalize()} of {field}" if field else "Count"
+                label = ym.get("label") or (f"{agg_type.capitalize()} of {field}" if field else "Count")
                 labels.append(label)
                 values.append(row.get(f"val_{i}", 0))
             
@@ -935,7 +1345,7 @@ class ChartService:
                 select_fields.append(f"{expr} AS {alias}")
                 metric_aliases.append({
                     "alias": alias,
-                    "name": field if field else agg_type.capitalize()
+                    "name": ym.get("label") or field or agg_type.capitalize()
                 })
         elif has_y_metrics_defined:
             # yMetrics explicitly provided but empty - return 0s so we see labels but no values
@@ -1059,7 +1469,7 @@ class ChartService:
                         val = float(cm[col].iloc[0]) if col in cm.columns and len(cm) else 0
                     except Exception:
                         val = 0
-                    labels.append(field or "Ratio")
+                    labels.append(ym.get("label") or field or "Ratio")
                     values.append(val)
                     continue
 
@@ -1076,7 +1486,7 @@ class ChartService:
                         elif agg_type == "max": val = col_data.max()
                         elif agg_type == "min": val = col_data.min()
                 
-                label = f"{agg_type.capitalize()} of {field}" if field else "Count"
+                label = ym.get("label") or (f"{agg_type.capitalize()} of {field}" if field else "Count")
                 labels.append(label)
                 values.append(val)
             return {"x": labels, "y": values}
@@ -1150,7 +1560,7 @@ class ChartService:
                         computed_metrics.append((alias, ym))
                         output_metrics.append({
                             "alias": alias,
-                            "name": field if field else "Ratio",
+                            "name": ym.get("label") or field or "Ratio",
                             "field": field,
                             "aggregation": "computed",
                         })
@@ -1175,7 +1585,7 @@ class ChartService:
                     
                     output_metrics.append({
                         "alias": alias,
-                        "name": field if field else agg_type.capitalize(),
+                        "name": ym.get("label") or field or agg_type.capitalize(),
                         "field": field,
                         "aggregation": agg_type
                     })

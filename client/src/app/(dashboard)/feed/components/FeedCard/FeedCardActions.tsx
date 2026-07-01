@@ -6,6 +6,7 @@ import {
   BookOutlined,
   CheckCircleFilled,
   EyeOutlined,
+  HeartOutlined,
   LikeOutlined,
   LinkOutlined,
   MessageOutlined,
@@ -35,6 +36,8 @@ interface FeedCardActionsProps {
   showCommentBox: boolean;
   onToggleCommentBox: () => void;
   closeCommentReactionPicker: () => void;
+  /** Lean icon-row footer (grid cards) instead of the full labeled action bar (detail view). */
+  compact?: boolean;
 }
 
 const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsProps>(
@@ -53,6 +56,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
       showCommentBox,
       onToggleCommentBox,
       closeCommentReactionPicker,
+      compact = false,
     },
     ref
   ) => {
@@ -263,6 +267,159 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
 
     const reactionIconMap = useMemo(() => Object.fromEntries(reactionOptions.map((o) => [o.key, o])), []);
 
+    const shareMenuContent = (
+      <div
+        className="flex flex-col min-w-[200px] text-sm overflow-hidden rounded-xl bg-[var(--ant-color-bg-elevated)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className={`flex items-center gap-2.5 px-4 py-3 text-left font-medium transition-colors ${isLinkCopied ? 'bg-[var(--ant-color-success-bg)] text-[var(--ant-color-success)]' : 'text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)]'}`}
+          onClick={handleCopyShareLink}
+        >
+          {isLinkCopied ? <CheckCircleFilled className="text-lg" /> : <LinkOutlined className="text-lg" />}
+          <span>{isLinkCopied ? t('link_copied') : t('copy_link')}</span>
+        </button>
+        <div className="h-px bg-[var(--ant-color-border-secondary)] w-full" />
+        <button
+          type="button"
+          className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+          onClick={handleShareToLinkedIn}
+        >
+          {t('share_to_linkedin')}
+        </button>
+        <button
+          type="button"
+          className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+          onClick={handleShareToX}
+        >
+          {t('share_to_x')}
+        </button>
+      </div>
+    );
+
+    if (compact) {
+      const isBookmarked = item.userInteraction.isBookmarked;
+      return (
+        <div
+          className="flex items-center justify-between gap-3 px-3 py-2 border-t border-[var(--ant-color-border-secondary)]"
+          onClick={stopPropagation}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              ref={reactionPickerRef}
+              className="relative"
+              onMouseEnter={openReactionPicker}
+              onMouseLeave={scheduleReactionPickerClose}
+            >
+              {isReactionPickerOpen && !reacting && (
+                <div
+                  className="absolute bottom-full left-0 mb-2 bg-[var(--ant-color-bg-elevated)] rounded-full shadow-lg border border-[var(--ant-color-border-secondary)] p-1 flex items-center gap-1 z-50"
+                  role="menu"
+                  aria-label={t('choose_reaction_aria')}
+                >
+                  {reactionOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      className={`flex items-center justify-center w-9 h-9 rounded-full transition-transform hover:scale-110 active:scale-95 ${
+                        currentReaction === option.key ? 'ring-2 ring-[var(--ant-color-border)] scale-110' : ''
+                      }`}
+                      aria-label={option.label}
+                      title={option.label}
+                      style={{
+                        color: reactionPalette[option.key].color,
+                        backgroundColor:
+                          currentReaction === option.key ? reactionPalette[option.key].softBg : 'transparent',
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleReactionSelect(option.key);
+                      }}
+                    >
+                      <span className="text-base">{option.icon}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
+                style={currentReaction ? { color: reactionPalette[currentReaction].color } : undefined}
+                disabled={reacting}
+                aria-label={reactionLabel}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleReactionSelect(currentReaction || 'like');
+                }}
+                onPointerDown={handleReactionPointerDown}
+                onPointerUp={clearLongPressTimer}
+                onPointerCancel={clearLongPressTimer}
+                onPointerLeave={clearLongPressTimer}
+              >
+                {selectedReaction?.icon || <HeartOutlined className="text-base" />}
+                <span>{item.metrics.reactions}</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
+              disabled={commenting}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleCommentBox();
+              }}
+            >
+              <MessageOutlined className="text-base" />
+              <span>{item.metrics.comments}</span>
+            </button>
+
+            <Popover
+              trigger="click"
+              placement="top"
+              overlayClassName="p-0 shadow-xl rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-elevated)]"
+              open={isSharePopoverOpen}
+              onOpenChange={(open) => {
+                setIsSharePopoverOpen(open);
+                if (!open) {
+                  clearShareCopyTimer();
+                  setIsLinkCopied(false);
+                }
+              }}
+              content={shareMenuContent}
+            >
+              <button
+                type="button"
+                className="flex items-center text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
+                aria-label={t('share')}
+                onClick={stopPropagation}
+              >
+                <ShareAltOutlined className="text-base" />
+              </button>
+            </Popover>
+          </div>
+
+          <button
+            type="button"
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-60 ${
+              isBookmarked
+                ? 'bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)]'
+                : 'bg-[var(--ant-color-fill-tertiary)] text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-primary-bg)] hover:text-[var(--ant-color-primary)]'
+            }`}
+            disabled={saving}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSave(item.id);
+            }}
+          >
+            <BookOutlined className="text-sm" />
+            <span>{isBookmarked ? t('saved') : t('save')}</span>
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col border-t border-[var(--ant-color-border-secondary)]" onClick={stopPropagation}>
         {/* LinkedIn-style social metrics summary */}
@@ -432,36 +589,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
                 setIsLinkCopied(false);
               }
             }}
-            content={
-              <div
-                className="flex flex-col min-w-[200px] text-sm overflow-hidden rounded-xl bg-[var(--ant-color-bg-elevated)]"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  className={`flex items-center gap-2.5 px-4 py-3 text-left font-medium transition-colors ${isLinkCopied ? 'bg-[var(--ant-color-success-bg)] text-[var(--ant-color-success)]' : 'text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)]'}`}
-                  onClick={handleCopyShareLink}
-                >
-                  {isLinkCopied ? <CheckCircleFilled className="text-lg" /> : <LinkOutlined className="text-lg" />}
-                  <span>{isLinkCopied ? t('link_copied') : t('copy_link')}</span>
-                </button>
-                <div className="h-px bg-[var(--ant-color-border-secondary)] w-full" />
-                <button
-                  type="button"
-                  className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-                  onClick={handleShareToLinkedIn}
-                >
-                  {t('share_to_linkedin')}
-                </button>
-                <button
-                  type="button"
-                  className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-                  onClick={handleShareToX}
-                >
-                  {t('share_to_x')}
-                </button>
-              </div>
-            }
+            content={shareMenuContent}
           >
             <Button
               type="text"

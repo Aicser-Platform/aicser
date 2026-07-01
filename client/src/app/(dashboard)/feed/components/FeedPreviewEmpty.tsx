@@ -8,14 +8,18 @@ interface FeedPreviewEmptyProps {
   label: string;
   /** Optional secondary hint line. */
   hint?: string;
+  /** Smaller footprint for grid cards — avoids a tall, conspicuously blank box. */
+  compact?: boolean;
 }
 
 /**
  * Professional placeholder for feed card previews that have nothing to render.
  * antd `Empty` for the visual, Tailwind for layout — never a blank box.
  */
-export const FeedPreviewEmpty: React.FC<FeedPreviewEmptyProps> = ({ label, hint }) => (
-  <div className="w-full h-full min-h-[180px] flex items-center justify-center px-6 py-8">
+export const FeedPreviewEmpty: React.FC<FeedPreviewEmptyProps> = ({ label, hint, compact = false }) => (
+  <div
+    className={`w-full h-full flex items-center justify-center px-6 ${compact ? 'min-h-[100px] py-3 scale-90' : 'min-h-[180px] py-8'}`}
+  >
     <Empty
       image={Empty.PRESENTED_IMAGE_SIMPLE}
       description={

@@ -74,12 +74,18 @@ class DataModelRelationship(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid(), index=True)
     data_source_id = Column(String, ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_data_source_id = Column(String, ForeignKey("data_sources.id", ondelete="SET NULL"), nullable=True, index=True)
     from_table = Column(String, nullable=False)
     from_column = Column(String, nullable=False)
     to_table = Column(String, nullable=False)
     to_column = Column(String, nullable=False)
     join_type = Column(String, nullable=False, server_default=text("'LEFT'"))
+    cardinality = Column(String(50), nullable=False, server_default=text("'one_to_many'"))
+    cross_filter_direction = Column(String(20), nullable=False, server_default=text("'single'"))
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    assume_integrity = Column(Boolean, nullable=False, server_default=text("false"))
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now(), onupdate=func.now())
 
 
 class ProjectDataSource(Base):

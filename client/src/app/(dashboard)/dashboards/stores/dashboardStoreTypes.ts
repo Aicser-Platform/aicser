@@ -16,6 +16,7 @@ export type WidgetType =
   | 'stat'
   | 'text'
   | 'slicer'
+  | 'filter'
   | 'donut'
   | 'gauge'
   | 'treemap'
@@ -26,7 +27,7 @@ export type WidgetType =
   | 'geo'
   | 'embed';
 
-const NON_DATA_WIDGET_TYPES = new Set<string>(['text', 'slicer', 'divider', 'image', 'embed']);
+const NON_DATA_WIDGET_TYPES = new Set<string>(['text', 'slicer', 'filter', 'divider', 'image', 'embed']);
 
 export function isNonDataWidget(chartType?: string): boolean {
   return NON_DATA_WIDGET_TYPES.has(chartType || '');
@@ -76,6 +77,14 @@ export type WidgetInstance = {
     sortOrder?: 'asc' | 'desc';
     limit?: number;
     seriesLimit?: number;
+    joins?: {
+      table: string;
+      alias?: string;
+      on: { left: string; right: string } | string;
+      type: string;
+      relationshipId?: string;
+      modelJoin?: boolean;
+    }[];
     drillPath?: string[];
     interactionMode?: 'drill' | 'cross_filter';
     drillThrough?: {
@@ -92,6 +101,8 @@ export type WidgetInstance = {
   isLocked?: boolean;
   /** Client-only LWW timestamp for collaborative edits */
   collabTs?: number;
+  /** Visual filter values applied to this widget (field → selected values) */
+  visualFilters?: Record<string, string[]>;
 };
 
 export interface Dashboard {

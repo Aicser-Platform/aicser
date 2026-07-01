@@ -23,7 +23,7 @@ export function getPieLayout(
 
 export function getChartSliceBorderColor(): string {
   if (typeof window === 'undefined') return '#ffffff';
-  const cardBg = getComputedStyle(document.documentElement).getPropertyValue('--studio-card-bg').trim();
+  const cardBg = getComputedStyle(document.documentElement).getPropertyValue('--ant-color-bg-container').trim();
   if (cardBg) return cardBg;
   return document.documentElement.classList.contains('dark') ? '#161b22' : '#ffffff';
 }

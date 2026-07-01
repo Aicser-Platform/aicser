@@ -27,11 +27,6 @@ const ProjectSelectorModal = dynamic(
   (() => import('@/ee').then((m) => ({ default: m.ProjectSelectorModal }))) as any,
   { ssr: false }
 ) as React.ComponentType<{ open?: boolean; onClose?: () => void; onProjectChange?: (projectId: string | number) => void; onCreateNew?: () => void;[key: string]: unknown }>;
-const ActivityInboxBell = dynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.ActivityInboxBell }))) as any,
-  { ssr: false }
-) as React.ComponentType;
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -367,8 +362,6 @@ export const LayoutHeader: React.FC<Props> = ({
               </Badge>
             </Tooltip>
           )}
-          {isEnterpriseEdition && <ActivityInboxBell className="header-shell-icon-btn icon-only-btn" />}
-
           {isEnterpriseEdition && (
             <Tooltip title={t('customize_theme')}>
               <Button

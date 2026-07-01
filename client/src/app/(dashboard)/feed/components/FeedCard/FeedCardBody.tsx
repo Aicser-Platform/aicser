@@ -1,36 +1,10 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
 import type { FeedItem } from '@/services/socialFeedService';
-import LazyFeedPreviewVisual from '../LazyFeedPreviewVisual';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
 import { assetTypeLabelKey } from '@/components/Feed/feedPostDisplay';
-
-dayjs.extend(relativeTime);
-
-function formatSharedAgo(dateStr: string, t: ReturnType<typeof useTranslations>): string {
-  const d = dayjs(dateStr);
-  if (!d.isValid()) return '';
-  const diffDays = dayjs().diff(d, 'day');
-  if (diffDays < 1) return t('shared_today');
-  if (diffDays === 1) return t('shared_yesterday');
-  if (diffDays < 7) return t('shared_days_ago', { count: diffDays });
-  return t('shared_on_date', { date: d.format('MMM D') });
-}
-
-function formatSnapshotLabel(item: FeedItem, t: ReturnType<typeof useTranslations>): string | null {
-  const captured =
-    item.snapshot?.capturedAt ||
-    item.asset.snapshotCapturedAt ||
-    (item.asset.snapshotPayload as { capturedAt?: string } | undefined)?.capturedAt;
-  if (item.renderMode === 'snapshot' && captured) {
-    const d = dayjs(captured);
-    if (!d.isValid()) return t('snapshot_badge');
-    return t('snapshot_from_date', { date: d.format('MMM D, YYYY') });
-  }
-  return formatSharedAgo(item.publishedAt || item.lastActivityAt, t);
-}
+import { FeedPreviewEmpty } from '../FeedPreviewEmpty';
+import { getBackendUrl } from '@/utils/backendUrl';
 
 interface FeedCardBodyProps {
   item: FeedItem;
@@ -58,48 +32,59 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
   };
 
   const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
-  const freshnessLabel = formatSnapshotLabel(item, t);
 
   return (
     <div className="flex flex-col">
-      <div className="px-4 py-2.5">
-        <FeedPostContent item={item} compactTitle />
+      <div className={compact ? 'px-3 py-2' : 'px-4 py-2.5'}>
+        <FeedPostContent item={item} compactTitle descriptionMaxRows={2} />
       </div>
 
       {!hidePreview && (
-        <div
-          className={`relative ${item.assetType === 'dashboard' ? 'min-h-[455px] px-2 pb-2 pt-7' : 'aspect-[16/9]'} w-full bg-[var(--ant-color-bg-container)] border-y border-[var(--ant-color-border-secondary)] overflow-hidden group/media ${
-            previewClickable ? 'cursor-pointer' : ''
-          }`}
-          role={previewClickable ? 'button' : undefined}
-          tabIndex={previewClickable ? 0 : -1}
-          onClick={previewClickable ? onPreviewClick : undefined}
-          onKeyDown={handleMediaKeyDown}
-          aria-label={previewClickable ? t('open_post') : undefined}
-        >
-          <div className="absolute left-2.5 top-1.5 z-10">
-            <span className="rounded-md border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ant-color-text-secondary)] shadow-sm backdrop-blur-sm">
-              {item.renderMode === 'snapshot' ? t('snapshot_badge') : assetTypeLabel}
-            </span>
-          </div>
-          {freshnessLabel && (
-            <div className="pointer-events-none absolute right-2.5 top-1.5 z-10">
-              <span
-                className="rounded-full border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[9px] font-medium tracking-wide text-[var(--ant-color-text-secondary)]"
-                style={{
-                  backdropFilter: 'blur(4px)',
-                  letterSpacing: '0.02em',
-                }}
-              >
-                {freshnessLabel}
+        <div className={compact ? 'px-3 pb-2.5' : 'px-4 pb-3'}>
+          <div
+            className={`relative aspect-video w-full overflow-hidden rounded-lg bg-[var(--ant-color-bg-layout)] group/media ${
+              previewClickable ? 'cursor-pointer' : ''
+            }`}
+            role={previewClickable ? 'button' : undefined}
+            tabIndex={previewClickable ? 0 : -1}
+            onClick={previewClickable ? onPreviewClick : undefined}
+            onKeyDown={handleMediaKeyDown}
+            aria-label={previewClickable ? t('open_post') : undefined}
+          >
+            {item.asset.thumbnailUrl ? (
+              <img
+                src={`${getBackendUrl()}${item.asset.thumbnailUrl}`}
+                alt={item.title}
+                loading="lazy"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <FeedPreviewEmpty label={t('snapshot_unavailable')} compact />
+            )}
+            <div className="absolute right-2 top-2 z-10">
+              <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
+                {assetTypeLabel}
               </span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {item.tags.length > 0 && (
+        <div className={`flex flex-wrap items-center gap-1.5 ${compact ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
+          {item.tags.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-secondary)]"
+            >
+              {tag}
+            </span>
+          ))}
+          {item.tags.length > 4 && (
+            <span className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-tertiary)]">
+              +{item.tags.length - 4}
+            </span>
           )}
-          <LazyFeedPreviewVisual
-            item={item}
-            maxPreviews={item.assetType === 'dashboard' ? 6 : compact ? 4 : undefined}
-            showOverflowBadge={compact}
-          />
         </div>
       )}
     </div>

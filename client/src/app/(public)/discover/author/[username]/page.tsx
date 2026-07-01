@@ -12,7 +12,7 @@ import FeedCard from '@/app/(dashboard)/feed/components/FeedCard';
 import FeedCardSkeleton from '@/app/(dashboard)/feed/components/FeedCardSkeleton';
 import { socialFeedService, type FeedItem, type PublicAuthorProfile } from '@/services/socialFeedService';
 import { useAuthStore } from '@/stores/useAuthStore';
-import '@/app/(dashboard)/feed/styles.css';
+import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 
 const PAGE_SIZE = 10;
 
@@ -31,6 +31,7 @@ export default function DiscoverAuthorPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const { pendingInteractions, handleDeleteItem } = useFeedInteractions(items, setItems);
 
   const loadProfile = useCallback(
     async (offset: number, append: boolean) => {
@@ -144,6 +145,8 @@ export default function DiscoverAuthorPage() {
               item={item}
               detailBasePath="/discover"
               hideInteractions={!isAuthenticated}
+              onDeleteItem={isAuthenticated ? handleDeleteItem : undefined}
+              interactionState={pendingInteractions[item.id]}
             />
           ))}
           {hasMore ? (

@@ -9,7 +9,7 @@ export function isDataWidget(widget: {
   dataSourceId?: string | null;
 }): boolean {
   if (!widget.chartId || !widget.dataSourceId) return false;
-  return widget.chartType !== 'text' && widget.chartType !== 'slicer';
+  return widget.chartType !== 'text' && widget.chartType !== 'slicer' && widget.chartType !== 'filter';
 }
 
 /** Run async tasks with a fixed concurrency limit (smooths DB connection spikes on refresh). */

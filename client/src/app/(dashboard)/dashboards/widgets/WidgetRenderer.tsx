@@ -11,7 +11,7 @@ import { EmbedWidget } from './EmbedWidget';
 import { getCrossFilterValues } from '../utils/filterOperators';
 import type * as echarts from 'echarts';
 import { extractEchartsSnapshotOption } from '@/components/charts/resolveChatChart';
-import { getColorsFromPalette } from './WidgetRendererConfig';
+import { getColorsFromPalette, type ChartValueFormat } from './WidgetRendererConfig';
 import { hasRenderableChartData } from '@/components/charts/chartDesignerBridge';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
@@ -31,6 +31,51 @@ const RawEChartWidget = dynamic(
   () => import('./RawEChartWidget').then((m) => m.RawEChartWidget),
   { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
 );
+
+interface QueryMetric {
+  field?: string;
+  aggregation?: string;
+  label?: string;
+  valueFormat?: ChartValueFormat;
+  computed?: {
+    format?: ChartValueFormat;
+  };
+}
+
+const metricDisplayName = (metric: QueryMetric) => {
+  if (metric.label) return metric.label;
+  if (metric.field) return metric.field;
+  if (metric.aggregation) return metric.aggregation;
+  return undefined;
+};
+
+const queryMetricArray = (value: unknown): QueryMetric[] => (
+  Array.isArray(value)
+    ? value.filter((item): item is QueryMetric => typeof item === 'object' && item !== null)
+    : []
+);
+
+const buildMetricFormats = (query: Record<string, unknown>): Record<string, ChartValueFormat> => {
+  const metrics: QueryMetric[] = [
+    ...queryMetricArray(query?.yMetrics),
+    ...queryMetricArray(query?.yMetricsSecondary),
+  ];
+  return metrics.reduce<Record<string, ChartValueFormat>>((acc, metric) => {
+    const format = metric.valueFormat || metric.computed?.format;
+    if (!format || format === 'auto') return acc;
+
+    const names = [
+      metricDisplayName(metric),
+      metric.field,
+      metric.label,
+      metric.field && metric.aggregation ? `${metric.aggregation[0]?.toUpperCase()}${metric.aggregation.slice(1)} of ${metric.field}` : undefined,
+    ];
+    names.forEach((name) => {
+      if (name) acc[name] = format;
+    });
+    return acc;
+  }, {});
+};
 
 interface WidgetRendererProps {
   type: string;
@@ -72,8 +117,8 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   onFilter,
   runtimeFilters = [],
 }) => {
-  /** Canvas slicers stay interactive in view / presentation even when the canvas is read-only. */
-  const effectiveReadOnly = type === 'slicer' && onFilter ? false : readOnly;
+  /** Canvas slicers/filters stay interactive in view / presentation even when the canvas is read-only. */
+  const effectiveReadOnly = (type === 'slicer' || type === 'filter') && onFilter ? false : readOnly;
   const loadingOverlayStyle: React.CSSProperties = {
     position: 'absolute',
     top: 0,
@@ -91,6 +136,16 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   const echartsSnapshot = extractEchartsSnapshotOption(config);
   const prefetchedData = config?.__prefetchedChartData;
   const effectiveData = prefetchedData ?? data;
+  const metricFormats = React.useMemo(
+    () => buildMetricFormats(query as Record<string, unknown>),
+    [query]
+  );
+  const chartConfig = React.useMemo(
+    () => Object.keys(metricFormats).length
+      ? { ...config, metricFormats: { ...(config?.metricFormats || {}), ...metricFormats } }
+      : config,
+    [config, metricFormats]
+  );
 
   // Frozen AI chat chart — render stored ECharts JSON directly (no SQL rebuild).
   // Prefer snapshot when live/prefetched data is missing or empty (failed SQL refresh).
@@ -146,11 +201,21 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     return <TextWidget config={config} onUpdate={readOnly ? undefined : onUpdateConfig} readOnly={readOnly} isSelected={isSelected} />;
   }
 
-  // Slicer / filter control
-  if (type === 'slicer') {
+  // Slicer / filter control — both render as SlicerWidget and write to the
+  // shared (cross-page) runtimeFilters; 'filter' just defaults to a wider,
+  // multi-select dashboard-wide control.
+  if (type === 'slicer' || type === 'filter') {
+    // SlicerWidget reads query.dataSourceId to fetch filter options.
+    // handleDataSourceChange writes to widget.dataSourceId (root level) but not to
+    // chartQuery.dataSourceId until the user hits Apply Changes.
+    // WidgetPreview already injects widget.dataSourceId into query, but fall back to
+    // config.__widgetDataSourceId for any call sites that bypass WidgetPreview.
+    const slicerQuery = (query as Record<string, unknown>).dataSourceId
+      ? query
+      : { ...query, dataSourceId: (config as Record<string, unknown>).__widgetDataSourceId };
     return (
       <SlicerWidget
-        query={query}
+        query={slicerQuery}
         config={config}
         readOnly={effectiveReadOnly}
         dashboardId={dashboardId}
@@ -272,7 +337,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         effectiveData.series.some((s: any) => Array.isArray(s.data) && s.data.length > 0)) ||
       (Array.isArray((effectiveData as { heatmap?: unknown[] }).heatmap) &&
         (effectiveData as { heatmap: unknown[] }).heatmap.length > 0) ||
-      (type === 'stat' && effectiveData.value !== undefined && effectiveData.value !== null));
+      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null));
 
   // Initial loading state (no data yet)
   if (isLoading && needsData && !hasData) {
@@ -326,7 +391,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         <EChartWidget
           type={type}
           data={effectiveData}
-          config={config}
+          config={chartConfig}
           onChartReady={onChartReady}
           crossFilterField={query?.x}
           runtimeFilters={runtimeFilters}

@@ -7,6 +7,11 @@ import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useD
 import { DashboardFilterPanel } from '@/app/(dashboard)/dashboards/components/DashboardFilterPanel';
 import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/DashboardPageTabs';
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
+// Same stylesheet the dashboard studio canvas and the shared/embed viewers load
+// (e.g. src/app/shared/dashboards/page.tsx, src/app/embed/dashboard/[id]/page.tsx) —
+// importing it here, not re-deriving widget-card/grid styling, is what keeps this
+// feed viewer visually identical to the canvas and automatically in sync with it.
+import '@/app/(dashboard)/dashboards/DashboardStudio.css';
 
 type Props = {
   dashboardId: string;
@@ -96,7 +101,10 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         onRetryWidget={viewer.handleRetryWidget}
         refreshing={viewer.refreshing}
         canvasMinHeight={variant === 'card' ? '280px' : '480px'}
-        layoutMode={variant === 'detail' ? 'preview' : 'preserve'}
+        // 'detail' preserves the dashboard's actual saved x/y/w/h so the feed
+        // detail page matches the canvas's place and layout exactly; only the
+        // small feed-list 'card' thumbnail reflows into a simplified grid.
+        layoutMode={variant === 'card' ? 'preview' : 'preserve'}
       />
     </div>
   );

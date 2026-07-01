@@ -18,6 +18,7 @@ from src.modules.dashboards.router import router as dashboards_router
 from src.modules.dashboards.charts.router import router as charts_router
 from src.modules.feed.router import router as feed_router
 from src.modules.knowledge.router import router as knowledge_router
+from src.modules.media.router import router as media_router
 from src.modules.notifications.router import router as notifications_router
 from src.modules.onboarding.router import router as onboarding_router
 from src.modules.pricing.router import router as pricing_router
@@ -54,6 +55,7 @@ api_router.include_router(charts_router, prefix="/api/dashboards/{dashboard_id}/
 api_router.include_router(dashboards_router, prefix="/api/dashboards", tags=["dashboards"])
 api_router.include_router(standalone_chart_router, prefix="/api/chart", tags=["charts"])
 api_router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
+api_router.include_router(media_router, prefix="/api/media/feed-thumbnails", tags=["media"])
 api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
 api_router.include_router(pricing_router)
 api_router.include_router(translations_router, prefix="/api")

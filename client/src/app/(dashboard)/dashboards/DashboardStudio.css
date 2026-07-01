@@ -2,3 +2,9 @@
 @import './styles/dashboard-grid.css';
 @import './styles/dashboard-filters.css';
 @import './styles/dashboard-chrome.css';
+
+/* ── Studio sidebar layout variables ─────────────────────────────────────── */
+:root {
+  --studio-sidebar-rail-width: 48px;
+  --studio-sidebar-panel-width: 260px;
+}

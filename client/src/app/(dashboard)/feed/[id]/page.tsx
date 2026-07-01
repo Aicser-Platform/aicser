@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Breadcrumb, Button, Card, Empty, Tag, Typography } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -16,7 +16,8 @@ import { useParams, useRouter } from 'next/navigation';
 import type { FeedItem } from '@/services/socialFeedService';
 import { socialFeedService } from '@/services/socialFeedService';
 import FeedDetailSkeleton from '../components/FeedDetailSkeleton';
-import FeedCard from '../components/FeedCard';
+import FeedCardActions from '../components/FeedCard/FeedCardActions';
+import FeedDiscussion from '../components/FeedDiscussion/FeedDiscussion';
 import FeedDetailSidebar from '../components/FeedDetailSidebar';
 import { FeedPostViewer } from '../components/FeedPostViewer';
 import FeedPreviewVisual from '../components/FeedPreviewVisual';
@@ -39,15 +40,16 @@ const FeedDetailPage: React.FC = () => {
   const [item, setItem] = useState<FeedItem | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const {
-    pendingInteractions,
-    handleReact,
-    handleSave,
-    handleAddComment,
-    handleToggleFollow,
-    handleDeleteItem,
-    handleCommentDeleted,
-  } = useFeedItemInteractions(item, setItem);
+  const { pendingInteractions, handleReact, handleSave, handleAddComment, handleCommentDeleted } =
+    useFeedItemInteractions(item, setItem);
+
+  // No-op stand-ins for FeedCardActions props that have no equivalent on the
+  // detail page (there's no comment-box-toggle concept anymore, and "open"
+  // would just navigate to this same page).
+  const noop = useCallback(() => {}, []);
+  const stopPropagation = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  }, []);
 
   useEffect(() => {
     if (!itemId) {
@@ -166,6 +168,11 @@ const FeedDetailPage: React.FC = () => {
         ? t('live_dashboard_preview')
         : t('data_snapshot');
 
+  const detailPath = `/feed/${item.id}`;
+  const reacting = Boolean(pendingInteractions[item.id]?.reacting);
+  const saving = Boolean(pendingInteractions[item.id]?.saving);
+  const commenting = Boolean(pendingInteractions[item.id]?.commenting);
+
   return (
     <DashboardPageShell>
       <main className="flex w-full min-w-0 flex-col gap-5">
@@ -228,52 +235,61 @@ const FeedDetailPage: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Applause / Save / Share actions, lifted up from the old embedded FeedCard footer.
+              "Open" is omitted in compact mode here since this already is the detail page —
+              navigating to itself would be a no-op surprise for the user. */}
+          <div className="-mx-1 mt-1 border-t border-[var(--ant-color-border-secondary)] pt-1">
+            <FeedCardActions
+              item={item}
+              compact
+              reacting={reacting}
+              saving={saving}
+              commenting={commenting}
+              detailPath={detailPath}
+              stopPropagation={stopPropagation}
+              onReact={handleReact}
+              onSave={handleSave}
+              onOpen={noop}
+              onPrefetch={noop}
+              showCommentBox={false}
+              onToggleCommentBox={noop}
+              closeCommentReactionPicker={noop}
+            />
+          </div>
         </section>
 
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
-            <Card
-              className="overflow-hidden border-[var(--ant-color-border-secondary)] shadow-none"
-              styles={{ body: { padding: 0 } }}
-              title={
-                <div className="flex min-w-0 flex-col gap-1 py-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 text-[var(--ant-color-primary)]">{assetIcon}</span>
-                    <span className="truncate">{previewHeading}</span>
-                  </div>
-                  {snapshotDate ? (
-                    <span className="shrink-0 text-xs font-normal text-[var(--ant-color-text-tertiary)]">
-                      {t('snapshot_from_date', { date: snapshotDate })}
-                    </span>
-                  ) : null}
+            <div className="overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)]">
+              <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="shrink-0 text-[var(--ant-color-primary)]">{assetIcon}</span>
+                  <span className="truncate text-sm font-medium text-[var(--ant-color-text)]">{previewHeading}</span>
                 </div>
-              }
-            >
-              <div className="min-h-[300px] bg-[var(--ant-color-bg-layout)] p-3 sm:p-4">
+                {snapshotDate ? (
+                  <span className="shrink-0 text-xs font-normal text-[var(--ant-color-text-tertiary)]">
+                    {t('snapshot_from_date', { date: snapshotDate })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="min-h-[340px] bg-[var(--ant-color-bg-layout)] p-4 sm:p-5">
                 {useFullViewer ? (
                   <FeedPostViewer item={item} variant="detail" />
                 ) : (
-                  <div className="min-h-[300px] overflow-hidden rounded-lg bg-[var(--ant-color-bg-container)]">
+                  <div className="min-h-[300px] overflow-hidden rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] shadow-sm">
                     <FeedPreviewVisual item={item} />
                   </div>
                 )}
               </div>
-            </Card>
+            </div>
 
-            <section aria-label={item.title}>
-              <FeedCard
-                item={item}
-                onReact={handleReact}
-                onSave={handleSave}
-                onAddComment={handleAddComment}
-                onToggleFollow={handleToggleFollow}
-                onDeleteItem={handleDeleteItem}
-                onCommentDeleted={handleCommentDeleted}
-                interactionState={pendingInteractions[item.id]}
-                compact={false}
-                hidePreview
-              />
-            </section>
+            <FeedDiscussion
+              item={item}
+              onAddComment={handleAddComment}
+              onCommentDeleted={handleCommentDeleted}
+              commenting={commenting}
+            />
           </div>
 
           <FeedDetailSidebar item={item} visibilityLabel={visibilityLabel} />

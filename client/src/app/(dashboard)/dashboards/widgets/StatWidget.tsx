@@ -284,7 +284,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config }) => {
         <div style={{ marginTop: 8, width: '100%', maxWidth: 140 }}>
           <Sparkline
             values={sparklineValues}
-            color={sparklineColor || valueColor || '#00c2cb'}
+            color={sparklineColor || config.color || '#00c2cb'}
             type={sparklineType}
             height={32}
             width={isCentered ? 100 : 120}

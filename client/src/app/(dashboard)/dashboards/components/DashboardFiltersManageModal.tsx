@@ -135,7 +135,7 @@ function FilterEditorForm({
       const stats = await chartService.getFilterFieldStats(dashboardId, f.field, f.dataSourceId, {
         tableName: f.tableName,
       });
-      if (stats.min != null && stats.max != null) {
+      if (typeof stats.min === 'number' && typeof stats.max === 'number') {
         const min = stats.min === stats.max ? stats.min - 1 : stats.min;
         const max = stats.min === stats.max ? stats.max + 1 : stats.max;
         updateAt(idx, { numericMin: min, numericMax: max });

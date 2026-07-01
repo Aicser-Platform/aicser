@@ -101,8 +101,8 @@ export function DashboardStyleMenu({
       }}
       trigger={['click']}
     >
-      <Button size="small" icon={<BgColorsOutlined />} className="studio-context-btn">
-        {t('style_menu_label')}
+      <Button type="text" block icon={<BgColorsOutlined />} className="!justify-start !text-left text-text-secondary">
+        <span className="flex-1 text-left">{t('style_menu_label')}</span>
         <PaletteSwatch colors={activePalette.colors.slice(0, 4)} />
         <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
       </Button>

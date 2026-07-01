@@ -95,16 +95,19 @@ const FeedExploreStrip: React.FC<FeedExploreStripProps> = ({
     onAction(action);
   };
 
+  const chipButtonClassName =
+    'inline-flex items-center gap-1.5 rounded-full border border-[var(--ant-color-border)] bg-[var(--ant-color-bg-container)] px-3 py-1.5 text-sm text-[var(--ant-color-text-secondary)] transition-colors hover:border-[var(--ant-color-primary)] hover:text-[var(--ant-color-primary)] hover:bg-[var(--ant-color-primary-bg)]';
+
   if (variant === 'compact') {
     return (
-      <div className="feed-explore-chips feed-explore-chips--compact" aria-label={t('explore_strip_aria')}>
+      <div className="flex flex-wrap items-center gap-2 mb-4" aria-label={t('explore_strip_aria')}>
         {visibleChips.map((chip) => (
           <button
             key={chip.key}
             type="button"
             aria-label={chip.label}
             onClick={() => handleChip(chip.action)}
-            className="feed-explore-chip"
+            className={chipButtonClassName}
           >
             {chip.icon}
             <span>{chip.label}</span>
@@ -115,23 +118,23 @@ const FeedExploreStrip: React.FC<FeedExploreStripProps> = ({
   }
 
   return (
-    <section className="feed-explore-empty" aria-label={t('explore_strip_aria')}>
-      <div className="feed-explore-empty-head">
-        <p className="feed-explore-empty-title">{t('explore_empty_title')}</p>
+    <section className="flex flex-col gap-4" aria-label={t('explore_strip_aria')}>
+      <div className="flex items-center justify-between gap-3">
+        <p className="m-0 text-sm font-medium text-[var(--ant-color-text-secondary)]">{t('explore_empty_title')}</p>
         {onDiscover ? (
           <Button size="small" icon={<CompassOutlined />} onClick={onDiscover}>
             {t('discover')}
           </Button>
         ) : null}
       </div>
-      <div className="feed-explore-chips">
+      <div className="flex flex-wrap items-center gap-2">
         {visibleChips.map((chip) => (
           <button
             key={chip.key}
             type="button"
             aria-label={chip.label}
             onClick={() => handleChip(chip.action)}
-            className="feed-explore-chip"
+            className={chipButtonClassName}
           >
             {chip.icon}
             <span>{chip.label}</span>

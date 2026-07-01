@@ -20,75 +20,6 @@
   min-height: 0;
 }
 
-/* Right-side filter panel (Power BI–style) */
-.dashboard-filter-panel {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--studio-card-bg, var(--ant-color-bg-container));
-  overflow: hidden;
-}
-
-.dashboard-filter-panel--panel {
-  width: 280px;
-  border-left: 1px solid var(--studio-border, var(--ant-color-border));
-  transition: width 200ms ease, border-color 200ms ease, background-color 200ms ease;
-}
-
-.dashboard-filter-panel--panel.is-closed {
-  width: 0;
-  border-left-color: transparent;
-}
-
-.dashboard-filter-panel--panel .dashboard-filter-panel-header,
-.dashboard-filter-panel--panel .dashboard-filter-panel-body {
-  opacity: 1;
-  transition: opacity 140ms ease;
-}
-
-.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-header,
-.dashboard-filter-panel--panel.is-closed .dashboard-filter-panel-body {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.dashboard-filter-panel--toolbar {
-  width: 100%;
-  border-top: 1px solid var(--studio-border, var(--ant-color-border));
-  padding: 10px 0 12px;
-  background: transparent;
-}
-
-.dashboard-filter-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px 10px;
-  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
-  flex-shrink: 0;
-}
-
-.dashboard-filter-panel-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--studio-text-main, var(--ant-color-text));
-}
-
-.dashboard-filter-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0 14px 14px;
-}
-
-.dashboard-filter-panel--toolbar .dashboard-filter-panel-body {
-  padding: 0;
-  overflow: visible;
-}
-
 /* Panel layout — stacked filters with horizontal dividers */
 .report-filter-panel {
   display: flex;
@@ -110,42 +41,68 @@
   height: 0;
   margin: 0;
   border: none;
-  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+  border-top: 1px solid var(--ant-color-border);
 }
 
-/* Toolbar layout — horizontal row with Ant vertical dividers */
+/* Toolbar layout — compact report filter strip */
 .report-filter-toolbar {
   width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-block: 1px solid var(--ant-color-border);
+  background: color-mix(in srgb, var(--ant-color-bg-container) 92%, var(--ant-color-fill-secondary));
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.report-filter-toolbar-title {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
 }
 
 .report-filter-toolbar-track {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
 }
 
 .report-filter-toolbar-item {
-  flex: 0 1 auto;
-  min-width: 140px;
-  max-width: 240px;
-  padding: 0 4px;
+  flex: 0 0 auto;
+  width: 150px;
+}
+
+.report-filter-toolbar-item:has(.gfb-daterange-control-wrap),
+.report-filter-toolbar-item:first-child {
+  width: 225px;
 }
 
 .report-filter-toolbar-actions {
+  flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
-  padding: 0 4px 2px;
-  margin-left: auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
 }
 
-.report-filter-vdivider {
-  align-self: stretch;
-  height: auto !important;
-  min-height: 44px;
-  margin: 0 8px !important;
-  border-color: var(--studio-border, var(--ant-color-border)) !important;
-  top: 0;
+.report-filter-icon-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.report-filter-reset-button {
+  height: 34px;
+  min-width: 84px;
+  font-weight: 700;
+  border-radius: 10px;
 }
 
 .gfb-filter-control {
@@ -176,7 +133,7 @@
   line-height: 1.2;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--studio-text-tertiary, var(--ant-color-text-tertiary)) !important;
+  color: var(--ant-color-text-tertiary) !important;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -184,6 +141,46 @@
 
 .gfb-filter-control-body {
   min-width: 0;
+}
+
+.report-filter-toolbar .gfb-filter-control {
+  gap: 5px;
+}
+
+.report-filter-toolbar .gfb-field-label-row {
+  min-height: 14px;
+}
+
+.report-filter-toolbar .gfb-field-label {
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ant-color-text-secondary) !important;
+}
+
+.report-filter-toolbar .ant-picker,
+.report-filter-toolbar .ant-select-selector,
+.report-filter-toolbar .ant-input {
+  min-height: 28px;
+  border-radius: 0;
+}
+
+.report-filter-toolbar .gfb-date-range-picker .ant-picker-input > input {
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .report-filter-toolbar {
+    align-items: flex-start;
+  }
+
+  .report-filter-toolbar-track {
+    flex-wrap: wrap;
+  }
+
+  .report-filter-toolbar-actions {
+    margin-left: auto;
+  }
 }
 
 .gfb-slider-value {
@@ -213,7 +210,7 @@
 
 .filter-select-all-row {
   padding: 4px 8px 2px;
-  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .filter-field-numeric-header {
@@ -258,18 +255,6 @@
   min-height: 28px;
 }
 
-.studio-presentation-exit-icon {
-  width: 32px !important;
-  height: 32px !important;
-  padding: 0 !important;
-  border-radius: 8px !important;
-  color: var(--studio-text-secondary) !important;
-}
-
-.studio-presentation-exit-icon:hover {
-  color: var(--studio-text-main) !important;
-  background: var(--ant-color-fill-quaternary) !important;
-}
 
 .data-model-graph {
   width: 100%;

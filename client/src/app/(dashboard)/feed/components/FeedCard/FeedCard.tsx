@@ -5,7 +5,6 @@ import { Card, message } from 'antd';
 import { useRouter } from 'next/navigation';
 import { socialFeedService } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
-import { canOpenFeedAsset, getFeedAssetPath } from '@/utils/feedAssetLinks';
 import FeedCardActions, { FeedCardActionsHandle } from './FeedCardActions';
 import FeedCardBody from './FeedCardBody';
 import FeedCardComments from './FeedCardComments';
@@ -63,10 +62,16 @@ const FeedCard: React.FC<FeedCardProps> = ({
   const following = Boolean(interactionState?.following);
   const deleting = Boolean(interactionState?.deleting);
   const detailPath = `${detailBasePath}/${item.id}`;
-  const isPostOwner = !!user && item.author?.id === user.id;
+  // Compare by username too: author.id can come from a different identity source
+  // than the session user.id for legacy/seeded posts, which otherwise leaks a
+  // "Follow" button onto the viewer's own posts.
+  const normalizeHandle = (handle?: string) => handle?.trim().replace(/^@/, '').toLowerCase() || '';
+  const isPostOwner =
+    !!user &&
+    (item.author?.id === user.id ||
+      (!!user.username && normalizeHandle(item.author?.username) === normalizeHandle(user.username)));
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
-  const canOpenAsset = canOpenFeedAsset(item, isPostOwner);
   const safeAddComment = useCallback(
     (itemId: string, content: string, parentCommentId?: string) => {
       if (!onAddComment) return;
@@ -92,10 +97,6 @@ const FeedCard: React.FC<FeedCardProps> = ({
 
   const handleOpen = () => router.push(detailPath);
   const handlePrefetch = () => router.prefetch(detailPath);
-  const handlePreviewOpen = () => {
-    if (!canOpenAsset) return;
-    router.push(getFeedAssetPath(item));
-  };
   const handleToggleFollow = useCallback(() => {
     if (!item.author?.id || !onToggleFollow) return;
     onToggleFollow(item.id, item.author.id);
@@ -152,15 +153,16 @@ const FeedCard: React.FC<FeedCardProps> = ({
   );
 
   return (
-    <div id={`feed-post-${item.id}`} className={highlighted ? 'feed-post-anchor feed-post-anchor--highlighted' : 'feed-post-anchor'}>
+    <div id={`feed-post-${item.id}`}>
     <Card
-      className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-none rounded-lg overflow-hidden mb-4 hover:border-[var(--ant-color-border)] transition-colors ${
-        highlighted ? 'feed-post-highlight' : ''
-      }`}
+      className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 ${
+        compact ? '' : 'mb-4'
+      } ${highlighted ? 'ring-2 ring-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
       bodyStyle={{ padding: 0 }}
     >
       <FeedCardHeader
         item={item}
+        compact={compact}
         visibilityLabel={visibilityLabel}
         canFollow={canFollow}
         isFollowingAuthor={isFollowingAuthor}
@@ -177,8 +179,8 @@ const FeedCard: React.FC<FeedCardProps> = ({
         item={item}
         compact={compact}
         hidePreview={hidePreview}
-        previewClickable={canOpenAsset}
-        onPreviewClick={handlePreviewOpen}
+        previewClickable
+        onPreviewClick={handleOpen}
       />
 
       {!hideInteractions && (
@@ -186,6 +188,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
           <FeedCardActions
             ref={actionsRef}
             item={item}
+            compact={compact}
             reacting={reacting}
             saving={saving}
             commenting={commenting}
