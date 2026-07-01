@@ -91,9 +91,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const [pendingChartType, setPendingChartType] = useState<string>('bar');
   // Slicer-specific pending state
   const [pendingSlicerField, setPendingSlicerField] = useState<string | undefined>(undefined);
+  const [pendingSlicerFields, setPendingSlicerFields] = useState<string[]>([]);
   const [pendingSlicerMode, setPendingSlicerMode] = useState<string>('single');
 
-  const isSlicer = selectedWidget?.chartType === 'slicer';
+  const isSlicer = selectedWidget?.chartType === 'slicer' || selectedWidget?.chartType === 'filter';
 
   // Sync pending state when widget selection changes
   useEffect(() => {
@@ -101,7 +102,12 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     setPendingTitle(selectedWidget.title || '');
     setPendingChartType(selectedWidget.chartType || 'bar');
     // Slicer
-    setPendingSlicerField((selectedWidget.chartQuery as any)?.field || selectedWidget.chartQuery?.x);
+    const slicerFields = Array.isArray((selectedWidget.chartQuery as any)?.fields)
+      ? ((selectedWidget.chartQuery as any).fields as unknown[]).map(String).filter(Boolean)
+      : [];
+    const slicerField = (selectedWidget.chartQuery as any)?.field || selectedWidget.chartQuery?.x;
+    setPendingSlicerField(slicerField);
+    setPendingSlicerFields(slicerFields.length > 0 ? slicerFields : slicerField ? [String(slicerField)] : []);
     setPendingSlicerMode((selectedWidget.chartQuery as any)?.mode || 'single');
   }, [selectedWidgetId, selectedWidget]);
 
@@ -114,7 +120,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     if (!hasWidget) return;
 
     if (isSlicer) {
-      applySlicerChanges({ title: pendingTitle, field: pendingSlicerField, mode: pendingSlicerMode });
+      const fields = pendingSlicerFields.length > 0 ? pendingSlicerFields : pendingSlicerField ? [pendingSlicerField] : [];
+      applySlicerChanges({ title: pendingTitle, field: fields[0], fields, mode: pendingSlicerMode });
       return;
     }
 
@@ -182,7 +189,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             /* ---- Slicer-specific fields ---- */
             <>
               <div>
-                <div className="pp-section-label">Filter Field</div>
+                <div className="pp-section-label">Filter Fields</div>
                 <div
                   className="pp-field-drop-shell"
                   onDragOver={(event) => {
@@ -195,14 +202,21 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     if (!field) return;
                     event.preventDefault();
                     setPendingSlicerField(field.columnName);
+                    setPendingSlicerFields((current) =>
+                      current.includes(field.columnName) ? current : [...current, field.columnName],
+                    );
                     applyDroppedField('slicerField', field);
                   }}
                 >
                   <Select
                     size="small"
                     style={{ width: '100%' }}
-                    value={pendingSlicerField}
-                    onChange={setPendingSlicerField}
+                    mode="multiple"
+                    value={pendingSlicerFields}
+                    onChange={(values) => {
+                      setPendingSlicerFields(values);
+                      setPendingSlicerField(values[0]);
+                    }}
                     options={columnOptions}
                     placeholder={
                       !selectedWidget?.dataSourceId
@@ -213,6 +227,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                     }
                     loading={schemaLoading}
                     allowClear
+                    maxTagCount={3}
                     showSearch
                     filterOption={(input, opt) =>
                       String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())

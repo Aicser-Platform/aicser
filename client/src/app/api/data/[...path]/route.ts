@@ -114,12 +114,25 @@ async function handleDataRequest(
       );
     }
     
-    // Return JSON response
-    if (responseContentType.includes('application/json')) {
-      const data = await response.json();
-      return NextResponse.json(data, { status: response.status });
+    // No-content responses (e.g. 204 from DELETE) have an empty body — forward
+    // the status without trying to parse JSON, which would throw on empty input.
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return new NextResponse(null, { status: response.status });
     }
-    
+
+    // Return JSON response. Guard against an empty body that still advertises a
+    // JSON content-type, which would make response.json() throw.
+    if (responseContentType.includes('application/json')) {
+      const raw = await response.text();
+      if (!raw) {
+        return new NextResponse(null, { status: response.status });
+      }
+      return new NextResponse(raw, {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // Return text response
     const text = await response.text();
     return NextResponse.json({ data: text }, { status: response.status });

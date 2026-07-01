@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Select, Typography, Button, Slider, Space, Switch } from 'antd';
+import { Typography, Button, Space, Switch } from 'antd';
 import { CheckOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { chartService } from '../services/chartService';
@@ -19,6 +19,7 @@ type SlicerMode = 'single' | 'multi' | 'tile' | 'date' | 'dateRange' | 'numericR
 type Props = {
   query?: {
     field?: string;
+    fields?: string[];
     dataSourceId?: string;
     x?: string;
     tableName?: string;
@@ -48,6 +49,13 @@ export function SlicerWidget({
   const datePresets = useMemo(() => resolveDatePresets(t), [t]);
 
   const field = query.field || query.x || '';
+  const fields = useMemo(() => {
+    const configured = Array.isArray(query.fields)
+      ? query.fields.map(String).filter(Boolean)
+      : [];
+    const fallback = field ? [field] : [];
+    return Array.from(new Set(configured.length > 0 ? configured : fallback));
+  }, [query.fields, field]);
   const dataSourceId = query.dataSourceId ? String(query.dataSourceId) : '';
   const tableName = query.tableName;
   const mode: SlicerMode = query.mode || 'single';
@@ -61,6 +69,7 @@ export function SlicerWidget({
   const isDropdown = !isTile && !isDate && !isDateRange && !isNumericRange && !isToggle;
 
   const [options, setOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [optionsByField, setOptionsByField] = useState<Record<string, Array<{ label: string; value: string }>>>({});
   const [loading, setLoading] = useState(false);
   const [loadedBounds, setLoadedBounds] = useState<{ min: number; max: number } | null>(null);
 
@@ -79,6 +88,16 @@ export function SlicerWidget({
     }
     return isMulti || isTile ? [String(match.value)] : String(match.value);
   }, [runtimeFilters, field, isMulti, isTile]);
+
+  const activeValueForField = (fieldName: string) => {
+    const match = runtimeFilters.find((f) => f.field === fieldName && (f.operator === '=' || f.operator === 'in'));
+    if (!match) return isMulti || isTile ? [] : undefined;
+    if (match.operator === 'in') {
+      const v = match.value;
+      return Array.isArray(v) ? v.map(String) : String(v).split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return isMulti || isTile ? [String(match.value)] : String(match.value);
+  };
 
   const configuredMin = query.numericMin;
   const configuredMax = query.numericMax;
@@ -99,6 +118,35 @@ export function SlicerWidget({
       .catch(() => setOptions([]))
       .finally(() => setLoading(false));
   }, [field, dataSourceId, dashboardId, tableName, embedToken, isDate, isDateRange, isNumericRange, cascadeKey, runtimeFilters]);
+
+  useEffect(() => {
+    if (fields.length <= 1 || !dataSourceId || !dashboardId) return;
+    setLoading(true);
+    let cancelled = false;
+    Promise.all(
+      fields.map((fieldName) =>
+        chartService
+          .getFilterOptions(dashboardId, fieldName, dataSourceId, {
+            embedToken,
+            tableName,
+            runtimeFilters,
+            excludeField: fieldName,
+          })
+          .then((vals) => [fieldName, normalizeFilterOptions(unwrapFilterOptionsResponse(vals))] as const)
+          .catch(() => [fieldName, []] as const),
+      ),
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        setOptionsByField(Object.fromEntries(entries));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fields, dataSourceId, dashboardId, tableName, embedToken, runtimeFilters]);
 
   useEffect(() => {
     if (!isNumericRange || !field || !dataSourceId || !dashboardId) return;
@@ -126,10 +174,39 @@ export function SlicerWidget({
 
   const label = config.slicerLabel || config.label || field;
 
-  if (!field) {
+  if (!fields.length) {
     return (
       <div className="widget-center" style={{ padding: 16 }}>
         <Typography.Text type="secondary">{t('slicer_pick_field')}</Typography.Text>
+      </div>
+    );
+  }
+
+  if (fields.length > 1) {
+    const labelPrefix = config.slicerLabel || config.label || 'Filters';
+    return (
+      <div className="slicer-widget slicer-filter-block" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Typography.Text className="slicer-widget-label" strong>
+          {labelPrefix}
+        </Typography.Text>
+        {fields.map((fieldName) => (
+          <FilterSelectField
+            key={fieldName}
+            label={fieldName}
+            mode={isMulti ? 'multi' : 'single'}
+            placeholder={config.placeholder || t('slicer_select_placeholder', { field: fieldName })}
+            options={optionsByField[fieldName] || []}
+            loading={loading}
+            disabled={readOnly}
+            value={activeValueForField(fieldName) as string | string[] | undefined}
+            maxTagCount={isMulti ? 2 : undefined}
+            variant="slicer"
+            showSelectAll={isMulti}
+            selectAllLabel={t('slicer_select_all')}
+            clearAllLabel={t('slicer_clear_all')}
+            onChange={(v) => onFilter?.(fieldName, v ?? (isMulti ? [] : null))}
+          />
+        ))}
       </div>
     );
   }

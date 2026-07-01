@@ -1313,13 +1313,15 @@ class DataConnectivityService:
             if isinstance(storage_meta, dict) and storage_meta:
                 data_source["schema"] = data_source.get("schema") or {}
                 if isinstance(data_source["schema"], dict):
-                    data_source["schema"]["storage"] = {
+                    storage_info = {
                         "backend": storage_meta.get("backend", options.get("storage_type", "postgresql")),
                         "format": storage_meta.get("storage_format", "parquet"),
                         "uploaded_size_bytes": storage_meta.get("uploaded_size_bytes", file_size),
                         "stored_size_bytes": storage_meta.get("compressed_size_bytes", file_size),
-                        "compression": storage_meta.get("compression", "zstd"),
                     }
+                    if storage_meta.get("compression"):
+                        storage_info["compression"] = storage_meta.get("compression")
+                    data_source["schema"]["storage"] = storage_info
             
             # Conditional in-memory storage based on upload_with_prompt flag
             upload_with_prompt = options.get('upload_with_prompt', False)
@@ -1509,32 +1511,49 @@ class DataConnectivityService:
         if not project_id and is_ee_enabled():
             raise ValueError("project_id is required for file upload")
 
-        parquet_payload = await self._convert_upload_to_compressed_parquet(
-            source_path=tmp_file_path,
-            file_extension=file_extension,
-            options=options,
-        )
+        is_excel = file_extension in ("xlsx", "xls")
+
+        if is_excel:
+            with open(tmp_file_path, "rb") as source_file:
+                stored_content = source_file.read()
+            stored_filename = filename
+            stored_format = file_extension
+            stored_content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            stored_size = file_size
+            storage_compression = None
+        else:
+            parquet_payload = await self._convert_upload_to_compressed_parquet(
+                source_path=tmp_file_path,
+                file_extension=file_extension,
+                options=options,
+            )
+            stored_content = parquet_payload["content"]
+            stored_filename = f"{Path(filename).stem}.parquet"
+            stored_format = "parquet"
+            stored_content_type = "application/x-parquet"
+            stored_size = parquet_payload["compressed_size_bytes"]
+            storage_compression = "zstd"
 
         import uuid as _uuid
         source_id = str(_uuid.uuid4())
 
         storage_service = UploadDatasourceStorageService()
-        parquet_filename = f"{Path(filename).stem}.parquet"
         object_key = await storage_service.store_file(
-            file_content=parquet_payload["content"],
+            file_content=stored_content,
             project_id=project_id,
-            original_filename=parquet_filename,
-            content_type="application/x-parquet",
+            original_filename=stored_filename,
+            content_type=stored_content_type,
             source_id=source_id,
             organization_id=options.get("organization_id"),
             user_id=options.get("user_id"),
         )
         logger.info(
-            "💾 Stored compressed parquet in %s: %s (original=%d bytes, stored=%d bytes)",
+            "💾 Stored %s in %s: %s (original=%d bytes, stored=%d bytes)",
+            stored_format,
             storage_service.storage_type,
             object_key,
             file_size,
-            parquet_payload["compressed_size_bytes"],
+            stored_size,
         )
 
         options_with_storage = {
@@ -1543,10 +1562,10 @@ class DataConnectivityService:
             "storage_type": storage_service.storage_type,
             "storage_meta": {
                 "backend": storage_service.storage_type,
-                "storage_format": "parquet",
-                "compression": "zstd",
+                "storage_format": stored_format,
                 "uploaded_size_bytes": file_size,
-                "compressed_size_bytes": parquet_payload["compressed_size_bytes"],
+                "compressed_size_bytes": stored_size,
+                **({"compression": storage_compression} if storage_compression else {}),
             },
         }
 
@@ -1846,6 +1865,12 @@ class DataConnectivityService:
                 if not primary_data:
                     raise Exception("No sheets could be processed from Excel file")
 
+                total_row_count = sum(
+                    int(info.get('row_count') or 0)
+                    for info in all_schemas.values()
+                    if isinstance(info, dict)
+                )
+
                 # Build multi-table schema: each sheet becomes a named table
                 primary_schema['tables'] = [
                     {
@@ -1861,10 +1886,14 @@ class DataConnectivityService:
                 # Store DuckDB connection info in schema for later use
                 primary_schema['duckdb_tables'] = {sheet: info['table_name'] for sheet, info in all_schemas.items()}
                 primary_schema['duckdb_connection'] = 'in_memory'  # Mark that tables are in DuckDB
+                primary_schema['primary_table'] = primary_schema.get('table_name')
+                primary_schema['primary_row_count'] = primary_schema.get('row_count')
+                primary_schema['row_count'] = total_row_count
+                primary_schema['total_rows'] = total_row_count
                 
                 conn.close()
                 
-                logger.info(f"🦆 Processed Excel with DuckDB: {len(sheet_names)} sheets, primary: {primary_schema['row_count']} rows")
+                logger.info(f"🦆 Processed Excel with DuckDB: {len(sheet_names)} sheets, total: {total_row_count} rows")
                 
                 return primary_data, primary_schema
                 

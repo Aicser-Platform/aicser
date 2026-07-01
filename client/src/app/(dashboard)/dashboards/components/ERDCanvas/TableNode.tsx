@@ -3,11 +3,22 @@
 import React from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { KeyOutlined, LinkOutlined, MoreOutlined } from '@ant-design/icons';
+import { useTranslations } from 'next-intl';
 import './ERDCanvas.css';
 
 export type TableNodeData = {
   tableId?: string;
   tableName: string;
+  rawTableName?: string;
+  sourceId?: string;
+  columnFilter?: string;
+  pendingColumnKey?: string | null;
+  onColumnPick?: (column: {
+    nodeId: string;
+    tableName: string;
+    sourceId: string;
+    columnName: string;
+  }) => void;
   columns: { name: string; type: string; primary_key?: boolean; foreign_key?: string }[];
 };
 
@@ -57,16 +68,30 @@ function colRole(col: { name: string; primary_key?: boolean; foreign_key?: strin
 }
 
 export function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
-  const { tableId = data.tableName, tableName, columns } = data;
+  const t = useTranslations('dashboards_page');
+  const {
+    tableId = data.tableName,
+    tableName,
+    rawTableName = tableName,
+    sourceId = tableId,
+    columnFilter = '',
+    pendingColumnKey,
+    onColumnPick,
+    columns,
+  } = data;
+  const normalizedFilter = columnFilter.trim().toLowerCase();
+  const visibleColumns = normalizedFilter
+    ? columns.filter((col) => col.name.toLowerCase().includes(normalizedFilter))
+    : columns;
 
   return (
     <div className={`erd-table${selected ? ' selected' : ''}`}>
       {/* Header */}
       <div className="erd-table-header">
-        <span className="erd-table-name" title={tableName}>
+        <span className="text-black dark:text-white font-semibold" title={tableName}>
           {tableName}
         </span>
-        <button className="erd-table-menu nodrag" aria-label="Table options">
+        <button className="erd-table-menu nodrag" aria-label={t('modeling_table_options')}>
           <MoreOutlined />
         </button>
       </div>
@@ -76,11 +101,38 @@ export function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
 
       {/* Columns */}
       <div className="erd-table-body">
-        {columns.map((col) => {
+        {visibleColumns.map((col) => {
           const handleId = `${tableId}__${col.name}`;
+          const columnKey = `${tableId}__${col.name}`;
+          const isPending = pendingColumnKey === columnKey;
           const role = colRole(col);
           return (
-            <div key={col.name} className={`erd-col${role === 'pk' ? ' erd-col-pk' : role === 'fk' ? ' erd-col-fk' : ''}`}>
+            <div
+              key={col.name}
+              role="button"
+              tabIndex={0}
+              title={col.name}
+              className={`erd-col nodrag nopan${role === 'pk' ? ' erd-col-pk' : role === 'fk' ? ' erd-col-fk' : ''}${isPending ? ' erd-col-pending' : ''}`}
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest('.erd-port')) return;
+                onColumnPick?.({
+                  nodeId: tableId,
+                  tableName: rawTableName,
+                  sourceId,
+                  columnName: col.name,
+                });
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onColumnPick?.({
+                  nodeId: tableId,
+                  tableName: rawTableName,
+                  sourceId,
+                  columnName: col.name,
+                });
+              }}
+            >
               {/* Left port — incoming FK target */}
               <Handle
                 type="target"
@@ -113,6 +165,9 @@ export function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
             </div>
           );
         })}
+        {visibleColumns.length === 0 ? (
+          <div className="erd-col-empty">{t('modeling_no_matching_fields')}</div>
+        ) : null}
       </div>
     </div>
   );

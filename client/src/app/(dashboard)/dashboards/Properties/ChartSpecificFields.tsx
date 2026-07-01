@@ -28,6 +28,7 @@ import { WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import { ConditionalFormattingEditor } from './ConditionalFormattingEditor';
 import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 import { TableColumnManager } from './TableColumnManager';
+import { RelatedJoinsPicker } from './RelatedJoinsPicker';
 import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 
 interface ChartFieldsProps {
@@ -618,7 +619,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
       )}
 
       {/* Legend sort / limit — applicable to multi-series chart types */}
-      {mode === 'customize' && !['table', 'embed', 'stat', 'text', 'divider', 'image', 'slicer'].includes(chartType) && onUpdateChartOption && (
+      {mode === 'customize' && !['table', 'embed', 'stat', 'text', 'divider', 'image', 'slicer', 'filter'].includes(chartType) && onUpdateChartOption && (
         <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           <Divider orientation="left" orientationMargin={0} style={{ fontSize: 12, margin: '8px 0 4px' }}>
             Legend / Series
@@ -822,6 +823,17 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               </div>
             </>
           )}
+
+          <Divider className="panel-divider" style={{ margin: '16px 0' }} />
+
+          <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <RelatedJoinsPicker
+              dataSourceId={selectedWidget.dataSourceId}
+              baseTable={chartQuery.tableName}
+              joins={chartQuery.joins || []}
+              onChange={(joins) => onUpdateChartQuery('joins', joins)}
+            />
+          </div>
 
           <Divider className="panel-divider" style={{ margin: '16px 0' }} />
 

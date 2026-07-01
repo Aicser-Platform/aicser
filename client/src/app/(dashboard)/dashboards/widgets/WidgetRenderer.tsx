@@ -72,8 +72,8 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   onFilter,
   runtimeFilters = [],
 }) => {
-  /** Canvas slicers stay interactive in view / presentation even when the canvas is read-only. */
-  const effectiveReadOnly = type === 'slicer' && onFilter ? false : readOnly;
+  /** Canvas slicers/filters stay interactive in view / presentation even when the canvas is read-only. */
+  const effectiveReadOnly = (type === 'slicer' || type === 'filter') && onFilter ? false : readOnly;
   const loadingOverlayStyle: React.CSSProperties = {
     position: 'absolute',
     top: 0,
@@ -146,8 +146,10 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     return <TextWidget config={config} onUpdate={readOnly ? undefined : onUpdateConfig} readOnly={readOnly} isSelected={isSelected} />;
   }
 
-  // Slicer / filter control
-  if (type === 'slicer') {
+  // Slicer / filter control — both render as SlicerWidget and write to the
+  // shared (cross-page) runtimeFilters; 'filter' just defaults to a wider,
+  // multi-select dashboard-wide control.
+  if (type === 'slicer' || type === 'filter') {
     // SlicerWidget reads query.dataSourceId to fetch filter options.
     // handleDataSourceChange writes to widget.dataSourceId (root level) but not to
     // chartQuery.dataSourceId until the user hits Apply Changes.

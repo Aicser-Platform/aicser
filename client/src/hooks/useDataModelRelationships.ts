@@ -24,7 +24,9 @@ export function useCreateRelationship(dataSourceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: RelationshipCreatePayload) => createRelationship(dataSourceId, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
+    },
   });
 }
 
@@ -44,7 +46,9 @@ export function useUpdateRelationship(dataSourceId: string) {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(QUERY_KEY(dataSourceId), ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
+    },
   });
 }
 
@@ -63,6 +67,8 @@ export function useDeleteRelationship(dataSourceId: string) {
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(QUERY_KEY(dataSourceId), ctx.prev);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
+    },
   });
 }

@@ -121,7 +121,7 @@ const getSelectedOrganizationId = (): string | null => {
  * @param options - Fetch options
  * @returns Parsed JSON data
  */
-export const fetchApi = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
+export const fetchApi = async <T = any>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   // Don't set Content-Type for FormData - browser will set it automatically with boundary
   const isFormData = options.body instanceof FormData;
   const defaultHeaders: Record<string, string> = isFormData
@@ -240,7 +240,7 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}): Pro
 
   // Handle 204 No Content
   if (response.status === 204) {
-    return null;
+    return null as T;
   }
 
   // 304 Not Modified has empty body — would fail JSON parse; treat as error and retry
@@ -249,5 +249,5 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}): Pro
   }
 
   // Parse and return JSON
-  return await response.json();
+  return (await response.json()) as T;
 };

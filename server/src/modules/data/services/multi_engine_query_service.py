@@ -27,7 +27,7 @@ from src.modules.ai.data_source_capabilities import (
 import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time
-
+#  Always apply fall back here ??
 from src.shared.query_limits import PANDAS_FALLBACK_MAX_ROWS
 
 logger = logging.getLogger(__name__)
@@ -251,11 +251,34 @@ class MultiEngineQueryService:
                             # No duckdb_tables mapping — assume name is used directly
                             _logical_to_duckdb[_k] = _t["name"]
 
+                # Older Excel uploads may have a multi-sheet schema but a compressed
+                # single-table Parquet object in storage. In that case only the first
+                # sheet/fact table is actually loadable as DuckDB's `data` table.
+                _storage_format = ""
+                if isinstance(_ds_schema, dict):
+                    _storage_format = str(((_ds_schema.get("storage") or {}).get("format") or "")).lower()
+                if _storage_format == "parquet" and _duckdb_tables_map:
+                    _primary_physical = str(_ds_schema.get("table_name") or "")
+                    _logical_to_duckdb = {
+                        str(logical).lower(): "data"
+                        for logical, physical in _duckdb_tables_map.items()
+                        if str(physical) == _primary_physical
+                    }
+                    _direct_duckdb_names = {"data"}
+                    _unavailable_logical_tables = {
+                        str(logical).lower()
+                        for logical, physical in _duckdb_tables_map.items()
+                        if str(physical) != _primary_physical
+                    }
+                else:
+                    _unavailable_logical_tables = set()
+
                 # Pattern to match: FROM "table" or FROM table or FROM "schema"."table"
                 table_pattern = r'(?i)(from|join)\s+(?:"([^"]+)"|`([^`]+)`|([a-zA-Z0-9_\.]+))'
                 matches = list(re.finditer(table_pattern, query))
                 table_names_found = []        # unknown → rewrite to 'data'
                 schema_translate_needed = []  # (full_ref, target_name, keyword) to normalise
+                unavailable_tables_found = []
                 for match in matches:
                     table_name = match.group(2) or match.group(3) or match.group(4)
                     keyword = match.group(1).upper()
@@ -267,6 +290,8 @@ class MultiEngineQueryService:
                     if table_name.lower() in ("data", "_aiser_inline_df") or table_name.lower().startswith("file_"):
                         # Already a valid DuckDB name — leave as-is
                         continue
+                    elif bare_name.lower() in _unavailable_logical_tables:
+                        unavailable_tables_found.append(bare_name)
                     elif bare_name.lower() in _logical_to_duckdb:
                         # Logical name → translate to actual DuckDB table name
                         target = _logical_to_duckdb[bare_name.lower()]
@@ -278,6 +303,19 @@ class MultiEngineQueryService:
                     else:
                         # Unknown table — rewrite to 'data' for backward compat
                         table_names_found.append((table_name, keyword, match.start(), match.end()))
+
+                if unavailable_tables_found:
+                    unavailable = sorted(set(unavailable_tables_found))
+                    primary = next(iter(_logical_to_duckdb.keys()), "data")
+                    return {
+                        "success": False,
+                        "error": (
+                            "Related table(s) "
+                            f"{', '.join(unavailable)} are present in the schema/model but not in the stored "
+                            f"compressed Parquet payload. Only {primary} is available at query time. "
+                            "Re-upload or refresh the original multi-sheet workbook so relationship joins can run."
+                        ),
+                    }
 
                 # Translate/normalise known table references
                 if schema_translate_needed:
@@ -896,9 +934,9 @@ class DuckDBEngine(BaseQueryEngine):
                 except Exception:
                     pass
 
-                # 2. Match double-quoted strings in common filter patterns: =, !=, <, >, <=, >=, LIKE, ILIKE
-                # Pattern matches: operator whitespace "string"
-                filter_pattern = r'(?i)(=|!=|<>|<|>|<=|>=|LIKE|ILIKE)\s*"([^"]+)"'
+                # 2. Match double-quoted strings in common filter patterns: =, !=, <, >, <=, >=, LIKE, ILIKE.
+                # Do not rewrite quoted table qualifiers in expressions like "table"."column".
+                filter_pattern = r'(?i)(=|!=|<>|<|>|<=|>=|LIKE|ILIKE)\s*"([^"]+)"(?!\s*\.)'
                 
                 def fix_quoted_literal(match):
                     op = match.group(1)

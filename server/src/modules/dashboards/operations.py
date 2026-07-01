@@ -68,6 +68,27 @@ def _safe_sql_ident(name: str) -> str:
     return cleaned
 
 
+def _ds_execution_dict(ds: Any, schema_info: dict) -> dict:
+    """Full data-source dict for the query engine.
+
+    Must include user_id/project_id/file_path so the engine can fetch a
+    multi-sheet file from storage and register every sheet table — without them
+    only the primary sheet loads and joins/filters on dimension tables fail with
+    "table ... does not exist". Mirrors the chart execution path.
+    """
+    return {
+        "id": str(ds.id),
+        "type": ds.type,
+        "db_type": getattr(ds, "db_type", None),
+        "format": ds.format,
+        "schema": schema_info,
+        "connection_config": ds.connection_config,
+        "project_id": str(ds.project_id) if getattr(ds, "project_id", None) else None,
+        "user_id": str(ds.user_id) if getattr(ds, "user_id", None) else None,
+        "file_path": getattr(ds, "file_path", None),
+    }
+
+
 def _resolve_table_for_field(
     schema_info: dict,
     field: str,
@@ -291,7 +312,7 @@ async def build_embed_payload(
             logger.warning("Embed chart execute failed for %s: %s", chart.id, exec_err)
 
         chart_type = chart.chart_type or "bar"
-        is_data_widget = chart_type not in ("text", "slicer") and chart.data_source_id
+        is_data_widget = chart_type not in ("text", "slicer", "filter") and chart.data_source_id
         if is_data_widget and not exec_error:
             if chart_data is None:
                 exec_error = "No data returned"
@@ -480,14 +501,8 @@ async def get_filter_options(
         f"WHERE {where_sql} ORDER BY v LIMIT {int(limit)}"
     )
     try:
-        ds_dict = {
-            "id": str(ds.id),
-            "type": ds.type,
-            "format": ds.format,
-            "connection_config": ds.connection_config,
-            "schema": schema_info,
-        }
-        from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
+        ds_dict = _ds_execution_dict(ds, schema_info)
+        from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()
         result = await engine.execute_query(query, ds_dict, {})
@@ -537,13 +552,7 @@ async def get_filter_field_stats(
         f'FROM "{safe_table}" WHERE {where_sql}'
     )
     try:
-        ds_dict = {
-            "id": str(ds.id),
-            "type": ds.type,
-            "format": ds.format,
-            "connection_config": ds.connection_config,
-            "schema": schema_info,
-        }
+        ds_dict = _ds_execution_dict(ds, schema_info)
         from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()

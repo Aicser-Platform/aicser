@@ -13,6 +13,7 @@ const TYPE_KEYS: Record<string, { name: string; desc: string; bestFor?: string }
   text: { name: 'type_text', desc: 'desc_text', bestFor: 'best_for_text' },
   stat: { name: 'type_stat', desc: 'desc_stat', bestFor: 'best_for_stat' },
   slicer: { name: 'type_slicer', desc: 'desc_slicer', bestFor: 'best_for_slicer' },
+  filter: { name: 'type_filter', desc: 'desc_filter', bestFor: 'best_for_filter' },
   gauge: { name: 'type_gauge', desc: 'desc_gauge', bestFor: 'best_for_gauge' },
   treemap: { name: 'type_treemap', desc: 'desc_treemap', bestFor: 'best_for_treemap' },
   waterfall: { name: 'type_waterfall', desc: 'desc_waterfall', bestFor: 'best_for_waterfall' },

@@ -1,4 +1,4 @@
-import { fetchApi } from '@/utils/api';
+import { ApiError, fetchApi } from '@/utils/api';
 
 export type DataModelRelationship = {
   id: string;
@@ -48,9 +48,16 @@ export async function updateRelationship(
 }
 
 export async function deleteRelationship(dataSourceId: string, relationshipId: string): Promise<void> {
-  await fetchApi(`data/data-sources/${dataSourceId}/model/relationships/${relationshipId}`, {
-    method: 'DELETE',
-  });
+  try {
+    await fetchApi(`data/data-sources/${dataSourceId}/model/relationships/${relationshipId}`, {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    // Treat delete as idempotent: if the row is already gone, the UI should close
+    // and keep the optimistic removal instead of surfacing a false error.
+    if (error instanceof ApiError && error.status === 404) return;
+    throw error;
+  }
 }
 
 export async function autoDetectRelationships(dataSourceId: string): Promise<DataModelRelationship[]> {

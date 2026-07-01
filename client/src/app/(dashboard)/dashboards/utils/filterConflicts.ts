@@ -53,7 +53,7 @@ export function detectFilterFieldConflicts(
     if (f.field) touch(f.field, 'page', { filterId: f.id });
   }
   for (const w of widgets) {
-    if (w.chartType !== 'slicer') continue;
+    if (w.chartType !== 'slicer' && w.chartType !== 'filter') continue;
     const field = w.chartQuery?.field || w.chartQuery?.x;
     if (field) touch(String(field), 'slicer', { widgetId: w.id });
   }

@@ -155,13 +155,10 @@
 .erd-table-body {
   background: var(--ant-color-bg-container);
   border-radius: 0 0 6px 6px;
-  /* Must be overflow: visible so handles aren't clipped */
-  overflow: visible;
   max-height: 280px;
-  /* Scrollbar inside the body, but we need handles to escape.
-     Use overflow-y: auto with padding to allow handle dots at the edges. */
+  padding: 4px 12px 6px;
   overflow-y: auto;
-  overflow-x: visible;
+  overflow-x: hidden;
 }
 
 /* Individual column row */
@@ -173,10 +170,12 @@
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 10px;
+  padding: 0 8px;
   color: var(--ant-color-text);
   border-bottom: 1px solid color-mix(in srgb, var(--ant-color-border-secondary) 70%, transparent);
   transition: background 100ms;
+  cursor: pointer;
+  outline: none;
 }
 
 .erd-col:last-child {
@@ -186,6 +185,27 @@
 
 .erd-col:hover {
   background: color-mix(in srgb, var(--ant-color-primary-bg) 40%, var(--ant-color-bg-container));
+}
+
+.erd-col:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 46%, transparent);
+}
+
+.erd-col-pending,
+.erd-col-pending:hover {
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 68%, var(--ant-color-bg-container));
+  box-shadow:
+    inset 3px 0 0 var(--ant-color-primary),
+    inset -3px 0 0 var(--ant-color-primary);
+}
+
+.erd-col-empty {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 /* PK row accent */
@@ -318,12 +338,12 @@
 
 .erd-port {
   /* Override ReactFlow's default handle styles */
-  width: 10px !important;
-  height: 10px !important;
+  width: 18px !important;
+  height: 18px !important;
   border-radius: 50% !important;
-  border: 2px solid #fff !important;
+  border: 2px solid var(--ant-color-bg-container) !important;
   background: var(--ant-color-primary) !important;
-  opacity: 0.4;
+  opacity: 0.74;
   transition:
     opacity 140ms ease,
     transform 140ms ease,
@@ -332,16 +352,16 @@
 }
 
 .erd-port-left {
-  left: -6px !important;
+  left: -10px !important;
 }
 
 .erd-port-right {
-  right: -6px !important;
+  right: -10px !important;
 }
 
 /* Brighten when hovering the row */
 .erd-col:hover .erd-port {
-  opacity: 0.85;
+  opacity: 0.94;
 }
 
 /* Full brightness when directly hovering or actively connecting */
@@ -349,7 +369,7 @@
 .erd-port.react-flow__handle-connecting,
 .erd-port.react-flow__handle-valid {
   opacity: 1 !important;
-  transform: scale(1.3) !important;
+  transform: scale(1.22) !important;
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--ant-color-primary) 25%, transparent) !important;
 }

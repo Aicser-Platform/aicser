@@ -5,15 +5,76 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.data.models import DataSource
 from src.modules.data.model_service import DataModelService
+from src.modules.project.service import ProjectService
 
 router = APIRouter()
+
+
+def _user_id_from_payload(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("id") or payload.get("user_id") or payload.get("sub") or "")
+
+
+async def _require_data_source_access(
+    db: AsyncSession,
+    data_source_id: str,
+    current_user: dict,
+    *,
+    write: bool = False,
+) -> DataSource:
+    """Mirror datasource access checks used by /data/sources endpoints."""
+    user_id = _user_id_from_payload(current_user)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    result = await db.execute(
+        select(DataSource).where(
+            DataSource.id == data_source_id,
+            DataSource.is_active.is_(True),
+        )
+    )
+    ds = result.scalar_one_or_none()
+    if not ds:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data source not found")
+
+    creator_ok = getattr(ds, "user_id", None) is not None and str(ds.user_id) == user_id
+    if creator_ok:
+        return ds
+
+    if not is_ee_enabled():
+        shared_read_ok = not write and getattr(ds, "user_id", None) is None
+        if shared_read_ok:
+            return ds
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this data source",
+        )
+
+    if ds.project_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this data source",
+        )
+
+    user_projects, _ = await ProjectService.get_user_projects(user_id)
+    project_ids = {str(project.id) for project in user_projects}
+    if str(ds.project_id) not in project_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this data source",
+        )
+    return ds
 
 
 class RelationshipCreateRequest(BaseModel):
@@ -46,9 +107,7 @@ async def list_relationships(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
-    ds = await svc.get_data_source(data_source_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Data source not found")
+    await _require_data_source_access(db, data_source_id, current_user)
     return {"relationships": await svc.list_relationships(data_source_id)}
 
 
@@ -62,9 +121,9 @@ async def create_relationship(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
-    ds = await svc.get_data_source(data_source_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Data source not found")
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
+    if body.to_data_source_id and body.to_data_source_id != data_source_id:
+        await _require_data_source_access(db, body.to_data_source_id, current_user)
     rel = await svc.create_relationship(data_source_id, body.model_dump())
     return rel
 
@@ -80,6 +139,7 @@ async def update_relationship(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
     updated = await svc.update_relationship(
         data_source_id, relationship_id, body.model_dump(exclude_none=True)
     )
@@ -98,9 +158,7 @@ async def delete_relationship(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
-    ds = await svc.get_data_source(data_source_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Data source not found")
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
     deleted = await svc.delete_relationship(data_source_id, relationship_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Relationship not found")
@@ -115,9 +173,7 @@ async def auto_detect_relationships(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
-    ds = await svc.get_data_source(data_source_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Data source not found")
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
     relationships = await svc.auto_detect(data_source_id)
     return {"relationships": relationships, "count": len(relationships)}
 

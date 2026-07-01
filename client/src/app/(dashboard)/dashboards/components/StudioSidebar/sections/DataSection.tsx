@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Empty, Select, Spin, Tag, Typography } from 'antd';
+import { useTranslations } from 'next-intl';
 import {
   AppstoreOutlined,
   CheckOutlined,
@@ -92,6 +93,7 @@ function normalizeTables(schema: unknown): DisplayTable[] {
 }
 
 export function DataSection() {
+  const t = useTranslations('dashboards_page');
   const qc = useQueryClient();
   const { dataSources, isLoading } = useDataSources();
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
@@ -131,7 +133,7 @@ export function DataSection() {
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="No data sources connected"
+        description={t('data_no_sources')}
         style={{ padding: '24px 16px' }}
       />
     );
@@ -141,7 +143,7 @@ export function DataSection() {
     <div className="data-workbench">
       <aside className="data-workbench-sidebar">
         <div className="data-workbench-source">
-          <Text className="data-workbench-kicker">Workspace</Text>
+          <Text className="data-workbench-kicker">{t('data_workspace')}</Text>
           <Select
             size="small"
             value={activeSourceId ?? undefined}
@@ -158,19 +160,19 @@ export function DataSection() {
         <div className="data-workbench-sidebar-section">
           <div className="data-workbench-sidebar-title">
             <TableOutlined />
-            Tables
+            {t('data_tables')}
           </div>
           {schemaLoading ? (
-            <div className="data-workbench-loading-row">Loading schema...</div>
+            <div className="data-workbench-loading-row">{t('data_loading_schema')}</div>
           ) : error ? (
             <Alert
               type="warning"
               showIcon
-              message="Schema unavailable"
-              description={error instanceof Error ? error.message : 'Unable to load schema'}
+              message={t('data_schema_unavailable')}
+              description={error instanceof Error ? error.message : t('data_schema_load_failed')}
             />
           ) : tables.length === 0 ? (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No tables" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('data_no_tables')} />
           ) : (
             <div className="data-workbench-table-list">
               {tables.map((table) => (
@@ -194,35 +196,35 @@ export function DataSection() {
       <main className="data-workbench-main">
         <div className="data-workbench-toolbar">
           <div>
-            <Text className="data-workbench-mode">Data View</Text>
-            <h2>{activeTable?.id || 'Select a table'}</h2>
+            <Text className="data-workbench-mode">{t('data_view')}</Text>
+            <h2>{activeTable?.id || t('data_select_table')}</h2>
           </div>
           <div className="data-workbench-actions">
-            <Button icon={<PlusOutlined />}>New Table</Button>
-            <Button icon={<AppstoreOutlined />}>Manage Columns</Button>
+            <Button icon={<PlusOutlined />}>{t('data_new_table')}</Button>
+            <Button icon={<AppstoreOutlined />}>{t('data_manage_columns')}</Button>
             <Button
               type="primary"
               icon={<ReloadOutlined />}
               onClick={() => activeSourceId && qc.invalidateQueries({ queryKey: dataSourceKeys.schema(activeSourceId) })}
             >
-              Refresh Data
+              {t('data_refresh')}
             </Button>
           </div>
         </div>
 
         <div className="data-workbench-formula">
           <span>fx</span>
-          <div>{selectedColumn ? `${selectedColumn.name} : ${normalizeType(selectedColumn.type)}` : 'Select a column'}</div>
+          <div>{selectedColumn ? `${selectedColumn.name} : ${normalizeType(selectedColumn.type)}` : t('data_select_column')}</div>
           <CheckOutlined />
         </div>
 
         <div className="data-workbench-grid">
           <div className="data-workbench-grid-head">
             <span>#</span>
-            <span>Column</span>
-            <span>Datatype</span>
-            <span>Role</span>
-            <span>Nullable</span>
+            <span>{t('data_column')}</span>
+            <span>{t('data_datatype')}</span>
+            <span>{t('data_role')}</span>
+            <span>{t('data_nullable')}</span>
           </div>
           {activeTable?.columns.map((column, index) => (
             <button
@@ -242,36 +244,36 @@ export function DataSection() {
                   label: `${activeTable.id}.${column.name}`,
                 });
               }}
-              title="Drag this field to a chart axis, metric, filter, or slicer"
+              title={t('data_drag_field_hint')}
             >
               <span>{index + 1}</span>
               <strong>{column.name}</strong>
               <span>{normalizeType(column.type)}</span>
               <span>
                 {column.primary_key ? (
-                  <Tag color="blue">Primary key</Tag>
+                  <Tag color="blue">{t('data_primary_key')}</Tag>
                 ) : column.foreign_key ? (
-                  <Tag color="cyan">Foreign key</Tag>
+                  <Tag color="cyan">{t('data_foreign_key')}</Tag>
                 ) : (
-                  <Tag>Field</Tag>
+                  <Tag>{t('data_field')}</Tag>
                 )}
               </span>
-              <span>{column.nullable === false ? 'No' : 'Yes'}</span>
+              <span>{column.nullable === false ? t('data_no') : t('data_yes')}</span>
             </button>
           ))}
         </div>
       </main>
 
       <aside className="data-workbench-properties">
-        <div className="data-workbench-properties-title">Field Properties</div>
+        <div className="data-workbench-properties-title">{t('data_field_properties')}</div>
         {selectedColumn ? (
           <>
-            <Text className="data-workbench-kicker">Selected Column</Text>
+            <Text className="data-workbench-kicker">{t('data_selected_column')}</Text>
             <div className="data-workbench-selected-field">
               <FieldStringOutlined />
               <span>{selectedColumn.name}</span>
             </div>
-            <Text className="data-workbench-kicker">Datatype</Text>
+            <Text className="data-workbench-kicker">{t('data_datatype')}</Text>
             <Select
               value={normalizeType(selectedColumn.type)}
               options={[
@@ -283,14 +285,14 @@ export function DataSection() {
               ]}
               style={{ width: '100%' }}
             />
-            <Text className="data-workbench-kicker">Source</Text>
+            <Text className="data-workbench-kicker">{t('data_source')}</Text>
             <div className="data-workbench-source-note">
               <DatabaseOutlined />
-              <span>{activeSourceId ? dataSources.find((source) => source.id === activeSourceId)?.name : 'Data source'}</span>
+              <span>{activeSourceId ? dataSources.find((source) => source.id === activeSourceId)?.name : t('data_source')}</span>
             </div>
           </>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select a column" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('data_select_column')} />
         )}
       </aside>
     </div>

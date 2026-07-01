@@ -17,7 +17,7 @@ export function getAffectedWidgetIds(
 
   return widgets
     .filter((w) => {
-      if (w.chartType === 'slicer' || w.chartType === 'text' || !w.chartId || !w.dataSourceId) {
+      if (w.chartType === 'slicer' || w.chartType === 'filter' || w.chartType === 'text' || !w.chartId || !w.dataSourceId) {
         return false;
       }
       const scoped = resolveRuntimeFiltersForWidget(runtimeFilters, filterConfigs, w);

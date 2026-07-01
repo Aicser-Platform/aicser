@@ -80,6 +80,23 @@ class DataModelService:
         return [_serialize_relationship(r) for r in result.scalars().all()]
 
     async def create_relationship(self, data_source_id: str, payload: dict) -> dict:
+        # Idempotent create: a relationship is uniquely identified by its
+        # (from_table, from_column, to_table, to_column) tuple within a data
+        # source. Return the existing row instead of inserting a duplicate — the
+        # ERD can fire the create path more than once for a single gesture.
+        existing = await self.db.execute(
+            select(DataModelRelationship).where(
+                DataModelRelationship.data_source_id == data_source_id,
+                DataModelRelationship.from_table == payload["from_table"],
+                DataModelRelationship.from_column == payload["from_column"],
+                DataModelRelationship.to_table == payload["to_table"],
+                DataModelRelationship.to_column == payload["to_column"],
+            )
+        )
+        duplicate = existing.scalars().first()
+        if duplicate is not None:
+            return _serialize_relationship(duplicate)
+
         rel = DataModelRelationship(
             data_source_id=data_source_id,
             to_data_source_id=payload.get("to_data_source_id"),

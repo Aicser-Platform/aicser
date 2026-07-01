@@ -28,6 +28,13 @@ const EDGE_TYPES = { relationshipEdge: RelationshipEdge };
 const NODE_WIDTH = 310;
 const NODE_HEIGHT = 310;
 
+type PendingColumnConnection = {
+  nodeId: string;
+  tableName: string;
+  sourceId: string;
+  columnName: string;
+};
+
 function columnFromHandle(nodeId: string, handleId: string | null | undefined): string {
   if (!handleId) return 'id';
   const withoutTargetSuffix = handleId.endsWith('__target')
@@ -90,41 +97,58 @@ export function ERDCanvas({
   selectedRelationshipId,
 }: ERDCanvasProps) {
   const [search, setSearch] = useState('');
+  const [pendingColumn, setPendingColumn] = useState<PendingColumnConnection | null>(null);
+  const normalizedSearch = search.trim().toLowerCase();
 
   const filteredTables = useMemo(
     () =>
-      search
-        ? tables.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+      normalizedSearch
+        ? tables.filter((t) => {
+            const tableMatches = t.name.toLowerCase().includes(normalizedSearch);
+            const labelMatches = String(t.label || '').toLowerCase().includes(normalizedSearch);
+            const columnMatches = t.columns.some((col) =>
+              col.name.toLowerCase().includes(normalizedSearch),
+            );
+            return tableMatches || labelMatches || columnMatches;
+          })
         : tables,
-    [tables, search],
+    [tables, normalizedSearch],
   );
 
   const tableIdentity = useMemo(() => {
     const byName = new Map<string, string>();
+    const bySourceAndName = new Map<string, string>();
     const ids = new Set<string>();
     filteredTables.forEach((table) => {
       const id = table.id || table.name;
       ids.add(id);
       byName.set(table.name, id);
       byName.set(id, id);
+      bySourceAndName.set(`${table.sourceId}::${table.name}`, id);
+      bySourceAndName.set(`${table.sourceId}::${id}`, id);
       if (table.schema) {
         byName.set(`${table.schema}.${table.name}`, id);
+        bySourceAndName.set(`${table.sourceId}::${table.schema}.${table.name}`, id);
       }
     });
-    return { byName, ids };
+    return { byName, bySourceAndName, ids };
   }, [filteredTables]);
 
-  const sourceIdByNodeId = useMemo(() => {
-    const map = new Map<string, string>();
+  const tableMetaByNodeId = useMemo(() => {
+    const map = new Map<string, { sourceId: string; tableName: string }>();
     filteredTables.forEach((table) => {
       const id = table.id || table.name;
-      map.set(id, table.sourceId);
+      map.set(id, { sourceId: table.sourceId, tableName: table.name });
     });
     return map;
   }, [filteredTables]);
 
   const resolveTableId = useCallback(
-    (tableName: string) => {
+    (tableName: string, sourceId?: string | null) => {
+      if (sourceId) {
+        const sourceMatch = tableIdentity.bySourceAndName.get(`${sourceId}::${tableName}`);
+        if (sourceMatch) return sourceMatch;
+      }
       const exact = tableIdentity.byName.get(tableName);
       if (exact) return exact;
       const suffix = `.${tableName}`;
@@ -134,26 +158,62 @@ export function ERDCanvas({
     [tableIdentity],
   );
 
+  const handleColumnPick = useCallback(
+    (column: PendingColumnConnection) => {
+      setPendingColumn((current) => {
+        if (!current) return column;
+
+        const sameColumn =
+          current.nodeId === column.nodeId && current.columnName === column.columnName;
+        if (sameColumn) return null;
+
+        onConnectionCreate({
+          fromTable: current.tableName,
+          fromColumn: current.columnName,
+          fromSourceId: current.sourceId,
+          toTable: column.tableName,
+          toColumn: column.columnName,
+          toSourceId: column.sourceId,
+        });
+        return null;
+      });
+    },
+    [onConnectionCreate],
+  );
+
   const initialNodes: Node[] = useMemo(
     () =>
-      filteredTables.map((table) => ({
-        id: table.id || table.name,
-        type: 'tableNode',
-        position: { x: 0, y: 0 },
-        data: {
-          tableId: table.id || table.name,
-          tableName: table.label || table.name,
-          columns: table.columns,
-        } satisfies TableNodeData,
-      })),
-    [filteredTables],
+      filteredTables.map((table) => {
+        const id = table.id || table.name;
+        const tableMatches =
+          Boolean(normalizedSearch) &&
+          (table.name.toLowerCase().includes(normalizedSearch) ||
+            String(table.label || '').toLowerCase().includes(normalizedSearch));
+
+        return {
+          id,
+          type: 'tableNode',
+          position: { x: 0, y: 0 },
+          data: {
+            tableId: id,
+            tableName: table.label || table.name,
+            rawTableName: table.name,
+            sourceId: table.sourceId,
+            columnFilter: normalizedSearch && !tableMatches ? normalizedSearch : '',
+            pendingColumnKey: null,
+            onColumnPick: handleColumnPick,
+            columns: table.columns,
+          } satisfies TableNodeData,
+        };
+      }),
+    [filteredTables, handleColumnPick, normalizedSearch],
   );
 
   const initialEdges: Edge[] = useMemo(
     () =>
       relationships.map((rel) => {
-        const source = resolveTableId(rel.from_table);
-        const target = resolveTableId(rel.to_table);
+        const source = resolveTableId(rel.from_table, rel.data_source_id);
+        const target = resolveTableId(rel.to_table, rel.to_data_source_id ?? rel.data_source_id);
         return {
           id: rel.id,
           source,
@@ -201,6 +261,26 @@ export function ERDCanvas({
     setTimeout(() => rfInstanceRef.current?.fitView({ padding: 0.15 }), 50);
   }, [dataSourceId, initialNodes, initialEdges, setNodes, setEdges]);
 
+  useEffect(() => {
+    setPendingColumn(null);
+  }, [dataSourceId, normalizedSearch]);
+
+  useEffect(() => {
+    const pendingColumnKey = pendingColumn
+      ? `${pendingColumn.nodeId}__${pendingColumn.columnName}`
+      : null;
+    setNodes((current) =>
+      current.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          pendingColumnKey,
+          onColumnPick: handleColumnPick,
+        },
+      })),
+    );
+  }, [handleColumnPick, pendingColumn, setNodes]);
+
   const persistPositions = useCallback(
     (current: Node[]) => {
       const positions: Record<string, { x: number; y: number }> = {};
@@ -233,16 +313,18 @@ export function ERDCanvas({
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target || !connection.sourceHandle) return;
+      const sourceMeta = tableMetaByNodeId.get(connection.source);
+      const targetMeta = tableMetaByNodeId.get(connection.target);
       onConnectionCreate({
-        fromTable: connection.source,
+        fromTable: sourceMeta?.tableName ?? connection.source,
         fromColumn: columnFromHandle(connection.source, connection.sourceHandle),
-        fromSourceId: sourceIdByNodeId.get(connection.source) ?? connection.source,
-        toTable: connection.target,
+        fromSourceId: sourceMeta?.sourceId ?? connection.source,
+        toTable: targetMeta?.tableName ?? connection.target,
         toColumn: columnFromHandle(connection.target, connection.targetHandle),
-        toSourceId: sourceIdByNodeId.get(connection.target) ?? connection.target,
+        toSourceId: targetMeta?.sourceId ?? connection.target,
       });
     },
-    [onConnectionCreate, sourceIdByNodeId],
+    [onConnectionCreate, tableMetaByNodeId],
   );
 
   const handleAutoLayout = useCallback(() => {
@@ -289,6 +371,7 @@ export function ERDCanvas({
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onPaneClick={() => setPendingColumn(null)}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         onInit={(instance) => { rfInstanceRef.current = instance; }}

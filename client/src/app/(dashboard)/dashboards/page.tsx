@@ -53,11 +53,9 @@ import { useChartImportFromChat } from './hooks/useChartImportFromChat';
 import { StudioSidebarRail, type SidebarSection } from './components/StudioSidebar/StudioSidebarRail';
 import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
 import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
-import { InsertSection } from './components/StudioSidebar/sections/InsertSection';
 import { DataSection } from './components/StudioSidebar/sections/DataSection';
 import { DataModelingSection } from './components/StudioSidebar/sections/DataModelingSection';
 import type { DataModelRelationship } from '@/api/dataModel';
-import { useCreateRelationship } from '@/hooks/useDataModelRelationships';
 import { RelationshipDetailsPanel } from './components/ERDCanvas/RelationshipDetailsPanel';
 import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
 import { DashboardBuildLiveBanner } from './components/DashboardBuildLiveBanner';
@@ -337,35 +335,6 @@ export default function NewDashboardStudio() {
     }
   }, []);
   const [selectedRelationship, setSelectedRelationship] = useState<DataModelRelationship | null>(null);
-  const [pendingConnection, setPendingConnection] = useState<{
-    fromTable: string;
-    fromColumn: string;
-    toTable: string;
-    toColumn: string;
-  } | null>(null);
-  const [modelingDataSourceId, setModelingDataSourceId] = useState<string | undefined>(undefined);
-  const [createCardinality, setCreateCardinality] = useState<
-    'one_to_one' | 'one_to_many' | 'many_to_many'
-  >('one_to_many');
-
-  const createRelMutation = useCreateRelationship(modelingDataSourceId ?? '');
-
-  const handleConfirmCreateRelationship = async () => {
-    if (!pendingConnection || !modelingDataSourceId) return;
-    await createRelMutation.mutateAsync({
-      from_table: pendingConnection.fromTable,
-      from_column: pendingConnection.fromColumn,
-      to_table: pendingConnection.toTable,
-      to_column: pendingConnection.toColumn,
-      cardinality: createCardinality,
-      cross_filter_direction: 'single',
-      is_active: true,
-      assume_integrity: false,
-      join_type: 'LEFT',
-    });
-    setPendingConnection(null);
-    setCreateCardinality('one_to_many');
-  };
 
   const [sampleTemplates, setSampleTemplates] = useState<DashboardTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
@@ -531,9 +500,10 @@ export default function NewDashboardStudio() {
     const isPieChart = template.type === 'pie' || template.type === 'donut';
     const isTextWidget = template.type === 'text';
     const isSlicerWidget = template.type === 'slicer';
+    const isFilterWidget = template.type === 'filter';
     const isDividerWidget = template.type === 'divider';
     const isImageWidget = template.type === 'image';
-    const isNonDataWidget = isTextWidget || isSlicerWidget || isDividerWidget || isImageWidget;
+    const isNonDataWidget = isTextWidget || isSlicerWidget || isFilterWidget || isDividerWidget || isImageWidget;
 
     let defaultChartOptions;
     let defaultChartQuery: WidgetInstance['chartQuery'];
@@ -550,6 +520,9 @@ export default function NewDashboardStudio() {
     } else if (isSlicerWidget) {
       defaultChartOptions = { slicerLabel: template.name };
       defaultChartQuery = { mode: 'single' as const };
+    } else if (isFilterWidget) {
+      defaultChartOptions = { slicerLabel: template.name };
+      defaultChartQuery = { mode: 'multi' as const };
     } else if (isDividerWidget) {
       defaultChartOptions = { sectionTitle: '', uppercase: true };
       defaultChartQuery = {};
@@ -1037,9 +1010,7 @@ export default function NewDashboardStudio() {
               {sidebarSection === 'modeling' && (
                 <DataModelingSection
                   onRelationshipSelect={setSelectedRelationship}
-                  onConnectionCreate={setPendingConnection}
                   selectedRelationshipId={selectedRelationship?.id ?? null}
-                  onDataSourceChange={setModelingDataSourceId}
                 />
               )}
             </StudioSidebarPanel>
@@ -1324,75 +1295,6 @@ export default function NewDashboardStudio() {
           }
         }}
       />
-      <Drawer
-        title="Create Relationship"
-        placement="bottom"
-        height={260}
-        open={pendingConnection !== null}
-        onClose={() => setPendingConnection(null)}
-        footer={
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button onClick={() => setPendingConnection(null)}>Cancel</Button>
-            <Button
-              type="primary"
-              loading={createRelMutation.isPending}
-              onClick={() => void handleConfirmCreateRelationship()}
-              disabled={!modelingDataSourceId}
-            >
-              Create
-            </Button>
-          </div>
-        }
-      >
-        {pendingConnection && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                background: 'var(--ant-color-fill-quaternary)',
-                borderRadius: 8,
-                padding: '10px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              <span>
-                {pendingConnection.fromTable}.{pendingConnection.fromColumn}
-              </span>
-              <span style={{ color: 'var(--ant-color-text-secondary)' }}>→</span>
-              <span>
-                {pendingConnection.toTable}.{pendingConnection.toColumn}
-              </span>
-            </div>
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  color: 'var(--ant-color-text-secondary)',
-                  marginBottom: 6,
-                  letterSpacing: '0.05em',
-                }}
-              >
-                Cardinality
-              </div>
-              <Select
-                style={{ width: 240 }}
-                value={createCardinality}
-                onChange={setCreateCardinality}
-                options={[
-                  { value: 'one_to_one', label: 'One to One (1:1)' },
-                  { value: 'one_to_many', label: 'One to Many (1:*)' },
-                  { value: 'many_to_many', label: 'Many to Many (*:*)' },
-                ]}
-              />
-            </div>
-          </div>
-        )}
-      </Drawer>
     </ConfigProvider>
     </DashboardPageShell>
     </PermissionGuard>

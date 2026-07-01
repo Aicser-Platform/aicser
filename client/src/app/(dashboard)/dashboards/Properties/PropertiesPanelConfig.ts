@@ -400,6 +400,17 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       },
     ],
   },
+  filter: {
+    label: 'Filter',
+    fields: [
+      {
+        key: 'field',
+        type: 'select',
+        label: 'Filter field',
+        required: true,
+      },
+    ],
+  },
   gauge: {
     label: 'Gauge',
     fields: [

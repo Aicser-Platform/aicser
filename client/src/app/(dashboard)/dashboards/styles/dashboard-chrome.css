@@ -357,6 +357,15 @@
   font-weight: 500;
 }
 
+.slicer-filter-block {
+  justify-content: flex-start;
+  overflow: auto;
+}
+
+.slicer-filter-block .filter-control-shell {
+  min-width: 0;
+}
+
 .widget-type-slicer .widget-card-header {
   min-height: 32px;
 }

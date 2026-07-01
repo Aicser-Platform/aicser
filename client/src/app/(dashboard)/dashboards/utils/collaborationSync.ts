@@ -47,7 +47,7 @@ export function stripTransientWidgetFields(widget: WidgetInstance): Partial<Widg
 
 export function widgetReadyForCollab(widget: WidgetInstance): boolean {
   if (!widget?.id) return false;
-  const nonData = ['text', 'slicer', 'divider', 'image', 'embed'].includes(widget.chartType || '');
+  const nonData = ['text', 'slicer', 'filter', 'divider', 'image', 'embed'].includes(widget.chartType || '');
   return nonData || Boolean(widget.chartId);
 }
 

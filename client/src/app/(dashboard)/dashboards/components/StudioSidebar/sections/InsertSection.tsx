@@ -7,6 +7,7 @@ import {
   TableOutlined,
   FontSizeOutlined,
   FilterOutlined,
+  ControlOutlined,
   GlobalOutlined,
 } from '@ant-design/icons';
 import { useDashboardStore, isNonDataWidget, type WidgetType, type WidgetInstance, type LayoutItem } from '../../../stores/useDashboardStore';
@@ -19,6 +20,7 @@ const WIDGET_ITEMS: { type: WidgetType; label: string; icon: React.ReactNode }[]
   { type: 'table', label: 'Table', icon: <TableOutlined /> },
   { type: 'text', label: 'Text', icon: <FontSizeOutlined /> },
   { type: 'slicer', label: 'Slicer', icon: <FilterOutlined /> },
+  { type: 'filter', label: 'Filter', icon: <ControlOutlined /> },
   { type: 'embed', label: 'Embed', icon: <GlobalOutlined /> },
 ];
 
@@ -27,6 +29,7 @@ function buildChartOptionsForType(type: WidgetType, templateName: string): Recor
     case 'text':
       return { content: '', fontSize: 14, fontWeight: 400, color: 'inherit', textAlign: 'left' };
     case 'slicer':
+    case 'filter':
       return { slicerLabel: templateName };
     case 'divider':
       return { sectionTitle: '', uppercase: true };
@@ -51,6 +54,9 @@ function buildChartQueryForType(type: WidgetType): WidgetInstance['chartQuery'] 
       return {};
     case 'slicer':
       return { mode: 'single' as const };
+    case 'filter':
+      // Filter widget defaults to a multi-select dashboard-wide control.
+      return { mode: 'multi' as const };
     default:
       return undefined;
   }

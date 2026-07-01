@@ -31,6 +31,12 @@ export interface ChartQuery {
   sortOrder?: 'asc' | 'desc';
   limit?: number;
   seriesLimit?: number;
+  joins?: {
+    table: string;
+    alias?: string;
+    on: { left: string; right: string } | string;
+    type: string;
+  }[];
   drillPath?: string[];
   interactionMode?: 'drill' | 'cross_filter';
   drillThrough?: {

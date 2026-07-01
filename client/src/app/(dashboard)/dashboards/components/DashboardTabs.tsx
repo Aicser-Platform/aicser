@@ -126,6 +126,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const {
     dashboards,
     activeDashboardId,
+    isLoadingDashboards,
     layout,
     widgets,
     globalFiltersConfig,
@@ -573,6 +574,9 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const renderDashItem = (dash: { id: string; name: string; tags?: string[] }) => (
     <div
       key={dash.id}
+      role="button"
+      tabIndex={0}
+      aria-current={dash.id === activeDashboardId ? 'page' : undefined}
       className={`group flex items-center gap-3 px-4 py-2.5 cursor-pointer text-left transition-colors ${
         dash.id === activeDashboardId
           ? 'bg-brand-subtle text-brand font-semibold'
@@ -580,6 +584,12 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
       }`}
       onClick={() => {
         if (editingDashboardId !== dash.id) setActiveDashboardId(dash.id);
+      }}
+      onKeyDown={(e) => {
+        if (editingDashboardId === dash.id) return;
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        setActiveDashboardId(dash.id);
       }}
     >
       <DashboardOutlined className={`shrink-0 text-base ${dash.id === activeDashboardId ? 'text-brand' : 'text-text-tertiary'}`} />
@@ -617,14 +627,16 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               type="text" size="small"
               icon={starredDashboardIds.has(dash.id) ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
               onClick={(e) => { e.stopPropagation(); toggleStarDashboard(dash.id); }}
-              className="text-text-tertiary hover:text-brand" title="Star / Unstar"
+              className="text-text-tertiary hover:text-brand" title={t('star_toggle')}
+              aria-label={t('star_toggle')}
             />
             <Button
               type="text" size="small" icon={<EditOutlined />}
               onClick={(e) => handleOpenRename(e, { id: dash.id, name: dash.name })}
-              className="text-text-tertiary hover:text-brand" title="Rename"
+              className="text-text-tertiary hover:text-brand" title={t('rename')}
+              aria-label={t('rename')}
             />
-            <OverflowMenuButton ariaLabel="More dashboard actions" title="More actions">
+            <OverflowMenuButton ariaLabel={t('more_dashboard_actions')} title={t('more_actions')}>
               {(closeOverflow) => (
                 <>
                   <Button
@@ -638,7 +650,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       closeOverflow();
                     }}
                   >
-                    Edit tags
+                    {t('edit_tags')}
                   </Button>
                   {folders.length > 0 && (
                     <Dropdown
@@ -649,7 +661,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                           closeOverflow();
                         },
                         items: [
-                          { key: '__root', label: '— No folder —' },
+                          { key: '__root', label: t('no_folder') },
                           ...folders.map((f) => ({ key: f.id, label: f.name, icon: <FolderOutlined /> })),
                         ],
                         selectedKeys: assignments[dash.id] ? [assignments[dash.id]] : ['__root'],
@@ -660,7 +672,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                         className="!justify-start !text-left text-text-secondary"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        Move to folder
+                        {t('move_to_folder')}
                       </Button>
                     </Dropdown>
                   )}
@@ -672,13 +684,13 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       closeOverflow();
                       try {
                         await duplicateDashboard(dash.id);
-                        message.success('Dashboard duplicated');
+                        message.success(t('dashboard_duplicated'));
                       } catch {
-                        message.error('Failed to duplicate dashboard');
+                        message.error(t('dashboard_duplicate_failed'));
                       }
                     }}
                   >
-                    Duplicate
+                    {t('duplicate')}
                   </Button>
                   <Button
                     type="text" block danger icon={<DeleteOutlined />}
@@ -688,7 +700,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       handleOpenDelete(e, { id: dash.id, name: dash.name });
                     }}
                   >
-                    Delete
+                    {t('delete')}
                   </Button>
                 </>
               )}
@@ -721,7 +733,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             </Button>
           </Link>
         ) : null}
-        <Tooltip title="Create a new folder to organise dashboards">
+        <Tooltip title={t('new_folder_hint')}>
           <Button
             type="text"
             size="small"
@@ -732,7 +744,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               setEditingFolderId(id);
               setNewFolderName('New Folder');
             }}
-            title="New folder"
+            title={t('new_folder')}
+            aria-label={t('new_folder')}
           />
         </Tooltip>
       </div>
@@ -761,8 +774,19 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         )}
       </div>
       <div className="max-h-80 overflow-y-auto py-1.5">
+        {isLoadingDashboards ? (
+          <div className="flex items-center justify-center gap-2 px-6 py-6 text-text-tertiary text-[13px]">
+            <Spin size="small" />
+            <span>{t('loading_dashboards')}</span>
+          </div>
+        ) : dashboards.length === 0 ? (
+          <div className="px-6 py-6 text-center text-text-tertiary text-[13px]">
+            {t('no_dashboards_yet')}
+          </div>
+        ) : null}
+
         {/* Folder hierarchy — only show when there are folders or search is not active */}
-        {folders.length > 0 && !searchTerm && !activeTagFilter && (
+        {!isLoadingDashboards && dashboards.length > 0 && folders.length > 0 && !searchTerm && !activeTagFilter && (
           <>
             {folders.map((folder) => {
               const folderDashes = filteredDashboards.filter((d) => assignments[d.id] === folder.id);
@@ -797,19 +821,21 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       </span>
                     )}
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
-                      <Tooltip title="Rename folder">
+                      <Tooltip title={t('rename_folder')}>
                         <Button type="text" size="small" icon={<EditOutlined />} className="text-text-tertiary"
                           onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setNewFolderName(folder.name); }}
+                          aria-label={t('rename_folder')}
                         />
                       </Tooltip>
-                      <Tooltip title="Delete folder (dashboards become unassigned)">
+                      <Tooltip title={t('delete_folder_hint')}>
                         <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                          aria-label={t('delete_folder')}
                           onClick={(e) => {
                             e.stopPropagation();
                             Modal.confirm({
-                              title: `Delete folder "${folder.name}"?`,
-                              content: 'Dashboards in this folder will become unassigned.',
-                              okText: 'Delete',
+                              title: t('delete_folder_title', { name: folder.name }),
+                              content: t('delete_folder_body'),
+                              okText: t('delete'),
                               okType: 'danger',
                               onOk: () => deleteFolder(folder.id),
                             });
@@ -822,7 +848,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   {!isCollapsed && (
                     <div className="pl-[18px]">
                       {folderDashes.length === 0 && (
-                        <div className="px-3 py-1 text-[11px] text-text-disabled">Empty folder</div>
+                        <div className="px-3 py-1 text-[11px] text-text-disabled">{t('empty_folder')}</div>
                       )}
                       {folderDashes.map((dash) => renderDashItem(dash))}
                     </div>
@@ -833,14 +859,14 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             {/* Unassigned dashboards */}
             {filteredDashboards.filter((d) => !assignments[d.id]).length > 0 && folders.length > 0 && (
               <div className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-text-disabled">
-                Unassigned
+                {t('unassigned')}
               </div>
             )}
           </>
         )}
 
         {/* Flat list (when no folders, or when searching/filtering) */}
-        {(folders.length === 0 || searchTerm || activeTagFilter) && (
+        {!isLoadingDashboards && dashboards.length > 0 && (folders.length === 0 || searchTerm || activeTagFilter) && (
           filteredDashboards.length === 0 ? (
             <div className="px-6 py-6 text-center text-text-tertiary text-[13px]">{t('no_dashboards_found')}</div>
           ) : (
@@ -849,7 +875,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         )}
 
         {/* Unassigned dashboards when folders exist and no filter active */}
-        {folders.length > 0 && !searchTerm && !activeTagFilter && (
+        {!isLoadingDashboards && dashboards.length > 0 && folders.length > 0 && !searchTerm && !activeTagFilter && (
           filteredDashboards
             .filter((d) => !assignments[d.id])
             .map((dash) => renderDashItem(dash))
@@ -1002,20 +1028,20 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           )}
 
           {/* Secondary tools: undo/redo, version history (edit mode), zoom (always) */}
-          <OverflowMenuButton ariaLabel="More actions" title="More actions">
+          <OverflowMenuButton ariaLabel={t('more_actions')} title={t('more_actions')}>
             {(closeOverflow) => (
               <>
                 {isEditMode && (
                   <div className="flex items-center justify-between gap-2 px-1 py-1 text-sm text-text-secondary">
-                    <span>Undo / Redo</span>
+                    <span>{t('undo_redo')}</span>
                     <div className="flex items-center gap-0.5 rounded-md border border-border-light bg-bg-container p-0.5">
                       <button
                         type="button"
                         className="flex items-center justify-center w-7 h-7 rounded text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
                         disabled={!canUndo}
                         onClick={() => undo?.()}
-                        title="Undo (Ctrl+Z)"
-                        aria-label="Undo"
+                        title={t('undo_shortcut')}
+                        aria-label={t('undo')}
                       >
                         <UndoOutlined />
                       </button>
@@ -1024,8 +1050,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                         className="flex items-center justify-center w-7 h-7 rounded text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
                         disabled={!canRedo}
                         onClick={() => redo?.()}
-                        title="Redo (Ctrl+Y)"
-                        aria-label="Redo"
+                        title={t('redo_shortcut')}
+                        aria-label={t('redo')}
                       >
                         <RedoOutlined />
                       </button>
@@ -1044,20 +1070,20 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       closeOverflow();
                     }}
                   >
-                    Version history
+                    {t('version_history')}
                   </Button>
                 )}
 
                 <div className="flex items-center justify-between gap-2 px-1 py-1 text-sm text-text-secondary">
-                  <span>Zoom</span>
+                  <span>{t('zoom')}</span>
                   <div className="flex items-center h-8 rounded-md border border-border-light bg-bg-container overflow-hidden">
                     <button
                       type="button"
                       className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
                       onClick={zoomOut}
                       disabled={canvasZoom <= 25}
-                      title="Zoom out"
-                      aria-label="Zoom out"
+                      title={t('zoom_out')}
+                      aria-label={t('zoom_out')}
                     >
                       <ZoomOutOutlined />
                     </button>
@@ -1065,7 +1091,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       type="button"
                       className="flex items-center justify-center min-w-[42px] h-full border-x border-border-light text-text text-xs font-medium px-1 whitespace-nowrap transition-colors hover:bg-bg-elevated"
                       onClick={() => setCanvasZoom(100)}
-                      title="Reset zoom to 100%"
+                      title={t('reset_zoom')}
+                      aria-label={t('reset_zoom')}
                     >
                       {canvasZoom}%
                     </button>
@@ -1074,8 +1101,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
                       onClick={zoomIn}
                       disabled={canvasZoom >= 200}
-                      title="Zoom in"
-                      aria-label="Zoom in"
+                      title={t('zoom_in')}
+                      aria-label={t('zoom_in')}
                     >
                       <ZoomInOutlined />
                     </button>
@@ -1087,7 +1114,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
 
           <button
             type="button"
-            className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-sm font-medium cursor-pointer shrink-0 transition-colors ${
+            className={`inline-flex items-center gap-1.5 py-2 px-3 rounded-md border text-sm font-medium cursor-pointer shrink-0 transition-colors ${
               isEditMode
                 ? 'border-brand/45 bg-brand-subtle text-brand'
                 : 'border-border-light bg-bg-container text-text hover:border-brand'
@@ -1104,8 +1131,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             <Tooltip
               title={
                 snapshotOutdated
-                  ? `Snapshot out of date${snapshotVersion ? ` (v${snapshotVersion})` : ''} — click to update`
-                  : `Feed linked${snapshotVersion ? ` (v${snapshotVersion})` : ''}`
+                  ? t('snapshot_outdated', { version: snapshotVersion ? `v${snapshotVersion}` : '' })
+                  : t('feed_linked', { version: snapshotVersion ? `v${snapshotVersion}` : '' })
               }
             >
               {onUpdateSnapshot && snapshotOutdated ? (
@@ -1115,7 +1142,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   icon={<SyncOutlined spin={updatingSnapshot} style={{ color: '#f59e0b' }} />}
                   loading={updatingSnapshot}
                   onClick={onUpdateSnapshot}
-                  aria-label="Update feed snapshot"
+                  aria-label={t('update_feed_snapshot')}
                   className="!w-8 !h-8 !p-0"
                 />
               ) : (
@@ -1124,7 +1151,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                     size="small"
                     type="text"
                     icon={<CompassOutlined className="text-text-tertiary" />}
-                    aria-label="View in feed"
+                    aria-label={t('view_in_feed')}
                     className="!w-8 !h-8 !p-0"
                   />
                 </Link>
@@ -1182,6 +1209,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         </Space>
       </div>
 
+      {/* Feed Modal to Public functions */}
       <PublishToFeedModal
         open={isPublishOpen}
         assetType="dashboard"
@@ -1224,7 +1252,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <TagOutlined />
-            <span>Edit Tags</span>
+            <span>{t('edit_tags')}</span>
           </div>
         }
         open={!!editTagsDashboardId}
@@ -1235,38 +1263,38 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           }
           setEditTagsDashboardId(null);
         }}
-        okText="Save"
+        okText={t('save')}
         width={420}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <Input
-              placeholder="Type a tag and press Enter"
+              placeholder={t('tag_input_placeholder')}
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onPressEnter={() => {
-                const t = tagInput.trim().toLowerCase();
-                if (t && !pendingTags.includes(t)) {
-                  setPendingTags([...pendingTags, t]);
+                const nextTag = tagInput.trim().toLowerCase();
+                if (nextTag && !pendingTags.includes(nextTag)) {
+                  setPendingTags([...pendingTags, nextTag]);
                 }
                 setTagInput('');
               }}
             />
             <Button
               onClick={() => {
-                const t = tagInput.trim().toLowerCase();
-                if (t && !pendingTags.includes(t)) {
-                  setPendingTags([...pendingTags, t]);
+                const nextTag = tagInput.trim().toLowerCase();
+                if (nextTag && !pendingTags.includes(nextTag)) {
+                  setPendingTags([...pendingTags, nextTag]);
                 }
                 setTagInput('');
               }}
             >
-              Add
+              {t('add')}
             </Button>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32 }}>
             {pendingTags.length === 0 && (
-              <span style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 13 }}>No tags yet</span>
+              <span style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 13 }}>{t('no_tags_yet')}</span>
             )}
             {pendingTags.map((tag) => (
               <Tag

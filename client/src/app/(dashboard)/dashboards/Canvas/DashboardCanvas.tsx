@@ -237,22 +237,23 @@ export default function DashboardCanvas({
       // Arrow keys — nudge selected widget by one grid unit
       if (selectedWidgetId && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         e.preventDefault();
-        setLayout((prev: typeof layout) => {
-          const itemIdx = prev.findIndex((l) => l.i === selectedWidgetId);
-          if (itemIdx < 0) return prev;
-          const item = prev[itemIdx];
-          if (!item) return prev;
-          let { x, y } = item;
-          if (e.key === 'ArrowLeft') x = Math.max(0, x - 1);
-          if (e.key === 'ArrowRight') x = Math.min(11, x + 1);
-          if (e.key === 'ArrowUp') y = Math.max(0, y - 1);
-          if (e.key === 'ArrowDown') y = y + 1;
-          const next = [...prev];
-          next[itemIdx] = { ...item, x, y };
-          onPageLayoutChange?.(next);
-          onLayoutSync?.(next);
-          return next;
-        });
+        const itemIdx = layout.findIndex((l) => l.i === selectedWidgetId);
+        if (itemIdx < 0) return;
+        const item = layout[itemIdx];
+        if (!item) return;
+        let { x, y } = item;
+        if (e.key === 'ArrowLeft') x = Math.max(0, x - 1);
+        if (e.key === 'ArrowRight') x = Math.min(11, x + 1);
+        if (e.key === 'ArrowUp') y = Math.max(0, y - 1);
+        if (e.key === 'ArrowDown') y = y + 1;
+        const next = [...layout];
+        next[itemIdx] = { ...item, x, y };
+        if (onPageLayoutChange) {
+          onPageLayoutChange(next);
+        } else {
+          setLayout(next);
+        }
+        onLayoutSync?.(next);
       }
     };
 
@@ -367,7 +368,7 @@ export default function DashboardCanvas({
 
   const getMenuItems = (widgetId?: string) => {
     const w = widgetId ? widgets.find((x) => x.id === widgetId) : null;
-    const isNonChart = w && (w.chartType === 'text' || w.chartType === 'slicer' || w.chartType === 'divider' || w.chartType === 'image');
+    const isNonChart = w && (w.chartType === 'text' || w.chartType === 'slicer' || w.chartType === 'filter' || w.chartType === 'divider' || w.chartType === 'image');
     const items: any[] = [
     {
       key: 'configure',
@@ -569,10 +570,12 @@ export default function DashboardCanvas({
           xxs: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={isDesigner ? { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 } : { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+        cols={{ lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }}
         rowHeight={isDesigner ? designerRowHeight : 42}
         margin={isDesigner ? [0, 0] : [8, 8]}
         containerPadding={[0, 0]}
+        compactType={null}
+        preventCollision
         isDraggable={isEditing}
         isResizable={isEditing}
         onLayoutChange={(l) => {

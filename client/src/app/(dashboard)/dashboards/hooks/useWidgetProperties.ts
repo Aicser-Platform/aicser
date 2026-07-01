@@ -163,6 +163,7 @@ export const useWidgetProperties = ({
     selectedWidget?.chartQuery?.sortOrder,
     selectedWidget?.chartQuery?.limit,
     selectedWidget?.chartQuery?.seriesLimit,
+    JSON.stringify(selectedWidget?.chartQuery?.joins),
     selectedWidget?.title, // DEBOUNCE TITLE CHANGES
   ]);
 
@@ -170,26 +171,57 @@ export const useWidgetProperties = ({
    * Selectors
    * --------------------------------------*/
 
+  const selectedChartQuery = (selectedWidget as any)?.chartQuery;
+  const selectedTableName = selectedChartQuery?.tableName;
+  const selectedJoinsKey = JSON.stringify(selectedChartQuery?.joins || []);
+
   const selectedTableColumns = useMemo(() => {
     if (!selectedSchemaInfo || !selectedSchemaInfo.tables) return [];
 
-    const selectedTableName = (selectedWidget as any)?.chartQuery?.tableName;
+    const joins = JSON.parse(selectedJoinsKey);
+    const bareTableName = (table?: string) => table?.split('.').pop()?.trim() || table?.trim();
+    const findSchemaTable = (tableName?: string) => {
+      const bare = bareTableName(tableName);
+      return selectedSchemaInfo.tables.find((t: any) => bareTableName(t.name) === bare);
+    };
 
     // Find the specific table if selected, else default to 'data' or the first usable one
     const table =
-      (selectedTableName ? selectedSchemaInfo.tables.find((t: any) => t.name === selectedTableName) : null) ||
+      (selectedTableName ? findSchemaTable(selectedTableName) : null) ||
       selectedSchemaInfo.tables.find((t: any) => t.name === 'data') ||
       selectedSchemaInfo.tables.find((t: any) => t.columns && t.columns.length > 0) ||
       selectedSchemaInfo.tables[0];
 
-    return (
+    const baseColumns =
       table?.columns?.map((c: any) => ({
         label: c.name || c,
         value: c.name || c,
         type: c.type || 'string',
-      })) ?? []
-    );
-  }, [selectedSchemaInfo, (selectedWidget as any)?.chartQuery?.tableName]);
+      })) ?? [];
+
+    const relatedColumns = Array.isArray(joins)
+      ? joins.flatMap((join: any) => {
+          const joinTable = findSchemaTable(join?.table);
+          const alias = join?.alias || bareTableName(join?.table);
+          if (!joinTable?.columns || !alias) return [];
+          return joinTable.columns.map((c: any) => {
+            const columnName = c.name || c;
+            const qualifiedName = `${alias}.${columnName}`;
+            return {
+              label: qualifiedName,
+              value: qualifiedName,
+              type: c.type || 'string',
+            };
+          });
+        })
+      : [];
+
+    return [...baseColumns, ...relatedColumns];
+  }, [
+    selectedSchemaInfo,
+    selectedTableName,
+    selectedJoinsKey,
+  ]);
 
   /* ----------------------------------------
    * Public API
@@ -305,9 +337,14 @@ export const useWidgetProperties = ({
         ],
       };
     } else if (targetKey === 'slicerField') {
+      const existingFields = Array.isArray(nextQuery.fields) ? nextQuery.fields.map(String).filter(Boolean) : [];
+      const fields = existingFields.includes(field.columnName)
+        ? existingFields
+        : [...existingFields, field.columnName];
       nextQuery = {
         ...nextQuery,
         field: field.columnName,
+        fields,
         x: field.columnName,
         dataSourceId: field.dataSourceId,
       };
@@ -396,12 +433,16 @@ export const useWidgetProperties = ({
   const applySlicerChanges = (changes: {
     title: string;
     field: string | undefined;
+    fields?: string[];
     mode: string;
   }) => {
     const currentQuery = selectedWidget?.chartQuery || {};
+    const fields = (changes.fields || []).filter(Boolean);
     const nextQuery = {
       ...currentQuery,
       field: changes.field,
+      fields,
+      x: changes.field,
       mode: changes.mode,
       // Mirror dataSourceId into chartQuery so SlicerWidget can load filter options
       dataSourceId: selectedWidget?.dataSourceId,
