@@ -72,7 +72,7 @@ const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITI
 
 const ConnectModelVisualizeWizard = nextDynamic(
   () => isEEEdition
-    ? import('@/ee/components/semantic/ConnectModelVisualizeWizard').then((m) => m.default)
+    ? import('@/ee').then((m) => m.ConnectModelVisualizeWizard)
     : Promise.resolve(() => null as React.ReactElement | null),
   { ssr: false },
 );

@@ -22,6 +22,13 @@ type ThemeCustomizerProps = {
   open?: boolean;
   onClose?: () => void;
 };
+type AnyComponentProps = Record<string, unknown>;
+export type CitationItem = Record<string, unknown>;
+export interface StreamingAccumulator {
+  partial_results?: Record<string, unknown>;
+  message?: unknown;
+  [key: string]: unknown;
+}
 
 // ── Component stubs ──────────────────────────────────────────────────────────
 export const BillingSuccessHandler   = (): null => null;
@@ -34,6 +41,15 @@ export const OrganizationSettingsTab = (): null => null;
 export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
 export const SubscriptionSettingsTab = (): null => null;
+export const RolesTab                = (): null => null;
+export const AgentSkillsTab          = (): null => null;
+export const AgentWorkflowsTab       = (): null => null;
+export const BriefingsTab            = (): null => null;
+export const SemanticStudio          = (_props: AnyComponentProps): null => null;
+export const ConnectModelVisualizeWizard = (_props: AnyComponentProps): null => null;
+export const CitationSourcesStrip    = (_props: AnyComponentProps): null => null;
+export const ThoughtProcessDisplay   = (_props: AnyComponentProps): null => null;
+export const DashboardPlanCard       = (_props: AnyComponentProps): null => null;
 export const ThemeCustomizer         = (_props: ThemeCustomizerProps): null => null;
 export const OnboardingBootstrap     = (): null => null;
 export const EnhancedOnboardingModal = (): null => null;
@@ -49,6 +65,55 @@ export const ProjectsPage            = (): null => null;
 export const DataPlatformPage        = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;
 export const InviteSetPasswordPageEE = (): null => null;
+
+// ── EE chat/embed utility stubs ─────────────────────────────────────────────
+export function applyEvent(
+  acc: StreamingAccumulator = {},
+  _evt: Record<string, unknown> = {},
+): StreamingAccumulator {
+  return acc;
+}
+export function buildCompleteFromAccumulator(
+  acc: StreamingAccumulator = {},
+  _query?: string,
+  fallbackMessage = '',
+): StreamingAccumulator {
+  return { ...acc, message: acc.message || fallbackMessage };
+}
+export function isSubstantiveCompleteEvent(_evt: Record<string, unknown>): boolean {
+  return false;
+}
+export function displayText(_partialResults?: Record<string, unknown>, fallback = ''): string {
+  return fallback;
+}
+export function drainSSEBuffer(
+  buffer: string,
+  _onEvent: (data: unknown) => void,
+): string {
+  return buffer;
+}
+export function extractAnalyzeRunView(_acc: StreamingAccumulator | null) {
+  return {
+    chartConfig: null,
+    queryResult: null,
+    citations: [] as CitationItem[],
+    progress: undefined,
+    dashboardKpiPlan: undefined,
+    dashboardWidgetsReady: [] as unknown[],
+    dashboardCreated: null,
+    followUpQuestions: undefined,
+  };
+}
+export function buildDashboardStudioLink(
+  dashboardId: string,
+  pageId?: string,
+  messageId?: string,
+): string {
+  const params = new URLSearchParams({ id: dashboardId });
+  if (pageId) params.set('page', pageId);
+  if (messageId) params.set('message', messageId);
+  return `/dashboards?${params.toString()}`;
+}
 
 // ── Auth stubs ───────────────────────────────────────────────────────────────
 export const eeAuthActions: AuthActions = {

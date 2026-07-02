@@ -3,13 +3,17 @@
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
+import nextDynamic from 'next/dynamic';
 import { Button } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
-import SemanticStudio from '@/ee/components/semantic/SemanticStudio';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+
+const SemanticStudio = nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), {
+  ssr: false,
+});
 
 export default function SemanticStudioPage() {
   const params = useParams();

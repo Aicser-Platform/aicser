@@ -6,7 +6,7 @@ import { CeOnboardingModal } from './CeOnboardingModal';
 
 const EEOnboardingBootstrap = dynamic(
   () =>
-    import('@/ee/components/onboarding/OnboardingBootstrap').then((m) => ({
+    import('@/ee').then((m) => ({
       default: m.OnboardingBootstrap,
     })),
   { ssr: false },

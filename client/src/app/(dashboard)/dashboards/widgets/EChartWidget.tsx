@@ -9,11 +9,6 @@ import { WatermarkOverlay } from '@/utils/watermark-overlay';
 import { syncCrossFilterHighlight } from '../utils/crossFilterChart';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
-import { useSubscription } from '@/ee/stores/useSubscriptionStore';
-
-const isEnterpriseEdition = ['enterprise', 'ee'].includes(
-  (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
-);
 
 interface EChartWidgetProps {
   type: string;
@@ -148,9 +143,4 @@ function EChartWidgetCe(props: EChartWidgetProps) {
   return <EChartWidgetCore {...props} planType={(planType || 'free').toLowerCase()} />;
 }
 
-function EChartWidgetEe(props: EChartWidgetProps) {
-  const { planType } = useSubscription();
-  return <EChartWidgetCore {...props} planType={(planType || 'free').toLowerCase()} />;
-}
-
-export const EChartWidget = isEnterpriseEdition ? EChartWidgetEe : EChartWidgetCe;
+export const EChartWidget = EChartWidgetCe;

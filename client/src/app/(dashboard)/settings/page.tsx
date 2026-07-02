@@ -68,22 +68,19 @@ const SubscriptionTab = nextDynamic(
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const RolesTab = nextDynamic(
-  () => import('@/ee/app/(dashboard)/settings/components/RolesTab').then((m) => ({ default: m.RolesTab })),
+  (() => import('@/ee').then((m) => ({ default: m.RolesTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const AgentSkillsTab = nextDynamic(
-  () => import('@/ee/app/(dashboard)/settings/components/AgentSkillsTab').then((m) => ({ default: m.AgentSkillsTab })),
+  (() => import('@/ee').then((m) => ({ default: m.AgentSkillsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const AgentWorkflowsTab = nextDynamic(
-  () =>
-    import('@/ee/app/(dashboard)/settings/components/AgentWorkflowsTab').then((m) => ({
-      default: m.AgentWorkflowsTab,
-    })),
+  (() => import('@/ee').then((m) => ({ default: m.AgentWorkflowsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const BriefingsTab = nextDynamic(
-  () => import('@/ee/app/(dashboard)/settings/components/BriefingsTab').then((m) => ({ default: m.BriefingsTab })),
+  (() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
