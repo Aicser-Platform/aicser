@@ -52,7 +52,9 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
 
   const { init: initSubscription } = useSubscriptionStore();
   React.useEffect(() => {
-    void initSubscription();
+    if (isEnterpriseEdition) {
+      void initSubscription();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -76,7 +78,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const projectsLimit = projects?.unlimited ? Infinity : (projects?.limit ?? 1);
 
   const handleDropdownVisibleChange = (open: boolean) => {
-    if (open) {
+    if (open && isEnterpriseEdition) {
       void refreshUsage({ silent: true });
     }
   };
@@ -114,7 +116,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       void planType;
       setPricingModalVisible(false);
 
-    } catch (error) {
+    } catch {
       message.error(t('failed_upgrade_plan'));
     } finally {
       setUpgradeLoading(false);
@@ -150,7 +152,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
         </div>
       ),
     },
-    ...(onboardingCompleted === false
+    ...(isEnterpriseEdition && onboardingCompleted === false
       ? [
           { type: 'divider' as const },
           {
@@ -161,119 +163,124 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           },
         ]
       : []),
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'plan-info',
-      label: (
-        <div style={{ padding: '12px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isTrial ? '4px' : '10px' }}>
-            <span className="text-sm text-gray-900 dark:text-gray-100" style={{ fontWeight: 500 }}>
-              {t('current_plan')}
-            </span>
-            <Badge 
-              color={getPlanBadgeColor(planType)} 
-              text={subLoading ? t('loading') : getPlanDisplayName(planType)}
-              style={{ fontSize: '11px', padding: '2px 8px' }}
-            />
-          </div>
-          {isTrial && trialDaysRemaining !== null && (
-            <div style={{ marginBottom: '10px' }}>
-              <span className="text-xs" style={{ color: '#fa8c16' }}>
-                {trialDaysRemaining} day{trialDaysRemaining !== 1 ? 's' : ''} remaining in trial
-              </span>
-            </div>
-          )}
-          
-          {/* AI Credits */}
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {showPerUserLabel ? 'AI Credits Per User' : 'AI Credits'}
-              </span>
-              <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                {aiCreditsLimit === Infinity ? `${aiCreditsUsed} / ∞` : `${aiCreditsUsed} / ${aiCreditsLimit}`}
-              </span>
-            </div>
-            {aiCreditsLimit !== Infinity && (
-              <Progress 
-                percent={creditsPercentage} 
-                size="small" 
-                strokeColor={creditsPercentage > 80 ? '#ff4d4f' : '#1890ff'}
-                showInfo={false}
-              />
-            )}
-          </div>
+    ...(isEnterpriseEdition
+      ? [
+          {
+            type: 'divider' as const,
+          },
+          {
+            key: 'plan-info',
+            label: (
+              <div style={{ padding: '12px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isTrial ? '4px' : '10px' }}>
+                  <span className="text-sm text-gray-900 dark:text-gray-100" style={{ fontWeight: 500 }}>
+                    {t('current_plan')}
+                  </span>
+                  <Badge
+                    color={getPlanBadgeColor(planType)}
+                    text={subLoading ? t('loading') : getPlanDisplayName(planType)}
+                    style={{ fontSize: '11px', padding: '2px 8px' }}
+                  />
+                </div>
+                {isTrial && trialDaysRemaining !== null && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <span className="text-xs" style={{ color: '#fa8c16' }}>
+                      {trialDaysRemaining} day{trialDaysRemaining !== 1 ? 's' : ''} remaining in trial
+                    </span>
+                  </div>
+                )}
 
-          {/* Data Sources */}
-          <div style={{ marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {showPerUserLabel ? 'Data Sources Per User' : 'Data Sources'}
-              </span>
-              <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                {useTeamStyleUsage
-                  ? dataSourcesUsed
-                  : (dataSourcesLimit === Infinity
-                      ? `${dataSourcesUsed} / ∞`
-                      : `${dataSourcesUsed} / ${dataSourcesLimit}`)}
-              </span>
-            </div>
-            {!useTeamStyleUsage && dataSourcesLimit !== Infinity && (
-              <Progress 
-                percent={dataSourcesPercentage} 
-                size="small" 
-                strokeColor={dataSourcesPercentage > 80 ? '#ff4d4f' : '#52c41a'}
-                showInfo={false}
-              />
-            )}
-          </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {showPerUserLabel ? 'AI Credits Per User' : 'AI Credits'}
+                    </span>
+                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
+                      {aiCreditsLimit === Infinity ? `${aiCreditsUsed} / ∞` : `${aiCreditsUsed} / ${aiCreditsLimit}`}
+                    </span>
+                  </div>
+                  {aiCreditsLimit !== Infinity && (
+                    <Progress
+                      percent={creditsPercentage}
+                      size="small"
+                      strokeColor={creditsPercentage > 80 ? '#ff4d4f' : '#1890ff'}
+                      showInfo={false}
+                    />
+                  )}
+                </div>
 
-          {/* Projects */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {showPerUserLabel ? 'Projects Per User' : 'Projects'}
-              </span>
-              <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                {useTeamStyleUsage
-                  ? projectsUsed
-                  : (projectsLimit === Infinity
-                      ? `${projectsUsed} / ∞`
-                      : `${projectsUsed} / ${projectsLimit}`)}
-              </span>
-            </div>
-            {!useTeamStyleUsage && projectsLimit !== Infinity && (
-              <Progress 
-                percent={projectsPercentage} 
-                size="small" 
-                strokeColor={projectsPercentage > 80 ? '#ff4d4f' : '#722ed1'}
-                showInfo={false}
-              />
-            )}
-          </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {showPerUserLabel ? 'Data Sources Per User' : 'Data Sources'}
+                    </span>
+                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
+                      {useTeamStyleUsage
+                        ? dataSourcesUsed
+                        : (dataSourcesLimit === Infinity
+                            ? `${dataSourcesUsed} / ∞`
+                            : `${dataSourcesUsed} / ${dataSourcesLimit}`)}
+                    </span>
+                  </div>
+                  {!useTeamStyleUsage && dataSourcesLimit !== Infinity && (
+                    <Progress
+                      percent={dataSourcesPercentage}
+                      size="small"
+                      strokeColor={dataSourcesPercentage > 80 ? '#ff4d4f' : '#52c41a'}
+                      showInfo={false}
+                    />
+                  )}
+                </div>
 
-          <Button
-            type="primary"
-            size="small"
-            icon={<CrownOutlined />}
-            block
-            onClick={() => setPricingModalVisible(true)}
-            style={{
-              background: 'var(--color-brand-primary, #00c2cb)',
-              borderColor: 'var(--color-brand-primary, #00c2cb)',
-            }}
-          >
-            {t('upgrade_plan')}
-          </Button>
-        </div>
-      ),
-      onClick: () => setPricingModalVisible(true),
-    },
-    {
-      type: 'divider' as const,
-    },
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {showPerUserLabel ? 'Projects Per User' : 'Projects'}
+                    </span>
+                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
+                      {useTeamStyleUsage
+                        ? projectsUsed
+                        : (projectsLimit === Infinity
+                            ? `${projectsUsed} / ∞`
+                            : `${projectsUsed} / ${projectsLimit}`)}
+                    </span>
+                  </div>
+                  {!useTeamStyleUsage && projectsLimit !== Infinity && (
+                    <Progress
+                      percent={projectsPercentage}
+                      size="small"
+                      strokeColor={projectsPercentage > 80 ? '#ff4d4f' : '#722ed1'}
+                      showInfo={false}
+                    />
+                  )}
+                </div>
+
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CrownOutlined />}
+                  block
+                  onClick={() => setPricingModalVisible(true)}
+                  style={{
+                    background: 'var(--color-brand-primary, #00c2cb)',
+                    borderColor: 'var(--color-brand-primary, #00c2cb)',
+                  }}
+                >
+                  {t('upgrade_plan')}
+                </Button>
+              </div>
+            ),
+            onClick: () => setPricingModalVisible(true),
+          },
+          {
+            type: 'divider' as const,
+          },
+        ]
+      : [
+          {
+            type: 'divider' as const,
+          },
+        ]),
     {
       key: 'get-help',
       icon: <CustomerServiceOutlined />,
@@ -347,20 +354,24 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 {displayName}
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400" style={{ lineHeight: '1.3' }}>
-                {subLoading ? '...' : t('plan_display', { plan: getPlanDisplayName(planType) })}
+                {isEnterpriseEdition
+                  ? (subLoading ? '...' : t('plan_display', { plan: getPlanDisplayName(planType) }))
+                  : (user?.email || t('user'))}
               </div>
             </div>
           )}
         </div>
       </Dropdown>
 
-      <PricingModal
-        visible={pricingModalVisible}
-        onClose={() => setPricingModalVisible(false)}
-        onUpgrade={handleUpgrade}
-        currentPlan={planType}
-        loading={upgradeLoading}
-      />
+      {isEnterpriseEdition && (
+        <PricingModal
+          visible={pricingModalVisible}
+          onClose={() => setPricingModalVisible(false)}
+          onUpgrade={handleUpgrade}
+          currentPlan={planType}
+          loading={upgradeLoading}
+        />
+      )}
     </>
   );
 };

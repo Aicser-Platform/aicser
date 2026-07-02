@@ -1,9 +1,16 @@
 """Add decision_cases and decision_evidence_items tables."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
+
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
 
 revision: str = "d1e2f3a4b5c6"
 down_revision: Union[str, Sequence[str], None] = "c0d1e2f3a4b5"
@@ -12,6 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.create_table(
         "decision_cases",
         sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -54,6 +64,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_index("ix_decision_evidence_items_case_id", table_name="decision_evidence_items")
     op.drop_table("decision_evidence_items")
     op.drop_index("ix_decision_cases_hitl_required", table_name="decision_cases")

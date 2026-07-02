@@ -1,17 +1,27 @@
 """Add knowledge_libraries and embed_assistants tables."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
+
 revision: str = "a1b2c3d4e5f7"
 down_revision: Union[str, None] = "f6a7b8c9d0e1"
 branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = ("f11a9f2c63b1",)
+depends_on: Union[str, Sequence[str], None] = ("f11a9f2c63b1",) if _is_ee_enabled() else None
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.create_table(
         "knowledge_libraries",
         sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -64,6 +74,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_index("ix_embed_assistants_organization_id", table_name="embed_assistants")
     op.drop_table("embed_assistants")
     op.drop_index("ix_knowledge_libraries_data_source_id", table_name="knowledge_libraries")

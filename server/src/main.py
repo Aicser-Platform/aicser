@@ -1,6 +1,7 @@
 """Application entry point — creates the FastAPI app and wires middleware."""
 import logging
 import os
+import mimetypes
 import sys
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -105,6 +106,7 @@ instrument_fastapi(app)
 # Disk layout: <UPLOAD_DIR>/feed_thumbnails/<uuid>.webp
 # Public URL:  /media/feed-thumbnails/<uuid>.webp
 # StaticFiles raises at mount time if the directory doesn't exist, so create it eagerly.
+mimetypes.add_type("image/webp", ".webp")
 _feed_thumbnails_dir = os.path.join(settings.UPLOAD_DIR, "feed_thumbnails")
 os.makedirs(_feed_thumbnails_dir, exist_ok=True)
 app.mount("/media/feed-thumbnails", StaticFiles(directory=_feed_thumbnails_dir), name="feed-thumbnails")

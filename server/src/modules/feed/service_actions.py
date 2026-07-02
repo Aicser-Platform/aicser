@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.modules.authentication.rbac.models import Role, UserRole
 from src.modules.charts.models import Chart
 from src.modules.dashboards.models import Dashboard
@@ -132,6 +133,9 @@ class FeedServiceActionMixin:
         return user.id if user else None
 
     async def _get_approver_ids(self, post: FeedPost) -> List[UUID]:
+        if not is_ee_enabled():
+            return []
+
         visibility = _enum_value(post.visibility)
 
         if visibility == "public":
@@ -452,6 +456,8 @@ class FeedServiceActionMixin:
         preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
         if request.asset_type == AssetType.query and request.source_query_id:
             preview_metadata.setdefault("sourceQueryId", request.source_query_id)
+        if request.thumbnail_url:
+            preview_metadata["thumbnailUrl"] = request.thumbnail_url
 
         organization_id = request.organization_id
         project_id = request.project_id
@@ -687,6 +693,8 @@ class FeedServiceActionMixin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
         preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
+        if request.thumbnail_url:
+            preview_metadata["thumbnailUrl"] = request.thumbnail_url
         if request.title:
             post.title = request.title
         if request.description is not None:
@@ -694,12 +702,17 @@ class FeedServiceActionMixin:
         if preview_metadata:
             post.preview_metadata = {**(post.preview_metadata or {}), **preview_metadata}
 
+        previous_thumbnail_url = None
+        if post.current_snapshot_id:
+            previous_snapshot = await self.db.get(FeedSnapshot, post.current_snapshot_id)
+            previous_thumbnail_url = getattr(previous_snapshot, "thumbnail_url", None)
+
         await create_feed_snapshot(
             self.db,
             post=post,
             payload=normalize_snapshot_payload(request.snapshot_payload),
             created_by=user_id,
-            thumbnail_url=request.thumbnail_url,
+            thumbnail_url=request.thumbnail_url or previous_thumbnail_url,
         )
         post.last_activity_at = _utcnow()
         await self.db.commit()

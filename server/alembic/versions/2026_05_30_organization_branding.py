@@ -1,10 +1,17 @@
 """Add organization branding columns (logo_url, settings JSONB)."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
+
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
 
 revision: str = "f3a4b5c6d7e8"
 down_revision: Union[str, Sequence[str], None] = "e2f3a4b5c6d7"
@@ -18,6 +25,9 @@ def _org_columns() -> set[str]:
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     cols = _org_columns()
     if "logo_url" not in cols:
         op.add_column("organizations", sa.Column("logo_url", sa.String(length=2048), nullable=True))
@@ -34,5 +44,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_column("organizations", "settings")
     op.drop_column("organizations", "logo_url")

@@ -80,6 +80,8 @@ class PostgresStorageService:
         """Retrieve file from PostgreSQL. On CE (no project), look up by object_key only."""
         from uuid import UUID
         project_id_uuid = None
+        if object_key.startswith("user_files/ce/"):
+            project_id = None
         if project_id:
             if isinstance(project_id, str):
                 try:
@@ -120,6 +122,8 @@ class PostgresStorageService:
         """Soft delete file (set is_active=False)"""
         from uuid import UUID
         project_id_uuid = None
+        if object_key.startswith("user_files/ce/"):
+            project_id = None
         if project_id:
             if isinstance(project_id, str):
                 try:

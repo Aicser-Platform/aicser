@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, or_, select, false
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
+from src.core.edition import is_ee_enabled
 from src.modules.authentication.rbac.models import Role, UserRole
 from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedView
 from src.modules.user.models import User
@@ -70,6 +71,18 @@ class FeedServiceQueryMixin:
                 )
             ]
 
+        if not is_ee_enabled():
+            return [
+                and_(
+                    FeedPost.visibility == FeedVisibility.public.value,
+                    FeedPost.public_access_level == "results_only",
+                ),
+                and_(
+                    FeedPost.author_id == user_id,
+                    FeedPost.visibility == FeedVisibility.private.value,
+                ),
+            ]
+
         org_ids_stmt = (
             select(UserRole.organization_id)
             .where(
@@ -117,6 +130,11 @@ class FeedServiceQueryMixin:
 
         if not user_id:
             return False
+
+        if not is_ee_enabled():
+            if visibility == FeedVisibility.private.value:
+                return post.author_id == user_id
+            return post.author_id == user_id
 
         if visibility == FeedVisibility.private.value:
             return post.author_id == user_id
@@ -1276,6 +1294,9 @@ class FeedServiceQueryMixin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
         await self._ensure_user_row(user_id, user_payload)
+
+        if not is_ee_enabled():
+            return ApprovalQueueResponse(items=[], total=0, limit=limit, offset=offset)
 
         role_rows = await self.db.execute(
             select(UserRole.organization_id, UserRole.project_id, Role.name)

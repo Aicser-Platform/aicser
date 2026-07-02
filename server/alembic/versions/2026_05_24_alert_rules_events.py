@@ -1,17 +1,29 @@
 """Add alert_rules and alert_events tables (EE alerts)."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
+
 revision: str = "f7a8b9c0d1e2"
-down_revision: Union[str, Sequence[str], None] = ("d4e5f6a7b8c0", "e1f2a3b4c5d6")
+down_revision: Union[str, Sequence[str], None] = (
+    ("d4e5f6a7b8c0", "e1f2a3b4c5d6") if _is_ee_enabled() else "d4e5f6a7b8c0"
+)
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.create_table(
         "alert_rules",
         sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -57,6 +69,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_index("ix_alert_events_triggered_at", table_name="alert_events")
     op.drop_index("ix_alert_events_rule_id", table_name="alert_events")
     op.drop_table("alert_events")
