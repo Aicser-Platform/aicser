@@ -19,11 +19,30 @@ import sqlalchemy as sa
 # DuckDB for local analytics
 import duckdb
 import shutil
-from src.modules.ai.data_source_capabilities import (
-    uses_duckdb_for_execution,
-    is_file_upload_duckdb,
-    is_single_table_source,
-)
+try:
+    from src.modules.ai.data_source_capabilities import (
+        uses_duckdb_for_execution,
+        is_file_upload_duckdb,
+        is_single_table_source,
+    )
+except ImportError:
+    def uses_duckdb_for_execution(source_type: str | None, db_type: str | None = None) -> bool:
+        source = (source_type or "").lower()
+        dialect = (db_type or "").lower()
+        return source in {"file", "file_upload", "sample_duckdb"} or dialect in {
+            "csv",
+            "duckdb",
+            "excel",
+            "json",
+            "parquet",
+            "xlsx",
+        }
+
+    def is_file_upload_duckdb(source_type: str | None, db_type: str | None = None) -> bool:
+        return uses_duckdb_for_execution(source_type, db_type)
+
+    def is_single_table_source(source_type: str | None, db_type: str | None = None) -> bool:
+        return uses_duckdb_for_execution(source_type, db_type)
 import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time

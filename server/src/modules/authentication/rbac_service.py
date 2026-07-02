@@ -1,7 +1,6 @@
 from typing import Optional, Iterable
 from sqlalchemy import select, text
 # User model removed - user management will be handled by Supabase
-from src.modules.project.models import Project
 from src.db.session import async_session
 import uuid
 import logging
@@ -92,11 +91,16 @@ async def has_org_role(user_payload, organization_id: int, roles: Iterable[str])
 
 async def is_project_owner(user_payload, project_id: int) -> bool:
     """Return True if the user is the created_by of the project or is owner/admin of the organization."""
+    if not is_ee_enabled():
+        return False
+
     uid = await _resolve_user_str(user_payload)
     if not uid:
         return False
     async with async_session() as sdb:
         try:
+            from src.modules.project.models import Project
+
             pres = await sdb.execute(select(Project).where(Project.id == project_id))
             proj = pres.scalar_one_or_none()
             if not proj:
@@ -189,4 +193,3 @@ async def has_dashboard_access(user_payload, dashboard_id: str) -> bool:
         except Exception as e:
             logger.exception(f"has_dashboard_access error: {e}")
             return False
-

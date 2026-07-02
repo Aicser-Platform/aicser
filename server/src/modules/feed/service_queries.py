@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
 from src.core.edition import is_ee_enabled
-from src.modules.authentication.rbac.models import Role, UserRole
+try:
+    from src.modules.authentication.rbac.models import Role, UserRole
+except ImportError:
+    Role = None  # type: ignore
+    UserRole = None  # type: ignore
 from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedView
 from src.modules.user.models import User
 from src.modules.feed.schemas import (
@@ -71,7 +75,7 @@ class FeedServiceQueryMixin:
                 )
             ]
 
-        if not is_ee_enabled():
+        if not is_ee_enabled() or UserRole is None:
             return [
                 and_(
                     FeedPost.visibility == FeedVisibility.public.value,
