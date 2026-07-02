@@ -1727,7 +1727,7 @@ async def create_data_source_via_project_path(
             )
         # Optionally link to project (project_data_sources table)
         try:
-            await project_service.add_data_source_to_project(
+            await ProjectService.add_data_source_to_project(
                 project_id, str(result.id), ds_type, user_id
             )
         except Exception as link_err:

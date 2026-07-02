@@ -58,6 +58,32 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+class NoOpAISchemaService:
+    async def generate_data_insights(
+        self,
+        data: List[Dict[str, Any]],
+        schema: Dict[str, Any],
+        name: str,
+    ) -> Dict[str, Any]:
+        columns = []
+        if isinstance(schema, dict):
+            if isinstance(schema.get("columns"), list):
+                columns = schema["columns"]
+            elif isinstance(schema.get("tables"), list) and schema["tables"]:
+                first_table = schema["tables"][0] or {}
+                columns = first_table.get("columns") or []
+        return {
+            "success": True,
+            "insights": [],
+            "summary": {
+                "name": name,
+                "row_count": len(data or []),
+                "column_count": len(columns),
+                "ai_enriched": False,
+            },
+        }
+
 NOSQL_TYPES = ("mongodb", "cassandra", "dynamodb")
 # IoT / time-series sources routed to EnterpriseConnectorsService (EE)
 TIMESERIES_TYPES = ("influxdb", "prometheus_source", "opensearch", "elasticsearch")
@@ -134,7 +160,7 @@ class DataConnectivityService:
         self.data_sources = {}
         self._initialize_demo_data()
         self.database_connector = DatabaseConnectorService()
-        self.ai_schema_service = AISchemaService()
+        self.ai_schema_service = AISchemaService() if AISchemaService else NoOpAISchemaService()
         # Schema cache: {data_source_id: (schema_dict, fetched_at_timestamp)}
         self._schema_cache: Dict[str, tuple] = {}
         self._schema_cache_ttl = 300  # 5 minutes
