@@ -9,12 +9,15 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.edition import is_ee_enabled
-from src.modules.authentication.rbac.models import Role, UserRole
+try:
+    from src.modules.authentication.rbac.models import Role, UserRole
+except ImportError:
+    Role = None  # type: ignore
+    UserRole = None  # type: ignore
 from src.modules.charts.models import Chart
 from src.modules.dashboards.models import Dashboard
 from src.modules.data.models import DataQuery
 from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedShare, FeedSnapshot, FeedView, FeedDigestSubscription
-from src.modules.project.models import Project
 from src.modules.user.models import User
 from src.modules.feed.schemas import (
     AddCommentRequest,
@@ -133,7 +136,7 @@ class FeedServiceActionMixin:
         return user.id if user else None
 
     async def _get_approver_ids(self, post: FeedPost) -> List[UUID]:
-        if not is_ee_enabled():
+        if not is_ee_enabled() or Role is None or UserRole is None:
             return []
 
         visibility = _enum_value(post.visibility)
@@ -230,6 +233,9 @@ class FeedServiceActionMixin:
         organization_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
     ) -> List[str]:
+        if Role is None or UserRole is None:
+            return []
+
         stmt = (
             select(Role.name)
             .join(UserRole, Role.id == UserRole.role_id)
@@ -463,6 +469,8 @@ class FeedServiceActionMixin:
         project_id = request.project_id
 
         if project_id and not organization_id:
+            from src.modules.project.models import Project
+
             organization_id = await self.db.scalar(
                 select(Project.organization_id).where(Project.id == project_id)
             )
@@ -1000,6 +1008,8 @@ class FeedServiceActionMixin:
         organization_id = request.organization_id
         project_id = request.project_id
         if project_id and not organization_id:
+            from src.modules.project.models import Project
+
             organization_id = await self.db.scalar(
                 select(Project.organization_id).where(Project.id == project_id)
             )

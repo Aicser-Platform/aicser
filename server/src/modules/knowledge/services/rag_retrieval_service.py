@@ -23,7 +23,7 @@ from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.knowledge.models import DocumentChunk, KnowledgeDocument
-from src.modules.ai.utils.embedding_service import get_embedding, QUERY_INSTRUCTION_PREFIX
+from src.shared.embedding import QUERY_INSTRUCTION_PREFIX, get_embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,10 @@ class RAGRetrievalService:
         if not query or not query.strip():
             return []
 
-        query_embedding = await get_embedding(query, instruction_prefix=QUERY_INSTRUCTION_PREFIX)
+        query_embedding = await get_embedding_service().embed_text(
+            query,
+            instruction_prefix=QUERY_INSTRUCTION_PREFIX,
+        )
 
         pgvector_hits = await self._retrieve_pgvector(
             query,

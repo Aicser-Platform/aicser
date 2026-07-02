@@ -18,8 +18,6 @@ from fastapi import HTTPException, status
 
 from src.db.session import get_async_session
 from src.modules.data.models import DataSource, DataQuery
-from src.modules.organizations.models import Organization
-from src.modules.project.models import Project
 from src.core.real_data_sources import real_data_source_manager
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
 from src.core.metrics import DS_CREATE_COUNTER, DS_UPDATE_COUNTER, DS_DELETE_COUNTER, CONNECTION_TEST_COUNTER
