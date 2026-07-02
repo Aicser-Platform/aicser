@@ -1849,6 +1849,12 @@ async def chat_to_chart_workflow(
     try:
         logger.info(f"💬 Chat-to-chart request: \"{request.natural_language_query}\" for data source {request.data_source_id}")
 
+        if not is_ee_enabled():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="AI chat-to-chart is available in Enterprise Edition",
+            )
+
         try:
             user_payload = extract_user_payload(current_token)
             user_id = str(user_payload.get('id') or user_payload.get('sub') or '')

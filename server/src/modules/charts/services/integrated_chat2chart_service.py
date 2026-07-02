@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from .mcp_echarts_service import MCPEChartsService
-from ...ai.services.litellm_service import LiteLLMService
+from .optional_litellm import get_litellm_service
 # DataModelingService removed - functionality integrated into UnifiedAIAnalyticsService
 from ...data.services.data_connectivity_service import DataConnectivityService
 
@@ -20,7 +20,7 @@ class IntegratedChat2ChartService:
     """Integrated service for complete chat-to-chart workflow"""
     
     def __init__(self):
-        self.litellm_service = LiteLLMService()
+        self.litellm_service = get_litellm_service()
         # self.data_modeling_service = DataModelingService()  # Removed - integrated into UnifiedAIAnalyticsService
         self.data_service = DataConnectivityService()
         self.echarts_service = MCPEChartsService()
