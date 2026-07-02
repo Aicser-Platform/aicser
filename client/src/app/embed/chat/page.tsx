@@ -21,25 +21,20 @@ import { resolveChatChartDisplay, withChartAnimationDefaults } from '@/component
 import {
   applyEvent,
   buildCompleteFromAccumulator,
-  isSubstantiveCompleteEvent,
-} from '@/ee/app/(dashboard)/chat/utils/applyEvent';
-import { displayText } from '@/ee/app/(dashboard)/chat/utils/mapAccumulatorToMessage';
-import { drainSSEBuffer } from '@/ee/app/(dashboard)/chat/utils/parseSSEBuffer';
-import type { StreamingAccumulator } from '@/ee/app/(dashboard)/chat/utils/applyEvent';
-import { extractAnalyzeRunView } from '@/ee/app/(dashboard)/chat/hooks/useAnalyzeRun';
-import {
+  buildDashboardStudioLink,
   CitationSourcesStrip,
+  displayText,
+  drainSSEBuffer,
+  extractAnalyzeRunView,
+  isSubstantiveCompleteEvent,
   type CitationItem,
-} from '@/ee/components/ai/chat/CitationSourcesStrip';
-import ThoughtProcessDisplay from '@/ee/app/(dashboard)/chat/components/ChatPanel/ThoughtProcessDisplay';
-import { buildDashboardStudioLink } from '@/ee/app/(dashboard)/chat/utils/chatDeepLinks';
+  type StreamingAccumulator,
+  ThoughtProcessDisplay,
+} from '@/ee';
 import { isDashboardAutoOpenEnabled } from '@/app/(dashboard)/dashboards/utils/dashboardAutoOpenStorage';
 
 const DashboardPlanCard = dynamic(
-  () =>
-    import('@/ee/app/(dashboard)/chat/components/ChatPanel/DashboardPlanCard').then(
-      (m) => m.DashboardPlanCard,
-    ),
+  () => import('@/ee').then((m) => m.DashboardPlanCard),
   { ssr: false, loading: () => <Spin size="small" /> },
 );
 

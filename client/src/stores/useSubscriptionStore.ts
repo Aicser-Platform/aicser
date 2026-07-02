@@ -8,7 +8,7 @@
  *   /api/billing/subscription — planType reflects the org's actual paid plan.
  *
  * All CE-codebase components import from this path; EE components may import
- * directly from @/ee/stores/useSubscriptionStore for access to EE-only fields.
+ * directly from @/ee for access to EE-only fields.
  */
 import type { PricingPlanKey } from '@/utils/pricingPlans';
 
@@ -28,7 +28,7 @@ if (isEE) {
     // Direct require: EE module is bundled in EE edition.
     // CE builds never reach this branch (isEE=false) so tree-shaker eliminates it.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    _eeStore = require('@/ee/stores/useSubscriptionStore').useSubscriptionStore;
+    _eeStore = require('@/ee').useSubscriptionStore;
   } catch {
     // Graceful fallback — EE module not available (CE build or missing submodule)
   }
