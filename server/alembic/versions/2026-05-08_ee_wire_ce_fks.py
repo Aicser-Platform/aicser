@@ -10,9 +10,15 @@ Revises: f11a9f2c63b1
 Create Date: 2026-05-08
 
 """
+import os
 from typing import Sequence, Union
 
 from alembic import op
+
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
 
 
 revision: str = 'e1f2a3b4c5d6'
@@ -24,6 +30,9 @@ depends_on: Union[str, Sequence[str], None] = ('4aa4ed67bea3',)
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     # dashboards.project_id → projects.id
     op.create_foreign_key('fk_dashboards_project_id', 'dashboards', 'projects', ['project_id'], ['id'])
 
@@ -68,6 +77,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_constraint('fk_feed_collections_org_id', 'feed_collections', type_='foreignkey')
     op.drop_constraint('fk_feed_collections_project_id', 'feed_collections', type_='foreignkey')
     op.drop_constraint('fk_feed_events_org_id', 'feed_events', type_='foreignkey')

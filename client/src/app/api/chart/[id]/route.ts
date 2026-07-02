@@ -1,9 +1,9 @@
 
-import { getBackendUrl } from '@/utils/backendUrl';
+import { getBackendUrlForApi } from '@/utils/backendUrl';
 import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 import { NextRequest, NextResponse } from 'next/server';
 
-const backendBase = getBackendUrl();
+const backendBase = getBackendUrlForApi();
 const backendUrl = `${backendBase}/api/chart`;
 
 async function forwardRequest(method: string, id: string, request?: NextRequest) {

@@ -14,6 +14,11 @@ import { useProjectStore } from '@/stores/useProjectStore';
 export { Permission } from '@/constants/permissions';
 import { Permission } from '@/constants/permissions';
 
+const IS_EE = ['enterprise', 'ee'].includes(
+  (process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase()
+);
+const CE_PERMISSIONS = Object.values(Permission);
+
 interface UsePermissionsOptions {
   organizationId?: string | number;
   projectId?: string | number;
@@ -64,6 +69,13 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
   }, [options.projectId, currentProject?.id]);
 
   const fetchPermissions = useCallback(async () => {
+    if (!IS_EE) {
+      setPermissions(CE_PERMISSIONS);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     if (!isAuthenticated || !user) {
       setPermissions([]);
       setLoading(false);
@@ -189,4 +201,3 @@ export function useHasPermission(
   
   return hasPermission(permission);
 }
-

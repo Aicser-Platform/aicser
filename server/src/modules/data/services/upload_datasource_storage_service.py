@@ -20,6 +20,7 @@ from src.core.edition import is_ee_enabled
 logger = logging.getLogger(__name__)
 
 POSTGRES_OBJECT_PREFIX = "user_files/"
+CE_OBJECT_PREFIX = "user_files/ce/"
 
 
 def _get_backend() -> str:
@@ -45,6 +46,14 @@ class UploadDatasourceStorageService:
 
     def _use_postgres_for_key(self, object_key: str) -> bool:
         return not is_ee_enabled() or object_key.startswith(POSTGRES_OBJECT_PREFIX)
+
+    def _storage_project_id(self, object_key: str, project_id: Optional[str]) -> Optional[str]:
+        # CE upload keys are stored without a project_id. Some execution paths
+        # pass user_id as a fallback scope, which would incorrectly filter out
+        # the stored file row during retrieval.
+        if object_key.startswith(CE_OBJECT_PREFIX):
+            return None
+        return project_id
 
     def _postgres_storage(self):
         from src.modules.data.services.postgres_storage_service import PostgresStorageService
@@ -108,6 +117,7 @@ class UploadDatasourceStorageService:
 
     async def get_file(self, object_key: str, project_id: Optional[str]) -> bytes:
         """Retrieve uploaded datasource content from the storage backend."""
+        project_id = self._storage_project_id(object_key, project_id)
         # Legacy PostgreSQL keys always go to Postgres regardless of current backend
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().get_file(object_key, project_id)
@@ -124,6 +134,7 @@ class UploadDatasourceStorageService:
 
     async def delete_file(self, object_key: str, project_id: Optional[str]) -> bool:
         """Delete uploaded datasource content from the storage backend."""
+        project_id = self._storage_project_id(object_key, project_id)
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().delete_file(object_key, project_id)
 

@@ -1,9 +1,16 @@
 """EE platform tables: query editor, widgets, audit, streaming, chat assets, billing columns."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
+
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
 
 revision: str = "a8b9c0d1e2f3"
 down_revision: Union[str, None] = "f7a8b9c0d1e2"
@@ -12,6 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     # ── organizations billing denormalization (rate_limiter, data retention) ──
     op.add_column("organizations", sa.Column("slug", sa.String(length=255), nullable=True))
     op.add_column(
@@ -304,6 +314,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_index("ix_onboarding_friction_logs_user_id", table_name="onboarding_friction_logs")
     op.drop_table("onboarding_friction_logs")
     op.drop_index("ix_onboarding_analytics_user_id", table_name="onboarding_analytics")

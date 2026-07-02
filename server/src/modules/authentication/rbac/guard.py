@@ -6,16 +6,21 @@ from typing import Optional, Union
 
 from fastapi import Request
 
+from src.core.edition import is_ee_enabled
+
 try:
-    from ee.modules.authentication.rbac.guard import (  # noqa: F401
-        data_rbac_guard,
-        legacy_charts_rbac_guard,
-        permission_for_method,
-        require_permission,
-        schedule_email_rbac_guard,
-        semantic_rbac_guard,
-        user_id_from_payload,
-    )
+    if is_ee_enabled():
+        from ee.modules.authentication.rbac.guard import (  # noqa: F401
+            data_rbac_guard,
+            legacy_charts_rbac_guard,
+            permission_for_method,
+            require_permission,
+            schedule_email_rbac_guard,
+            semantic_rbac_guard,
+            user_id_from_payload,
+        )
+    else:
+        raise ImportError("EE RBAC disabled")
 except ImportError:
     # Community Edition without EE package on disk — guards are no-ops.
     async def require_permission(*_args, **_kwargs) -> None:
@@ -34,14 +39,14 @@ except ImportError:
             return edit
         return view
 
-    async def legacy_charts_rbac_guard(_request: Request, _current_token: Union[str, dict, None] = None) -> None:
+    async def legacy_charts_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return
 
-    async def data_rbac_guard(_request: Request, _current_token: Union[str, dict, None] = None) -> None:
+    async def data_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return
 
-    async def schedule_email_rbac_guard(_request: Request, _current_token: Union[str, dict, None] = None) -> None:
+    async def schedule_email_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return
 
-    async def semantic_rbac_guard(_request: Request, _current_token: Union[str, dict, None] = None) -> None:
+    async def semantic_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return

@@ -6,6 +6,7 @@ from src.db.session import async_session
 import uuid
 import logging
 from src.core.config import settings
+from src.core.edition import is_ee_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,9 @@ async def _resolve_user_str(user_payload) -> Optional[str]:
 
 async def has_org_role(user_payload, organization_id: int, roles: Iterable[str]) -> bool:
     """Return True if user has any of the roles in the organization."""
+    if not is_ee_enabled():
+        return False
+
     uid = await _resolve_user_str(user_payload)
     logger.info(f"has_dashboard_access: resolved uid={uid}")
     if not uid:
@@ -131,6 +135,9 @@ async def has_dashboard_access(user_payload, dashboard_id: str) -> bool:
     except Exception:
         pass
     uid = await _resolve_user_str(user_payload)
+    if not is_ee_enabled():
+        return bool(uid)
+
     async with async_session() as sdb:
         try:
             from uuid import UUID as UUIDType
@@ -182,5 +189,4 @@ async def has_dashboard_access(user_payload, dashboard_id: str) -> bool:
         except Exception as e:
             logger.exception(f"has_dashboard_access error: {e}")
             return False
-
 

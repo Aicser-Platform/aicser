@@ -289,7 +289,7 @@ const DataSourcesPage: React.FC = () => {
                             onClick={() => handleEditDataSource(record)}
                         />
                     </Tooltip>
-                    <Tooltip title={t('profile_source')}>
+                    {/* <Tooltip title={t('profile_source')}>
                         <Button
                             size="small"
                             icon={<ScanOutlined />}
@@ -311,7 +311,7 @@ const DataSourcesPage: React.FC = () => {
                                 onClick={() => router.push(`/data/sources/${record.id}/semantic`)}
                             />
                         </Tooltip>
-                    )}
+                    )} */}
                     <Tooltip title={t('delete')}>
                         <Button
                             size="small"

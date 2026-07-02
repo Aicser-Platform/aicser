@@ -7,6 +7,7 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.edition import is_ee_enabled
 from src.modules.authentication.rbac.models import UserRole
 from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedShare, FeedView
 from src.modules.user.models import User
@@ -46,7 +47,8 @@ class FeedServiceBaseMixin:
         await self.db.execute(update(FeedAuthorFollow).where(FeedAuthorFollow.following_id == from_user_id).values(following_id=to_user_id))
 
         # UserRole.user_id is not FK-constrained but should stay aligned for permission checks.
-        await self.db.execute(update(UserRole).where(UserRole.user_id == from_user_id).values(user_id=to_user_id))
+        if is_ee_enabled():
+            await self.db.execute(update(UserRole).where(UserRole.user_id == from_user_id).values(user_id=to_user_id))
 
     @staticmethod
     def resolve_user_id(user_payload: Optional[Dict[str, Any]]) -> Optional[UUID]:

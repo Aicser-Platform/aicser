@@ -1,9 +1,16 @@
 """Add organization_agent_skills table."""
+import os
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
+
+
+def _is_ee_enabled() -> bool:
+    edition = os.getenv("AISER_EDITION", "community").strip().lower()
+    return edition in {"enterprise", "ee"} or bool(os.getenv("AISER_EDITION_LICENSE_KEY", "").strip())
+
 
 revision: str = "b2c3d4e5f6a8"
 down_revision: Union[str, None] = "a1b2c3d4e5f7"
@@ -12,6 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.create_table(
         "organization_agent_skills",
         sa.Column("id", postgresql.UUID(as_uuid=True), server_default=sa.text("gen_random_uuid()"), nullable=False),
@@ -36,5 +46,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _is_ee_enabled():
+        return
+
     op.drop_index("ix_organization_agent_skills_org_id", table_name="organization_agent_skills")
     op.drop_table("organization_agent_skills")

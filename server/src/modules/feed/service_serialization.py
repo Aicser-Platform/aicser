@@ -76,6 +76,7 @@ class FeedServiceSerializationMixin:
             "questionTitle",
             "conversationId",
             "messageId",
+            "thumbnailUrl",
         ):
             if meta.get(key) is not None:
                 payload[key] = meta[key]
