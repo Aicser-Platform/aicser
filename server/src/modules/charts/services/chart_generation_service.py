@@ -5,8 +5,7 @@ Orchestrates chart generation using MCP ECharts and integrates with analytics
 
 import logging
 from typing import Dict, List, Optional, Any
-# Import will be handled by __init__.py
-from ...ai.services.litellm_service import LiteLLMService
+from .optional_litellm import get_litellm_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +16,9 @@ class ChartGenerationService:
     def __init__(self):
         # Import here to avoid circular imports
         from .mcp_echarts_service import MCPEChartsService
-        
+
         self.mcp_echarts = MCPEChartsService()
-        self.litellm = LiteLLMService()
+        self.litellm = get_litellm_service()
     
     async def generate_chart_from_query(
         self,
