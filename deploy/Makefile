@@ -98,6 +98,12 @@ ce-recreate:
 ce-reset:
 	$(CE) down -v
 
+# Run CE the way a fresh PUBLIC clone would (no EE submodule baked in).
+# Surfaces any CE-imports-EE errors that `make ce` hides on a dev machine
+# that has server/ee/ checked out. Restores your submodule on exit.
+ce-fresh:
+	bash $(DEPLOY_DIR)/scripts/ce-fresh.sh
+
 # -- EE build
 ee:
 	$(EE) up -d --build
@@ -131,6 +137,6 @@ seed-rbac-dev:
 .PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
-        dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset \
+        dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
         ee ee-down ee-logs ee-client-light ee-restart ee-restart-client \
         ee-recreate ee-reset seed-rbac-ee seed-rbac-dev

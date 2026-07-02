@@ -60,6 +60,11 @@ api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
 api_router.include_router(pricing_router)
 api_router.include_router(translations_router, prefix="/api")
 
+if not is_ee_enabled():
+    from src.modules.ai.router import router as ce_ai_router
+
+    api_router.include_router(ce_ai_router, prefix="/ai", tags=["ai"])
+
 
 @api_router.get("/api/data/sources/{data_source_id}")
 async def get_data_source_proxy(
