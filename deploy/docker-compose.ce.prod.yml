@@ -59,6 +59,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
+      - server_ce_prod_uploads:/app/uploads
     ports:
       - "8000:8000"
     depends_on:
@@ -72,7 +73,7 @@ services:
       - |
         set -e
         echo "Running CE migrations..."
-        alembic -c alembic.ini upgrade ce@head
+        alembic -c alembic.ini upgrade 2026_06_29_cross_source_rel
         echo "Starting server..."
         exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
     healthcheck:
@@ -112,6 +113,7 @@ services:
 volumes:
   postgres_ce_prod_data:
   redis_ce_prod_data:
+  server_ce_prod_uploads:
 
 networks:
   default:

@@ -78,6 +78,8 @@ dev-logs: dev-ce-logs
 # ── CE build (rebuild image on code change, run migrations, start) ────────────
 ce:
 	$(CE) up -d --build
+ce-up:
+	$(CE) up -d
 
 ce-down:
 	$(CE) down
@@ -102,7 +104,7 @@ ee:
 ee-up:
 	$(EE) up -d
 ee-client-light:
-	COMPOSE_PARALLEL_LIMIT=1 NEXT_BUILD_CPUS=1 NEXT_BUILD_MAX_OLD_SPACE_SIZE=1024 $(EE) build client
+	COMPOSE_PARALLEL_LIMIT=1 NEXT_BUILD_CPUS=1 NEXT_BUILD_MAX_OLD_SPACE_SIZE=3072 $(EE) build client
 	$(EE) up -d --no-deps client
 ee-down:
 	$(EE) down

@@ -167,7 +167,11 @@ services:
         set -e
         cd /app
         echo "Running database migrations..."
-        /venv/bin/python -m alembic -c alembic.ini upgrade heads
+        if [ "$${AISER_EDITION}" = "enterprise" ] || [ "$${AISER_EDITION}" = "ee" ]; then
+          /venv/bin/python -m alembic -c alembic.ini upgrade heads
+        else
+          /venv/bin/python -m alembic -c alembic.ini upgrade 2026_06_29_cross_source_rel
+        fi
 
         if [ "$${RUN_EE_DEV_SEEDS}" = "true" ]; then
           echo "Seeding EE development data..."
