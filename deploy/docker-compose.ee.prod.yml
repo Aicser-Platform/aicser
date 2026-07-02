@@ -99,6 +99,7 @@ services:
       PYTHONUNBUFFERED: "1"
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
+      - server_ee_prod_uploads:/app/uploads
     ports:
       - "8000:8000"
     depends_on:
@@ -139,6 +140,8 @@ services:
         NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-1}
+        NEXT_BUILD_MAX_OLD_SPACE_SIZE: ${NEXT_BUILD_MAX_OLD_SPACE_SIZE:-3072}
     container_name: aiser-client-ee-prod
     environment:
       API_TARGET: http://server:8000
@@ -159,6 +162,7 @@ services:
 volumes:
   postgres_ee_prod_data:
   redis_ee_prod_data:
+  server_ee_prod_uploads:
 
 networks:
   default:
