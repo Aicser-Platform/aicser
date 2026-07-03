@@ -6,12 +6,15 @@ availability for bring-your-own-key providers configured in Settings or env.
 
 from __future__ import annotations
 
+import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.authentication.deps.auth_bearer import get_current_user
+from src.db.session import get_async_session
+from src.modules.authentication.deps.auth_bearer import JWTCookieBearer, get_current_user
 from src.modules.ai.providers import (
     PROVIDER_MODELS,
     ENV_KEYS,
@@ -19,6 +22,13 @@ from src.modules.ai.providers import (
     provider_for_model,
     saved_provider_keys as _saved_provider_keys,
 )
+from src.modules.ai.services.text_to_sql_service import (
+    TextToSqlService,
+    NoProviderKeyError,
+    DataSourceNotFoundError,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -128,3 +138,50 @@ async def model_status(model_id: str, request: Request):
             else "Configure a provider API key in Settings -> API Keys."
         ),
     }
+
+
+def _user_id_from_token(token: Union[str, dict]) -> str:
+    if isinstance(token, dict):
+        return str(token.get("id") or token.get("sub") or token.get("user_id") or "")
+    return str(token or "")
+
+
+@router.post("/text-to-sql")
+async def generate_text_to_sql(
+    payload: dict,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """CE natural-language → SQL using the user's own provider key (BYOK)."""
+    user_id = _user_id_from_token(current_token)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+    question = (payload or {}).get("question")
+    data_source_id = (payload or {}).get("data_source_id")
+    model = (payload or {}).get("model")
+
+    service = TextToSqlService()
+    try:
+        return await service.generate(
+            user_id=user_id, question=question, data_source_id=data_source_id, model=model
+        )
+    except NoProviderKeyError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "no_provider_key",
+                "provider": err.provider,
+                "message": "No AI provider key configured. Add one in Settings → API Keys.",
+            },
+        )
+    except DataSourceNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data source not found")
+    except ValueError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
+    except Exception as err:  # provider / litellm failure
+        logger.warning("text-to-sql generation failed: %s", err)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"code": "llm_error", "message": "AI provider request failed."},
+        )
