@@ -50,6 +50,27 @@ def test_render_schema_lists_tables_and_columns():
     assert "orders" in out and "id" in out and "amount" in out
 
 
+def test_render_schema_uses_duckdb_physical_names():
+    # Multi-sheet file sources load into DuckDB under prefixed physical names;
+    # the LLM must see those so generated SQL actually executes.
+    schema = {
+        "tables": [
+            {"name": "fact_marketing_campaign", "columns": [{"name": "impressions", "type": "BIGINT"}]},
+            {"name": "dim_channel", "columns": [{"name": "channel", "type": "VARCHAR"}]},
+        ],
+        "duckdb_tables": {
+            "fact_marketing_campaign": "sheet_6_fact_marketing_campaign",
+            "dim_channel": "sheet_1_dim_channel",
+        },
+    }
+    out = render_schema(schema)
+    assert "- sheet_6_fact_marketing_campaign(" in out
+    assert "- sheet_1_dim_channel(" in out
+    # the bare friendly name must not be presented as a queryable table
+    assert "- fact_marketing_campaign(" not in out
+    assert "- dim_channel(" not in out
+
+
 def test_build_messages_includes_schema_and_selectonly():
     schema = {"tables": [{"name": "orders", "columns": [{"name": "id", "type": "int"}]}]}
     msgs = build_messages("top orders", schema, "postgres")

@@ -74,15 +74,21 @@ def is_read_only_sql(sql: str) -> bool:
 
 
 def render_schema(schema: dict[str, Any], max_tables: int = 40, max_cols: int = 60) -> str:
-    tables = (schema or {}).get("tables") or []
+    schema = schema or {}
+    tables = schema.get("tables") or []
+    # Multi-sheet file sources load into DuckDB under prefixed physical names
+    # (e.g. "sheet_6_fact_marketing_campaign"). The stored schema lists friendly
+    # names but execution needs the physical ones, so present those to the LLM.
+    duckdb_tables = schema.get("duckdb_tables") or {}
     lines: list[str] = []
     for table in tables[:max_tables]:
         name = table.get("name") or table.get("table") or "table"
+        physical = duckdb_tables.get(name) or name
         cols = table.get("columns") or []
         rendered_cols = ", ".join(
             f"{c.get('name')}:{c.get('type', 'unknown')}" for c in cols[:max_cols] if c.get("name")
         )
-        lines.append(f"- {name}({rendered_cols})")
+        lines.append(f"- {physical}({rendered_cols})")
     return "\n".join(lines) if lines else "(no schema available)"
 
 
