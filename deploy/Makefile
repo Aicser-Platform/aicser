@@ -99,7 +99,7 @@ ce-recreate:
 
 # Stop everything and wipe volumes (fresh start)
 ce-reset:
-	$(CE) down
+	$(CE) down -v
 
 # Run CE the way a fresh PUBLIC clone would (no EE submodule baked in).
 # Surfaces any CE-imports-EE errors that `make ce` hides on a dev machine
