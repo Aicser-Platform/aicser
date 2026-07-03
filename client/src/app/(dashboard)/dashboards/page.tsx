@@ -924,7 +924,7 @@ export default function NewDashboardStudio() {
             </div>
           ) : (
             <Text type="secondary" style={{ marginTop: 12 }}>
-              No sample dashboards available right now.
+              {t('no_sample_dashboards')}
             </Text>
           )}
         </div>

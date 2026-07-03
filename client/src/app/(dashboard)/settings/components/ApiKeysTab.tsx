@@ -400,7 +400,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                       ) : providerApiKeys[provider.key] ? (
                         <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{t('configured')}</Tag>
                       ) : (
-                        <Tag style={{ margin: 0, fontSize: 10 }}>Not set</Tag>
+                        <Tag style={{ margin: 0, fontSize: 10 }}>{t('not_set')}</Tag>
                       )}
                     </div>
                   ))}

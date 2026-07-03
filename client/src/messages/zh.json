@@ -1919,7 +1919,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "数据源",
@@ -5903,7 +5904,8 @@
     "build_live_subtitle": "组件在校验并创建后会出现在画布上。",
     "build_live_syncing": "同步中",
     "build_live_connected": "实时",
-    "dashboard_not_found": "未找到仪表板或您无权访问。"
+    "dashboard_not_found": "未找到仪表板或您无权访问。",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "加载中...",

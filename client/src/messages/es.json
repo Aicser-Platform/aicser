@@ -1917,7 +1917,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "Fuentes de Datos",
@@ -5901,7 +5902,8 @@
     "build_live_subtitle": "Los widgets aparecen en el lienzo tras validarse.",
     "build_live_syncing": "Sincronizando",
     "build_live_connected": "En vivo",
-    "dashboard_not_found": "Panel no encontrado o sin acceso."
+    "dashboard_not_found": "Panel no encontrado o sin acceso.",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "Cargando...",

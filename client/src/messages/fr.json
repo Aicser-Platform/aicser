@@ -1919,7 +1919,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "Sources de données",
@@ -5903,7 +5904,8 @@
     "build_live_subtitle": "Les widgets apparaissent après validation.",
     "build_live_syncing": "Synchronisation",
     "build_live_connected": "En direct",
-    "dashboard_not_found": "Tableau de bord introuvable ou accès refusé."
+    "dashboard_not_found": "Tableau de bord introuvable ou accès refusé.",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "Chargement...",

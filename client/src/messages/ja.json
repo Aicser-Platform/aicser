@@ -1919,7 +1919,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "データソース",
@@ -5903,7 +5904,8 @@
     "build_live_subtitle": "検証されたウィジェットがキャンバスに順次表示されます。",
     "build_live_syncing": "同期中",
     "build_live_connected": "ライブ",
-    "dashboard_not_found": "ダッシュボードが見つからないか、アクセス権がありません。"
+    "dashboard_not_found": "ダッシュボードが見つからないか、アクセス権がありません。",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "読み込み中...",

@@ -139,11 +139,11 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       <Card
         size="small"
         title={t('language_region')}
-        className="mb-4"
+        className="mb-6"
         bordered={false}
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
       >
-        <Row gutter={16}>
+        <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
             <Form.Item name="language" label={t('language')} rules={[{ required: true }]}>
               <Select placeholder={t('select_language')} showSearch optionFilterProp="label">
@@ -197,11 +197,11 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       <Card
         size="small"
         title={t('display_preferences')}
-        className="mb-4"
+        className="mb-6"
         bordered={false}
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
       >
-        <Row gutter={16}>
+        <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
             <Form.Item name="theme" label={t('theme')} tooltip={t('theme_tooltip')}>
               <Select
