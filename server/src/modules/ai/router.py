@@ -6,50 +6,21 @@ availability for bring-your-own-key providers configured in Settings or env.
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Request
 
 from src.modules.authentication.deps.auth_bearer import get_current_user
-from src.modules.data.utils.credentials import decrypt_credentials
-from src.modules.user.user_setting_repository import UserSettingRepository
+from src.modules.ai.providers import (
+    PROVIDER_MODELS,
+    ENV_KEYS,
+    has_env_provider as _has_env_provider,
+    provider_for_model,
+    saved_provider_keys as _saved_provider_keys,
+)
 
 router = APIRouter()
-_settings_repo = UserSettingRepository()
-
-
-PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
-    "openai": [
-        {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini", "tier": "fast", "cost_per_1k_tokens": 0},
-        {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "tier": "fast", "cost_per_1k_tokens": 0},
-        {"id": "gpt-4o", "name": "GPT-4o", "tier": "standard", "cost_per_1k_tokens": 0},
-    ],
-    "anthropic": [
-        {"id": "claude-3-5-haiku-latest", "name": "Claude 3.5 Haiku", "tier": "fast", "cost_per_1k_tokens": 0},
-        {"id": "claude-3-5-sonnet-latest", "name": "Claude 3.5 Sonnet", "tier": "standard", "cost_per_1k_tokens": 0},
-    ],
-    "google": [
-        {"id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "tier": "fast", "cost_per_1k_tokens": 0},
-        {"id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "tier": "standard", "cost_per_1k_tokens": 0},
-    ],
-    "azure_openai": [
-        {"id": "azure/gpt-4o-mini", "name": "Azure GPT-4o Mini", "tier": "fast", "cost_per_1k_tokens": 0},
-        {"id": "azure/gpt-4o", "name": "Azure GPT-4o", "tier": "standard", "cost_per_1k_tokens": 0},
-    ],
-    "ollama": [
-        {"id": "ollama/llama3.1", "name": "Ollama Llama 3.1", "tier": "local", "cost_per_1k_tokens": 0, "is_local": True},
-    ],
-}
-
-ENV_KEYS = {
-    "openai": ("OPENAI_API_KEY",),
-    "anthropic": ("ANTHROPIC_API_KEY",),
-    "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
-    "azure_openai": ("AZURE_OPENAI_API_KEY",),
-    "ollama": ("OLLAMA_BASE_URL", "OLLAMA_HOST", "AISER_PRIVATE_MODELS"),
-}
 
 
 async def _optional_user_id(request: Request) -> Optional[str]:
@@ -61,28 +32,6 @@ async def _optional_user_id(request: Request) -> Optional[str]:
         return None
     user_id = payload.get("id") or payload.get("user_id") or payload.get("sub")
     return str(user_id) if user_id else None
-
-
-async def _saved_provider_keys(user_id: Optional[str]) -> dict[str, dict[str, Any]]:
-    if not user_id:
-        return {}
-    all_settings = await _settings_repo.get_all_settings(user_id)
-    providers: dict[str, dict[str, Any]] = {}
-    for key, raw_value in all_settings.items():
-        if not key.startswith("provider_key."):
-            continue
-        provider = key.split(".", 2)[1]
-        try:
-            data = json.loads(raw_value)
-            if isinstance(data, dict):
-                providers[provider] = decrypt_credentials(data)
-        except Exception:
-            continue
-    return providers
-
-
-def _has_env_provider(provider: str) -> bool:
-    return any(os.getenv(env_name) for env_name in ENV_KEYS.get(provider, ()))
 
 
 def _model_with_status(
