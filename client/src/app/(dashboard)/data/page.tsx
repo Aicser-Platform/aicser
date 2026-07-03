@@ -433,54 +433,6 @@ const DataSourcesPage: React.FC = () => {
                 }
             />
             <div className="page-body">
-            {/* What's next — guide new users before first connection */}
-            {stats.total === 0 && (
-              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                {([
-                  {
-                    icon: <CodeOutlined style={{ fontSize: 20, color: 'var(--ant-color-primary)' }} />,
-                    title: t('next_query_title'),
-                    desc: t('next_query_desc'),
-                    href: '/query-editor',
-                  },
-                  {
-                    icon: <BarChartOutlined style={{ fontSize: 20, color: '#52c41a' }} />,
-                    title: t('next_dashboard_title'),
-                    desc: t('next_dashboard_desc'),
-                    href: '/dashboards',
-                  },
-                  {
-                    icon: <BellOutlined style={{ fontSize: 20, color: '#faad14' }} />,
-                    title: t('next_alert_title'),
-                    desc: t('next_alert_desc'),
-                    href: '/alerts',
-                  },
-                  ...(isEEEdition ? [{
-                    icon: <RocketOutlined style={{ fontSize: 20, color: '#722ed1' }} />,
-                    title: t('next_ai_title'),
-                    desc: t('next_ai_desc'),
-                    href: '/chat',
-                  }] : []),
-                ] as Array<{ icon: React.ReactNode; title: string; desc: string; href: string }>).map((item) => (
-                  <Col xs={24} sm={12} lg={isEEEdition ? 6 : 8} key={item.href}>
-                    <Card
-                      size="small"
-                      className="page-stat-tile"
-                      bordered={false}
-                      hoverable
-                      style={{ cursor: 'pointer', height: '100%' }}
-                      onClick={() => router.push(item.href)}
-                    >
-                      <Space direction="vertical" size={4}>
-                        {item.icon}
-                        <Text strong style={{ fontSize: 13 }}>{item.title}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{item.desc}</Text>
-                      </Space>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            )}
             {/* Statistics & quick actions — hide empty chrome until first source exists */}
             {stats.total > 0 ? (
             <Row gutter={[16, 16]} className="page-stat-grid">

@@ -1919,7 +1919,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "Nguồn dữ liệu",
@@ -5903,7 +5904,8 @@
     "build_live_subtitle": "Widget xuất hiện trên canvas khi được xác thực.",
     "build_live_syncing": "Đang đồng bộ",
     "build_live_connected": "Trực tiếp",
-    "dashboard_not_found": "Không tìm thấy bảng điều khiển hoặc bạn không có quyền truy cập."
+    "dashboard_not_found": "Không tìm thấy bảng điều khiển hoặc bạn không có quyền truy cập.",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "Đang tải...",

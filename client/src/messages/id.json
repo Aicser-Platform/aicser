@@ -1919,7 +1919,8 @@
       "step_depends_placeholder": "depends_on (optional)",
       "add_step": "Add step",
       "remove_step": "Remove"
-    }
+    },
+    "not_set": "Not set"
   },
   "data": {
     "title": "Sumber Data",
@@ -5903,7 +5904,8 @@
     "build_live_subtitle": "Widget muncul di kanvas setelah divalidasi.",
     "build_live_syncing": "Menyinkronkan",
     "build_live_connected": "Langsung",
-    "dashboard_not_found": "Dasbor tidak ditemukan atau Anda tidak memiliki akses."
+    "dashboard_not_found": "Dasbor tidak ditemukan atau Anda tidak memiliki akses.",
+    "no_sample_dashboards": "No sample dashboards available right now."
   },
   "billing_page": {
     "loading": "Memuat...",
