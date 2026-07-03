@@ -66,12 +66,12 @@ import {
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
-import { CeSchemaExplorer } from '@/components/data/SQLEditor/CeSchemaExplorer';
 import { generateColumns } from '@/components/data/SQLEditor/panes/generateColumns';
 import { PerformancePane } from '@/components/data/SQLEditor/panes/PerformancePane';
 import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistoryPane';
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
+import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
 import {
   isSameQueryName,
@@ -2819,6 +2819,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   flexDirection: 'column',
                 }}
               >
+                {!['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
+                  <NL2SqlPromptBar
+                    dataSourceId={selectedDataSource?.id ? String(selectedDataSource.id) : undefined}
+                    onInsert={(sql) => editorInsertRef.current?.insertTextAtCursor(sql)}
+                  />
+                )}
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                   <MemoryOptimizedEditor
                     ref={editorInsertRef}
@@ -3112,7 +3118,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 <DatabaseOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
               </Tooltip>
             </div>
-          ) : IS_EE ? (
+          ) : (
             <EnhancedDataPanel
               onCollapse={() => {
                 setSidebarCollapsed(true);
@@ -3133,27 +3139,6 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 editorInsertRef.current?.insertTextAtCursor(text);
               }}
               schemaTreeCompact
-            />
-          ) : (
-            <CeSchemaExplorer
-              onCollapse={() => {
-                setSidebarCollapsed(true);
-                try {
-                  window.localStorage.setItem('sidebarCollapsed', 'true');
-                } catch {}
-                try {
-                  window.dispatchEvent(new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } }));
-                } catch {}
-              }}
-              onTableClick={(tableName, schemaName) => {
-                const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
-                const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
-                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT 100`);
-              }}
-              onColumnClick={(tableName, columnName, _schemaName) => {
-                const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
-                editorInsertRef.current?.insertTextAtCursor(text);
-              }}
             />
           )}
         </div>
