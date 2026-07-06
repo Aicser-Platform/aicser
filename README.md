@@ -4,7 +4,7 @@ Aicser (AI Data Scientist) is an open-source data analytics and visualization pl
 
 **Community Edition (CE)** is a SQL-first analytics studio: data connections, query editor, chart designer, dashboards, knowledge search, and social feed.
 
-**Enterprise Edition (EE)** adds conversational analytics: ask questions in natural language via the AI Engine (`/chat`), LangGraph orchestration, multi-tenancy, RBAC, billing, alerts, and the data platform. Natural-language Q&A requires EE; CE does not include the AI chat backend or UI.
+**Enterprise Edition (EE)** adds conversational analytics: ask questions in natural language via the AI Engine (`/chat`), AI orchestration, RBAC, billing, alerts, and the data platform services. Natural-language Q&A requires EE for business team and non-techncial users but CE still include AI Text-to-SQL with a natural-language prompting for ease of analysts and developers. 
 
 ## Repository layout
 
@@ -19,14 +19,14 @@ The public monorepo ships the Community Edition. Enterprise features live in pri
 
 ## CE vs EE
 
-**Community Edition** includes dashboards, chart designer, data connections, SQL query editor, knowledge bases (document upload and search), notifications, feed, and user management. It does **not** include the AI Engine chat or NL-to-SQL APIs.
+**Community Edition** includes dashboards, chart designer, data connections, SQL query editor, knowledge bases (document upload and search), notifications, feed, and user management. It also include NL-to-SQL with your own AI Provider's API key.
 
-**Enterprise Edition** adds multi-tenancy, RBAC custom roles, billing, alerts (with agent investigate flow), scheduled AI briefings, data platform (semantic layer, catalog, lakehouse, BI sync to Power BI/Tableau), SharePoint/Confluence KB connectors, Telegram and Teams bots, embed SDK, AI chat (LangGraph), collaboration, audit logs, and other paid features. CE code never imports EE modules directly — EE overrides CE via `__path__` shims and optional frontend wrappers that dynamic-import from `@/ee`.
+**Enterprise Edition** adds multi-tenancy, RBAC custom roles, billing, alerts (with agent investigate flow), scheduled AI briefings, collaboration social analytic feed, Telegram bots, embed SDK, AI chat, audit logs, and other paid enterprise features. 
 
 Edition is controlled by environment variables:
 
 ```bash
-AISER_EDITION=enterprise              # or community (default)
+AISER_EDITION=community              # or enterpirse (default)
 AISER_EDITION_LICENSE_KEY=<key>       # presence also enables EE
 NEXT_PUBLIC_EDITION=enterprise        # frontend edition flag
 ```
@@ -48,9 +48,10 @@ cd aicser
 cp .env.example deploy/.env   # fill in required values
 cd deploy
 docker compose -f docker-compose.ce.yml up -d
+#OR use make if already have make command  
+make ce
 ```
 
 ## License
 
 - `server/src/`, `client/src/` — [AGPL-3.0](LICENSE)
-- `server/ee/`, `client/ee/` — Proprietary (see `server/ee/LICENSE`)
