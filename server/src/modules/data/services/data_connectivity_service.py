@@ -161,15 +161,19 @@ class DataConnectivityService:
         self._initialize_demo_data()
         self.database_connector = DatabaseConnectorService()
         self.ai_schema_service = AISchemaService() if AISchemaService else NoOpAISchemaService()
-        # Schema cache: {data_source_id: (schema_dict, fetched_at_timestamp)}
-        self._schema_cache: Dict[str, tuple] = {}
-        self._schema_cache_ttl = 300  # 5 minutes
+        # Schema cache TTLs. Backed by the shared Redis cache (src.core.cache.cache), which
+        # is shared across uvicorn workers/replicas and survives restarts — it falls back to
+        # per-process in-memory automatically if Redis is unreachable.
+        self._schema_cache_ttl = 300  # 5 minutes — successful schema fetch
+        self._schema_error_cache_ttl = 30  # 30 seconds — failed/timed-out fetch, to stop retry storms
 
     def invalidate_data_source_cache(self, data_source_id: str) -> None:
-        """Remove a data source from in-memory cache so next read gets fresh config (e.g. after update)."""
+        """Remove a data source from cache so next read gets fresh config (e.g. after update)."""
         self.data_sources.pop(data_source_id, None)
-        self._schema_cache.pop(data_source_id, None)
-        logger.debug("Invalidated in-memory cache for data source: %s", data_source_id)
+        from src.core.cache import cache
+        cache.delete(f"schema:{data_source_id}")
+        cache.delete(f"schema_error:{data_source_id}")
+        logger.debug("Invalidated schema cache for data source: %s", data_source_id)
 
     async def _test_nosql_connection(self, db_type: str, request: Dict[str, Any]) -> Dict[str, Any]:
         """Test NoSQL connection (MongoDB, Cassandra, DynamoDB) using dedicated connectors."""
@@ -3375,29 +3379,30 @@ class DataConnectivityService:
                             'error': 'Stored connection has no password. Please re-save this data source with the correct SQL Server password (Data sources → Edit → Save).'
                         }
 
-                # Return in-memory cached schema if still fresh
-                import time as _time
-                _cached = self._schema_cache.get(data_source_id)
-                if not force_refresh and _cached:
-                    _cached_schema, _cached_at = _cached
-                    if _time.monotonic() - _cached_at < self._schema_cache_ttl:
-                        logger.info("✅ Returning cached schema for %s", data_source_id)
-                        return {
-                            'success': True,
-                            'schema': _cached_schema,
-                            'data_source': {
-                                'id': data_source.id,
-                                'name': data_source.name,
-                                'type': data_source.type,
-                                'db_type': data_source.db_type,
-                                'row_count': data_source.row_count,
-                            },
-                        }
+                from src.core.cache import cache as _shared_cache
+                _schema_cache_key = f"schema:{data_source_id}"
+                _schema_error_cache_key = f"schema_error:{data_source_id}"
+
+                # Return Redis-cached schema if still fresh (shared across workers/replicas)
+                _cached_schema = None if force_refresh else _shared_cache.get(_schema_cache_key)
+                if _cached_schema:
+                    logger.info("✅ Returning cached schema for %s", data_source_id)
+                    return {
+                        'success': True,
+                        'schema': _cached_schema,
+                        'data_source': {
+                            'id': data_source.id,
+                            'name': data_source.name,
+                            'type': data_source.type,
+                            'db_type': data_source.db_type,
+                            'row_count': data_source.row_count,
+                        },
+                    }
 
                 # Return stored schema immediately if it has tables and no forced refresh
                 if not force_refresh and schema_info and isinstance(schema_info, dict) and schema_info.get('tables'):
                     logger.info("✅ Returning stored schema for %s (%d tables)", data_source_id, len(schema_info['tables']))
-                    self._schema_cache[data_source_id] = (schema_info, _time.monotonic())
+                    _shared_cache.set(_schema_cache_key, schema_info, ttl=self._schema_cache_ttl)
                     return {
                         'success': True,
                         'schema': schema_info,
@@ -3409,6 +3414,25 @@ class DataConnectivityService:
                             'row_count': data_source.row_count,
                         },
                     }
+
+                # A live fetch failed very recently — don't hammer a slow/unreachable database again
+                # on every rapid retry (duplicate mounts, UI polling). Skipped when force_refresh is
+                # explicitly requested.
+                if not force_refresh:
+                    _cached_error = _shared_cache.get(_schema_error_cache_key)
+                    if _cached_error:
+                        logger.info("⏳ Returning recently-cached schema error for %s (retry backoff)", data_source_id)
+                        return {
+                            'success': False,
+                            'error': _cached_error,
+                            'schema': schema_info,
+                            'data_source': {
+                                'id': data_source.id,
+                                'name': data_source.name,
+                                'type': data_source.type,
+                                'db_type': data_source.db_type,
+                            },
+                        }
 
                 # Try to get live schema from the database
                 try:
@@ -3433,8 +3457,8 @@ class DataConnectivityService:
                         
                         logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
 
-                        # Cache in memory
-                        self._schema_cache[data_source_id] = (updated_schema, _time.monotonic())
+                        # Cache in Redis (shared across workers/replicas, survives restarts)
+                        _shared_cache.set(_schema_cache_key, updated_schema, ttl=self._schema_cache_ttl)
 
                         # Update the database record
                         data_source.schema = json.dumps(updated_schema)
@@ -3467,9 +3491,11 @@ class DataConnectivityService:
                         }
                     else:
                         # Live fetch failed (e.g. wrong credentials) — return error so UI can show it
+                        _err = live_schema.get('error') or 'Schema fetch failed'
+                        _shared_cache.set(_schema_error_cache_key, _err, ttl=self._schema_error_cache_ttl)
                         return {
                             'success': False,
-                            'error': live_schema.get('error') or 'Schema fetch failed',
+                            'error': _err,
                             'schema': schema_info,
                             'data_source': {
                                 'id': data_source.id,
@@ -3482,9 +3508,11 @@ class DataConnectivityService:
 
                 except asyncio.TimeoutError:
                     logger.warning("Live schema fetch timed out after 25s for %s", data_source_id)
+                    _err = 'Schema fetch timed out. The database may be slow or unreachable.'
+                    _shared_cache.set(_schema_error_cache_key, _err, ttl=self._schema_error_cache_ttl)
                     return {
                         'success': False,
-                        'error': 'Schema fetch timed out. The database may be slow or unreachable.',
+                        'error': _err,
                         'schema': schema_info,
                         'data_source': {
                             'id': data_source.id,
@@ -3496,6 +3524,7 @@ class DataConnectivityService:
                     }
                 except Exception as live_error:
                     logger.warning("Live schema fetch failed: %s", str(live_error))
+                    _shared_cache.set(_schema_error_cache_key, str(live_error), ttl=self._schema_error_cache_ttl)
                     return {
                         'success': False,
                         'error': str(live_error),

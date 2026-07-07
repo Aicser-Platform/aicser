@@ -49,6 +49,7 @@ import type { DashboardPageItem } from './components/DashboardPageTabs';
 import { chartService, type DashboardTemplate } from './services/chartService';
 import { WIDGET_TEMPLATES } from './widgetTemplates';
 import { exitDocumentFullscreen } from './utils/studioNavigation';
+import { shouldPersistLayoutSync } from './utils/layoutSyncGuard';
 import { useChartImportFromChat } from './hooks/useChartImportFromChat';
 import { StudioSidebarRail, type SidebarSection } from './components/StudioSidebar/StudioSidebarRail';
 import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
@@ -415,8 +416,6 @@ export default function NewDashboardStudio() {
       }
       return;
     }
-    // Not in the current project's list (e.g. just created from chat) —
-    // fetch it directly so the deep link never silently opens another dashboard.
     void loadDashboardById(requestedDashboardId).then((loaded) => {
       if (!loaded) message.warning(t('dashboard_not_found'));
     });
@@ -642,25 +641,43 @@ export default function NewDashboardStudio() {
 
   const scheduleLayoutSync = useCallback(
     (newLayout: LayoutItem[]) => {
+      // The dashboard's own pages/filters are still loading (async, see
+      // useDashboardFilterContext) -- widgets from the *new* active
+      // dashboard can briefly render before pages/activePageId catch up.
+      // Any layout react-grid-layout reports during that window is not
+      // trustworthy (it may be reacting to a transient widgets/layout
+      // mismatch), so don't schedule a persist for it at all.
+      if (!filterCtx.initialLoadDone) return;
       // Capture undo snapshot before persisting the layout change
       pushUndoSnapshot();
       if (layoutSyncTimerRef.current) clearTimeout(layoutSyncTimerRef.current);
+      // Bind the save to the dashboard that was active when the layout
+      // change happened. Without this, switching dashboards inside the
+      // 400ms debounce window lets this timer fire against whatever
+      // dashboard is active *then* (re-reading store state at fire time),
+      // persisting a stale/transient layout onto the wrong dashboard's
+      // charts -- e.g. every widget collapsing to react-grid-layout's
+      // "no matching layout entry" default ({x:0,y:index,w:1,h:1}).
+      const dashboardIdAtSchedule = activeDashboardId;
       layoutSyncTimerRef.current = setTimeout(() => {
+        if (!shouldPersistLayoutSync(dashboardIdAtSchedule, useDashboardStore.getState().activeDashboardId)) return;
         newLayout.forEach((l) => {
           const widget = widgets.find((w) => w.id === l.i);
           if (widget?.chartId) void updateChartLayout(widget.id, l);
         });
       }, 400);
     },
-    [widgets, updateChartLayout]
+    [widgets, updateChartLayout, activeDashboardId, filterCtx.initialLoadDone]
   );
 
-  useEffect(
-    () => () => {
+  // Cancel outright (don't just detect-and-skip) the moment the user
+  // navigates to a different dashboard, so a pending save from the
+  // previous dashboard never fires at all.
+  useEffect(() => {
+    return () => {
       if (layoutSyncTimerRef.current) clearTimeout(layoutSyncTimerRef.current);
-    },
-    []
-  );
+    };
+  }, [activeDashboardId]);
 
   const applyLayoutPreset = useCallback(
     (preset: LayoutPreset) => {
@@ -858,9 +875,9 @@ export default function NewDashboardStudio() {
             {t('create_dashboard')}
           </Button>
 
-          <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{t('or_sample_dashboard')}</Divider>
+          {/* <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{t('or_sample_dashboard')}</Divider> */}
 
-          {isLoadingTemplates ? (
+          {/* {isLoadingTemplates ? (
             <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
               <Spin size="small" />
             </div>
@@ -926,7 +943,7 @@ export default function NewDashboardStudio() {
             <Text type="secondary" style={{ marginTop: 12 }}>
               {t('no_sample_dashboards')}
             </Text>
-          )}
+          )} */}
         </div>
         <CreateDashboardWizard
           open={wizardOpen}
@@ -984,9 +1001,6 @@ export default function NewDashboardStudio() {
               flexDirection: 'column',
               display: 'flex',
               padding: 0,
-              // Reserve room for the absolute properties panel (300px) so its overlay
-              // never hides the right end of the toolbar / widget edges.
-              // paddingRight: isEditMode && !isPropertiesCollapsed ? 300 : 0,
               transition: 'padding-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
@@ -1060,7 +1074,6 @@ export default function NewDashboardStudio() {
                 tableOptionsBySource={filterCtx.tableOptionsBySource}
                 widgetScopeOptions={filterCtx.widgetScopeOptions}
                 filterFieldConflicts={filterCtx.filterFieldConflicts}
-                // dataSourcesForFilters={filterCtx.dataSourcesForFilters}
                 dashboardId={activeDashboardId ?? undefined}
                 studioWidgets={widgets}
                 onSaveGlobalFilters={filterCtx.saveGlobalFilters}
@@ -1247,7 +1260,7 @@ export default function NewDashboardStudio() {
           </main>
 
           {/* Right toggle button — absolute overlay, does not affect canvas width */}
-          {selectedWidgetId && selectedWidget?.chartType !== 'text' && isEditMode && (
+          {/* {selectedWidgetId && selectedWidget?.chartType !== 'text' && isEditMode && (
             <div
               className={`sidebar-toggle-btn right ${isPropertiesCollapsed ? 'collapsed' : ''}`}
               onClick={() => setPropertiesCollapsed(!isPropertiesCollapsed)}
@@ -1262,7 +1275,7 @@ export default function NewDashboardStudio() {
                 <RightOutlined style={{ fontSize: '10px' }} />
               )}
             </div>
-          )}
+          )} */}
 
           {/* Right Sidebar Properties — absolute overlay, does NOT push canvas */}
           {sidebarSection === 'modeling' && selectedRelationship ? (

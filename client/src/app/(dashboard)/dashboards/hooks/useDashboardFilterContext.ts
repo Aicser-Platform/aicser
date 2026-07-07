@@ -552,6 +552,15 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
 
   const handlePageLayoutChange = useCallback(
     (nextPageLayout: typeof layout) => {
+      // Mirrors the guard in scheduleLayoutSync (page.tsx): widgets for the
+      // active dashboard can render before pages/activePageId catch up, and
+      // any layout react-grid-layout reports during that window is not
+      // trustworthy (e.g. every widget collapsing to {x:0,y:index,w:1,h:1}).
+      // scheduleLayoutSync only guards the backend *persist* -- without this
+      // check here too, that same degenerate layout still overwrites the
+      // real positions in the store (and gets cached per-dashboard on the
+      // next switch), even though it never reaches the database.
+      if (!initialLoadDoneRef.current) return;
       updatePageLayout(activePageId, nextPageLayout, defaultPageIdRef.current);
     },
     [activePageId, updatePageLayout]
@@ -618,6 +627,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     activePageId,
     setActivePageId,
     defaultPageIdRef,
+    initialLoadDone,
     pageWidgets,
     pageLayout,
     updatePageLayout,

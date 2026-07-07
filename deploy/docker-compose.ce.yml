@@ -63,6 +63,11 @@ services:
       - server_ce_uploads:/app/uploads
     ports:
       - "8000:8000"
+    # Lets users add a data source pointing at a database on the Docker host itself
+    # (host="host.docker.internal") — needed on native Linux Docker Engine, where
+    # host.docker.internal isn't resolved automatically the way it is on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,7 +79,7 @@ services:
       - |
         set -e
         echo "Running migrations..."
-        alembic -c alembic.ini upgrade 2026_06_29_cross_source_rel
+        alembic -c alembic.ini upgrade ce@head
         echo "Starting server..."
         exec uvicorn src.main:app --host 0.0.0.0 --port 8000
     healthcheck:
@@ -93,12 +98,6 @@ services:
         EDITION: community
         NEXT_PUBLIC_EDITION: community
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_URL:-}
-        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-}
-        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
-        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     container_name: aiser-client-ce
     environment:
       API_TARGET: http://server:8000

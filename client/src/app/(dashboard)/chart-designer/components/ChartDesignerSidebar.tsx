@@ -19,7 +19,6 @@ import {
 import { useRouter } from 'next/navigation';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
 import { useDashboardStore } from '../../dashboards/stores/useDashboardStore';
-import { WIDGET_TEMPLATES, CHART_WIDGET_TEMPLATES } from '../../dashboards/widgetTemplates';
 import './ChartDesignerSidebar.css';
 import { useTranslations } from 'next-intl';
 
@@ -55,7 +54,7 @@ const getChartIcon = (type: string) => {
 export const ChartDesignerSidebar: React.FC = () => {
   const t = useTranslations('chart_designer');
   const router = useRouter();
-  const { widgets, selectedWidgetId, isSidebarCollapsed, setSelectedWidgetId, deleteChart, updateWidget, addWidget } =
+  const { widgets, selectedWidgetId, isSidebarCollapsed, setSelectedWidgetId, deleteChart, updateWidget } =
     useChartDesignerStore();
   const dashboards = useDashboardStore((s) => s.dashboards);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
@@ -131,27 +130,10 @@ export const ChartDesignerSidebar: React.FC = () => {
   };
 
   const handleAddNew = () => {
-    const template = CHART_WIDGET_TEMPLATES[0] || WIDGET_TEMPLATES[0];
-    const newWidgetId = `w_designer_${Date.now()}`;
-
-    addWidget(
-      {
-        id: newWidgetId,
-        title: template.name,
-        chartType: template.type,
-        chartQuery: {},
-        chartOptions: {},
-        isLoading: false,
-        error: null,
-      },
-      {
-        i: newWidgetId,
-        x: 0,
-        y: 0,
-        w: 4,
-        h: 5,
-      }
-    );
+    // Deselecting (rather than creating a widget with a hardcoded type)
+    // falls back to ChartDesignerStudio's EmptyDesignerState, which shows
+    // the same chart-type picker used for the very first chart.
+    setSelectedWidgetId(null);
   };
 
   const renderChartItem = (widget: (typeof filteredWidgets)[number]) => (

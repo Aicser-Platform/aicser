@@ -49,7 +49,7 @@ class User(BaseModel):
     location = Column(String(255), nullable=True)
     timezone = Column(String(50), nullable=True)  # e.g., 'America/New_York', 'Asia/Phnom Penh'
     bio = Column(Text, nullable=True)
-    avatar_url = Column(String(255), nullable=True)
+    avatar_url = Column(Text, nullable=True)
     is_pro= Column(Boolean, nullable=True, server_default=text("false"))  ## this one is temporary fix and will remove out later
 
     # ── Onboarding profile fields (all nullable) ──────────────────────────

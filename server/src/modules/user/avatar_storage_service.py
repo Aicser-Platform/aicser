@@ -24,6 +24,11 @@ from azure.core.exceptions import ResourceNotFoundError, AzureError
 logger = logging.getLogger(__name__)
 
 
+def is_avatar_data_uri(avatar_url: str) -> bool:
+    """Return True for CE avatars stored directly in users.avatar_url."""
+    return avatar_url.startswith("data:image/")
+
+
 def generate_avatar_sas_url(avatar_url: str, expiry_hours: int = 1) -> str:
     """
     Return a time-limited SAS URL for a private avatar blob.
@@ -34,6 +39,9 @@ def generate_avatar_sas_url(avatar_url: str, expiry_hours: int = 1) -> str:
 
     Returns the original URL unchanged if any required env var is missing.
     """
+    if is_avatar_data_uri(avatar_url):
+        return avatar_url
+
     account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY", "")
     container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "")
     account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL", "").rstrip("/")
@@ -81,6 +89,19 @@ ALLOWED_CONTENT_TYPES = {
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 AVATAR_MAX_DIMENSION = 256              # px — longest side capped at this
 AVATAR_WEBP_QUALITY = 85               # 0-100; 85 is a good size/quality balance
+
+
+def compress_image_to_webp(file_content: bytes) -> bytes:
+    """Resize image to AVATAR_MAX_DIMENSION and convert to WebP. CE-safe (no Azure dep)."""
+    with Image.open(io.BytesIO(file_content)) as img:
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        elif img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        img.thumbnail((AVATAR_MAX_DIMENSION, AVATAR_MAX_DIMENSION), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="WEBP", quality=AVATAR_WEBP_QUALITY, method=6)
+        return buf.getvalue()
 
 
 class AvatarStorageService:

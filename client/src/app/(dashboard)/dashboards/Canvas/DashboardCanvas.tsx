@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Button, Typography, Dropdown, message, Input, Tooltip, Modal } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import { Responsive, WidthProvider } from 'react-grid-layout';
@@ -31,7 +31,7 @@ import { WidgetBlockPicker } from '../components/WidgetBlockPicker';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { exportChartByWidget } from '../services/exportChartImageService';
 import { exportCSV, exportExcel } from '../services/exportChartDataService';
-import { useDashboardStore, useCanUndo, useCanRedo, useUndo, useRedo } from '../stores/useDashboardStore';
+import { useDashboardStore, useUndo, useRedo } from '../stores/useDashboardStore';
 import { useTranslations } from 'next-intl';
 
 const { Text } = Typography;
@@ -89,12 +89,38 @@ export default function DashboardCanvas({
   peerEditingWidgetId?: string | null;
   onCollabCursorMove?: (x: number, y: number, widgetId?: string | null) => void;
 }) {
-  const t = useTranslations('dashboards_page');
   const td = useTranslations('dashboards');
   const router = useRouter();
   const pathname = usePathname();
   const isDesigner = pathname?.includes('chart-designer');
   const isEditing = !readOnly && !isDesigner;
+
+  const widgetById = useMemo(() => {
+    return new Map(widgets.map((widget) => [widget.id, widget]));
+  }, [widgets]);
+
+  const cleanLayout = useCallback((nextLayout: any[]) => {
+    return nextLayout.map(({ static: _static, moved: _moved, ...item }) => ({ ...item }));
+  }, []);
+
+  const commitLayout = useCallback(
+    (nextLayout: any[], options?: { sync?: boolean }) => {
+      const cleanedLayout = cleanLayout(nextLayout);
+
+      if (onPageLayoutChange) {
+        onPageLayoutChange(cleanedLayout);
+      } else {
+        setLayout(cleanedLayout);
+      }
+
+      if (options?.sync) {
+        onLayoutSync?.(cleanedLayout);
+      }
+
+      return cleanedLayout;
+    },
+    [cleanLayout, onLayoutSync, onPageLayoutChange, setLayout]
+  );
 
   const canvasZoom = useDashboardStore((s) => s.canvasZoom);
   const setCanvasZoom = useDashboardStore((s) => s.setCanvasZoom);
@@ -107,8 +133,6 @@ export default function DashboardCanvas({
   const bulkDeleteWidgets = useDashboardStore((s) => s.bulkDeleteWidgets);
 
   // Undo / redo
-  const canUndo = useCanUndo();
-  const canRedo = useCanRedo();
   const undo = useUndo();
   const redo = useRedo();
 
@@ -127,7 +151,7 @@ export default function DashboardCanvas({
     setFocusedWidgetId(null);
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isDesigner) return;
     const updateHeight = () => {
       const vh = window.innerHeight;
@@ -141,7 +165,7 @@ export default function DashboardCanvas({
   }, [isDesigner]);
 
   // ─── Global canvas keyboard shortcuts ─────────────────────────────────────
-  React.useEffect(() => {
+  useEffect(() => {
     if (readOnly) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't capture when typing inside an input, textarea or contenteditable
@@ -248,22 +272,17 @@ export default function DashboardCanvas({
         if (e.key === 'ArrowDown') y = y + 1;
         const next = [...layout];
         next[itemIdx] = { ...item, x, y };
-        if (onPageLayoutChange) {
-          onPageLayoutChange(next);
-        } else {
-          setLayout(next);
-        }
-        onLayoutSync?.(next);
+        commitLayout(next, { sync: true });
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, setLayout, onPageLayoutChange, onLayoutSync]);
+  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout]);
 
   const { dashboards, fetchDashboards, activeDashboardId, setActiveDashboardId, copyWidgetToDashboard } = useDashboardStore();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (dashboards.length === 0) {
       fetchDashboards();
     }
@@ -563,11 +582,11 @@ export default function DashboardCanvas({
       <ResponsiveGridLayout
         className="layout"
         layouts={{
-          lg: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
-          md: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
-          sm: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
-          xs: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
-          xxs: layout.map((item) => ({ ...item, static: !isEditing || !!widgets.find((w) => w.id === item.i)?.isLocked })),
+          lg: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
+          md: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
+          sm: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
+          xs: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
+          xxs: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
         cols={{ lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }}
@@ -578,20 +597,14 @@ export default function DashboardCanvas({
         preventCollision
         isDraggable={isEditing}
         isResizable={isEditing}
-        onLayoutChange={(l) => {
-          if (!isEditing) return;
-          if (onPageLayoutChange) {
-            onPageLayoutChange(l);
-          } else {
-            setLayout(l);
-          }
-          onLayoutSync?.(l);
+        /* Do not persist from onLayoutChange. React Grid Layout also fires it on
+           mount/page restore/breakpoint recalculation, which can overwrite saved
+           page layout with generated default positions. Persist only final user actions. */
+        onDragStop={(nextLayout) => {
+          commitLayout(nextLayout, { sync: true });
         }}
-        onDragStop={(l) => {
-          onLayoutSync?.(l);
-        }}
-        onResizeStop={(l) => {
-          onLayoutSync?.(l);
+        onResizeStop={(nextLayout) => {
+          commitLayout(nextLayout, { sync: true });
         }}
         draggableHandle=".widget-card-header, .drag-handle"
         draggableCancel=".no-drag"

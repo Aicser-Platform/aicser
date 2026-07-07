@@ -15,3 +15,6 @@ dist
 build
 # --- ce-fresh: exclude private EE submodule to mimic a public clone ---
 ee/
+
+# --- ce-fresh: exclude private EE submodule to mimic a public clone ---
+ee/

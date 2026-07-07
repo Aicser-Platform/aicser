@@ -8,6 +8,9 @@ import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal
 import { useDataSources } from '@/hooks/useDataSources';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
+import { OnboardingBootstrap } from '@/components/onboarding/OnboardingBootstrap';
+import { CE_ONBOARDING_AWAITING_DATA, CE_ONBOARDING_DATA_CONNECTED } from '@/components/onboarding/CeOnboardingModal';
 
 const USER_PREFERENCES_KEY = 'userPreferences';
 
@@ -38,9 +41,6 @@ function setStoredLayoutSidebarCollapsed(collapsed: boolean): void {
     // ignore storage failures
   }
 }
-import { useTranslations } from 'next-intl';
-import { OnboardingBootstrap } from '@/components/onboarding/OnboardingBootstrap';
-import { CE_ONBOARDING_AWAITING_DATA, CE_ONBOARDING_DATA_CONNECTED } from '@/components/onboarding/CeOnboardingModal';
 
 const { useBreakpoint } = Grid;
 const { Content } = Layout;

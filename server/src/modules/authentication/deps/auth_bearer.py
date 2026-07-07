@@ -182,25 +182,29 @@ def verify_supabase_token(token: str) -> dict:
     """
     try:
         from src.core.config import settings
+        from src.core.edition import is_ee_enabled
 
-        # 1. Keycloak OIDC (sync path — used by extract_user_id_from_token)
-        try:
-            from src.modules.authentication.keycloak_service import (
-                is_keycloak_enabled,
-                verify_keycloak_token_sync,
-            )
+        ee = is_ee_enabled()
 
-            if is_keycloak_enabled():
-                kc_result = verify_keycloak_token_sync(token)
-                if kc_result and kc_result.get("id"):
-                    return kc_result
-        except Exception:
-            pass
+        # 1. Keycloak OIDC (sync path — used by extract_user_id_from_token) — EE only
+        if ee:
+            try:
+                from src.modules.authentication.keycloak_service import (
+                    is_keycloak_enabled,
+                    verify_keycloak_token_sync,
+                )
+
+                if is_keycloak_enabled():
+                    kc_result = verify_keycloak_token_sync(token)
+                    if kc_result and kc_result.get("id"):
+                        return kc_result
+            except Exception:
+                pass
 
         jwt_secret = getattr(settings, "JWT_SECRET", None) or ""
-        jwt_secret_ok = jwt_secret and jwt_secret.strip() and jwt_secret != "your-jwt-secret-here"
+        jwt_secret_ok = ee and jwt_secret and jwt_secret.strip() and jwt_secret != "your-jwt-secret-here"
 
-        # 2. HS256 when JWT_SECRET is set — Supabase Docker / shared secret tokens
+        # 2. HS256 when JWT_SECRET is set — Supabase Docker / shared secret tokens — EE only
         if jwt_secret_ok:
             try:
                 claims = jose_jwt.decode(
@@ -230,9 +234,9 @@ def verify_supabase_token(token: str) -> dict:
             except JWTError:
                 pass  # Fall through to JWKS or unverified
 
-        # 3. Supabase JWKS (RS256) — not for Keycloak-issued tokens
+        # 3. Supabase JWKS (RS256) — EE only, not for Keycloak-issued tokens
         supabase_url = getattr(settings, "SUPABASE_URL", None) or ""
-        if supabase_url and _should_try_supabase_jwks(token, supabase_url):
+        if ee and supabase_url and _should_try_supabase_jwks(token, supabase_url):
             try:
                 import jwt
                 from jwt import PyJWKClient
@@ -511,7 +515,10 @@ class JWTCookieBearer(HTTPBearer):
                 token = str(ce_cookie).strip()
 
         if not token:
-            token = _jwt_from_supabase_auth_cookies(request)
+            from src.core.edition import is_ee_enabled
+
+            if is_ee_enabled():
+                token = _jwt_from_supabase_auth_cookies(request)
 
         # No token means no authentication
         if not token:
@@ -537,19 +544,22 @@ class JWTCookieBearer(HTTPBearer):
         except Exception:
             pass
 
-        # Keycloak OIDC (async path — proper signature verification before sync fallbacks)
-        try:
-            from src.modules.authentication.keycloak_service import (
-                is_keycloak_enabled,
-                verify_keycloak_token,
-            )
+        # Keycloak OIDC (async path — proper signature verification before sync fallbacks) — EE only
+        from src.core.edition import is_ee_enabled
 
-            if is_keycloak_enabled():
-                kc_payload = await verify_keycloak_token(token)
-                if kc_payload:
-                    return kc_payload
-        except Exception:
-            pass
+        if is_ee_enabled():
+            try:
+                from src.modules.authentication.keycloak_service import (
+                    is_keycloak_enabled,
+                    verify_keycloak_token,
+                )
+
+                if is_keycloak_enabled():
+                    kc_payload = await verify_keycloak_token(token)
+                    if kc_payload:
+                        return kc_payload
+            except Exception:
+                pass
 
         # Extract payload from token (HS256 / Supabase JWKS / dev fallback)
         payload = extract_user_id_from_token(token)

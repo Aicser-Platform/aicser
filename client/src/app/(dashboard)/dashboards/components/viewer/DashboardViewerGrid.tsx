@@ -115,7 +115,18 @@ export function DashboardViewerGrid({
           xxs: responsiveLayouts.xxs.map((item) => ({ ...item, static: true })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+        cols={
+          layoutMode === 'preserve'
+            // 'preserve' reuses the Studio canvas's saved x/y/w/h verbatim (see
+            // DashboardCanvas.tsx), which are authored against a constant 12-column
+            // grid at every breakpoint. Keeping cols at 12 here too — instead of
+            // narrowing to 10/6/4/2 — is what lets WidthProvider shrink column
+            // *width* on smaller screens without invalidating those positions
+            // (item.x + item.w must stay <= cols, or items collide/overlap and
+            // widgets appear to vanish).
+            ? { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }
+            : { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }
+        }
         rowHeight={42}
         margin={[8, 8]}
         containerPadding={[0, 0]}

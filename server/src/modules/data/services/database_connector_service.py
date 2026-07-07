@@ -922,7 +922,6 @@ class DatabaseConnectorService:
                         logger.warning(f"Failed to get tables for schema {schema_name}: {table_error}")
                         continue
             
-            # Fetch row count per table for SQLAlchemy-backed DBs (SQL Server, PostgreSQL, MySQL, Redshift)
             def _quote_ident(db_t: str, schema: str, table: str) -> str:
                 if db_t == 'sqlserver':
                     return f"[{schema}].[{table}]"
@@ -931,18 +930,12 @@ class DatabaseConnectorService:
                 # postgresql, redshift: double-quote
                 return f'"{schema}"."{table}"'
             
-            total_rows = 0
+            # rowCount is already populated from row_count_map (cheap catalog statistics —
+            # pg_class.reltuples/pg_stat_user_tables, information_schema.TABLES, sys.partitions).
+            # Do NOT re-count with SELECT COUNT(*) per table here — that's a full table/index
+            # scan on every table on every schema fetch, which is what made schema loading slow
+            # for large tables. Catalog-estimate row counts are accurate enough for a schema browser.
             with engine.connect() as conn:
-                for t in tables:
-                    try:
-                        quoted = _quote_ident(db_type, t['schema'], t['name'])
-                        q = text(f"SELECT COUNT(*) AS cnt FROM {quoted}")
-                        row = conn.execute(q).scalar()
-                        cnt = int(row) if row is not None else 0
-                        t['rowCount'] = cnt
-                        total_rows += cnt
-                    except Exception as count_err:
-                        logger.debug(f"Row count failed for {t['schema']}.{t['name']}: {count_err}")
                 # Fetch 2 sample rows per table so the LLM sees actual value formats
                 for t in tables:
                     try:

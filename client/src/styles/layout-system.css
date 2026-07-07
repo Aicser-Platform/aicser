@@ -319,6 +319,14 @@ div.page-container,
   margin-left: 0 !important; /* No left margin - use page-wrapper padding */
   box-sizing: border-box !important;
   border-radius: var(--ant-border-radius, 6px) !important; /* Ant Design default */
+  /* .ant-card/.content-card get `overflow: hidden` elsewhere (aiser-aesthetic-enhancements.css,
+     aiser-unified-design-system.css) to clip the rounded-corner gradient overlay. As a flex
+     child of .page-body, a non-"visible" overflow makes its automatic minimum size 0 instead of
+     its content height (CSS Flexbox §4.5), so the flex algorithm was free to shrink it down to
+     whatever space was left and silently clip the rest (e.g. a tall table) with no way to reach
+     it — page reads as "stuck", not scrollable. flex-shrink: 0 keeps the clip for rounded corners
+     but stops the card from being squashed below its content; .page-wrapper scrolls it instead. */
+  flex-shrink: 0 !important;
 }
 
 .stat-card {
