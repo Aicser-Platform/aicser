@@ -1,30 +1,31 @@
-name: aiser-ce
+name: aicser-ce
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: aiser-postgres-ce
+    container_name: aicser-postgres-ce
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-aiser}
-      POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aicser}
+      POSTGRES_USER: ${POSTGRES_USER:-aicser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aicser_password}
     volumes:
       - postgres_ce_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT_HOST:-5432}:5432"
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}",
+          "pg_isready -U ${POSTGRES_USER:-aicser} -d ${POSTGRES_DB:-aicser}",
         ]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: aiser-redis-ce
+    container_name: aicser-redis-ce
     volumes:
       - redis_ce_data:/data
     healthcheck:
@@ -32,40 +33,41 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.prod
-    container_name: aiser-server-ce
+    image: ghcr.io/aicser-platform/aicser-server-ce:${AISER_VERSION:-latest}
+    container_name: aicser-server-ce
     environment:
-      AISER_EDITION: CE
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
+      AISER_EDITION: community
+      AISER_EDITION_LICENSE_KEY: ""
+      AISER_DEPLOYMENT_MODE: self_host
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aicser}:${POSTGRES_PASSWORD:-aicser_password}@postgres:5432/${POSTGRES_DB:-aicser}
       POSTGRES_SERVER: postgres
-      POSTGRES_DB: ${POSTGRES_DB:-aiser}
-      POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aicser}
+      POSTGRES_USER: ${POSTGRES_USER:-aicser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aicser_password}
       POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_URL: redis://redis:6379
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      SECRET_KEY: ${SECRET_KEY:-change-me-local-secret}
+      JWT_SECRET: ${JWT_SECRET:-change-me-local-jwt-secret}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-local-jwt-secret}
       JWT_ALGORITHM: HS256
       JWT_EXPIRY_SECONDS: "604800"
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ENVIRONMENT: production
+      DEBUG: "false"
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ./server/alembic/versions:/app/alembic/versions
       - server_ce_uploads:/app/uploads
     ports:
-      - "8000:8000"
-    # Lets users add a data source pointing at a database on the Docker host itself
-    # (host="host.docker.internal") — needed on native Linux Docker Engine, where
-    # host.docker.internal isn't resolved automatically the way it is on Docker Desktop.
+      - "${SERVER_PORT:-8000}:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -78,9 +80,9 @@ services:
       - -c
       - |
         set -e
-        echo "Running migrations..."
-        alembic -c alembic.ini upgrade ce@head
-        echo "Starting server..."
+        echo "Running CE migrations..."
+        alembic -x edition=ce -c alembic.ini upgrade head
+        echo "Starting Aicser CE server..."
         exec uvicorn src.main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -91,19 +93,14 @@ services:
     restart: unless-stopped
 
   client:
-    build:
-      context: ./client
-      dockerfile: Dockerfile.prod
-      args:
-        EDITION: community
-        NEXT_PUBLIC_EDITION: community
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-    container_name: aiser-client-ce
+    image: ghcr.io/aicser-platform/aicser-client-ce:${AISER_VERSION:-latest}
+    container_name: aicser-client-ce
     environment:
       API_TARGET: http://server:8000
       NODE_ENV: production
+      NEXT_PUBLIC_EDITION: community
     ports:
-      - "3000:3000"
+      - "${CLIENT_PORT:-3000}:3000"
     depends_on:
       server:
         condition: service_healthy
@@ -116,5 +113,5 @@ volumes:
 
 networks:
   default:
-    name: aiser-ce-network
+    name: aicser-ce-network
     driver: bridge
