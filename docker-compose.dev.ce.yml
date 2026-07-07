@@ -1,13 +1,13 @@
 # Aicser Community Edition — development stack (standalone, live-reload).
 #
 # Usage (no Makefile needed):
-#   cp deploy/.env.ce.example .env
-#   docker compose -f deploy/docker-compose.dev.ce.yml up
+#   cp .env.example .env
+#   docker compose -f docker-compose.dev.ce.yml up
 #
 # Or via make:
 #   make -C deploy dev-ce
 
-name: aiser-dev-ce
+name: aicser-dev-ce
 
 x-client-command: &client-command
   - sh
@@ -36,9 +36,9 @@ x-client-command: &client-command
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: aiser-postgres-dev-ce
+    container_name: aicser-postgres-dev-ce
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_DB: ${POSTGRES_DB:-aicser_world_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
     ports:
@@ -49,7 +49,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aiser_world_db}",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aicser_world_db}",
         ]
       interval: 10s
       timeout: 5s
@@ -58,7 +58,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: aiser-redis-dev-ce
+    container_name: aicser-redis-dev-ce
     ports:
       - "${DEV_REDIS_PORT:-6379}:6379"
     volumes:
@@ -71,11 +71,11 @@ services:
     restart: unless-stopped
 
   server:
-    image: aiser-server:dev-ce
+    image: aicser-server:dev-ce
     build:
       context: ./server
       dockerfile: Dockerfile.dev
-    container_name: aiser-server-dev-ce
+    container_name: aicser-server-dev-ce
     working_dir: /app
     ports:
       - "${DEV_SERVER_PORT:-8000}:8000"
@@ -97,11 +97,11 @@ services:
       AISER_ORG_NAME: ${AISER_ORG_NAME:-Aicser}
       # ── Database ─────────────────────────────────────────────────────────────
       POSTGRES_SERVER: postgres
-      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_DB: ${POSTGRES_DB:-aicser_world_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
       POSTGRES_PORT: "5432"
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aicser_world_db}
       # ── Auth ─────────────────────────────────────────────────────────────────
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
       JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-here}
@@ -138,7 +138,7 @@ services:
         set -e
         cd /app
         echo "Running CE migrations..."
-        /venv/bin/python -m alembic -c alembic.ini upgrade 2026_07_08_avatar_url_text
+        /venv/bin/python -m alembic -x edition=ce -c alembic.ini upgrade head
         exec /venv/bin/python -m uvicorn src.main:app \
           --host 0.0.0.0 \
           --port 8000 \
@@ -152,13 +152,13 @@ services:
     restart: unless-stopped
 
   client:
-    image: aiser-client:dev-ce
+    image: aicser-client:dev-ce
     build:
       context: ./client
       dockerfile: Dockerfile.dev
       args:
         EDITION: community
-    container_name: aiser-client-dev-ce
+    container_name: aicser-client-dev-ce
     working_dir: /app
     command: *client-command
     environment:
@@ -198,5 +198,5 @@ volumes:
 
 networks:
   default:
-    name: aiser-dev-ce-network
+    name: aicser-dev-ce-network
     driver: bridge

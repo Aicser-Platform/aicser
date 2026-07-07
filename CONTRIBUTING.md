@@ -99,7 +99,7 @@ other edition before starting the requested one.
 cp .env.example .env
 
 # Community Edition: Postgres, Redis, server, and one client
-make -C deploy dev-ce
+docker compose -f docker-compose.dev.ce.yml up
 
 # Enterprise Edition: the same core stack plus Keycloak
 make -C deploy dev-ee
@@ -113,12 +113,12 @@ overwrite each other.
 Useful commands:
 
 ```bash
-make -C deploy dev-ce-logs
+docker compose -f docker-compose.dev.ce.yml logs -f
 make -C deploy dev-ee-logs
-make -C deploy dev-down
+docker compose -f docker-compose.dev.ce.yml down
 
 # Rebuild images only when dependencies or Dockerfiles change
-make -C deploy dev-ce-build
+docker compose -f docker-compose.dev.ce.yml build
 make -C deploy dev-ee-build
 ```
 
@@ -134,8 +134,8 @@ make -C deploy dev-ee-observability
 
 ```bash
 git clone https://github.com/Aicser-Platform/aicser.git
-cd aicser/deploy
-cp .env.example .env   # fill in required values
+cd aicser
+cp .env.example .env
 docker compose -f docker-compose.ce.yml up -d
 ```
 

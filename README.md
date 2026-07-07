@@ -31,6 +31,31 @@ AISER_EDITION_LICENSE_KEY=<key>       # presence also enables EE
 NEXT_PUBLIC_EDITION=enterprise        # frontend edition flag
 ```
 
+## Quick Start: Community Edition
+
+Run Aicser CE locally with Docker Compose. The root CE compose file pulls
+published images from GitHub Container Registry (GHCR), so users do not need a
+local Node/Python toolchain.
+
+```bash
+git clone https://github.com/Aicser-Platform/aicser.git
+cd aicser
+cp .env.example .env
+docker compose -f docker-compose.ce.yml pull
+docker compose -f docker-compose.ce.yml up -d
+```
+
+Open http://localhost:3000.
+
+Useful commands:
+
+```bash
+docker compose -f docker-compose.ce.yml logs -f server
+docker compose -f docker-compose.ce.yml logs -f client
+docker compose -f docker-compose.ce.yml down
+docker compose -f docker-compose.ce.yml down -v   # reset all local CE data
+```
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for:
@@ -40,16 +65,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 - Database migrations
 - Contribution guidelines and licensing
 
-Quick start (CE):
+For live-reload CE development from the repository root:
 
 ```bash
-git clone https://github.com/Aicser-Platform/aicser.git
-cd aicser
-cp .env.example deploy/.env   # fill in required values
-cd deploy
-docker compose -f docker-compose.ce.yml up -d
-#OR use make if already have make command  
-make ce
+cp .env.example .env
+docker compose -f docker-compose.dev.ce.yml up
 ```
 
 ## License
