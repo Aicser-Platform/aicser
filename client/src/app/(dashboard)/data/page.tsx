@@ -57,7 +57,8 @@ import { PermissionGuard } from '@/components/PermissionGuard';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import PricingModal from '@/components/PricingModal';
 import { type DataSource } from '@/stores/useDataSourceStore';
-import { useDataSources, useDeleteDataSource } from '@/hooks/useDataSources';
+import { useDataSources, useDeleteDataSource, dataSourceKeys } from '@/hooks/useDataSources';
+import { getDataSource } from '@/api/dataSources';
 import { useFormatUserError } from '@/hooks/useFormatUserError';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useQueryClient } from '@tanstack/react-query';
@@ -100,6 +101,7 @@ const DataSourcesPage: React.FC = () => {
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
     const [profileLoading, setProfileLoading] = useState(false);
+    const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 });
     const { dataSources, isLoading } = useDataSources();
     const { mutateAsync: deleteDataSource } = useDeleteDataSource();
     const qc = useQueryClient();
@@ -151,24 +153,28 @@ const DataSourcesPage: React.FC = () => {
         setModalVisible(true);
     };
 
+    // Open edit modal for existing source
     const handleEditDataSource = async (dataSource: DataSource) => {
         try {
-            // authenticatedFetch (fetchApi) returns parsed JSON on success, throws on 4xx/5xx
-            const data = await authenticatedFetch(`/api/data/sources/${dataSource.id}`, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
-            const full = data?.data_source ? { ...dataSource, ...data.data_source } : dataSource;
-            setSelectedDataSource(full);
+            const full = await qc.fetchQuery({
+                queryKey: dataSourceKeys.detail(dataSource.id),
+                queryFn: () => getDataSource(dataSource.id),
+            });
+            setSelectedDataSource({ ...dataSource, ...full });
             setModalVisible(true);
         } catch (e: unknown) {
             message.error(formatError(e, 'load_failed'));
         }
     };
 
+    // Close modal and reset state
     const handleModalClose = () => {
         setModalVisible(false);
         setSelectedDataSource(null);
         refreshDataSources();
     };
 
+    // Handle delete with confirmation modal
     const handleDeleteDataSource = async (dataSource: DataSource) => {
         Modal.confirm({
             title: t('delete_data_source'),
@@ -186,23 +192,6 @@ const DataSourcesPage: React.FC = () => {
                 }
             },
         });
-    };
-
-    const handleProfileDataSource = async (ds: DataSource) => {
-        setProfileDataSource(ds);
-        setProfileResult(null);
-        setProfileLoading(true);
-        try {
-            const res = await authenticatedFetch(
-                `/api/platform/catalog/quality/profile/source/${ds.id}?sample_size=1000`,
-                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
-            );
-            setProfileResult(res as Record<string, unknown>);
-        } catch {
-            message.error(t('profile_failed'));
-        } finally {
-            setProfileLoading(false);
-        }
     };
 
     const getStatusColor = (status: string) => {
@@ -289,29 +278,6 @@ const DataSourcesPage: React.FC = () => {
                             onClick={() => handleEditDataSource(record)}
                         />
                     </Tooltip>
-                    {/* <Tooltip title={t('profile_source')}>
-                        <Button
-                            size="small"
-                            icon={<ScanOutlined />}
-                            onClick={() => handleProfileDataSource(record)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('monitor_source')}>
-                        <Button
-                            size="small"
-                            icon={<BellOutlined />}
-                            onClick={() => router.push(`/alerts?new=1&ds=${encodeURIComponent(record.id)}`)}
-                        />
-                    </Tooltip>
-                    {isModelEligible(record) && (
-                        <Tooltip title={t('data_model')}>
-                            <Button
-                                size="small"
-                                icon={<ApartmentOutlined />}
-                                onClick={() => router.push(`/data/sources/${record.id}/semantic`)}
-                            />
-                        </Tooltip>
-                    )} */}
                     <Tooltip title={t('delete')}>
                         <Button
                             size="small"
@@ -464,46 +430,6 @@ const DataSourcesPage: React.FC = () => {
             </Row>
             ) : null}
 
-            {stats.total > 0 ? (
-            <Card className="content-card page-section-card">
-                <div className="page-quota-strip">
-                    <div className="page-quota-strip__content">
-                        <Text type="secondary" className="page-quota-strip__label">{t('plan_quota')}</Text>
-                        <Progress
-                            percent={dataSourcesPercent}
-                            status={dataSourcesPercent >= 90 ? 'exception' : 'active'}
-                            strokeColor={dataSourcesPercent >= 90 ? '#ff7875' : 'var(--ant-color-primary)'}
-                            format={() =>
-                                dataSourcesLimit < 0
-                                    ? t('connected_org_count', { count: dataSourcesUsedCount })
-                                    : t('used_limit', { used: dataSourcesUsedCount, limit: dataSourcesLimit })
-                            }
-                        />
-                        <Text className="page-quota-strip__meta">
-                            {dataSourcesLimit < 0
-                                ? t('unlimited_connections')
-                                : t('connections_remaining', { count: Math.max(dataSourcesLimit - dataSourcesUsedCount, 0) })}
-                        </Text>
-                    </div>
-                    <Button
-                        className="page-quota-strip__action"
-                        icon={<ArrowUpOutlined />}
-                        onClick={() => setPricingModalVisible(true)}
-                    >
-                        {t('view_plans')}
-                    </Button>
-                </div>
-                {!canAddDataSource && (
-                    <Alert
-                        type="warning"
-                        showIcon
-                        style={{ marginTop: 16 }}
-                        message={t('limit_alert')}
-                    />
-                )}
-            </Card>
-            ) : null}
-
             <Card className="content-card page-section-card">
                 <div className="page-panel-toolbar">
                     <div className="page-panel-toolbar__row">
@@ -551,7 +477,7 @@ const DataSourcesPage: React.FC = () => {
                     </div>
                 </div>
                 <Divider className="page-divider" />
-                <div style={{ minHeight: '50vh' }}>
+                <div>
                     <Table
                         className="page-data-table"
                         columns={columns}
@@ -582,11 +508,13 @@ const DataSourcesPage: React.FC = () => {
                             ),
                         }}
                         pagination={{
-                            pageSize: 10,
+                            current: tablePagination.current,
+                            pageSize: tablePagination.pageSize,
                             showSizeChanger: true,
                             showQuickJumper: true,
                             showTotal: (total, range) =>
                                 t('pagination_total', { start: range[0], end: range[1], total }),
+                            onChange: (current, pageSize) => setTablePagination({ current, pageSize }),
                         }}
                         scroll={{ x: 960 }}
                     />

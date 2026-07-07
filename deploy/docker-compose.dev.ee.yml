@@ -17,6 +17,27 @@ services:
     restart: unless-stopped
 
   server:
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        cd /app
+        echo "Running EE migrations..."
+        /venv/bin/python -m alembic -c alembic.ini upgrade heads
+        if [ "$${RUN_EE_DEV_SEEDS}" = "true" ]; then
+          echo "Seeding EE development data..."
+          if [ -f /app/ee/scripts/seed_rbac.py ]; then
+            /venv/bin/python /app/ee/scripts/seed_rbac.py
+          fi
+          if [ -f /app/ee/scripts/seed_deployment_org.py ]; then
+            /venv/bin/python /app/ee/scripts/seed_deployment_org.py
+          fi
+        fi
+        exec /venv/bin/python -m uvicorn src.main:app \
+          --host 0.0.0.0 \
+          --port 8000 \
+          --reload
     environment:
       AISER_EDITION: enterprise
       AISER_EDITION_LICENSE_KEY: ${AISER_EDITION_LICENSE_KEY:-}
@@ -44,6 +65,10 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      AZURE_OPENAI_GPT41_API_KEY: ${AZURE_OPENAI_GPT41_API_KEY:-}
+      AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT:-}
+      AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION:-}
+      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
     depends_on:
       keycloak:
         condition: service_started

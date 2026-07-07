@@ -2,7 +2,7 @@ from typing import Optional, List, Mapping, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from src.modules.dashboards.models import Dashboard
 
@@ -50,6 +50,19 @@ class DashboardService:
         result = await self.db.execute(stmt)
         return list(result.scalars())
 
+    async def list_by_user(self, user_id: UUID) -> List[Dashboard]:
+        """CE scoping: a user's own dashboards plus legacy rows with no
+        recorded owner (created before the created_by column existed).
+        Never excludes pre-existing dashboards no one can be attributed to.
+        """
+        stmt = (
+            select(Dashboard)
+            .where(or_(Dashboard.created_by == user_id, Dashboard.created_by.is_(None)))
+            .order_by(Dashboard.created_at.desc())
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars())
+
     async def list_by_project(
         self,
         project_id: UUID,
@@ -84,6 +97,7 @@ class DashboardService:
         """Remove dashboard and dependent rows (widgets, pages, charts, shares, analytics)."""
         from sqlalchemy import delete, select, update
 
+        from src.core.edition import is_ee_enabled
         from src.modules.charts.models import Chart, DashboardEmbed, QueryPattern
         from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
         from src.modules.dashboards.models import (
@@ -96,12 +110,17 @@ class DashboardService:
 
         dashboard_id = dashboard.id
 
-        # Legacy widget rows (FK to dashboard and pages)
-        await self.db.execute(
-            delete(dashboard_widgets_table).where(
-                dashboard_widgets_table.c.dashboard_id == dashboard_id
+        # Legacy widget rows (FK to dashboard and pages). The dashboard_widgets
+        # table itself is only created by an EE-gated migration (see
+        # alembic/versions/2026_05_24_ee_platform_tables.py's _is_ee_enabled()
+        # check), so it doesn't exist in CE — attempting this delete there
+        # raised UndefinedTableError and aborted the whole dashboard delete.
+        if is_ee_enabled():
+            await self.db.execute(
+                delete(dashboard_widgets_table).where(
+                    dashboard_widgets_table.c.dashboard_id == dashboard_id
+                )
             )
-        )
 
         chart_service = DashboardChartService(self.db)
         charts = await chart_service.list_charts(dashboard_id)
@@ -141,21 +160,29 @@ class DashboardService:
             delete(DashboardEmbed).where(DashboardEmbed.dashboard_id == dashboard_id)
         )
 
-        try:
-            from sqlalchemy import text
+        # scheduled_emails is on the EE-only migration branch
+        # (f11a9f2c63b1_ee_tables.py, branch_labels=('ee',)) and never
+        # exists in CE. The previous try/except: pass here swallowed that
+        # UndefinedTableError but left the transaction aborted -- every
+        # statement after it (including the commit below) then failed with
+        # InFailedSQLTransactionError, a second 500 hiding behind the
+        # dashboard_widgets one.
+        if is_ee_enabled():
+            try:
+                from sqlalchemy import text
 
-            dash_id_str = str(dashboard_id)
-            await self.db.execute(
-                text(
-                    "DELETE FROM scheduled_emails WHERE body LIKE :meta_pattern OR body LIKE :url_pattern"
-                ),
-                {
-                    "meta_pattern": f'%"dashboard_id": "{dash_id_str}"%',
-                    "url_pattern": f"%{dash_id_str}%",
-                },
-            )
-        except Exception:
-            pass
+                dash_id_str = str(dashboard_id)
+                await self.db.execute(
+                    text(
+                        "DELETE FROM scheduled_emails WHERE body LIKE :meta_pattern OR body LIKE :url_pattern"
+                    ),
+                    {
+                        "meta_pattern": f'%"dashboard_id": "{dash_id_str}"%',
+                        "url_pattern": f"%{dash_id_str}%",
+                    },
+                )
+            except Exception:
+                pass
 
         await self.db.delete(dashboard)
         await self.db.commit()

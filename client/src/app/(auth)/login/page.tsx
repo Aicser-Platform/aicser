@@ -26,19 +26,18 @@ export default function LoginPage() {
   const t = useTranslations('auth');
   const searchParams = useSearchParams();
   const initialSignUp =
-    searchParams.get('signup') === '1' ||
-    searchParams.get('mode') === 'signup' ||
-    searchParams.get('mode') === 'register';
+    searchParams?.get('signup') === '1' ||
+    searchParams?.get('mode') === 'signup' ||
+    searchParams?.get('mode') === 'register';
   const [isSignUp, setIsSignUp] = useState(initialSignUp);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
-  const { login, signup, actionLoading: loading, isAuthenticated, authLoading, loginError, clearLoginError } =
-    useAuth();
+  const { login, signup, actionLoading: loading, isAuthenticated, authLoading, loginError, clearLoginError } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
-    const next = searchParams.get('next');
+    const next = searchParams?.get('next');
     const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : getDefaultAppPath();
     router.replace(dest);
   }, [authLoading, isAuthenticated, router, searchParams]);
@@ -95,7 +94,7 @@ export default function LoginPage() {
       }
 
       await login(values.identifier, values.password);
-      const next = searchParams.get('next');
+      const next = searchParams?.get('next');
       const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : getDefaultAppPath();
       router.push(dest);
     } catch {

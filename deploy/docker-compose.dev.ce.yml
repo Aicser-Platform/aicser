@@ -1,17 +1,202 @@
-# Community Edition development overrides.
+# Aicser Community Edition — development stack (standalone, live-reload).
+#
+# Usage (no Makefile needed):
+#   cp deploy/.env.ce.example .env
+#   docker compose -f deploy/docker-compose.dev.ce.yml up
+#
+# Or via make:
+#   make -C deploy dev-ce
+
+name: aiser-dev-ce
+
+x-client-command: &client-command
+  - sh
+  - -c
+  - >-
+    export NEXT_PUBLIC_EDITION="$${NEXT_PUBLIC_EDITION:-$${EDITION}}";
+    DEPS_HASH="$$(sha256sum package.json package-lock.json 2>/dev/null | sha256sum | cut -d ' ' -f 1)";
+    INSTALLED_HASH="";
+    if [ -f ./node_modules/.aicser-deps-hash ]; then
+      INSTALLED_HASH="$$(cat ./node_modules/.aicser-deps-hash)";
+    fi;
+    if [ ! -x ./node_modules/.bin/next ] || [ "$${INSTALLED_HASH}" != "$${DEPS_HASH}" ]; then
+      echo "[dev] node_modules volume is missing or stale; installing dependencies...";
+      npm install --no-audit --no-fund;
+      echo "$${DEPS_HASH}" > ./node_modules/.aicser-deps-hash;
+    fi;
+    node scripts/setup-ee.js;
+    if [ "$${NEXT_DEV_TURBO}" = "true" ]; then
+      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-4096}"
+      ./node_modules/.bin/next dev --turbo -H 0.0.0.0 -p $${PORT:-3000};
+    else
+      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-4096}"
+      ./node_modules/.bin/next dev -H 0.0.0.0 -p $${PORT:-3000};
+    fi
 
 services:
-  server:
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiser-postgres-dev-ce
     environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
+    ports:
+      - "${DEV_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_dev_ce_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aiser_world_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiser-redis-dev-ce
+    ports:
+      - "${DEV_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_dev_ce_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  server:
+    image: aiser-server:dev-ce
+    build:
+      context: ../server
+      dockerfile: Dockerfile.dev
+    container_name: aiser-server-dev-ce
+    working_dir: /app
+    ports:
+      - "${DEV_SERVER_PORT:-8000}:8000"
+      - "${DEV_DEBUG_PORT:-5678}:5678"
+    # Lets users add a data source pointing at a database on the Docker host itself
+    # (host="host.docker.internal") — needed on native Linux Docker Engine, where
+    # host.docker.internal isn't resolved automatically the way it is on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../server:/app
+      - pip_dev_ce_cache:/root/.cache/pip
+      - ./scripts/sample-data:/app/scripts/sample-data
+    environment:
+      # ── Edition ──────────────────────────────────────────────────────────────
       AISER_EDITION: community
       AISER_EDITION_LICENSE_KEY: ""
-      RUN_EE_DEV_SEEDS: "false"
+      AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
+      AISER_ORG_NAME: ${AISER_ORG_NAME:-Aicser}
+      # ── Database ─────────────────────────────────────────────────────────────
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
+      # ── Auth ─────────────────────────────────────────────────────────────────
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key}
+      JWT_SECRET: ${JWT_SECRET:-your-jwt-secret-here}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-${JWT_SECRET:-your-jwt-secret-here}}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      COOKIE_SECURE: "false"
+      # ── Dev flags ────────────────────────────────────────────────────────────
+      ENVIRONMENT: development
+      DEBUG: ${APP_DEBUG:-true}
+      ALLOW_UNVERIFIED_JWT_IN_DEV: ${ALLOW_UNVERIFIED_JWT_IN_DEV:-true}
+      # ── Redis ────────────────────────────────────────────────────────────────
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_URL: redis://redis:6379
+      # ── AI / LLM ─────────────────────────────────────────────────────────────
+      # ── Email (optional) ─────────────────────────────────────────────────────
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SENDER: ${SMTP_SENDER:-Aicser}
+      # ── Python ───────────────────────────────────────────────────────────────
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        cd /app
+        echo "Running CE migrations..."
+        /venv/bin/python -m alembic -c alembic.ini upgrade 2026_07_08_avatar_url_text
+        exec /venv/bin/python -m uvicorn src.main:app \
+          --host 0.0.0.0 \
+          --port 8000 \
+          --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   client:
     image: aiser-client:dev-ce
     build:
+      context: ../client
+      dockerfile: Dockerfile.dev
       args:
         EDITION: community
+    container_name: aiser-client-dev-ce
+    working_dir: /app
+    command: *client-command
     environment:
       EDITION: community
       NEXT_PUBLIC_EDITION: community
+      NEXT_PUBLIC_API_URL: http://localhost:${DEV_SERVER_PORT:-8000}
+      API_TARGET: http://server:8000
+      PORT: "3000"
+      NEXT_DEV_TURBO: ${NEXT_DEV_TURBO:-false}
+      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-4096}
+      NEXT_DEV_CPUS: ${NEXT_DEV_CPUS:-}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-false}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+    ports:
+      - "${DEV_CLIENT_PORT:-3000}:3000"
+    volumes:
+      - ../client:/app
+      - client_dev_ce_node_modules:/app/node_modules
+      - client_dev_ce_ee_shim:/app/src/ee
+      - client_dev_ce_next:/app/.next
+    depends_on:
+      server:
+        condition: service_healthy
+    mem_limit: ${CLIENT_DEV_MEM_LIMIT:-6g}
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_ce_data:
+  redis_dev_ce_data:
+  pip_dev_ce_cache:
+  client_dev_ce_node_modules:
+  client_dev_ce_ee_shim:
+  client_dev_ce_next:
+
+networks:
+  default:
+    name: aiser-dev-ce-network
+    driver: bridge

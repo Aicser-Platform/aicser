@@ -62,6 +62,10 @@ class Dashboard(BaseModel):
     description = Column(Text, nullable=True)
     config = Column(JSON, nullable=True)
     project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    # CE per-user scoping. Nullable: pre-existing rows have no recorded owner
+    # and stay visible rather than being guessed at or hidden (see
+    # alembic/versions/2026_07_06_dashboard_created_by.py).
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     @property
     def title(self):

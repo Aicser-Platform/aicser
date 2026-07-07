@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Select, Switch, Button, Row, Col, Typography, message, Spin } from 'antd';
+import { Card, Form, Select, Switch, Button, Row, Col, Typography, message, Spin, Flex } from 'antd';
 import { GlobalOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
@@ -140,7 +140,6 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         size="small"
         title={t('language_region')}
         className="mb-6"
-        bordered={false}
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
       >
         <Row gutter={[16, 16]}>
@@ -192,18 +191,11 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
             </Form.Item>
           </Col>
         </Row>
-      </Card>
 
-      <Card
-        size="small"
-        title={t('display_preferences')}
-        className="mb-6"
-        bordered={false}
-        style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-      >
-        <Row gutter={[16, 16]}>
+      <p className='text-lg font-semibold'>{t('display_preferences')}</p>
+        <Row gutter={[16, 0]}>
           <Col xs={24} md={12}>
-            <Form.Item name="theme" label={t('theme')} tooltip={t('theme_tooltip')}>
+            <Form.Item name="theme" label={t('theme')} tooltip={t('theme_tooltip')} style={{ marginBottom: 16 }}>
               <Select
                 onChange={(value: string) => {
                   persistThemeModeAndNotify(value);
@@ -216,7 +208,7 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
             </Form.Item>
           </Col>
           <Col span={24}>
-            <Form.Item name="autoSave" label={t('auto_save')} valuePropName="checked">
+            <Form.Item name="autoSave" label={t('auto_save')} valuePropName="checked" style={{ marginBottom: 16 }}>
               <Switch />
             </Form.Item>
           </Col>
@@ -226,12 +218,13 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               label={t('notifications')}
               valuePropName="checked"
               tooltip={t('notifications_tooltip')}
+              style={{ marginBottom: 16 }}
             >
               <Switch />
             </Form.Item>
           </Col>
           <Col span={24}>
-            <Form.Item name="dataSharing" label={t('data_sharing')} valuePropName="checked">
+            <Form.Item name="dataSharing" label={t('data_sharing')} valuePropName="checked" style={{ marginBottom: 0 }}>
               <Switch />
             </Form.Item>
           </Col>

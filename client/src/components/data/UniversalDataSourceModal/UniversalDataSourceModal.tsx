@@ -53,6 +53,8 @@ const { Title, Text } = Typography;
 const { Dragger } = Upload;
 const { useBreakpoint } = Grid;
 
+const IS_EE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+
 /** Parse Google Sheet URL; extract spreadsheet ID and optional gid from ?gid= #gid= or &gid= */
 function parseGoogleSheetUrl(url: string): { sheetId: string | null; gid: string | null } {
   const s = (url || '').trim();
@@ -86,6 +88,15 @@ interface DataSourceConfig {
   type: 'file' | 'database' | 'warehouse' | 'api' | 'knowledge_base' | 'sample_duckdb' | '';
   description?: string;
 }
+
+const hiddenDataSourceTypes = new Set(['knowledge_base', 'sample_duckdb']);
+
+const normalizeInitialDataSourceType = (
+  type: UniversalDataSourceModalProps['initialDataSourceType'],
+): DataSourceConfig['type'] => {
+  if (!type || (!IS_EE && hiddenDataSourceTypes.has(type))) return 'file';
+  return type;
+};
 
 interface ConnectionConfig {
   // Basic connection
@@ -173,7 +184,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   // Data source configuration
   const [dataSourceConfig, setDataSourceConfig] = useState<DataSourceConfig>({
     name: '', // Will auto-generate if empty
-    type: initialDataSourceType || '',
+    type: normalizeInitialDataSourceType(initialDataSourceType),
     description: '',
   });
 
@@ -259,7 +270,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   ];
   const SAMPLE_DOMAINS_WITH_DATA = ['banking', 'education', 'insurance', 'ecommerce', 'retail_supply_chain', 'telecom', 'healthcare', 'saas', 'ngo_impact', 'govt_public_services', 'energy'];
 
-  // Supported data sources
+  // Supported data sources. Knowledge Base and Sample Data are EE-only entry points.
   const dataSourceTypes = [
     {
       key: 'file',
@@ -289,20 +300,24 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       description: t('type_api_desc'),
       color: 'orange',
     },
-    {
-      key: 'knowledge_base',
-      label: t('type_knowledge_base_label'),
-      icon: <FileOutlined />,
-      description: t('type_knowledge_base_desc'),
-      color: 'cyan',
-    },
-    {
-      key: 'sample_duckdb',
-      label: t('type_sample_duckdb_label'),
-      icon: <ExperimentOutlined />,
-      description: t('type_sample_duckdb_desc'),
-      color: 'geekblue',
-    },
+    ...(IS_EE
+      ? [
+          {
+            key: 'knowledge_base',
+            label: t('type_knowledge_base_label'),
+            icon: <FileOutlined />,
+            description: t('type_knowledge_base_desc'),
+            color: 'cyan',
+          },
+          {
+            key: 'sample_duckdb',
+            label: t('type_sample_duckdb_label'),
+            icon: <ExperimentOutlined />,
+            description: t('type_sample_duckdb_desc'),
+            color: 'geekblue',
+          },
+        ]
+      : []),
   ];
 
   // Detect dark mode for theme-aware logos
@@ -791,7 +806,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         setSelectedDatabaseType(dbType);
         setDataSourceConfig({
           name: existingDataSource.name || '',
-          type: (existingDataSource.type as any) || initialDataSourceType,
+          type: normalizeInitialDataSourceType((existingDataSource.type as any) || initialDataSourceType),
           description: existingDataSource.description || '',
         });
         if (dsType === 'api') {
@@ -860,7 +875,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         setCurrentStep(0);
         setDataSourceConfig({
           name: '',
-          type: initialDataSourceType,
+          type: normalizeInitialDataSourceType(initialDataSourceType),
           description: '',
         });
         setTestResult(null);
@@ -890,6 +905,8 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   ];
 
   const handleDataSourceTypeSelect = (type: string) => {
+    if (!IS_EE && hiddenDataSourceTypes.has(type)) return;
+
     setDataSourceConfig((prev) => ({
       ...prev,
       type: type as any,

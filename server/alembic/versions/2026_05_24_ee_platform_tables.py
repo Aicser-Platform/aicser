@@ -4,6 +4,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import text
 from sqlalchemy.dialects import postgresql
 
 
@@ -40,98 +41,117 @@ def upgrade() -> None:
     op.add_column("organizations", sa.Column("max_projects", sa.Integer(), nullable=True))
 
     # ── query editor ──────────────────────────────────────────────────────────
-    op.create_table(
-        "query_tabs",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("organization_id", sa.Text(), nullable=True),
-        sa.Column("project_id", sa.Text(), nullable=True),
-        sa.Column("tabs", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("active_key", sa.String(length=255), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_query_tabs_scope", "query_tabs", ["user_id", "organization_id", "project_id"])
+    # Use IF NOT EXISTS — the CE migration (2026_07_07_ce_query_tables) may have
+    # already created these tables when both branches run together (upgrade heads).
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS query_tabs (
+            id              SERIAL PRIMARY KEY,
+            user_id         TEXT        NOT NULL,
+            organization_id TEXT,
+            project_id      TEXT,
+            tabs            JSONB       NOT NULL,
+            active_key      VARCHAR(255),
+            updated_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_query_tabs_scope "
+        "ON query_tabs (user_id, organization_id, project_id)"
+    ))
 
-    op.create_table(
-        "saved_queries",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("organization_id", sa.Text(), nullable=True),
-        sa.Column("project_id", sa.Text(), nullable=True),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("sql", sa.Text(), nullable=False),
-        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_saved_queries_scope", "saved_queries", ["user_id", "organization_id", "project_id"])
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS saved_queries (
+            id              SERIAL PRIMARY KEY,
+            user_id         TEXT         NOT NULL,
+            organization_id TEXT,
+            project_id      TEXT,
+            name            VARCHAR(255) NOT NULL,
+            sql             TEXT         NOT NULL,
+            metadata        JSONB,
+            created_at      TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_saved_queries_scope "
+        "ON saved_queries (user_id, organization_id, project_id)"
+    ))
 
-    op.create_table(
-        "saved_query_versions",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("saved_query_id", sa.Integer(), nullable=False),
-        sa.Column("sql", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.ForeignKeyConstraint(["saved_query_id"], ["saved_queries.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_saved_query_versions_query_id", "saved_query_versions", ["saved_query_id"])
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS saved_query_versions (
+            id             SERIAL PRIMARY KEY,
+            saved_query_id INTEGER NOT NULL REFERENCES saved_queries(id) ON DELETE CASCADE,
+            sql            TEXT    NOT NULL,
+            created_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_saved_query_versions_query_id "
+        "ON saved_query_versions (saved_query_id)"
+    ))
 
-    op.create_table(
-        "query_execution_history",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("organization_id", sa.Text(), nullable=True),
-        sa.Column("project_id", sa.Text(), nullable=True),
-        sa.Column("data_source_id", sa.String(), nullable=True),
-        sa.Column("sql", sa.Text(), nullable=False),
-        sa.Column("status", sa.String(length=32), server_default="success", nullable=False),
-        sa.Column("row_count", sa.Integer(), server_default="0", nullable=True),
-        sa.Column("engine", sa.String(length=64), nullable=True),
-        sa.Column("duration_ms", sa.Integer(), nullable=True),
-        sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_query_execution_history_scope", "query_execution_history", ["user_id", "organization_id"])
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS query_execution_history (
+            id              SERIAL PRIMARY KEY,
+            user_id         TEXT         NOT NULL,
+            organization_id TEXT,
+            project_id      TEXT,
+            data_source_id  VARCHAR,
+            sql             TEXT         NOT NULL,
+            status          VARCHAR(32)  NOT NULL DEFAULT 'success',
+            row_count       INTEGER               DEFAULT 0,
+            engine          VARCHAR(64),
+            duration_ms     INTEGER,
+            error_message   TEXT,
+            started_at      TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_query_execution_history_scope "
+        "ON query_execution_history (user_id, organization_id)"
+    ))
 
-    op.create_table(
-        "query_schedules",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("organization_id", sa.Text(), nullable=True),
-        sa.Column("project_id", sa.Text(), nullable=True),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("sql", sa.Text(), nullable=False),
-        sa.Column("cron", sa.String(length=255), nullable=True),
-        sa.Column("enabled", sa.Boolean(), server_default=sa.text("true"), nullable=False),
-        sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_query_schedules_scope", "query_schedules", ["user_id", "organization_id", "project_id"])
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS query_schedules (
+            id              SERIAL PRIMARY KEY,
+            user_id         TEXT         NOT NULL,
+            organization_id TEXT,
+            project_id      TEXT,
+            name            VARCHAR(255) NOT NULL,
+            sql             TEXT         NOT NULL,
+            cron            VARCHAR(255),
+            enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+            last_run_at     TIMESTAMPTZ,
+            created_at      TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_query_schedules_scope "
+        "ON query_schedules (user_id, organization_id, project_id)"
+    ))
 
-    op.create_table(
-        "query_snapshots",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.Text(), nullable=False),
-        sa.Column("organization_id", sa.Text(), nullable=True),
-        sa.Column("project_id", sa.Text(), nullable=True),
-        sa.Column("name", sa.String(length=255), nullable=True),
-        sa.Column("data_source_id", sa.String(), nullable=True),
-        sa.Column("sql", sa.Text(), nullable=True),
-        sa.Column("columns", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("rows", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("row_count", sa.Integer(), server_default="0", nullable=True),
-        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("idx_query_snapshots_scope", "query_snapshots", ["user_id", "organization_id", "project_id"])
+    op.execute(text("""
+        CREATE TABLE IF NOT EXISTS query_snapshots (
+            id              SERIAL PRIMARY KEY,
+            user_id         TEXT        NOT NULL,
+            organization_id TEXT,
+            project_id      TEXT,
+            name            VARCHAR(255),
+            data_source_id  VARCHAR,
+            sql             TEXT,
+            columns         JSONB,
+            rows            JSONB,
+            row_count       INTEGER DEFAULT 0,
+            metadata        JSONB,
+            created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    op.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_query_snapshots_scope "
+        "ON query_snapshots (user_id, organization_id, project_id)"
+    ))
 
     # ── dashboard widgets (v2 layout engine) ──────────────────────────────────
     op.create_table(

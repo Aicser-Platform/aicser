@@ -290,17 +290,18 @@ const SettingsPage: React.FC = () => {
 
   const activeTab = resolveSettingsTab(searchParams?.get('tab'), isEE);
 
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
+  if (prevActiveTab !== activeTab) {
+    setPrevActiveTab(activeTab);
+    setPageAction(null);
+  }
+
   const { setActiveTab, loadSettingsByTab, loadApiKeys, loadTeamMembers, loadDataSources } = useSettingsStore();
 
   // Keep store in sync for any legacy consumers
   useEffect(() => {
     setActiveTab(activeTab);
   }, [activeTab, setActiveTab]);
-
-  // Clear the action button when switching tabs
-  useEffect(() => {
-    setPageAction(null);
-  }, [activeTab]);
 
   // Load overview data and subscription on mount
   useEffect(() => {

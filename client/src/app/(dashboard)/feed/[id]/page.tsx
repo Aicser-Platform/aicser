@@ -200,12 +200,12 @@ const FeedDetailPage: React.FC = () => {
                 <Tag icon={assetIcon} color="blue" className="m-0 rounded-full px-3 py-1">
                   {assetTypeLabel}
                 </Tag>
-                <Tag className="m-0 rounded-full px-3 py-1">{visibilityLabel}</Tag>
-                {item.renderMode === 'snapshot' ? (
+                <Tag color="green" className="m-0 rounded-full px-3 py-1">{visibilityLabel}</Tag>
+                {/* {item.renderMode === 'snapshot' ? (
                   <Tag color="purple" className="m-0 rounded-full px-3 py-1">
                     {t('snapshot_badge')}
                   </Tag>
-                ) : null}
+                ) : null} */}
               </div>
               <Title level={2} className="!mb-2 !mt-0 !text-2xl sm:!text-3xl">
                 {item.title}
@@ -239,7 +239,7 @@ const FeedDetailPage: React.FC = () => {
           {/* Applause / Save / Share actions, lifted up from the old embedded FeedCard footer.
               "Open" is omitted in compact mode here since this already is the detail page —
               navigating to itself would be a no-op surprise for the user. */}
-          <div className="-mx-1 mt-1 border-t border-[var(--ant-color-border-secondary)] pt-1">
+          <div className="-mx-1 mt-1 pt-1">
             <FeedCardActions
               item={item}
               compact

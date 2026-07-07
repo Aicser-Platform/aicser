@@ -4,6 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any, Optional
 from uuid import UUID
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from src.db.session import get_async_session
 from src.core.edition import is_ee_enabled
@@ -64,8 +67,23 @@ async def list_dashboards(
     service = DashboardService(db)
     if is_ee_enabled() and project_id:
         dashboards = await service.list_by_project(project_id)
+    elif uid:
+        # CE: scope to the caller's own dashboards (plus legacy rows with no
+        # recorded owner). list_all() has no owner filter at all and used to
+        # return every user's dashboards to every authenticated user.
+        try:
+            dashboards = await service.list_by_user(UUID(str(uid)))
+        except ValueError:
+            dashboards = []
+        except Exception as exc:
+            # Fallback for missing created_by column (migration not yet applied).
+            logger.warning("list_by_user failed (%s); falling back to list_all", exc)
+            try:
+                dashboards = await service.list_all()
+            except Exception:
+                dashboards = []
     else:
-        dashboards = await service.list_all()
+        dashboards = []
     return {"dashboards": [_serialize_dashboard(dashboard) for dashboard in dashboards]}
 
 
@@ -83,10 +101,16 @@ async def create_dashboard(
     uid = user_id_from_payload(extract_user_payload(current_user))
     await require_permission(uid, "dashboard:create", project_id=str(project_id) if project_id else None)
     service = DashboardService(db)
+    created_by = None
+    try:
+        created_by = UUID(str(uid)) if uid else None
+    except ValueError:
+        created_by = None
     dashboard = await service.create({
         "project_id": project_id if is_ee_enabled() else None,
         "title": payload.title,
         "config": payload.config,
+        "created_by": created_by,
     })
     return _serialize_dashboard(dashboard)
 

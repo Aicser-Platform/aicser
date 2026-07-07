@@ -19,11 +19,14 @@ from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.user.service import UserService
 from src.modules.user.schemas import UserProfileUpdate, UserProfileResponse
+from src.core.edition import is_ee_enabled
 from src.modules.user.avatar_storage_service import (
     AvatarStorageService,
     ALLOWED_CONTENT_TYPES,
     MAX_AVATAR_SIZE_BYTES,
+    compress_image_to_webp,
     generate_avatar_sas_url,
+    is_avatar_data_uri,
 )
 from src.modules.user.utils import mask_key
 from src.modules.user.user_setting_repository import UserSettingRepository
@@ -70,7 +73,7 @@ async def get_profile(
 
     # Replace raw private blob URL with a time-limited SAS URL so the browser
     # can load the avatar image from the private Azure Blob Storage container.
-    if profile.get("avatar_url"):
+    if profile.get("avatar_url") and not is_avatar_data_uri(profile["avatar_url"]):
         profile["avatar_url"] = generate_avatar_sas_url(profile["avatar_url"])
 
     return profile
@@ -120,6 +123,20 @@ async def upload_avatar(
             detail=f"File too large ({len(file_content)} bytes). Maximum allowed is 5 MB.",
         )
 
+    # CE: store avatar as a base64 WebP data URI directly in the database.
+    if not is_ee_enabled():
+        import base64
+
+        webp_bytes = compress_image_to_webp(file_content)
+        data_uri = f"data:image/webp;base64,{base64.b64encode(webp_bytes).decode()}"
+        logger.info("CE avatar compressed: %d bytes → %d bytes (data URI)", len(file_content), len(webp_bytes))
+        svc = UserService(db)
+        updated = await svc.update_profile(user_id=user_id, data={"avatar_url": data_uri})
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return updated
+
+    # EE: upload to Azure Blob Storage.
     # Look up the user's organization so we can place the avatar under orgs/{org_id}/
     from sqlalchemy import text
     org_row = await db.execute(
@@ -219,7 +236,7 @@ async def get_bulk_profiles(
             profile = await svc.get_profile(uid)
             if profile:
                 avatar = profile.get("avatar_url")
-                if avatar:
+                if avatar and not is_avatar_data_uri(avatar):
                     avatar = generate_avatar_sas_url(avatar)
                 results.append(BulkProfileItem(
                     user_id=profile.get("user_id") or uid,

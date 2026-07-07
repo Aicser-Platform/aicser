@@ -1,48 +1,50 @@
-name: aiser-ce-prod
+name: aiser-ce
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: aiser-postgres-ce-prod
+    container_name: aiser-postgres-ce
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aiser}
       POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
     volumes:
-      - postgres_ce_prod_data:/var/lib/postgresql/data
+      - postgres_ce_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: aiser-redis-ce-prod
+    container_name: aiser-redis-ce
     volumes:
-      - redis_ce_prod_data:/data
+      - redis_ce_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
   server:
     build:
-      context: ../server
+      context: ./server
       dockerfile: Dockerfile.prod
-    container_name: aiser-server-ce-prod
+    container_name: aiser-server-ce
     environment:
       AISER_EDITION: CE
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
       POSTGRES_SERVER: postgres
       POSTGRES_DB: ${POSTGRES_DB:-aiser}
       POSTGRES_USER: ${POSTGRES_USER:-aiser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
       POSTGRES_PORT: "5432"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -51,16 +53,14 @@ services:
       JWT_ALGORITHM: HS256
       JWT_EXPIRY_SECONDS: "604800"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
-      JWT_SECRET: ${JWT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ENVIRONMENT: production
-      # Set COOKIE_SECURE=true only when running behind HTTPS. Keep false for plain HTTP.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
     volumes:
-      - ../server/alembic/versions:/app/alembic/versions
-      - server_ce_prod_uploads:/app/uploads
+      - ./server/alembic/versions:/app/alembic/versions
+      - server_ce_uploads:/app/uploads
     ports:
       - "8000:8000"
     # Lets users add a data source pointing at a database on the Docker host itself
@@ -78,10 +78,10 @@ services:
       - -c
       - |
         set -e
-        echo "Running CE migrations..."
+        echo "Running migrations..."
         alembic -c alembic.ini upgrade ce@head
         echo "Starting server..."
-        exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 2
+        exec uvicorn src.main:app --host 0.0.0.0 --port 8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -92,16 +92,14 @@ services:
 
   client:
     build:
-      context: ../client
+      context: ./client
       dockerfile: Dockerfile.prod
       args:
         EDITION: community
         NEXT_PUBLIC_EDITION: community
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required (browser-accessible server URL e.g. http://YOUR_HOST:8000)}
-        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
-    container_name: aiser-client-ce-prod
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: aiser-client-ce
     environment:
-      # Server-side proxy target (Next.js Route Handlers → FastAPI, internal Docker DNS)
       API_TARGET: http://server:8000
       NODE_ENV: production
     ports:
@@ -112,11 +110,11 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_ce_prod_data:
-  redis_ce_prod_data:
-  server_ce_prod_uploads:
+  postgres_ce_data:
+  redis_ce_data:
+  server_ce_uploads:
 
 networks:
   default:
-    name: aiser-ce-prod-network
+    name: aiser-ce-network
     driver: bridge

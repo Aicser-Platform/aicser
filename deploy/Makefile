@@ -1,7 +1,7 @@
 DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 COMPOSE    := docker compose --project-directory $(DEPLOY_DIR)
 DEV_BASE   := -f $(DEPLOY_DIR)/docker-compose.dev.yml
-DEV_CE     := AISER_EDITION=community $(COMPOSE) -p aiser-dev-ce $(DEV_BASE) -f $(DEPLOY_DIR)/docker-compose.dev.ce.yml
+DEV_CE     := $(COMPOSE) -p aiser-dev-ce -f $(DEPLOY_DIR)/docker-compose.dev.ce.yml
 DEV_EE     := AISER_EDITION=enterprise $(COMPOSE) -p aiser-dev-ee $(DEV_BASE) -f $(DEPLOY_DIR)/docker-compose.dev.ee.yml
 DEV_CE_EXTRAS := $(DEV_CE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
 DEV_EE_EXTRAS := $(DEV_EE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
@@ -10,13 +10,12 @@ CE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ce.yml
 EE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.yml
 
 # ── Dev (live-reload, volume-mounted) ────────────────────────────────────────
-dev: dev-ce
 
 # Start only the CE development stack.
 dev-ce:
 	-$(DEV_LEGACY) down --remove-orphans
 	-$(DEV_EE_EXTRAS) down --remove-orphans
-	$(DEV_CE) up -d
+	$(DEV_CE) up
 
 dev-ce-build:
 	-$(DEV_LEGACY) down --remove-orphans
@@ -77,9 +76,13 @@ dev-logs: dev-ce-logs
 
 # ── CE build (rebuild image on code change, run migrations, start) ────────────
 ce:
-	$(CE) up -d --build
+	$(CE) up --build
 ce-up:
 	$(CE) up -d
+
+ce-fresh-client:
+	$(CE) build client
+	$(CE) up -d client
 
 ce-down:
 	$(CE) down
