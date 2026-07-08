@@ -169,13 +169,12 @@ docker run --rm \
   -e SECRET_KEY=<secret> \
   -e ENVIRONMENT=production \
   deploy-server \
-  alembic -c alembic.ini upgrade head
+  alembic -c alembic.ini upgrade ce@head
 ```
 
 To generate a new migration:
 
 ```bash
-# replace "upgrade head" with:
 alembic -c alembic.ini revision --autogenerate -m "describe your change"
 ```
 
