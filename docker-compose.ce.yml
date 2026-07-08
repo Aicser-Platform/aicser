@@ -81,7 +81,7 @@ services:
       - |
         set -e
         echo "Running CE migrations..."
-        alembic -x edition=ce -c alembic.ini upgrade head
+        alembic -c alembic.ini upgrade ce@head
         echo "Starting Aicser CE server..."
         exec uvicorn src.main:app --host 0.0.0.0 --port 8000
     healthcheck:
