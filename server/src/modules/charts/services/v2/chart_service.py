@@ -171,8 +171,8 @@ class ChartService:
             raw = explicit.strip().strip('"')
             if "." in raw:
                 schema_part, table_part = raw.split(".", 1)
-                return table_part.strip(), schema_part.strip() or "public"
-            return raw, "public"
+                return self._canonical_schema_table_name(table_part.strip(), schema_info), schema_part.strip() or "public"
+            return self._canonical_schema_table_name(raw, schema_info), "public"
         return self._resolve_table_and_schema(schema_info)
 
     def _is_valid_table_reference(self, ref: str) -> bool:
@@ -228,6 +228,42 @@ class ChartService:
         if not table:
             return ""
         return str(table).split(".")[-1].strip()
+
+    @staticmethod
+    def _logical_table_name(table: Optional[str]) -> str:
+        bare = str(table or "").split(".")[-1].strip().lower()
+        return re.sub(r"^sheet_\d+_", "", bare)
+
+    def _schema_table_alias_map(self, schema_info: Any) -> Dict[str, str]:
+        """Map logical/short table aliases to physical schema table names.
+
+        Uploaded workbook sheets are stored as physical tables such as
+        ``sheet_0_dim_campaign``. Semantic hints and LLM output often refer to
+        the logical table name ``dim_campaign``. Canonicalizing that here keeps
+        chart execution single-table when the selected sheet already contains
+        the field, instead of requiring a nonexistent modeled relationship.
+        """
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        aliases: Dict[str, str] = {}
+        if not isinstance(tables, list):
+            return aliases
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            physical = self._bare_table_name(table.get("name"))
+            if not physical:
+                continue
+            physical_lower = physical.lower()
+            aliases.setdefault(physical_lower, physical)
+            aliases.setdefault(self._logical_table_name(physical), physical)
+        return aliases
+
+    def _canonical_schema_table_name(self, table: Optional[str], schema_info: Any) -> str:
+        bare = self._bare_table_name(table)
+        if not bare:
+            return ""
+        aliases = self._schema_table_alias_map(schema_info)
+        return aliases.get(bare.lower()) or aliases.get(self._logical_table_name(bare)) or bare
 
     def _schema_column_table_map(self, schema_info: Any) -> Dict[str, List[str]]:
         tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
@@ -406,20 +442,29 @@ class ChartService:
             f"Create or activate a relationship from {base_table} to {tables}."
         )
 
-    def _field_table(self, field: Optional[str], base_table: str, column_tables: Dict[str, List[str]]) -> Optional[str]:
+    def _field_table(
+        self,
+        field: Optional[str],
+        base_table: str,
+        column_tables: Dict[str, List[str]],
+        table_aliases: Optional[Dict[str, str]] = None,
+    ) -> Optional[str]:
         if not field or not isinstance(field, str):
             return None
         clean = field.strip()
         if "." in clean:
-            return self._bare_table_name(clean.rsplit(".", 1)[0])
+            explicit = self._bare_table_name(clean.rsplit(".", 1)[0])
+            return (table_aliases or {}).get(explicit.lower()) or explicit
         candidates = column_tables.get(clean.lower()) or []
         if base_table in candidates:
             return base_table
         return candidates[0] if candidates else None
 
     def _qualify_field(self, field: Optional[str], table: Optional[str]) -> Optional[str]:
-        if not field or not table or "." in str(field):
+        if not field or not table:
             return field
+        if "." in str(field):
+            return f"{self._bare_table_name(table)}.{str(field).rsplit('.', 1)[-1].strip()}"
         return f"{self._bare_table_name(table)}.{field}"
 
     async def _apply_modeled_joins_to_chart_query(
@@ -443,11 +488,12 @@ class ChartService:
         column_tables = self._schema_column_table_map(schema_info)
         if not column_tables:
             return chart_query, x_field, y_metric, y_metrics, y_metrics_secondary, group_field
+        table_aliases = self._schema_table_alias_map(schema_info)
 
         needed_tables: set[str] = set()
 
         def qualify_plain_field(field: Optional[str]) -> Optional[str]:
-            table_name = self._field_table(field, base_table, column_tables)
+            table_name = self._field_table(field, base_table, column_tables, table_aliases)
             if table_name and table_name != base_table:
                 needed_tables.add(table_name)
             return self._qualify_field(field, table_name)

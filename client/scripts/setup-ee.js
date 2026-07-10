@@ -20,7 +20,12 @@ const eeChatShimFile = path.join(eeShimDir, 'chat-page.tsx');
 
 mkdirSync(eeShimDir, { recursive: true });
 
-const edition = (process.env.EDITION || process.env.NEXT_PUBLIC_EDITION || '').toLowerCase();
+const edition = (
+  process.env.NEXT_PUBLIC_EDITION ||
+  process.env.EDITION ||
+  process.env.AISER_EDITION ||
+  ''
+).toLowerCase();
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const hasEnterpriseModules = existsSync(eeIndex) && existsSync(eeChatPage);
 

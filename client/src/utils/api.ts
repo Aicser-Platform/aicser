@@ -1,5 +1,5 @@
 import { getBackendUrl } from './backendUrl';
-import { getCeBearerToken } from '@/auth/ce/bearerToken';
+import { getCeBearerToken, setCeBearerToken } from '@/auth/ce/bearerToken';
 import { getEeApiAuthToken } from '@/ee';
 
 /**
@@ -111,6 +111,32 @@ const getSelectedOrganizationId = (): string | null => {
   }
 };
 
+let eeTokenExchangePromise: Promise<string | null> | null = null;
+
+async function exchangeEeTokenForAicserBearer(providerToken: string): Promise<string | null> {
+  if (!eeTokenExchangePromise) {
+    eeTokenExchangePromise = fetch('/api/auth/token-exchange', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'supabase', token: providerToken }),
+    })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = (await res.json().catch(() => ({}))) as { access_token?: string };
+        if (data.access_token) {
+          setCeBearerToken(data.access_token);
+          return data.access_token;
+        }
+        return null;
+      })
+      .finally(() => {
+        eeTokenExchangePromise = null;
+      });
+  }
+  return eeTokenExchangePromise;
+}
+
 /**
  * API fetch utility with automatic JSON parsing.
  *
@@ -146,7 +172,8 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
       try {
         const eeToken = await getEeApiAuthToken();
         if (eeToken) {
-          defaultHeaders['Authorization'] = `Bearer ${eeToken}`;
+          const exchanged = await exchangeEeTokenForAicserBearer(eeToken);
+          defaultHeaders['Authorization'] = `Bearer ${exchanged || eeToken}`;
         }
       } catch (error) {
         console.warn('Failed to get EE auth session:', error);

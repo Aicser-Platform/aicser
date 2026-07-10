@@ -63,6 +63,26 @@ def test_enrich_widget_spec_for_kpi_stat_only():
     assert "x" not in spec["chart_query"]
 
 
+def test_enrich_widget_spec_for_kpi_preserves_compiled_sql():
+    spec = {
+        "chart_type": "stat",
+        "chart_query": {
+            "compiled_semantic_sql": 'SELECT SUM("revenue") AS "total_revenue" FROM "fact_sales"'
+        },
+        "chart_options": {},
+    }
+    out = enrich_widget_spec_for_kpi(
+        spec,
+        schema={},
+        table_name="orders",
+        classify_columns_fn=lambda *_: {"temporal": ["order_date"], "numeric": ["revenue"], "categorical": []},
+    )
+    assert out is spec
+    assert spec["chart_query"] == {
+        "compiled_semantic_sql": 'SELECT SUM("revenue") AS "total_revenue" FROM "fact_sales"'
+    }
+
+
 @pytest.mark.asyncio
 async def test_build_embed_payload_surfaces_widget_error():
     from src.modules.dashboards import operations as dash_ops

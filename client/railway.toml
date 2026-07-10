@@ -1,0 +1,19 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.prod"
+watchPatterns = [
+  "Dockerfile.prod",
+  "package.json",
+  "package-lock.json",
+  "next.config.mjs",
+  "scripts/**",
+  "src/**",
+  "ee/**",
+  "public/**"
+]
+  
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
