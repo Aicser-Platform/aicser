@@ -2,10 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForProxy } from '@/utils/backendUrl';
 import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
+type RouteParams = { path?: string[] };
+type RouteContext = { params?: RouteParams | Promise<RouteParams> };
+
 /**
  * Proxies GET/PUT /api/users/ai-provider-keys[/{provider}] to FastAPI with auth + cookies.
  * App Router takes precedence over pages/api/[...path] so Docker can use API_TARGET.
  */
+async function proxyJson(response: Response) {
+  const text = await response.text();
+  if (!text) {
+    return new NextResponse(null, { status: response.status });
+  }
+  try {
+    return NextResponse.json(JSON.parse(text), { status: response.status });
+  } catch {
+    return NextResponse.json({ detail: text }, { status: response.status });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const backendUrl = getBackendUrlForProxy();
@@ -15,20 +30,20 @@ export async function GET(request: NextRequest) {
       headers,
       credentials: 'include',
     });
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error('ai-provider-keys GET proxy error:', error);
+    return proxyJson(response);
+  } catch {
     return NextResponse.json({ detail: 'Failed to load provider keys' }, { status: 500 });
   }
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { path?: string[] } }
+  context: RouteContext
 ) {
   try {
-    const provider = params.path?.[0];
+    const rawParams = context?.params;
+    const params = rawParams && typeof rawParams.then === 'function' ? await rawParams : rawParams;
+    const provider = Array.isArray(params?.path) ? params.path[0] : undefined;
     if (!provider) {
       return NextResponse.json({ detail: 'provider is required' }, { status: 400 });
     }
@@ -44,10 +59,8 @@ export async function PUT(
       credentials: 'include',
       body: JSON.stringify(body),
     });
-    const data = await response.json();
-    return NextResponse.json(data, { status: response.status });
-  } catch (error) {
-    console.error('ai-provider-keys PUT proxy error:', error);
+    return proxyJson(response);
+  } catch {
     return NextResponse.json({ detail: 'Failed to save provider key' }, { status: 500 });
   }
 }
