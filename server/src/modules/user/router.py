@@ -36,6 +36,7 @@ from src.modules.notifications.preferences import (
     load_notification_prefs_raw,
     save_notification_prefs,
 )
+from src.modules.data.utils.credentials import decrypt_credentials, encrypt_credentials
 
 _user_settings_repo = UserSettingRepository()
 
@@ -414,6 +415,7 @@ async def get_ai_provider_keys(
             provider = k.split(".", 2)[1]
             try:
                 data = json.loads(v)
+                data = decrypt_credentials(data)
                 if isinstance(data, dict) and "api_key" in data:
                     data["api_key"] = mask_key(data["api_key"])
                 result[provider] = data
@@ -439,7 +441,7 @@ async def save_ai_provider_key(
     existing: dict = {}
     if existing_raw and existing_raw.value:
         try:
-            existing = json.loads(existing_raw.value)
+            existing = decrypt_credentials(json.loads(existing_raw.value))
         except Exception:
             pass
     if api_key_val and not api_key_val.startswith("••••"):
@@ -453,9 +455,13 @@ async def save_ai_provider_key(
         "model": (payload.model or "").strip() or existing.get("model"),
         "endpoint": (payload.endpoint or "").strip() or existing.get("endpoint"),
     }
-    from src.modules.data.utils.credentials import encrypt_credentials
-
-    store = encrypt_credentials(store)
+    try:
+        store = encrypt_credentials(store)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        )
     await _user_settings_repo.set_setting(
         user_id, f"provider_key.{key_normalized}", json.dumps(store)
     )
