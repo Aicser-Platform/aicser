@@ -1,5 +1,5 @@
 """User domain SQLAlchemy models."""
-from sqlalchemy import Column, String, DateTime, Text, Boolean, Enum
+from sqlalchemy import Column, String, DateTime, Text, Boolean, Enum, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import text
 
@@ -31,6 +31,9 @@ class User(BaseModel):
     - provider_user_id : varchar(255)
     """
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("email", "provider", name="uq_users_email_provider"),
+    )
 
     user_id = Column(UUID(as_uuid=True), nullable=True, unique=True, index=True)
     username = Column(String(100), nullable=True, index=True)

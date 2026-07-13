@@ -134,6 +134,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("Failed to start retention cleanup: %s", e)
 
         if is_ee_enabled():
+            # Register EE's auth provider so CE's router resolves login/register
+            # through it instead of importing ee.modules.auth by name.
+            try:
+                from ee.modules.auth import EEAuthProviderAdapter
+                from src.modules.authentication.provider import register_auth_provider
+                register_auth_provider(EEAuthProviderAdapter())
+                logger.info("EE auth provider registered")
+            except Exception as e:
+                logger.warning("Failed to register EE auth provider: %s", e)
+
             # Auto-seed RBAC roles/permissions if table is empty
             try:
                 from sqlalchemy import select, func

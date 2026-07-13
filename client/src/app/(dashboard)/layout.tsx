@@ -54,7 +54,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated) {
-      router.replace('/login');
+      const search = window.location.search;
+      const hash = window.location.hash;
+      router.replace(`/login${search}${hash}`);
     }
   }, [authLoading, isAuthenticated, router]);
 

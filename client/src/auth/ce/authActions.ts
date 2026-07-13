@@ -8,6 +8,7 @@ type AuthJson = {
   error?: string;
   details?: Array<{ loc?: (string | number)[]; msg?: string }>;
   access_token?: string;
+  is_verified?: boolean;
 };
 
 async function readAuthJson(res: Response): Promise<AuthJson> {
@@ -45,7 +46,15 @@ export const ceAuthActions: AuthActions = {
       throw new Error(parseAuthResponseError(res.status, data));
     }
     if (data.access_token) setCeBearerToken(data.access_token);
-    return { success: true, is_verified: true, message: 'Account created successfully!' };
+    
+    const isVerified = data.is_verified ?? true;
+    return { 
+      success: true, 
+      is_verified: isVerified, 
+      message: isVerified 
+        ? 'Account created successfully!'
+        : 'Check your email to confirm your account.'
+    };
   },
 
   async logout(): Promise<void> {

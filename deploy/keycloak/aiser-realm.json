@@ -45,6 +45,7 @@
   ],
   "users": [
     {
+      "id": "489e2f36-b469-441f-a890-5d198ab8cf13",
       "username": "demo",
       "enabled": true,
       "emailVerified": true,

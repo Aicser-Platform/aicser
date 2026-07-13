@@ -1,5 +1,4 @@
 # AISER EE-ONLY — requires AISER_EDITION=enterprise
-# Canonical EE boundary file: keycloak_service.ee.py
 """
 Keycloak OIDC Integration Service.
 

@@ -32,7 +32,7 @@ dev-ce-down:
 dev-ee:
 	-$(DEV_LEGACY) down --remove-orphans
 	-$(DEV_CE_EXTRAS) down --remove-orphans
-	$(DEV_EE) up -d
+	$(DEV_EE) up 
 
 dev-ee-build:
 	-$(DEV_LEGACY) down --remove-orphans

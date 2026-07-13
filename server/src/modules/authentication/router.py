@@ -5,13 +5,9 @@ import logging
 from src.db.session import get_async_session
 from src.modules.authentication.schemas import LoginRequest, RegisterRequest, UserResponse, ChangePasswordRequest
 from src.modules.authentication.service import (
-    authenticate_user,
-    register_user,
     create_access_token,
     change_user_password,
 )
-from src.modules.user.models import User
-
 from src.modules.authentication.cookies import clear_auth_token_cookie, set_auth_token_cookie
 from src.core.production import is_production
 
@@ -25,29 +21,26 @@ def _set_auth_cookie(response: Response, token: str) -> None:
     set_auth_token_cookie(response, token)
 
 
-async def _ensure_ee_workspace(user: User) -> None:
-    """Join deployment org / create personal org after CE email-password auth (EE only)."""
-    from src.core.edition import is_ee_enabled
+async def _authenticate(db: AsyncSession, email: str, password: str):
+    """Credential check via the active auth provider (CE by default, EE when registered)."""
+    from src.modules.authentication.provider import get_auth_provider
 
-    if not is_ee_enabled():
-        return
-    try:
-        from src.modules.organizations.user_workspace import ensure_user_workspace
+    return await get_auth_provider().authenticate(db, email, password)
 
-        await ensure_user_workspace(str(user.id), user.email or "")
-    except ImportError:
-        pass
-    except Exception as exc:
-        logger.warning("Workspace provisioning after auth failed (non-fatal): %s", exc)
+
+async def _register(db: AsyncSession, email: str, username: str, password: str):
+    """Registration via the active auth provider (CE by default, EE when registered)."""
+    from src.modules.authentication.provider import get_auth_provider
+
+    return await get_auth_provider().register(db, email, username, password)
 
 
 @router.post("/auth/login", response_model=UserResponse)
 async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_async_session)):
-    user = await authenticate_user(db, body.email, body.password)
+    user = await _authenticate(db, body.email, body.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Invalid email or password")
-    await _ensure_ee_workspace(user)
     token = create_access_token(str(user.id), user.email)
     _set_auth_cookie(response, token)
     return UserResponse.model_validate(user, from_attributes=True).model_copy(update={"access_token": token})
@@ -56,10 +49,17 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, response: Response, db: AsyncSession = Depends(get_async_session)):
     try:
-        user = await register_user(db, body.email, body.username, body.password)
+        user = await _register(db, body.email, body.username, body.password)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    await _ensure_ee_workspace(user)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is not available. Contact your administrator.",
+        )
+    if not user.is_verified:
+        return UserResponse.model_validate(user, from_attributes=True)
+
     token = create_access_token(str(user.id), user.email)
     _set_auth_cookie(response, token)
     return UserResponse.model_validate(user, from_attributes=True).model_copy(update={"access_token": token})

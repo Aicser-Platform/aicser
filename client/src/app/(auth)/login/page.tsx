@@ -32,6 +32,7 @@ export default function LoginPage() {
   const [isSignUp, setIsSignUp] = useState(initialSignUp);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [ssoLoading, setSsoLoading] = useState(false);
+  const [signupMessage, setSignupMessage] = useState<string | null>(null);
   const { login, signup, actionLoading: loading, isAuthenticated, authLoading, loginError, clearLoginError } = useAuth();
   const router = useRouter();
 
@@ -61,10 +62,24 @@ export default function LoginPage() {
     });
   }, [clearLoginError, router]);
 
+  // Supabase email-confirmation / magic-link redirects land back here with the
+  // session already established client-side by supabase-js — exchange it for
+  // an Aicser session instead of leaving the user staring at the login form.
+  useEffect(() => {
+    if (!IS_EE || isAuthenticated) return;
+    import('@/ee').then(async (mod) => {
+      const completed = await mod.completeSupabaseRedirectSession();
+      if (completed) {
+        useAuth.getState().init();
+      }
+    });
+  }, [isAuthenticated]);
+
   const switchMode = useCallback(
     (signUp: boolean) => {
       setIsSignUp(signUp);
       clearLoginError();
+      setSignupMessage(null);
       const params = new URLSearchParams(window.location.search);
       if (signUp) {
         params.set('mode', 'signup');
@@ -88,7 +103,7 @@ export default function LoginPage() {
         if (signupResult?.is_verified) {
           router.push(getDefaultAppPath());
         } else {
-          switchMode(false);
+          setSignupMessage(signupResult?.message ?? 'Check your email to confirm your account.');
         }
         return;
       }
@@ -132,7 +147,17 @@ export default function LoginPage() {
 
             <p className="form-subtitle">{isSignUp ? t('sign_up_subtitle') : t('sign_in_subtitle')}</p>
 
-            {loginError ? (
+            {signupMessage ? (
+              <Alert
+                type="success"
+                showIcon
+                message={signupMessage}
+                description="Once confirmed, you'll be signed in automatically."
+                className="login-error-alert"
+                closable
+                onClose={() => setSignupMessage(null)}
+              />
+            ) : loginError ? (
               <Alert
                 type="error"
                 showIcon
@@ -249,7 +274,7 @@ export default function LoginPage() {
                   type="default"
                   className="login-sso-btn"
                   loading={ssoLoading}
-                  disabled={!process.env.NEXT_PUBLIC_KEYCLOAK_URL}
+                  disabled={process.env.NEXT_PUBLIC_SSO_PROVIDER !== 'keycloak'}
                   onClick={async () => {
                     setSsoLoading(true);
                     try {
