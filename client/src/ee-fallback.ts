@@ -123,8 +123,10 @@ export const eeAuthActions: AuthActions = {
   },
   async logout(): Promise<void> {},
 };
-export const supabaseAuthActions = eeAuthActions;
 export const supabase = null;
+export async function completeSupabaseRedirectSession(): Promise<boolean> {
+  return false;
+}
 export async function getEeApiAuthToken(): Promise<string | null> {
   return null;
 }

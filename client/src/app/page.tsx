@@ -15,7 +15,13 @@ export default function HomePage() {
 
   useEffect(() => {
     if (authLoading) return;
-    router.replace(isAuthenticated ? getDefaultAppPath() : '/login');
+    if (isAuthenticated) {
+      router.replace(getDefaultAppPath());
+    } else {
+      const search = window.location.search;
+      const hash = window.location.hash;
+      router.replace(`/login${search}${hash}`);
+    }
   }, [authLoading, isAuthenticated, router]);
 
   return (

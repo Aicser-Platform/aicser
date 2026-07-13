@@ -49,7 +49,7 @@ def _pick_user_for_email(users: list[User], email: str) -> Optional[User]:
         email,
     )
     for user in users:
-        if user.provider == "ce" and user.hashed_password:
+        if user.provider in ("ce", "local") and user.hashed_password:
             return user
     for user in users:
         if user.hashed_password:
@@ -80,15 +80,21 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> Opti
 
 
 async def register_user(db: AsyncSession, email: str, username: str, password: str) -> User:
-    existing = await get_user_by_email(db, email)
-    if existing:
-        raise ValueError("Email already registered")
+    normalized = email.strip().lower()
+    result = await db.execute(
+        select(User).where(
+            func.lower(User.email) == normalized,
+            User.provider.in_(["ce", "local"])
+        )
+    )
+    if result.scalars().first():
+        raise ValueError("Email already registered with local account")
     user = User(
         email=email,
         username=username,
         hashed_password=hash_password(password),
         provider="ce",
-        is_verified=False,
+        is_verified=True,
     )
     db.add(user)
     try:

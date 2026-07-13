@@ -24,7 +24,11 @@ const edition = (process.env.EDITION || process.env.NEXT_PUBLIC_EDITION || '').t
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const hasEnterpriseModules = existsSync(eeIndex) && existsSync(eeChatPage);
 
-if (isEnterprise && hasEnterpriseModules) {
+// Prefer file-presence detection: if the EE submodule is checked out the shim
+// should point to it regardless of whether env vars are loaded yet (e.g. predev
+// runs before Next.js reads .env). Env-var check is kept as a fallback for
+// cases where the submodule is absent but CI still needs EE mode.
+if (hasEnterpriseModules || isEnterprise) {
   writeFileSync(
     eeShimFile,
     [
