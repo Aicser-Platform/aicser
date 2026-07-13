@@ -27,7 +27,7 @@ import logging
 import asyncio
 import os
 import aiohttp
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from sqlalchemy import create_engine, inspect, text, MetaData
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
@@ -813,6 +813,9 @@ class DatabaseConnectorService:
                 pool_recycle=300,
                 echo=False,
             )
+            if db_type in ('postgresql', 'redshift'):
+                return self._get_postgresql_schema_fast(engine)
+
             inspector = inspect(engine)
             
             tables = []
@@ -935,22 +938,29 @@ class DatabaseConnectorService:
             # Do NOT re-count with SELECT COUNT(*) per table here — that's a full table/index
             # scan on every table on every schema fetch, which is what made schema loading slow
             # for large tables. Catalog-estimate row counts are accurate enough for a schema browser.
-            with engine.connect() as conn:
-                # Fetch 2 sample rows per table so the LLM sees actual value formats
-                for t in tables:
-                    try:
-                        quoted = _quote_ident(db_type, t['schema'], t['name'])
-                        sample_q = text(f"SELECT * FROM {quoted} LIMIT 2")
-                        sample_result = conn.execute(sample_q)
-                        col_names = list(sample_result.keys())
-                        sample_rows = [
-                            {col_names[i]: str(val) if val is not None else None for i, val in enumerate(row)}
-                            for row in sample_result.fetchall()
-                        ]
-                        if sample_rows:
-                            t['sample_data'] = sample_rows
-                    except Exception as sample_err:
-                        logger.debug(f"Sample data skipped for {t['schema']}.{t['name']}: {sample_err}")
+            sample_rows_per_table = int(os.getenv("AICSER_SCHEMA_SAMPLE_ROWS", "0") or "0")
+            if sample_rows_per_table > 0:
+                sample_rows_per_table = min(sample_rows_per_table, 5)
+                with engine.connect() as conn:
+                    # Disabled by default: sample rows may be slow on large warehouses and may contain
+                    # sensitive business values. Enable only for trusted/dev environments.
+                    for t in tables:
+                        try:
+                            quoted = _quote_ident(db_type, t['schema'], t['name'])
+                            if db_type == "sqlserver":
+                                sample_sql = f"SELECT TOP {sample_rows_per_table} * FROM {quoted}"
+                            else:
+                                sample_sql = f"SELECT * FROM {quoted} LIMIT {sample_rows_per_table}"
+                            sample_result = conn.execute(text(sample_sql))
+                            col_names = list(sample_result.keys())
+                            sample_rows = [
+                                {col_names[i]: str(val) if val is not None else None for i, val in enumerate(row)}
+                                for row in sample_result.fetchall()
+                            ]
+                            if sample_rows:
+                                t['sample_data'] = sample_rows
+                        except Exception as sample_err:
+                            logger.debug(f"Sample data skipped for {t['schema']}.{t['name']}: {sample_err}")
             
             engine.dispose()
             
@@ -969,6 +979,149 @@ class DatabaseConnectorService:
                 'success': False,
                 'error': f'Schema retrieval failed: {str(e)}'
             }
+
+    def _get_postgresql_schema_fast(self, engine) -> Dict[str, Any]:
+        """Fetch PostgreSQL/Redshift schema with bulk catalog queries.
+
+        SQLAlchemy Inspector issues several round trips per table for columns,
+        PKs, and FKs. On remote databases that can exceed the API timeout even
+        for moderate schemas. This path keeps introspection to a few catalog
+        queries and never reads user table rows.
+        """
+        try:
+            tables_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            row_count_map: Dict[Tuple[str, str], int] = {}
+            pk_columns: set[Tuple[str, str, str]] = set()
+            fk_columns: set[Tuple[str, str, str]] = set()
+
+            with engine.connect() as conn:
+                columns_result = conn.execute(text(
+                    """
+                    SELECT c.table_schema,
+                           c.table_name,
+                           c.column_name,
+                           c.data_type,
+                           c.is_nullable,
+                           c.ordinal_position
+                    FROM information_schema.columns c
+                    JOIN information_schema.tables t
+                      ON t.table_schema = c.table_schema
+                     AND t.table_name = c.table_name
+                    WHERE t.table_type = 'BASE TABLE'
+                      AND c.table_schema NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                    ORDER BY c.table_schema, c.table_name, c.ordinal_position
+                    """
+                ))
+                for row in columns_result:
+                    key = (str(row[0]), str(row[1]))
+                    table = tables_by_key.setdefault(
+                        key,
+                        {
+                            "schema": key[0],
+                            "name": key[1],
+                            "columns": [],
+                            "rowCount": 0,
+                        },
+                    )
+                    table["columns"].append({
+                        "name": row[2],
+                        "type": str(row[3]),
+                        "nullable": str(row[4]).upper() == "YES",
+                        "primary_key": False,
+                    })
+
+                rc_result = conn.execute(text(
+                    """
+                    SELECT n.nspname AS schemaname,
+                           c.relname AS tablename,
+                           GREATEST(
+                               COALESCE(c.reltuples, 0)::bigint,
+                               COALESCE(s.n_live_tup, 0)::bigint
+                           ) AS row_count
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    LEFT JOIN pg_stat_user_tables s
+                      ON s.schemaname = n.nspname
+                     AND s.relname = c.relname
+                    WHERE c.relkind = 'r'
+                      AND n.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                    """
+                ))
+                for row in rc_result:
+                    row_count_map[(str(row[0]), str(row[1]))] = int(row[2]) if row[2] is not None else 0
+
+                try:
+                    pk_result = conn.execute(text(
+                        """
+                        SELECT ns.nspname AS table_schema,
+                               cls.relname AS table_name,
+                               attr.attname AS column_name
+                        FROM pg_constraint con
+                        JOIN pg_class cls ON cls.oid = con.conrelid
+                        JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                        JOIN unnest(con.conkey) AS cols(attnum) ON true
+                        JOIN pg_attribute attr
+                          ON attr.attrelid = cls.oid
+                         AND attr.attnum = cols.attnum
+                        WHERE con.contype = 'p'
+                          AND ns.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                        """
+                    ))
+                    pk_columns = {(str(r[0]), str(r[1]), str(r[2])) for r in pk_result}
+                except Exception as pk_error:
+                    logger.debug("PostgreSQL PK metadata skipped: %s", pk_error)
+
+                try:
+                    fk_result = conn.execute(text(
+                        """
+                        SELECT ns.nspname AS table_schema,
+                               cls.relname AS table_name,
+                               attr.attname AS column_name
+                        FROM pg_constraint con
+                        JOIN pg_class cls ON cls.oid = con.conrelid
+                        JOIN pg_namespace ns ON ns.oid = cls.relnamespace
+                        JOIN unnest(con.conkey) AS cols(attnum) ON true
+                        JOIN pg_attribute attr
+                          ON attr.attrelid = cls.oid
+                         AND attr.attnum = cols.attnum
+                        WHERE con.contype = 'f'
+                          AND ns.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                        """
+                    ))
+                    fk_columns = {(str(r[0]), str(r[1]), str(r[2])) for r in fk_result}
+                except Exception as fk_error:
+                    logger.debug("PostgreSQL FK metadata skipped: %s", fk_error)
+
+            for key, table in tables_by_key.items():
+                table["rowCount"] = row_count_map.get(key, 0)
+                for col in table["columns"]:
+                    col_key = (key[0], key[1], str(col.get("name")))
+                    if col_key in pk_columns:
+                        col["primary_key"] = True
+                        col["is_primary_key"] = True
+                    if col_key in fk_columns:
+                        col["is_foreign_key"] = True
+
+            tables = list(tables_by_key.values())
+            total_rows = sum(int(t.get("rowCount", 0) or 0) for t in tables)
+            logger.info("✅ Retrieved schema for %s tables, %s total rows", len(tables), total_rows)
+            return {
+                "success": True,
+                "tables": tables,
+                "schemas": sorted({t["schema"] for t in tables}),
+                "total_rows": total_rows,
+            }
+        except Exception as e:
+            logger.error("❌ PostgreSQL fast schema fetch failed: %s", str(e))
+            return {
+                "success": False,
+                "error": f"Schema retrieval failed: {str(e)}",
+            }
+        finally:
+            try:
+                engine.dispose()
+            except Exception:
+                pass
     
     async def execute_query(self, connection_id: str, query: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         """Execute query on database connection"""

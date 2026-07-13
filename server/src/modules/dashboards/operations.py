@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
 from src.modules.charts.services.v2.dashboard_service import DashboardService
 from src.modules.charts.services.v2.chart_service import ChartService
+from src.modules.dashboards.chart_data_validation import validate_chart_data
 from src.modules.dashboards.models import Dashboard, DashboardShare, PLAN_LIMITS, DashboardChart
 
 logger = logging.getLogger(__name__)
@@ -351,29 +352,13 @@ async def build_embed_payload(
         chart_type = chart.chart_type or "bar"
         is_data_widget = chart_type not in ("text", "slicer", "filter") and chart.data_source_id
         if is_data_widget and not exec_error:
-            if chart_data is None:
-                exec_error = "No data returned"
-            elif chart_type == "stat":
-                has_value = isinstance(chart_data, dict) and (
-                    chart_data.get("value") is not None
-                    or (chart_data.get("y") and len(chart_data.get("y") or []) > 0)
-                    or (
-                        chart_data.get("series")
-                        and isinstance((chart_data.get("series") or [None])[0], dict)
-                        and ((chart_data.get("series") or [{}])[0].get("data") or [])
-                    )
-                )
-                if not has_value:
-                    exec_error = "KPI returned no value"
-            elif isinstance(chart_data, dict):
-                empty = not (
-                    chart_data.get("series")
-                    or chart_data.get("x")
-                    or chart_data.get("y")
-                    or chart_data.get("value")
-                )
-                if empty:
-                    exec_error = "Chart returned no data"
+            validation = validate_chart_data(
+                chart_type,
+                chart_data,
+                chart_query=chart.chart_query if isinstance(chart.chart_query, dict) else None,
+            )
+            if not validation.valid:
+                exec_error = validation.reason or "Chart returned invalid data"
 
         option = chart.chart_options if isinstance(chart.chart_options, dict) else {}
         if chart_data and not exec_error:
@@ -474,12 +459,25 @@ async def refresh_dashboard_charts(
                             base_query = apply_drill_context(base_query, drill_context)
                         exec_chart.chart_query = base_query
                     data = await chart_svc.chart_service.execute(exec_chart)
-                    result = {
-                        "chart_id": chart_id,
-                        "widget_id": widget_id,
-                        "success": True,
-                        "data": data,
-                    }
+                    validation = validate_chart_data(
+                        chart.chart_type,
+                        data,
+                        chart_query=getattr(exec_chart, "chart_query", None),
+                    )
+                    if validation.valid:
+                        result = {
+                            "chart_id": chart_id,
+                            "widget_id": widget_id,
+                            "success": True,
+                            "data": data,
+                        }
+                    else:
+                        result = {
+                            "chart_id": chart_id,
+                            "widget_id": widget_id,
+                            "success": False,
+                            "error": validation.reason or "Chart returned invalid data",
+                        }
             except Exception as exc:
                 logger.warning("Batch refresh failed for chart %s: %s", chart_id, exc)
                 result = {

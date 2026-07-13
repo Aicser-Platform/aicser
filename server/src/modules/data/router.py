@@ -4,6 +4,7 @@ FastAPI endpoints for universal data connectivity
 """
 
 import asyncio
+import copy
 import logging
 import json
 import re
@@ -72,6 +73,7 @@ except ImportError:
 from src.modules.authentication.deps.auth_bearer import current_user_payload
 from src.modules.data.schemas import DataSourceUpdate, BusinessMetadataUpdate
 from src.modules.data.services.data_sources_crud import DataSourcesCRUD
+from src.modules.data.utils.masking import mask_connection_info, mask_query_result_rows
 from src.modules.project.service import ProjectService
 # OrganizationService removed - organization context removed
 from src.modules.pricing.feature_gate import (
@@ -97,6 +99,53 @@ def _schema_columns(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if isinstance(tables, list) and tables and isinstance(tables[0], dict):
         return tables[0].get("columns") or []
     return schema.get("columns") or []
+
+
+def _safe_connection_config(raw: Any) -> Optional[Dict[str, Any]]:
+    """Mask connection secrets before returning data source metadata to clients."""
+    config = raw
+    if isinstance(config, str) and config.strip():
+        try:
+            config = json.loads(config)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if not isinstance(config, dict):
+        return None
+    return mask_connection_info(config)
+
+
+def _strip_schema_sample_data(schema: Any) -> Any:
+    """Avoid exposing persisted sample row values in schema responses by default."""
+    if os.getenv("AICSER_EXPOSE_SCHEMA_SAMPLE_DATA", "").strip().lower() in ("1", "true", "yes"):
+        return schema
+    if not isinstance(schema, dict):
+        return schema
+    safe_schema = copy.deepcopy(schema)
+    tables = safe_schema.get("tables")
+    if isinstance(tables, list):
+        for table in tables:
+            if isinstance(table, dict):
+                table.pop("sample_data", None)
+                table.pop("sample_rows", None)
+                table.pop("samples", None)
+    return safe_schema
+
+
+def _sanitize_data_source_payload(payload: Any) -> Any:
+    """Return client-safe data source metadata without connection secrets or row samples."""
+    if not isinstance(payload, dict):
+        return payload
+    safe = dict(payload)
+    for key in ("config", "connection_config", "connection_info", "metadata"):
+        if key in safe:
+            masked = _safe_connection_config(safe.get(key))
+            if masked is not None:
+                safe[key] = masked
+    safe.pop("sample_data", None)
+    safe.pop("data", None)
+    if "schema" in safe:
+        safe["schema"] = _strip_schema_sample_data(safe.get("schema"))
+    return safe
 
 
 def _ce_can_read_data_source(row: Any, user_id: str) -> bool:
@@ -802,7 +851,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=_safe_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -810,12 +859,12 @@ async def get_data_sources(
                         last_accessed=ds.last_accessed.isoformat() if ds.last_accessed else None,
                         connection_status="active" if ds.is_active else "inactive",
                         metadata={},
-                        schema=ds.schema,
+                        schema=_strip_schema_sample_data(ds.schema),
                         row_count=ds.row_count,
                         size=ds.size,
                         file_path=ds.file_path,
                         original_filename=ds.original_filename,
-                        sample_data=ds.sample_data,
+                        sample_data=None,
                         user_id=str(ds.user_id) if ds.user_id else None,
                     )
                     for ds in data_sources
@@ -874,7 +923,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=_safe_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -882,12 +931,12 @@ async def get_data_sources(
                         last_accessed=ds.last_accessed.isoformat() if ds.last_accessed else None,
                         connection_status="active" if ds.is_active else "inactive",  # Derived from is_active
                         metadata={},  # Not stored in DB, return empty dict
-                        schema=ds.schema,
+                        schema=_strip_schema_sample_data(ds.schema),
                         row_count=ds.row_count,
                         size=ds.size,
                         file_path=ds.file_path,
                         original_filename=ds.original_filename,
-                        sample_data=ds.sample_data,
+                        sample_data=None,
                         user_id=str(ds.user_id) if ds.user_id else None
                     )
                     for ds in data_sources
@@ -917,7 +966,7 @@ async def get_data_sources(
                         format=ds.format,
                         db_type=ds.db_type,
                         description=ds.description,
-                        connection_config=ds.connection_config,
+                        connection_config=_safe_connection_config(ds.connection_config),
                         project_id=str(ds.project_id) if ds.project_id else None,
                         is_active=ds.is_active,
                         created_at=ds.created_at.isoformat() if ds.created_at else None,
@@ -925,12 +974,12 @@ async def get_data_sources(
                         last_accessed=ds.last_accessed.isoformat() if ds.last_accessed else None,
                         connection_status="active" if ds.is_active else "inactive",  # Derived from is_active
                         metadata={},  # Not stored in DB, return empty dict
-                        schema=ds.schema,
+                        schema=_strip_schema_sample_data(ds.schema),
                         row_count=ds.row_count,
                         size=ds.size,
                         file_path=ds.file_path,
                         original_filename=ds.original_filename,
-                        sample_data=ds.sample_data,
+                        sample_data=None,
                         user_id=str(ds.user_id) if ds.user_id else None
                     )
                     for ds in data_sources
@@ -1034,7 +1083,7 @@ async def create_data_source(
                 "type": result.type,
                 "format": result.format,
                 "description": result.description,
-                "connection_config": result.connection_config,
+                "connection_config": _safe_connection_config(result.connection_config),
                 "is_active": result.is_active,
             },
         }
@@ -1322,7 +1371,7 @@ async def get_data_source(
         if result['success']:
             return {
                 "success": True,
-                "data_source": result['data_source']
+                "data_source": _sanitize_data_source_payload(result['data_source'])
             }
         else:
             raise HTTPException(status_code=404, detail=result['error'])
@@ -1563,7 +1612,7 @@ async def update_data_source(
                 "format": getattr(updated, "format", None),
                 "db_type": getattr(updated, "db_type", None),
                 "description": getattr(updated, "description", None),
-                "connection_config": getattr(updated, "connection_config", None),
+                "connection_config": _safe_connection_config(getattr(updated, "connection_config", None)),
                 "is_active": updated.is_active,
                 "created_at": updated.created_at.isoformat() if updated.created_at else None,
                 "updated_at": updated.updated_at.isoformat() if updated.updated_at else None,
@@ -1740,7 +1789,7 @@ async def create_data_source_via_project_path(
                 "type": result.type,
                 "format": result.format,
                 "description": result.description,
-                "connection_config": result.connection_config,
+                "connection_config": _safe_connection_config(result.connection_config),
                 "is_active": result.is_active,
             },
         }
@@ -2369,7 +2418,7 @@ async def get_data_source_data(
                 "metadata": {
                     "type": "database",
                     "db_type": data_source.get('db_type'),
-                    "connection_info": data_source.get('connection_info', {})
+                    "connection_info": _safe_connection_config(data_source.get('connection_info')) or {}
                 }
             }
         # Allow demo_* ids to return embedded sample data
@@ -2626,9 +2675,9 @@ async def connect_enterprise_warehouse_legacy(request: Dict[str, Any], current_t
                 "type": "database",
                 "db_type": connection_config.get('type'),
                 "status": "connected",
-                "connection_info": connection_result.get('connection_info', {})
+                "connection_info": _safe_connection_config(connection_result.get('connection_info')) or connection_result.get('connection_info', {})
             },
-            "connection_info": connection_result.get('connection_info'),
+            "connection_info": _safe_connection_config(connection_result.get('connection_info')) or connection_result.get('connection_info'),
             "cube_modeling": cube_result if cube_result else None
         }
     except HTTPException:
@@ -2987,7 +3036,7 @@ async def get_data_source_schema(
                 if schema_result.get('success'):
                     return {
                         "success": True,
-                        "schema": schema_result['schema'],
+                        "schema": _strip_schema_sample_data(schema_result['schema']),
                         "data_source": schema_result.get('data_source'),
                     }
                 # Live fetch failed — return stored schema if it has tables so the UI
@@ -2996,7 +3045,7 @@ async def get_data_source_schema(
                 if stored.get('tables'):
                     return {
                         "success": True,
-                        "schema": stored,
+                        "schema": _strip_schema_sample_data(stored),
                         "data_source": schema_result.get('data_source'),
                     }
                 err = schema_result.get('error') or 'Failed to fetch schema'
@@ -3021,7 +3070,7 @@ async def get_data_source_schema(
                         logger.debug("Optional API schema persist skipped: %s", persist_err)
                     return {
                         "success": True,
-                        "schema": schema,
+                        "schema": _strip_schema_sample_data(schema),
                         "data_source": schema_result.get('data_source'),
                     }
                 err = schema_result.get('error') or 'Failed to fetch API schema'
@@ -3034,7 +3083,7 @@ async def get_data_source_schema(
                 if schema_result.get('success'):
                     return {
                         "success": True,
-                        "schema": schema_result['schema'],
+                        "schema": _strip_schema_sample_data(schema_result['schema']),
                         "data_source": schema_result.get('data_source') or {
                             "id": data_source.id,
                             "name": data_source.name,
@@ -3047,7 +3096,7 @@ async def get_data_source_schema(
                 if 'not found' in err.lower() or 'run sample data generators' in err.lower():
                     return {
                         "success": True,
-                        "schema": schema_result.get('schema') or {"tables": [], "schemas": []},
+                        "schema": _strip_schema_sample_data(schema_result.get('schema') or {"tables": [], "schemas": []}),
                         "data_source": {"id": data_source.id, "name": data_source.name, "type": "sample_duckdb", "row_count": 0},
                     }
                 raise HTTPException(
@@ -3080,7 +3129,7 @@ async def get_data_source_schema(
                 if schema_result.get('success'):
                     return {
                         "success": True,
-                        "schema": schema_result['schema'],
+                        "schema": _strip_schema_sample_data(schema_result['schema']),
                         "data_source": schema_result.get('data_source') or {
                             "id": data_source.id,
                             "name": data_source.name,
@@ -3096,7 +3145,7 @@ async def get_data_source_schema(
                 try:
                     # Try to get schema from stored schema field first
                     if isinstance(data_source.schema, dict):
-                        schema = data_source.schema
+                        schema = copy.deepcopy(data_source.schema)
                     elif isinstance(data_source.schema, str):
                         schema = json.loads(data_source.schema)
 
@@ -3187,7 +3236,7 @@ async def get_data_source_schema(
                 try:
                     # Handle both string and dict schemas
                     if isinstance(data_source.schema, dict):
-                        schema = data_source.schema
+                        schema = copy.deepcopy(data_source.schema)
                     elif isinstance(data_source.schema, str):
                         schema = json.loads(data_source.schema)
                     else:
@@ -3198,7 +3247,7 @@ async def get_data_source_schema(
             
             return {
                 "success": True,
-                "schema": schema,
+                "schema": _strip_schema_sample_data(schema),
                 "data_source": {
                     "id": data_source.id,
                     "name": data_source.name,
@@ -3682,6 +3731,7 @@ async def execute_multi_engine_query(
         user_id = str(
             (user_payload or {}).get("sub")
             or (user_payload or {}).get("user_id")
+            or (user_payload or {}).get("id")
             or ""
         )
         if not user_id:
@@ -3744,6 +3794,41 @@ async def execute_multi_engine_query(
         if not data_source:
             logger.error(f"❌ Data source not found: {data_source_id}")
             raise HTTPException(status_code=404, detail="Data source not found")
+
+        ds_user_id = str(data_source.get("user_id") or "").strip()
+        ds_project_id = str(data_source.get("project_id") or "").strip()
+        is_demo_source = (
+            str(data_source.get("id") or "").startswith("demo_")
+            or data_source.get("source") == "demo_data"
+        )
+        creator_ok = bool(ds_user_id and ds_user_id == user_id)
+        if not creator_ok and not is_demo_source:
+            if not is_ee_enabled():
+                if ds_user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to query this data source",
+                    )
+            else:
+                user_projects, _ = await ProjectService.get_user_projects(user_id)
+                project_ids = {str(p.id) for p in user_projects}
+                if not (ds_project_id and ds_project_id in project_ids):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not authorized to query this data source",
+                    )
+
+        await require_permission(
+            user_id,
+            "query:execute",
+            organization_id=str(
+                (user_payload or {}).get("organization_id")
+                or (user_payload or {}).get("org_id")
+                or org_id
+                or ""
+            ) or None,
+            project_id=ds_project_id or str((user_payload or {}).get("project_id") or "") or None,
+        )
         
         # SECURITY: Log only non-sensitive identifiers; never log connection_info/connection_config or database name.
         logger.info(
@@ -3791,11 +3876,17 @@ async def execute_multi_engine_query(
             if not isinstance(result_data, list):
                 logger.warning(f"⚠️ Result data is not a list, converting: {type(result_data)}")
                 result['data'] = [result_data] if result_data else []
+
+            masked_data, masked_columns = mask_query_result_rows(
+                result.get('data', []),
+                result.get('columns', []),
+            )
+            if masked_columns:
+                result['data'] = masked_data
+                result['masked_columns'] = masked_columns
+                logger.info("🔒 Masked sensitive query result columns: %s", masked_columns)
             
-            # Log first row for debugging
-            if result['data'] and len(result['data']) > 0:
-                logger.info(f"📊 First row sample: {json.dumps(result['data'][0], default=str)[:200]}")
-            else:
+            if not result['data']:
                 logger.warning("⚠️ Query executed successfully but returned no data rows")
         
         return result

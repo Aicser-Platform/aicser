@@ -9,7 +9,7 @@ import os
 import re
 import json
 import time
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Iterable
 from datetime import datetime
 from enum import Enum
 import pandas as pd
@@ -61,6 +61,91 @@ _DATE_TRUNC_COL_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_KEYWORDS = {"CURRENT_DATE", "CURRENT_TIMESTAMP", "NOW", "TODAY", "LOCALTIMESTAMP"}
+
+
+def _schema_dict(schema_info: Any) -> Dict[str, Any]:
+    if isinstance(schema_info, dict):
+        return schema_info
+    if isinstance(schema_info, str):
+        try:
+            parsed = json.loads(schema_info)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _quote_ident_part(part: str) -> str:
+    return '"' + str(part).replace('"', '""') + '"'
+
+
+def _quote_table_ref(ref: str) -> str:
+    parts = [p.strip().strip('"') for p in str(ref or "").split(".") if p.strip()]
+    if not parts or any(not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", p) for p in parts):
+        return ref
+    return ".".join(_quote_ident_part(p) for p in parts)
+
+
+def _table_ref_variants(schema_name: str, table_name: str) -> List[str]:
+    if not schema_name:
+        return [table_name, _quote_ident_part(table_name)]
+    return [
+        f"{schema_name}.{table_name}",
+        f'{schema_name}.{_quote_ident_part(table_name)}',
+        f'{_quote_ident_part(schema_name)}.{table_name}',
+        f'{_quote_ident_part(schema_name)}.{_quote_ident_part(table_name)}',
+    ]
+
+
+def quote_known_table_refs_for_sql(
+    query: str,
+    schema_info: Any,
+    schema_aliases: Optional[Iterable[str]] = None,
+) -> str:
+    """Quote known table refs in user SQL for mixed-case database tables.
+
+    PostgreSQL folds unquoted identifiers to lower case. If schema introspection
+    found a table named Account, raw SQL like ``FROM public.Account`` must be
+    sent as ``FROM "public"."Account"``. This only rewrites identifiers directly
+    following FROM/JOIN/UPDATE/INTO, leaving columns and string literals alone.
+    """
+    schema = _schema_dict(schema_info)
+    if not query or not schema:
+        return query
+    tables = schema.get("tables") or []
+    if not isinstance(tables, list):
+        return query
+
+    aliases = {
+        str(alias).strip()
+        for alias in (schema_aliases or [])
+        if str(alias or "").strip() and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", str(alias).strip())
+    }
+    refs: List[tuple[str, str]] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        name = str(table.get("name") or "").strip()
+        schema_name = str(table.get("schema") or schema.get("schema") or "public").strip()
+        if not name or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            continue
+        refs.append((name, _quote_table_ref(name)))
+        refs.append((_quote_ident_part(name), _quote_table_ref(name)))
+        if schema_name and re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", schema_name):
+            for raw_ref in _table_ref_variants(schema_name, name):
+                refs.append((raw_ref, _quote_table_ref(f"{schema_name}.{name}")))
+            for alias in aliases:
+                if alias.lower() != schema_name.lower():
+                    for raw_ref in _table_ref_variants(alias, name):
+                        refs.append((raw_ref, _quote_table_ref(f"{schema_name}.{name}")))
+
+    normalized = query
+    for raw_ref, quoted_ref in sorted(refs, key=lambda item: len(item[0]), reverse=True):
+        pattern = re.compile(
+            rf'(?i)\b(FROM|JOIN|UPDATE|INTO)\s+({re.escape(raw_ref)})(?=\s|;|$)',
+        )
+        normalized = pattern.sub(lambda m: f"{m.group(1)} {quoted_ref}", normalized)
+    return normalized
 
 
 def cast_date_trunc_args_for_duckdb(query: str) -> str:
@@ -1788,6 +1873,25 @@ class DirectSQLEngine(BaseQueryEngine):
                 query = re.sub(r"\s+LIMIT\s+\(\s*\d+\s*\)\s*;?\s*$", "", query, flags=re.IGNORECASE)
                 if query != _orig:
                     logger.debug("SQL Server: applied T-SQL rewrites (TOP/DISTINCT and LIMIT removal)")
+
+            if db_type.startswith("postgres"):
+                postgres_schema_aliases = []
+                database_alias = (
+                    conn_info.get('database')
+                    or conn_info.get('db')
+                    or conn_info.get('database_name')
+                    or conn_info.get('initial_database')
+                )
+                if database_alias:
+                    postgres_schema_aliases.append(str(database_alias))
+                normalized_query = quote_known_table_refs_for_sql(
+                    query,
+                    data_source.get("schema") or {},
+                    schema_aliases=postgres_schema_aliases,
+                )
+                if normalized_query != query:
+                    logger.info("DirectSQL PostgreSQL: quoted known mixed-case table references in query")
+                    query = normalized_query
 
             # CRITICAL: Enforce read-only mode for database connections
             # User-scoped queries only (no tenant isolation needed)
