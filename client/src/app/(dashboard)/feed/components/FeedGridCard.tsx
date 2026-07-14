@@ -20,7 +20,7 @@ import type { FeedItem, ReactionType } from '@/services/socialFeedService';
 import { assetTypeLabelKey, resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
 import { FeedPreviewEmpty } from './FeedPreviewEmpty';
 import { reactionOptions } from './FeedCard/constants';
-import { getBackendUrl } from '@/utils/backendUrl';
+import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 
 interface FeedGridCardProps {
@@ -99,6 +99,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
   const authorTitle = item.author.title?.trim();
   const description = useMemo(() => resolveFeedPostSummary(item), [item]);
+  const thumbnailUrl = resolveBackendMediaUrl(item.asset.thumbnailUrl);
 
   const handleOpen = useCallback(() => router.push(detailPath), [router, detailPath]);
   const handlePrefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
@@ -364,9 +365,9 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
               }}
               aria-label={t('open_post')}
             >
-              {item.asset.thumbnailUrl ? (
+              {thumbnailUrl ? (
                 <img
-                  src={`${getBackendUrl()}${item.asset.thumbnailUrl}`}
+                  src={thumbnailUrl}
                   alt={item.title}
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover"

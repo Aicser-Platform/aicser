@@ -4,7 +4,7 @@ import type { FeedItem } from '@/services/socialFeedService';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
 import { assetTypeLabelKey } from '@/components/Feed/feedPostDisplay';
 import { FeedPreviewEmpty } from '../FeedPreviewEmpty';
-import { getBackendUrl } from '@/utils/backendUrl';
+import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
 
 interface FeedCardBodyProps {
   item: FeedItem;
@@ -32,6 +32,7 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
   };
 
   const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
+  const thumbnailUrl = resolveBackendMediaUrl(item.asset.thumbnailUrl);
 
   return (
     <div className="flex flex-col">
@@ -51,9 +52,9 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
             onKeyDown={handleMediaKeyDown}
             aria-label={previewClickable ? t('open_post') : undefined}
           >
-            {item.asset.thumbnailUrl ? (
+            {thumbnailUrl ? (
               <img
-                src={`${getBackendUrl()}${item.asset.thumbnailUrl}`}
+                src={thumbnailUrl}
                 alt={item.title}
                 loading="lazy"
                 className="absolute inset-0 h-full w-full object-cover"

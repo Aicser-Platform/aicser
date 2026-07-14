@@ -148,6 +148,128 @@ def quote_known_table_refs_for_sql(
     return normalized
 
 
+_DUCKDB_TABLE_REF_RE = re.compile(
+    r'\b(FROM|JOIN)\s+((?:"[^"]+"|`[^`]+`|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|`[^`]+`|[A-Za-z_][\w$-]*))?)',
+    re.IGNORECASE,
+)
+
+
+def _normalize_duckdb_table_ref(ref: str) -> str:
+    parts = []
+    for part in re.split(r"\s*\.\s*", str(ref or "").strip()):
+        clean = part.strip().strip('"').strip("`").strip()
+        if clean:
+            parts.append(clean)
+    return ".".join(parts).lower()
+
+
+def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> Tuple[str, Optional[str], List[str]]:
+    """Normalize file-upload SQL table refs to the DuckDB execution surface.
+
+    Single-table uploads execute as ``data``. Multi-sheet uploads expose physical
+    ``sheet_*`` tables, with ``schema.duckdb_tables`` mapping friendly/logical
+    names to those physical names. This function handles quoted schema-qualified
+    refs such as ``FROM "data"."fact_marketing_campaign"``.
+    """
+    if not query or not isinstance(query, str):
+        return query, None, []
+
+    ds_schema = data_source.get("schema") or {}
+    duckdb_tables_map = ds_schema.get("duckdb_tables") or {}
+    logical_to_duckdb: Dict[str, str] = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in duckdb_tables_map.items()
+        if k and v
+    } if isinstance(duckdb_tables_map, dict) else {}
+    direct_duckdb_names = {
+        str(v).strip().lower()
+        for v in duckdb_tables_map.values()
+        if v
+    } if isinstance(duckdb_tables_map, dict) else set()
+
+    for table in ds_schema.get("tables") or []:
+        if not isinstance(table, dict):
+            continue
+        name = str(table.get("name") or "").strip()
+        logical_name = str(table.get("logical_name") or "").strip()
+        if name:
+            direct_duckdb_names.add(name.lower())
+            logical_to_duckdb.setdefault(name.lower(), name)
+        if name and logical_name and logical_name.lower() != name.lower():
+            logical_to_duckdb[logical_name.lower()] = name
+
+    storage_format = ""
+    if isinstance(ds_schema, dict):
+        storage_format = str(((ds_schema.get("storage") or {}).get("format") or "")).lower()
+    if storage_format == "parquet" and isinstance(duckdb_tables_map, dict) and duckdb_tables_map:
+        primary_physical = str(ds_schema.get("table_name") or "")
+        logical_to_duckdb = {
+            str(logical).strip().lower(): "data"
+            for logical, physical in duckdb_tables_map.items()
+            if str(physical) == primary_physical
+        }
+        direct_duckdb_names = {"data"}
+        unavailable_logical_tables = {
+            str(logical).strip().lower()
+            for logical, physical in duckdb_tables_map.items()
+            if str(physical) != primary_physical
+        }
+    else:
+        unavailable_logical_tables = set()
+
+    replacements: List[Tuple[int, int, str]] = []
+    translated_refs: List[str] = []
+    fallback_refs: List[str] = []
+    unavailable_found: List[str] = []
+
+    for match in _DUCKDB_TABLE_REF_RE.finditer(query):
+        keyword = match.group(1).upper()
+        raw_ref = match.group(2)
+        clean_ref = _normalize_duckdb_table_ref(raw_ref)
+        if not clean_ref:
+            continue
+        bare_name = clean_ref.split(".")[-1]
+
+        is_single_valid = (
+            "." not in clean_ref
+            and (clean_ref in ("data", "_aiser_inline_df") or clean_ref.startswith("file_"))
+        )
+        if is_single_valid:
+            continue
+        if bare_name in unavailable_logical_tables:
+            unavailable_found.append(bare_name)
+            continue
+        if bare_name in logical_to_duckdb:
+            target = logical_to_duckdb[bare_name]
+            replacements.append((match.start(), match.end(), f'{keyword} "{target}"'))
+            translated_refs.append(raw_ref)
+        elif bare_name in direct_duckdb_names:
+            replacements.append((match.start(), match.end(), f'{keyword} "{bare_name}"'))
+            translated_refs.append(raw_ref)
+        else:
+            replacements.append((match.start(), match.end(), f'{keyword} "data"'))
+            fallback_refs.append(raw_ref)
+
+    if unavailable_found:
+        unavailable = sorted(set(unavailable_found))
+        primary = next(iter(logical_to_duckdb.keys()), "data")
+        return query, (
+            "Related table(s) "
+            f"{', '.join(unavailable)} are present in the schema/model but not in the stored "
+            f"compressed Parquet payload. Only {primary} is available at query time. "
+            "Re-upload or refresh the original multi-sheet workbook so relationship joins can run."
+        ), []
+
+    if not replacements:
+        return query, None, []
+
+    rewritten = query
+    for start, end, replacement in reversed(replacements):
+        rewritten = rewritten[:start] + replacement + rewritten[end:]
+
+    return rewritten, None, translated_refs + fallback_refs
+
+
 def cast_date_trunc_args_for_duckdb(query: str) -> str:
     """Wrap the date argument of ``date_trunc(...)`` in ``TRY_CAST(... AS TIMESTAMP)``.
 
@@ -338,6 +460,18 @@ class MultiEngineQueryService:
             # 4. Unrelated tables - rewrite to 'data' for backward compat (fallback)
             if is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 import re
+                rewritten_query, rewrite_error, rewritten_refs = rewrite_file_duckdb_table_refs(query, data_source)
+                if rewrite_error:
+                    return {"success": False, "error": rewrite_error}
+                if rewritten_query != query:
+                    logger.info(
+                        "✅ Normalized DuckDB file table refs %s:\nOriginal: %s\nRewritten: %s",
+                        rewritten_refs,
+                        query,
+                        rewritten_query,
+                    )
+                    query_analysis["original_query"] = query
+                    query = rewritten_query
                 # Build lookup: bare_logical_name (lower) → actual DuckDB table name
                 _ds_schema = data_source.get("schema") or {}
                 _duckdb_tables_map = _ds_schema.get("duckdb_tables") or {}
