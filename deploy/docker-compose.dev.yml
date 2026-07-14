@@ -81,7 +81,6 @@ services:
     volumes:
       - ../server:/app
       - pip_cache:/root/.cache/pip
-      - ./scripts/sample-data:/app/scripts/sample-data
     environment:
       POSTGRES_SERVER: postgres
       POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
@@ -132,8 +131,7 @@ services:
       AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-}
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
       AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
-      SAMPLE_DATA_DUCKDB_PATH: ${SAMPLE_DATA_DUCKDB_PATH:-/app/scripts/sample-data/duckdb/sample_data.duckdb}
-      GENERATORS_BASE: /app/scripts/sample-data
+      SAMPLE_DATA_DUCKDB_PATH: ${SAMPLE_DATA_DUCKDB_PATH:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -169,6 +167,7 @@ services:
       - |
         set -e
         cd /app
+        /venv/bin/python -m src.shared.sample_data.ensure
         exec /venv/bin/python -m uvicorn src.main:app \
           --host 0.0.0.0 \
           --port 8000 \

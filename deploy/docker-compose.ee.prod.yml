@@ -101,6 +101,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
+      SAMPLE_DATA_DUCKDB_PATH: ${SAMPLE_DATA_DUCKDB_PATH:-}
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_prod_uploads:/app/uploads

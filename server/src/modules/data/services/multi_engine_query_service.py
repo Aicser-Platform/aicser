@@ -979,13 +979,9 @@ class DuckDBEngine(BaseQueryEngine):
             # Create DuckDB connection (in-memory for file/sample_duckdb path, or attach sample DB)
             conn = None
             if data_source.get("type") == "sample_duckdb":
-                sample_path = os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip()
-                if not sample_path or not os.path.isfile(sample_path):
-                    sample_path = "/app/scripts/sample-data/duckdb/sample_data.duckdb"
-                if not sample_path or not os.path.isfile(sample_path):
-                    _base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."))
-                    sample_path = os.path.join(_base, "scripts", "sample-data", "duckdb", "sample_data.duckdb")
-                if sample_path and os.path.isfile(sample_path):
+                from src.shared.sample_data.generate_duckdb import resolve_sample_duckdb_path
+                sample_path = resolve_sample_duckdb_path()
+                if sample_path:
                     conn = duckdb.connect(sample_path, read_only=True)
                     logger.info("🦆 Connected to sample DuckDB at %s", sample_path)
                     # Set search_path to domain schema so unqualified table names resolve (e.g. workspaces -> saas.workspaces)

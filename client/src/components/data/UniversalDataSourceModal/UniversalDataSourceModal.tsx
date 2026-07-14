@@ -2183,13 +2183,39 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               style={{
                 textAlign: 'center',
                 cursor: 'pointer',
-                border: dataSourceConfig.type === type.key ? `2px solid #1890ff` : '1px solid #d9d9d9',
+                minHeight: 188,
+                border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+                borderRadius: 10,
+                boxShadow:
+                  dataSourceConfig.type === type.key
+                    ? '0 0 0 2px var(--ant-color-primary, #1890ff)'
+                    : undefined,
+                transition: 'border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
+              }}
+              styles={{
+                body: {
+                  minHeight: 188,
+                  padding: '24px',
+                  display: 'flex',
+                  alignItems: 'stretch',
+                },
               }}
             >
-              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <div
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                }}
+              >
                 <div
                   style={{
                     fontSize: '32px',
+                    height: 32,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     color:
                       type.color === 'blue'
                         ? '#1890ff'
@@ -2202,11 +2228,21 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 >
                   {type.icon}
                 </div>
-                <Title level={5} style={{ margin: 0 }}>
+                <Title level={5} style={{ margin: '18px 0 0', lineHeight: '22px' }}>
                   {type.label}
                 </Title>
-                <Text type="secondary">{type.description}</Text>
-              </Space>
+                <Text
+                  type="secondary"
+                  style={{
+                    display: 'block',
+                    marginTop: 14,
+                    minHeight: 40,
+                    lineHeight: '20px',
+                  }}
+                >
+                  {type.description}
+                </Text>
+              </div>
             </Card>
           </Col>
         ))}
@@ -2218,11 +2254,19 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     if (fileSourceKind === 'google_sheet') {
       return (
         <div style={{ padding: '24px 0' }}>
-          <Title level={4}>{t('connect_google_sheet')}</Title>
+          <Title level={4} style={{ marginBottom: 4 }}>{t('connect_google_sheet')}</Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
             {t('connect_google_sheet_desc')}
           </Text>
-          <Row gutter={16}>
+          <div
+            style={{
+              border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+              borderRadius: 10,
+              background: 'var(--ant-color-bg-container)',
+              padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+            }}
+          >
+          <Row gutter={[16, 0]}>
             <Col span={24}>
               <Form.Item label={t('data_source_name')} required>
                 <Input
@@ -2260,6 +2304,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               </Form.Item>
             </Col>
           </Row>
+          </div>
         </div>
       );
     }
@@ -2269,6 +2314,14 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       <Text type="secondary" style={{ display: 'block', marginBottom: '24px' }}>
         {t('upload_file_desc')}
       </Text>
+      <div
+        style={{
+          border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+          borderRadius: 10,
+          background: 'var(--ant-color-bg-container)',
+          padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+        }}
+      >
       <Form.Item label={t('how_add_data')} style={{ marginBottom: 16 }}>
         <Radio.Group
           value={fileSourceKind}
@@ -2457,6 +2510,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           rows={3}
         />
       </Form.Item>
+      </div>
 
       {/* Test result alert for file uploads */}
       {testResult && (
@@ -2488,8 +2542,16 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           </Title>
         </div>
 
+        <div
+          style={{
+            border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+            borderRadius: 10,
+            background: 'var(--ant-color-bg-container)',
+            padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+          }}
+        >
         <Form layout="vertical">
-          <Row gutter={16}>
+          <Row gutter={[16, 0]}>
             <Col span={12}>
               <Form.Item label={t('label_database_type')} required>
                 <Select
@@ -2788,7 +2850,9 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
           {/* Connection URL - SQL only; hidden for NoSQL to avoid duplicate/confusing fields */}
           {!['mongodb', 'cassandra', 'dynamodb', 'prometheus_source'].includes(selectedDatabaseType) && (
-            <Form.Item label={t('label_connection_url')}>
+            <>
+              <Divider style={{ margin: '4px 0 20px' }} />
+              <Form.Item label={t('label_connection_url')}>
               <Space.Compact style={{ width: '100%' }}>
                 <Input
                   value={
@@ -2832,21 +2896,30 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                     }
                     setConnectionUrlEditable(!connectionUrlEditable);
                   }}
-                  style={{ minWidth: '80px' }}
+                  style={{ minWidth: '80px', marginLeft: '10px' }}
                 >
                   {connectionUrlEditable ? t('preview') : t('edit')}
                 </Button>
               </Space.Compact>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
+              <Text type="secondary" style={{ fontSize: '12px', marginTop: 6, display: 'block' }}>
                 {connectionUrlEditable
                   ? t('connection_url_edit_help')
                   : t('connection_url_auto_help')}
               </Text>
             </Form.Item>
+            </>
           )}
 
           {/* Advanced Options */}
-          <Collapse ghost>
+          <Collapse
+            ghost
+            style={{
+              marginTop: 4,
+              marginBottom: 16,
+              border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+              borderRadius: 8,
+            }}
+          >
             <Panel header={t('collapse_advanced_options')} key="advanced">
               <Row gutter={16}>
                 <Col span={12}>
@@ -2968,6 +3041,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </Panel>
           </Collapse>
         </Form>
+        </div>
       </div>
     );
   };
@@ -2996,9 +3070,17 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                     : 'Cloud Storage Configuration'}
         </Title>
 
+        <div
+          style={{
+            border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+            borderRadius: 10,
+            background: 'var(--ant-color-bg-container)',
+            padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+          }}
+        >
         <Form layout="vertical">
           {/* Database Type Selector - Always visible and prominent */}
-          <Row gutter={16}>
+          <Row gutter={[16, 0]}>
             <Col span={24}>
               <Form.Item label={t('label_db_storage_type')} required help={t('help_db_storage_type_changeable')}>
                 <Select
@@ -3453,6 +3535,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             />
           </Form.Item>
         </Form>
+        </div>
       </div>
     );
   };
@@ -3463,8 +3546,16 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         {t('title_api_config')}
       </Title>
 
+      <div
+        style={{
+          border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+          borderRadius: 10,
+          background: 'var(--ant-color-bg-container)',
+          padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+        }}
+      >
       <Form layout="vertical">
-        <Row gutter={16}>
+        <Row gutter={[16, 0]}>
           <Col span={12}>
             <Form.Item label={t('label_api_name')} required>
               <Input
@@ -3600,6 +3691,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           />
         </Form.Item>
       </Form>
+      </div>
     </div>
   );
 
@@ -3672,6 +3764,14 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         {t('kb_description')}
       </Text>
 
+      <div
+        style={{
+          border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+          borderRadius: 10,
+          background: 'var(--ant-color-bg-container)',
+          padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+        }}
+      >
       <Form layout="vertical" size="middle">
         <Form.Item label={t('kb_name_label')} required style={{ marginBottom: 12 }}>
           <Input
@@ -3768,19 +3868,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           ))}
         </div>
       )}
-
-      <Button
-        type="primary"
-        icon={kbUploading ? <LoadingOutlined /> : <SaveOutlined />}
-        onClick={handleKbUpload}
-        loading={kbUploading}
-        disabled={!kbFiles.length || !dataSourceConfig.name || kbUploading}
-        block
-        size="large"
-        style={{ height: 44 }}
-      >
-        {kbUploading ? t('kb_processing_documents') : t('kb_create_upload')}
-      </Button>
+      </div>
     </div>
   );
 
@@ -3790,7 +3878,16 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
         {t('sample_data_intro')}
       </Text>
-      <Row gutter={16}>
+      <div
+        style={{
+          border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+          borderRadius: 10,
+          background: 'var(--ant-color-bg-container)',
+          padding: isCompactViewport ? '16px 16px 4px' : '20px 24px 4px',
+          marginBottom: 16,
+        }}
+      >
+      <Row gutter={[16, 0]}>
         <Col span={24}>
           <Form.Item label={t('data_source_name')} required>
             <Input
@@ -3816,15 +3913,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           </Form.Item>
         </Col>
       </Row>
-      <Button
-        type="primary"
-        icon={<SaveOutlined />}
-        onClick={saveDataSource}
-        loading={loading}
-        disabled={!dataSourceConfig.name?.trim()}
-      >
-        {t('btn_save')}
-      </Button>
+      </div>
     </div>
   );
 
@@ -4043,9 +4132,31 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             {t('btn_save')}
           </Button>
         )}
+        {currentStep === 1 && dataSourceConfig.type === 'knowledge_base' && kbDocuments.length === 0 && (
+          <Button
+            type="primary"
+            onClick={handleKbUpload}
+            loading={kbUploading}
+            disabled={!kbFiles.length || !dataSourceConfig.name || kbUploading}
+            icon={kbUploading ? <LoadingOutlined /> : <SaveOutlined />}
+          >
+            {kbUploading ? t('kb_processing_documents') : t('kb_create_upload')}
+          </Button>
+        )}
         {currentStep === 1 && dataSourceConfig.type === 'knowledge_base' && kbDocuments.length > 0 && (
           <Button type="primary" onClick={onClose}>
             {t('btn_done')}
+          </Button>
+        )}
+        {currentStep === 1 && dataSourceConfig.type === 'sample_duckdb' && (
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            onClick={saveDataSource}
+            loading={loading}
+            disabled={!dataSourceConfig.name?.trim()}
+          >
+            {t('btn_save')}
           </Button>
         )}
         {currentStep === 1 &&

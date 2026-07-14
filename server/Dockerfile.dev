@@ -80,6 +80,11 @@ RUN chmod +x /app/entrypoint.sh
 # Copy application code
 COPY src ./src
 
+# Generate the sample DuckDB file with this image's pinned duckdb version.
+# In local dev-via-compose this gets shadowed by the source bind mount, so
+# the compose entrypoint also runs `sample_data.ensure` at container start.
+RUN python -m src.shared.sample_data.ensure
+
 # Remove __pycache__ directories to ensure clean imports
 RUN find . -type d -name "__pycache__" -exec rm -r {} +
 
