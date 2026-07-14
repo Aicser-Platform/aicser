@@ -31,13 +31,13 @@
   min-width: 0;
   border-radius: 6px;
   background: var(--ant-color-fill-quaternary);
-  border: 1px solid transparent !important;
+  border: 1px solid var(--ant-color-border-secondary) !important;
   box-shadow: none !important;
   font-size: 12px;
 }
 
 .schema-explorer-toolbar .ant-input-affix-wrapper:hover {
-  border-color: var(--ant-color-border-secondary) !important;
+  border-color: var(--ant-color-border) !important;
   box-shadow: none !important;
 }
 
