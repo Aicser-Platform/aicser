@@ -35,8 +35,6 @@ dev-ee:
 	$(DEV_EE) up 
 
 dev-ee-build:
-	-$(DEV_LEGACY) down --remove-orphans
-	-$(DEV_CE_EXTRAS) down --remove-orphans
 	$(DEV_EE) up -d --build
 
 dev-ee-logs:
@@ -44,6 +42,9 @@ dev-ee-logs:
 
 dev-ee-down:
 	$(DEV_EE_EXTRAS) down --remove-orphans
+
+dev-ee-down-v:
+	$(DEV_EE) down -v
 
 dev-ee-turbo:
 	NEXT_DEV_TURBO=true $(DEV_EE) up -d --force-recreate client

@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
@@ -43,3 +44,18 @@ async def upload_feed_thumbnail(
         )
 
     return FeedThumbnailUploadResponse(url=url)
+
+
+@router.get("/{filename}")
+async def get_feed_thumbnail(filename: str) -> Response:
+    """Serve a feed thumbnail from disk, with PostgreSQL backup fallback."""
+    stored = await _storage_service.get_thumbnail(filename)
+    if not stored:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
+
+    content, content_type = stored
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )

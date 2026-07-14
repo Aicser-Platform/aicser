@@ -591,6 +591,84 @@ def _create_ngo_impact(conn: duckdb.DuckDBPyConnection) -> None:
         """
     )
 
+def _create_hospitality(conn: duckdb.DuckDBPyConnection) -> None:
+    conn.execute("CREATE SCHEMA IF NOT EXISTS hospitality")
+    n = ROW_COUNT
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE hospitality.hotels AS
+        SELECT
+            row_number() OVER () AS hotel_id,
+            'Hotel ' || row_number() OVER () AS name,
+            CASE (row_number() OVER () % 6)
+                WHEN 0 THEN 'Phnom Penh' WHEN 1 THEN 'Siem Reap' WHEN 2 THEN 'Sihanoukville'
+                WHEN 3 THEN 'Battambang' WHEN 4 THEN 'Kampot' ELSE 'Kep'
+            END AS city,
+            (row_number() OVER () % 5) + 1 AS star_rating
+        FROM range(1, 21)
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE hospitality.rooms AS
+        SELECT
+            row_number() OVER () AS room_id,
+            (row_number() OVER () % 20) + 1 AS hotel_id,
+            CASE (row_number() OVER () % 4)
+                WHEN 0 THEN 'standard' WHEN 1 THEN 'deluxe' WHEN 2 THEN 'suite' ELSE 'villa'
+            END AS room_type,
+            round(20 + (random() * 180), 2) AS nightly_rate_usd
+        FROM range(1, 121)
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE hospitality.guests AS
+        SELECT
+            row_number() OVER () AS guest_id,
+            'Guest ' || row_number() OVER () AS full_name,
+            CASE (row_number() OVER () % 8)
+                WHEN 0 THEN 'Cambodia' WHEN 1 THEN 'Thailand' WHEN 2 THEN 'Vietnam'
+                WHEN 3 THEN 'South Korea' WHEN 4 THEN 'China' WHEN 5 THEN 'France'
+                WHEN 6 THEN 'USA' ELSE 'Australia'
+            END AS nationality
+        FROM range(1, 81)
+        """
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE hospitality.bookings AS
+        SELECT
+            row_number() OVER () AS booking_id,
+            (row_number() OVER () % 120) + 1 AS room_id,
+            (row_number() OVER () % 80) + 1 AS guest_id,
+            CAST('2024-01-01' AS DATE) + (row_number() OVER () * INTERVAL '1 day') AS check_in_date,
+            (row_number() OVER () % 7) + 1 AS nights,
+            CASE (row_number() OVER () % 5)
+                WHEN 0 THEN 'confirmed' WHEN 1 THEN 'checked_in' WHEN 2 THEN 'checked_out'
+                WHEN 3 THEN 'cancelled' ELSE 'no_show'
+            END AS status,
+            CASE (row_number() OVER () % 4)
+                WHEN 0 THEN 'direct' WHEN 1 THEN 'booking.com' WHEN 2 THEN 'agoda' ELSE 'travel_agent'
+            END AS booking_channel,
+            round(30 + (random() * 800), 2) AS total_amount_usd
+        FROM range(1, ? + 1)
+        """,
+        [n],
+    )
+    conn.execute(
+        """
+        CREATE OR REPLACE TABLE hospitality.reviews AS
+        SELECT
+            row_number() OVER () AS review_id,
+            (row_number() OVER () % 20) + 1 AS hotel_id,
+            (row_number() OVER () % 80) + 1 AS guest_id,
+            (row_number() OVER () % 5) + 1 AS rating,
+            CAST('2024-01-15' AS DATE) + (row_number() OVER () * INTERVAL '4 days') AS reviewed_at
+        FROM range(1, 161)
+        """
+    )
+
 
 DOMAIN_BUILDERS: List[Callable[[duckdb.DuckDBPyConnection], None]] = [
     _create_banking,
@@ -604,6 +682,7 @@ DOMAIN_BUILDERS: List[Callable[[duckdb.DuckDBPyConnection], None]] = [
     _create_healthcare,
     _create_saas,
     _create_ngo_impact,
+    _create_hospitality,
 ]
 
 

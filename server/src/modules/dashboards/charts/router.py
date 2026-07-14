@@ -11,6 +11,7 @@ from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.charts.permissions import enforce_publish_owner_chart_edit
+from src.modules.dashboards.chart_data_validation import validate_chart_data
 from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, verify_dashboard_read_access
 
 router = APIRouter()
@@ -236,6 +237,14 @@ async def _execute_chart_data(
         raise HTTPException(status_code=400, detail=message) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Chart execution failed") from exc
+
+    validation = validate_chart_data(
+        chart.chart_type,
+        data,
+        chart_query=getattr(exec_chart, "chart_query", None),
+    )
+    if not validation.valid:
+        raise HTTPException(status_code=400, detail=validation.reason or "Chart returned invalid data")
 
     return {
         "chart": serialize_chart(chart),

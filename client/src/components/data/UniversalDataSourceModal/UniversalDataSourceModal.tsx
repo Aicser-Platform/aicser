@@ -267,9 +267,10 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     { value: 'ngo_impact', label: t('sample_domain_ngo_impact') },
     { value: 'govt_public_services', label: t('sample_domain_govt_public_services') },
     { value: 'energy', label: t('sample_domain_energy') },
+    { value: 'hospitality', label: t('sample_domain_hospitality') },
   ];
-  const SAMPLE_DOMAINS_WITH_DATA = ['banking', 'education', 'insurance', 'ecommerce', 'retail_supply_chain', 'telecom', 'healthcare', 'saas', 'ngo_impact', 'govt_public_services', 'energy'];
-
+  // const SAMPLE_DOMAINS_WITH_DATA = ['banking', 'education', 'insurance', 'ecommerce', 'retail_supply_chain', 'telecom', 'healthcare', 'saas', 'ngo_impact', 'govt_public_services', 'energy'];
+  const SAMPLE_DOMAINS_WITH_DATA = ['banking', 'education', 'insurance', 'ecommerce', 'retail_supply_chain', 'telecom', 'healthcare', 'saas', 'ngo_impact', 'govt_public_services', 'energy', 'hospitality'];
   // Supported data sources. Knowledge Base and Sample Data are EE-only entry points.
   const dataSourceTypes = [
     {

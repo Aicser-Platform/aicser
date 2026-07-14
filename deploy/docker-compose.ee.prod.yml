@@ -13,7 +13,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiser} -d ${POSTGRES_DB:-aiser}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -141,6 +145,7 @@ services:
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
         NEXT_BUILD_CPUS: ${NEXT_BUILD_CPUS:-1}
+        NEXT_PUBLIC_SSO_PROVIDER: ${NEXT_PUBLIC_SSO_PROVIDER:-}
         NEXT_BUILD_MAX_OLD_SPACE_SIZE: ${NEXT_BUILD_MAX_OLD_SPACE_SIZE:-3072}
     container_name: aiser-client-ee-prod
     environment:
@@ -152,6 +157,7 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      NEXT_PUBLIC_SSO_PROVIDER: ${NEXT_PUBLIC_SSO_PROVIDER:-}
     ports:
       - "3000:3000"
     depends_on:

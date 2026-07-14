@@ -42,6 +42,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       target = `${targetBase}/api`;
     } else if (pathSegment === 'health') {
       target = `${targetBase}/health`;
+    } else if (pathSegment.startsWith('auth/')) {
+      target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('data/')) {
       target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('charts/')) {

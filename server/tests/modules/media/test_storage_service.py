@@ -12,11 +12,16 @@ from src.modules.media.storage_service import (
 )
 
 
-def _make_png_bytes(size=(1200, 800)) -> bytes:
+def _make_png_bytes(size=(320, 200)) -> bytes:
     img = Image.new("RGB", size, color=(255, 0, 0))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+@pytest.fixture(autouse=True)
+def _disable_db_backup(monkeypatch):
+    monkeypatch.setattr(LocalMediaStorageService, "_should_use_db_backup", lambda self: False)
 
 
 @pytest.mark.asyncio
@@ -38,6 +43,12 @@ async def test_save_thumbnail_accepts_valid_png(tmp_path, monkeypatch):
     with Image.open(saved_path) as saved_img:
         assert saved_img.format == "WEBP"
         assert max(saved_img.size) <= 960
+
+    stored = await service.get_thumbnail(filename)
+    assert stored is not None
+    stored_bytes, content_type = stored
+    assert stored_bytes == saved_path.read_bytes()
+    assert content_type == "image/webp"
 
 
 @pytest.mark.asyncio

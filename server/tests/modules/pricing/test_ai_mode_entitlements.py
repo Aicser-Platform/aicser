@@ -22,3 +22,14 @@ def test_api_streaming_plan_gate_allows_dashboard_for_free():
     assert _plan_allows_mode("free", "dashboard") is True
     assert _plan_allows_mode("pro", "dashboard") is True
     assert _plan_allows_mode("team", "dashboard") is True
+
+
+def test_combined_modes_are_paid_entitlements():
+    from src.modules.ai.api_streaming import _effective_billing_analysis_mode, _plan_allows_mode
+
+    assert "decision_intelligence" in PAID_ALLOWED_AI_MODES
+    assert "business_journey" in PAID_ALLOWED_AI_MODES
+    assert _plan_allows_mode("free", "decision_intelligence") is False
+    assert _plan_allows_mode("pro", "decision_intelligence") is True
+    assert _plan_allows_mode("team", "all") is True
+    assert _effective_billing_analysis_mode("all", None, None) == "decision_intelligence"

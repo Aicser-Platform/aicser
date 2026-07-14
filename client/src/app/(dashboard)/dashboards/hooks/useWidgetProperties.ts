@@ -74,6 +74,84 @@ export const useWidgetProperties = ({
     sortBy: query.sortBy ?? 'x',
   });
 
+  const fieldName = (field?: unknown) => String(field || '').split('.').pop() || '';
+
+  const tableColumnsFor = (tableName?: string) => {
+    const tables = selectedSchemaInfo?.tables || [];
+    const bare = (name?: string) => String(name || '').split('.').pop();
+    const table =
+      tables.find((t: any) => bare(t?.name) === bare(tableName)) ||
+      tables.find((t: any) => t?.name === 'data') ||
+      tables.find((t: any) => t?.columns?.length) ||
+      tables[0];
+    return (table?.columns || []).map((column: any) => ({
+      name: String(column?.name || column?.column_name || column || ''),
+      type: String(column?.type || column?.data_type || ''),
+    })).filter((column: { name: string }) => column.name);
+  };
+
+  const sanitizeQueryForTable = (query: any, tableName?: string) => {
+    const columns = tableColumnsFor(tableName);
+    const columnNames = new Set(columns.map((column: { name: string }) => column.name.toLowerCase()));
+    if (!columnNames.size) {
+      return {
+        ...query,
+        tableName,
+        joins: [],
+        compiled_semantic_sql: undefined,
+        saved_query_id: undefined,
+      };
+    }
+
+    const hasColumn = (field?: unknown) => {
+      const name = fieldName(field).toLowerCase();
+      return Boolean(name && columnNames.has(name));
+    };
+    const firstDimension =
+      columns.find((column: { name: string; type: string }) => !/(int|float|double|decimal|numeric|number|real)/i.test(column.type))?.name ||
+      columns[0]?.name;
+    const metricFallback = query.x && hasColumn(query.x) ? fieldName(query.x) : firstDimension;
+    const next: any = { ...query, tableName, joins: [] };
+
+    delete next.compiled_semantic_sql;
+    delete next.semantic_query_spec;
+    delete next.semantic_metric_id;
+    delete next.semantic_dimension_ids;
+    delete next.saved_query_id;
+
+    for (const key of ['x', 'y', 'legend', 'groupField', 'sortBy']) {
+      if (next[key] && next[key] !== 'x' && next[key] !== 'y' && next[key] !== 'record_order' && !hasColumn(next[key])) {
+        delete next[key];
+      } else if (next[key] && hasColumn(next[key])) {
+        next[key] = fieldName(next[key]);
+      }
+    }
+
+    next.yMetrics = Array.isArray(next.yMetrics)
+      ? next.yMetrics
+          .filter((metric: any) => metric?.field && hasColumn(metric.field))
+          .map((metric: any) => ({ ...metric, field: fieldName(metric.field) }))
+      : [];
+    next.yMetricsSecondary = Array.isArray(next.yMetricsSecondary)
+      ? next.yMetricsSecondary
+          .filter((metric: any) => metric?.field && hasColumn(metric.field))
+          .map((metric: any) => ({ ...metric, field: fieldName(metric.field) }))
+      : [];
+    next.filters = Array.isArray(next.filters)
+      ? next.filters
+          .filter((filter: any) => !filter?.field || hasColumn(filter.field))
+          .map((filter: any) => filter?.field ? { ...filter, field: fieldName(filter.field) } : filter)
+      : [];
+
+    if (!next.x && selectedWidget?.chartType !== 'stat' && selectedWidget?.chartType !== 'gauge') {
+      next.x = firstDimension;
+    }
+    if (!next.yMetrics.length) {
+      next.yMetrics = metricFallback ? [{ field: metricFallback, aggregation: 'count' }] : [];
+    }
+    return next;
+  };
+
   /* ----------------------------------------
    * Effects
    * --------------------------------------*/
@@ -198,21 +276,22 @@ export const useWidgetProperties = ({
   const selectedJoinsKey = JSON.stringify(selectedChartQuery?.joins || []);
 
   const selectedTableColumns = useMemo(() => {
-    if (!selectedSchemaInfo || !selectedSchemaInfo.tables) return [];
+    const tables = selectedSchemaInfo?.tables || [];
+    if (!tables.length) return [];
 
     const joins = JSON.parse(selectedJoinsKey);
     const bareTableName = (table?: string) => table?.split('.').pop()?.trim() || table?.trim();
     const findSchemaTable = (tableName?: string) => {
       const bare = bareTableName(tableName);
-      return selectedSchemaInfo.tables.find((t: any) => bareTableName(t.name) === bare);
+      return tables.find((t: any) => bareTableName(t.name) === bare);
     };
 
     // Find the specific table if selected, else default to 'data' or the first usable one
     const table =
       (selectedTableName ? findSchemaTable(selectedTableName) : null) ||
-      selectedSchemaInfo.tables.find((t: any) => t.name === 'data') ||
-      selectedSchemaInfo.tables.find((t: any) => t.columns && t.columns.length > 0) ||
-      selectedSchemaInfo.tables[0];
+      tables.find((t: any) => t.name === 'data') ||
+      tables.find((t: any) => t.columns && t.columns.length > 0) ||
+      tables[0];
 
     const baseColumns =
       table?.columns?.map((c: any) => ({
@@ -283,6 +362,10 @@ export const useWidgetProperties = ({
       ...(selectedWidget.chartQuery || {}),
       [key]: value,
     });
+
+    if (key === 'tableName') {
+      nextQuery = ensureChartQueryDefaults(sanitizeQueryForTable(nextQuery, value));
+    }
 
     // Smart default: if x is selected and yMetrics is empty or only contained the previous default x
     // then update yMetrics to count(newX)

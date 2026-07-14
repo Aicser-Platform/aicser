@@ -12,11 +12,12 @@ from src.modules.dashboards.charts import router as charts_router
 async def test_execute_chart_data_merges_runtime_filters():
     chart = MagicMock()
     chart.chart_query = {"filters": [{"field": "region", "operator": "=", "value": "US"}]}
+    chart.chart_type = "bar"
     chart.id = "chart-1"
 
     service = MagicMock()
     service.get_chart = AsyncMock(return_value=chart)
-    service.chart_service.execute = AsyncMock(return_value={"x": [], "y": []})
+    service.chart_service.execute = AsyncMock(return_value={"x": ["EU"], "series": [{"name": "Value", "data": [1]}]})
 
     with patch.object(charts_router, "DashboardChartService", return_value=service):
         result = await charts_router._execute_chart_data(
@@ -26,7 +27,7 @@ async def test_execute_chart_data_merges_runtime_filters():
             runtime_filters=[{"field": "region", "operator": "eq", "value": "EU"}],
         )
 
-    assert result["data"] == {"x": [], "y": []}
+    assert result["data"] == {"x": ["EU"], "series": [{"name": "Value", "data": [1]}]}
     execute_arg = service.chart_service.execute.await_args[0][0]
     assert execute_arg is not chart
     filters = execute_arg.chart_query["filters"]

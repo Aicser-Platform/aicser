@@ -135,12 +135,7 @@ class ChartService:
         if not schema_info:
             return None, "public"
 
-        # Handle case where schema_info is a JSON string
-        if isinstance(schema_info, str):
-            try:
-                schema_info = json.loads(schema_info)
-            except:
-                return None, "public"
+        schema_info = self._schema_dict(schema_info)
         
         if not isinstance(schema_info, dict):
             return None, "public"
@@ -163,6 +158,17 @@ class ChartService:
             
         return None, "public"
 
+    def _schema_dict(self, schema_info: Any) -> Dict[str, Any]:
+        if isinstance(schema_info, dict):
+            return schema_info
+        if isinstance(schema_info, str):
+            try:
+                parsed = json.loads(schema_info)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+        return {}
+
     def _resolve_table_from_chart(self, chart_query: Optional[Dict], schema_info: Any) -> tuple[Optional[str], str]:
         """Prefer explicit chart_query.tableName over schema default table."""
         cq = chart_query or {}
@@ -171,8 +177,8 @@ class ChartService:
             raw = explicit.strip().strip('"')
             if "." in raw:
                 schema_part, table_part = raw.split(".", 1)
-                return table_part.strip(), schema_part.strip() or "public"
-            return raw, "public"
+                return self._canonical_schema_table_name(table_part.strip(), schema_info), schema_part.strip() or "public"
+            return self._canonical_schema_table_name(raw, schema_info), "public"
         return self._resolve_table_and_schema(schema_info)
 
     def _is_valid_table_reference(self, ref: str) -> bool:
@@ -183,6 +189,24 @@ class ChartService:
     def _table_alias_from_ref(self, ref: str) -> str:
         return ref.strip().split(".")[-1]
 
+    def _quote_table_reference(self, ref: str) -> str:
+        """Quote schema/table references for SQL engines such as PostgreSQL.
+
+        PostgreSQL folds unquoted mixed-case identifiers to lower case. A source
+        table named "QuizAttempt" must therefore be emitted as
+        "public"."QuizAttempt", not public.QuizAttempt.
+        """
+        clean_ref = str(ref or "").strip()
+        if not self._is_valid_table_reference(clean_ref):
+            raise ValueError(f"Invalid table reference: {ref}")
+        return self._quote_identifier(clean_ref)
+
+    def _quote_table_alias(self, alias: str) -> str:
+        clean_alias = str(alias or "").strip()
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", clean_alias):
+            raise ValueError(f"Invalid table alias: {alias}")
+        return self._quote_identifier(clean_alias)
+
     def _format_table_reference(self, ref: str, alias: Optional[str] = None) -> str:
         clean_ref = str(ref or "").strip()
         if not self._is_valid_table_reference(clean_ref):
@@ -190,7 +214,8 @@ class ChartService:
         clean_alias = str(alias or self._table_alias_from_ref(clean_ref)).strip()
         if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", clean_alias):
             clean_alias = self._table_alias_from_ref(clean_ref)
-        return f"{clean_ref} AS {clean_alias}" if clean_alias else clean_ref
+        quoted_ref = self._quote_table_reference(clean_ref)
+        return f"{quoted_ref} AS {self._quote_table_alias(clean_alias)}" if clean_alias else quoted_ref
 
     def _build_from_clause(self, base_table: str, joins: Optional[List[Dict]]) -> str:
         if not joins:
@@ -224,12 +249,149 @@ class ChartService:
             clause += f" {join_type} JOIN {self._format_table_reference(str(join_table), str(join_alias))} ON {on_sql}"
         return clause
 
+    def _quote_known_table_refs_in_sql(self, sql: str, schema_info: Any) -> str:
+        """Quote known schema table references in saved/template SQL.
+
+        Older generated widgets may have persisted SQL such as
+        ``FROM public.QuizAttempt``. Normalize those references before execution
+        so existing dashboards keep working after schema introspection discovers
+        mixed-case PostgreSQL tables.
+        """
+        schema_info = self._schema_dict(schema_info)
+        if not sql or not schema_info:
+            return sql
+        tables = schema_info.get("tables") or []
+        if not isinstance(tables, list):
+            return sql
+
+        normalized = sql
+        refs: List[tuple[str, str]] = []
+        for table in tables:
+            if not isinstance(table, dict):
+                continue
+            name = str(table.get("name") or "").strip()
+            schema = str(table.get("schema") or schema_info.get("schema") or "public").strip()
+            if not name:
+                continue
+            if self._is_valid_table_reference(name):
+                refs.append((name, self._quote_table_reference(name)))
+            if schema and self._is_valid_table_reference(f"{schema}.{name}"):
+                refs.append((f"{schema}.{name}", self._quote_table_reference(f"{schema}.{name}")))
+
+        for raw_ref, quoted_ref in sorted(refs, key=lambda item: len(item[0]), reverse=True):
+            pattern = re.compile(
+                rf'(?i)\b(FROM|JOIN)\s+({re.escape(raw_ref)})(?=\s|$)',
+            )
+            normalized = pattern.sub(lambda m: f"{m.group(1)} {quoted_ref}", normalized)
+        return normalized
+
+    def _unquote_sql_identifier_ref(self, ref: str) -> str:
+        parts = [part.strip().strip('"').strip("`") for part in str(ref or "").split(".")]
+        return ".".join(part for part in parts if part)
+
+    def _base_table_schema_name(self, schema_info: Any, table_name: str) -> str:
+        schema_info = self._schema_dict(schema_info)
+        wanted = self._bare_table_name(table_name).lower()
+        for table in schema_info.get("tables") or []:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            if self._bare_table_name(table.get("name")).lower() == wanted:
+                return str(table.get("schema") or schema_info.get("schema") or "public")
+        return str(schema_info.get("schema") or "public")
+
+    def _rewrite_sql_fk_display_labels(self, sql: str, schema_info: Any) -> str:
+        """Rewrite simple saved/compiled SQL FK groupings to friendly labels.
+
+        Example:
+          SELECT "userId", SUM(...) FROM "QuizAttempt" GROUP BY "userId"
+        becomes a LEFT JOIN to "User" and selects User.name as x.
+        """
+        if not sql:
+            return sql
+        select_match = re.match(r'(?is)^\s*SELECT\s+((?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*))\s*,', sql)
+        from_match = re.search(
+            r'(?is)\bFROM\s+((?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)(?:\.(?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*))?)',
+            sql,
+        )
+        if not select_match or not from_match:
+            return sql
+
+        raw_x = select_match.group(1)
+        raw_base_ref = from_match.group(1)
+        x_column = self._unquote_sql_identifier_ref(raw_x).split(".")[-1]
+        base_table = self._bare_table_name(self._unquote_sql_identifier_ref(raw_base_ref))
+        if not x_column or not base_table:
+            return sql
+
+        inferred = self._infer_fk_display_dimension(schema_info, base_table, x_column, [])
+        if not inferred or not inferred.get("join"):
+            return sql
+
+        join = inferred["join"]
+        on = join.get("on") if isinstance(join, dict) else None
+        if not isinstance(on, dict):
+            return sql
+
+        base_schema = self._base_table_schema_name(schema_info, base_table)
+        from_sql = self._format_table_reference(f"{base_schema}.{base_table}", base_table)
+        join_sql = self._format_table_reference(str(join["table"]), str(join.get("alias") or join["table"]))
+        on_sql = f"{self._quote_identifier(on['left'])} = {self._quote_identifier(on['right'])}"
+        rewritten = sql[:from_match.start()] + f"FROM {from_sql} LEFT JOIN {join_sql} ON {on_sql}" + sql[from_match.end():]
+
+        rewritten = re.sub(
+            rf'(?is)^(\s*SELECT\s+){re.escape(raw_x)}(\s*,)',
+            lambda m: f"{m.group(1)}{inferred['expression']} AS x{m.group(2)}",
+            rewritten,
+            count=1,
+        )
+        group_pattern = re.compile(rf'(?is)\bGROUP\s+BY\s+{re.escape(raw_x)}(?=\s+(ORDER\s+BY|LIMIT)\b|\s*$)')
+        rewritten = group_pattern.sub(f"GROUP BY {inferred['expression']}", rewritten, count=1)
+        return rewritten
+
     def _bare_table_name(self, table: Optional[str]) -> str:
         if not table:
             return ""
         return str(table).split(".")[-1].strip()
 
+    @staticmethod
+    def _logical_table_name(table: Optional[str]) -> str:
+        bare = str(table or "").split(".")[-1].strip().lower()
+        return re.sub(r"^sheet_\d+_", "", bare)
+
+    def _schema_table_alias_map(self, schema_info: Any) -> Dict[str, str]:
+        schema_info = self._schema_dict(schema_info)
+        """Map logical/short table aliases to physical schema table names.
+
+        Uploaded workbook sheets are stored as physical tables such as
+        ``sheet_0_dim_campaign``. Semantic hints and LLM output often refer to
+        the logical table name ``dim_campaign``. Canonicalizing that here keeps
+        chart execution single-table when the selected sheet already contains
+        the field, instead of requiring a nonexistent modeled relationship.
+        """
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        aliases: Dict[str, str] = {}
+        if not isinstance(tables, list):
+            return aliases
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            physical = self._bare_table_name(table.get("name"))
+            if not physical:
+                continue
+            physical_lower = physical.lower()
+            aliases.setdefault(physical_lower, physical)
+            aliases.setdefault(self._logical_table_name(physical), physical)
+        return aliases
+
+    def _canonical_schema_table_name(self, table: Optional[str], schema_info: Any) -> str:
+        bare = self._bare_table_name(table)
+        if not bare:
+            return ""
+        aliases = self._schema_table_alias_map(schema_info)
+        return aliases.get(bare.lower()) or aliases.get(self._logical_table_name(bare)) or bare
+
     def _schema_column_table_map(self, schema_info: Any) -> Dict[str, List[str]]:
+        schema_info = self._schema_dict(schema_info)
         tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
         column_tables: Dict[str, List[str]] = {}
         if not isinstance(tables, list):
@@ -246,6 +408,7 @@ class ChartService:
         return column_tables
 
     def _schema_table_columns_map(self, schema_info: Any) -> Dict[str, List[str]]:
+        schema_info = self._schema_dict(schema_info)
         tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
         table_columns: Dict[str, List[str]] = {}
         if not isinstance(tables, list):
@@ -264,6 +427,7 @@ class ChartService:
 
     def _schema_column_type_map(self, schema_info: Any) -> Dict[str, Dict[str, str]]:
         """table -> {column_lower: normalized_type_family}."""
+        schema_info = self._schema_dict(schema_info)
         tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
         type_map: Dict[str, Dict[str, str]] = {}
         if not isinstance(tables, list):
@@ -292,6 +456,142 @@ class ChartService:
         if any(k in t for k in ("CHAR", "TEXT", "STRING", "UUID")):
             return "text"
         return "unknown"
+
+    def _schema_tables_by_bare_name(self, schema_info: Any) -> Dict[str, Dict[str, Any]]:
+        schema_info = self._schema_dict(schema_info)
+        tables = schema_info.get("tables") if isinstance(schema_info, dict) else []
+        by_name: Dict[str, Dict[str, Any]] = {}
+        if not isinstance(tables, list):
+            return by_name
+        for table in tables:
+            if not isinstance(table, dict) or not table.get("name"):
+                continue
+            by_name[self._bare_table_name(table.get("name")).lower()] = table
+        return by_name
+
+    def _schema_column_names_for_table(self, table: Dict[str, Any]) -> Dict[str, str]:
+        names: Dict[str, str] = {}
+        for col in table.get("columns") or []:
+            name = col.get("name") if isinstance(col, dict) else col
+            if name:
+                names[str(name).lower()] = str(name)
+        return names
+
+    def _fk_root_from_column(self, column: str) -> str:
+        name = str(column or "").strip()
+        lower = name.lower()
+        if lower.endswith("_id"):
+            return name[:-3]
+        if lower.endswith("id") and len(name) > 2:
+            return name[:-2]
+        if lower.endswith("_key"):
+            return name[:-4]
+        if lower.endswith("key") and len(name) > 3:
+            return name[:-3]
+        return ""
+
+    def _choose_display_column(self, target_table: Dict[str, Any]) -> Optional[str]:
+        columns = self._schema_column_names_for_table(target_table)
+        priority = [
+            "name",
+            "title",
+            "displayname",
+            "display_name",
+            "fullname",
+            "full_name",
+            "username",
+            "email",
+            "label",
+            "code",
+            "slug",
+        ]
+        for candidate in priority:
+            if candidate in columns:
+                return columns[candidate]
+        for lower_name, original in columns.items():
+            if lower_name == "id" or lower_name.endswith(("id", "_id", "key", "_key")):
+                continue
+            return original
+        return None
+
+    def _infer_fk_display_dimension(
+        self,
+        schema_info: Any,
+        base_table: str,
+        x_field: Optional[str],
+        joins: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Use related table labels for FK dimensions, e.g. userId -> User.name."""
+        if not x_field or not isinstance(x_field, str):
+            return None
+        parts = [part.strip() for part in str(x_field).split(".") if part.strip()]
+        column = parts[-1] if parts else ""
+        explicit_table = self._bare_table_name(parts[-2]) if len(parts) >= 2 else ""
+        if explicit_table and explicit_table.lower() != base_table.lower():
+            return None
+        root = self._fk_root_from_column(column)
+        if not root:
+            return None
+
+        tables = self._schema_tables_by_bare_name(schema_info)
+        target_table: Optional[Dict[str, Any]] = None
+        target_name = ""
+        root_lower = root.lower()
+        candidates = [
+            root_lower,
+            f"{root_lower}s",
+            root_lower.rstrip("s"),
+        ]
+        for candidate in candidates:
+            if candidate in tables:
+                target_table = tables[candidate]
+                target_name = self._bare_table_name(target_table.get("name"))
+                break
+        if not target_table or not target_name:
+            return None
+
+        target_columns = self._schema_column_names_for_table(target_table)
+        target_id = target_columns.get("id")
+        display_col = self._choose_display_column(target_table)
+        if not target_id or not display_col:
+            return None
+
+        type_map = self._schema_column_type_map(schema_info)
+        if not self._join_columns_compatible(type_map, base_table, column, target_name, target_id):
+            return None
+
+        joined = {
+            self._bare_table_name(j.get("alias") or j.get("table")).lower()
+            for j in joins
+            if isinstance(j, dict)
+        }
+        join: Optional[Dict[str, Any]] = None
+        if target_name.lower() not in joined:
+            schema_name = str(target_table.get("schema") or schema_info.get("schema") or "public").strip()
+            table_ref = f"{schema_name}.{target_name}" if schema_name else target_name
+            join = {
+                "table": table_ref,
+                "alias": target_name,
+                "type": "LEFT",
+                "modelJoin": True,
+                "inferredDisplayJoin": True,
+                "on": {
+                    "left": f"{base_table}.{column}",
+                    "right": f"{target_name}.{target_id}",
+                },
+            }
+
+        display_sql = self._quote_identifier(f"{target_name}.{display_col}")
+        fk_sql = self._quote_identifier(f"{base_table}.{column}")
+        # Fall back to the raw FK only when the label is blank/null. Existing
+        # dashboards still show all categories even if a dimension row is missing.
+        expression = f"COALESCE(NULLIF({display_sql}, ''), {fk_sql})"
+        return {
+            "join": join,
+            "expression": expression,
+            "target_table": target_name,
+            "display_column": display_col,
+        }
 
     def _join_columns_compatible(
         self,
@@ -406,20 +706,29 @@ class ChartService:
             f"Create or activate a relationship from {base_table} to {tables}."
         )
 
-    def _field_table(self, field: Optional[str], base_table: str, column_tables: Dict[str, List[str]]) -> Optional[str]:
+    def _field_table(
+        self,
+        field: Optional[str],
+        base_table: str,
+        column_tables: Dict[str, List[str]],
+        table_aliases: Optional[Dict[str, str]] = None,
+    ) -> Optional[str]:
         if not field or not isinstance(field, str):
             return None
         clean = field.strip()
         if "." in clean:
-            return self._bare_table_name(clean.rsplit(".", 1)[0])
+            explicit = self._bare_table_name(clean.rsplit(".", 1)[0])
+            return (table_aliases or {}).get(explicit.lower()) or explicit
         candidates = column_tables.get(clean.lower()) or []
         if base_table in candidates:
             return base_table
         return candidates[0] if candidates else None
 
     def _qualify_field(self, field: Optional[str], table: Optional[str]) -> Optional[str]:
-        if not field or not table or "." in str(field):
+        if not field or not table:
             return field
+        if "." in str(field):
+            return f"{self._bare_table_name(table)}.{str(field).rsplit('.', 1)[-1].strip()}"
         return f"{self._bare_table_name(table)}.{field}"
 
     async def _apply_modeled_joins_to_chart_query(
@@ -443,11 +752,12 @@ class ChartService:
         column_tables = self._schema_column_table_map(schema_info)
         if not column_tables:
             return chart_query, x_field, y_metric, y_metrics, y_metrics_secondary, group_field
+        table_aliases = self._schema_table_alias_map(schema_info)
 
         needed_tables: set[str] = set()
 
         def qualify_plain_field(field: Optional[str]) -> Optional[str]:
-            table_name = self._field_table(field, base_table, column_tables)
+            table_name = self._field_table(field, base_table, column_tables, table_aliases)
             if table_name and table_name != base_table:
                 needed_tables.add(table_name)
             return self._qualify_field(field, table_name)
@@ -796,7 +1106,7 @@ class ChartService:
                 data_source,
                 chart_query,
                 x_field,
-                y_metric,
+                None if y_metrics else y_metric,
                 y_metrics,
                 y_metrics_secondary,
                 group_field,
@@ -934,7 +1244,7 @@ class ChartService:
         if not table:
             raise ValueError("Table name missing in data source schema")
 
-        table_full_name = f"{schema}.{table}"
+        table_full_name = self._quote_table_reference(f"{schema}.{table}")
         where_clause = self._apply_filters_db(filters)
         having_clause = self._apply_metric_filters_db(metric_filters)
         group_by_clause = f"GROUP BY {', '.join(set(group_by))}" if group_by else ""
@@ -953,6 +1263,7 @@ class ChartService:
             "file_path": data_source.file_path,
         }
 
+        sql = self._quote_known_table_refs_in_sql(sql, data_source.schema or {})
         multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict)
 
@@ -1098,6 +1409,9 @@ class ChartService:
         data_source = res.scalar_one_or_none()
         if not data_source:
             raise ValueError("Data source not found")
+
+        sql = self._rewrite_sql_fk_display_labels(sql, data_source.schema or {})
+        sql = self._quote_known_table_refs_in_sql(sql, data_source.schema or {})
 
         ds_dict = {
             "id": data_source.id,
@@ -1247,6 +1561,9 @@ class ChartService:
             raise ValueError("Table name missing in data source schema")
 
         joins = chart_query.get("joins") if isinstance(chart_query.get("joins"), list) else []
+        display_dimension = self._infer_fk_display_dimension(schema_info, self._bare_table_name(table), x_field, joins)
+        if display_dimension and display_dimension.get("join"):
+            joins = [*joins, display_dimension["join"]]
         from_clause = self._build_from_clause(f"{schema}.{table}", joins)
         
         # USE MultiEngineQueryService for external databases
@@ -1306,7 +1623,9 @@ class ChartService:
         # Build GROUP BY clause
         group_by_fields = []
         if x_field:
-            if x_grain:
+            if display_dimension:
+                group_by_fields.append(display_dimension["expression"])
+            elif x_grain:
                 db_type = data_source.db_type or "postgres"
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 group_by_fields.append(transformed_x)
@@ -1320,7 +1639,9 @@ class ChartService:
         # Build SELECT clause
         select_fields = []
         if x_field:
-            if x_grain:
+            if display_dimension:
+                select_fields.append(f"{display_dimension['expression']} AS x")
+            elif x_grain:
                 db_type = data_source.db_type or "postgres"
                 transformed_x = self._get_date_trunc(x_field, x_grain, db_type)
                 select_fields.append(f"{transformed_x} AS x")

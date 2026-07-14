@@ -166,6 +166,7 @@ class DataConnectivityService:
         # per-process in-memory automatically if Redis is unreachable.
         self._schema_cache_ttl = 300  # 5 minutes — successful schema fetch
         self._schema_error_cache_ttl = 30  # 30 seconds — failed/timed-out fetch, to stop retry storms
+        self._schema_fetch_locks: Dict[str, asyncio.Lock] = {}
 
     def invalidate_data_source_cache(self, data_source_id: str) -> None:
         """Remove a data source from cache so next read gets fresh config (e.g. after update)."""
@@ -3434,64 +3435,118 @@ class DataConnectivityService:
                             },
                         }
 
-                # Try to get live schema from the database
-                try:
-                    logger.info(f"🔍 Fetching live schema for {data_source_id}, db_type: {data_source.db_type}, type: {data_source.type}")
-                    live_schema = await asyncio.wait_for(
-                        self._fetch_live_database_schema(config),
-                        timeout=25.0,
-                    )
-                    logger.info(f"📊 Live schema result: success={live_schema.get('success')}, tables_count={len(live_schema.get('tables', []))}, schemas_count={len(live_schema.get('schemas', []))}")
-                    
-                    if live_schema['success']:
-                        tables = live_schema.get('tables', [])
-                        schemas = live_schema.get('schemas', [])
-                        
-                        # Update the stored schema with live data
-                        updated_schema = {
-                            **schema_info,
-                            'tables': tables,
-                            'schemas': schemas,
-                            'last_updated': datetime.now().isoformat()
-                        }
-                        
-                        logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
+                schema_lock = self._schema_fetch_locks.setdefault(data_source_id, asyncio.Lock())
+                if schema_lock.locked() and not force_refresh:
+                    logger.info("⏳ Waiting for in-flight schema fetch for %s", data_source_id)
 
-                        # Cache in Redis (shared across workers/replicas, survives restarts)
-                        _shared_cache.set(_schema_cache_key, updated_schema, ttl=self._schema_cache_ttl)
-
-                        # Update the database record
-                        data_source.schema = json.dumps(updated_schema)
-                        data_source.row_count = live_schema.get('total_rows', 0)
-                        data_source.updated_at = datetime.now()
-                        await db.commit()
-                        # Build schema index for Schema RAG (NL2SQL table ranking) on schema refresh.
-                        try:
-                            from src.modules.ai.services.schema_index_service import build_schema_index_for_data_source
-                            build_result = await build_schema_index_for_data_source(db, str(data_source.id), updated_schema)
-                            await db.commit()
-                            logger.info(
-                                "Schema index built on refresh: data_source_id=%s, tables_indexed=%s",
-                                data_source.id,
-                                build_result.get("tables_indexed", 0),
-                            )
-                        except Exception as idx_err:
-                            logger.warning("Schema index build after schema refresh failed: %s", idx_err)
-                        
-                        return {
-                            'success': True,
-                            'schema': updated_schema,
-                            'data_source': {
-                                'id': data_source.id,
-                                'name': data_source.name,
-                                'type': data_source.type,
-                                'db_type': data_source.db_type,
-                                'row_count': data_source.row_count
+                async with schema_lock:
+                    if not force_refresh:
+                        _cached_schema = _shared_cache.get(_schema_cache_key)
+                        if _cached_schema:
+                            logger.info("✅ Returning schema cached by concurrent fetch for %s", data_source_id)
+                            return {
+                                'success': True,
+                                'schema': _cached_schema,
+                                'data_source': {
+                                    'id': data_source.id,
+                                    'name': data_source.name,
+                                    'type': data_source.type,
+                                    'db_type': data_source.db_type,
+                                    'row_count': data_source.row_count,
+                                },
                             }
-                        }
-                    else:
-                        # Live fetch failed (e.g. wrong credentials) — return error so UI can show it
-                        _err = live_schema.get('error') or 'Schema fetch failed'
+                        _cached_error = _shared_cache.get(_schema_error_cache_key)
+                        if _cached_error:
+                            logger.info("⏳ Returning schema error cached by concurrent fetch for %s", data_source_id)
+                            return {
+                                'success': False,
+                                'error': _cached_error,
+                                'schema': schema_info,
+                                'data_source': {
+                                    'id': data_source.id,
+                                    'name': data_source.name,
+                                    'type': data_source.type,
+                                    'db_type': data_source.db_type,
+                                    'row_count': data_source.row_count,
+                                },
+                            }
+
+                    # Try to get live schema from the database
+                    try:
+                        logger.info(f"🔍 Fetching live schema for {data_source_id}, db_type: {data_source.db_type}, type: {data_source.type}")
+                        schema_timeout = float(os.getenv("AICSER_SCHEMA_FETCH_TIMEOUT", "25") or "25")
+                        live_schema = await asyncio.wait_for(
+                            self._fetch_live_database_schema(config),
+                            timeout=schema_timeout,
+                        )
+                        logger.info(f"📊 Live schema result: success={live_schema.get('success')}, tables_count={len(live_schema.get('tables', []))}, schemas_count={len(live_schema.get('schemas', []))}")
+
+                        if live_schema['success']:
+                            tables = live_schema.get('tables', [])
+                            schemas = live_schema.get('schemas', [])
+
+                            # Update the stored schema with live data
+                            updated_schema = {
+                                **schema_info,
+                                'tables': tables,
+                                'schemas': schemas,
+                                'last_updated': datetime.now().isoformat()
+                            }
+
+                            logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
+
+                            # Cache in Redis (shared across workers/replicas, survives restarts)
+                            _shared_cache.set(_schema_cache_key, updated_schema, ttl=self._schema_cache_ttl)
+
+                            # Update the database record
+                            data_source.schema = json.dumps(updated_schema)
+                            data_source.row_count = live_schema.get('total_rows', 0)
+                            data_source.updated_at = datetime.now()
+                            await db.commit()
+                            # Build schema index for Schema RAG (NL2SQL table ranking) on schema refresh.
+                            try:
+                                from src.modules.ai.services.schema_index_service import build_schema_index_for_data_source
+                                build_result = await build_schema_index_for_data_source(db, str(data_source.id), updated_schema)
+                                await db.commit()
+                                logger.info(
+                                    "Schema index built on refresh: data_source_id=%s, tables_indexed=%s",
+                                    data_source.id,
+                                    build_result.get("tables_indexed", 0),
+                                )
+                            except Exception as idx_err:
+                                logger.warning("Schema index build after schema refresh failed: %s", idx_err)
+
+                            return {
+                                'success': True,
+                                'schema': updated_schema,
+                                'data_source': {
+                                    'id': data_source.id,
+                                    'name': data_source.name,
+                                    'type': data_source.type,
+                                    'db_type': data_source.db_type,
+                                    'row_count': data_source.row_count
+                                }
+                            }
+                        else:
+                            # Live fetch failed (e.g. wrong credentials) — return error so UI can show it
+                            _err = live_schema.get('error') or 'Schema fetch failed'
+                            _shared_cache.set(_schema_error_cache_key, _err, ttl=self._schema_error_cache_ttl)
+                            return {
+                                'success': False,
+                                'error': _err,
+                                'schema': schema_info,
+                                'data_source': {
+                                    'id': data_source.id,
+                                    'name': data_source.name,
+                                    'type': data_source.type,
+                                    'db_type': data_source.db_type,
+                                    'row_count': data_source.row_count
+                                }
+                            }
+
+                    except asyncio.TimeoutError:
+                        logger.warning("Live schema fetch timed out for %s", data_source_id)
+                        _err = 'Schema fetch timed out. The database may be slow or unreachable.'
                         _shared_cache.set(_schema_error_cache_key, _err, ttl=self._schema_error_cache_ttl)
                         return {
                             'success': False,
@@ -3505,38 +3560,21 @@ class DataConnectivityService:
                                 'row_count': data_source.row_count
                             }
                         }
-
-                except asyncio.TimeoutError:
-                    logger.warning("Live schema fetch timed out after 25s for %s", data_source_id)
-                    _err = 'Schema fetch timed out. The database may be slow or unreachable.'
-                    _shared_cache.set(_schema_error_cache_key, _err, ttl=self._schema_error_cache_ttl)
-                    return {
-                        'success': False,
-                        'error': _err,
-                        'schema': schema_info,
-                        'data_source': {
-                            'id': data_source.id,
-                            'name': data_source.name,
-                            'type': data_source.type,
-                            'db_type': data_source.db_type,
-                            'row_count': data_source.row_count
+                    except Exception as live_error:
+                        logger.warning("Live schema fetch failed: %s", str(live_error))
+                        _shared_cache.set(_schema_error_cache_key, str(live_error), ttl=self._schema_error_cache_ttl)
+                        return {
+                            'success': False,
+                            'error': str(live_error),
+                            'schema': schema_info,
+                            'data_source': {
+                                'id': data_source.id,
+                                'name': data_source.name,
+                                'type': data_source.type,
+                                'db_type': data_source.db_type,
+                                'row_count': data_source.row_count
+                            }
                         }
-                    }
-                except Exception as live_error:
-                    logger.warning("Live schema fetch failed: %s", str(live_error))
-                    _shared_cache.set(_schema_error_cache_key, str(live_error), ttl=self._schema_error_cache_ttl)
-                    return {
-                        'success': False,
-                        'error': str(live_error),
-                        'schema': schema_info,
-                        'data_source': {
-                            'id': data_source.id,
-                            'name': data_source.name,
-                            'type': data_source.type,
-                            'db_type': data_source.db_type,
-                            'row_count': data_source.row_count
-                        }
-                    }
                     
         except Exception as e:
             logger.error(f"❌ Failed to get database schema: {str(e)}")

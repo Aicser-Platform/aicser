@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Select, Switch, Space, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { fetchApi } from '@/utils/api';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 
 type Metric = { id: string; name: string; expression?: string; description?: string; certified?: boolean };
 type Dimension = { id: string; name: string; expression?: string };
@@ -26,9 +27,22 @@ export function SemanticMetricFields({
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
   const [loading, setLoading] = useState(false);
+  const {
+    features,
+    loading: planFeaturesLoading,
+  } = useSubscriptionStore();
+  const hasPlatformServices = features.platform_services === true;
 
   useEffect(() => {
     if (!dataSourceId) return;
+    if (planFeaturesLoading) return;
+    if (!hasPlatformServices) {
+      setMetrics([]);
+      setDimensions([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     Promise.all([
       fetchApi(`semantic/metrics?data_source_id=${encodeURIComponent(dataSourceId)}`),
@@ -55,7 +69,14 @@ export function SemanticMetricFields({
         setDimensions([]);
       })
       .finally(() => setLoading(false));
-  }, [dataSourceId, recommendWhenAvailable, chartQuery?.semantic_metric_id]);
+  }, [
+    dataSourceId,
+    recommendWhenAvailable,
+    chartQuery?.semantic_metric_id,
+    planFeaturesLoading,
+    hasPlatformServices,
+    onChange,
+  ]);
 
   const metricId = chartQuery?.semantic_metric_id as string | undefined;
   const dimensionIds = (chartQuery?.semantic_dimension_ids as string[]) || [];

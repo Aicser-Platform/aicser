@@ -5,6 +5,7 @@ import { getAuthActions } from '@/auth/authProvider';
 import type { SignupResult } from '@/auth/types';
 import { setCeBearerToken, getCeBearerToken } from '@/auth/ce/bearerToken';
 import { resetWorkspaceScope } from '@/utils/resetWorkspaceScope';
+import { getEeApiAuthToken } from '@/ee';
 
 interface AppUser {
   id: string;
@@ -54,10 +55,28 @@ function meHeaders(): HeadersInit {
   return h;
 }
 
+async function ensureAicserBearerFromEeSession(): Promise<void> {
+  if (getCeBearerToken()) return;
+  const providerToken = await getEeApiAuthToken().catch(() => null);
+  if (!providerToken) return;
+
+  const res = await fetch('/api/auth/token-exchange', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'supabase', token: providerToken }),
+  });
+  if (!res.ok) return;
+
+  const data = (await res.json().catch(() => ({}))) as { access_token?: string };
+  if (data.access_token) setCeBearerToken(data.access_token);
+}
+
 async function fetchMeWithRetry(maxAttempts = 4): Promise<AppUser | null> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      await ensureAicserBearerFromEeSession();
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 12_000);
       const res = await fetch('/api/auth/me', {
