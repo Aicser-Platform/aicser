@@ -3067,16 +3067,10 @@ class DataConnectivityService:
                             "row_count": entry.get("row_count", 0),
                         },
                     }
-            sample_path = os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip()
-            if not sample_path or not os.path.isfile(sample_path):
-                sample_path = "/app/scripts/sample-data/duckdb/sample_data.duckdb"
-            if not sample_path or not os.path.isfile(sample_path):
-                _base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."))
-                sample_path = os.path.join(_base, "scripts", "sample-data", "duckdb", "sample_data.duckdb")
-            if not sample_path or not os.path.isfile(sample_path):
-                sample_path = "/app/scripts/sample-data/duckdb/sample_data.duckdb"
-            if not sample_path or not os.path.isfile(sample_path):
-                logger.debug("Sample DuckDB file not found at %s (returning empty schema)", sample_path or "SAMPLE_DATA_DUCKDB_PATH")
+            from src.shared.sample_data.generate_duckdb import resolve_sample_duckdb_path
+            sample_path = resolve_sample_duckdb_path()
+            if not sample_path:
+                logger.debug("Sample DuckDB file not found in any known location (returning empty schema)")
                 return {
                     "success": False,
                     "error": "Sample data DuckDB file not found. Set SAMPLE_DATA_DUCKDB_PATH or run sample data generators.",

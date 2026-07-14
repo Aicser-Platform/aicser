@@ -23,6 +23,7 @@ services:
       - |
         set -e
         cd /app
+        /venv/bin/python -m src.shared.sample_data.ensure
         echo "Running EE migrations..."
         /venv/bin/python -m alembic -c alembic.ini upgrade heads
         if [ "$${RUN_EE_DEV_SEEDS}" = "true" ]; then

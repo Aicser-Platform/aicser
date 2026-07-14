@@ -88,7 +88,6 @@ services:
     volumes:
       - ../server:/app
       - pip_dev_ce_cache:/root/.cache/pip
-      - ./scripts/sample-data:/app/scripts/sample-data
     environment:
       # ── Edition ──────────────────────────────────────────────────────────────
       AISER_EDITION: community
@@ -137,6 +136,7 @@ services:
       - |
         set -e
         cd /app
+        /venv/bin/python -m src.shared.sample_data.ensure
         echo "Running CE migrations..."
         /venv/bin/python -m alembic -c alembic.ini upgrade 2026_07_08_avatar_url_text
         exec /venv/bin/python -m uvicorn src.main:app \

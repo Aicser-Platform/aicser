@@ -161,3 +161,7 @@ docs/superpowers/*
 #.idea/
 
 uploads/
+
+# Generated at Docker build / container start (see src/shared/sample_data/ensure.py)
+# so it always matches the pinned duckdb version — never commit a binary here.
+src/shared/sample_data/duckdb/

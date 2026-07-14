@@ -687,55 +687,23 @@ DOMAIN_BUILDERS: List[Callable[[duckdb.DuckDBPyConnection], None]] = [
 
 
 def default_sample_duckdb_path() -> str:
-    """Return the preferred on-disk path for the shared sample DuckDB file."""
+    """Return the on-disk path for the shared sample DuckDB file.
+
+    A single canonical, bundled location — generated at image build time
+    (see Dockerfile.prod/.dev) so it always matches the pinned `duckdb`
+    version. SAMPLE_DATA_DUCKDB_PATH can override this for local/ops needs.
+    """
     env_path = os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip()
     if env_path:
         return env_path
 
     module_dir = os.path.dirname(os.path.abspath(__file__))
-    bundled = os.path.join(module_dir, "duckdb", "sample_data.duckdb")
-    if os.path.isfile(bundled):
-        return bundled
-
-    candidates = [
-        "/app/scripts/sample-data/duckdb/sample_data.duckdb",
-        os.path.join(module_dir, "duckdb", "sample_data.duckdb"),
-    ]
-    repo_root = os.path.abspath(os.path.join(module_dir, "..", "..", "..", ".."))
-    candidates.append(os.path.join(repo_root, "scripts", "sample-data", "duckdb", "sample_data.duckdb"))
-
-    for path in candidates:
-        parent = os.path.dirname(path)
-        if os.path.isdir(parent) and os.access(parent, os.W_OK):
-            return path
-
-    return bundled
-
-
-def sample_duckdb_candidates() -> List[str]:
-    """All paths that may contain the shared sample DuckDB file."""
-    module_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(module_dir, "..", "..", "..", ".."))
-    paths = [
-        os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip(),
-        "/app/scripts/sample-data/duckdb/sample_data.duckdb",
-        os.path.join(module_dir, "duckdb", "sample_data.duckdb"),
-        os.path.join(repo_root, "scripts", "sample-data", "duckdb", "sample_data.duckdb"),
-    ]
-    seen = set()
-    out: List[str] = []
-    for path in paths:
-        if path and path not in seen:
-            seen.add(path)
-            out.append(path)
-    return out
+    return os.path.join(module_dir, "duckdb", "sample_data.duckdb")
 
 
 def resolve_sample_duckdb_path() -> str | None:
-    for path in sample_duckdb_candidates():
-        if path and os.path.isfile(path):
-            return path
-    return None
+    path = default_sample_duckdb_path()
+    return path if os.path.isfile(path) else None
 
 
 def generate_sample_duckdb(output_path: str | None = None, force: bool = False) -> str:

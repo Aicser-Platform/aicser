@@ -56,18 +56,9 @@ class ChartService:
 
     @staticmethod
     def _sample_duckdb_file_available() -> bool:
-        candidates = [
-            os.getenv("SAMPLE_DATA_DUCKDB_PATH", "").strip(),
-            "/app/scripts/sample-data/duckdb/sample_data.duckdb",
-            os.path.join(
-                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..")),
-                "scripts",
-                "sample-data",
-                "duckdb",
-                "sample_data.duckdb",
-            ),
-        ]
-        return any(path and os.path.isfile(path) for path in candidates)
+        from src.shared.sample_data.generate_duckdb import resolve_sample_duckdb_path
+
+        return resolve_sample_duckdb_path() is not None
 
     # =========================================================
     # CRUD
