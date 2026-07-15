@@ -1,5 +1,5 @@
 import React from 'react';
-import { message, Tooltip } from 'antd';
+import { message, Tooltip, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
 
@@ -63,14 +63,74 @@ export function generateColumns(data: Record<string, unknown>[], t: TranslateFn)
       if (typeof value === 'number') {
         return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{value.toLocaleString()}</span>;
       }
-      if (typeof value === 'string' && value.length > 60) {
-        return (
-          <Tooltip title={value} placement="topLeft">
-            <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{value.slice(0, 60)}…</span>
-          </Tooltip>
-        );
+      if (typeof value === 'boolean') {
+        return <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{value ? 'TRUE' : 'FALSE'}</span>;
       }
-      return value as React.ReactNode;
+      if (typeof value === 'string') {
+        if (value.length > 60) {
+          return (
+            <Tooltip title={value} placement="topLeft">
+              <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{value.slice(0, 60)}…</span>
+            </Tooltip>
+          );
+        }
+
+        const lowerVal = value.toLowerCase().trim();
+        const isIdColumn = key.toLowerCase().includes('id');
+        
+        // Match specific status pills from screenshot
+        if (['active', 'success', 'completed', 'online'].includes(lowerVal)) {
+          return (
+            <span style={{ 
+              display: 'inline-block',
+              padding: '2px 10px', 
+              background: 'rgba(0, 137, 123, 0.12)', // Light teal
+              color: 'var(--ant-color-primary, #00897b)', // Dark teal
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 500
+            }}>
+              {value}
+            </span>
+          );
+        }
+        if (['idle', 'pending', 'inactive'].includes(lowerVal)) {
+          return (
+            <span style={{ 
+              display: 'inline-block',
+              padding: '2px 10px', 
+              background: '#f1f5f9', 
+              color: '#475569', 
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 500
+            }}>
+              {value}
+            </span>
+          );
+        }
+        if (['failed', 'error', 'offline'].includes(lowerVal)) {
+          return (
+            <span style={{ 
+              display: 'inline-block',
+              padding: '2px 10px', 
+              background: '#fee2e2', 
+              color: '#b91c1c', 
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 500
+            }}>
+              {value}
+            </span>
+          );
+        }
+
+        // Emphasize IDs (like PHN-01, SR-05)
+        if (isIdColumn) {
+          return <span style={{ fontWeight: 600, color: 'var(--ant-color-primary, #00897b)', fontFamily: 'monospace' }}>{value}</span>;
+        }
+      }
+      return <span style={{ fontSize: 13, color: 'var(--ant-color-text)' }}>{value as React.ReactNode}</span>;
     },
     sorter: (a: Record<string, unknown>, b: Record<string, unknown>) => {
       const aVal = a[key];

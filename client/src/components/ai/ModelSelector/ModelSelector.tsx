@@ -136,7 +136,7 @@ const AUTO_MODEL: ModelInfo = {
 };
 
 /** Composer toolbar: show friendly label; full id stays in tooltip (e.g. "Gemini (gemini-…)" → "Gemini"). */
-function shortComposerModelDisplayName(name: string): string {
+export function shortComposerModelDisplayName(name: string): string {
     const trimmed = name.trim();
     const i = trimmed.indexOf('(');
     if (i > 0) return trimmed.slice(0, i).trim();

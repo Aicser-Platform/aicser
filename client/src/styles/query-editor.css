@@ -144,9 +144,10 @@
 /* Query tabs row — line tabs (not editable-card) */
 .query-editor-workspace .qe-query-tabs-row {
   flex-shrink: 0;
-  padding: 0 var(--qe-gutter-x);
+  margin: 0 !important;
+  border-top: none !important;
   border-bottom: var(--qe-zone-border);
-  background: var(--ant-color-bg-container);
+  background: var(--ant-color-fill-alter, #f9fafb);
 }
 
 .query-editor-workspace .qe-editor-top-panel {
@@ -154,6 +155,8 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+  border-top: none !important;
+  margin-top: 0 !important;
   background: var(--ant-color-bg-container);
 }
 
@@ -161,29 +164,96 @@
   width: 100%;
 }
 
-.query-editor-workspace .query-editor-query-tabs.ant-tabs > .ant-tabs-nav {
+/* Query Editor Tabs (VSCode style) */
+.query-editor-workspace .query-editor-query-tabs {
+  background: transparent;
+}
+
+.query-editor-workspace .query-editor-query-tabs > .ant-tabs-nav {
   margin: 0 !important;
-  padding: 0 !important;
-  min-height: 36px !important;
+  padding: 10px 16px !important;
+  min-height: 52px !important;
+  align-items: center !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-nav-wrap {
   align-items: center !important;
+  display: flex;
+}
+
+.query-editor-workspace .query-editor-query-tabs .ant-tabs-nav::before {
+  display: none !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab {
-  padding: 4px 12px !important;
-  font-size: 12px !important;
-  margin: 0 4px 0 0 !important;
-  line-height: 1.4 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  margin: 0 6px 0 0 !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  line-height: 20px !important;
+  transition: all 0.2s;
+  display: flex !important;
+  align-items: center !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-btn {
-  font-size: 12px !important;
+  font-size: 13px !important;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary);
+}
+
+.query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-active {
+  background: var(--ant-color-bg-container, #ffffff) !important;
+  border: 1px solid var(--ant-color-border, #d9d9d9) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important;
+}
+
+.query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  font-weight: 600;
+  color: var(--ant-color-primary, #00897b) !important;
+}
+
+/* Run SQL Button Custom Style */
+.qe-tab-toolbar {
+  flex-shrink: 0 !important;
+  white-space: nowrap !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  margin-top: 0 !important;
+}
+
+.qe-run-btn {
+  border-radius: 6px !important;
+  padding-inline: 16px !important;
+  font-weight: 500 !important;
+  min-width: 90px !important;
+  height: 32px !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.query-editor-workspace .query-editor-results-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--ant-color-primary, #00897b) !important;
+  font-weight: 700;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-nav-add {
-  display: none !important;
+  background: transparent !important;
+  border: none !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--ant-color-text-secondary);
+  box-shadow: none !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-nav-extra-left {
@@ -285,12 +355,9 @@
   text-align: center;
 }
 
-/* Run toolbar */
+/* Run toolbar (deprecated/moved) */
 .query-editor-workspace .qe-run-bar {
-  padding: 8px var(--qe-gutter-x) !important;
-  border-top: var(--qe-zone-border) !important;
-  background: var(--ant-color-bg-container) !important;
-  flex-shrink: 0;
+  display: none !important;
 }
 
 .qe-run-bar-inner {
@@ -371,7 +438,7 @@
   height: 12px !important;
   min-height: 12px !important;
   padding: 0 var(--qe-gutter-x) !important;
-  border-top: var(--qe-zone-border) !important;
+  border-top: none !important;
   border-bottom: var(--qe-zone-border) !important;
   background: var(--ant-color-bg-layout) !important;
   cursor: row-resize !important;
@@ -480,11 +547,39 @@
 .query-editor-workspace .qe-results-table-host .qe-results-table {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.query-editor-workspace .qe-results-table-host .ant-table-wrapper {
+.query-editor-workspace .qe-results-table-host .ant-table-wrapper,
+.query-editor-workspace .qe-results-table-host .ant-spin-nested-loading,
+.query-editor-workspace .qe-results-table-host .ant-spin-container {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.query-editor-workspace .qe-results-table-host .ant-table {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.query-editor-workspace .qe-results-table-host .ant-table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.query-editor-workspace .qe-results-table-host .ant-table-body {
+  flex: 1;
+  overflow-y: auto !important;
+  max-height: none !important;
+  height: 100% !important;
 }
 
 .query-editor-workspace .qe-results-table .ant-table-pagination {
@@ -500,7 +595,50 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--ant-color-bg-container);
+  background: #f9fafb !important;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: #374151 !important;
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding: 10px 16px !important;
+}
+
+/* Remove vertical dividers in Ant Design table headers */
+.query-editor-workspace .qe-results-table .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+.query-editor-workspace .qe-results-table .ant-table-tbody > tr > td {
+  padding: 10px 16px !important;
+  border: none !important;
+  color: #111827;
+  font-size: 13px;
+  background: transparent;
+}
+
+.query-editor-workspace .qe-results-table .ant-table-tbody > tr:nth-child(odd) > td {
+  background-color: #ffffff !important;
+}
+
+.query-editor-workspace .qe-results-table .ant-table-tbody > tr:nth-child(even) > td {
+  background-color: #f8f9fa !important;
+}
+
+.query-editor-workspace .qe-results-table .ant-table-tbody > tr:hover > td {
+  background-color: transparent !important;
+}
+
+/* Aggressively remove any outer container borders from Ant Design */
+.query-editor-workspace .qe-results-table,
+.query-editor-workspace .qe-results-table .ant-table,
+.query-editor-workspace .qe-results-table .ant-table-container,
+.query-editor-workspace .qe-results-table .ant-table-wrapper {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 /* Sources panel — flat sections */
@@ -841,16 +979,31 @@
 }
 
 /* Saved Queries & Snapshots modal */
+.qe-saved-modal .ant-modal-body {
+  padding: 0 !important;
+}
+
+.qe-saved-modal .ant-tabs-nav {
+  padding: 0 24px !important;
+  margin-bottom: 0 !important;
+}
+
 .qe-saved-modal-scope {
   display: block;
-  margin-bottom: 12px;
-  font-size: 12px;
+  margin: 16px 24px 16px;
+  font-size: 13px;
+  padding: 10px 16px;
+  background-color: var(--ant-color-bg-container, #fff);
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border-secondary);
+  color: var(--ant-color-text-secondary);
 }
 
 .qe-saved-tab-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  padding: 16px 24px;
 }
 
 .qe-saved-help {
@@ -863,18 +1016,41 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.qe-saved-save-row .ant-btn {
+  height: 32px !important;
+  padding: 4px 12px !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+.qe-saved-save-row .ant-input {
+  height: 32px !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+}
+
+.qe-saved-table {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .qe-saved-table .ant-table-thead > tr > th {
-  font-size: 11px;
-  padding: 6px 8px !important;
+  font-size: 12px;
+  padding: 10px 12px !important;
   white-space: nowrap;
+  background-color: var(--ant-color-bg-layout) !important;
+  color: var(--ant-color-text-secondary) !important;
+  font-weight: 600;
 }
 
 .qe-saved-table .ant-table-tbody > tr > td {
-  padding: 4px 8px !important;
+  padding: 8px 12px !important;
   vertical-align: middle;
 }
 

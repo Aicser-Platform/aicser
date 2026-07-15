@@ -674,7 +674,7 @@
   margin-bottom: var(--spacing-md) !important;
 }
 
-.ant-message {
+.ant-message-notice-content {
   border-radius: var(--radius-md) !important;
   box-shadow: var(--shadow-lg) !important;
 }
