@@ -526,6 +526,14 @@ async def get_filter_options(
         return []
 
     table_fields = _table_column_names(schema_info, table)
+    if table_fields and safe_field not in table_fields:
+        logger.info(
+            "Skipping filter-options query: field %s is not present on table %s",
+            safe_field,
+            table,
+        )
+        return []
+
     cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
     cascade = _build_cascade_where_for_options(cascade_filters, exclude_field or field)
     where_parts = [f'"{safe_field}" IS NOT NULL']
@@ -579,6 +587,14 @@ async def get_filter_field_stats(
         return {"min": None, "max": None}
 
     table_fields = _table_column_names(schema_info, table)
+    if table_fields and safe_field not in table_fields:
+        logger.info(
+            "Skipping filter-field-stats query: field %s is not present on table %s",
+            safe_field,
+            table,
+        )
+        return {"min": None, "max": None}
+
     cascade_filters = _runtime_filters_for_table(runtime_filters, table_fields)
     cascade = _build_cascade_where_for_options(cascade_filters, field)
     where_parts = [f'"{safe_field}" IS NOT NULL']

@@ -97,30 +97,31 @@
   display: none !important;
 }
 
-/* Header workspace / project chips — match chat composer controls (28px) */
+/* Header workspace / project chips */
 .header-shell-chip.ant-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: flex-start !important;
-  gap: 6px !important;
-  height: 28px !important;
-  min-height: 28px !important;
-  max-height: 28px !important;
-  padding: 0 10px !important;
-  border-radius: 6px !important;
-  border: 1px solid var(--ant-color-border-secondary) !important;
-  background: transparent !important;
+  gap: 10px !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+  padding: 0 16px !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(119, 145, 112, 0.45) !important;
+  background: var(--ant-color-bg-container) !important;
   box-shadow: none !important;
-  font-size: 12px !important;
+  font-size: 18px !important;
   font-weight: 500 !important;
   line-height: 1 !important;
   color: var(--ant-color-text) !important;
-  max-width: min(220px, 28vw);
+  max-width: min(280px, 28vw);
+  min-width: 180px;
 }
 
 .header-shell-chip.ant-btn:hover {
-  border-color: var(--ant-color-border) !important;
-  background: transparent !important;
+  border-color: rgba(70, 124, 80, 0.75) !important;
+  background: var(--ant-color-bg-container) !important;
   color: var(--ant-color-text) !important;
 }
 
@@ -133,30 +134,30 @@
 }
 
 .header-shell-chip.header-org-chip.ant-btn {
-  padding: 0 !important;
-  max-width: none;
-  width: 28px;
-  min-width: 28px;
-  justify-content: center !important;
-  border: none !important;
-  background: transparent !important;
+  min-width: 210px;
+  max-width: min(280px, 30vw);
 }
 
-.header-shell-chip.header-org-chip.ant-btn:hover {
-  border: none !important;
-  background: transparent !important;
+.header-shell-chip-icon {
+  font-size: 20px !important;
+  flex-shrink: 0;
 }
 
-.header-shell-chip.header-org-chip .workspace-brand-btn,
-.header-shell-chip.header-org-chip > div {
-  justify-content: center !important;
-  width: 100%;
+.header-shell-chip-icon--org {
+  color: #0f8f4d !important;
 }
 
 .header-shell-chip-chevron {
-  font-size: 10px !important;
-  opacity: 0.55;
+  font-size: 12px !important;
+  opacity: 0.75;
   flex-shrink: 0;
+}
+
+.header-workspace-separator {
+  color: var(--ant-color-text-tertiary);
+  font-size: 24px;
+  line-height: 1;
+  padding: 0 12px;
 }
 
 .header-shell-icon-btn.ant-btn,
@@ -439,6 +440,31 @@ div.page-container,
   .layout--mobile-nav .layout-page-content {
     height: 100% !important;
     max-height: 100% !important;
+  }
+
+  .header-shell-chip.ant-btn {
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    min-width: 0;
+    max-width: 34vw;
+    padding: 0 10px !important;
+    gap: 6px !important;
+    font-size: 14px !important;
+  }
+
+  .header-shell-chip.header-org-chip.ant-btn {
+    min-width: 0;
+    max-width: 32vw;
+  }
+
+  .header-shell-chip-icon {
+    font-size: 16px !important;
+  }
+
+  .header-workspace-separator {
+    font-size: 18px;
+    padding: 0 4px;
   }
 }
 

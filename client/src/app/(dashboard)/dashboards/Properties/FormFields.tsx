@@ -296,11 +296,31 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   const [editingComputedIndex, setEditingComputedIndex] = useState<number | null>(null);
 
   const isLimitReached = maxItems !== undefined && metrics.length >= maxItems;
+  const isNumericType = (type?: unknown) => /(int|float|double|decimal|numeric|number|real)/i.test(String(type || ''));
+  const isDimensionLikeField = (name?: unknown) => {
+    const normalized = String(name || '').toLowerCase();
+    return (
+      !normalized ||
+      normalized === 'id' ||
+      normalized.endsWith('_id') ||
+      normalized.endsWith('_key') ||
+      normalized.includes('date') ||
+      normalized.includes('month') ||
+      normalized.includes('year') ||
+      normalized.includes('quarter')
+    );
+  };
 
   const handleAddField = (fieldValue: string) => {
     if (!fieldValue) return;
 
-    const defaultAgg = chartType === 'scatter' ? 'none' : 'count';
+    const selectedColumn = columnOptions.find((opt) => opt.value === fieldValue);
+    const defaultAgg =
+      chartType === 'scatter'
+        ? 'none'
+        : isNumericType(selectedColumn?.type) && !isDimensionLikeField(fieldValue)
+          ? 'sum'
+          : 'count';
 
     const newMetric: MetricItem = {
       field: fieldValue,

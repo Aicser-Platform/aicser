@@ -302,6 +302,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       onClick: async () => {
         try {
           await logout();
+          router.replace('/login');
         } catch (error) {
           void error;
           // Force redirect even if logout fails

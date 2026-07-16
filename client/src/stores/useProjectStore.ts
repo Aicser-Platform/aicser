@@ -21,7 +21,7 @@ interface ProjectUIState {
   listProjectMembers: (projectId: string) => Promise<void>;
   inviteUserToProject: (
     projectId: string,
-    payload: { user_id: string; role_id: string }
+    payload: { user_id?: string; email?: string; role_id: string }
   ) => Promise<boolean>;
   updateProjectMemberRole: (
     projectId: string,

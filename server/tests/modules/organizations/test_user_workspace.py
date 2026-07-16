@@ -81,3 +81,25 @@ async def test_ensure_user_workspace_self_host_joins_deployment_org():
         ) as self_host:
             await ensure_user_workspace(uid, "user@example.com", realm_roles=["viewer"])
             self_host.assert_awaited_once_with(uid, ["viewer"], email="user@example.com")
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_workspace_saas_defers_org_creation_to_onboarding():
+    from src.modules.organizations.user_workspace import ensure_user_workspace
+
+    uid = str(uuid4())
+    with patch(
+        "src.modules.organizations.user_workspace.is_self_host_deployment",
+        return_value=False,
+    ), patch(
+        "src.modules.organizations.user_workspace._user_has_org_membership",
+        new_callable=AsyncMock,
+        return_value=False,
+    ) as has_membership, patch(
+        "src.modules.organizations.user_workspace.ensure_self_host_user_membership",
+        new_callable=AsyncMock,
+    ) as self_host:
+        await ensure_user_workspace(uid, "new-user@example.com")
+
+    has_membership.assert_awaited_once_with(uid)
+    self_host.assert_not_awaited()
