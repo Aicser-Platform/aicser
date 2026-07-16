@@ -536,6 +536,45 @@ class DataConnectivityService:
 
             # Generate unique ID for the connection
             connection_id = f"db_{connection_request.get('type')}_{int(datetime.now().timestamp())}"
+            schema_info: Dict[str, Any] = {
+                'type': connection_request.get('type'),
+                'host': connection_request.get('host'),
+                'port': connection_request.get('port'),
+                'database': connection_request.get('database'),
+                'username': connection_request.get('username'),
+                'ssl_mode': connection_request.get('ssl_mode', 'prefer'),
+                'connection_string': connection_request.get('uri'),
+                'encrypt': connection_request.get('encrypt', False)
+            }
+            row_count = 0
+
+            # Best-effort schema fetch at connect time. Without persisted tables,
+            # the data-model graph and dashboard planner cannot discover joins
+            # until a later manual schema refresh.
+            if db_type not in NOSQL_TYPES and db_type not in TIMESERIES_TYPES:
+                try:
+                    schema_timeout = float(os.getenv("AICSER_SCHEMA_FETCH_TIMEOUT", "25") or "25")
+                    live_schema = await asyncio.wait_for(
+                        self.database_connector.get_schema(connection_request),
+                        timeout=schema_timeout,
+                    )
+                    if live_schema.get('success'):
+                        row_count = int(live_schema.get('total_rows') or 0)
+                        schema_info = {
+                            **schema_info,
+                            'tables': live_schema.get('tables', []),
+                            'schemas': live_schema.get('schemas', []),
+                            'last_updated': datetime.now().isoformat(),
+                        }
+                        logger.info(
+                            "✅ Initial database schema persisted for %s: %d tables",
+                            connection_id,
+                            len(schema_info.get('tables') or []),
+                        )
+                    else:
+                        logger.info("Initial schema fetch skipped for %s: %s", connection_id, live_schema.get('error'))
+                except Exception as schema_error:
+                    logger.info("Initial schema fetch skipped for %s: %s", connection_id, schema_error)
             
             # Prepare in-memory representation upfront to avoid unbound variable
             connection_data = {
@@ -596,17 +635,8 @@ class DataConnectivityService:
                         format=connection_request.get('type'),
                         db_type=connection_request.get('type'),
                         size=0,
-                        row_count=0,
-                        schema=json.dumps({
-                            'type': connection_request.get('type'),
-                            'host': connection_request.get('host'),
-                            'port': connection_request.get('port'),
-                            'database': connection_request.get('database'),
-                            'username': connection_request.get('username'),
-                            'ssl_mode': connection_request.get('ssl_mode', 'prefer'),
-                            'connection_string': connection_request.get('uri'),
-                            'encrypt': connection_request.get('encrypt', False)
-                        }),
+                        row_count=row_count,
+                        schema=schema_info,
                         connection_config=json.dumps(safe_config),
                         metadata=json.dumps({
                             'connection_type': 'database',
@@ -622,6 +652,19 @@ class DataConnectivityService:
                     )
                     
                     db.add(new_source)
+                    await db.flush()
+                    if schema_info.get('tables'):
+                        try:
+                            from src.modules.data.model_service import DataModelService
+
+                            rels = await DataModelService(db).auto_detect(connection_id)
+                            logger.info(
+                                "✅ Auto-detected %d relationship(s) for database source %s",
+                                len(rels),
+                                connection_id,
+                            )
+                        except Exception as rel_error:
+                            logger.info("Relationship auto-detect skipped for %s: %s", connection_id, rel_error)
                     await db.commit()
                     await db.refresh(new_source)
                     
@@ -3493,9 +3536,21 @@ class DataConnectivityService:
                             _shared_cache.set(_schema_cache_key, updated_schema, ttl=self._schema_cache_ttl)
 
                             # Update the database record
-                            data_source.schema = json.dumps(updated_schema)
+                            data_source.schema = updated_schema
                             data_source.row_count = live_schema.get('total_rows', 0)
                             data_source.updated_at = datetime.now()
+                            await db.flush()
+                            try:
+                                from src.modules.data.model_service import DataModelService
+
+                                relationships = await DataModelService(db).auto_detect(str(data_source.id))
+                                logger.info(
+                                    "Relationship auto-detect after schema refresh: data_source_id=%s, relationships=%s",
+                                    data_source.id,
+                                    len(relationships),
+                                )
+                            except Exception as rel_err:
+                                logger.warning("Relationship auto-detect after schema refresh failed: %s", rel_err)
                             await db.commit()
                             # Build schema index for Schema RAG (NL2SQL table ranking) on schema refresh.
                             try:

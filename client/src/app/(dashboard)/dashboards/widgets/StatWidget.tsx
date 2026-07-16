@@ -2,7 +2,15 @@
 
 import React, { useMemo } from 'react';
 import { Typography } from 'antd';
-import { CaretUpOutlined, CaretDownOutlined, MinusOutlined } from '@ant-design/icons';
+import {
+  BarChartOutlined,
+  CaretDownOutlined,
+  CaretUpOutlined,
+  DollarOutlined,
+  LineChartOutlined,
+  NumberOutlined,
+  PercentageOutlined,
+} from '@ant-design/icons';
 import { formatStatValue } from '../utils/numberFormatter';
 import { useTranslations } from 'next-intl';
 
@@ -125,8 +133,24 @@ interface StatWidgetProps {
     // Conditional icon
     iconName?: string;
     // Layout variant
-    layout?: 'default' | 'compact' | 'centered';
+    layout?: 'default' | 'compact' | 'centered' | 'executive';
   };
+}
+
+const EXECUTIVE_CARD_COLORS = ['#14532d', '#166534', '#0f3f24', '#177245'];
+
+function pickExecutiveColor(title?: string): string {
+  const seed = (title || 'metric').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return EXECUTIVE_CARD_COLORS[seed % EXECUTIVE_CARD_COLORS.length];
+}
+
+function resolveKpiIcon(iconName?: string, title?: string, format?: string) {
+  const text = `${iconName || ''} ${title || ''} ${format || ''}`.toLowerCase();
+  if (text.includes('margin') || text.includes('percent') || text.includes('%')) return <PercentageOutlined />;
+  if (text.includes('revenue') || text.includes('sales') || text.includes('profit') || text.includes('cost') || text.includes('expense') || text.includes('usd') || text.includes('currency')) return <DollarOutlined />;
+  if (text.includes('trend') || text.includes('growth') || text.includes('rate')) return <LineChartOutlined />;
+  if (text.includes('bar') || text.includes('volume')) return <BarChartOutlined />;
+  return <NumberOutlined />;
 }
 
 export const StatWidget: React.FC<StatWidgetProps> = ({ data, config }) => {
@@ -216,6 +240,117 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config }) => {
   }
 
   const isCentered = layout === 'centered';
+  const isExecutive = layout === 'executive';
+
+  if (isExecutive) {
+    const cardColor = color || pickExecutiveColor(displayTitle);
+    const executiveTrendColor = trendIsPositive ? '#9be7b1' : '#ff9a8a';
+    const sparkColor = sparklineColor || (trendIsPositive ? '#a7f3c2' : '#ff9a8a');
+
+    return (
+      <div
+        style={{
+          height: '100%',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '18px 20px 16px',
+          background: cardColor,
+          color: '#fff',
+          borderRadius: 6,
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, minWidth: 0 }}>
+          <div
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.16)',
+              color: '#d9fbe4',
+              flex: '0 0 auto',
+              fontSize: 18,
+            }}
+          >
+            {resolveKpiIcon(config.iconName, displayTitle, format)}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Title
+              level={2}
+              className={`studio-stat-value number-${format === 'currency' ? 'currency' : format === 'percent' ? 'percent' : 'large'} number-compact`}
+              style={{
+                margin: 0,
+                color: '#fff',
+                fontSize: `${Math.min(Math.max(fontSize, 26), 34)}px`,
+                fontWeight: 800,
+                lineHeight: 1.05,
+                letterSpacing: 0,
+              }}
+            >
+              {formattedValue}
+            </Title>
+            <div
+              style={{
+                color: 'rgba(255,255,255,0.76)',
+                fontSize: 13,
+                fontWeight: 500,
+                lineHeight: 1.25,
+                marginTop: 4,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={displayTitle || t('key_metric')}
+            >
+              {displayTitle || t('key_metric')}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginTop: 12 }}>
+          <div style={{ minWidth: 92 }}>
+            {(showTrend || computedTrendValue) && computedTrendValue && !trendIsNeutral ? (
+              <div
+                className={`number-compact ${trendIsPositive ? 'number-positive' : 'number-negative'}`}
+                style={{
+                  color: executiveTrendColor,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                }}
+              >
+                {trendIsPositive ? <CaretUpOutlined style={{ fontSize: 10 }} /> : <CaretDownOutlined style={{ fontSize: 10 }} />}
+                {computedTrendValue.replace(/^\+/, '')}
+              </div>
+            ) : null}
+            <div style={{ color: 'rgba(255,255,255,0.58)', fontSize: 11, marginTop: 3, lineHeight: 1.2 }}>
+              {trendLabel || (comparisonLabel ? `vs ${comparisonLabel}` : config.comparisonPeriodLabel || t('prior_period'))}
+            </div>
+          </div>
+          {showSparkline && sparklineValues.length >= 2 ? (
+            <div style={{ width: 110, flex: '0 0 110px', opacity: 0.95 }}>
+              <Sparkline
+                values={sparklineValues}
+                color={sparkColor}
+                type={sparklineType}
+                height={30}
+                width={108}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

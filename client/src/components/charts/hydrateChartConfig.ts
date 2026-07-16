@@ -61,6 +61,8 @@ export function isChartConfigRenderable(
   if (!config || typeof config !== 'object') return false;
   const hydrated = hydrateChartConfigFromQueryResult(config, rows || null);
   const inner = rawChartConfig(hydrated);
+  const anim = inner.__animate as Record<string, unknown> | undefined;
+  if (anim && Array.isArray(anim.frames) && anim.frames.length > 0) return true;
   const series = inner.series as Array<Record<string, unknown>> | undefined;
   const ds = inner.dataset as Record<string, unknown> | undefined;
   const hasSeries = Array.isArray(series) && series.length > 0;
