@@ -17,24 +17,19 @@ import {
   Dropdown,
   Menu,
   message,
-  Card,
   Collapse,
-  Badge,
   Divider,
   Alert,
   Modal,
   Form,
-  Tree,
   Spin,
-  Switch,
   Grid,
+  Pagination,
+  Avatar,
 } from 'antd';
 import { useTranslations } from 'next-intl';
 import MemoryOptimizedEditor, { type MemoryOptimizedEditorHandle } from '@/components/ai/MemoryOptimizedEditor';
-import ErrorBoundary from '@/components/layout/ErrorBoundary';
-import LoadingStates, { QueryLoading } from '@/components/ui/LoadingStates';
 import {
-  PlayCircleOutlined,
   DatabaseOutlined,
   PlusOutlined,
   SaveOutlined,
@@ -42,26 +37,18 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   CloseOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  ClockCircleOutlined,
-  HistoryOutlined,
   DownloadOutlined,
   ExpandOutlined,
   CloudOutlined,
   ApiOutlined,
   FileOutlined,
-  FileTextOutlined,
-  BulbOutlined,
   RocketOutlined,
-  BarChartOutlined,
-  SyncOutlined,
   ThunderboltOutlined,
   UnorderedListOutlined,
-  CodeOutlined,
   QuestionCircleOutlined,
   ScissorOutlined,
-  FormatPainterOutlined,
+  MoreOutlined,
+  CaretRightOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
@@ -72,7 +59,11 @@ import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistory
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
+import { useAiModels } from '@/hooks/useAi';
+import { getAiProviderLogo } from '@/config/aiProviders';
+import { shortComposerModelDisplayName } from '@/components/ai/ModelSelector/ModelSelector';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
+import { getChatHref } from '@/utils/appPaths';
 import {
   isSameQueryName,
   resolveQueryTabSaveName,
@@ -361,6 +352,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [results, setResults] = useState<any[]>([]);
   const [resultLimitApplied, setResultLimitApplied] = useState(false);
   const [executionStatus, setExecutionStatus] = useState<string>('');
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [results]);
   const [selectedEngine, setSelectedEngine] = useState<string>('auto');
   const [resolvedEngine, setResolvedEngine] = useState<string | null>(null);
   const [queryHistory, setQueryHistory] = useState<any[]>([]);
@@ -490,6 +488,30 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
+  const [aiModel, setAiModel] = useState<string | undefined>();
+  const { data: aiModels = [] } = useAiModels();
+  const availableAiModels = useMemo(() => aiModels.filter((m) => m.available), [aiModels]);
+  const aiModelOptions = useMemo(
+    () =>
+      availableAiModels.map((m) => {
+        const logo = getAiProviderLogo(m.provider);
+        return {
+          label: (
+            <Tooltip title={m.name} placement="left">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                {logo && <Avatar src={logo} size={14} />}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {shortComposerModelDisplayName(m.name)}
+                </span>
+              </span>
+            </Tooltip>
+          ),
+          value: m.id,
+        };
+      }),
+    [availableAiModels]
+  );
+  const selectedAiModel = aiModel ?? availableAiModels[0]?.id;
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
@@ -1910,6 +1932,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           data_source_id: selectedDataSourceId,
           language: editorLanguage, // 'sql' or 'python'
           current_sql: sqlQuery.trim() || undefined, // Send current SQL from editor
+          model: selectedAiModel,
         }),
       });
       console.log('AI generation result (Query Editor):', {
@@ -2381,18 +2404,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             sqlQuery={sqlQuery}
             latestSql={latestEditorContentRef.current || sqlQuery}
             selectedDataSourceId={selectedDataSourceId}
-            onSaveSnapshot={() => {
-              const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
-              setSaveSnapshotName(
-                snapshotNameFromTabTitle(
-                  tab?.title,
-                  `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`,
-                ),
-              );
-              setShowSaveSnapshotModal(true);
-            }}
-            onExportCsv={() => exportToCSV(results)}
-            onExportJson={() => exportToJSON(results)}
+            currentPage={currentPage}
+            pageSize={pageSize}
           />
         ),
       },
@@ -2533,6 +2546,16 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 onPressEnter={handleAIGenerate}
                 disabled={aiGenerating}
               />
+              <Select
+                value={selectedAiModel}
+                onChange={setAiModel}
+                options={aiModelOptions}
+                placeholder={availableAiModels.length === 0 ? 'No keys configured' : 'Select model'}
+                disabled={aiGenerating || availableAiModels.length === 0}
+                size="small"
+                popupMatchSelectWidth={false}
+                style={{ width: 'auto', minWidth: 90, maxWidth: 140, flexShrink: 0 }}
+              />
               <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
                 <Button
                   size="small"
@@ -2574,41 +2597,44 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             <div className="qe-query-tabs-row">
               <Tabs
                 size="small"
-                type="line"
-                hideAdd
+                type="editable-card"
                 className="workspace-inline-tabs query-editor-query-tabs"
                 activeKey={activeQueryKey}
                 tabBarExtraContent={{
-                  left: (
-                    <Tooltip title={t('new_query_tab')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        className="icon-only-btn qe-tab-add-btn"
-                        icon={<PlusOutlined />}
-                        aria-label={t('new_query_tab')}
-                        onClick={() => {
-                          const newKey = `q-${Date.now()}`;
-                          const defaultPython = buildPythonTemplate(DEFAULT_SQL_SNIPPET, selectedDataSource?.name);
-                          const newTitle = getNextDefaultTabTitle(queryTabs);
-                          const newTab = {
-                            key: newKey,
-                            title: newTitle,
-                            sql: DEFAULT_SQL_SNIPPET,
-                            python: defaultPython,
-                            language: editorLanguage,
-                          };
-                          const next = [...queryTabs, newTab];
-                          setQueryTabs(next);
-                          setActiveQueryKey(newKey);
-                          setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
-                          saveTabsToBackend(next, newKey, true);
-                        }}
-                      />
-                    </Tooltip>
-                  ),
                   right: (
                   <Space size={4} className="icon-toolbar qe-tab-toolbar">
+                    {isExecuting ? (
+                      <Tooltip title={t('cancel_query_tooltip')}>
+                        <Button
+                          type="primary"
+                          danger
+                          icon={<CloseCircleOutlined />}
+                          size="small"
+                          className="qe-run-btn qe-cancel-btn"
+                          onClick={handleCancelQuery}
+                        >
+                          {t('cancel_query')}
+                        </Button>
+                      </Tooltip>
+                    ) : (
+                      <Button
+                        type="primary"
+                        icon={<CaretRightOutlined />}
+                        size="small"
+                        className="qe-run-btn"
+                        onClick={() => runHandlerRef.current?.()}
+                        disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSourceId}
+                      >
+                        {editorLanguage === 'python'
+                          ? t('run_python')
+                          : isPromqlDataSource
+                            ? t('run_promql')
+                            : hasEditorSelection
+                              ? t('run_selection')
+                              : t('run_sql')}
+                      </Button>
+                    )}
+                    <Divider type="vertical" style={{ margin: '0 4px' }} />
                     <Tooltip title={t('tooltip_save_query_script')}>
                       <Button
                         type="text"
@@ -2772,6 +2798,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         />
                       ) : (
                         <>
+                          <DatabaseOutlined className="qe-query-tab-icon" style={{ marginRight: '6px', color: 'inherit' }} />
                           <Tooltip title={t('rename_query_tab_hint')}>
                             <span
                               className="qe-query-tab-title"
@@ -2890,104 +2917,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 </div>
               )}
 
-              {/* Query Controls & Execute Button - part of top section */}
-            <div className="qe-run-bar">
-              <div className="qe-run-bar-inner">
-                <div className="qe-run-bar-left">
-                  <Button
-                    type="primary"
-                    icon={<PlayCircleOutlined />}
-                    size="small"
-                    loading={isExecuting}
-                    onClick={() => runHandlerRef.current?.()}
-                    disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSourceId}
-                  >
-                    {editorLanguage === 'python'
-                      ? t('run_python')
-                      : isPromqlDataSource
-                        ? t('run_promql')
-                        : hasEditorSelection
-                          ? t('run_selection')
-                          : t('run_sql')}
-                  </Button>
-                  {isExecuting && (
-                    <Tooltip title={t('cancel_query_tooltip')}>
-                      <Button
-                        size="small"
-                        danger
-                        icon={<CloseCircleOutlined />}
-                        onClick={handleCancelQuery}
-                      >
-                        {t('cancel_query')}
-                      </Button>
-                    </Tooltip>
-                  )}
-                  {editorLanguage === 'sql' && (
-                    <Tooltip title={t('format_sql_tooltip')}>
-                      <Button
-                        type="text"
-                        icon={<FormatPainterOutlined />}
-                        size="small"
-                        className="icon-only-btn"
-                        onClick={() => editorInsertRef.current?.formatDocument()}
-                        disabled={!sqlQuery.trim()}
-                      />
-                    </Tooltip>
-                  )}
-                  <div className="qe-run-control-group">
-                    <span>{t('label_row_limit')}</span>
-                    <Select
-                      className="qe-row-limit-select"
-                      value={rowLimit}
-                      onChange={handleRowLimitChange}
-                      size="small"
-                      disabled={limitSource === 'query'}
-                      options={rowLimitOptions}
-                    />
-                    {limitSource === 'query' && (
-                      <Tooltip title={t('limit_detected_in_sql')}>
-                        <span className="qe-run-meta--engine">{t('in_sql')}</span>
-                      </Tooltip>
-                    )}
-                  </div>
-                </div>
-
-                <div className="qe-run-bar-right">
-                  <div className="qe-run-control-group">
-                    <span>{t('label_engine')}</span>
-                    <Select
-                      className="qe-engine-select"
-                      value={selectedEngine}
-                      onChange={(val) => {
-                        setSelectedEngine(val);
-                        setResolvedEngine(null);
-                      }}
-                      size="small"
-                      options={[
-                        { value: 'auto', label: 'Auto' },
-                        ...enhancedDataService
-                          .getAvailableQueryEngines()
-                          .map((e) => ({ value: e.type, label: e.name })),
-                      ]}
-                    />
-                    {resolvedEngine && !isExecuting && (
-                      <Tooltip title={resolvedEngine}>
-                        <span className="qe-run-meta--engine">{resolvedEngine}</span>
-                      </Tooltip>
-                    )}
-                    {isExecuting && (
-                      <span className="qe-run-meta--engine">
-                        <SyncOutlined spin style={{ marginRight: 4 }} />
-                        {executionStatus || '…'}
-                      </span>
-                    )}
-                  </div>
-                  <span className="qe-run-meta--engine" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '—'}
-                  </span>
-                </div>
-              </div>
-            </div>
+                {/* Execution bar moved to top */}
+              {/* <div className="qe-run-bar"> ... </div> */}
             </div>
 
             {/* Resize handle: border between Run button and Query Results - drag to split */}
@@ -3033,6 +2964,87 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 destroyInactiveTabPane={false}
                 className="workspace-inline-tabs query-editor-results-tabs"
                 items={resultsTabItems}
+                tabBarExtraContent={
+                  activeTab === 'results' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingRight: '16px' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--ant-color-text-secondary)', marginRight: '8px' }}>
+                        {executionTime ? t('execution_time_ms', { ms: executionTime }) : null}
+                        {executionTime && results.length > 0 ? ' · ' : null}
+                        {results.length > 0 ? t('result_rows', { count: results.length }) : null}
+                        {resultLimitApplied && results.length > 0 ? (
+                          <Tooltip title={t('result_limited', { limit: Number(rowLimit) || 0 })}>
+                            <span> · {t('result_limited', { limit: (Number(rowLimit) || 0).toLocaleString() })}</span>
+                          </Tooltip>
+                        ) : null}
+                      </span>
+                      <Space size={4}>
+                        {results.length > 0 && (
+                          <Tooltip title={t('ask_ai_results_tip')}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<RocketOutlined />}
+                              onClick={() => {
+                                const sql = latestEditorContentRef.current || sqlQuery;
+                                const cols = results.length > 0 ? Object.keys(results[0]).join(', ') : '';
+                                const promptText = `I ran this SQL query:\n${sql}\n\nThe result has ${results.length} rows with columns: ${cols}.\n\nHelp me understand and explore these results.`;
+                                window.open(
+                                  getChatHref({
+                                    prompt: promptText,
+                                    dataSourceId: selectedDataSourceId || undefined,
+                                  }),
+                                  '_blank',
+                                );
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                        <Tooltip title={t('save_as_snapshot')}>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<SaveOutlined />}
+                            onClick={() => {
+                              const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+                              setSaveSnapshotName(
+                                snapshotNameFromTabTitle(
+                                  tab?.title,
+                                  `${t('snapshot')} ${new Date().toISOString().slice(0, 10)}`,
+                                ),
+                              );
+                              setShowSaveSnapshotModal(true);
+                            }}
+                            disabled={results.length === 0}
+                          />
+                        </Tooltip>
+                        <Dropdown menu={{ items: [
+                          {
+                            key: 'csv',
+                            label: t('export_csv'),
+                            icon: <DownloadOutlined />,
+                            disabled: results.length === 0,
+                            onClick: () => exportToCSV(results),
+                          },
+                          {
+                            key: 'json',
+                            label: t('export_json'),
+                            icon: <DownloadOutlined />,
+                            disabled: results.length === 0,
+                            onClick: () => exportToJSON(results),
+                          }
+                        ] }} trigger={['click']}>
+                          <Tooltip title={t('more_actions')}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<MoreOutlined />}
+                            />
+                          </Tooltip>
+                        </Dropdown>
+                      </Space>
+                    </div>
+                  ) : null
+                }
                 style={{
                   flex: 1,
                   display: 'flex',
@@ -3049,6 +3061,66 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   flexShrink: 0,
                 }}
               />
+              <div
+                className="qe-results-footer"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 16px',
+                  borderTop: '1px solid var(--ant-color-border-secondary)',
+                  background: 'var(--ant-color-bg-container)',
+                  fontSize: '12px',
+                  color: 'var(--ant-color-text-secondary)',
+                  flexShrink: 0
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="qe-run-control-group">
+                    <span>Engine:</span>
+                    <Select
+                      className="qe-engine-select"
+                      value={selectedEngine}
+                      onChange={(val) => {
+                        setSelectedEngine(val);
+                        setResolvedEngine(null);
+                      }}
+                      size="small"
+                      bordered={false}
+                      style={{ fontWeight: 600, color: 'var(--ant-color-primary)' }}
+                      options={[
+                        { value: 'auto', label: 'Auto' },
+                        ...enhancedDataService
+                          .getAvailableQueryEngines()
+                          .map((e) => ({ value: e.type, label: e.name })),
+                      ]}
+                    />
+                  </div>
+                  <div className="qe-run-control-group">
+                    <span>Limit:</span>
+                    <Select
+                      className="qe-row-limit-select"
+                      value={rowLimit}
+                      onChange={handleRowLimitChange}
+                      size="small"
+                      bordered={false}
+                      disabled={limitSource === 'query'}
+                      options={rowLimitOptions}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <Pagination
+                    current={currentPage}
+                    pageSize={pageSize}
+                    total={results.length}
+                    onChange={(page, size) => { setCurrentPage(page); setPageSize(size); }}
+                    showSizeChanger
+                    size="small"
+                    showTotal={(total, range) => t('rows_range_total', { from: range[0], to: range[1], total })}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
