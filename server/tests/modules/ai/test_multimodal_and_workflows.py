@@ -8,8 +8,20 @@ from ee.modules.ai.kernel.goal_resolver import resolve_goal_heuristic, should_us
 from ee.modules.ai.kernel.planner import build_plan
 from ee.modules.ai.kernel.schemas import AgentGoal, DeliverableType
 from ee.modules.ai.services.adaptive_continuation_service import compute_continuation
-from ee.modules.ai.services.multimodal_ingestion import augment_query_with_multimodal, MultimodalContext
+from ee.modules.ai.services.multimodal_ingestion import (
+    MultimodalContext,
+    augment_query_with_multimodal,
+    ingest_attachments,
+)
 from ee.modules.ai.services.org_workflow_service import _WORKFLOW_CACHE, match_org_workflow
+
+
+class _FakeVisionService:
+    async def generate_completion(self, **kwargs):
+        return {
+            "success": True,
+            "content": "- Four KPI cards across the top\n- Filter controls in the header\n- Green finance palette",
+        }
 
 
 def test_augment_query_with_multimodal_pdf_excerpt():
@@ -44,6 +56,27 @@ def test_resolve_goal_heuristic_multimodal_constraints():
     }
     goal = resolve_goal_heuristic(state)
     assert any("PDF" in c for c in goal.constraints)
+
+
+@pytest.mark.asyncio
+async def test_image_attachment_is_summarized_for_text_planners():
+    ctx = await ingest_attachments(
+        [
+            {
+                "type": "image",
+                "mime_type": "image/png",
+                "base64": "iVBORw0KGgo=",
+                "name": "reference-dashboard.png",
+            }
+        ],
+        litellm_service=_FakeVisionService(),
+    )
+
+    assert "image" in ctx.modalities
+    assert ctx.vision_model_hint is True
+    assert "Reference image dashboard layout" in ctx.text_excerpt
+    assert "Four KPI cards" in ctx.text_excerpt
+    assert "Image layout summarized" in ctx.attachment_summaries
 
 
 def test_match_org_workflow_and_build_plan():

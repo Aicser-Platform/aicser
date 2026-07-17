@@ -17,7 +17,7 @@ export function useWorkspaceConfig(options: { enabled?: boolean } = {}) {
     placeholderData: {
       mode: 'saas' as const,
       allows_multi_org: true,
-      allows_create_org: true,
+      allows_create_org: false,
       default_org_name: 'Organization',
       single_org_rename_only: false,
     },
@@ -25,7 +25,7 @@ export function useWorkspaceConfig(options: { enabled?: boolean } = {}) {
   return {
     config: data,
     isLoading: enabled ? isLoading : false,
-    allowsCreateOrg: data?.allows_create_org ?? true,
+    allowsCreateOrg: data?.allows_create_org ?? false,
     isSelfHost: data?.mode === 'self_host',
   };
 }

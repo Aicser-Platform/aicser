@@ -36,6 +36,11 @@ def get_auth_provider() -> str:
     """
     import logging
     provider = os.getenv("AUTH_PROVIDER", "local").strip().lower()
+    if provider == "supbase":
+        logging.getLogger(__name__).warning(
+            "[Auth] AUTH_PROVIDER=supbase looks like a typo. Treating it as 'supabase'."
+        )
+        provider = "supabase"
     if provider == "keycloak":
         logging.getLogger(__name__).warning(
             "[Auth] AUTH_PROVIDER=keycloak is not supported as a form-auth provider. "

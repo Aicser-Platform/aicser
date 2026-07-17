@@ -1,5 +1,6 @@
 """Model-aware dashboard planning for multi-table workbook schemas."""
 
+from ee.modules.ai.nodes.dashboard_pesd_nodes import _is_reference_dashboard_request
 from ee.modules.ai.services.dashboard_pesd_service import build_kpi_sections, synthesize_widget_specs
 
 
@@ -44,6 +45,84 @@ def _marketing_schema() -> dict:
                     {"name": "conversions", "type": "integer"},
                     {"name": "spend", "type": "double"},
                     {"name": "revenue", "type": "double"},
+                ],
+            },
+        ]
+    }
+
+
+def _accounting_schema() -> dict:
+    return {
+        "tables": [
+            {
+                "name": "accounting.fact_journal",
+                "row_count": 3039,
+                "columns": [
+                    {"name": "journal_line_id", "type": "integer"},
+                    {"name": "date_key", "type": "integer"},
+                    {"name": "account_id", "type": "integer"},
+                    {"name": "source", "type": "varchar"},
+                    {"name": "memo", "type": "varchar"},
+                    {"name": "debit_usd", "type": "double"},
+                    {"name": "credit_usd", "type": "double"},
+                ],
+            },
+            {
+                "name": "accounting.fact_monthly_financials",
+                "row_count": 24,
+                "columns": [
+                    {"name": "month_key", "type": "integer"},
+                    {"name": "revenue_usd", "type": "double"},
+                    {"name": "cogs_usd", "type": "double"},
+                    {"name": "gross_profit_usd", "type": "double"},
+                    {"name": "opex_usd", "type": "double"},
+                    {"name": "net_profit_usd", "type": "double"},
+                    {"name": "cash_balance_usd", "type": "double"},
+                    {"name": "ar_balance_usd", "type": "double"},
+                    {"name": "ap_balance_usd", "type": "double"},
+                ],
+            },
+            {
+                "name": "accounting.fact_invoice_lines",
+                "row_count": 590,
+                "columns": [
+                    {"name": "line_id", "type": "integer"},
+                    {"name": "product_id", "type": "integer"},
+                    {"name": "line_total_usd", "type": "double"},
+                ],
+            },
+            {
+                "name": "accounting.dim_product",
+                "row_count": 10,
+                "columns": [
+                    {"name": "product_id", "type": "integer"},
+                    {"name": "category", "type": "varchar"},
+                ],
+            },
+            {
+                "name": "accounting.fact_bills",
+                "row_count": 178,
+                "columns": [
+                    {"name": "bill_id", "type": "integer"},
+                    {"name": "vendor_id", "type": "integer"},
+                    {"name": "total_usd", "type": "double"},
+                ],
+            },
+            {
+                "name": "accounting.dim_vendor",
+                "row_count": 14,
+                "columns": [
+                    {"name": "vendor_id", "type": "integer"},
+                    {"name": "category", "type": "varchar"},
+                ],
+            },
+            {
+                "name": "accounting.fact_bank_transactions",
+                "row_count": 461,
+                "columns": [
+                    {"name": "txn_id", "type": "integer"},
+                    {"name": "direction", "type": "varchar"},
+                    {"name": "amount_usd", "type": "double"},
                 ],
             },
         ]
@@ -103,3 +182,43 @@ def test_model_aware_synthesis_does_not_pad_with_generic_widgets():
 
     assert len(specs) == len(sections)
     assert all((spec.get("chart_query") or {}).get("compiled_semantic_sql") for spec in specs)
+
+
+def test_reference_dashboard_request_detects_uploaded_image_context():
+    assert _is_reference_dashboard_request(
+        "Can you create dashboard like image i uploaded?",
+        {"multimodal_context": {"modalities": ["text", "image"], "image_count": 1}},
+    )
+    assert not _is_reference_dashboard_request(
+        "Show debit by account code",
+        {"multimodal_context": {"modalities": ["text"]}},
+    )
+
+
+def test_accounting_prompt_uses_financial_statement_widgets_not_debit_default():
+    prompt = (
+        "Create dashboard base on our accounting data. Like have kpi cards of total revenue, "
+        "expense, net profit, gross profit margin. Revenue Trend, Revenue by Category, "
+        "Expense Summary, Profit & Loss Summary, Balance Sheet Overview, Cash Flow Overview, "
+        "Recent Journal Entries, Top Expense Categories"
+    )
+    sections = build_kpi_sections(
+        prompt,
+        _accounting_schema(),
+        db_type="duckdb",
+        tier="executive",
+        max_widgets=12,
+        relationships=[],
+    )
+
+    titles = {str(s.get("title") or "") for s in sections}
+    sql = "\n".join(str(s.get("sql") or "") for s in sections)
+
+    assert "Financial KPI Cards" in titles
+    assert "Revenue Trend" in titles
+    assert "Revenue by Category" in titles
+    assert "Profit & Loss Summary" in titles
+    assert "Cash Flow Overview" in titles
+    assert "fact_monthly_financials" in sql
+    assert "debit_usd Trend" not in "\n".join(titles)
+    assert "Account Code" not in "\n".join(titles)

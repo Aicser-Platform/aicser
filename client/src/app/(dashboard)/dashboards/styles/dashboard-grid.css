@@ -356,6 +356,10 @@
   padding-top: 16px !important;
 }
 
+.widget-card.widget-type-stat.header-hidden .widget-card-body {
+  padding-top: 0 !important;
+}
+
 .widget-card-body {
   flex: 1;
   padding: 0;
@@ -424,7 +428,10 @@
   padding: 8px 12px 12px !important;
 }
 
-.widget-card.widget-type-stat .widget-content-root,
+.widget-card.widget-type-stat .widget-content-root {
+  padding: 0;
+}
+
 .widget-card.widget-type-slicer .widget-content-root {
   padding: 4px 8px 8px;
 }

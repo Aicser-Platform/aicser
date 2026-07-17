@@ -75,6 +75,37 @@ export const useWidgetProperties = ({
   });
 
   const fieldName = (field?: unknown) => String(field || '').split('.').pop() || '';
+  const isNumericType = (type?: unknown) => /(int|float|double|decimal|numeric|number|real)/i.test(String(type || ''));
+  const isDimensionLikeField = (name?: unknown) => {
+    const normalized = String(name || '').toLowerCase();
+    return (
+      !normalized ||
+      normalized === 'id' ||
+      normalized.endsWith('_id') ||
+      normalized.endsWith('_key') ||
+      normalized.includes('date') ||
+      normalized.includes('month') ||
+      normalized.includes('year') ||
+      normalized.includes('quarter')
+    );
+  };
+  const isMeasureColumn = (column: { name: string; type: string }) =>
+    isNumericType(column.type) && !isDimensionLikeField(column.name);
+  const metricAggregationForColumn = (column?: { name: string; type: string }) =>
+    column && isMeasureColumn(column) ? 'sum' : 'count';
+  const pickDefaultMetricColumn = (
+    columns: Array<{ name: string; type: string }>,
+    excludeField?: unknown,
+  ) => {
+    const excluded = fieldName(excludeField).toLowerCase();
+    const candidates = columns.filter((column) => column.name.toLowerCase() !== excluded);
+    return (
+      candidates.find(isMeasureColumn) ||
+      candidates.find((column) => isNumericType(column.type) && !isDimensionLikeField(column.name)) ||
+      candidates.find((column) => !isDimensionLikeField(column.name)) ||
+      candidates[0]
+    );
+  };
 
   const tableColumnsFor = (tableName?: string) => {
     const tables = selectedSchemaInfo?.tables || [];
@@ -108,9 +139,10 @@ export const useWidgetProperties = ({
       return Boolean(name && columnNames.has(name));
     };
     const firstDimension =
-      columns.find((column: { name: string; type: string }) => !/(int|float|double|decimal|numeric|number|real)/i.test(column.type))?.name ||
+      columns.find((column: { name: string; type: string }) => !isNumericType(column.type))?.name ||
+      columns.find((column: { name: string; type: string }) => isDimensionLikeField(column.name))?.name ||
       columns[0]?.name;
-    const metricFallback = query.x && hasColumn(query.x) ? fieldName(query.x) : firstDimension;
+    const defaultMetric = pickDefaultMetricColumn(columns, query.x || firstDimension);
     const next: any = { ...query, tableName, joins: [] };
 
     delete next.compiled_semantic_sql;
@@ -147,7 +179,9 @@ export const useWidgetProperties = ({
       next.x = firstDimension;
     }
     if (!next.yMetrics.length) {
-      next.yMetrics = metricFallback ? [{ field: metricFallback, aggregation: 'count' }] : [];
+      next.yMetrics = defaultMetric
+        ? [{ field: defaultMetric.name, aggregation: metricAggregationForColumn(defaultMetric) }]
+        : [];
     }
     return next;
   };
@@ -378,9 +412,12 @@ export const useWidgetProperties = ({
       nextQuery.yMetrics[0].aggregation === 'count';
 
     if (isXChange && value && (hasNoMetrics || wasUsingDefaultX)) {
+      const defaultMetric = pickDefaultMetricColumn(tableColumnsFor(nextQuery.tableName), value);
       nextQuery = {
         ...nextQuery,
-        yMetrics: [{ field: value, aggregation: 'count' }],
+        yMetrics: defaultMetric
+          ? [{ field: defaultMetric.name, aggregation: metricAggregationForColumn(defaultMetric) }]
+          : [{ field: value, aggregation: 'count' }],
       };
     }
 
@@ -391,14 +428,8 @@ export const useWidgetProperties = ({
   const metricAggregationForField = (field: DashboardFieldDragPayload) => {
     const type = (field.columnType || '').toLowerCase();
     const isNumeric =
-      type.includes('int') ||
-      type.includes('float') ||
-      type.includes('number') ||
-      type.includes('decimal') ||
-      type.includes('double') ||
-      type.includes('real') ||
-      type.includes('numeric');
-    return isNumeric ? 'sum' : 'count';
+      isNumericType(type);
+    return isNumeric && !isDimensionLikeField(field.columnName) ? 'sum' : 'count';
   };
 
   const appendMetric = (metrics: any[] = [], field: DashboardFieldDragPayload, replace = false) => {
@@ -461,9 +492,12 @@ export const useWidgetProperties = ({
 
       const hasNoMetrics = !nextQuery.yMetrics || nextQuery.yMetrics.length === 0;
       if (targetKey === 'x' && hasNoMetrics && selectedWidget?.chartType !== 'scatter') {
+        const defaultMetric = pickDefaultMetricColumn(tableColumnsFor(nextQuery.tableName), field.columnName);
         nextQuery = {
           ...nextQuery,
-          yMetrics: [{ field: field.columnName, aggregation: 'count' }],
+          yMetrics: defaultMetric
+            ? [{ field: defaultMetric.name, aggregation: metricAggregationForColumn(defaultMetric) }]
+            : [{ field: field.columnName, aggregation: 'count' }],
         };
       }
     }

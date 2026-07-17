@@ -5,6 +5,8 @@ export const INTERACTIVE_CHART_TYPES = [
   'bar',
   'line',
   'area',
+  'bar_race',
+  'line_race',
   'pie',
   'donut',
   'scatter',
@@ -15,6 +17,8 @@ export type InteractiveChartType = (typeof INTERACTIVE_CHART_TYPES)[number];
 
 export function chartTypeLabel(type: string): string {
   if (type === 'table') return 'Table';
+  if (type === 'bar_race') return 'Bar race';
+  if (type === 'line_race') return 'Line race';
   return CHART_TYPE_CONFIGS[type]?.label ?? type.charAt(0).toUpperCase() + type.slice(1);
 }
 

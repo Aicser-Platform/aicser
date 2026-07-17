@@ -9,13 +9,13 @@ import {
   DownOutlined,
   SettingOutlined,
   PlusOutlined,
+  BankOutlined,
 } from '@ant-design/icons';
 import { Badge, Button, Layout, Tooltip, Modal, Form, Input, Typography, message, Dropdown } from 'antd';
 const { Text } = Typography;
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
-import { WorkspaceBrand } from '@/components/WorkspaceBrand/WorkspaceBrand';
 import { useLocale, useTranslations } from 'next-intl';
 import { LOCALE_OPTIONS, getLocaleLabel, getLocaleMeta } from '@/config/locales';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
@@ -38,7 +38,6 @@ import { useOrganizations, useCreateOrganization } from '@/hooks/useOrganization
 import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { useHeaderStore } from '@/stores/useHeaderStore';
 import { useConversationStore } from '@/stores/useConversationStore';
-import { Divider } from 'antd';
 import { useRouter } from 'next/navigation';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -186,6 +185,27 @@ export const LayoutHeader: React.FC<Props> = ({
     }
   };
 
+  const handleOrganizationChange = (organizationId: string) => {
+    const org = organizations.find((item) => String(item.id) === String(organizationId));
+    if (!org) {
+      message.error({ content: t('organization_switch_failed'), key: 'organization-switch', duration: 2 });
+      return;
+    }
+    if (String(currentOrganization?.id) === String(org.id)) return;
+
+    message.loading({ content: t('switching_organization'), key: 'organization-switch' });
+    setCurrentOrganization(org);
+    clearProject();
+    resetProjectScopedData();
+    void queryClient.invalidateQueries({ queryKey: ['projects'] });
+    void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    message.success({
+      content: t('switched_organization', { name: org.name }),
+      key: 'organization-switch',
+      duration: 2,
+    });
+  };
+
   const handleCreateProject = async (values: any) => {
     try {
       setCreateLoading(true);
@@ -228,6 +248,7 @@ export const LayoutHeader: React.FC<Props> = ({
       const newOrg = await createOrgMutation.mutateAsync(values);
       if (newOrg) {
         setCurrentOrganization(newOrg);
+        void queryClient.invalidateQueries({ queryKey: ['workspace-config'] });
         setCreateOrgModalOpen(false);
         orgForm.resetFields();
         message.success(t('organization_created'));
@@ -279,18 +300,33 @@ export const LayoutHeader: React.FC<Props> = ({
           <AicserLogo size={28} showText={false} />
         )}
 
-        {isEnterpriseEdition && currentOrganization && !isBreakpoint && (
+        {isEnterpriseEdition && currentOrganization && (
           <>
-            <Tooltip title={currentOrganization.name}>
+            <Dropdown
+              menu={{
+                items: organizations.map((org) => ({
+                  key: String(org.id),
+                  icon: <BankOutlined />,
+                  label: org.name,
+                  onClick: () => handleOrganizationChange(String(org.id)),
+                })),
+                selectedKeys: [String(currentOrganization.id)],
+              }}
+              placement="bottomLeft"
+              trigger={['click']}
+            >
               <Button
                 type="text"
                 className="header-shell-chip header-org-chip"
-                onClick={() => router.push('/settings?tab=organization')}
+                aria-label={t('switch_organization')}
+                title={t('switch_organization')}
               >
-                <WorkspaceBrand size="sm" compact />
+                <BankOutlined className="header-shell-chip-icon header-shell-chip-icon--org" />
+                <span className="header-shell-chip-label">{currentOrganization.name}</span>
+                <DownOutlined className="header-shell-chip-chevron" />
               </Button>
-            </Tooltip>
-            <Divider type="vertical" className="header-shell-divider" />
+            </Dropdown>
+            <span className="header-workspace-separator" aria-hidden="true">/</span>
           </>
         )}
 

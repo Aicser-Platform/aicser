@@ -902,15 +902,27 @@ class DatabaseConnectorService:
                             except Exception:
                                 pass
 
-                            # Mark foreign key columns
+                            # Mark foreign key columns and retain the referenced
+                            # table/column so data-model auto-detect can create
+                            # exact relationships for database sources.
                             try:
                                 fk_list = inspector.get_foreign_keys(table_name, schema=schema_name)
-                                fk_cols = set()
                                 for fk in fk_list:
-                                    fk_cols.update(fk.get("constrained_columns", []))
-                                for col in columns:
-                                    if col.get("name") in fk_cols:
-                                        col["is_foreign_key"] = True
+                                    constrained = fk.get("constrained_columns", []) or []
+                                    referred_cols = fk.get("referred_columns", []) or []
+                                    referred_table = fk.get("referred_table")
+                                    referred_schema = fk.get("referred_schema")
+                                    for idx, constrained_col in enumerate(constrained):
+                                        for col in columns:
+                                            if col.get("name") != constrained_col:
+                                                continue
+                                            col["is_foreign_key"] = True
+                                            if referred_table:
+                                                col["references_table"] = str(referred_table)
+                                            if referred_schema:
+                                                col["references_schema"] = str(referred_schema)
+                                            if idx < len(referred_cols):
+                                                col["references_column"] = str(referred_cols[idx])
                             except Exception:
                                 pass
 
@@ -992,7 +1004,7 @@ class DatabaseConnectorService:
             tables_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
             row_count_map: Dict[Tuple[str, str], int] = {}
             pk_columns: set[Tuple[str, str, str]] = set()
-            fk_columns: set[Tuple[str, str, str]] = set()
+            fk_columns: Dict[Tuple[str, str, str], Dict[str, str]] = {}
 
             with engine.connect() as conn:
                 columns_result = conn.execute(text(
@@ -1076,19 +1088,34 @@ class DatabaseConnectorService:
                         """
                         SELECT ns.nspname AS table_schema,
                                cls.relname AS table_name,
-                               attr.attname AS column_name
+                               attr.attname AS column_name,
+                               ref_ns.nspname AS references_schema,
+                               ref_cls.relname AS references_table,
+                               ref_attr.attname AS references_column
                         FROM pg_constraint con
                         JOIN pg_class cls ON cls.oid = con.conrelid
                         JOIN pg_namespace ns ON ns.oid = cls.relnamespace
-                        JOIN unnest(con.conkey) AS cols(attnum) ON true
+                        JOIN unnest(con.conkey, con.confkey) AS cols(attnum, ref_attnum) ON true
                         JOIN pg_attribute attr
                           ON attr.attrelid = cls.oid
                          AND attr.attnum = cols.attnum
+                        JOIN pg_class ref_cls ON ref_cls.oid = con.confrelid
+                        JOIN pg_namespace ref_ns ON ref_ns.oid = ref_cls.relnamespace
+                        JOIN pg_attribute ref_attr
+                          ON ref_attr.attrelid = ref_cls.oid
+                         AND ref_attr.attnum = cols.ref_attnum
                         WHERE con.contype = 'f'
                           AND ns.nspname NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
                         """
                     ))
-                    fk_columns = {(str(r[0]), str(r[1]), str(r[2])) for r in fk_result}
+                    fk_columns = {
+                        (str(r[0]), str(r[1]), str(r[2])): {
+                            "references_schema": str(r[3]),
+                            "references_table": str(r[4]),
+                            "references_column": str(r[5]),
+                        }
+                        for r in fk_result
+                    }
                 except Exception as fk_error:
                     logger.debug("PostgreSQL FK metadata skipped: %s", fk_error)
 
@@ -1101,6 +1128,7 @@ class DatabaseConnectorService:
                         col["is_primary_key"] = True
                     if col_key in fk_columns:
                         col["is_foreign_key"] = True
+                        col.update(fk_columns[col_key])
 
             tables = list(tables_by_key.values())
             total_rows = sum(int(t.get("rowCount", 0) or 0) for t in tables)

@@ -51,14 +51,15 @@ export interface ProjectMemberListResponse {
 }
 
 export interface ProjectInvitePayload {
-    user_id: string;
+    user_id?: string;
+    email?: string;
     role_id: string;
 }
 
 export interface ProjectInviteResponse {
     project_id: string;
     organization_id: string;
-    user_id: string;
+    user_id?: string | null;
     role_id: string;
     role_name: string;
     message: string;

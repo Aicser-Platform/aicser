@@ -28,6 +28,20 @@ export const listProjectMembers = (
 ): Promise<ProjectMemberListResponse> =>
   fetchApi(`/projects/${projectId}/members?page=${page}&page_size=${pageSize}`);
 
+export const listAvailableProjectMembers = (
+  projectId: string,
+): Promise<Array<{
+  user_id: string;
+  email: string | null;
+  username: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  avatar_url?: string | null;
+  role_id: string;
+  role_name: string;
+  role_display_name: string | null;
+}>> => fetchApi(`/projects/${projectId}/available-members`);
+
 export const inviteProjectMember = (
   projectId: string,
   payload: ProjectInvitePayload,

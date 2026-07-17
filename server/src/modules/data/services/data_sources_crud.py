@@ -164,7 +164,16 @@ class DataSourcesCRUD:
             if data_source_data.type == "database" and connection_status == "connected":
                 try:
                     schema = await self.real_data_manager.get_schema(data_source)
+                    if isinstance(schema, dict) and not schema.get("error"):
+                        data_source.schema = schema
                     metadata = {"schema": schema}
+                    if isinstance(schema, dict) and schema.get("tables"):
+                        try:
+                            from src.modules.data.model_service import DataModelService
+
+                            await DataModelService(session).auto_detect(data_source.id)
+                        except Exception as rel_error:
+                            logger.info("Relationship auto-detect skipped for %s: %s", data_source.id, rel_error)
                 except Exception as e:
                     logger.warning(f"Schema retrieval failed: {e}")
             
@@ -466,7 +475,16 @@ class DataSourcesCRUD:
                 connection_status = "connected" if test_result.success else "failed"
                 if connection_status == "connected" and data_source.type == "database":
                     schema = await self.real_data_manager.get_schema(data_source)
+                    if isinstance(schema, dict) and not schema.get("error"):
+                        data_source.schema = schema
                     metadata = {"schema": schema}
+                    if isinstance(schema, dict) and schema.get("tables"):
+                        try:
+                            from src.modules.data.model_service import DataModelService
+
+                            await DataModelService(session).auto_detect(data_source.id)
+                        except Exception as rel_error:
+                            logger.info("Relationship auto-detect skipped for %s: %s", data_source.id, rel_error)
             except Exception as e:
                 logger.warning(f"Connection test failed: {e}")
                 connection_status = "failed"
@@ -672,6 +690,15 @@ class DataSourcesCRUD:
             
             # Get schema
             schema = await self.real_data_manager.get_schema(data_source)
+            if isinstance(schema, dict) and not schema.get("error"):
+                data_source.schema = schema
+                if schema.get("tables"):
+                    try:
+                        from src.modules.data.model_service import DataModelService
+
+                        await DataModelService(session).auto_detect(data_source.id)
+                    except Exception as rel_error:
+                        logger.info("Relationship auto-detect skipped for %s: %s", data_source.id, rel_error)
             
             # Update last accessed time
             data_source.last_accessed = datetime.now(timezone.utc)
