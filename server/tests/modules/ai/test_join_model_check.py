@@ -1,3 +1,5 @@
+import re
+
 from ee.modules.ai.utils.join_model_check import check_joins_against_model
 
 JOINS = [{"from_table": "fact_sales", "from_column": "device_key",
@@ -29,3 +31,11 @@ def test_no_model_no_findings():
 
 def test_sql_without_joins_no_findings():
     assert check_joins_against_model("SELECT * FROM data LIMIT 5", JOINS) == []
+
+
+def test_multiline_sql_join_detected_by_guard_pattern():
+    # Regression: validate_sql_node's outer gate used to be a strict
+    # " JOIN " substring test, which missed the newline-formatted SQL that
+    # LLMs commonly produce and silently skipped the whole join-model check.
+    sql_query = "SELECT d.device_name\nFROM fact_sales f\nJOIN dim_device d ON f.device_key = d.device_key"
+    assert re.search(r'\bJOIN\b', sql_query, re.IGNORECASE) is not None
