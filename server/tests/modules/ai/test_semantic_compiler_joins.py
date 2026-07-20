@@ -71,3 +71,29 @@ def test_diamond_topology_joins_only_one_path():
     assert not ("path_a" in joined_tables and "path_b" in joined_tables), (
         "only one branch of the diamond should be joined, not both"
     )
+
+
+def test_multi_target_prefers_already_joined_table_over_new_branch():
+    shared_hub_joins = [
+        {"from_table": "fact_sales", "from_column": "b_key", "to_table": "path_b",
+         "to_column": "b_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "fact_sales", "from_column": "a_key", "to_table": "path_a",
+         "to_column": "a_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "path_b", "from_column": "c_key", "to_table": "shared",
+         "to_column": "c_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "path_a", "from_column": "c_key", "to_table": "shared",
+         "to_column": "c_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+    ]
+    # path_b listed BEFORE path_a on purpose: without the fix, BFS for "shared"
+    # would discover it via path_b (not needed) instead of path_a (already joined
+    # for the "path_a" target).
+    clause, used = _build_from_clause(
+        "fact_sales", shared_hub_joins, needed_tables={"path_a", "shared"}
+    )
+    joined_tables = {j["to_table"] for j in used} | {j["from_table"] for j in used}
+    assert "path_a" in joined_tables
+    assert "shared" in joined_tables
+    assert "path_b" not in joined_tables, (
+        "path_b was never in needed_tables and a path through the already-joined "
+        "path_a exists; it must not be pulled in"
+    )
