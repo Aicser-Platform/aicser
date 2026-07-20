@@ -400,6 +400,11 @@ class DataConnectivityService:
                     header=int(header_row),
                     engine="python",
                     on_bad_lines="skip",
+                    # Preserve raw null-token strings ("N/A", "NULL", ...) so
+                    # clean_dataframe (the single source of truth for null-token
+                    # detection/reporting) sees and counts them, instead of pandas'
+                    # own default na_values silently converting them to NaN first.
+                    keep_default_na=False,
                 )
             if ext in ("xlsx", "xls"):
                 sheet_name = options.get("sheet_name")
@@ -417,6 +422,17 @@ class DataConnectivityService:
             raise ValueError(f"Unsupported upload format for parquet conversion: {ext}")
 
         df = await asyncio.to_thread(_read_into_dataframe)
+
+        from src.modules.data.services.data_cleaning_service import clean_dataframe
+
+        df, cleaning_report = await asyncio.to_thread(clean_dataframe, df)
+        logger.info(
+            "🧹 Ingest cleaning: %s null tokens, actions on %d columns",
+            cleaning_report.null_tokens_replaced,
+            len(cleaning_report.column_actions),
+        )
+        cleaned_schema = self._infer_schema_from_dataframe(df)
+
         parquet_buffer = io.BytesIO()
         await asyncio.to_thread(
             df.to_parquet,
@@ -430,6 +446,8 @@ class DataConnectivityService:
             "storage_format": "parquet",
             "compressed_size_bytes": len(parquet_bytes),
             "row_count": len(df.index),
+            "cleaning_report": cleaning_report.to_dict(),
+            "cleaned_schema": cleaned_schema,
         }
 
     async def test_database_connection(self, connection_request: Dict[str, Any]) -> Dict[str, Any]:
@@ -1387,6 +1405,16 @@ class DataConnectivityService:
             if isinstance(storage_meta, dict) and storage_meta:
                 data_source["schema"] = data_source.get("schema") or {}
                 if isinstance(data_source["schema"], dict):
+                    # Cleaned schema wins: it describes the stored (typed) parquet,
+                    # not the raw uploaded file.
+                    cleaned_schema = storage_meta.get("cleaned_schema")
+                    if isinstance(cleaned_schema, dict) and cleaned_schema.get("columns"):
+                        preserved_rc = data_source["schema"].get("row_count") or cleaned_schema.get("row_count")
+                        data_source["schema"].update(cleaned_schema)
+                        if preserved_rc is not None:
+                            data_source["schema"]["row_count"] = preserved_rc
+                    if storage_meta.get("cleaning_report"):
+                        data_source["schema"]["cleaning_report"] = storage_meta["cleaning_report"]
                     storage_info = {
                         "backend": storage_meta.get("backend", options.get("storage_type", "postgresql")),
                         "format": storage_meta.get("storage_format", "parquet"),
@@ -1480,6 +1508,7 @@ class DataConnectivityService:
             is_excel = file_extension in ("xlsx", "xls")
 
             if is_excel:
+                parquet_payload: Dict[str, Any] = {}
                 stored_content = file_content
                 stored_filename = filename
                 stored_format = file_extension
@@ -1530,6 +1559,14 @@ class DataConnectivityService:
                     "uploaded_size_bytes": len(file_content),
                     "compressed_size_bytes": stored_size,
                     **({"compression": "zstd"} if not is_excel else {}),
+                    **(
+                        {
+                            "cleaning_report": parquet_payload.get("cleaning_report"),
+                            "cleaned_schema": parquet_payload.get("cleaned_schema"),
+                        }
+                        if not is_excel
+                        else {}
+                    ),
                 },
             }
 
