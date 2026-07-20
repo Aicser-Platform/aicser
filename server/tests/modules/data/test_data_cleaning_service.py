@@ -87,3 +87,17 @@ def test_duplicate_rows_counted_but_retained():
     )
     assert report.duplicate_row_count == 1
     assert len(df) == 3                            # rows retained
+
+
+def test_pandas_default_na_tokens_do_not_block_numeric_coercion():
+    # "<NA>" and "#N/A N/A" are in pandas' own default `na_values` list but were
+    # NOT in our NULL_TOKENS set. With keep_default_na=False upstream (so the
+    # cleaner can see and count them itself), these tokens now arrive here as
+    # literal strings. If they aren't recognized as null tokens, they count
+    # against the numeric-match share and can push a genuinely numeric column
+    # below _COERCE_THRESHOLD, leaving it typed as string instead of number.
+    values = [str(n) for n in range(17)] + ["<NA>", "#N/A N/A", "<NA>"]  # 3/20 = 15%
+    df, report = clean_dataframe(pd.DataFrame({"amount": values}))
+    assert ptypes.is_numeric_dtype(df["amount"])
+    assert "coerced_numeric" in report.column_actions["amount"]
+    assert df["amount"].isna().sum() == 3
