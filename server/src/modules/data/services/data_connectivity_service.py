@@ -2141,10 +2141,13 @@ class DataConnectivityService:
             return "time"
         if lname == "id" or lname.endswith(("_id", "_key", "_code", "_uuid")):
             return "id"
+        if pd.api.types.is_bool_dtype(series):
+            return "dimension"
         if data_type in ("integer", "number"):
             # Numeric but unique-per-row integers are usually identifiers
             try:
-                if data_type == "integer" and series.nunique(dropna=True) == series.notna().sum():
+                non_null_count = series.notna().sum()
+                if data_type == "integer" and non_null_count > 0 and series.nunique(dropna=True) == non_null_count:
                     return "id"
             except Exception:
                 pass

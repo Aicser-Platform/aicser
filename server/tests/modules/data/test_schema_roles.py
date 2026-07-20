@@ -28,3 +28,15 @@ def test_string_date_named_column_is_not_time():
     df = pd.DataFrame({"update_notes": ["a", "b", "c", "d"]})
     schema = _schema_for(df)
     assert schema["columns"][0]["role"] == "dimension"
+
+
+def test_all_null_integer_column_is_not_misclassified_as_id():
+    df = pd.DataFrame({"empty_int": pd.array([pd.NA] * 4, dtype="Int64")})
+    schema = _schema_for(df)
+    assert schema["columns"][0]["role"] == "metric"
+
+
+def test_boolean_column_is_dimension():
+    df = pd.DataFrame({"is_active": [True, False, True, True]})
+    schema = _schema_for(df)
+    assert schema["columns"][0]["role"] == "dimension"
