@@ -6,11 +6,14 @@ Applied once at upload so the stored parquet is typed. Never renames data column
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 NULL_TOKENS = {"", "n/a", "na", "null", "none", "-", "--", "nan", "#n/a"}
 
@@ -75,7 +78,7 @@ def clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, CleaningReport]:
             continue
 
         # 2. Trim string cells.
-        stripped = series.astype(str).str.strip().where(series.notna(), other=pd.NA)
+        stripped = series.astype(str).str.strip().where(series.notna(), other=float("nan"))
         if not stripped.equals(series):
             report.add(col, "trimmed_values")
         series = stripped
@@ -85,7 +88,7 @@ def clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, CleaningReport]:
         null_mask = series.notna() & lowered.isin(NULL_TOKENS)
         n_nulls = int(null_mask.sum())
         if n_nulls:
-            series = series.mask(null_mask, other=pd.NA)
+            series = series.mask(null_mask, other=float("nan"))
             report.null_tokens_replaced += n_nulls
             report.add(col, "normalized_null_tokens")
 
@@ -117,4 +120,5 @@ def clean_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, CleaningReport]:
         out[col] = series
 
     report.duplicate_row_count = int(out.duplicated().sum())
+    logger.debug("clean_dataframe report: %s", report.to_dict())
     return out, report

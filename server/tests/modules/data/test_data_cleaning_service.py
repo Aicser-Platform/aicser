@@ -71,3 +71,19 @@ def test_report_to_dict_is_json_safe():
     payload = report.to_dict()
     json.dumps(payload)                            # must not raise
     assert payload["null_tokens_replaced"] >= 2
+
+
+def test_native_none_does_not_trigger_false_trim_or_pd_na():
+    df, report = clean_dataframe(
+        pd.DataFrame({"category": ["alpha", "beta", None, "gamma"]})
+    )
+    assert "category" not in report.column_actions  # no false trimmed_values
+    assert all(v is not pd.NA for v in df["category"])  # no NAType cells
+
+
+def test_duplicate_rows_counted_but_retained():
+    df, report = clean_dataframe(
+        pd.DataFrame({"a": ["x", "x", "y"], "b": ["1", "1", "2"]})
+    )
+    assert report.duplicate_row_count == 1
+    assert len(df) == 3                            # rows retained
