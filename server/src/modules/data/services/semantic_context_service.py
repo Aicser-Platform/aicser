@@ -38,6 +38,7 @@ async def list_modeled_join_paths(db: AsyncSession, data_source_id: str) -> List
                 "to_table": r.to_table,
                 "to_column": r.to_column,
                 "join_type": r.join_type or "LEFT",
+                "cardinality": r.cardinality or "one_to_many",
             }
             for r in result.scalars().all()
         ]
