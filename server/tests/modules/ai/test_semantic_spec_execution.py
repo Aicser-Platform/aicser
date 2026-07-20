@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -37,3 +37,17 @@ async def test_compiles_spec_to_sql(mock_ctx):
 async def test_unknown_metric_falls_back_to_none(mock_ctx):
     parsed = {"semantic_query_spec": {"metric": "no_such_metric"}}
     assert await try_compile_semantic_spec(parsed, STATE) is None
+
+
+@pytest.mark.asyncio
+@patch("ee.modules.ai.utils.semantic_spec_execution._load_semantic_context",
+       new_callable=AsyncMock, return_value=CTX)
+async def test_ignores_llm_supplied_data_source_id(mock_ctx):
+    """The LLM's own data_source_id must never override the validated session value."""
+    parsed = {"semantic_query_spec": {"metric": "total_sales", "dimensions": ["region"],
+                                       "data_source_id": "attacker-controlled-ds"}}
+    sql = await try_compile_semantic_spec(parsed, STATE)  # STATE["data_source_id"] == "ds1"
+    assert sql is not None
+    mock_ctx.assert_awaited_once()
+    called_ds_id = mock_ctx.await_args.args[0] if mock_ctx.await_args.args else mock_ctx.await_args.kwargs.get("data_source_id")
+    assert called_ds_id == "ds1"
