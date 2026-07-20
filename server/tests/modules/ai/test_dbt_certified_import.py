@@ -1,11 +1,15 @@
 """dbt sync must certify imported metrics (governed compiler path requires it)."""
 import inspect
+import os
+
+os.environ.setdefault("AISER_EDITION", "enterprise")
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ee.modules.ai.services.semantic_layer_db import semantic_layer_db
-from ee.modules.ai.services.dbt_integration_service import dbt_integration_service
+from src.modules.ai.services.semantic_layer_db import semantic_layer_db
+from src.modules.ai.services.dbt_integration_service import dbt_integration_service
 
 
 def test_upsert_metric_accepts_certified_param():
