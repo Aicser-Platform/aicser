@@ -2134,6 +2134,23 @@ class DataConnectivityService:
         except Exception as error:
             raise Exception(f"Text processing failed: {str(error)}")
 
+    @staticmethod
+    def _infer_column_role(name: str, data_type: str, series: "pd.Series") -> str:
+        lname = str(name).strip().lower()
+        if data_type == "date":
+            return "time"
+        if lname == "id" or lname.endswith(("_id", "_key", "_code", "_uuid")):
+            return "id"
+        if data_type in ("integer", "number"):
+            # Numeric but unique-per-row integers are usually identifiers
+            try:
+                if data_type == "integer" and series.nunique(dropna=True) == series.notna().sum():
+                    return "id"
+            except Exception:
+                pass
+            return "metric"
+        return "dimension"
+
     def _infer_schema_from_dataframe(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Infer schema from pandas DataFrame"""
         columns = []
@@ -2182,6 +2199,7 @@ class DataConnectivityService:
             columns.append({
                 'name': column,
                 'type': data_type,
+                'role': self._infer_column_role(column, data_type, series),
                 'nullable': bool(series.isnull().any()),  # Convert numpy.bool_ to Python bool
                 'statistics': statistics[column]
             })
