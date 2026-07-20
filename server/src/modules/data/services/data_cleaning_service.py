@@ -15,7 +15,29 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-NULL_TOKENS = {"", "n/a", "na", "null", "none", "-", "--", "nan", "#n/a"}
+NULL_TOKENS = {
+    "",
+    "n/a",
+    "na",
+    "null",
+    "none",
+    "-",
+    "--",
+    "nan",
+    "#n/a",
+    # pandas' own default read_csv na_values (lowercased) — kept in sync so that
+    # keep_default_na=False upstream (which lets the cleaner see and count these
+    # tokens itself) doesn't leave them as literal strings that block numeric/
+    # date coercion by diluting the non-null match share below threshold.
+    "<na>",
+    "#na",
+    "#n/a n/a",
+    "-1.#ind",
+    "-1.#qnan",
+    "1.#ind",
+    "1.#qnan",
+    "-nan",
+}
 
 # "$1,234.50", "€2 000", "10%", "-5.2", "+1,000"
 _NUMERIC_RE = re.compile(
