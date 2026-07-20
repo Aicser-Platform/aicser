@@ -52,3 +52,22 @@ def test_build_from_clause_never_references_missing_table():
     # orphan_b is unreachable from fact_sales → no join emitted for it
     assert "orphan" not in clause
     assert used == []
+
+
+def test_diamond_topology_joins_only_one_path():
+    diamond_joins = [
+        {"from_table": "fact_sales", "from_column": "a_key", "to_table": "path_a",
+         "to_column": "a_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "fact_sales", "from_column": "b_key", "to_table": "path_b",
+         "to_column": "b_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "path_a", "from_column": "target_key", "to_table": "target",
+         "to_column": "target_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+        {"from_table": "path_b", "from_column": "target_key", "to_table": "target",
+         "to_column": "target_key", "join_type": "LEFT", "cardinality": "one_to_many"},
+    ]
+    clause, used = _build_from_clause("fact_sales", diamond_joins, needed_tables={"target"})
+    joined_tables = {j["to_table"] for j in used} | {j["from_table"] for j in used}
+    assert "target" in joined_tables
+    assert not ("path_a" in joined_tables and "path_b" in joined_tables), (
+        "only one branch of the diamond should be joined, not both"
+    )
