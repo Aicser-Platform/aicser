@@ -73,6 +73,25 @@ def test_diamond_topology_joins_only_one_path():
     )
 
 
+def test_malicious_order_by_falls_back_to_safe_default():
+    # No dimensions selected, so the safe default is unambiguous: "metric_value".
+    compiled = _compiler().compile(SemanticQuerySpec(
+        data_source_id="ds1", metric="total_sales", dimensions=[],
+        order_by="(SELECT 1); DROP TABLE fact_sales; --",
+    ))
+    assert "DROP TABLE" not in compiled.sql
+    order_clause = compiled.sql.rstrip().split("ORDER BY")[-1].strip()
+    assert order_clause.startswith("metric_value")
+
+
+def test_order_by_referencing_selected_dimension_is_honored():
+    compiled = _compiler().compile(SemanticQuerySpec(
+        data_source_id="ds1", metric="total_sales", dimensions=["device_name"],
+        order_by="device_name",
+    ))
+    assert "ORDER BY device_name" in compiled.sql
+
+
 def test_multi_target_prefers_already_joined_table_over_new_branch():
     shared_hub_joins = [
         {"from_table": "fact_sales", "from_column": "b_key", "to_table": "path_b",
