@@ -298,6 +298,7 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    directly rather than relying on a selector that never matches. */
 .ant-input:focus-visible,
 .ant-input-affix-wrapper:focus-visible,
+.ant-select:focus-visible,
 .ant-select-selector:focus-visible,
 .ant-select-selection-search-input:focus-visible,
 .ant-input-number-input:focus-visible,

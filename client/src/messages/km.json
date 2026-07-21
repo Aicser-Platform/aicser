@@ -1710,6 +1710,8 @@
     "api_key_deleted": "បានលុបកូនសោ API ដោយជោគជ័យ!",
     "api_key_delete_failed": "បរាជ័យក្នុងការលុបកូនសោ API",
     "api_key_provider_saved": "បានរក្សាទុកកូនសោអ្នកផ្តល់សេវា។",
+    "name": "ឈ្មោះ",
+    "api_key": "កូនសោ API",
     "created_at": "បានបង្កើត",
     "last_used": "ប្រើចុងក្រោយ",
     "unknown": "មិនស្គាល់",

@@ -1713,6 +1713,8 @@
     "api_key_deleted": "Xóa khóa API thành công!",
     "api_key_delete_failed": "Xóa khóa API thất bại",
     "api_key_provider_saved": "Khóa nhà cung cấp đã được lưu.",
+    "name": "Tên",
+    "api_key": "Khóa API",
     "created_at": "Đã tạo",
     "last_used": "Sử Dụng Lần Cuối",
     "unknown": "KHÔNG XÁC ĐỊNH",

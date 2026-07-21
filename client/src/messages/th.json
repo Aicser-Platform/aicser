@@ -1712,6 +1712,8 @@
     "api_key_deleted": "ลบคีย์ API สำเร็จ!",
     "api_key_delete_failed": "ลบคีย์ API ไม่สำเร็จ",
     "api_key_provider_saved": "บันทึกคีย์ผู้ให้บริการแล้ว",
+    "name": "ชื่อ",
+    "api_key": "คีย์ API",
     "created_at": "สร้างเมื่อ",
     "last_used": "ใช้งานครั้งล่าสุด",
     "unknown": "ไม่ทราบ",

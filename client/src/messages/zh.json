@@ -1713,6 +1713,8 @@
     "api_key_deleted": "API 密钥删除成功！",
     "api_key_delete_failed": "删除 API 密钥失败",
     "api_key_provider_saved": "提供商密钥已保存。",
+    "name": "名称",
+    "api_key": "API 密钥",
     "created_at": "创建时间",
     "last_used": "上次使用",
     "unknown": "未知",
