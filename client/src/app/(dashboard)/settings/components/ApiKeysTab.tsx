@@ -17,14 +17,7 @@ import {
   Alert,
   Select,
 } from 'antd';
-import {
-  KeyOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  EyeOutlined,
-  EyeInvisibleOutlined,
-  RobotOutlined,
-} from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import type { ApiKey } from '../types';
@@ -80,10 +73,7 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
   ],
 };
 
-function buildProviderModelLabel(
-  translate: (key: string) => string,
-  def: ProviderModelDef
-): string {
+function buildProviderModelLabel(translate: (key: string) => string, def: ProviderModelDef): string {
   const base = translate(def.labelKey);
   if (def.suffix === 'default') return `${base}${translate('ai_model_default_suffix')}`;
   if (def.suffix === 'latest') return `${base}${translate('ai_model_latest_suffix')}`;
@@ -326,106 +316,120 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   return (
     <div>
-      <Tabs
-        className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-content-holder]:block [&_.ant-tabs-content-holder]:h-auto [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content-holder]:flex-none [&_.ant-tabs-content-holder]:overflow-visible [&_.ant-tabs-content-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
-        activeKey={activeApiTab}
-        onChange={handleApiTabChange}
-        destroyInactiveTabPane
-        items={[
-          {
-            key: 'platform',
-            label: t('platform_api_keys'),
-            children: (
-              <div style={{ paddingTop: 4 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
-                  {t('platform_api_keys_desc')}
-                </Text>
-                <Table
-                  dataSource={apiKeys}
-                  columns={apiKeyColumns}
-                  rowKey="id"
-                  loading={loading}
-                  pagination={{ pageSize: 10 }}
-                  scroll={{ x: 'max-content' }}
-                />
-              </div>
-            ),
-          },
-          {
-            key: 'providers',
-            label: t('ai_provider_keys'),
-            children: (
-              <div style={{ paddingTop: 4 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
-                  {t('ai_provider_keys_desc')}
-                </Text>
-                {/* Provider list — flat rows, no stacked full-width cards */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {providers.map((provider) => (
-                    <div
-                      key={provider.key}
-                      onClick={() => !provider.comingSoon && handleOpenProviderKeyModal(provider.key)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '10px 12px',
-                        borderRadius: 8,
-                        border: '1px solid var(--ant-color-border)',
-                        background: 'var(--ant-color-bg-container)',
-                        cursor: provider.comingSoon ? 'default' : 'pointer',
-                        opacity: provider.comingSoon ? 0.6 : 1,
-                        transition: 'background 0.12s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!provider.comingSoon)
-                          (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-fill-tertiary)';
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-bg-container)';
-                      }}
-                    >
-                      {getAiProviderLogo(provider.key) ? (
-                        <img src={getAiProviderLogo(provider.key)} alt="" width={20} height={20}
-                          style={{ objectFit: 'contain', borderRadius: 3, flexShrink: 0 }} />
-                      ) : (
-                        <RobotOutlined style={{ fontSize: 18, color: 'var(--ant-color-text-secondary)', flexShrink: 0 }} />
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, fontSize: 13, lineHeight: 1.3 }}>{provider.name}</div>
-                        <Text type="secondary" style={{ fontSize: 11 }}>{provider.description}</Text>
-                      </div>
-                      {provider.comingSoon ? (
-                        <Tag style={{ margin: 0, fontSize: 10 }}>{t('coming_soon')}</Tag>
-                      ) : providerApiKeys[provider.key] ? (
-                        <Tag color="green" style={{ margin: 0, fontSize: 10 }}>{t('configured')}</Tag>
-                      ) : (
-                        <Tag style={{ margin: 0, fontSize: 10 }}>{t('not_set')}</Tag>
-                      )}
-                    </div>
-                  ))}
+      <Card bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+        <Tabs
+          className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-content-holder]:block [&_.ant-tabs-content-holder]:h-auto [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content-holder]:flex-none [&_.ant-tabs-content-holder]:overflow-visible [&_.ant-tabs-content-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
+          activeKey={activeApiTab}
+          onChange={handleApiTabChange}
+          destroyInactiveTabPane
+          items={[
+            {
+              key: 'platform',
+              label: t('platform_api_keys'),
+              children: (
+                <div style={{ paddingTop: 4 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
+                    {t('platform_api_keys_desc')}
+                  </Text>
+                  <Table
+                    dataSource={apiKeys}
+                    columns={apiKeyColumns}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 'max-content' }}
+                  />
                 </div>
-              </div>
-            ),
-          },
-          {
-            key: 'ai-model',
-            label: t('default_ai_model'),
-            children: (
-              <div style={{ paddingTop: 4 }}>
-                <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
-                  {t('default_ai_model_desc')}
-                </Text>
-                <ModelSelector
-                  persistPreference
-                  reloadNonce={aiModelsReloadNonce}
-                  onChange={() => message.success(t('model_preference_saved'))}
-                />
-              </div>
-            ),
-          },
-        ]}
-      />
+              ),
+            },
+            {
+              key: 'providers',
+              label: t('ai_provider_keys'),
+              children: (
+                <div style={{ paddingTop: 4 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
+                    {t('ai_provider_keys_desc')}
+                  </Text>
+                  {/* Provider list — flat rows, no stacked full-width cards */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {providers.map((provider) => (
+                      <div
+                        className="mt-1"
+                        key={provider.key}
+                        onClick={() => !provider.comingSoon && handleOpenProviderKeyModal(provider.key)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          border: '1px solid var(--ant-color-border)',
+                          background: 'var(--ant-color-bg-container)',
+                          cursor: provider.comingSoon ? 'default' : 'pointer',
+                          opacity: provider.comingSoon ? 0.6 : 1,
+                          transition: 'background 0.12s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!provider.comingSoon)
+                            (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-fill-tertiary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLElement).style.background = 'var(--ant-color-bg-container)';
+                        }}
+                      >
+                        {getAiProviderLogo(provider.key) ? (
+                          <img
+                            src={getAiProviderLogo(provider.key)}
+                            alt=""
+                            width={20}
+                            height={20}
+                            style={{ objectFit: 'contain', borderRadius: 3, flexShrink: 0 }}
+                          />
+                        ) : (
+                          <RobotOutlined
+                            style={{ fontSize: 18, color: 'var(--ant-color-text-secondary)', flexShrink: 0 }}
+                          />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, fontSize: 13, lineHeight: 1.3 }}>{provider.name}</div>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            {provider.description}
+                          </Text>
+                        </div>
+                        {provider.comingSoon ? (
+                          <Tag style={{ margin: 0, fontSize: 10 }}>{t('coming_soon')}</Tag>
+                        ) : providerApiKeys[provider.key] ? (
+                          <Tag color="green" style={{ margin: 0, fontSize: 10 }}>
+                            {t('configured')}
+                          </Tag>
+                        ) : (
+                          <Tag style={{ margin: 0, fontSize: 10 }}>{t('not_set')}</Tag>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'ai-model',
+              label: t('default_ai_model'),
+              children: (
+                <div style={{ paddingTop: 4 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
+                    {t('default_ai_model_desc')}
+                  </Text>
+                  <ModelSelector
+                    persistPreference
+                    reloadNonce={aiModelsReloadNonce}
+                    onChange={() => message.success(t('model_preference_saved'))}
+                  />
+                </div>
+              ),
+            },
+          ]}
+        />
+      </Card>
 
       {/* Shown once after creating a platform API key — copy and store securely */}
       <Modal
@@ -453,11 +457,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       >
         {createdKeyOnce && (
           <>
-            <Alert
-              type="warning"
-              message={t('api_key_store_securely')}
-              style={{ marginBottom: 16 }}
-            />
+            <Alert type="warning" message={t('api_key_store_securely')} style={{ marginBottom: 16 }} />
             <Text strong>{createdKeyOnce.name}</Text>
             <div style={{ marginTop: 8, wordBreak: 'break-all', fontFamily: 'monospace', fontSize: 12 }}>
               {createdKeyOnce.key}
@@ -524,11 +524,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               <Input placeholder={t('azure_endpoint_placeholder')} type="url" autoComplete="off" />
             </Form.Item>
           )}
-          <Form.Item
-            name="model"
-            label={t('default_model')}
-            extra={t('default_model_help')}
-          >
+          <Form.Item name="model" label={t('default_model')} extra={t('default_model_help')}>
             <Select
               placeholder={t('select_model_or_custom')}
               allowClear

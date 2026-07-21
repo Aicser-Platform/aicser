@@ -1713,6 +1713,8 @@
     "api_key_deleted": "Clé API supprimée avec succès !",
     "api_key_delete_failed": "Échec de la suppression de la clé API",
     "api_key_provider_saved": "Clé du fournisseur enregistrée.",
+    "name": "Nom",
+    "api_key": "Clé API",
     "created_at": "Créé",
     "last_used": "Dernière utilisation",
     "unknown": "INCONNU",

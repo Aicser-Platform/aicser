@@ -1713,6 +1713,8 @@
     "api_key_deleted": "APIキーが正常に削除されました！",
     "api_key_delete_failed": "APIキーの削除に失敗しました",
     "api_key_provider_saved": "プロバイダーキーが保存されました。",
+    "name": "名前",
+    "api_key": "APIキー",
     "created_at": "作成日",
     "last_used": "最終使用日",
     "unknown": "不明",

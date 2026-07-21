@@ -1713,6 +1713,8 @@
     "api_key_deleted": "API-Schlüssel erfolgreich gelöscht!",
     "api_key_delete_failed": "Löschen des API-Schlüssels fehlgeschlagen",
     "api_key_provider_saved": "Anbieter-Schlüssel gespeichert.",
+    "name": "Name",
+    "api_key": "API-Schlüssel",
     "created_at": "Erstellt am",
     "last_used": "Zuletzt verwendet",
     "unknown": "UNBEKANNT",

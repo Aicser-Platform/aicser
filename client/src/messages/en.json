@@ -1721,6 +1721,8 @@
     "api_key_deleted": "API key deleted successfully!",
     "api_key_delete_failed": "Failed to delete API key",
     "api_key_provider_saved": "Provider key saved.",
+    "name": "Name",
+    "api_key": "API Key",
     "created_at": "Created",
     "last_used": "Last Used",
     "unknown": "UNKNOWN",

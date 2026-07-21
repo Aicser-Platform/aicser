@@ -16,7 +16,6 @@ def is_ee_enabled() -> bool:
     """Return True when the platform is running in Enterprise Edition mode."""
     edition = os.getenv("AISER_EDITION", "community").strip().lower()
     if edition in ("enterprise", "ee"):
-        print("Enterprise Edition enabled via AISER_EDITION environment variable")
         return True
     if os.getenv("AISER_EDITION_LICENSE_KEY", "").strip():
         return True

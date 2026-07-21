@@ -1711,6 +1711,8 @@
     "api_key_deleted": "¡Clave API eliminada con éxito!",
     "api_key_delete_failed": "Error al eliminar la clave API",
     "api_key_provider_saved": "Clave de proveedor guardada.",
+    "name": "Nombre",
+    "api_key": "Clave API",
     "created_at": "Creado",
     "last_used": "Último Uso",
     "unknown": "DESCONOCIDO",

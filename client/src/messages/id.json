@@ -1713,6 +1713,8 @@
     "api_key_deleted": "Kunci API berhasil dihapus!",
     "api_key_delete_failed": "Gagal menghapus kunci API",
     "api_key_provider_saved": "Kunci penyedia disimpan.",
+    "name": "Nama",
+    "api_key": "Kunci API",
     "created_at": "Dibuat",
     "last_used": "Terakhir Digunakan",
     "unknown": "TIDAK DIKETAHUI",
