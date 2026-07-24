@@ -2,11 +2,17 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Modal, Tag, message, Alert } from 'antd';
+import { Button, Dropdown, Input, Modal, Tag, message, Alert } from 'antd';
 import {
   ArrowUpOutlined,
+  BulbOutlined,
+  CompassOutlined,
   DashboardOutlined,
+  DownOutlined,
+  FireOutlined,
   MessageOutlined,
+  ShareAltOutlined,
+  TeamOutlined,
   UserAddOutlined,
   ArrowDownOutlined,
 } from '@ant-design/icons';
@@ -19,7 +25,6 @@ import { DashboardPageHeader } from '@/components/layout/DashboardPageShell';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useFeedFiltersStore } from '@/stores/useFeedFiltersStore';
 import FeedFilters from './components/FeedFilters';
-import FeedExploreStrip, { type FeedExploreAction } from './components/FeedExploreStrip';
 import FeedCard from './components/FeedCard';
 import FeedGridCard from './components/FeedGridCard';
 import FeedCardSkeleton from './components/FeedCardSkeleton';
@@ -57,7 +62,7 @@ const SocialFeedPage: React.FC = () => {
   const { user } = useAuth();
 
   // ─── Shared filter/sidebar-control UI state (Zustand — read by FeedFilters,
-  // FeedDiscoveryDrawer, FeedExploreStrip) ───────────────────────────────────
+  // FeedDiscoveryDrawer) ───────────────────────────────────
   const filters = useFeedFiltersStore((s) => s.filters);
   const sidebarControls = useFeedFiltersStore((s) => s.sidebarControls);
   const setFilters = useFeedFiltersStore((s) => s.setFilters);
@@ -380,14 +385,6 @@ const SocialFeedPage: React.FC = () => {
     );
   }, [rejectMutation, rejectReason, rejectTargetId, t]);
 
-  const handleExploreAction = useCallback(
-    (action: FeedExploreAction) => {
-      if (action.type !== 'filters') return;
-      setFilters({ ...filters, ...action.patch });
-    },
-    [filters, setFilters]
-  );
-
   const searchQuery = (filters.search || '').trim();
   const hasSearchFilter = searchQuery.length > 0;
   const hasTagFilters = filters.tags.length > 0;
@@ -476,7 +473,6 @@ const SocialFeedPage: React.FC = () => {
                 </div>
               )}
 
-              {/* {!loading && items.length > 0 && <FeedExploreStrip variant="compact" onAction={handleExploreAction} />} */}
               {/* {approvalAccessResolved && canModerateApprovals && (
                 <div className="mb-6 rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
@@ -557,23 +553,16 @@ const SocialFeedPage: React.FC = () => {
               )} */}
 
               {items.length === 0 && !loading && (
-                <div className="flex flex-col items-center justify-center p-8 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">
-                  <FeedExploreStrip
-                    variant="empty"
-                    onAction={handleExploreAction}
-                    onDiscover={() => setDiscoveryOpen(true)}
-                  />
-                  <div className="mt-4 mb-6 text-center">
-                    <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
-                      {emptyStateTitle}
-                    </h3>
-                    {showContextualEmptyState && (
-                      <p className="mt-1.5 mb-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
-                        {emptyStateSubtitle}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-3">
+                <div className="flex flex-col items-center justify-center gap-3 p-10 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">
+                  <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
+                    {emptyStateTitle}
+                  </h3>
+                  {showContextualEmptyState && (
+                    <p className="m-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
+                      {emptyStateSubtitle}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
                     <Button
                       type="primary"
                       icon={<MessageOutlined />}
@@ -582,23 +571,58 @@ const SocialFeedPage: React.FC = () => {
                     >
                       {t('empty_cta_explore_ai')}
                     </Button>
-                    <Button
-                      icon={<DashboardOutlined />}
-                      className="rounded-lg font-medium"
-                      onClick={() => router.push('/dashboards')}
+                    <Dropdown
+                      trigger={['click']}
+                      menu={{
+                        items: [
+                          { key: 'discover', icon: <CompassOutlined />, label: t('discover') },
+                          { key: 'trending', icon: <FireOutlined />, label: t('explore_chip_trending') },
+                          { key: 'team', icon: <TeamOutlined />, label: t('explore_chip_team') },
+                          { key: 'learn', icon: <BulbOutlined />, label: t('explore_chip_learn') },
+                          { key: 'build_dashboard', icon: <DashboardOutlined />, label: t('build_dashboard') },
+                          { key: 'share', icon: <ShareAltOutlined />, label: t('explore_chip_share_insight') },
+                        ],
+                        onClick: ({ key }) => {
+                          switch (key) {
+                            case 'discover':
+                              setDiscoveryOpen(true);
+                              break;
+                            case 'trending':
+                              setFilters({ ...filters, sort: 'trending', scope: defaultScope });
+                              break;
+                            case 'team':
+                              setFilters({ ...filters, scope: defaultScope, sort: 'recommended' });
+                              break;
+                            case 'learn':
+                              router.push(getChatHref({ prompt: t('explore_prompt_learn') }));
+                              break;
+                            case 'build_dashboard':
+                              router.push('/dashboards');
+                              break;
+                            case 'share':
+                              router.push('/feed/publish');
+                              break;
+                            default:
+                              break;
+                          }
+                        },
+                      }}
                     >
-                      {t('build_dashboard')}
-                    </Button>
-                    {!user && (
-                      <Button
-                        icon={<UserAddOutlined />}
-                        className="rounded-lg font-medium"
-                        onClick={() => router.push('/login')}
-                      >
-                        {t('sign_in_to_save')}
+                      <Button className="rounded-lg font-medium">
+                        {t('explore_more')} <DownOutlined />
                       </Button>
-                    )}
+                    </Dropdown>
                   </div>
+                  {!user && (
+                    <Button
+                      type="link"
+                      icon={<UserAddOutlined />}
+                      className="font-medium"
+                      onClick={() => router.push('/login')}
+                    >
+                      {t('sign_in_to_save')}
+                    </Button>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">

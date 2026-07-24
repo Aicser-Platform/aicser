@@ -2,7 +2,8 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Empty, Spin } from 'antd';
+import { Empty } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
 import { StatWidget } from './StatWidget';
 import { TextWidget } from './TextWidget';
@@ -17,19 +18,25 @@ import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 
+const widgetChunkLoading = () => (
+  <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <AppLoadingIndicator variant="minimal" />
+  </div>
+);
+
 const GeoMapWidget = dynamic(
   () => import('./GeoMapWidget').then((m) => m.GeoMapWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 const EChartWidget = dynamic(
   () => import('./EChartWidget').then((m) => m.EChartWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 const RawEChartWidget = dynamic(
   () => import('./RawEChartWidget').then((m) => m.RawEChartWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 interface QueryMetric {
@@ -167,7 +174,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         <RawEChartWidget option={snapshotOption} onChartReady={onChartReady} minHeight={minHeight} />
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
-            <Spin tip="Updating..." size="small" />
+            <AppLoadingIndicator variant="minimal" tip="Updating..." />
           </div>
         )}
       </div>
@@ -319,7 +326,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         />
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
-            <Spin tip="Updating…" size="small" />
+            <AppLoadingIndicator variant="minimal" tip="Updating…" />
           </div>
         )}
       </div>
@@ -343,7 +350,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   if (isLoading && needsData && !hasData) {
     return (
       <div style={loadingOverlayStyle}>
-        <Spin tip="Loading data..." />
+        <AppLoadingIndicator variant="minimal" tip="Loading data..." />
       </div>
     );
   }
@@ -414,7 +421,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       {renderContent()}
       {isLoading && (
         <div className={activeOverlayClass} style={activeOverlayStyle}>
-          <Spin tip="Updating..." size="small" />
+          <AppLoadingIndicator variant="minimal" tip="Updating..." />
         </div>
       )}
     </div>

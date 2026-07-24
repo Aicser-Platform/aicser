@@ -7,7 +7,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 16px;
   color: var(--ant-color-text-secondary);
   box-sizing: border-box;
 }
@@ -37,7 +37,102 @@
   color: var(--ant-color-text-secondary);
 }
 
-.app-loading-indicator .ant-spin-dot-item {
+/* Branded mark: spinning brand-color ring around a gently pulsing logo */
+.app-loading-indicator__mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.app-loading-indicator__mark--small {
+  width: 32px;
+  height: 32px;
+}
+
+.app-loading-indicator__mark--default {
+  width: 48px;
+  height: 48px;
+}
+
+.app-loading-indicator__mark--large {
+  width: 72px;
+  height: 72px;
+}
+
+.app-loading-indicator__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--color-primary, #00c2cb);
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  animation: app-loading-spin 0.9s linear infinite;
+}
+
+.app-loading-indicator__logo {
+  position: relative;
+  display: block;
+  border-radius: 8px;
+  object-fit: contain;
+  animation: app-loading-pulse 1.6s ease-in-out infinite;
+}
+
+.app-loading-indicator__mark--small .app-loading-indicator__logo {
+  width: 20px;
+  height: 20px;
+}
+
+.app-loading-indicator__mark--default .app-loading-indicator__logo {
+  width: 30px;
+  height: 30px;
+}
+
+.app-loading-indicator__mark--large .app-loading-indicator__logo {
+  width: 44px;
+  height: 44px;
+}
+
+@keyframes app-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes app-loading-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading-indicator__ring,
+  .app-loading-indicator__logo {
+    animation: none;
+  }
+}
+
+/* Minimal variant — drop-in for a bare small <Spin>, no wrapper box */
+.app-loading-indicator-minimal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  vertical-align: middle;
+}
+
+.app-loading-indicator-minimal__tip {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.app-loading-indicator-minimal .ant-spin-dot-item {
   background-color: var(--ant-color-primary) !important;
 }
 

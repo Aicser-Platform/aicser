@@ -108,21 +108,39 @@
   max-height: 42px !important;
   padding: 0 16px !important;
   border-radius: 10px !important;
-  border: 1px solid rgba(119, 145, 112, 0.45) !important;
-  background: var(--ant-color-bg-container) !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
   box-shadow: none !important;
   font-size: 18px !important;
   font-weight: 500 !important;
   line-height: 1 !important;
   color: var(--ant-color-text) !important;
   max-width: min(280px, 28vw);
-  min-width: 180px;
+  /* Size to content instead of forcing a wide pill around a 3-char org/project
+     name — max-width above still caps and ellipsis-truncates long ones. */
+  min-width: 0;
 }
 
 .header-shell-chip.ant-btn:hover {
-  border-color: rgba(70, 124, 80, 0.75) !important;
-  background: var(--ant-color-bg-container) !important;
+  background: var(--ant-color-fill-quaternary) !important;
   color: var(--ant-color-text) !important;
+}
+
+/* Single-org label — same layout as the switcher chip, but no hover/click
+   affordance since there's nothing to switch to. */
+.header-shell-chip.header-shell-chip--static {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: 42px;
+  padding: 0 16px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ant-color-text);
+  max-width: min(280px, 28vw);
+  cursor: default;
 }
 
 .header-shell-chip-label {
@@ -134,7 +152,7 @@
 }
 
 .header-shell-chip.header-org-chip.ant-btn {
-  min-width: 210px;
+  min-width: 0;
   max-width: min(280px, 30vw);
 }
 
@@ -144,7 +162,10 @@
 }
 
 .header-shell-chip-icon--org {
-  color: #0f8f4d !important;
+  /* Brand teal default, not the unrelated green this used to be — same accent
+     used everywhere else (logo, model selector, loading indicator). No
+     !important: a custom per-org color (inline style) should be able to win. */
+  color: var(--color-primary);
 }
 
 .header-shell-chip-chevron {
@@ -154,10 +175,29 @@
 }
 
 .header-workspace-separator {
+  /* Chevron reads as "org contains project" (breadcrumb convention) more clearly
+     than a bare slash, which looks more like a URL/file-path separator. */
   color: var(--ant-color-text-tertiary);
-  font-size: 24px;
+  font-size: 15px;
   line-height: 1;
-  padding: 0 12px;
+  padding: 0 6px;
+}
+
+.header-shell-icon-affordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.header-shell-icon-affordance:hover {
+  background: var(--ant-color-fill-quaternary);
 }
 
 .header-shell-icon-btn.ant-btn,
@@ -475,3 +515,4 @@ div.page-container,
     padding: 16px !important;
   }
 }
+

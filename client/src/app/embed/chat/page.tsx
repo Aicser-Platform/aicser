@@ -3,7 +3,8 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { Alert, Button, Card, Input, Spin, Typography, Avatar, Tooltip } from 'antd';
+import { Alert, Button, Card, Input, Typography, Avatar, Tooltip } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
   SendOutlined,
   StopOutlined,
@@ -33,19 +34,25 @@ import {
 } from '@/ee';
 import { isDashboardAutoOpenEnabled } from '@/app/(dashboard)/dashboards/utils/dashboardAutoOpenStorage';
 
+const dynamicChunkLoading = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}>
+    <AppLoadingIndicator variant="minimal" />
+  </div>
+);
+
 const DashboardPlanCard = dynamic(
   () => import('@/ee').then((m) => m.DashboardPlanCard),
-  { ssr: false, loading: () => <Spin size="small" /> },
+  { ssr: false, loading: dynamicChunkLoading },
 );
 
 const SharedChartRenderer = dynamic(
   () => import('@/components/charts/SharedChartRenderer').then((m) => m.SharedChartRenderer),
-  { ssr: false, loading: () => <Spin style={{ margin: '12px auto', display: 'block' }} /> },
+  { ssr: false, loading: dynamicChunkLoading },
 );
 
 const EmbedEChartsFallback = dynamic(
   () => import('@/components/charts/EmbedEChartsFallback').then((m) => m.EmbedEChartsFallback),
-  { ssr: false, loading: () => <Spin style={{ margin: '12px auto', display: 'block' }} /> },
+  { ssr: false, loading: dynamicChunkLoading },
 );
 
 const { Text, Paragraph } = Typography;
@@ -407,7 +414,7 @@ function EmbedChatContent() {
         <Text strong style={{ fontSize: 14 }}>
           {assistantName}
         </Text>
-        {loading && <Spin size="small" style={{ marginLeft: 'auto' }} />}
+        {loading && <AppLoadingIndicator variant="minimal" className="ml-auto" />}
       </div>
 
       <div
@@ -741,7 +748,7 @@ function EmbedChatContent() {
 
 export default function EmbedChatPage() {
   return (
-    <Suspense fallback={<Spin style={{ margin: 48 }} />}>
+    <Suspense fallback={<AppLoadingIndicator variant="full" />}>
       <EmbedChatContent />
     </Suspense>
   );

@@ -149,7 +149,10 @@ class TextToSqlService:
             self._completion = litellm.acompletion
 
     def _pick_model(self, model: str | None, keys: dict) -> str | None:
-        if model:
+        # CE has no managed "auto" tier (that's an EE/litellm_service concept) — treat
+        # it the same as unset so the frontend's shared ModelSelector (which defaults
+        # to 'auto') can be reused here without sending an id this picker can't resolve.
+        if model and model != "auto":
             return model
         # Prefer a provider that has a key AND a saved default model.
         for provider, cfg in keys.items():
@@ -184,7 +187,7 @@ class TextToSqlService:
         if not chosen_model:
             raise NoProviderKeyError("any")
 
-        provider = provider_for_model(chosen_model)
+        provider = provider_for_model(chosen_model, keys)
         cfg = keys.get(provider) or {}
         api_key = cfg.get("api_key") or _env_api_key(provider)
         if not api_key:

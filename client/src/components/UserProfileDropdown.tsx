@@ -2,13 +2,16 @@
 
 import React, { useState } from 'react';
 import { Dropdown, Avatar, Badge, Button, Progress, message } from 'antd';
-import { 
-  UserOutlined, 
-  LogoutOutlined, 
+import {
+  UserOutlined,
+  LogoutOutlined,
   CrownOutlined,
+  CreditCardOutlined,
   RocketOutlined,
   CustomerServiceOutlined,
   CommentOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
@@ -16,9 +19,13 @@ import { useOnboardingStore, useOnboarding } from '@/stores/useOnboardingStore';
 import { useProfileStore } from '@/stores/useProfileStore';
 import PricingModal from '@/components/PricingModal';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useFeaturebaseStore } from '@/stores/useFeaturebaseStore';
 import { useRouter } from 'next/navigation';
+import { useThemeMode } from '@/components/Providers/ThemeModeContext';
+import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
+import { getLocaleMeta } from '@/config/locales';
+import { fetchApi } from '@/utils/api';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -44,6 +51,17 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const { profile, fetchProfile } = useProfileStore();
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const { isDarkMode, setIsDarkMode } = useThemeMode();
+  const currentLocale = useLocale();
+
+  const handleThemeChange = (dark: boolean) => {
+    setIsDarkMode(dark);
+    fetchApi('users/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: dark ? 'dark' : 'light' }),
+    }).catch(() => {});
+  };
 
   // Fetch profile and subscription/usage on mount
   React.useEffect(() => {
@@ -268,6 +286,19 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 >
                   {t('upgrade_plan')}
                 </Button>
+                <Button
+                  type="link"
+                  size="small"
+                  block
+                  icon={<CreditCardOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push('/settings?tab=billing-subscription');
+                  }}
+                  style={{ marginTop: 4, paddingLeft: 0 }}
+                >
+                  {t('manage_billing')}
+                </Button>
               </div>
             ),
             onClick: () => setPricingModalVisible(true),
@@ -281,6 +312,39 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
             type: 'divider' as const,
           },
         ]),
+    {
+      key: 'theme-mode',
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isDarkMode ? <MoonOutlined /> : <SunOutlined />}
+            <span>{t('appearance')}</span>
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--ant-color-text-tertiary)' }}>
+            {isDarkMode ? t('dark_mode') : t('light_mode')}
+          </span>
+        </div>
+      ),
+      onClick: () => handleThemeChange(!isDarkMode),
+    },
+    {
+      key: 'language',
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <LocaleFlagIcon locale={currentLocale} width={16} />
+            <span>{t('language')}</span>
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--ant-color-text-tertiary)' }}>
+            {getLocaleMeta(currentLocale).label}
+          </span>
+        </div>
+      ),
+      onClick: () => router.push('/settings?tab=general'),
+    },
+    {
+      type: 'divider' as const,
+    },
     {
       key: 'get-help',
       icon: <CustomerServiceOutlined />,
@@ -329,7 +393,10 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   return (
     <>
       <Dropdown
-        menu={{ items: menuItems }}
+        menu={{
+          items: menuItems,
+          selectedKeys: [`lang-${currentLocale}`],
+        }}
         trigger={['click']}
         placement="bottomRight"
         overlayClassName="user-profile-dropdown"
@@ -345,7 +412,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
               size={showText ? 'default' : 24}
               src={profile?.avatar_url || undefined}
               icon={!profile?.avatar_url ? <UserOutlined /> : undefined}
-              className={showText ? 'bg-blue-500' : undefined}
+              style={!profile?.avatar_url ? { backgroundColor: 'var(--ant-color-primary)' } : undefined}
             />
           </div>
           {/* always show username on desktop and tablet, collapse only on very small screens */}

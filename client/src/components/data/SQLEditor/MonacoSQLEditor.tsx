@@ -22,12 +22,11 @@ import {
   Alert,
   Modal,
   Form,
-  Spin,
   Grid,
   Pagination,
-  Avatar,
 } from 'antd';
 import { useTranslations } from 'next-intl';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import MemoryOptimizedEditor, { type MemoryOptimizedEditorHandle } from '@/components/ai/MemoryOptimizedEditor';
 import {
   DatabaseOutlined,
@@ -59,9 +58,7 @@ import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistory
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
-import { useAiModels } from '@/hooks/useAi';
-import { getAiProviderLogo } from '@/config/aiProviders';
-import { shortComposerModelDisplayName } from '@/components/ai/ModelSelector/ModelSelector';
+import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
 import { getChatHref } from '@/utils/appPaths';
 import {
@@ -206,26 +203,40 @@ const MIN_EDITOR_HEIGHT = 100;
 const RUN_BAR_HEIGHT = 44;
 const TABS_ROW_HEIGHT = 32;
 const MIN_TOP_SECTION_HEIGHT = TABS_ROW_HEIGHT + MIN_EDITOR_HEIGHT + RUN_BAR_HEIGHT; // tabs + editor + run bar
-const MIN_RESULTS_PANE_HEIGHT = 140;
+// Results pane's minimum footprint — kept small since it's the resizable floor,
+// not its default (the results pane still gets whatever space is left over).
+const MIN_RESULTS_PANE_HEIGHT = 90;
 const DEFAULT_EDITOR_HEIGHT = 200;
 const DATA_PANEL_MIN = 260;
 const DATA_PANEL_MAX = 600;
 const DATA_PANEL_DEFAULT = 320;
 const computeMaxEditorHeight = (workspaceHeight?: number) => {
   if (typeof window === 'undefined') return 360;
+  // `||` (not `??`) on purpose: a not-yet-laid-out container reports clientHeight
+  // 0, which is defined (so `??` would accept it) but never a real measurement —
+  // treating it as real clamped the editor to its floor on every mount and then
+  // *persisted* that bogus small height, silently wiping the user's saved resize
+  // on every refresh/navigation.
   const base =
-    workspaceHeight ??
+    workspaceHeight ||
     (typeof document !== 'undefined'
       ? document.querySelector('.qe-workspace-main')?.clientHeight
-      : undefined) ??
+      : undefined) ||
     window.innerHeight;
-  const reserved = 180;
+  // Chrome above the resizable split (page header + AI assist bar) — tightened
+  // from an earlier, over-generous estimate that was silently capping the
+  // editor's default height well below what the viewport actually allowed.
+  const reserved = 140;
   const available = Math.max(MIN_TOP_SECTION_HEIGHT, base - reserved);
   return Math.max(MIN_TOP_SECTION_HEIGHT, available - MIN_RESULTS_PANE_HEIGHT);
 };
 const computeDefaultEditorHeight = () => {
   const max = computeMaxEditorHeight();
-  return Math.min(220, Math.max(MIN_TOP_SECTION_HEIGHT, Math.floor(max * 0.55)));
+  // Default to a generously tall code area (most of the available space) rather
+  // than a box that leaves a large empty void above the results pane on first
+  // load — matches how most SQL editors (and this one, once resized) look.
+  const target = Math.max(500, Math.floor(max * 0.88));
+  return Math.min(max, target, 760);
 };
 const buildPythonTemplate = (baseSql: string, dataSourceName?: string) => `# Python code to query data source
 import pandas as pd
@@ -488,30 +499,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
+  const aiGenerateAbortRef = useRef<AbortController | null>(null);
   const [aiModel, setAiModel] = useState<string | undefined>();
-  const { data: aiModels = [] } = useAiModels();
-  const availableAiModels = useMemo(() => aiModels.filter((m) => m.available), [aiModels]);
-  const aiModelOptions = useMemo(
-    () =>
-      availableAiModels.map((m) => {
-        const logo = getAiProviderLogo(m.provider);
-        return {
-          label: (
-            <Tooltip title={m.name} placement="left">
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                {logo && <Avatar src={logo} size={14} />}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {shortComposerModelDisplayName(m.name)}
-                </span>
-              </span>
-            </Tooltip>
-          ),
-          value: m.id,
-        };
-      }),
-    [availableAiModels]
-  );
-  const selectedAiModel = aiModel ?? availableAiModels[0]?.id;
+  const selectedAiModel = aiModel ?? 'auto';
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
@@ -556,7 +546,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_EDITOR_HEIGHT;
     const max = computeMaxEditorHeight();
-    const stored = Number(window.localStorage.getItem('qe_editor_height'));
+    const stored = Number(window.localStorage.getItem('qe_editor_height_v3'));
     const initial = Number.isFinite(stored) && stored > 0 ? stored : computeDefaultEditorHeight();
     return Math.min(Math.max(initial, MIN_TOP_SECTION_HEIGHT), max);
   });
@@ -589,7 +579,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       const clamped = Math.min(Math.max(h, MIN_TOP_SECTION_HEIGHT), nextMax);
       if (clamped !== h) {
         try {
-          window.localStorage.setItem('qe_editor_height', String(clamped));
+          window.localStorage.setItem('qe_editor_height_v3', String(clamped));
         } catch {
           /* ignore */
         }
@@ -611,7 +601,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       editorResizeStateRef.current.startHeight = editorHeight;
     }
     try {
-      window.localStorage.setItem('qe_editor_height', String(editorHeight));
+      window.localStorage.setItem('qe_editor_height_v3', String(editorHeight));
     } catch {
       // ignore storage failures
     }
@@ -1919,6 +1909,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       return;
     }
 
+    const abortController = new AbortController();
+    aiGenerateAbortRef.current = abortController;
     setAiGenerating(true);
     try {
       // authenticatedFetch (fetchApi) returns parsed JSON on success or throws on error
@@ -1934,6 +1926,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           current_sql: sqlQuery.trim() || undefined, // Send current SQL from editor
           model: selectedAiModel,
         }),
+        signal: abortController.signal,
       });
       console.log('AI generation result (Query Editor):', {
         success: result.success,
@@ -2029,14 +2022,24 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         });
       }
     } catch (error: unknown) {
-      console.error('AI generation error:', error);
-      message.error({
-        content: formatError(error, 'generic', t('ai_assistant_hint')),
-        duration: 5,
-      });
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      if (isAbort) {
+        message.info({ content: t('ai_generation_cancelled'), duration: 3 });
+      } else {
+        console.error('AI generation error:', error);
+        message.error({
+          content: formatError(error, 'generic', t('ai_assistant_hint')),
+          duration: 5,
+        });
+      }
     } finally {
+      aiGenerateAbortRef.current = null;
       setAiGenerating(false);
     }
+  };
+
+  const handleCancelAIGenerate = () => {
+    aiGenerateAbortRef.current?.abort();
   };
 
   // Python execution handler
@@ -2537,35 +2540,48 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   />
                 </div>
               </Tooltip>
-              <Input
+              <Input.TextArea
                 placeholder={t('ai_assistant_placeholder')}
-                style={{ flex: 1, height: '32px', borderRadius: '6px' }}
-                size="middle"
+                style={{ flex: 1, borderRadius: '6px', resize: 'none' }}
+                autoSize={{ minRows: 1, maxRows: 6 }}
                 value={aiAssistantInput}
                 onChange={(e) => setAiAssistantInput(e.target.value)}
-                onPressEnter={handleAIGenerate}
+                onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                  // Enter submits; Ctrl/Shift+Enter inserts a newline instead.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    handleAIGenerate();
+                  }
+                }}
                 disabled={aiGenerating}
               />
-              <Select
-                value={selectedAiModel}
-                onChange={setAiModel}
-                options={aiModelOptions}
-                placeholder={availableAiModels.length === 0 ? 'No keys configured' : 'Select model'}
-                disabled={aiGenerating || availableAiModels.length === 0}
-                size="small"
-                popupMatchSelectWidth={false}
-                style={{ width: 'auto', minWidth: 90, maxWidth: 140, flexShrink: 0 }}
+              {aiGenerating ? (
+                <Tooltip title={t('cancel_generation')}>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<CloseCircleOutlined />}
+                    onClick={handleCancelAIGenerate}
+                  />
+                </Tooltip>
+              ) : (
+                <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={handleAIGenerate}
+                    disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
+                  />
+                </Tooltip>
+              )}
+              <ModelSelector
+                compact
+                value={aiModel}
+                onModelChange={setAiModel}
+                disabled={aiGenerating}
+                persistPreference
               />
-              <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<RocketOutlined />}
-                  onClick={handleAIGenerate}
-                  loading={aiGenerating}
-                  disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
-                />
-              </Tooltip>
             </div>
           </div>
           )}
@@ -3641,10 +3657,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }
       >
         {aiExplaining ? (
-          <div style={{ padding: '40px 0', textAlign: 'center' }}>
-            <Spin size="large" tip={t('explain_sql_analyzing')}>
-              <div style={{ minHeight: 60 }} />
-            </Spin>
+          <div style={{ padding: '24px 0' }}>
+            <AppLoadingIndicator variant="inline" tip={t('explain_sql_analyzing')} />
           </div>
         ) : (
           <div

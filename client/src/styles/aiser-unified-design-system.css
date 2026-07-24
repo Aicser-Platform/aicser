@@ -408,47 +408,14 @@
 }
 
 /* ========================================
-   TABLES - MODERN & READABLE
+   TABLES - canonical global default lives in aiser-color-system.css
    ======================================== */
 
-.ant-table,
 .data-table {
   border-radius: var(--radius-lg) !important;
   overflow: hidden !important;
   background: var(--ant-color-bg-container) !important;
 }
-
-.ant-table-wrapper {
-  background: var(--ant-color-bg-container) !important;
-  border-radius: var(--radius-lg) !important;
-}
-
-.ant-table-thead > tr > th {
-  background: var(--ant-color-bg-elevated) !important;
-  border-bottom: var(--border-medium) solid var(--ant-color-border) !important;
-  font-weight: var(--font-weight-semibold) !important;
-  color: var(--ant-color-text) !important;
-  padding: var(--spacing-md) !important;
-  font-size: var(--font-size-sm) !important;
-}
-
-.ant-table-tbody > tr > td {
-  border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-md) !important;
-  color: var(--ant-color-text) !important;
-  font-size: var(--font-size-sm) !important;
-}
-
-.ant-table-tbody > tr:hover > td {
-  background: var(--ant-color-fill-secondary) !important;
-}
-
-.ant-table-tbody > tr:last-child > td {
-  border-bottom: none !important;
-}
-
-/* Query history table - use default Ant Design styling */
-/* Removed custom overrides - let Ant Design handle it */
 
 /* ========================================
    TABS - page-level only (not query editor / inline workspaces)

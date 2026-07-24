@@ -127,6 +127,9 @@ function buildScatterFromQueryResult(
   };
 }
 
+/** Chart types that can render one series per group value (vs. a single flat series). */
+const GROUPABLE_CHART_TYPES = new Set(['bar', 'line', 'area']);
+
 function buildFromQueryResult(
   rows: Record<string, unknown>[],
   chartType: string,
@@ -145,20 +148,71 @@ function buildFromQueryResult(
 
   let xKey = String(meta.x || meta.xField || meta.x_axis || '');
   let yKey = String(meta.yMetric || meta.yField || meta.metric || '');
+  const groupKeyRaw = String(meta.group || meta.groupField || meta.groupBy || '');
+  const groupKey = groupKeyRaw && keys.includes(groupKeyRaw) && groupKeyRaw !== xKey ? groupKeyRaw : '';
 
   if (!xKey || !keys.includes(xKey)) {
     xKey =
-      keys.find((k) => typeof rows[0][k] === 'string') ||
-      keys.find((k) => !/^(id|_id)$/i.test(k)) ||
+      keys.find((k) => k !== groupKey && typeof rows[0][k] === 'string') ||
+      keys.find((k) => k !== groupKey && !/^(id|_id)$/i.test(k)) ||
       keys[0];
   }
   if (!yKey || !keys.includes(yKey)) {
     yKey =
-      keys.find((k) => k !== xKey && typeof rows[0][k] === 'number') ||
-      keys.find((k) => k !== xKey && !Number.isNaN(Number(rows[0][k]))) ||
+      keys.find((k) => k !== xKey && k !== groupKey && typeof rows[0][k] === 'number') ||
+      keys.find((k) => k !== xKey && k !== groupKey && !Number.isNaN(Number(rows[0][k]))) ||
       keys[1];
   }
   if (!xKey || !yKey) return null;
+
+  // The original chart may have been grouped (e.g. "revenue by month, split by region").
+  // Re-derive from the raw rows using that same grouping rather than flattening to one
+  // series per row — the previous version dropped the group entirely on every switch,
+  // which is exactly what turned a grouped line chart into a garbled per-row pie.
+  if (groupKey) {
+    const xOrder: string[] = [];
+    const groupOrder: string[] = [];
+    const sums = new Map<string, Map<string, number>>();
+    for (const row of rows) {
+      const xVal = String(row[xKey] ?? '');
+      const gVal = String(row[groupKey] ?? '');
+      if (!xOrder.includes(xVal)) xOrder.push(xVal);
+      if (!groupOrder.includes(gVal)) groupOrder.push(gVal);
+      const yVal = Number(row[yKey]) || 0;
+      const perX = sums.get(xVal) || new Map<string, number>();
+      perX.set(gVal, (perX.get(gVal) || 0) + yVal);
+      sums.set(xVal, perX);
+    }
+
+    if (GROUPABLE_CHART_TYPES.has(chartType)) {
+      const series = groupOrder.map((g) => ({
+        name: g,
+        data: xOrder.map((x) => sums.get(x)?.get(g) ?? 0),
+      }));
+      return {
+        chartType,
+        chartData: { x: xOrder, y: series[0]?.data ?? [], series },
+        chartOptions: {},
+        chartQuery: { x: xKey, yMetric: yKey, group: groupKey, aggregate: meta.aggregate || 'sum' },
+      };
+    }
+
+    // Chart type doesn't support multiple series (pie/donut/table/…) — collapse the
+    // group dimension by summing across groups per x, giving correct per-category
+    // totals instead of one slice per raw (x, group) row.
+    const collapsed = xOrder.map((x) => {
+      const perX = sums.get(x);
+      let total = 0;
+      perX?.forEach((v) => { total += v; });
+      return total;
+    });
+    return {
+      chartType,
+      chartData: { x: xOrder, y: collapsed, series: [{ name: String(yKey), data: collapsed }] },
+      chartOptions: {},
+      chartQuery: { x: xKey, yMetric: yKey, aggregate: meta.aggregate || 'sum' },
+    };
+  }
 
   const x = rows.map((r) => String(r[xKey] ?? ''));
   const data = rows.map((r) => Number(r[yKey]) || 0);

@@ -22,6 +22,40 @@ export const NAV_ROUTES: Record<string, string> = {
   alerts: '/alerts',
   'platform-services': '/data-platform',
   settings: '/settings',
+  billing: '/settings?tab=billing-subscription',
+};
+
+/**
+ * Single source of truth for nav-item display labels (keys into the `nav` i18n namespace).
+ * Shared by the sidebar (Navigation.tsx) and PageBreadcrumb so labels never drift apart.
+ */
+export const NAV_LABEL_KEYS: Record<string, string> = {
+  chat: 'ai_engine',
+  'query-editor': 'query_editor',
+  feed: 'feed',
+  'dashboard-studio': 'dashboard_studio',
+  dashboards: 'dashboards',
+  'chart-designer': 'chart_designer',
+  'grp-data': 'cat_data',
+  data: 'data',
+  'semantic-model': 'semantic_layer',
+  knowledge: 'knowledge_libraries',
+  'grp-operate': 'cat_monitor',
+  alerts: 'alerts',
+  'platform-services': 'integrations',
+  settings: 'settings',
+  billing: 'billing',
+};
+
+/** Nav key → parent group key, for breadcrumb trails (e.g. Data & Model > Semantic layer). */
+export const NAV_PARENT_GROUP: Record<string, string> = {
+  dashboards: 'dashboard-studio',
+  'chart-designer': 'dashboard-studio',
+  data: 'grp-data',
+  'semantic-model': 'grp-data',
+  knowledge: 'grp-data',
+  alerts: 'grp-operate',
+  'platform-services': 'grp-operate',
 };
 
 export interface NavLinkDef {
@@ -52,13 +86,16 @@ export function openKeysForPathname(pathname: string | null): string[] {
   return [];
 }
 
-export function selectedKeyForPathname(pathname: string | null): string {
+export function selectedKeyForPathname(pathname: string | null, search?: string | null): string {
   if (!pathname) return '';
   if (pathname === '/chat' || pathname === '/ai-search') return 'chat';
   if (pathname === '/semantic-layer' || pathname === '/model' || pathname.includes('/semantic')) return 'semantic-model';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'knowledge';
-  if (pathname.startsWith('/settings')) return 'settings';
+  if (pathname.startsWith('/settings')) {
+    const tab = search ? new URLSearchParams(search).get('tab') : null;
+    return tab === 'billing-subscription' ? 'billing' : 'settings';
+  }
   if (pathname.startsWith('/feed')) return 'feed';
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';

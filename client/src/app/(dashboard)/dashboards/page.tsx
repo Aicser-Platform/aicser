@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Typography, ConfigProvider, Button, Spin, message, Divider, Tag, Alert, Modal, Select, Drawer } from 'antd';
+import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal, Select, Drawer } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
   LeftOutlined,
   RightOutlined,
@@ -61,7 +62,7 @@ import { RelationshipDetailsPanel } from './components/ERDCanvas/RelationshipDet
 import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
 import { DashboardBuildLiveBanner } from './components/DashboardBuildLiveBanner';
 import { isDashboardLiveBuild } from './utils/dashboardLiveBuildStorage';
-import { CreateDashboardWizard, type WizardLayoutChoice } from './components/CreateDashboardWizard';
+type WizardLayoutChoice = 'blank' | 'kpi' | 'executive' | 'template';
 import {
   DEFAULT_CHART_PALETTE_ID,
   isKnownChartPalette,
@@ -353,7 +354,6 @@ export default function NewDashboardStudio() {
   const [sampleTemplates, setSampleTemplates] = useState<DashboardTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [creatingTemplateId, setCreatingTemplateId] = useState<string | null>(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [creatingDashboard, setCreatingDashboard] = useState(false);
   const dashboardColorPalette = useDashboardStore((s) => {
     const dash = s.dashboards.find((d) => d.id === s.activeDashboardId);
@@ -806,27 +806,21 @@ export default function NewDashboardStudio() {
           },
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            minHeight: '100vh',
-            width: '100%',
-            gap: '16px',
-          }}
-        >
-          <Spin size="large" />
-          <Text type="secondary">
-            {isEnterpriseEdition && !currentProjectId ? t('waiting_project') : t('loading_dashboards')}
-          </Text>
-          {isEnterpriseEdition && !currentProjectId && (
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {t('waiting_project_hint')}
-            </Text>
-          )}
-        </div>
+        <AppLoadingIndicator
+          variant="full"
+          tip={
+            <>
+              <Text type="secondary">
+                {isEnterpriseEdition && !currentProjectId ? t('waiting_project') : t('loading_dashboards')}
+              </Text>
+              {isEnterpriseEdition && !currentProjectId && (
+                <Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
+                  {t('waiting_project_hint')}
+                </Text>
+              )}
+            </>
+          }
+        />
       </ConfigProvider>
     );
   }
@@ -869,7 +863,8 @@ export default function NewDashboardStudio() {
             type="primary"
             size="large"
             icon={<PlusOutlined />}
-            onClick={() => setWizardOpen(true)}
+            loading={creatingDashboard}
+            onClick={() => void handleWizardCreateWithLayout(t('wizard_default_name'), 'blank')}
             style={{ marginTop: '16px' }}
           >
             {t('create_dashboard')}
@@ -945,24 +940,6 @@ export default function NewDashboardStudio() {
             </Text>
           )} */}
         </div>
-        <CreateDashboardWizard
-          open={wizardOpen}
-          onClose={() => setWizardOpen(false)}
-          templates={sampleTemplates}
-          creating={creatingDashboard}
-          onCreateWithLayout={handleWizardCreateWithLayout}
-          onCreateFromTemplate={async (template, name) => {
-            setCreatingDashboard(true);
-            try {
-              await createFromTemplate(template, name);
-              message.success(t('dashboard_created_success'));
-            } catch (err) {
-              message.error(formatApiValidationError(err));
-            } finally {
-              setCreatingDashboard(false);
-            }
-          }}
-        />
       </ConfigProvider>
     );
   }
@@ -970,11 +947,7 @@ export default function NewDashboardStudio() {
   return (
     <PermissionGuard
       permission={Permission.DASHBOARD_VIEW}
-      loadingFallback={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-          <Spin size="large" tip={t('loading_dashboards')} />
-        </div>
-      }
+      loadingFallback={<AppLoadingIndicator variant="inline" tip={t('loading_dashboards')} />}
       fallback={
         <div style={{ padding: 48, maxWidth: 480, margin: '0 auto' }}>
           <Alert type="warning" showIcon message={t('no_dashboard_permission')} description={t('no_dashboard_permission_desc')} />
@@ -1316,24 +1289,6 @@ export default function NewDashboardStudio() {
           options={chartImport.dashboardOptions}
         />
       </Modal>
-      <CreateDashboardWizard
-        open={wizardOpen}
-        onClose={() => setWizardOpen(false)}
-        templates={sampleTemplates}
-        creating={creatingDashboard}
-        onCreateWithLayout={handleWizardCreateWithLayout}
-        onCreateFromTemplate={async (template, name) => {
-          setCreatingDashboard(true);
-          try {
-            await createFromTemplate(template, name);
-            message.success(t('dashboard_created_success'));
-          } catch (err) {
-            message.error(formatApiValidationError(err));
-          } finally {
-            setCreatingDashboard(false);
-          }
-        }}
-      />
     </ConfigProvider>
     </DashboardPageShell>
     </PermissionGuard>

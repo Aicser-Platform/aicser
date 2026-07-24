@@ -129,6 +129,17 @@ a:hover {
   --ant-color-border: var(--color-border);
   --ant-color-text: var(--color-text-primary);
   --ant-color-text-secondary: var(--color-text-secondary);
+  /* Not part of the original 5-color system but referenced by ~20+ component
+     stylesheets (query editor tabs/results table, ERD canvas, schema explorer,
+     dashboard studio sidebar, chat query-result table, etc.) with no fallback —
+     left undefined, those rules were silently no-op-ing in production.
+     colorFillAlter ≈ AntD's subtle "alternate row" surface (one step up from
+     container); the rest is AntD's fill scale, faintest → strongest:
+     quinary < quaternary < tertiary. */
+  --ant-color-fill-alter: var(--color-bg-elevated);
+  --ant-color-fill-quinary: rgba(0, 0, 0, 0.02);
+  --ant-color-fill-quaternary: rgba(0, 0, 0, 0.04);
+  --ant-color-fill-tertiary: rgba(0, 0, 0, 0.08);
 }
 
 [data-theme='dark'],
@@ -140,6 +151,10 @@ html.dark {
   --ant-color-border: var(--color-border);
   --ant-color-text: var(--color-text-primary);
   --ant-color-text-secondary: var(--color-text-secondary);
+  --ant-color-fill-alter: var(--color-bg-elevated);
+  --ant-color-fill-quinary: rgba(255, 255, 255, 0.03);
+  --ant-color-fill-quaternary: rgba(255, 255, 255, 0.06);
+  --ant-color-fill-tertiary: rgba(255, 255, 255, 0.12);
 }
 
 /* ========================================
@@ -313,6 +328,15 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
 /* Composer toolbar pill uses content width; keep min width for settings/other compact rows only. */
 .model-selector-compact:not(.model-selector-composer-embed) .ant-select-selector {
   min-width: 220px !important;
+}
+
+/* Dropdown popup: popupMatchSelectWidth={false} lets it size to content, which grew
+   past the small trigger pill's width (long model names + "Your key" badges) and
+   spilled over neighboring toolbar/panel content. Cap it to a sane width; long
+   names ellipsis inside the row instead (see ModelSelector's .model-option-name). */
+.model-selector-dropdown {
+  width: 260px !important;
+  max-width: 260px !important;
 }
 
 /* ========================================

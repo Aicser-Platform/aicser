@@ -64,24 +64,19 @@
   border: 1px solid var(--ant-color-border, #30363d) !important;
 }
 
-/* Header styling - Refined for consistency with system font */
+/* Header styling — same token-based background as every other table in the
+   app (query editor, chat results, global default); no more hardcoded hex. */
 .table-widget-container .ant-table-thead > tr > th {
-  background: #eef2ff !important;
+  background: var(--ant-color-fill-quaternary) !important;
   border-right: 1px solid var(--ant-color-border, #f0f0f0) !important;
   border-bottom: 2px solid var(--ant-color-border, #f0f0f0) !important;
   font-weight: 700 !important;
-  color: #1e293b !important;
+  color: var(--ant-color-text) !important;
   padding: 12px 16px !important;
-  font-size: 13px !important; 
-  text-transform: none !important; 
-  letter-spacing: normal !important; 
-  font-family: var(--font-sans) !important; 
-}
-
-[data-theme='dark'] .table-widget-container .ant-table-thead > tr > th {
-  background: #1e293b !important;
-  border-right: 1px solid var(--ant-color-border, #30363d) !important;
-  color: #fff !important;
+  font-size: 13px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-family: var(--font-sans) !important;
 }
 
 .table-widget-container .ant-table-thead > tr > th::before {
@@ -209,14 +204,10 @@
 
 /* Total Row Styling - Matches sample UI */
 .table-widget-container .table-row-total > td {
-  background: #eef2ff !important;
+  background: var(--ant-color-fill-quaternary) !important;
+  color: var(--ant-color-text) !important;
   font-weight: 700 !important;
   border-top: 2px solid var(--ant-color-border, #f0f0f0) !important;
-}
-
-[data-theme='dark'] .table-widget-container .table-row-total > td {
-  background: #1e293b !important;
-  color: #fff !important;
 }
 
 .table-widget-container .table-row-cross-filter-active > td {

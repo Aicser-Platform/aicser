@@ -16,13 +16,14 @@ import {
   ApiOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import React from 'react';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useTranslations } from 'next-intl';
 import {
   NAV_ROUTES,
+  NAV_LABEL_KEYS,
   openKeysForPathname,
   selectedKeyForPathname,
   type NavItemDef,
@@ -69,9 +70,15 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   settings: <SettingOutlined />,
 };
 
-const SETTINGS_ITEMS: NavItemDef[] = [
-  { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
-];
+function buildSettingsItems(_enterprise: boolean): NavItemDef[] {
+  // Billing intentionally does NOT get a top-level sidebar entry — it's reachable
+  // from the user profile dropdown (which already shows plan/usage) via a direct
+  // "Manage Billing" link, matching how Stripe/GitHub/Linear/Vercel place billing
+  // under the account menu rather than as a primary nav item. Giving it equal visual
+  // weight to Dashboards/Query Editor in the sidebar was a placement mistake — see
+  // UserProfileDropdown.tsx for the actual fix.
+  return [{ kind: 'link', key: 'settings', labelKey: NAV_LABEL_KEYS.settings, href: NAV_ROUTES.settings }];
+}
 
 const SETTINGS_ICONS: SidebarNavIconMap = {
   settings: <SettingOutlined />,
@@ -99,8 +106,13 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const router = useRouter();
   const pathname = usePathname();
-  const selectedKey = React.useMemo(() => selectedKeyForPathname(pathname), [pathname]);
+  const searchParams = useSearchParams();
+  const selectedKey = React.useMemo(
+    () => selectedKeyForPathname(pathname, searchParams?.toString() ? `?${searchParams.toString()}` : null),
+    [pathname, searchParams]
+  );
   const routeOpenGroups = React.useMemo(() => openKeysForPathname(pathname), [pathname]);
+  const settingsItems = React.useMemo(() => buildSettingsItems(isEnterpriseEdition), []);
 
   const onNavigate = React.useCallback(
     (href: string) => {
@@ -113,36 +125,36 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const enterpriseItems = React.useMemo<NavItemDef[]>(
     () => [
-      { kind: 'link', key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
-      { kind: 'link', key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
-      { kind: 'link', key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+      { kind: 'link', key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat },
+      { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
+      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
       {
         kind: 'group',
         key: 'dashboard-studio',
-        labelKey: 'dashboard_studio',
+        labelKey: NAV_LABEL_KEYS['dashboard-studio'],
         children: [
-          { key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
-          { key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
+          { key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
+          { key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
         ],
       },
       { kind: 'divider' },
       {
         kind: 'group',
         key: 'grp-data',
-        labelKey: 'cat_data',
+        labelKey: NAV_LABEL_KEYS['grp-data'],
         children: [
-          { key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
-          { key: 'semantic-model', labelKey: 'semantic_layer', href: NAV_ROUTES['semantic-model'] },
-          { key: 'knowledge', labelKey: 'knowledge_libraries', href: NAV_ROUTES.knowledge },
+          { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+          { key: 'semantic-model', labelKey: NAV_LABEL_KEYS['semantic-model'], href: NAV_ROUTES['semantic-model'] },
+          { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
         ],
       },
       {
         kind: 'group',
         key: 'grp-operate',
-        labelKey: 'cat_monitor',
+        labelKey: NAV_LABEL_KEYS['grp-operate'],
         children: [
-          { key: 'alerts', labelKey: 'alerts', href: NAV_ROUTES.alerts },
-          { key: 'platform-services', labelKey: 'integrations', href: NAV_ROUTES['platform-services'] },
+          { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
+          { key: 'platform-services', labelKey: NAV_LABEL_KEYS['platform-services'], href: NAV_ROUTES['platform-services'] },
         ],
       },
     ],
@@ -151,11 +163,11 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const communityItems = React.useMemo<NavItemDef[]>(
     () => [
-      { kind: 'link', key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
-      { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
-      { kind: 'link', key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
-      { kind: 'link', key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
-      { kind: 'link', key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
+      { kind: 'link', key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
+      { kind: 'link', key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
+      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
+      { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
+      { kind: 'link', key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
     ],
     []
   );
@@ -214,7 +226,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
         <div className="shrink-0 border-t border-[var(--ant-color-border)] px-0 pb-2 pt-1">
           <SidebarNav
-            items={SETTINGS_ITEMS}
+            items={settingsItems}
             selectedKey={selectedKey}
             routeOpenGroups={[]}
             railCollapsed={isRailMode}

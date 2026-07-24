@@ -3,6 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { LayoutHeader } from '../Header/Header';
 import Navigation from '../Navigation/Navigation';
 import MobileBottomNav from '../Navigation/MobileBottomNav';
+import { PageBreadcrumb } from '../Navigation/PageBreadcrumb';
 import '@/layouts/Navigation/MobileBottomNav.css';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import { useDataSources } from '@/hooks/useDataSources';
@@ -55,6 +56,10 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
   const [isBreakpoint, setIsBreakpoint] = useState(false);
   const [showDataSourceModal, setShowDataSourceModal] = useState(false);
   const { dataSources, isLoading: dataSourcesLoading } = useDataSources();
+  const failedDataSourcesCount = React.useMemo(
+    () => dataSources.filter((ds) => ds.connection_status === 'failed').length,
+    [dataSources]
+  );
   const { select: contextSelectDataSource } = useDataSourceStore();
   const qc = useQueryClient();
   const refreshDataSources = () => qc.invalidateQueries({ queryKey: ['data-sources'] });
@@ -116,12 +121,14 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
       hasSider={!isBreakpoint}
     >
       {!isBreakpoint && (
-        <Navigation
-          collapsed={collapsed}
-          isBreakpoint={isBreakpoint}
-          onCollapse={setCollapsed}
-          onBreakpoint={setIsBreakpoint}
-        />
+        <React.Suspense fallback={null}>
+          <Navigation
+            collapsed={collapsed}
+            isBreakpoint={isBreakpoint}
+            onCollapse={setCollapsed}
+            onBreakpoint={setIsBreakpoint}
+          />
+        </React.Suspense>
       )}
 
       {isBreakpoint && <MobileBottomNav />}
@@ -163,6 +170,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
           setCollapsed={setCollapsed}
           onOpenDataSourceModal={() => setShowDataSourceModal(true)}
           highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
+          failedDataSourcesCount={failedDataSourcesCount}
         />
         <Content
           id="main-content"
@@ -193,6 +201,9 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
               flexDirection: 'column',
             }}
           >
+            <React.Suspense fallback={null}>
+              <PageBreadcrumb />
+            </React.Suspense>
             {children}
           </div>
         </Content>

@@ -118,6 +118,16 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     if (urlTab === 'documents') setActiveTab('documents');
   }, [fromCitation, citationDocumentId, urlTab]);
 
+  const library = libraries.find((l) => l.id === activeLibrary) ?? null;
+  const activeDataSourceId = library?.data_source_id ?? null;
+
+  const { documents, isLoading: docsLoading, refetch } = useKnowledgeDocuments(
+    activeDataSourceId ?? undefined,
+  );
+  const { mutateAsync: deleteDocument, isPending: deleting } = useDeleteKnowledgeDocument();
+  const uploadDoc = useUploadKnowledgeDocument();
+  const reindexKb = useReindexKnowledgeBase();
+
   useEffect(() => {
     if (!highlightDocumentId || docsLoading) return;
     const timer = window.setTimeout(() => {
@@ -128,16 +138,6 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     }, 200);
     return () => window.clearTimeout(timer);
   }, [highlightDocumentId, docsLoading, documents.length]);
-
-  const library = libraries.find((l) => l.id === activeLibrary) ?? null;
-  const activeDataSourceId = library?.data_source_id ?? null;
-
-  const { documents, isLoading: docsLoading, refetch } = useKnowledgeDocuments(
-    activeDataSourceId ?? undefined,
-  );
-  const { mutateAsync: deleteDocument, isPending: deleting } = useDeleteKnowledgeDocument();
-  const uploadDoc = useUploadKnowledgeDocument();
-  const reindexKb = useReindexKnowledgeBase();
 
   const scopeTag = (lib: KnowledgeLibrary) =>
     lib.scope === 'project' ? (

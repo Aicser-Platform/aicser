@@ -25,7 +25,6 @@ import {
     ExclamationCircleOutlined,
     ExperimentOutlined,
     SettingOutlined,
-    RocketOutlined,
     StarOutlined,
     DownOutlined,
 } from '@ant-design/icons';
@@ -80,6 +79,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   groq: '#f59e0b',
   anthropic: '#d97706',
   cohere: '#059669',
+  deepseek: '#4d6bfe',
+  openrouter: '#6467f2',
   auto: 'var(--ant-color-primary)',
 };
 
@@ -91,7 +92,9 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   groq: <ThunderboltOutlined />,
   anthropic: <RobotOutlined />,
   cohere: <RobotOutlined />,
-  auto: <RocketOutlined />,
+  deepseek: <RobotOutlined />,
+  openrouter: <CloudOutlined />,
+  auto: <ExperimentOutlined />,
 };
 
 function ProviderLogo({ provider, size = 18 }: { provider: string; size?: number }) {
@@ -117,6 +120,32 @@ function categoryTag(model: ModelInfo): { color: string; label: string } {
   return { color: 'default', label: model.category || model.tier || 'Standard' };
 }
 
+// Grouping keeps the dropdown scannable as more providers/BYOK models are added —
+// a single flat list of 15-20 models is hard to scan without a cost/capability anchor.
+type TierKey = 'fast' | 'standard' | 'reasoning' | 'local';
+const TIER_ORDER: TierKey[] = ['fast', 'standard', 'reasoning', 'local'];
+
+function tierKeyForModel(model: ModelInfo): TierKey {
+  if (model.is_local) return 'local';
+  if (model.tier === 'reasoning' || model.category === 'Premium') return 'reasoning';
+  if (model.tier === 'fast' || model.category === 'Fast') return 'fast';
+  return 'standard';
+}
+
+function groupModelsByTier(models: ModelInfo[]): Record<TierKey, ModelInfo[]> {
+  const groups: Record<TierKey, ModelInfo[]> = { fast: [], standard: [], reasoning: [], local: [] };
+  for (const model of models) {
+    groups[tierKeyForModel(model)].push(model);
+  }
+  return groups;
+}
+
+function modelMatchesSearch(model: ModelInfo, input: string): boolean {
+  const needle = input.trim().toLowerCase();
+  if (!needle) return true;
+  return `${model.name} ${model.provider}`.toLowerCase().includes(needle);
+}
+
 const FALLBACK_DESC: Record<string, string> = {
   auto: 'Automatically picks the best model for each task — recommended for most users.',
   azure_gpt41_mini:
@@ -125,9 +154,12 @@ const FALLBACK_DESC: Record<string, string> = {
   azure_reasoning: 'Premium reasoning model for complex multi-step analysis, deep synthesis, and nuanced insights.',
 };
 
+// Distinct from the mode selector's "Auto" pill (InlineModeSelector) which sits right next
+// to this one in the composer — same bare "Auto" text on both was indistinguishable at a
+// glance. This one is specifically about which LLM answers, so it says so.
 const AUTO_MODEL: ModelInfo = {
   id: 'auto',
-  name: 'Auto',
+  name: 'Auto model',
   provider: 'auto',
   cost_per_1k_tokens: 0,
   available: true,
@@ -222,7 +254,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 } catch { /* ignore */ }
             }
             if (!initial) {
-                const lsModel = localStorage.getItem('selected_ai_model');
+                let lsModel = '';
+                try {
+                    const prefsStr = localStorage.getItem('userPreferences');
+                    lsModel = (prefsStr && JSON.parse(prefsStr)?.aiModel) || '';
+                } catch { /* ignore */ }
                 if (composerEmbed) {
                     initial = lsModel || defaultModel || 'auto';
                 } else {
@@ -337,7 +373,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             </span>
         );
         return (
-            <Tooltip title={composerEmbed ? `${sd.name} · ${sd.provider}` : `${sd.name} (${sd.provider})`}>
+            <Tooltip
+                title={
+                    sd.id === 'auto'
+                        ? sd.description
+                        : composerEmbed
+                            ? `${sd.name} · ${sd.provider}`
+                            : `${sd.name} (${sd.provider})`
+                }
+            >
             <Select
                 value={{
                     value: sd.id,
@@ -362,59 +406,100 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 popupMatchSelectWidth={false}
                 classNames={{ popup: { root: 'model-selector-dropdown' } }}
                 variant="borderless"
+                showSearch={allModels.length > 6}
+                filterOption={(input, option) => {
+                    const m = allModels.find(mm => mm.id === option?.value);
+                    return m ? modelMatchesSearch(m, input) : true;
+                }}
                 suffixIcon={
                     composerEmbed ? (
                         <DownOutlined className="model-selector-composer-chevron" />
                     ) : null
                 }
             >
-                {allModels.map(model => {
-                    const providerColor = PROVIDER_COLORS[model.provider] || '#6b7280';
-                    const icon = <ProviderLogo provider={model.provider} size={18} />;
-                    const tag = categoryTag(model);
-                    const isSelected = model.id === selectedModel;
-                    return (
-                        <Option
-                            key={model.id}
-                            value={model.id}
-                            disabled={!model.available}
-                            label={
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                    <span style={{ color: providerColor, fontSize: 12 }}>{icon}</span>
-                                    <span style={{ fontSize: 12 }}>{model.name}</span>
-                                </span>
-                            }
-                        >
-                            <Tooltip
-                                title={
-                                    <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
-                                        <div style={{ fontWeight: 600, marginBottom: 2 }}>{model.name}</div>
-                                        <div style={{ opacity: 0.85 }}>{model.description}</div>
-                                        {model.cost_per_1k_tokens === 0 && model.id !== 'auto' && (
-                                            <div style={{ marginTop: 4, color: '#4ade80' }}>Free (local/private)</div>
+                {(() => {
+                    const renderModelOption = (model: ModelInfo) => {
+                        const providerColor = PROVIDER_COLORS[model.provider] || '#6b7280';
+                        const icon = <ProviderLogo provider={model.provider} size={18} />;
+                        const isSelected = model.id === selectedModel;
+                        const isByok = model.id.startsWith('byok_');
+                        return (
+                            <Option
+                                key={model.id}
+                                value={model.id}
+                                disabled={!model.available}
+                                label={
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                        <span style={{ color: providerColor, fontSize: 12 }}>{icon}</span>
+                                        <span style={{ fontSize: 12 }}>{model.name}</span>
+                                    </span>
+                                }
+                            >
+                                <Tooltip
+                                    title={
+                                        <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
+                                            <div style={{ fontWeight: 600, marginBottom: 2 }}>{model.name}</div>
+                                            <div style={{ opacity: 0.85 }}>{model.description}</div>
+                                            {model.cost_per_1k_tokens === 0 && model.id !== 'auto' && (
+                                                <div style={{ marginTop: 4, color: '#4ade80' }}>Free (local/private)</div>
+                                            )}
+                                        </div>
+                                    }
+                                    placement="left"
+                                    mouseEnterDelay={0.3}
+                                >
+                                    <div className="model-option-row" style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                        <span style={{ color: providerColor, fontSize: 13, flexShrink: 0 }}>{icon}</span>
+                                        <span
+                                            className="model-option-name"
+                                            style={{
+                                                flex: 1,
+                                                minWidth: 0,
+                                                fontSize: 13,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
+                                            {model.name}
+                                        </span>
+                                        {isByok && (
+                                            <Tag color="processing" style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px', flexShrink: 0 }}>
+                                                {t('byok_tag')}
+                                            </Tag>
+                                        )}
+                                        {isSelected && <CheckOutlined className="model-option-check" style={{ fontSize: 11, color: 'var(--ant-color-primary)', flexShrink: 0 }} />}
+                                        {model.id === 'auto' && (
+                                            <Tooltip title={t('ai_model_settings')}>
+                                                <Button
+                                                    type="text"
+                                                    size="small"
+                                                    icon={<SettingOutlined />}
+                                                    aria-label={t('ai_model_settings')}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        window.location.href = '/settings?tab=api-keys&subtab=providers';
+                                                    }}
+                                                    style={{ flexShrink: 0, width: 22, height: 22, padding: 0, marginLeft: 2 }}
+                                                />
+                                            </Tooltip>
                                         )}
                                     </div>
-                                }
-                                placement="left"
-                                mouseEnterDelay={0.3}
-                            >
-                                <div className="model-option-row" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ color: providerColor, fontSize: 13, flexShrink: 0 }}>{icon}</span>
-                                    <span className="model-option-name" style={{ flex: 1, fontSize: 13 }}>{model.name}</span>
-                                    {model.id !== 'auto' && (
-                                        <Tag
-                                            color={tag.color}
-                                            style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
-                                        >
-                                            {tag.label}
-                                        </Tag>
-                                    )}
-                                    {isSelected && <CheckOutlined className="model-option-check" style={{ fontSize: 11, color: 'var(--ant-color-primary)' }} />}
-                                </div>
-                            </Tooltip>
-                        </Option>
+                                </Tooltip>
+                            </Option>
+                        );
+                    };
+                    // Tier order still groups models (fast models first, etc.) but without a
+                    // visible section label — the label duplicated info already on the item
+                    // (or was simply unnecessary chrome in this compact dropdown).
+                    const groups = groupModelsByTier(models);
+                    return (
+                        <>
+                            {renderModelOption(AUTO_MODEL)}
+                            {TIER_ORDER.flatMap(tierKey => groups[tierKey].map(renderModelOption))}
+                        </>
                     );
-                })}
+                })()}
             </Select>
             </Tooltip>
         );
@@ -442,90 +527,103 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     placeholder={t('select_ai_model')}
                     optionLabelProp="label"
                     popupMatchSelectWidth={false}
-                    popupRender={menu => (
-                        <div>
-                            {menu}
-                            <div style={{ padding: '8px', borderTop: '1px solid #f0f0f0' }}>
-                                <Button
-                                    type="link"
-                                    size="small"
-                                    icon={<SettingOutlined />}
-                                    onClick={() => window.location.href = '/settings?tab=api-keys'}
-                                    style={{ width: '100%' }}
-                                >
-                                    {t('ai_model_settings')}
-                                </Button>
-                            </div>
-                        </div>
-                    )}
+                    showSearch={allModels.length > 6}
+                    filterOption={(input, option) => {
+                        const m = allModels.find(mm => mm.id === option?.value);
+                        return m ? modelMatchesSearch(m, input) : true;
+                    }}
+                    // No "manage keys" footer here — full mode only renders inside the
+                    // Settings → API Keys → Providers tab itself, so that link would
+                    // just point back at the page already showing.
                 >
-                    {allModels.map(model => {
-                        const providerColor = PROVIDER_COLORS[model.provider] || '#6b7280';
-                        const icon = <ProviderLogo provider={model.provider} size={18} />;
-                        const tag = categoryTag(model);
-                        const isDefault = model.id === serverDefault;
-                        return (
-                            <Option
-                                key={model.id}
-                                value={model.id}
-                                disabled={!model.available}
-                                label={
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                        <span style={{ color: providerColor }}>{icon}</span>
-                                        <span>{model.name}</span>
-                                        {model.is_local && (
-                                            <Tag color="purple" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>{t('local')}</Tag>
-                                        )}
-                                    </span>
-                                }
-                            >
-                                <Tooltip
-                                    title={
-                                        <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 280 }}>
-                                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{model.name}</div>
-                                            <div style={{ opacity: 0.85 }}>{model.description}</div>
-                                        </div>
-                                    }
-                                    placement="right"
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-                                        <span style={{ color: model.available ? providerColor : '#9ca3af', fontSize: 16, flexShrink: 0 }}>
-                                            {icon}
+                    {(() => {
+                        const renderModelOption = (model: ModelInfo) => {
+                            const providerColor = PROVIDER_COLORS[model.provider] || '#6b7280';
+                            const icon = <ProviderLogo provider={model.provider} size={18} />;
+                            const tag = categoryTag(model);
+                            const isDefault = model.id === serverDefault;
+                            return (
+                                <Option
+                                    key={model.id}
+                                    value={model.id}
+                                    disabled={!model.available}
+                                    label={
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                            <span style={{ color: providerColor }}>{icon}</span>
+                                            <span>{model.name}</span>
+                                            {model.is_local && (
+                                                <Tag color="purple" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>{t('local')}</Tag>
+                                            )}
                                         </span>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: model.available ? 1 : 0.45 }}>
-                                                <Text strong={selectedModel === model.id} style={{ fontSize: 13 }}>{model.name}</Text>
-                                                {model.id !== 'auto' && (
-                                                    <Tag
-                                                        color={tag.color}
-                                                        style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
-                                                    >
-                                                        {tag.label}
-                                                    </Tag>
-                                                )}
-                                                {isDefault && (
-                                                    <CrownOutlined style={{ color: '#f59e0b', fontSize: 11 }} title={t('platform_default')} />
-                                                )}
-                                                {model.id !== 'auto' && modelStatus[model.id] !== undefined && (
-                                                    modelStatus[model.id]?.success
-                                                        ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 11 }} />
-                                                        : <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 11 }} />
-                                                )}
+                                    }
+                                >
+                                    <Tooltip
+                                        title={
+                                            <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 280 }}>
+                                                <div style={{ fontWeight: 600, marginBottom: 4 }}>{model.name}</div>
+                                                <div style={{ opacity: 0.85 }}>{model.description}</div>
                                             </div>
-                                            <div style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.4 }}>
-                                                {model.available
-                                                    ? (model.description || FALLBACK_DESC[model.id] || '')
-                                                    : t('model_not_configured')}
+                                        }
+                                        placement="right"
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
+                                            <span style={{ color: model.available ? providerColor : '#9ca3af', fontSize: 16, flexShrink: 0 }}>
+                                                {icon}
+                                            </span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: model.available ? 1 : 0.45 }}>
+                                                    <Text strong={selectedModel === model.id} style={{ fontSize: 13 }}>{model.name}</Text>
+                                                    {model.id !== 'auto' && (
+                                                        <Tag
+                                                            color={tag.color}
+                                                            style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}
+                                                        >
+                                                            {tag.label}
+                                                        </Tag>
+                                                    )}
+                                                    {isDefault && (
+                                                        <CrownOutlined style={{ color: '#f59e0b', fontSize: 11 }} title={t('platform_default')} />
+                                                    )}
+                                                    {model.id !== 'auto' && modelStatus[model.id] !== undefined && (
+                                                        modelStatus[model.id]?.success
+                                                            ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 11 }} />
+                                                            : <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 11 }} />
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.4 }}>
+                                                    {model.available
+                                                        ? (model.description || FALLBACK_DESC[model.id] || '')
+                                                        : t('model_not_configured')}
+                                                </div>
                                             </div>
+                                            {showCostInfo && model.cost_per_1k_tokens === 0 && model.available && model.id !== 'auto' && (
+                                                <Tag color="green" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>{t('free')}</Tag>
+                                            )}
                                         </div>
-                                        {showCostInfo && model.cost_per_1k_tokens === 0 && model.available && model.id !== 'auto' && (
-                                            <Tag color="green" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>{t('free')}</Tag>
-                                        )}
-                                    </div>
-                                </Tooltip>
-                            </Option>
+                                    </Tooltip>
+                                </Option>
+                            );
+                        };
+                        const groups = groupModelsByTier(models);
+                        const tierLabelKey: Record<TierKey, string> = {
+                            fast: 'tier_group_fast',
+                            standard: 'tier_group_standard',
+                            reasoning: 'tier_group_premium',
+                            local: 'tier_group_local',
+                        };
+                        return (
+                            <>
+                                {renderModelOption(AUTO_MODEL)}
+                                {TIER_ORDER.map(tierKey => (
+                                    groups[tierKey].length > 0 ? (
+                                        <Select.OptGroup key={tierKey} label={t(tierLabelKey[tierKey])}>
+                                            {groups[tierKey].map(renderModelOption)}
+                                        </Select.OptGroup>
+                                    ) : null
+                                ))}
+                            </>
                         );
-                    })}
+                    })()}
                 </Select>
 
                 {selectedModel && selectedModel !== 'auto' && (

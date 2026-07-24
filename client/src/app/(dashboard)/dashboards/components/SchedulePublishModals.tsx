@@ -17,6 +17,7 @@ import {
   formatRuleText,
   normalizeScheduleType,
 } from '../hooks/useAutomationManager';
+import { useDataSources } from '@/hooks/useDataSources';
 
 interface SchedulePublishModalsProps {
   isAutoSendOpen: boolean;
@@ -90,6 +91,8 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
   handleCopySharedLink,
 }) => {
   const t = useTranslations('dashboard_tabs');
+  const { dataSources } = useDataSources();
+  const dataSourceOptions = dataSources.map((ds: { id: string; name: string }) => ({ value: ds.id, label: ds.name }));
 
   return (
     <>
@@ -144,6 +147,47 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                   options={SCHEDULE_TYPE_OPTIONS}
                 />
               </div>
+            </div>
+
+            <div className="auto-send-field-label" style={{ marginTop: 12 }}>{t('schedule_data_source')}</div>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder={t('schedule_data_source_placeholder')}
+              value={autoSendForm.dataSourceId ?? undefined}
+              onChange={(value) =>
+                setAutoSendForm((prev: any) => ({
+                  ...prev,
+                  dataSourceId: value ?? null,
+                  refreshDataBeforeSend: value ? prev.refreshDataBeforeSend : false,
+                }))
+              }
+              options={dataSourceOptions}
+              style={{ width: '100%' }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginTop: 10,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div className="auto-send-field-label" style={{ marginBottom: 2 }}>
+                  {t('schedule_refresh_before_send')}
+                </div>
+                <p className="auto-send-field-help" style={{ margin: 0 }}>
+                  {t('schedule_refresh_before_send_hint')}
+                </p>
+              </div>
+              <Switch
+                checked={autoSendForm.refreshDataBeforeSend}
+                disabled={!autoSendForm.dataSourceId}
+                onChange={(checked) => setAutoSendForm((prev: any) => ({ ...prev, refreshDataBeforeSend: checked }))}
+              />
             </div>
           </div>
 
@@ -403,6 +447,55 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
                       setEditingAutomationForm((prev: any) => (prev ? { ...prev, frequency: value } : prev))
                     }
                     options={SCHEDULE_TYPE_OPTIONS}
+                  />
+                </div>
+              </div>
+
+              <div className="edit-automation-card">
+                <div className="edit-automation-card-title">{t('schedule_data_source')}</div>
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder={t('schedule_data_source_placeholder')}
+                  value={editingAutomationForm.dataSourceId ?? undefined}
+                  onChange={(value) =>
+                    setEditingAutomationForm((prev: any) =>
+                      prev
+                        ? {
+                            ...prev,
+                            dataSourceId: value ?? null,
+                            refreshDataBeforeSend: value ? prev.refreshDataBeforeSend : false,
+                          }
+                        : prev
+                    )
+                  }
+                  options={dataSourceOptions}
+                  style={{ width: '100%' }}
+                />
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginTop: 10,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div className="edit-automation-field-label" style={{ marginBottom: 2 }}>
+                      {t('schedule_refresh_before_send')}
+                    </div>
+                    <p className="auto-send-field-help" style={{ margin: 0 }}>
+                      {t('schedule_refresh_before_send_hint')}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editingAutomationForm.refreshDataBeforeSend}
+                    disabled={!editingAutomationForm.dataSourceId}
+                    onChange={(checked) =>
+                      setEditingAutomationForm((prev: any) => (prev ? { ...prev, refreshDataBeforeSend: checked } : prev))
+                    }
                   />
                 </div>
               </div>

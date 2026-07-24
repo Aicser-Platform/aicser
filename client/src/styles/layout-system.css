@@ -412,28 +412,35 @@ div.page-container,
   margin-bottom: 0 !important;
 }
 
-/* Integrations (/data-platform) — tab nav + panels align with page shell */
+/* Integrations (/data-platform) — tab nav + panels align with page shell.
+   .page-wrapper is the scroll container (overflow-y:auto, see page-shell.css);
+   Tabs must be a proper shrinkable flex child (flex + min-height:0) all the way
+   down to the tabpane so its content isn't clipped instead of scrolling. */
 .page-wrapper.integrations-page .integrations-tabs.ant-tabs {
   padding: 0 !important;
   background: transparent !important;
   border-radius: 0 !important;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav {
   margin: 0 0 16px 0 !important;
   padding: 0 !important;
+  flex-shrink: 0;
 }
 
 .page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav::before {
   border-bottom-color: var(--ant-color-border-secondary) !important;
 }
 
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content-holder {
-  padding: 0 !important;
-}
-
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content-holder,
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content,
 .page-wrapper.integrations-page .integrations-tabs .ant-tabs-tabpane {
   padding: 0 !important;
+  min-height: 0;
 }
 
 .page-wrapper.integrations-page .page-tab-panel {

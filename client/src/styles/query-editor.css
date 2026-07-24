@@ -187,16 +187,21 @@
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab {
   background: transparent !important;
-  border: 1px solid transparent !important;
-  border-radius: 6px !important;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 6px 6px 0 0 !important;
   padding: 6px 12px !important;
-  margin: 0 6px 0 0 !important;
+  margin: 0 2px 0 0 !important;
   min-height: 32px !important;
   height: 32px !important;
   line-height: 20px !important;
-  transition: all 0.2s;
+  transition: background 0.15s ease, color 0.15s ease;
   display: flex !important;
   align-items: center !important;
+}
+
+.query-editor-workspace .query-editor-query-tabs .ant-tabs-tab:hover {
+  background: var(--ant-color-fill-quaternary) !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-btn {
@@ -206,9 +211,10 @@
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-active {
-  background: var(--ant-color-bg-container, #ffffff) !important;
-  border: 1px solid var(--ant-color-border, #d9d9d9) !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important;
+  background: var(--ant-color-fill-quaternary) !important;
+  border: none !important;
+  border-bottom: 2px solid var(--ant-color-primary) !important;
+  box-shadow: none !important;
 }
 
 .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
@@ -433,10 +439,11 @@
   color: var(--ant-color-text-tertiary);
 }
 
-/* Resize handle */
+/* Resize handle — kept minimal; the grip only appears on hover/active so it
+   doesn't read as a visible bar splitting the editor from the results pane. */
 .query-editor-workspace .qe-split-handle {
-  height: 12px !important;
-  min-height: 12px !important;
+  height: 6px !important;
+  min-height: 6px !important;
   padding: 0 var(--qe-gutter-x) !important;
   border-top: none !important;
   border-bottom: var(--qe-zone-border) !important;
@@ -451,11 +458,16 @@
 }
 
 .query-editor-workspace .qe-split-handle-grip {
-  width: 72px;
-  height: 4px;
+  width: 32px;
+  height: 3px;
   border-radius: 999px;
-  background: var(--ant-color-border);
+  background: transparent;
   transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.query-editor-workspace .qe-split-handle:hover,
+.query-editor-workspace .qe-split-handle:active {
+  background: var(--ant-color-fill-quaternary) !important;
 }
 
 .query-editor-workspace .qe-split-handle:hover .qe-split-handle-grip,
@@ -595,14 +607,17 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #f9fafb !important;
+  /* A subtle translucent tint over whatever's beneath reads as "still the same
+     table, just the header row" — colorBgElevated (used elsewhere for the
+     chart title bar) is too big a jump here and shows as a visible seam. */
+  background: var(--ant-color-fill-quaternary) !important;
   text-transform: uppercase;
   font-weight: 700;
   font-size: 11px;
   letter-spacing: 0.05em;
-  color: #374151 !important;
+  color: var(--ant-color-text-secondary) !important;
   border: none !important;
-  border-bottom: 1px solid #e5e7eb !important;
+  border-bottom: 1px solid var(--ant-color-border) !important;
   padding: 10px 16px !important;
 }
 
@@ -614,21 +629,21 @@
 .query-editor-workspace .qe-results-table .ant-table-tbody > tr > td {
   padding: 10px 16px !important;
   border: none !important;
-  color: #111827;
+  color: var(--ant-color-text);
   font-size: 13px;
   background: transparent;
 }
 
 .query-editor-workspace .qe-results-table .ant-table-tbody > tr:nth-child(odd) > td {
-  background-color: #ffffff !important;
+  background-color: var(--ant-color-bg-container) !important;
 }
 
 .query-editor-workspace .qe-results-table .ant-table-tbody > tr:nth-child(even) > td {
-  background-color: #f8f9fa !important;
+  background-color: var(--ant-color-fill-alter) !important;
 }
 
 .query-editor-workspace .qe-results-table .ant-table-tbody > tr:hover > td {
-  background-color: transparent !important;
+  background-color: var(--ant-color-fill-quaternary) !important;
 }
 
 /* Aggressively remove any outer container borders from Ant Design */
@@ -792,6 +807,15 @@
 .chat-page-container .data-panel.data-panel-flat .schema-tree-wrapper,
 .query-editor-workspace .data-panel.data-panel-flat .schema-tree-wrapper {
   margin-top: 8px !important;
+}
+
+/* Explicit, theme-tuned hover for every tree row (schema, table, and column
+   levels) — without this, rows fall back to AntD's own algorithm-derived hover
+   color, which reads inconsistent/too-strong against this app's customized
+   dark palette (fine on the schema row, off on table rows). */
+.schema-tree-wrapper .ant-tree .ant-tree-node-content-wrapper:hover,
+.schema-tree-wrapper .ant-tree .ant-tree-treenode:hover .ant-tree-node-content-wrapper {
+  background: var(--ant-color-fill-quaternary) !important;
 }
 
 .chat-page-container .data-panel.data-panel-flat .schema-tree-compact.ant-tree .ant-tree-node-content-wrapper,

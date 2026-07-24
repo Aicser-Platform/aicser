@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { Input, Select, Button, Space, message, Avatar } from 'antd';
+import React, { useState } from 'react';
+import { Input, Button, Space, message } from 'antd';
 import { ThunderboltOutlined } from '@ant-design/icons';
-import { useAiModels, useGenerateSql } from '@/hooks/useAi';
+import { useGenerateSql } from '@/hooks/useAi';
 import { ApiError } from '@/utils/api';
-import { getAiProviderLogo } from '@/config/aiProviders';
+import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
 
 type Props = {
   dataSourceId?: string;
@@ -14,32 +14,10 @@ type Props = {
 
 export default function NL2SqlPromptBar({ dataSourceId, onInsert }: Props) {
   const [question, setQuestion] = useState('');
-  const [model, setModel] = useState<string | undefined>();
-  const { data: models = [], isLoading: modelsLoading } = useAiModels();
+  // Undefined (not 'auto') until the persisted preference loads — ModelSelector
+  // treats any truthy controlled value as authoritative and skips loading it.
+  const [model, setModel] = useState<string | undefined>(undefined);
   const { mutateAsync, isPending } = useGenerateSql();
-
-  // Only show models with configured keys
-  const availableModels = useMemo(() => models.filter((m) => m.available), [models]);
-
-  const options = useMemo(
-    () =>
-      availableModels.map((m) => {
-        const logo = getAiProviderLogo(m.provider);
-        return {
-          label: (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {logo && <Avatar src={logo} size={16} />}
-              {m.name}
-            </span>
-          ),
-          value: m.id,
-        };
-      }),
-    [availableModels]
-  );
-
-  const firstAvailable = useMemo(() => availableModels[0]?.id, [availableModels]);
-  const selectedModel = model ?? firstAvailable;
 
   const handleGenerate = async () => {
     if (!question.trim()) {
@@ -50,15 +28,11 @@ export default function NL2SqlPromptBar({ dataSourceId, onInsert }: Props) {
       message.warning('Select a data source first.');
       return;
     }
-    if (!selectedModel) {
-      message.error('No AI key configured. Add one in Settings → API Keys.');
-      return;
-    }
     try {
       const res = await mutateAsync({
         question: question.trim(),
         data_source_id: dataSourceId,
-        model: selectedModel,
+        model: model ?? 'auto',
       });
       onInsert(res.sql);
       if (res.warning) message.warning(res.warning);
@@ -82,21 +56,12 @@ export default function NL2SqlPromptBar({ dataSourceId, onInsert }: Props) {
         allowClear
         style={{borderRadius: 8 }}
       />
-      <Select
-        value={selectedModel}
-        onChange={setModel}
-        options={options}
-        loading={modelsLoading}
-        placeholder={availableModels.length === 0 ? 'No keys configured' : 'Select model'}
-        disabled={availableModels.length === 0}
-        style={{ minWidth: 200, borderRadius: 8 }}
-      />
+      <ModelSelector compact value={model} onModelChange={setModel} disabled={isPending} persistPreference />
       <Button
         type="primary"
         icon={<ThunderboltOutlined />}
         loading={isPending}
         onClick={handleGenerate}
-        disabled={availableModels.length === 0}
         style={{ borderRadius: 8 }}
       >
         Generate
