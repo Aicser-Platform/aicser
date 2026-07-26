@@ -143,7 +143,7 @@ export const pricingPlans: PricingPlan[] = [
     price_monthly: 99,
     price_yearly: 990,
     stats: [
-      { label: 'AI Credits', value: '1, 000 / user' },
+      { label: 'AI Credits', value: '1,000 / user' },
       { label: 'Storage', value: '100 GB / user' },
       { label: 'Data History', value: '1 year' },
       { label: 'Seats', value: '5 included' },

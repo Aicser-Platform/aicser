@@ -37,6 +37,14 @@ import { useTranslations } from 'next-intl';
 const { Text } = Typography;
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
+// Layout x/y/w/h values are authored against the base (lg, 12-column) grid — the
+// `cols` prop below only changes how that same grid renders at narrower breakpoints —
+// so keyboard nudge/resize bounds are checked against this fixed reference, and widget
+// templates don't define per-type minimums (see widgetTemplates.tsx), hence a shared floor.
+const GRID_COLS = 12;
+const GRID_MIN_W = 2;
+const GRID_MIN_H = 2;
+
 export default function DashboardCanvas({
   widgets,
   layout,
@@ -258,27 +266,43 @@ export default function DashboardCanvas({
         return;
       }
 
-      // Arrow keys — nudge selected widget by one grid unit
+      // Arrow keys — nudge selected widget by one grid unit; Shift+Arrow — resize
+      // it by one grid unit (grow/shrink w/h depending on direction). Mirrors what
+      // a mouse drag/resize does by going through the same commitLayout path react-grid-layout's
+      // onDragStop/onResizeStop use, so persistence/sync behaves identically.
       if (selectedWidgetId && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        const widget = widgetById.get(selectedWidgetId);
+        if (widget?.isLocked) return; // mouse drag/resize is disabled for locked widgets too
         e.preventDefault();
         const itemIdx = layout.findIndex((l) => l.i === selectedWidgetId);
         if (itemIdx < 0) return;
         const item = layout[itemIdx];
         if (!item) return;
-        let { x, y } = item;
-        if (e.key === 'ArrowLeft') x = Math.max(0, x - 1);
-        if (e.key === 'ArrowRight') x = Math.min(11, x + 1);
-        if (e.key === 'ArrowUp') y = Math.max(0, y - 1);
-        if (e.key === 'ArrowDown') y = y + 1;
+        let { x, y, w, h } = item;
+
+        if (e.shiftKey) {
+          // Resize
+          if (e.key === 'ArrowLeft') w = Math.max(GRID_MIN_W, w - 1);
+          if (e.key === 'ArrowRight') w = Math.min(GRID_COLS - x, w + 1);
+          if (e.key === 'ArrowUp') h = Math.max(GRID_MIN_H, h - 1);
+          if (e.key === 'ArrowDown') h = h + 1;
+        } else {
+          // Move
+          if (e.key === 'ArrowLeft') x = Math.max(0, x - 1);
+          if (e.key === 'ArrowRight') x = Math.min(GRID_COLS - w, x + 1);
+          if (e.key === 'ArrowUp') y = Math.max(0, y - 1);
+          if (e.key === 'ArrowDown') y = y + 1;
+        }
+
         const next = [...layout];
-        next[itemIdx] = { ...item, x, y };
+        next[itemIdx] = { ...item, x, y, w, h };
         commitLayout(next, { sync: true });
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout]);
+  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, widgetById, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout]);
 
   const { dashboards, fetchDashboards, activeDashboardId, setActiveDashboardId, copyWidgetToDashboard } = useDashboardStore();
 
@@ -579,6 +603,12 @@ export default function DashboardCanvas({
         </div>
       )}
 
+      {/* breakpoints already match react-grid-layout's own documented defaults (width
+          thresholds in px at which each named breakpoint kicks in). cols is a real
+          responsive scale rather than a flat 12 everywhere so narrow viewports reflow
+          widgets instead of just compressing them — xxs floors at 3 because the
+          smallest widget templates (KPI Card, Slicer, Gauge; see widgetTemplates.tsx)
+          default to w:3, so anything lower would immediately clip them. */}
       <ResponsiveGridLayout
         className="layout"
         layouts={{
@@ -589,7 +619,7 @@ export default function DashboardCanvas({
           xxs: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={{ lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }}
+        cols={{ lg: 12, md: 12, sm: 8, xs: 4, xxs: 3 }}
         rowHeight={isDesigner ? designerRowHeight : 42}
         margin={isDesigner ? [0, 0] : [8, 8]}
         containerPadding={[0, 0]}
@@ -619,12 +649,21 @@ export default function DashboardCanvas({
             !!crossFilterField && getCrossFilterValues(runtimeFilters, crossFilterField).length > 0;
 
           const isLayoutSlot = isLayoutSlotWidget(w);
+          const layoutItem = layout.find((l) => l.i === w.id);
+          const canKeyboardMove = isEditing && !w.isLocked && !isLayoutSlot;
+          const widgetAriaLabel = layoutItem
+            ? `${w.title || w.chartType || 'Widget'}. Column ${layoutItem.x + 1} of ${GRID_COLS}, row ${layoutItem.y + 1}, size ${layoutItem.w} by ${layoutItem.h} grid units.${canKeyboardMove ? ' Use arrow keys to move, Shift plus arrow keys to resize.' : ''}`
+            : w.title || w.chartType || 'Widget';
 
           return (
             <div key={w.id} data-widget-id={w.id} className={isLayoutSlot ? 'dashboard-canvas-slot-placeholder' : undefined}>
               <div
                 className={`widget-card ${isSelected ? 'selected' : ''} ${isMultiSelected ? 'multi-selected' : ''} ${isCrossFilterSource ? 'is-cross-filter-source' : ''} ${peerEditingWidgetId === w.id ? 'is-peer-editing' : ''} widget-type-${w.chartType} ${!showHeader ? 'header-hidden' : ''} ${w.chartOptions?.backgroundColor === 'transparent' ? 'is-transparent' : ''} ${isLayoutSlot ? 'is-layout-slot' : ''}`}
                 data-widget-id={w.id}
+                role="group"
+                aria-label={widgetAriaLabel}
+                tabIndex={canKeyboardMove ? 0 : undefined}
+                onFocus={canKeyboardMove ? () => setSelectedWidgetId(w.id) : undefined}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (readOnly) return;

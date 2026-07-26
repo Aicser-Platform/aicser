@@ -104,6 +104,39 @@ class DashboardPage(BaseModel):
     dashboard = relationship("Dashboard", back_populates="pages", lazy='select')
 
 
+class DashboardVersion(Base):
+    """
+    Named dashboard version snapshots ("Version History" in Studio).
+    Table: dashboard_versions
+
+    Schema:
+    - id : UUID (PK)
+    - dashboard_id : UUID (FK -> dashboards.id)
+    - label : string, nullable (user-provided snapshot name)
+    - config : JSONB (full { widgets, layout } snapshot — same shape the
+      Studio canvas keeps in memory)
+    - created_by : UUID (FK -> users.id)
+    - created_at : timestamp
+
+    Server-backed replacement for the old localStorage-only history
+    (aicser_dash_versions_<dashboard_id>), which was invisible to teammates
+    and lost if the browser's storage was cleared.
+
+    Note: Does not inherit from BaseModel because snapshots are immutable —
+    no is_active/is_deleted/updated_at needed (same reasoning as DashboardChart).
+    """
+    __tablename__ = "dashboard_versions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid(), index=True)
+
+    dashboard_id = Column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=False, index=True)
+    label = Column(String(255), nullable=True)
+    config = Column(JSONB, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
+
+
 # Standalone Table definition for dashboard_widgets (not an ORM class)
 # This is used for raw SQL operations, bypassing SQLAlchemy's ORM mapper.
 metadata_obj = MetaData()

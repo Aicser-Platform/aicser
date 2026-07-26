@@ -572,6 +572,20 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     }
     return opts;
   }, [limitSource, rowLimit]);
+  // The window-resize listeners below only catch viewport changes — they miss the
+  // workspace shrinking/growing from its own sibling content (e.g. the AI bar
+  // wrapping onto a second line when its model selector overflows). Without this,
+  // editorHeight/maxEditorHeight go stale relative to the real available space and
+  // the split leaves empty/clipped space until the next window resize.
+  useEffect(() => {
+    const node = workspaceMainRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setEditorHeight((h) => clampEditorHeight(h));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [clampEditorHeight]);
   useEffect(() => {
     const nextMax = computeMaxEditorHeight();
     setMaxEditorHeight(nextMax);
@@ -1389,6 +1403,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         saveTabsToBackendRef.current(tabs, activeKey);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        // Skip when Monaco has focus — its own addAction keybinding (registered in
+        // onMonacoMount) already runs the query for this exact keypress; without this
+        // check both handlers fire and the query runs twice. This listener exists for
+        // the case where focus is elsewhere on the page (e.g. the row-limit control).
+        if (monacoEditorInstanceRef.current?.hasTextFocus?.()) return;
         e.preventDefault();
         runHandlerRef.current?.();
       }
@@ -1409,6 +1428,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // Ref for run handler so shortcuts (window + Monaco Ctrl+Enter) always call latest
   const runHandlerRef = useRef<() => void>(() => {});
+  // Monaco editor instance, so the window-level Ctrl+Enter fallback below can check
+  // hasTextFocus() and skip when Monaco's own action (registered in onMonacoMount)
+  // is already handling the same keypress — otherwise both fire and the query runs twice.
+  const monacoEditorInstanceRef = useRef<{ hasTextFocus?: () => boolean } | null>(null);
 
   // Debounced auto-save: persist current tab content to backend after 2s of no typing
   useEffect(() => {
@@ -1484,6 +1507,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     // Store refs for external use (e.g. setModelMarkers for error highlighting)
     monacoInstanceRef.current = monacoInstance;
     editorModelRef.current = (editor as any)?.getModel?.() ?? null;
+    monacoEditorInstanceRef.current = editor as { hasTextFocus?: () => boolean };
 
     const monaco = monacoInstance as {
       languages: {
@@ -2508,7 +2532,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }}>
           {IS_EE && (
           <div className="qe-ai-bar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
               <Tooltip
                 title={
                   <div>
@@ -2542,7 +2566,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               </Tooltip>
               <Input.TextArea
                 placeholder={t('ai_assistant_placeholder')}
-                style={{ flex: 1, borderRadius: '6px', resize: 'none' }}
+                style={{ flex: '1 1 160px', minWidth: 0, borderRadius: '6px', resize: 'none' }}
                 autoSize={{ minRows: 1, maxRows: 6 }}
                 value={aiAssistantInput}
                 onChange={(e) => setAiAssistantInput(e.target.value)}
@@ -2581,6 +2605,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 onModelChange={setAiModel}
                 disabled={aiGenerating}
                 persistPreference
+                style={{ minWidth: 0, maxWidth: 140, width: 'clamp(56px, 16vw, 140px)', flexShrink: 1 }}
+                dropdownWidth={200}
               />
             </div>
           </div>
@@ -3220,7 +3246,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               onTableClick={(tableName, schemaName) => {
                 const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
                 const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
-                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT 100`);
+                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT}`);
               }}
               onColumnClick={(tableName, columnName, schemaName) => {
                 const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;

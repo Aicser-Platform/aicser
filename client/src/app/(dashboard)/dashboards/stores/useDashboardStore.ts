@@ -17,6 +17,7 @@ import {
   hydrateRemixWidget,
   isRemixSnapshotWidget,
 } from '../utils/remixSnapshotHydration';
+import { hasRenderableChartData } from '@/components/charts/chartDesignerBridge';
 import { getColorsFromPalette } from '../widgets/WidgetRendererConfig';
 import { isWidgetPaletteInherited, WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import {
@@ -97,26 +98,6 @@ function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
   return { widgets, layout };
 }
 
-// ─── Version history (named snapshots, stored in localStorage) ────────────────
-const MAX_VERSIONS = 20;
-const VERSION_STORAGE_KEY = (dashId: string) => `aicser_dash_versions_${dashId}`;
-
-function loadVersions(dashboardId: string): DashboardVersion[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(VERSION_STORAGE_KEY(dashboardId));
-    return raw ? (JSON.parse(raw) as DashboardVersion[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistVersions(dashboardId: string, versions: DashboardVersion[]) {
-  try {
-    localStorage.setItem(VERSION_STORAGE_KEY(dashboardId), JSON.stringify(versions));
-  } catch {}
-}
-
 // ─── History snapshot for undo/redo ───────────────────────────────────────────
 type HistorySnapshot = { widgets: WidgetInstance[]; layout: LayoutItem[] };
 const MAX_HISTORY = 30;
@@ -162,12 +143,14 @@ interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
   setSelectedWidgetId: (id: string | null) => void;
   setSaving: (saving: boolean) => void;
   // Multi-widget selection (shift+click)
-  // Version history (named snapshots)
+  // Version history (named snapshots — server-backed)
   dashboardVersions: DashboardVersion[];
-  saveVersionSnapshot: (label?: string) => void;
-  loadVersionHistory: (dashboardId: string) => void;
-  restoreVersionSnapshot: (versionId: string) => void;
-  deleteVersionSnapshot: (versionId: string) => void;
+  isLoadingVersions: boolean;
+  versionsError: string | null;
+  saveVersionSnapshot: (label?: string) => Promise<void>;
+  loadVersionHistory: (dashboardId: string) => Promise<void>;
+  restoreVersionSnapshot: (versionId: string) => Promise<void>;
+  deleteVersionSnapshot: (versionId: string) => Promise<void>;
   fetchDashboards: () => Promise<void>;
   loadDashboardById: (id: string) => Promise<boolean>;
 
@@ -288,6 +271,8 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
   setSelectedWidgetId: (id) => set({ selectedWidgetId: id }),
 
   dashboardVersions: [],
+  isLoadingVersions: false,
+  versionsError: null,
 
   copyWidgetToDashboard: async (widget, layoutItem, targetDashboardId) => {
     const state = get();
@@ -1148,6 +1133,18 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       if (!widget || !widget.chartId) return;
       if (isNonDataWidget(widget.chartType)) return;
       if (isRemixSnapshotWidget(widget) && widget.chartData) return;
+      // Chat-originated widgets (Pin to Dashboard / Chart Designer import) often store
+      // a chartQuery that can't actually be re-run (frequently just {tableName:'data',
+      // filters:[]} — see buildChatChartPinPayload) since the chart came from an AI
+      // answer, not a query built in the designer. Re-fetching would overwrite the
+      // carried-over chartData with an empty/failed result. WidgetRenderer already
+      // prefers __prefetchedChartData/__echartsSnapshot over live data (see its
+      // `effectiveData` resolution) — skip the live fetch entirely when either is
+      // present and usable, mirroring the Designer's own shouldFetchDesignerChartData
+      // guard (chartDesignerBridge.ts) so both paths behave consistently.
+      const chartOpts = widget.chartOptions as Record<string, unknown> | undefined;
+      if (chartOpts?.__echartsSnapshot) return;
+      if (hasRenderableChartData(chartOpts?.__prefetchedChartData)) return;
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) => (w.id === widgetId ? { ...w, isLoading: true, error: null } : w));
@@ -1400,50 +1397,85 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
     }
   },
 
-  // ─── Version history ──────────────────────────────────────────────────────
-  loadVersionHistory: (dashboardId) => {
-    const versions = loadVersions(dashboardId);
-    set({ dashboardVersions: versions });
+  // ─── Version history (server-backed — /api/dashboards/{id}/versions) ───────
+  loadVersionHistory: async (dashboardId) => {
+    set({ isLoadingVersions: true, versionsError: null });
+    try {
+      const versions = await chartService.listVersions(dashboardId);
+      set({
+        dashboardVersions: versions.map((v) => ({
+          id: v.id,
+          dashboardId: v.dashboardId,
+          label: v.label,
+          savedAt: v.savedAt ?? 0,
+          widgetCount: v.widgetCount,
+        })),
+        isLoadingVersions: false,
+      });
+    } catch (error) {
+      console.error(`Failed to load version history for dashboard ${dashboardId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load version history';
+      set({ isLoadingVersions: false, versionsError: errorMessage });
+    }
   },
 
-  saveVersionSnapshot: (label) => {
+  saveVersionSnapshot: async (label) => {
     const { activeDashboardId, widgets, layout } = get();
     if (!activeDashboardId) return;
-    const id = `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const version: DashboardVersion = {
-      id,
-      dashboardId: activeDashboardId,
-      label: label || new Date().toLocaleString(),
-      savedAt: Date.now(),
-      widgets: JSON.parse(JSON.stringify(widgets)),
-      layout: JSON.parse(JSON.stringify(layout)),
-    };
-    const existing = loadVersions(activeDashboardId);
-    const next = [version, ...existing].slice(0, MAX_VERSIONS);
-    persistVersions(activeDashboardId, next);
-    set({ dashboardVersions: next });
+    try {
+      await chartService.createVersion(activeDashboardId, {
+        label: label || new Date().toLocaleString(),
+        config: {
+          widgets: JSON.parse(JSON.stringify(widgets)),
+          layout: JSON.parse(JSON.stringify(layout)),
+        },
+      });
+      // Refresh from the server so the list (and the 20-version cap) stays authoritative.
+      await get().loadVersionHistory(activeDashboardId);
+    } catch (error) {
+      console.error('Failed to save version snapshot:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save snapshot';
+      set({ versionsError: errorMessage });
+      throw error;
+    }
   },
 
-  restoreVersionSnapshot: (versionId) => {
-    const { activeDashboardId, dashboardVersions } = get();
-    const version = dashboardVersions.find((v) => v.id === versionId);
-    if (!version || !activeDashboardId) return;
-    const { widgets, layout } = version;
-    // Save current state as a recovery point first
-    get().saveVersionSnapshot(`Before restore — ${new Date().toLocaleString()}`);
-    set((state) => {
-      const dashboards = state.dashboards.map((d) =>
-        d.id === activeDashboardId ? { ...d, widgets, layout } : d
-      );
-      return { widgets, layout, dashboards, selectedWidgetId: null };
-    });
-  },
-
-  deleteVersionSnapshot: (versionId) => {
-    const { activeDashboardId, dashboardVersions } = get();
+  restoreVersionSnapshot: async (versionId) => {
+    const { activeDashboardId } = get();
     if (!activeDashboardId) return;
-    const next = dashboardVersions.filter((v) => v.id !== versionId);
-    persistVersions(activeDashboardId, next);
-    set({ dashboardVersions: next });
+    try {
+      const full = await chartService.getVersion(activeDashboardId, versionId);
+      // Save current state as a recovery point first
+      await get().saveVersionSnapshot(`Before restore — ${new Date().toLocaleString()}`);
+      const widgets = (full.widgets ?? []) as unknown as WidgetInstance[];
+      const layout = (full.layout ?? []) as unknown as LayoutItem[];
+      set((state) => {
+        const dashboards = state.dashboards.map((d) =>
+          d.id === activeDashboardId ? { ...d, widgets, layout } : d
+        );
+        return { widgets, layout, dashboards, selectedWidgetId: null };
+      });
+    } catch (error) {
+      console.error(`Failed to restore version ${versionId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to restore version';
+      set({ versionsError: errorMessage });
+      throw error;
+    }
+  },
+
+  deleteVersionSnapshot: async (versionId) => {
+    const { activeDashboardId } = get();
+    if (!activeDashboardId) return;
+    try {
+      await chartService.deleteVersion(activeDashboardId, versionId);
+      set((state) => ({
+        dashboardVersions: state.dashboardVersions.filter((v) => v.id !== versionId),
+      }));
+    } catch (error) {
+      console.error(`Failed to delete version ${versionId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete snapshot';
+      set({ versionsError: errorMessage });
+      throw error;
+    }
   },
 }));

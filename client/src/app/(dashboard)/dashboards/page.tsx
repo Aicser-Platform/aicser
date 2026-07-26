@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal, Select, Drawer } from 'antd';
+import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal, Select, Drawer, Spin } from 'antd';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
   LeftOutlined,
@@ -864,15 +864,15 @@ export default function NewDashboardStudio() {
             size="large"
             icon={<PlusOutlined />}
             loading={creatingDashboard}
-            onClick={() => void handleWizardCreateWithLayout(t('wizard_default_name'), 'blank')}
+            onClick={() => void handleWizardCreateWithLayout(td('wizard_default_name'), 'blank')}
             style={{ marginTop: '16px' }}
           >
             {t('create_dashboard')}
           </Button>
 
-          {/* <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{t('or_sample_dashboard')}</Divider> */}
+          <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{td('or_sample_dashboard')}</Divider>
 
-          {/* {isLoadingTemplates ? (
+          {isLoadingTemplates ? (
             <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
               <Spin size="small" />
             </div>
@@ -938,7 +938,7 @@ export default function NewDashboardStudio() {
             <Text type="secondary" style={{ marginTop: 12 }}>
               {t('no_sample_dashboards')}
             </Text>
-          )} */}
+          )}
         </div>
       </ConfigProvider>
     );

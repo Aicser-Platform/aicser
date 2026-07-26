@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Empty } from 'antd';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
+import { RawRowsTableWidget } from './RawRowsTableWidget';
 import { StatWidget } from './StatWidget';
 import { TextWidget } from './TextWidget';
 import { SlicerWidget } from './SlicerWidget';
@@ -344,7 +345,10 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         effectiveData.series.some((s: any) => Array.isArray(s.data) && s.data.length > 0)) ||
       (Array.isArray((effectiveData as { heatmap?: unknown[] }).heatmap) &&
         (effectiveData as { heatmap: unknown[] }).heatmap.length > 0) ||
-      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null));
+      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null) ||
+      // Chat-originated "table" charts carry a raw row array (not the {x,y,series}
+      // aggregation shape) — see hasRenderableChartData, which already special-cases this.
+      (Array.isArray(effectiveData) && effectiveData.length > 0));
 
   // Initial loading state (no data yet)
   if (isLoading && needsData && !hasData) {
@@ -373,6 +377,23 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   const renderContent = () => {
     // Table
     if (type === 'table') {
+      // Chat-originated tables carry a raw row array, not TableWidget's {x,y,series}
+      // dimension/metric aggregation shape — those are structurally different data
+      // (arbitrary flat columns vs. a pivoted x/series breakdown), so render them
+      // with RawRowsTableWidget instead of feeding TableWidget a shape it can't use.
+      if (Array.isArray(effectiveData)) {
+        return (
+          <RawRowsTableWidget
+            rows={effectiveData as Record<string, unknown>[]}
+            config={config}
+            crossFilterField={query?.x}
+            activeCrossFilterValues={
+              query?.x ? getCrossFilterValues(runtimeFilters, query.x) : []
+            }
+            onCrossFilter={onFilter && query?.x ? (value) => onFilter(query.x!, value) : undefined}
+          />
+        );
+      }
       return (
         <TableWidget
           data={effectiveData}

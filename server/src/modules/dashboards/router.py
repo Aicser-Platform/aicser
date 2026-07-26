@@ -22,11 +22,13 @@ from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.dashboards.pages_router import router as pages_router
+from src.modules.dashboards.versions_router import router as versions_router
 from src.modules.dashboards import operations as dash_ops
 
 router = APIRouter()
 
 router.include_router(pages_router, prefix="/{dashboard_id}/pages", tags=["dashboard-pages"])
+router.include_router(versions_router, prefix="/{dashboard_id}/versions", tags=["dashboard-versions"])
 
 
 def _normalize_dashboard_config(config: Any) -> dict[str, Any]:

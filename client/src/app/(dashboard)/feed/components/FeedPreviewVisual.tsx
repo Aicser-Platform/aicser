@@ -3,29 +3,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import type { EChartsOption } from 'echarts';
 import type { FeedAssetPreview, FeedItem, FeedPreviewType } from '@/services/socialFeedService';
 import { chartService } from '../../dashboards/services/chartService';
 import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
+import {
+  CHART_COLORS,
+  getBaseTooltipConfig,
+  getBaseGridConfig,
+  getXAxisConfig,
+} from '../../dashboards/widgets/WidgetRendererConfig';
+import type { ChartConfig, ChartData } from '../../dashboards/widgets/WidgetRendererConfig';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
 import { FeedPostViewer } from './FeedPostViewer';
 import { FeedDashboardChartGrid } from './FeedDashboardChartGrid';
 import { FeedPreviewEmpty } from './FeedPreviewEmpty';
+import { MiniEChart } from './MiniEChart';
 
 interface FeedPreviewVisualProps {
   item: FeedItem;
@@ -60,20 +53,134 @@ const normalizePreviews = (item: FeedItem): FeedAssetPreview[] => {
   return [{ type: fallbackType, data: item.asset.previewData }];
 };
 
-const tooltipStyle = {
-  borderRadius: 10,
-  border: '1px solid var(--ant-color-border)',
-  boxShadow: '0 6px 18px rgba(0, 0, 0, 0.25)',
-  fontSize: 12,
-  background: 'var(--ant-color-bg-elevated)',
-  color: 'var(--ant-color-text)',
-} as React.CSSProperties;
-const tickStyle: React.SVGProps<SVGTextElement> = {
-  fill: 'var(--ant-color-text-secondary)',
-  fontSize: 11,
+const areaGradient = (opacityTop: number, opacityBottom: number) =>
+  ({
+    type: 'linear',
+    x: 0,
+    y: 0,
+    x2: 0,
+    y2: 1,
+    colorStops: [
+      { offset: 0, color: `rgba(0, 194, 203, ${opacityTop})` },
+      { offset: 1, color: `rgba(0, 194, 203, ${opacityBottom})` },
+    ],
+  }) as const;
+
+/** Adapts the flat `ChartPoint[]` fallback series into the minimal shape the
+ *  dashboard widget's shared axis/grid builders expect. */
+const toChartData = (series: ChartPoint[]): ChartData => ({
+  x: series.map((point) => point.label),
+  y: series.map((point) => point.value),
+});
+
+/** Cartesian axis/grid config for line & bar mini previews — same
+ *  getBaseGridConfig/getXAxisConfig the dashboard's EChartWidget uses (via
+ *  ChartOptionsBuilder), just in the existing feed-preview density mode.
+ *  Area charts stay on a bespoke edge-to-edge grid below: they need
+ *  boundaryGap:false for the sparkline fill, which these builders don't support. */
+const cartesianAxisConfig = (showAxes: boolean, compact: boolean): ChartConfig => ({
+  isFeedPreview: true,
+  isDashboardWidget: compact,
+  showAxis: showAxes,
+  showHAxisLabels: showAxes,
+  showVAxisLabels: false,
+  showHAxisLine: false,
+  showVAxisLine: false,
+  showLegend: false,
+  axisLabelFontSize: 11,
+});
+
+const buildAreaOption = (series: ChartPoint[], { showAxes, showTooltip }: { showAxes: boolean; showTooltip: boolean }): EChartsOption => ({
+  animation: false,
+  grid: { left: 4, right: 6, top: showAxes ? 10 : 4, bottom: showAxes ? 4 : 4, containLabel: false },
+  tooltip: showTooltip ? getBaseTooltipConfig('area') : undefined,
+  xAxis: {
+    type: 'category',
+    show: showAxes,
+    boundaryGap: false,
+    data: series.map((s) => s.label),
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 },
+    splitLine: { show: false },
+  },
+  yAxis: { type: 'value', show: false },
+  series: [
+    {
+      type: 'line',
+      data: series.map((s) => s.value),
+      smooth: true,
+      symbol: 'none',
+      lineStyle: { color: CHART_COLORS.primary, width: showAxes ? 2.5 : 2 },
+      areaStyle: { color: areaGradient(showAxes ? 0.45 : 0.4, 0.05) },
+    },
+  ],
+} as EChartsOption);
+
+const buildPieOption = (series: ChartPoint[], compact: boolean, showTooltip: boolean): EChartsOption => ({
+  animation: false,
+  tooltip: showTooltip ? getBaseTooltipConfig('pie') : undefined,
+  series: [
+    {
+      type: 'pie',
+      radius: [compact ? '38%' : '45%', compact ? '68%' : '75%'],
+      avoidLabelOverlap: false,
+      itemStyle: { borderColor: CHART_COLORS.background, borderWidth: 2 },
+      label: { show: false },
+      data: series.map((point, idx) => ({
+        name: point.label,
+        value: point.value,
+        itemStyle: { color: PIE_COLORS[idx % PIE_COLORS.length] },
+      })),
+    },
+  ],
+} as EChartsOption);
+
+const buildLineOption = (series: ChartPoint[], { showAxes, showTooltip, compact }: { showAxes: boolean; showTooltip: boolean; compact: boolean }): EChartsOption => {
+  const chartData = toChartData(series);
+  const axisConfig = cartesianAxisConfig(showAxes, compact);
+  return {
+    animation: false,
+    grid: getBaseGridConfig(axisConfig, chartData),
+    tooltip: showTooltip ? getBaseTooltipConfig('line') : undefined,
+    xAxis: getXAxisConfig(chartData, axisConfig, 'line'),
+    yAxis: { type: 'value', show: false },
+    series: [
+      {
+        type: 'line',
+        data: chartData.y,
+        smooth: true,
+        symbol: compact ? 'none' : 'circle',
+        symbolSize: 6,
+        showSymbol: !compact,
+        lineStyle: { color: CHART_COLORS.primary, width: compact ? 2 : 3 },
+        itemStyle: { color: CHART_COLORS.primary, borderColor: CHART_COLORS.background, borderWidth: 2 },
+      },
+    ],
+  } as EChartsOption;
 };
 
-const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number, compact: boolean) => {
+const buildBarOption = (series: ChartPoint[], { showAxes, showTooltip }: { showAxes: boolean; showTooltip: boolean }): EChartsOption => {
+  const chartData = toChartData(series);
+  const axisConfig = cartesianAxisConfig(showAxes, !showAxes);
+  return {
+    animation: false,
+    grid: getBaseGridConfig(axisConfig, chartData),
+    tooltip: showTooltip ? getBaseTooltipConfig('bar') : undefined,
+    xAxis: getXAxisConfig(chartData, axisConfig, 'bar'),
+    yAxis: { type: 'value', show: false },
+    series: [
+      {
+        type: 'bar',
+        data: chartData.y,
+        itemStyle: { color: CHART_COLORS.primary, borderRadius: [5, 5, 0, 0] },
+        barMaxWidth: 28,
+      },
+    ],
+  } as EChartsOption;
+};
+
+const renderPreview = (preview: FeedAssetPreview, compact: boolean) => {
   const series = buildSeries(preview.data);
   const chartClass = compact ? 'feed-card-chart feed-card-chart--mini' : 'feed-card-chart';
   const showTooltip = !compact;
@@ -91,29 +198,11 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
     const first = series[0]?.value ?? latest;
     const change = latest - first;
     const changeLabel = `${change >= 0 ? '+' : ''}${change}`;
-    const gradientId = `dashboardFill-${itemId}-${index}`;
 
     if (compact) {
       return (
-        <div className="w-full h-8 overflow-hidden rounded-md bg-[var(--ant-color-bg-layout)] bg-opacity-30 flex items-center justify-center">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={series} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--ant-color-primary)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="var(--ant-color-primary)" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <YAxis hide />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="var(--ant-color-primary)"
-                strokeWidth={2}
-                fill={`url(#${gradientId})`}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="w-full h-8 overflow-hidden rounded-md bg-[var(--ant-color-bg-layout)] bg-opacity-30">
+          <MiniEChart option={buildAreaOption(series, { showAxes: false, showTooltip: false })} />
         </div>
       );
     }
@@ -139,58 +228,16 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
         </div>
 
         <div className="flex-1 w-full min-h-0 absolute bottom-0 left-0 right-0 h-2/3">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--ant-color-primary)" stopOpacity={0.45} />
-                  <stop offset="95%" stopColor="var(--ant-color-primary)" stopOpacity={0.05} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={tickStyle} />
-              <YAxis hide />
-              {showTooltip && <Tooltip cursor={false} contentStyle={tooltipStyle} />}
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke="var(--ant-color-primary)"
-                strokeWidth={2.5}
-                fillOpacity={1}
-                fill={`url(#${gradientId})`}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <MiniEChart option={buildAreaOption(series, { showAxes: true, showTooltip })} />
         </div>
       </div>
     );
   }
 
   if (preview.type === 'pie') {
-    const pieData = series.map((point) => ({ name: point.label, value: point.value }));
     return (
       <div className={chartClass}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            {showTooltip && <Tooltip contentStyle={tooltipStyle} />}
-            <Pie
-              data={pieData}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              innerRadius={compact ? 20 : 32}
-              outerRadius={compact ? 44 : 54}
-              paddingAngle={2}
-              stroke="#ffffff"
-              strokeWidth={2}
-            >
-              {pieData.map((entry, idx) => (
-                <Cell key={`cell-${entry.name}`} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
+        <MiniEChart option={buildPieOption(series, compact, showTooltip)} />
       </div>
     );
   }
@@ -198,54 +245,29 @@ const renderPreview = (preview: FeedAssetPreview, itemId: string, index: number,
   if (preview.type === 'line') {
     return (
       <div className={chartClass}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-            {!compact && (
-              <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
-            )}
-            <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
-            <YAxis hide />
-            {showTooltip && <Tooltip cursor={false} contentStyle={tooltipStyle} />}
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="var(--ant-color-primary)"
-              strokeWidth={compact ? 2 : 3}
-              dot={false}
-              activeDot={
-                compact ? false : { r: 4, fill: 'var(--ant-color-primary)', stroke: '#ffffff', strokeWidth: 2 }
-              }
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <MiniEChart option={buildLineOption(series, { showAxes, showTooltip, compact })} />
       </div>
     );
   }
 
   return (
     <div className={chartClass}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={series} margin={{ top: 8, right: 6, left: 0, bottom: 0 }}>
-          {!compact && (
-            <CartesianGrid stroke="var(--ant-color-border-secondary)" strokeDasharray="3 3" vertical={false} />
-          )}
-          <XAxis dataKey="label" axisLine={false} tickLine={false} hide={!showAxes} tick={tickStyle} />
-          <YAxis hide />
-          {showTooltip && <Tooltip cursor={{ fill: 'var(--ant-color-primary-bg)' }} contentStyle={tooltipStyle} />}
-          <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="var(--ant-color-primary)" />
-        </BarChart>
-      </ResponsiveContainer>
+      <MiniEChart option={buildBarOption(series, { showAxes, showTooltip })} />
     </div>
   );
 };
 
 /**
  * ChartLivePreview — renders a single `chart` type feed item using live data.
- * Falls back to the Recharts sparkline if data cannot be fetched.
+ * Falls back to FeedPreviewEmpty if the live data cannot be fetched.
  */
 const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
   const [widget, setWidget] = useState<WidgetInstance | null>(null);
   const [loading, setLoading] = useState(true);
+  // Distinct from "no widget yet" (still loading, or nothing configured to preview) —
+  // this fetch genuinely failed, so unlike the general empty state, Retry makes sense.
+  const [fetchFailed, setFetchFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     const dashboardId = item.asset.dashboardId;
@@ -256,6 +278,8 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     }
 
     let cancelled = false;
+    setLoading(true);
+    setFetchFailed(false);
     Promise.all([
       chartService.getChart(dashboardId, chartId),
       chartService.executeChart(dashboardId, chartId).catch(() => null),
@@ -276,7 +300,9 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
         } as WidgetInstance);
       })
       .catch(() => {
-        if (!cancelled) setWidget(null);
+        if (cancelled) return;
+        setWidget(null);
+        setFetchFailed(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -285,7 +311,7 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     return () => {
       cancelled = true;
     };
-  }, [item.assetId, item.asset.dashboardId, item.id, item.title]);
+  }, [item.assetId, item.asset.dashboardId, item.id, item.title, retryNonce]);
 
   if (loading) {
     return (
@@ -295,7 +321,17 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     );
   }
 
-  if (!widget) return <FeedPreviewEmpty label={item.asset.previewLabel || item.title} />;
+  if (!widget) {
+    return fetchFailed ? (
+      <FeedPreviewEmpty
+        label="Couldn't load this chart"
+        hint="Check your connection and try again."
+        onRetry={() => setRetryNonce((n) => n + 1)}
+      />
+    ) : (
+      <FeedPreviewEmpty label={item.asset.previewLabel || item.title} />
+    );
+  }
 
   return (
     <div className="w-full h-full min-h-[200px] p-3">
@@ -405,7 +441,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
     if (previews.length > 0 && previews[0]?.data && previews[0].data.length > 0) {
       return (
         <div className="w-full h-full flex items-center justify-center p-4">
-          {renderPreview(previews[0], item.id, 0, false)}
+          {renderPreview(previews[0], false)}
         </div>
       );
     }
@@ -424,7 +460,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
     if (previews.length > 0 && previews[0]?.data && previews[0].data.length > 0) {
       return (
         <div className="w-full h-full flex items-center justify-center p-4">
-          {renderPreview(previews[0], item.id, 0, false)}
+          {renderPreview(previews[0], false)}
         </div>
       );
     }
@@ -453,7 +489,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
             key={`${preview.type}-${index}`}
             className="relative bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-lg overflow-hidden flex items-center justify-center min-h-[160px]"
           >
-            {renderPreview(preview, item.id, index, true)}
+            {renderPreview(preview, true)}
             {showOverflowBadge && overflow > 0 && index === cappedPreviews.length - 1 && (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-900/60 text-white font-bold text-xl backdrop-blur-sm">
                 {overflowLabel}
@@ -467,7 +503,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
 
   return (
     <div className="w-full h-full flex items-center justify-center p-4">
-      {renderPreview(previews[0], item.id, 0, false)}
+      {renderPreview(previews[0], false)}
     </div>
   );
 };

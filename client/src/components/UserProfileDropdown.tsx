@@ -121,22 +121,17 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   };
 
   const handleUpgrade = async (planType: string, isYearly: boolean) => {
-    void isYearly;
     setUpgradeLoading(true);
     try {
-      // For now, we'll simulate the upgrade process
-      // In a real app, you would:
-      // 1. Create Stripe checkout session
-      // 2. Redirect to Stripe checkout
-      // 3. Handle webhook to update subscription
-
-      // await upgradePlan(planType, mockPaymentMethodId); // Commented out since function doesn't exist
-      void planType;
-      setPricingModalVisible(false);
-
+      // This modal only renders in EE (gated by isEnterpriseEdition below), so the real
+      // billing service is always present at this path. Previously this just closed the
+      // modal and did nothing — a second, silently-broken "Upgrade" button sitting next
+      // to the real one in Settings → Billing (see BillingSubscriptionTab.tsx).
+      const { billingService } = await import('@/ee/services/billingService');
+      const checkoutUrl = await billingService.createCheckout(planType, isYearly ? 'yearly' : 'monthly');
+      window.location.href = checkoutUrl;
     } catch {
       message.error(t('failed_upgrade_plan'));
-    } finally {
       setUpgradeLoading(false);
     }
   };

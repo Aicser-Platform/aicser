@@ -20,6 +20,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
+import { fetchApi } from '@/utils/api';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -149,6 +150,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     deleteApiKey,
     loadProviderApiKeys,
     saveProviderKey,
+    availableModels,
   } = useSettingsStore();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -241,17 +243,41 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   }) => {
     if (!editingProvider) return;
     const modelToSave = (values.model === '__custom__' ? values.model_custom : values.model) ?? '';
+    const savedProvider = editingProvider;
     try {
-      await saveProviderKey(editingProvider, {
+      await saveProviderKey(savedProvider, {
         api_key: values.api_key ?? '',
         model: modelToSave,
         endpoint: values.endpoint,
       });
-      message.success(t('api_key_provider_saved'));
       setAiModelsReloadNonce((n) => n + 1);
       setShowProviderKeyModal(false);
       setEditingProvider(null);
       providerKeyForm.resetFields();
+
+      // Previously this just showed "saved" regardless of whether the key actually
+      // works — the user only found out it was wrong the next time a real AI request
+      // failed. saveProviderKey() already refreshed availableModels; read it fresh
+      // from the store (not the destructured hook value, which is a stale closure
+      // from this render) and probe the new BYOK model's live connection status.
+      const savedModel = useSettingsStore
+        .getState()
+        .availableModels.find((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
+      if (savedModel) {
+        try {
+          const status = await fetchApi(`/ai/model-status?model_id=${savedModel.id}`);
+          if (status?.success === false || status?.available === false) {
+            message.warning(t('api_key_saved_but_invalid'));
+          } else {
+            message.success(t('api_key_provider_saved'));
+          }
+        } catch {
+          // Status probe itself failing isn't proof the key is bad — don't block save success on it.
+          message.success(t('api_key_provider_saved'));
+        }
+      } else {
+        message.success(t('api_key_provider_saved'));
+      }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : t('api_keys_provider_save_failed');
       message.error(msg);

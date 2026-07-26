@@ -41,6 +41,7 @@ export const DASHBOARD_CHART_TYPES = [
   'scatter',
   'funnel',
   'heatmap',
+  'table',
 ] as const;
 
 export type DashboardChartType = (typeof DASHBOARD_CHART_TYPES)[number];

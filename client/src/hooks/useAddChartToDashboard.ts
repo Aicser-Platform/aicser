@@ -10,6 +10,7 @@ import {
   buildChatChartPinPayload,
   type ChatMessagePinSource,
 } from '@/components/charts/buildChatChartPinPayload';
+import { prepareChartOptionsForPersist } from '@/components/charts/chartDesignerBridge';
 import { sanitizeLayoutItem, maxLayoutY } from '@/app/(dashboard)/dashboards/utils/layoutSanitize';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -155,7 +156,13 @@ export function useAddChartToDashboard() {
         dataSourceId: payload.dataSourceId,
         chartType: payload.chartType,
         title: payload.title,
-        chartOptions: payload.chartOptions,
+        // Same cleanup the Chart Designer save path applies (strips __animate,
+        // removes watermark graphics from any embedded snapshot) — this path
+        // built its payload independently and was skipping it, so a pinned
+        // chart's stored options carried transient/render-only fields the
+        // designer path already knows to drop. Does NOT strip
+        // __prefetchedChartData (see prepareChartOptionsForPersist's own doc).
+        chartOptions: prepareChartOptionsForPersist(payload.chartOptions),
         chartQuery: payload.chartQuery,
         layout: sanitizeLayoutItem({ x: 0, y: 0, w: 6, h: 5 }, maxLayoutY(layoutState)),
       });

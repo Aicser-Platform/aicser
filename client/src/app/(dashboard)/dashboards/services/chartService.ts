@@ -133,6 +133,25 @@ export interface CreateDashboardFromTemplatePayload {
 
 export type DashboardAccessOptions = { embedToken?: string };
 
+/** List-endpoint shape — omits the widgets/layout payload to keep the list light. */
+export interface DashboardVersionSummaryResponse {
+  id: string;
+  dashboardId: string;
+  label: string;
+  savedAt: number | null;
+  widgetCount: number;
+}
+
+/** Single-version shape (create/get) — includes the full widgets/layout snapshot. */
+export interface DashboardVersionFullResponse {
+  id: string;
+  dashboardId: string;
+  label: string;
+  savedAt: number | null;
+  widgets: unknown[];
+  layout: unknown[];
+}
+
 class ChartService {
   private async authenticatedFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
     return fetchApi(endpoint, options);
@@ -205,12 +224,19 @@ class ChartService {
   }
 
   async createDashboardFromTemplate(payload: CreateDashboardFromTemplatePayload): Promise<any> {
+    // The backend's single Pydantic body param is (for reasons not yet root-caused —
+    // isolated FastAPI repros with the same signature shape don't reproduce it) actually
+    // requiring the body embedded under its own param name, contradicting both FastAPI's
+    // documented default and this endpoint's own integration test. Verified empirically
+    // via direct curl against the live server: flat body -> 422, embedded -> 200.
     return await this.authenticatedFetch(`charts/dashboards/from-template`, {
       method: 'POST',
       body: JSON.stringify({
-        template_id: payload.templateId,
-        project_id: payload.projectId != null ? String(payload.projectId) : undefined,
-        dashboard_name: payload.dashboardName,
+        request_payload: {
+          template_id: payload.templateId,
+          project_id: payload.projectId != null ? String(payload.projectId) : undefined,
+          dashboard_name: payload.dashboardName,
+        },
       }),
     });
   }
@@ -439,6 +465,39 @@ class ChartService {
     await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/${chartId}/layout`, {
       method: 'PUT',
       body: JSON.stringify(safe),
+    });
+  }
+
+  /* =========================================================
+   * Version History (server-backed named snapshots)
+   * =======================================================*/
+
+  async listVersions(dashboardId: string): Promise<DashboardVersionSummaryResponse[]> {
+    const data = await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/versions`, {
+      method: 'GET',
+    });
+    return Array.isArray(data?.versions) ? data.versions : [];
+  }
+
+  async createVersion(
+    dashboardId: string,
+    payload: { label?: string; config: Record<string, unknown> }
+  ): Promise<DashboardVersionFullResponse> {
+    return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getVersion(dashboardId: string, versionId: string): Promise<DashboardVersionFullResponse> {
+    return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/versions/${versionId}`, {
+      method: 'GET',
+    });
+  }
+
+  async deleteVersion(dashboardId: string, versionId: string): Promise<void> {
+    await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/versions/${versionId}`, {
+      method: 'DELETE',
     });
   }
 }

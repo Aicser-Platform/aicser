@@ -119,15 +119,28 @@ function safeClone<T>(obj: T): T {
   );
 }
 
-/** Strip render-only fields and watermark graphics before persisting to the API. */
+/**
+ * Strip render-only fields and watermark graphics before persisting to the API.
+ *
+ * __prefetchedChartData is intentionally KEPT (previously stripped here) — it's
+ * the only durable copy of a chat-originated chart's row data once the sessionStorage
+ * side-channel (storeTempChartData) is consumed on first read. Stripping it meant any
+ * reload/refetch of the saved chart had no data to hydrate from and fell back to
+ * shouldFetchDesignerChartData's executeAdhoc re-fetch, which for chat charts uses a
+ * chartQuery that's frequently just {tableName:'data', filters:[]} and can't actually
+ * reconstruct anything — the chart went blank on reload. mapApiChartToDesignerWidget
+ * already round-trips chartOptions back onto the widget, so keeping this field here is
+ * sufficient for the existing read path to pick it back up.
+ */
 export function prepareChartOptionsForPersist(
   chartOptions: Record<string, unknown> | undefined | null,
 ): Record<string, unknown> {
   if (!chartOptions || typeof chartOptions !== 'object') return {};
 
-  // Drop client-only transient fields before cloning
+  // Drop client-only transient fields before cloning (__prefetchedChartData is NOT
+  // transient — see function doc — so it stays in `rest` and gets persisted)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { __prefetchedChartData: _pcd, __animate: _anim, ...rest } = chartOptions;
+  const { __animate: _anim, ...rest } = chartOptions;
 
   // Safe-clone the whole object to eliminate circular refs and functions
   let next: Record<string, unknown>;

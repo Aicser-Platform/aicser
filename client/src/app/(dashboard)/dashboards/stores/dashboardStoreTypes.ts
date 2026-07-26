@@ -122,8 +122,13 @@ export interface DashboardVersion {
   dashboardId: string;
   label: string;
   savedAt: number;
-  widgets: WidgetInstance[];
-  layout: LayoutItem[];
+  /** Widget count for list display. Present on every version; kept separate from
+   *  `widgets` below so the list endpoint doesn't have to ship the full snapshot. */
+  widgetCount: number;
+  /** Full snapshot payload — only populated after a dedicated single-version fetch
+   *  (see restoreVersionSnapshot), not by the list endpoint. */
+  widgets?: WidgetInstance[];
+  layout?: LayoutItem[];
 }
 
 export function scopedFiltersForWidget(

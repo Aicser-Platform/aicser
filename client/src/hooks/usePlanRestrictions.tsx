@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback } from 'react';
+import type { PricingPlanKey } from '@/utils/pricingPlans';
 
 /**
  * Community / open-source: no billing integration — all plan gates open.
@@ -19,14 +20,17 @@ export function usePlanRestrictions() {
   const getRequiredPlan = useCallback((_feature: string) => 'Pro', []);
 
   return {
-    planType: 'community' as const,
+    // Matches PricingPlanKey used everywhere else (useSubscriptionStore, pricingPlans) —
+    // this previously said 'community', a value that type doesn't even define, so any
+    // caller comparing planType against the other plan tiers silently never matched CE.
+    planType: 'free' as PricingPlanKey,
     loading: false,
     hasFeature,
     canPerformAction,
     getRequiredPlan,
     showUpgradePrompt,
     UpgradeModal,
-    isFreePlan: false,
+    isFreePlan: true,
     canUseFeature: hasFeature,
   };
 }

@@ -36,6 +36,8 @@ interface FeedCardProps {
   detailBasePath?: string;
 }
 
+// Header/Body/Actions/Comments composite with inline comment threads — used by
+// saved/commented/discover views. The main feed list uses the leaner FeedGridCard instead.
 const FeedCard: React.FC<FeedCardProps> = ({
   item,
   onReact,

@@ -59,6 +59,16 @@ export interface ModelSelectorProps {
   defaultModel?: string;
   disabled?: boolean;
   className?: string;
+  /** Override compact-mode sizing per caller — contexts vary widely (a
+   *  Space.Compact bar next to an Input+Button reads very differently from a
+   *  standalone toolbar row), so one shared default width doesn't fit every
+   *  usage. Merges over (wins against) the default compact style. */
+  style?: React.CSSProperties;
+  /** Compact-mode dropdown popup width in px (default 260, via the shared
+   *  .model-selector-dropdown CSS class). The trigger pill can be as narrow
+   *  as ~56px in a tight toolbar — leaving the popup at a fixed 260px there
+   *  reads as a mostly-empty box ballooning out from a tiny button. */
+  dropdownWidth?: number;
   /** Persist selection to backend preference API */
   persist?: boolean;
   /** Alias for persist — used by settings page */
@@ -186,6 +196,8 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   defaultModel = 'auto',
   disabled = false,
   className = '',
+  style,
+  dropdownWidth,
   persist = false,
   persistPreference = false,
   reloadNonce = 0,
@@ -391,20 +403,28 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                 onChange={(v: any) => onSelect(typeof v === 'object' ? v.value : v)}
                 loading={composerEmbed ? false : loading}
                 disabled={disabled}
-                className={`model-selector-compact${composerEmbed ? ' model-selector-composer-embed' : ''}${className ? ` ${className}` : ''}`}
+                className={`model-selector-compact${composerEmbed ? ' model-selector-composer-embed' : ''}${dropdownWidth ? ' model-selector-narrow' : ''}${className ? ` ${className}` : ''}`}
                 style={
                     composerEmbed
-                        ? { width: 'auto', maxWidth: '100%' }
+                        ? { width: 'auto', maxWidth: '100%', ...style }
                         : {
                               minWidth: 72,
                               maxWidth: 168,
                               width: 'clamp(72px, 22vw, 168px)',
+                              ...style,
                           }
                 }
                 placeholder={t('ai_model')}
                 optionLabelProp="label"
-                popupMatchSelectWidth={false}
-                classNames={{ popup: { root: 'model-selector-dropdown' } }}
+                popupMatchSelectWidth={dropdownWidth ?? false}
+                classNames={{
+                    // The default class forces a fixed 260px (!important) — fine for
+                    // the chat composer's wider pill, but leaves a mostly-empty popup
+                    // ballooning out of a ~72-140px toolbar trigger. When a caller
+                    // passes dropdownWidth, skip that class so antd's own
+                    // popupMatchSelectWidth sizing isn't fought by it.
+                    popup: { root: dropdownWidth ? 'model-selector-dropdown-compact' : 'model-selector-dropdown' },
+                }}
                 variant="borderless"
                 showSearch={allModels.length > 6}
                 filterOption={(input, option) => {

@@ -88,6 +88,21 @@ export function defaultFeedVisibility(
   return 'private';
 }
 
+/**
+ * Chat insights get an auto-filled description from the AI's answer text;
+ * dashboards have no equivalent generated text. Building one from the
+ * dashboard's own widget titles keeps the two share flows consistent instead
+ * of leaving the field blank.
+ */
+export function buildDashboardAutoDescription(widgetTitles: string[]): string | undefined {
+  const titles = widgetTitles.map((t) => t.trim()).filter(Boolean);
+  if (!titles.length) return undefined;
+  const shown = titles.slice(0, 4);
+  const rest = titles.length - shown.length;
+  const list = rest > 0 ? `${shown.join(', ')}, +${rest} more` : shown.join(', ');
+  return `${titles.length} chart${titles.length === 1 ? '' : 's'}: ${list}`;
+}
+
 export function feedPostListUrl(publicationId: string): string {
   if (typeof window !== 'undefined') {
     try {

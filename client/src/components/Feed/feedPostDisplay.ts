@@ -63,6 +63,8 @@ export function buildPreviewFeedItem(params: {
     chartOptions?: Record<string, unknown>;
     chartQuery?: Record<string, unknown>;
   };
+  renderMode?: FeedItem['renderMode'];
+  snapshotPayload?: Record<string, unknown>;
 }): FeedItem {
   const meta = params.previewMetadata ?? {};
   const chartWidget =
@@ -90,6 +92,7 @@ export function buildPreviewFeedItem(params: {
     metrics: { views: 0, comments: 0, reactions: 0, bookmarks: 0, shares: 0 },
     userInteraction: { isBookmarked: false },
     recentComments: [],
+    renderMode: params.renderMode,
     asset: {
       summary: params.description || params.excerpt || params.title,
       previewLabel: params.title,
@@ -103,6 +106,7 @@ export function buildPreviewFeedItem(params: {
       questionTitle: params.questionTitle,
       conversationId: meta.conversationId as string | undefined,
       messageId: meta.messageId as string | undefined,
+      snapshotPayload: params.snapshotPayload,
     },
   };
 }

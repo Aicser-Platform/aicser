@@ -43,6 +43,8 @@ export function FeedPostPreview({
       tags: draft.defaultTags,
       previewMetadata: draft.previewMetadata,
       chartPreview: draft.chartPreview,
+      renderMode: draft.renderMode,
+      snapshotPayload: draft.snapshotPayload,
     });
   }, [draft, title, description]);
 

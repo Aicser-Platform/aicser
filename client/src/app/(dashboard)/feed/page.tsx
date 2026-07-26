@@ -282,7 +282,12 @@ const SocialFeedPage: React.FC = () => {
         prependFeedItem(post);
         window.setTimeout(() => scrollToPost(post.id), 120);
       })
-      .catch(() => {});
+      .catch(() => {
+        // One-shot deep-link resolution (e.g. a shared /feed?post= link), not a
+        // repeating background process — unlike the 60s poll above, a failure here
+        // has no next attempt, so it needs to be visible instead of silent.
+        if (active) message.error(t('feed_highlight_load_failed', { defaultMessage: "Couldn't load that post." }));
+      });
 
     return () => {
       active = false;
@@ -473,7 +478,7 @@ const SocialFeedPage: React.FC = () => {
                 </div>
               )}
 
-              {/* {approvalAccessResolved && canModerateApprovals && (
+              {approvalAccessResolved && canModerateApprovals && (
                 <div className="mb-6 rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">
@@ -550,7 +555,7 @@ const SocialFeedPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-              )} */}
+              )}
 
               {items.length === 0 && !loading && (
                 <div className="flex flex-col items-center justify-center gap-3 p-10 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">

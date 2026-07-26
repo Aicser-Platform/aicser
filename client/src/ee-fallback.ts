@@ -240,9 +240,11 @@ export function useSubscriptionStore() {
     usage: {} as Record<string, UsageMetric | undefined>,
     features: {} as Record<string, boolean>,
     loading: false,
+    lastFetchedAt: null as number | null,
     refresh: noop,
     refreshUsage: noopOpts,
     init: noop,
+    refreshIfStale: async (_maxAgeMs?: number) => {},
   };
 }
 export const useSubscription = useSubscriptionStore;

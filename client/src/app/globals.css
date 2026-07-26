@@ -326,8 +326,18 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    ======================================== */
 
 /* Composer toolbar pill uses content width; keep min width for settings/other compact rows only. */
-.model-selector-compact:not(.model-selector-composer-embed) .ant-select-selector {
+.model-selector-compact:not(.model-selector-composer-embed):not(.model-selector-narrow) .ant-select-selector {
   min-width: 220px !important;
+}
+
+/* Narrow-toolbar trigger (query-editor AI bar, etc. — signaled by passing
+   `dropdownWidth`, same flag the popup sizing already keys off below). The
+   220px floor above fought the caller's own clamp()/maxWidth style on the
+   outer `.ant-select`, forcing this pill wider than its row had budgeted and
+   wrapping it onto its own line — which then starves the editor/results
+   split of the height it measured on mount, leaving stale empty space. */
+.model-selector-narrow .ant-select-selector {
+  min-width: 0 !important;
 }
 
 /* Dropdown popup: popupMatchSelectWidth={false} lets it size to content, which grew
@@ -337,6 +347,13 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
 .model-selector-dropdown {
   width: 260px !important;
   max-width: 260px !important;
+}
+
+/* Narrow-toolbar variant — width comes from the Select's own
+   popupMatchSelectWidth={n} prop (set per caller via dropdownWidth), this
+   only caps how far it can still grow relative to viewport edge cases. */
+.model-selector-dropdown-compact {
+  max-width: min(220px, 92vw) !important;
 }
 
 /* ========================================

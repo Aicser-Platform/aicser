@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useDashboardStore, type RuntimeFilter, useCanUndo, useCanRedo, useUndo, useRedo } from '../stores/useDashboardStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
+import { buildDashboardAutoDescription } from '@/components/Feed/chatFeedDraft';
 import { chartService, type DashboardTemplate } from '../services/chartService';
 import {
   PlusOutlined,
@@ -224,6 +225,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const [newFolderName, setNewFolderName] = useState('');
 
   const { updateDashboardName, updateDashboardMeta, removeDashboard, duplicateDashboard, starredDashboardIds, toggleStarDashboard, updateDashboardTags } = useDashboardStore();
+
+  const publishAutoDescription = useMemo(
+    () => buildDashboardAutoDescription(widgets.map((w) => w.title)),
+    [widgets],
+  );
 
   const publishPreviewMetadata = useMemo(() => {
     if (!activeDashboardId || !activeDashboard) return undefined;
@@ -1215,7 +1221,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         assetType="dashboard"
         assetId={activeDashboardId || undefined}
         defaultTitle={activeDashboard?.name || t('dashboard')}
-        defaultDescription={activeDashboard?.description || ''}
+        defaultDescription={activeDashboard?.description || publishAutoDescription || ''}
         previewMetadata={publishPreviewMetadata}
         snapshotPayload={publishSnapshotPayload}
         renderMode="snapshot"

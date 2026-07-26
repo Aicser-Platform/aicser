@@ -47,6 +47,23 @@ function resolvePreviewType(chartType: string): string {
   return 'insight';
 }
 
+/**
+ * Chat answers are markdown meant for the chat bubble (bold, headers, fenced
+ * SQL blocks) — used verbatim as a feed excerpt, the raw syntax and embedded
+ * query leak straight through ("**SQL Query:** ```sql SELECT...```"). Strips
+ * that down to the plain-text sentence a reader is meant to see.
+ */
+function plainTextExcerpt(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks (SQL, etc.) — not excerpt material
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/^#{1,6}\s+/gm, '') // headers
+    .replace(/\*\*([^*]+)\*\*/g, '$1') // bold
+    .replace(/\*([^*]+)\*/g, '$1') // italic
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function buildChatInsightDraft(params: {
   conversationId: string;
   messageId: string;
@@ -99,7 +116,18 @@ export function buildChatInsightDraft(params: {
     }
   }
 
+  // Prefer the purpose-built executive summary (short, clean prose) over the
+  // full chat answer, which routinely embeds a stats dump and a fenced SQL
+  // block meant for the chat bubble, not a feed excerpt.
+  const executiveSummary =
+    typeof message.executiveSummary === 'string'
+      ? message.executiveSummary
+      : typeof message.executive_summary === 'string'
+        ? message.executive_summary
+        : '';
   const answerText = typeof message.answer === 'string' ? message.answer.trim() : '';
+  const excerptSource = executiveSummary.trim() || answerText;
+  const cleanExcerpt = excerptSource ? plainTextExcerpt(excerptSource) : '';
 
   return {
     conversationId,
@@ -107,7 +135,7 @@ export function buildChatInsightDraft(params: {
     title,
     questionTitle,
     description: undefined,
-    excerpt: answerText ? truncateWithEllipsis(answerText.replace(/\s+/g, ' '), 320) : undefined,
+    excerpt: cleanExcerpt ? truncateWithEllipsis(cleanExcerpt, 320) : undefined,
     hasChart,
     hasSql,
     chartPreview,
@@ -120,14 +148,14 @@ export function buildChatInsightDraft(params: {
       conversationId,
       messageId,
       ...(questionTitle ? { questionTitle } : {}),
-      ...(answerText ? { excerpt: truncateWithEllipsis(answerText.replace(/\s+/g, ' '), 2000) } : {}),
+      ...(cleanExcerpt ? { excerpt: truncateWithEllipsis(cleanExcerpt, 2000) } : {}),
       ...(sqlSnippet ? { sql: sqlSnippet.slice(0, 500) } : {}),
       ...(chartPreview ? { chartWidget: chartPreview } : {}),
     },
     snapshotPayload: buildInsightSnapshotPayload({
       title,
       questionTitle,
-      excerpt: answerText ? truncateWithEllipsis(answerText.replace(/\s+/g, ' '), 320) : undefined,
+      excerpt: cleanExcerpt ? truncateWithEllipsis(cleanExcerpt, 320) : undefined,
       chartPreview,
       conversationId,
       messageId,

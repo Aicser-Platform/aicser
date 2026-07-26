@@ -114,6 +114,24 @@ async def log_audit_event(
     if not AUDIT_ENABLED:
         return
 
+    # The auth token that reaches the middleware rarely carries an explicit
+    # organization_id claim — org membership is resolved from the DB
+    # (UserRole) everywhere else in the app, e.g. get_user_organization_id()
+    # used by the actual data/chart/chat endpoints. Without the same fallback
+    # here, every audit row reads org=None even for a user who very much has
+    # an org, defeating the point of an org-scoped audit trail. This function
+    # already only runs inside a background asyncio task (see dispatch()
+    # below), so the extra DB lookup never adds latency to the real response.
+    if user_id and not org_id:
+        try:
+            from src.db.session import async_session
+            from src.modules.pricing.feature_gate import get_user_organization_id
+
+            async with async_session() as audit_db:
+                org_id = await get_user_organization_id(user_id, audit_db)
+        except Exception:
+            pass
+
     event = {
         "event_type": event_type,
         "category": category,
