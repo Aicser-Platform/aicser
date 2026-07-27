@@ -13,6 +13,8 @@ type Props = {
   selectedWidgetId?: string | null;
   onAddComment: (text: string, widgetId?: string | null) => void;
   connected: boolean;
+  /** Toolbar trigger sits in the dashboard header (scrolls with chrome). */
+  variant?: 'toolbar' | 'floating';
 };
 
 export function DashboardCollabCommentsPanel({
@@ -22,6 +24,7 @@ export function DashboardCollabCommentsPanel({
   selectedWidgetId,
   onAddComment,
   connected,
+  variant = 'toolbar',
 }: Props) {
   const t = useTranslations('dashboards');
   const [draft, setDraft] = useState('');
@@ -39,19 +42,29 @@ export function DashboardCollabCommentsPanel({
     setDraft('');
   };
 
+  const trigger = (
+    <Button
+      type="default"
+      size="small"
+      icon={<CommentOutlined />}
+      className={`dashboard-collab-comments-trigger no-print no-export${
+        variant === 'toolbar' ? ' dashboard-collab-comments-trigger--toolbar' : ''
+      }`}
+      disabled={!connected}
+      onClick={() => onOpenChange(true)}
+      aria-label={t('collab_comments_open')}
+    >
+      {comments.length > 0 ? comments.length : null}
+    </Button>
+  );
+
   return (
     <>
-      <Button
-        type="default"
-        size="small"
-        icon={<CommentOutlined />}
-        className="dashboard-collab-comments-trigger"
-        disabled={!connected}
-        onClick={() => onOpenChange(true)}
-        aria-label={t('collab_comments_open')}
-      >
-        {comments.length > 0 ? comments.length : null}
-      </Button>
+      {variant === 'floating' ? (
+        <div className="dashboard-collab-comments-anchor no-print no-export">{trigger}</div>
+      ) : (
+        trigger
+      )}
 
       <Drawer
         title={t('collab_comments_title')}
@@ -59,7 +72,8 @@ export function DashboardCollabCommentsPanel({
         width={320}
         open={open}
         onClose={() => onOpenChange(false)}
-        className="dashboard-collab-comments-drawer"
+        className="dashboard-collab-comments-drawer no-print"
+        rootClassName="no-print"
       >
         {selectedWidgetId ? (
           <Typography.Text type="secondary" className="dashboard-collab-comments-scope">

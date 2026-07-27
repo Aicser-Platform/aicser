@@ -4,79 +4,11 @@ import React from 'react';
 import { Table, Typography, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { formatTableValue } from '../utils/numberFormatter';
+import { columnHeaderFromKey } from '@/utils/columnLabels';
 import './TableWidget.css';
 import { useTranslations } from 'next-intl';
 import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
-
-// ─── Conditional Formatting helpers ──────────────────────────────────────────
-
-function testRule(
-  rule: ConditionalFormattingRule,
-  value: unknown
-): boolean {
-  const numVal = typeof value === 'number' ? value : parseFloat(String(value));
-  const ruleNum = parseFloat(rule.value);
-
-  switch (rule.operator) {
-    case 'gt':       return !isNaN(numVal) && !isNaN(ruleNum) && numVal > ruleNum;
-    case 'lt':       return !isNaN(numVal) && !isNaN(ruleNum) && numVal < ruleNum;
-    case 'gte':      return !isNaN(numVal) && !isNaN(ruleNum) && numVal >= ruleNum;
-    case 'lte':      return !isNaN(numVal) && !isNaN(ruleNum) && numVal <= ruleNum;
-    case 'eq':       return String(value) === rule.value || numVal === ruleNum;
-    case 'neq':      return String(value) !== rule.value && numVal !== ruleNum;
-    case 'contains': return String(value).toLowerCase().includes(rule.value.toLowerCase());
-    case 'is_empty': return value === null || value === undefined || String(value).trim() === '';
-    case 'not_empty':return value !== null && value !== undefined && String(value).trim() !== '';
-    default:         return false;
-  }
-}
-
-/** Returns merged inline style from all matching rules for a specific cell */
-function getCellStyle(
-  rules: ConditionalFormattingRule[],
-  columnKey: string,
-  cellValue: unknown,
-  rowData: Record<string, unknown>
-): React.CSSProperties {
-  const style: React.CSSProperties = {};
-
-  for (const rule of rules) {
-    const matchesColumn = rule.column === columnKey || rule.column === '*';
-    if (!matchesColumn) continue;
-
-    const testValue = rule.applyTo === 'row'
-      ? rowData[columnKey]   // each cell in row checks its own value
-      : cellValue;
-
-    const ruleTarget = rule.applyTo === 'row' ? rowData[rule.column] : cellValue;
-    if (!testRule(rule, ruleTarget)) continue;
-
-    if (rule.bgColor)   style.backgroundColor = rule.bgColor;
-    if (rule.textColor) style.color = rule.textColor;
-    if (rule.bold)      style.fontWeight = 'bold';
-    break; // first match wins
-  }
-
-  return style;
-}
-
-/** Returns row-level style from the first matching row rule */
-function getRowStyle(
-  rules: ConditionalFormattingRule[],
-  rowData: Record<string, unknown>
-): React.CSSProperties {
-  const rowRules = rules.filter((r) => r.applyTo === 'row');
-  for (const rule of rowRules) {
-    const val = rowData[rule.column] ?? rowData['x'] ?? rowData['y'];
-    if (!testRule(rule, val)) continue;
-    const style: React.CSSProperties = {};
-    if (rule.bgColor)   style.backgroundColor = rule.bgColor;
-    if (rule.textColor) style.color = rule.textColor;
-    if (rule.bold)      style.fontWeight = 'bold';
-    return style;
-  }
-  return {};
-}
+import { getCellStyle, getRowStyle } from './utils/conditionalFormatting';
 
 const { Text } = Typography;
 
@@ -102,6 +34,33 @@ interface TableWidgetProps {
   crossFilterField?: string;
   activeCrossFilterValues?: string[];
   onCrossFilter?: (value: unknown) => void;
+}
+
+function measureColumnTitle(
+  seriesName: string,
+  query?: TableWidgetProps['query'],
+  widgetTitle?: string,
+): string {
+  const raw = String(seriesName || '').trim();
+  const title = String(widgetTitle || '').trim();
+  const looksLikeWidgetTitle =
+    Boolean(title) &&
+    (raw.toLowerCase() === title.toLowerCase() ||
+      /^breakdown\b/i.test(raw) ||
+      /\sby\s/i.test(raw));
+  if (looksLikeWidgetTitle) {
+    const ym = query?.yMetrics?.[0];
+    if (ym?.field) {
+      const agg = String(ym.aggregation || '').toLowerCase();
+      const fieldLabel = columnHeaderFromKey(ym.field);
+      if (agg === 'count') return 'Count';
+      if (agg === 'avg' || agg === 'average' || agg === 'mean') return `Avg ${fieldLabel}`;
+      return fieldLabel;
+    }
+    if (query?.yMetric) return columnHeaderFromKey(query.yMetric);
+    return 'Value';
+  }
+  return columnHeaderFromKey(raw);
 }
 
 /**
@@ -156,9 +115,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     colEntries.push({
       fieldName: xField,
       column: {
-        title: query?.x || t('category'),
+        title: columnHeaderFromKey(query?.x || t('category')),
         dataIndex: 'x',
         key: 'x',
+        ellipsis: true,
         className: 'table-cell-category',
         sorter: (a, b) => {
           if (a.key === 'total') return 1;
@@ -210,9 +170,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       colEntries.push({
         fieldName: s.name,
         column: {
-          title: s.name,
+          title: measureColumnTitle(s.name, query, title),
           dataIndex: s.name,
           key: s.name,
+          ellipsis: true,
           align: 'right',
           className: 'table-cell-number table-cell-y',
           sorter: (a, b) => {
@@ -240,7 +201,11 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
         },
       });
 
-      const sum = (s.data || []).reduce((acc, curr) => acc + (typeof curr === 'number' ? curr : 0), 0);
+      // s.data is occasionally not an array (e.g. a live re-fetch on an older saved
+      // chart returning a differently-shaped series) — guard defensively rather than
+      // crash the whole designer/dashboard on one malformed series.
+      const seriesValues = Array.isArray(s.data) ? s.data : [];
+      const sum = seriesValues.reduce((acc, curr) => acc + (typeof curr === 'number' ? curr : 0), 0);
       totals[s.name] = sum;
       hasNumericalY = true;
     });
@@ -249,7 +214,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       const row: any = { key: i, x: data.x?.[i] };
       data.series.forEach((s) => {
         if (!isColumnVisible(s.name)) return;
-        row[s.name] = s.data?.[i];
+        row[s.name] = Array.isArray(s.data) ? s.data[i] : undefined;
       });
       dataSource.push(row);
     }
@@ -259,9 +224,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       colEntries.push({
         fieldName: yField,
         column: {
-          title: query?.yMetric || t('value'),
+          title: columnHeaderFromKey(query?.yMetric || t('value')),
           dataIndex: 'y',
           key: 'y',
+          ellipsis: true,
           align: 'right',
           className: 'table-cell-number table-cell-y',
           sorter: (a, b) => {
@@ -337,6 +303,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
         size={size}
         bordered={bordered}
         sticky
+        scroll={{ x: 'max-content' }}
         rowClassName={(record) => {
           if (record.key === 'total') return 'table-row-total';
           if (activeSet.has(String(record.x))) return 'table-row-cross-filter-active';

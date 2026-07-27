@@ -33,8 +33,71 @@ export function hasRenderableChartData(data: unknown): boolean {
   if (Array.isArray(d.x) && d.x.length > 0) return true;
   if (Array.isArray(d.y) && d.y.length > 0) return true;
   if (Array.isArray(d.series) && d.series.length > 0) return true;
+  // KPI / gauge prefetch from Query Editor Visualize is `{ value: N }`
+  if (d.value !== undefined && d.value !== null) return true;
   if (Array.isArray(data) && data.length > 0) return true;
   return false;
+}
+
+/** Whether the widget has a source the backend can re-execute. */
+export function hasRunnableChartSource(widget: {
+  dataSourceId?: string | null;
+  chartQuery?: Record<string, unknown> | null;
+  chartOptions?: Record<string, unknown> | null;
+}): boolean {
+  const q = (widget.chartQuery || {}) as Record<string, unknown>;
+  const o = (widget.chartOptions || {}) as Record<string, unknown>;
+  if (q.saved_query_id != null && String(q.saved_query_id).trim() !== '') return true;
+  if (q.query_snapshot_id != null && String(q.query_snapshot_id).trim() !== '') return true;
+  if (typeof q.compiled_semantic_sql === 'string' && q.compiled_semantic_sql.trim()) return true;
+  if (typeof o.sample_sql === 'string' && o.sample_sql.trim()) return true;
+  if (
+    widget.dataSourceId &&
+    (q.tableName ||
+      q.x ||
+      (Array.isArray(q.yMetrics) && q.yMetrics.length > 0) ||
+      (Array.isArray(q.xMetrics) && q.xMetrics.length > 0))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Merge chartOptions; `undefined` / `null` values in patch delete keys
+ * (so Apply can strip __prefetchedChartData / sample_sql cleanly).
+ */
+export function mergeChartOptions(
+  base: Record<string, unknown> | undefined | null,
+  patch: Record<string, unknown> | undefined | null,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(base || {}) };
+  if (!patch) return next;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === null) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+/**
+ * Drop pin/import freeze fields so live refresh can update the canvas.
+ * Keep sample_sql unless clearSql is true (entering table mode / DS reset).
+ */
+export function stripPinFreezeOptions(
+  chartOptions: Record<string, unknown> | undefined | null,
+  opts?: { clearSql?: boolean },
+): Record<string, unknown> {
+  const next = { ...(chartOptions || {}) };
+  delete next.__prefetchedChartData;
+  delete next.__echartsSnapshot;
+  if (opts?.clearSql) {
+    delete next.sample_sql;
+  }
+  return next;
 }
 
 /** Map ECharts styling back to chart-designer property panel options. */
@@ -119,15 +182,28 @@ function safeClone<T>(obj: T): T {
   );
 }
 
-/** Strip render-only fields and watermark graphics before persisting to the API. */
+/**
+ * Strip render-only fields and watermark graphics before persisting to the API.
+ *
+ * __prefetchedChartData is intentionally KEPT (previously stripped here) — it's
+ * the only durable copy of a chat-originated chart's row data once the sessionStorage
+ * side-channel (storeTempChartData) is consumed on first read. Stripping it meant any
+ * reload/refetch of the saved chart had no data to hydrate from and fell back to
+ * shouldFetchDesignerChartData's executeAdhoc re-fetch, which for chat charts uses a
+ * chartQuery that's frequently just {tableName:'data', filters:[]} and can't actually
+ * reconstruct anything — the chart went blank on reload. mapApiChartToDesignerWidget
+ * already round-trips chartOptions back onto the widget, so keeping this field here is
+ * sufficient for the existing read path to pick it back up.
+ */
 export function prepareChartOptionsForPersist(
   chartOptions: Record<string, unknown> | undefined | null,
 ): Record<string, unknown> {
   if (!chartOptions || typeof chartOptions !== 'object') return {};
 
-  // Drop client-only transient fields before cloning
+  // Drop client-only transient fields before cloning (__prefetchedChartData is NOT
+  // transient — see function doc — so it stays in `rest` and gets persisted)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { __prefetchedChartData: _pcd, __animate: _anim, ...rest } = chartOptions;
+  const { __animate: _anim, ...rest } = chartOptions;
 
   // Safe-clone the whole object to eliminate circular refs and functions
   let next: Record<string, unknown>;

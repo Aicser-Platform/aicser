@@ -52,11 +52,12 @@ export function localizeWidgetTemplate(
 }
 
 export const FEATURED_WIDGET_TYPES = [
-  'stat',
   'bar',
   'line',
   'area',
   'pie',
+  'donut',
+  'stat',
   'table',
   'text',
   'slicer',

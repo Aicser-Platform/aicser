@@ -74,6 +74,10 @@ export type WidgetInstance = {
     field?: string;
     mode?: 'single' | 'multi';
     dataSourceId?: string;
+    /** Bound Query Editor saved SQL (integer id as string). */
+    saved_query_id?: string | number;
+    /** Frozen query-editor snapshot (integer id). */
+    query_snapshot_id?: string | number;
     sortOrder?: 'asc' | 'desc';
     limit?: number;
     seriesLimit?: number;
@@ -111,6 +115,9 @@ export interface Dashboard {
   description?: string;
   tags?: string[];
   config?: Record<string, unknown>;
+  isFavorite?: boolean;
+  collectionId?: string | null;
+  chartCount?: number;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
 }
@@ -122,8 +129,13 @@ export interface DashboardVersion {
   dashboardId: string;
   label: string;
   savedAt: number;
-  widgets: WidgetInstance[];
-  layout: LayoutItem[];
+  /** Widget count for list display. Present on every version; kept separate from
+   *  `widgets` below so the list endpoint doesn't have to ship the full snapshot. */
+  widgetCount: number;
+  /** Full snapshot payload — only populated after a dedicated single-version fetch
+   *  (see restoreVersionSnapshot), not by the list endpoint. */
+  widgets?: WidgetInstance[];
+  layout?: LayoutItem[];
 }
 
 export function scopedFiltersForWidget(

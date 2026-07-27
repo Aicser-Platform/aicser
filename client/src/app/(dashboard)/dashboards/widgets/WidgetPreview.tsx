@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useMemo } from 'react';
 import { WidgetInstance } from '../stores/useDashboardStore';
 import { WidgetRenderer } from './WidgetRenderer';
 import * as echarts from 'echarts';
@@ -37,29 +38,36 @@ export const WidgetPreview: React.FC<{
     return dash?.config?.default_color_palette as string | undefined;
   });
 
-  const resolvedChartConfig = {
-    ...(widget.chartOptions || {}),
-    colorPalette: resolveChartPaletteId(
-      widget.chartOptions?.colorPalette,
+  const resolvedChartConfig = useMemo(() => {
+    const options = widget.chartOptions || {};
+    return {
+      ...options,
+      title: options.title || widget.title,
+      colorPalette: resolveChartPaletteId(options.colorPalette, dashboardDefaultPalette),
       dashboardDefaultPalette,
-    ),
+      __widgetDataSourceId: widget.dataSourceId,
+      ...(compactPreview
+        ? {
+            isDashboardWidget: true,
+            isFeedPreview: true,
+            axisLabelFontSize: 9,
+            hAxisFontSize: 9,
+            vAxisFontSize: 9,
+            legendFontSize: 9,
+            fontSize: widget.chartType === 'stat' ? 24 : options.fontSize,
+            // Keep author layout for stats — don't force compact and erase executive/tile/etc.
+            layout: widget.chartType === 'stat' ? options.layout || 'compact' : options.layout,
+          }
+        : {}),
+    };
+  }, [
+    widget.chartOptions,
+    widget.title,
+    widget.dataSourceId,
+    widget.chartType,
     dashboardDefaultPalette,
-    // __widgetDataSourceId: slicer widgets read query.dataSourceId to fetch filter options;
-    // this ensures the widget-level dataSourceId is available even before Apply Changes is clicked.
-    __widgetDataSourceId: widget.dataSourceId,
-    ...(compactPreview
-      ? {
-          isDashboardWidget: true,
-          isFeedPreview: true,
-          axisLabelFontSize: 9,
-          hAxisFontSize: 9,
-          vAxisFontSize: 9,
-          legendFontSize: 9,
-          fontSize: widget.chartType === 'stat' ? 24 : widget.chartOptions?.fontSize,
-          layout: widget.chartType === 'stat' ? 'compact' : widget.chartOptions?.layout,
-        }
-      : {}),
-  };
+    compactPreview,
+  ]);
 
   return (
     <WidgetRenderer

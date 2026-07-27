@@ -14,6 +14,8 @@ export interface Organization {
     is_active: boolean;
     is_deleted: boolean;
     telegram_enabled: boolean;
+    icon_emoji?: string | null;
+    color?: string | null;
 }
 
 export interface OrganizationWithStats extends Organization {
@@ -32,6 +34,8 @@ export interface UpdateOrganizationPayload {
     is_active?: boolean;
     is_deleted?: boolean;
     telegram_enabled?: boolean;
+    icon_emoji?: string | null;
+    color?: string | null;
 }
 
 export interface DeleteOrganizationPayload {

@@ -1,5 +1,6 @@
 'use client';
 
+import './FeedPublishComposer.css';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Radio, Switch, message } from 'antd';
 import {
@@ -294,7 +295,9 @@ export function FeedPublishComposer({
         </section>
 
         <section className="feed-publish-form-card">
-          <h2 className="feed-publish-form-heading">{heading ?? t('heading')}</h2>
+          {layout === 'page' ? (
+            <h2 className="feed-publish-form-heading">{heading ?? t('heading')}</h2>
+          ) : null}
           <p className="feed-publish-snapshot-note">{t('snapshot_mode_note')}</p>
 
           {publishError ? <p className="feed-publish-inline-error">{publishError}</p> : null}

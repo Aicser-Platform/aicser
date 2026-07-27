@@ -43,6 +43,28 @@ function SubscriptionInitializer() {
       .catch(() => {});
   }, [isAuthenticated]);
 
+  // The store otherwise only fetches once per login — a plan change made
+  // outside the in-app upgrade flow (trial provisioned via billing webhook,
+  // admin action, etc.) during a long-running session never propagates until
+  // something explicitly refetches. Bringing the tab back into focus is a
+  // reasonable, low-noise moment to check — refreshIfStale no-ops if the last
+  // fetch was under a minute ago, so this doesn't hammer the API.
+  useEffect(() => {
+    if (!isAuthenticated || !isEE) return;
+    const onFocus = () => {
+      import('@/stores/useSubscriptionStore')
+        .then(({ useSubscriptionStore }) => {
+          const store = (useSubscriptionStore as unknown as {
+            getState?: () => { refreshIfStale: (maxAgeMs?: number) => Promise<void> };
+          }).getState?.();
+          if (store) void store.refreshIfStale();
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [isAuthenticated]);
+
   return null;
 }
 

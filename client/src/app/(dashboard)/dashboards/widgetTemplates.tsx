@@ -7,10 +7,12 @@ import {
   BarChartOutlined,
   AreaChartOutlined,
 } from '@ant-design/icons';
+import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
 
 /**
  * Shared widget template definitions for dashboard studio and chart designer.
  * English labels; localized UIs should use translations when rendering names/descriptions.
+ * Chart visual order for pickers is derived from DASHBOARD_SWITCHABLE_CHART_TYPES.
  */
 export const WIDGET_TEMPLATES = [
   {
@@ -312,23 +314,28 @@ export const WIDGET_TEMPLATES = [
 
 export type WidgetTemplate = (typeof WIDGET_TEMPLATES)[number];
 
-/** Visual chart templates only (excludes table, stat, text, slicer). */
-const CHART_ONLY_TYPES = new Set([
-  'line',
-  'bar',
-  'area',
-  'donut',
-  'pie',
-  'scatter',
-  'heatmap',
-  'funnel',
-  'geo',
-]);
+/** Visual chart templates — membership + order match Build / chat shared catalog. */
+const CHART_ONLY_TYPES = new Set<string>(DASHBOARD_SWITCHABLE_CHART_TYPES);
 
-export const CHART_WIDGET_TEMPLATES = WIDGET_TEMPLATES.filter((t) => CHART_ONLY_TYPES.has(t.type));
+export const CHART_WIDGET_TEMPLATES: WidgetTemplate[] = DASHBOARD_SWITCHABLE_CHART_TYPES.map(
+  (type) => WIDGET_TEMPLATES.find((t) => t.type === type),
+).filter((t): t is WidgetTemplate => Boolean(t));
 
-/** Non-chart dashboard blocks (indicators, data, content). */
+/** Non-chart dashboard blocks (indicators leftovers, data, content). */
 export const NON_CHART_WIDGET_TEMPLATES = WIDGET_TEMPLATES.filter((t) => !CHART_ONLY_TYPES.has(t.type));
+
+/**
+ * Templates ordered for Add Block / designer: switchable charts in catalog order,
+ * then remaining non-chart blocks in template definition order.
+ */
+export function orderedWidgetTemplates(templates: WidgetTemplate[] = WIDGET_TEMPLATES): WidgetTemplate[] {
+  const byType = new Map(templates.map((t) => [t.type, t]));
+  const charts = DASHBOARD_SWITCHABLE_CHART_TYPES.map((type) => byType.get(type)).filter(
+    (t): t is WidgetTemplate => Boolean(t),
+  );
+  const rest = templates.filter((t) => !CHART_ONLY_TYPES.has(t.type));
+  return [...charts, ...rest];
+}
 
 const SECTION_BY_CATEGORY: Record<string, string> = {
   Visuals: 'Charts',
@@ -339,17 +346,20 @@ const SECTION_BY_CATEGORY: Record<string, string> = {
 
 /** Group shared templates into Add Block / empty-canvas sections. */
 export function buildWidgetSections(templates: WidgetTemplate[] = WIDGET_TEMPLATES) {
+  const ordered = orderedWidgetTemplates(templates);
   const order = ['Charts', 'Indicators', 'Data', 'Content'];
   const grouped = new Map<string, WidgetTemplate[]>();
 
-  templates.forEach((template) => {
-    const title = SECTION_BY_CATEGORY[template.category] || template.category;
+  ordered.forEach((template) => {
+    const title = CHART_ONLY_TYPES.has(template.type)
+      ? 'Charts'
+      : SECTION_BY_CATEGORY[template.category] || template.category;
     const list = grouped.get(title) || [];
     list.push(template);
     grouped.set(title, list);
   });
 
   return order
-    .filter((title) => grouped.has(title))
-    .map((title) => ({ title, items: grouped.get(title)! }));
+    .filter((title) => (grouped.get(title) || []).length > 0)
+    .map((title) => ({ title, items: grouped.get(title) || [] }));
 }

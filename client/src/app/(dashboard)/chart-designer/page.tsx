@@ -1,12 +1,5 @@
-import dynamic from 'next/dynamic';
-import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
-
-const ChartDesignerStudio = dynamic(() => import('./components/ChartDesignerStudio'), { ssr: false });
+import ChartDesignerPageClient from './ChartDesignerPageClient';
 
 export default function ChartDesignerPage() {
-  return (
-    <DashboardPageShell fullBleed>
-      <ChartDesignerStudio />
-    </DashboardPageShell>
-  );
+  return <ChartDesignerPageClient />;
 }

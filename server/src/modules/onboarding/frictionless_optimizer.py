@@ -173,20 +173,27 @@ class FrictionlessOptimizer:
         user_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Get contextual help based on current step and user data"""
+        # Each "content" string below is deliberately written to add something the
+        # matching frontend question hint (en.json: q_*_hint) does NOT already say —
+        # they used to nearly restate each other word-for-word (e.g. name's hint said
+        # "used across chat and dashboards" and this content said almost the same
+        # thing), which just doubled up the same sentence in two boxes on screen.
+        # Keep that principle when editing either side: hint = what/why we're asking,
+        # content = a distinct reassurance/detail, not a rephrase of the hint.
         help_content = {
             "name": {
                 "title": "Why we need this",
-                "content": "We'll greet you by name and personalize tips in chat and dashboards.",
+                "content": "Just your display name — not a login credential, so nicknames are fine.",
                 "tips": ["You can update this anytime in Settings → Profile"],
             },
             "company": {
                 "title": "Your organization",
-                "content": "We use this to set up your workspace and team context.",
+                "content": "One workspace per organization for now — invite teammates or add more orgs later if you manage multiple businesses.",
                 "tips": ["Prefilled from your email when possible"],
             },
             "role": {
                 "title": "Tailored for your job",
-                "content": "Your role helps us suggest relevant prompts, charts, and templates.",
+                "content": "This only shapes suggestions — it never limits which features or data you can access.",
                 "tips": ["Pick the closest match — you can refine later"],
             },
             "primary_goal": {
@@ -196,31 +203,23 @@ class FrictionlessOptimizer:
             },
             "industry": {
                 "title": "Industry context",
-                "content": "We use this to suggest relevant templates, metrics, and sample datasets.",
+                "content": "Your data stays completely private regardless of industry — this only picks which starter templates you see first.",
                 "tips": ["Pick the closest match — you can change this in Settings"],
             },
             "company_size": {
                 "title": "Team scale",
-                "content": "Helps us recommend collaboration and governance features.",
+                "content": "Bigger teams unlock governance and permission features tailored to scale.",
                 "tips": ["Approximate is fine"],
             },
             "experience": {
                 "title": "Skill level",
-                "content": "We adjust AI explanations and default chart complexity to match your experience.",
+                "content": "Nothing is locked in — jump into advanced features anytime; this just sets a comfortable starting point.",
                 "tips": ["Beginners get more guided prompts in chat"],
             },
             "workspace": {
                 "title": "Your first project",
-                "content": "Projects group data sources, chats, and dashboards for one team or initiative.",
+                "content": "Projects keep each team or initiative's data sources and chats separate — handy once you're managing more than one.",
                 "tips": ["You can rename or create more projects later"],
-            },
-            "plan_selection": {
-                "title": "Choose Your Plan",
-                "content": "Start with a Pro trial to explore fully. Switch or stay on Free anytime.",
-                "tips": [
-                    "Pro trial is enabled by default — no charge for 14 days",
-                    "You can change plans anytime in Settings → Billing",
-                ],
             },
             # Legacy keys
             "welcome": {
@@ -251,11 +250,16 @@ class FrictionlessOptimizer:
             },
             "plan_selection": {
                 "title": "Choose Your Plan",
-                "content": "Start with Free to explore. You can upgrade anytime with no commitment.",
+                # Kept short and distinct on purpose — the step body directly below already
+                # states the exact default (Team trial, 14 days, no card) and what happens
+                # after the trial ends, so this banner shouldn't repeat that (it previously
+                # said "Start with Free" while the actual default toggle is Team trial —
+                # keep this in sync with EnhancedOnboardingModal.tsx's enableTeamTrial default
+                # if that default ever changes).
+                "content": "Every plan can be changed anytime — no long-term commitment.",
                 "tips": [
                     "Free plan includes 10 AI credits to get started",
-                    "All plans include a 14-day trial of Pro features",
-                    "You can change plans anytime",
+                    "You can change plans anytime in Settings → Billing",
                 ],
             },
         }

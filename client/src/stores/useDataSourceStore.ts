@@ -10,6 +10,21 @@ import {
   resolveDataSourceProjectId,
 } from '@/hooks/dataSourceKeys';
 
+const CHAT_DS_PREF_KEY = 'userPreferences';
+
+function persistSelectedDataSourceId(id: string | null): void {
+  if (typeof window === 'undefined' || !id) return;
+  try {
+    const raw = localStorage.getItem(CHAT_DS_PREF_KEY);
+    const prefs = raw ? JSON.parse(raw) : {};
+    if (!prefs || typeof prefs !== 'object') return;
+    prefs.dataSourceId = id;
+    localStorage.setItem(CHAT_DS_PREF_KEY, JSON.stringify(prefs));
+  } catch {
+    /* ignore */
+  }
+}
+
 // ── Types (kept here so api/ and hooks/ can import them) ──────────────────────
 
 export interface SchemaInfo {
@@ -188,6 +203,7 @@ export function useDataSources() {
       if (!detail?.id) return;
 
       setSelectedId(detail.id);
+      persistSelectedDataSourceId(detail.id);
       if (detail.schema) {
         setSchemaCache(detail.id, detail.schema as SchemaInfo);
       }
@@ -219,6 +235,7 @@ export function useDataSources() {
     getSelectedDataSource,
     selectDataSource: async (id: string | null) => {
       setSelectedId(id);
+      persistSelectedDataSourceId(id);
       if (id && !schemaCache[id]) {
         await fetchDataSourceSchema(id);
       }

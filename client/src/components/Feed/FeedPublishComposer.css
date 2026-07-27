@@ -1,0 +1,246 @@
+/*
+ * Feed publish composer — preview pane + form, shared by the standalone
+ * /feed/publish page and the embedded PublishToFeedModal (chat, dashboards,
+ * chart designer, query editor). None of these classes had CSS backing them
+ * before this file existed; layout came entirely from default block stacking
+ * and antd's own component styles, which is why the preview and form read as
+ * loosely related blocks rather than one composed view.
+ */
+
+.feed-publish-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.feed-publish-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 4px 2px;
+  background: none;
+  border: none;
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+}
+.feed-publish-back:hover {
+  color: var(--ant-color-primary);
+}
+
+/* Preview and form read as one composed view, not two stacked forms — side
+   by side once there's room for both, single column when there isn't. */
+.feed-publish-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (min-width: 640px) {
+  .feed-publish-grid {
+    grid-template-columns: minmax(240px, 320px) 1fr;
+  }
+}
+
+.feed-publish-preview-card {
+  position: sticky;
+  top: 0;
+  background: var(--ant-color-fill-quaternary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  padding: 16px;
+}
+@media (max-width: 639px) {
+  .feed-publish-preview-card {
+    position: static;
+  }
+}
+
+.feed-publish-form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.feed-publish-form-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.feed-publish-snapshot-note {
+  margin: -8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
+}
+
+.feed-publish-inline-error {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ant-color-error-bg, rgba(255, 77, 79, 0.08));
+  border: 1px solid var(--ant-color-error-border, rgba(255, 77, 79, 0.3));
+  color: var(--ant-color-error, #ff4d4f);
+  font-size: 13px;
+}
+
+/* ── Fields ── */
+.feed-publish-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feed-publish-field--row {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.feed-publish-field--row .feed-publish-field-hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.feed-publish-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+}
+
+.feed-publish-field-hint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
+}
+
+.feed-publish-add-desc {
+  align-self: flex-start;
+  height: auto;
+  padding: 0;
+  font-size: 13px;
+}
+
+.feed-publish-visibility.ant-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.feed-publish-submit {
+  margin-top: 6px;
+}
+
+/* ── Success state ── */
+.feed-publish-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+}
+.feed-publish-success--embedded {
+  padding: 28px 12px;
+}
+
+.feed-publish-success-icon {
+  margin-bottom: 4px;
+  color: var(--ant-color-success);
+  font-size: 42px;
+}
+
+.feed-publish-success-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.feed-publish-success-body {
+  max-width: 42ch;
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.feed-publish-success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.feed-publish-back-link {
+  margin-top: 4px;
+}
+
+/* ── Preview card content (FeedPostPreview.tsx) ── */
+.feed-post-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feed-publish-preview-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-tertiary);
+}
+
+.feed-publish-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feed-publish-author-avatar {
+  flex-shrink: 0;
+  background: var(--ant-color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.feed-publish-author-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ant-color-text);
+}
+
+.feed-publish-author-handle {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--ant-color-text-tertiary);
+}
+
+.feed-publish-preview-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Recharts' ResponsiveContainer needs a resolvable ancestor height to render
+   at all — without one here it silently paints nothing at 0px, leaving a
+   blank gap the size of whatever margin happened to sit around it. */
+.feed-post-preview-visual {
+  height: 180px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+.feed-post-preview-visual--compact {
+  height: 130px;
+}
+.feed-post-preview-visual--dashboard {
+  height: 220px;
+}

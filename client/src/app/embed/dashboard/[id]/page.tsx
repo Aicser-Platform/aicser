@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
 import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useDashboardViewerState';
@@ -66,9 +66,10 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
   );
 }
 
-export default function EmbedDashboardPage({ params }: { params: { id: string } }) {
+export default function EmbedDashboardPage() {
   const t = useTranslations('dashboard_viewer');
-  const dashboardId = params?.id || '';
+  const routeParams = useParams();
+  const dashboardId = typeof routeParams?.id === 'string' ? routeParams.id : '';
   return (
     <Suspense fallback={<ViewerLoading title={t('loading_title')} message="" />}>
       <EmbedDashboardContent dashboardId={dashboardId} />

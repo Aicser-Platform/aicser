@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
@@ -109,17 +109,14 @@ interface FieldProps {
 }
 
 export const SectionLabel: React.FC<FieldProps> = ({ label, required = false, className = '', hint }) => (
-  <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }} className={className}>
-    <Text className="section-label">
+  <div className={`pp-section-label ${className}`.trim()} style={{ marginBottom: 8 }}>
+    <span className="section-label">
       {label}
       {required && <span className="required-star">*</span>}
-    </Text>
+    </span>
     {hint ? (
       <Tooltip title={hint}>
-        <InfoCircleOutlined
-          style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', cursor: 'help' }}
-          aria-label={hint}
-        />
+        <InfoCircleOutlined className="pp-section-label-tip" aria-label={hint} />
       </Tooltip>
     ) : null}
   </div>
@@ -135,6 +132,8 @@ interface SelectFieldProps extends FieldProps {
   onChange: (value: any) => void;
   options: { label: React.ReactNode; value: any }[];
   placeholder?: string;
+  /** Shown while dragging a field over this shelf. */
+  dropHint?: string;
   disabled?: boolean;
   isLoading?: boolean;
   showSearch?: boolean;
@@ -151,6 +150,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
   onChange,
   options,
   placeholder = 'Select an option...',
+  dropHint,
   disabled = false,
   isLoading = false,
   showSearch = true,
@@ -194,7 +194,11 @@ export const SelectField: React.FC<SelectFieldProps> = ({
         value={value}
         onChange={onChange}
         options={options}
-        placeholder={isDragOver ? 'Drop field here' : placeholder}
+        placeholder={
+          isDragOver
+            ? dropHint || 'Drop field here'
+            : placeholder
+        }
         disabled={disabled}
         loading={isLoading}
         size="small"
@@ -206,6 +210,36 @@ export const SelectField: React.FC<SelectFieldProps> = ({
           popup: { root: { zIndex: 10000, maxHeight: 300 } },
         }}
         getPopupContainer={() => document.body}
+        optionRender={(option) => {
+          const raw = options.find((o) => String(o.value) === String(option.value)) as
+            | { type?: string }
+            | undefined;
+          const upper = String(raw?.type || '').toUpperCase();
+          let kind = '';
+          if (upper.includes('DATE') || upper.includes('TIME')) kind = 'Date';
+          else if (upper.includes('BOOL')) kind = 'Boolean';
+          else if (
+            upper.includes('INT') ||
+            upper.includes('SERIAL') ||
+            upper.includes('DECIMAL') ||
+            upper.includes('NUMERIC') ||
+            upper.includes('FLOAT') ||
+            upper.includes('DOUBLE') ||
+            upper.includes('REAL') ||
+            upper.includes('NUMBER')
+          ) {
+            kind = 'Number';
+          } else if (upper) {
+            kind = 'Text';
+          }
+          if (!kind) return option.label;
+          return (
+            <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, width: '100%' }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{option.label}</span>
+              <span style={{ flexShrink: 0, opacity: 0.55, fontSize: 11 }}>{kind}</span>
+            </span>
+          );
+        }}
       />
     </div>
   );
@@ -270,9 +304,12 @@ interface MetricListFieldProps extends FieldProps {
   columnOptions: { label: React.ReactNode; value: string; type?: string }[];
   isLoading?: boolean;
   placeholder?: string;
+  dropHint?: string;
   maxItems?: number;
   excludeFields?: string[];
   chartType?: string;
+  /** When set (e.g. saved SQL), new metrics use this agg instead of sum/count. */
+  defaultAggregation?: string;
   onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
@@ -285,9 +322,11 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   columnOptions,
   isLoading = false,
   placeholder = 'Add data fields here',
+  dropHint,
   maxItems,
   excludeFields = [],
   chartType,
+  defaultAggregation,
   onFieldDrop,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -316,11 +355,12 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
 
     const selectedColumn = columnOptions.find((opt) => opt.value === fieldValue);
     const defaultAgg =
-      chartType === 'scatter'
+      defaultAggregation ||
+      (chartType === 'scatter'
         ? 'none'
         : isNumericType(selectedColumn?.type) && !isDimensionLikeField(fieldValue)
           ? 'sum'
-          : 'count';
+          : 'count');
 
     const newMetric: MetricItem = {
       field: fieldValue,
@@ -347,6 +387,15 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   const handleUpdateAggregation = (index: number, agg: string) => {
     const updated = [...metrics];
     updated[index] = { ...updated[index], aggregation: agg };
+    onChange(updated);
+  };
+
+  const handleUpdateValueFormat = (index: number, format: MetricValueFormat | 'auto') => {
+    const updated = [...metrics];
+    updated[index] = {
+      ...updated[index],
+      valueFormat: format === 'auto' ? undefined : format,
+    };
     onChange(updated);
   };
 
@@ -462,10 +511,11 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
             type.includes('real') ||
             type.includes('numeric');
 
+          const allowNone = chartType === 'scatter' || defaultAggregation === 'none';
           const allowedAggregations = isNumeric
-            ? METRIC_OPTIONS.filter((opt) => chartType === 'scatter' || opt.value !== 'none')
+            ? METRIC_OPTIONS.filter((opt) => allowNone || opt.value !== 'none')
             : METRIC_OPTIONS.filter((opt) => {
-              if (opt.value === 'none') return chartType === 'scatter';
+              if (opt.value === 'none') return allowNone;
               const valString = String(opt.value);
               return ['count', 'distinct_count'].includes(valString);
             });
@@ -505,6 +555,23 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                     </div>
                   ),
                   onClick: () => handleUpdateAggregation(index, opt.value as string),
+                })),
+                { type: 'divider' },
+                {
+                  key: 'format-header',
+                  label: 'Display format',
+                  disabled: true,
+                  style: { opacity: 0.65, cursor: 'default', fontSize: 11 },
+                },
+                ...(['auto', 'compact', 'currency', 'percent', 'full'] as const).map((fmt) => ({
+                  key: `fmt-${fmt}`,
+                  label: (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {fmt === 'auto' ? 'Auto' : fmt.charAt(0).toUpperCase() + fmt.slice(1)}
+                      {(item.valueFormat || 'auto') === fmt && <CheckOutlined style={{ fontSize: '12px' }} />}
+                    </div>
+                  ),
+                  onClick: () => handleUpdateValueFormat(index, fmt),
                 })),
               ];
 
@@ -577,7 +644,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
             <Select
               style={{ flex: 1 }}
               popupClassName="properties-panel-dropdown"
-              placeholder={placeholder}
+              placeholder={isFieldDragOver ? dropHint || 'Drop a number here' : placeholder}
               loading={isLoading}
               onChange={handleAddField}
               value={null}
@@ -671,6 +738,8 @@ interface FilterListFieldProps extends FieldProps {
   isLoading?: boolean;
   placeholder?: string;
   onFieldDrop?: (field: DashboardFieldDragPayload) => void;
+  /** Load distinct values for the selected column (visual filter value picker). */
+  fetchDistinctValues?: (field: string) => Promise<Array<{ label: string; value: string }>>;
 }
 
 export const FilterListField: React.FC<FilterListFieldProps> = ({
@@ -682,6 +751,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   columnOptions,
   placeholder = 'Select columns here or click',
   onFieldDrop,
+  fetchDistinctValues,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -691,6 +761,8 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     value: '',
     type: 'simple',
   });
+  const [distinctOptions, setDistinctOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [distinctLoading, setDistinctLoading] = useState(false);
 
   const handleAddFilterClick = () => {
     setEditingIndex(null);
@@ -708,6 +780,29 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     setTempFilter({ ...filters[index] });
     setIsModalOpen(true);
   };
+
+  // Load distinct values when filter modal opens / field changes
+  useEffect(() => {
+    if (!isModalOpen || !tempFilter.field || !fetchDistinctValues) {
+      setDistinctOptions([]);
+      return;
+    }
+    let cancelled = false;
+    setDistinctLoading(true);
+    fetchDistinctValues(tempFilter.field)
+      .then((opts) => {
+        if (!cancelled) setDistinctOptions(opts || []);
+      })
+      .catch(() => {
+        if (!cancelled) setDistinctOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDistinctLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isModalOpen, tempFilter.field, fetchDistinctValues]);
 
   const handleRemoveFilter = (index: number) => {
     const updated = filters.filter((_, i) => i !== index);
@@ -804,25 +899,42 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
           {['in', 'not_in'].includes(tempFilter.operator) ? (
             <Select
-              mode="tags"
+              mode={distinctOptions.length ? 'multiple' : 'tags'}
               className="filter-select"
               style={{ width: '100%' }}
-              placeholder="Type and press enter..."
+              placeholder={distinctLoading ? 'Loading values…' : 'Select or type values…'}
+              loading={distinctLoading}
               value={Array.isArray(tempFilter.value) ? tempFilter.value : (tempFilter.value ? String(tempFilter.value).split(',').map(s => s.trim()) : [])}
               onChange={(vals) => setTempFilter({ ...tempFilter, value: vals })}
+              options={distinctOptions}
               tokenSeparators={[',']}
-              dropdownStyle={{ display: 'none' }}
               allowClear
+              showSearch
+              optionFilterProp="label"
               suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--ant-color-text-tertiary)' }} />}
+            />
+          ) : filterOp?.disableValue ? (
+            <Input size="small" className="premium-input" value="" disabled placeholder="(Value not required)" />
+          ) : distinctOptions.length > 0 ? (
+            <Select
+              size="small"
+              style={{ width: '100%' }}
+              popupClassName="properties-panel-dropdown"
+              placeholder={distinctLoading ? 'Loading…' : 'Select value'}
+              loading={distinctLoading}
+              showSearch
+              allowClear
+              options={distinctOptions}
+              value={tempFilter.value != null && tempFilter.value !== '' ? String(tempFilter.value) : undefined}
+              onChange={(val) => setTempFilter({ ...tempFilter, value: val })}
             />
           ) : (
             <Input
               size="small"
               className="premium-input"
-              placeholder={filterOp?.disableValue ? "(Value not required)" : "Filter value"}
-              value={filterOp?.disableValue ? "" : tempFilter.value}
+              placeholder={distinctLoading ? 'Loading values…' : 'Filter value'}
+              value={String(tempFilter.value ?? '')}
               onChange={(e) => setTempFilter({ ...tempFilter, value: e.target.value })}
-              disabled={filterOp?.disableValue}
             />
           )}
         </div>
@@ -1148,7 +1260,7 @@ interface ToggleFieldProps extends FieldProps {
 
 export const ToggleField: React.FC<ToggleFieldProps> = ({ label, checked, onChange, disabled = false }) => (
   <div className="toggle-wrapper" style={{ marginBottom: 16 }}>
-    <span style={{ fontSize: '13px', color: '#1f2329' }}>{label}</span>
+    <span className="section-label">{label}</span>
     <Switch checked={checked} onChange={onChange} disabled={disabled} size="small" />
   </div>
 );
@@ -1212,12 +1324,13 @@ interface TextInputFieldProps extends FieldProps {
 export const TextInputField: React.FC<TextInputFieldProps> = ({
   label,
   required,
+  hint,
   value,
   onChange,
   placeholder = '',
 }) => (
   <div className="panel-section">
-    <SectionLabel label={label} required={required} />
+    <SectionLabel label={label} required={required} hint={hint} />
     <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} size="small" />
   </div>
 );

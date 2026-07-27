@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:20.19-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -54,8 +54,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV NEXT_DEV_CPUS=$NEXT_BUILD_CPUS
 
 RUN node scripts/setup-ee.js
+# Next 16 defaults to Turbopack for `next build`. This app still needs webpack
+# (custom aliases, Serwist, CSS @import + Tailwind order). Match package.json.
 RUN node scripts/generate-pwa-icons.mjs \
-  && NODE_OPTIONS="--max-old-space-size=${NEXT_BUILD_MAX_OLD_SPACE_SIZE} --max-semi-space-size=64 --expose-gc" ./node_modules/.bin/next build
+  && NODE_OPTIONS="--max-old-space-size=${NEXT_BUILD_MAX_OLD_SPACE_SIZE} --max-semi-space-size=64 --expose-gc" ./node_modules/.bin/next build --webpack
 # PWA: Serwist emits public/sw.js during next build — fail fast if missing
 RUN test -f public/sw.js
 

@@ -18,7 +18,7 @@ export function RecommendChartTypeChips({ chartType, xField, yFields = [], colum
   const t = useTranslations('dashboards');
   const recs = recommendChartTypes(xField, yFields, columns).filter((r) => r !== chartType);
 
-  if (!xField || recs.length === 0) return null;
+  if (recs.length === 0) return null;
 
   return (
     <div style={{ marginBottom: 8 }}>
@@ -27,14 +27,14 @@ export function RecommendChartTypeChips({ chartType, xField, yFields = [], colum
       </Typography.Text>
       <ConfigProvider wave={{ disabled: true }}>
         <Space size={4} wrap>
-          {recs.slice(0, 3).map((type) => (
+          {recs.slice(0, 4).map((type) => (
             <Tag
               key={type}
               color="processing"
               style={{ cursor: 'pointer' }}
               onClick={() => onSelect(type as WidgetType)}
             >
-              {t(`chart_type_${type}` as 'line')}
+              {t(`chart_type_${type}` as 'chart_type_bar')}
             </Tag>
           ))}
         </Space>

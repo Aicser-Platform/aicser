@@ -36,6 +36,7 @@ if (isEE) {
 
 const noop = async () => {};
 const noopOpts = async (_opts?: unknown) => {};
+const noopMaxAge = async (_maxAgeMs?: number) => {};
 
 const _ceStub = () => ({
   planType: 'free' as PricingPlanKey,
@@ -43,9 +44,11 @@ const _ceStub = () => ({
   usage: {} as Record<string, UsageMetric | undefined>,
   features: {} as Record<string, boolean>,
   loading: false,
+  lastFetchedAt: null as number | null,
   refresh: noop,
   refreshUsage: noopOpts,
   init: noop,
+  refreshIfStale: noopMaxAge,
 });
 
 /**

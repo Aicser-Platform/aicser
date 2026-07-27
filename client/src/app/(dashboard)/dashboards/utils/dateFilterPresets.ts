@@ -1,10 +1,13 @@
 import dayjs from 'dayjs';
+import { rangeMtd, rangeQtd, rangeYtd } from './timeIntelligence';
 
 export type DatePresetKey =
   | 'today'
   | 'yesterday'
   | 'last7'
   | 'last30'
+  | 'mtd'
+  | 'qtd'
   | 'thisMonth'
   | 'lastMonth'
   | 'thisQtr'
@@ -47,10 +50,23 @@ export const DATE_PRESET_DEFINITIONS: DatePresetDefinition[] = [
     to: () => dayjs().format('YYYY-MM-DD'),
   },
   {
+    key: 'mtd',
+    labelKey: 'date_preset_mtd',
+    from: () => rangeMtd().from,
+    to: () => rangeMtd().to,
+  },
+  {
+    key: 'qtd',
+    labelKey: 'date_preset_qtd',
+    from: () => rangeQtd().from,
+    to: () => rangeQtd().to,
+  },
+  {
+    // Alias of MTD for existing dashboards — ends at today (not end of month)
     key: 'thisMonth',
     labelKey: 'date_preset_this_month',
-    from: () => dayjs().startOf('month').format('YYYY-MM-DD'),
-    to: () => dayjs().endOf('month').format('YYYY-MM-DD'),
+    from: () => rangeMtd().from,
+    to: () => rangeMtd().to,
   },
   {
     key: 'lastMonth',
@@ -59,16 +75,11 @@ export const DATE_PRESET_DEFINITIONS: DatePresetDefinition[] = [
     to: () => dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD'),
   },
   {
+    // Alias of QTD — ends at today
     key: 'thisQtr',
     labelKey: 'date_preset_this_qtr',
-    from: () => {
-      const qStart = Math.floor(dayjs().month() / 3) * 3;
-      return dayjs().month(qStart).startOf('month').format('YYYY-MM-DD');
-    },
-    to: () => {
-      const qStart = Math.floor(dayjs().month() / 3) * 3;
-      return dayjs().month(qStart + 2).endOf('month').format('YYYY-MM-DD');
-    },
+    from: () => rangeQtd().from,
+    to: () => rangeQtd().to,
   },
   {
     key: 'lastQtr',
@@ -97,8 +108,8 @@ export const DATE_PRESET_DEFINITIONS: DatePresetDefinition[] = [
   {
     key: 'ytd',
     labelKey: 'date_preset_ytd',
-    from: () => dayjs().startOf('year').format('YYYY-MM-DD'),
-    to: () => dayjs().format('YYYY-MM-DD'),
+    from: () => rangeYtd().from,
+    to: () => rangeYtd().to,
   },
   {
     key: 'custom',

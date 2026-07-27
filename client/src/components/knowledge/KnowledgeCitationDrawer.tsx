@@ -56,7 +56,7 @@ export function KnowledgeCitationDrawer({
       open={open}
       onClose={onClose}
       width={440}
-      destroyOnClose
+      destroyOnHidden
     >
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: 32 }}>

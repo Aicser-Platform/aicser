@@ -127,20 +127,49 @@ body,
   border: 1px solid var(--color-border) !important;
 }
 
-/* Tables - Container Color */
+/* Tables - single canonical global default; page-specific tables (query editor,
+   chat results, dashboard widgets) layer higher-specificity overrides on top. */
 .ant-table,
 .ant-table-container,
 .ant-table-wrapper {
   background: var(--color-bg-container) !important;
+  border-radius: var(--radius-lg, 12px) !important;
+  overflow: hidden !important;
 }
 
 .ant-table-thead>tr>th {
-  background: var(--color-bg-elevated) !important;
+  /* Same surface as body — avoid navy/gray header band (Linear/Notion pattern) */
+  background: var(--ant-color-bg-container, var(--color-bg-container)) !important;
   border-bottom: 1px solid var(--color-border) !important;
+  font-weight: 600 !important;
+  color: var(--color-text-secondary) !important;
+  padding: 10px 14px !important;
+  font-size: 12px !important;
+  /* Title Case from columnHeaderFromKey — not ALL CAPS (BI industry standard) */
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.ant-table-thead>tr>th::before {
+  display: none !important;
 }
 
 .ant-table-tbody>tr>td {
   border-bottom: 1px solid var(--color-border) !important;
+  padding: 10px 14px !important;
+  color: var(--color-text-primary) !important;
+  font-size: 13px !important;
+}
+
+.ant-table-tbody>tr:hover>td {
+  background: var(--ant-color-fill-quaternary) !important;
+}
+
+.ant-table-tbody>tr:last-child>td {
+  border-bottom: none !important;
 }
 
 /* Forms - Container Color */

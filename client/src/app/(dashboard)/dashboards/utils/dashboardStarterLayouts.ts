@@ -11,6 +11,7 @@ const STARTER_WIDGETS: Record<StarterLayoutKind, StarterSpec[]> = {
     { chartType: 'stat', title: 'KPI 1' },
     { chartType: 'stat', title: 'KPI 2' },
     { chartType: 'stat', title: 'KPI 3' },
+    { chartType: 'stat', title: 'KPI 4' },
     { chartType: 'bar', title: 'Trend or breakdown' },
   ],
   executive: [

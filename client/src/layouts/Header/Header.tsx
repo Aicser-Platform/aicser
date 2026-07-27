@@ -2,24 +2,19 @@ import React from 'react';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  MoonOutlined,
-  SunOutlined,
   BgColorsOutlined,
   FolderOutlined,
   DownOutlined,
-  SettingOutlined,
   PlusOutlined,
   BankOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
-import { Badge, Button, Layout, Tooltip, Modal, Form, Input, Typography, message, Dropdown } from 'antd';
+import { Alert, Badge, Button, Layout, Tooltip, Modal, Form, Input, Typography, message, Dropdown } from 'antd';
 const { Text } = Typography;
-import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
-import { useLocale, useTranslations } from 'next-intl';
-import { LOCALE_OPTIONS, getLocaleLabel, getLocaleMeta } from '@/config/locales';
-import { useThemeMode } from '@/components/Providers/ThemeModeContext';
-import { fetchApi, handlePlanLimitError } from '@/utils/api';
+import { useTranslations } from 'next-intl';
+import { handlePlanLimitError } from '@/utils/api';
 import dynamic from 'next/dynamic';
 
 const ProjectSelectorModal = dynamic(
@@ -42,6 +37,25 @@ import { useRouter } from 'next/navigation';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
+type IconableEntity = { icon_emoji?: string | null; color?: string | null };
+
+/** Custom emoji when set (colored to match), falling back to the given default icon. */
+function renderEntityIcon(entity: IconableEntity | null | undefined, fallback: React.ReactNode, className?: string) {
+  if (entity?.icon_emoji) {
+    return (
+      <span className={className} style={{ fontSize: 14, lineHeight: 1, display: 'inline-flex', flexShrink: 0 }}>
+        {entity.icon_emoji}
+      </span>
+    );
+  }
+  if (!React.isValidElement(fallback)) return fallback;
+  const el = fallback as React.ReactElement<{ className?: string; style?: React.CSSProperties }>;
+  return React.cloneElement(el, {
+    className: [el.props.className, className].filter(Boolean).join(' ') || undefined,
+    style: entity?.color ? { ...el.props.style, color: entity.color } : el.props.style,
+  });
+}
+
 type Props = {
   isBreakpoint: boolean;
   collapsed: boolean;
@@ -49,6 +63,8 @@ type Props = {
   onOpenDataSourceModal?: () => void;
   /** When true, show a dot on Connect Data Source so first-time users notice it (no data sources yet). */
   highlightConnectData?: boolean;
+  /** Count of data sources currently in a 'failed' connection state — surfaced proactively instead of only in Settings. */
+  failedDataSourcesCount?: number;
 };
 
 export const LayoutHeader: React.FC<Props> = ({
@@ -57,11 +73,10 @@ export const LayoutHeader: React.FC<Props> = ({
   setCollapsed,
   onOpenDataSourceModal,
   highlightConnectData = false,
+  failedDataSourcesCount = 0,
 }) => {
   const router = useRouter();
   const t = useTranslations('header');
-
-  const { isDarkMode, setIsDarkMode } = useThemeMode();
 
   const ThemeCustomizer = React.useMemo(
     () => dynamic(() => import('@/ee').then((m) => ({ default: m.ThemeCustomizer })), { ssr: false }),
@@ -79,29 +94,12 @@ export const LayoutHeader: React.FC<Props> = ({
 
   const { createConversation } = useConversationStore();
 
-  const currentLocale = useLocale();
-
-  const handleLanguageChange = async (locale: string) => {
-    try {
-      await fetchApi('users/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: locale }),
-      });
-      // Fire custom event for LocaleProvider to pick up
-      window.dispatchEvent(new CustomEvent('aicser-locale-change', { detail: locale }));
-      message.success(t('language_switched', { language: getLocaleLabel(locale) }));
-    } catch (err) {
-      message.error(t('language_switch_failed'));
-    }
-  };
-
   const { user } = useAuth();
   const userWithId = user as { id?: string };
 
-  const handleProjectSettings = () => {
-    if (isEnterpriseEdition && currentProject) {
-      router.push('/projects');
+  const handleOrgSettings = () => {
+    if (isEnterpriseEdition) {
+      router.push('/settings?tab=organization');
     }
   };
   // Organization state
@@ -278,9 +276,6 @@ export const LayoutHeader: React.FC<Props> = ({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0px',
-          marginLeft: collapsed ? '0px' : '0px',
-          transition: 'margin-left 0.2s ease',
         }}
       >
         {/* Sidebar toggle — desktop only; mobile uses bottom tab bar */}
@@ -302,63 +297,74 @@ export const LayoutHeader: React.FC<Props> = ({
 
         {isEnterpriseEdition && currentOrganization && (
           <>
-            <Dropdown
-              menu={{
-                items: organizations.map((org) => ({
-                  key: String(org.id),
-                  icon: <BankOutlined />,
-                  label: org.name,
-                  onClick: () => handleOrganizationChange(String(org.id)),
-                })),
-                selectedKeys: [String(currentOrganization.id)],
-              }}
-              placement="bottomLeft"
-              trigger={['click']}
-            >
-              <Button
-                type="text"
-                className="header-shell-chip header-org-chip"
-                aria-label={t('switch_organization')}
-                title={t('switch_organization')}
+            <Tooltip title={t('org_settings')}>
+              <button
+                type="button"
+                className="header-shell-icon-affordance"
+                onClick={handleOrgSettings}
+                aria-label={t('org_settings')}
               >
-                <BankOutlined className="header-shell-chip-icon header-shell-chip-icon--org" />
+                {renderEntityIcon(currentOrganization, <BankOutlined />, 'header-shell-chip-icon header-shell-chip-icon--org')}
+              </button>
+            </Tooltip>
+            {organizations.length > 1 ? (
+              <Dropdown
+                menu={{
+                  items: organizations.map((org) => ({
+                    key: String(org.id),
+                    icon: renderEntityIcon(org, <BankOutlined />),
+                    label: org.name,
+                    onClick: () => handleOrganizationChange(String(org.id)),
+                  })),
+                  selectedKeys: [String(currentOrganization.id)],
+                }}
+                placement="bottomLeft"
+                trigger={['click']}
+              >
+                <Button
+                  type="text"
+                  className="header-shell-chip header-org-chip"
+                  aria-label={t('switch_organization')}
+                  title={`${currentOrganization.name} — ${t('switch_organization')}`}
+                >
+                  <span className="header-shell-chip-label">{currentOrganization.name}</span>
+                  <DownOutlined className="header-shell-chip-chevron" />
+                </Button>
+              </Dropdown>
+            ) : (
+              // Nothing to switch to — a chevron/dropdown here would be a dead affordance.
+              // The icon above already opens org settings; this just shows the name.
+              <span className="header-shell-chip header-org-chip header-shell-chip--static">
                 <span className="header-shell-chip-label">{currentOrganization.name}</span>
-                <DownOutlined className="header-shell-chip-chevron" />
-              </Button>
-            </Dropdown>
-            <span className="header-workspace-separator" aria-hidden="true">/</span>
+              </span>
+            )}
+            <span className="header-workspace-separator" aria-hidden="true">›</span>
           </>
         )}
 
         {isEnterpriseEdition && (
           <>
-            <Tooltip title={t('switch_project')}>
+            <Tooltip
+              title={
+                currentProject
+                  ? currentProject.is_private && currentProject.owner_name
+                    ? `${currentProject.name} — private, owned by ${currentProject.owner_name}`
+                    : `${currentProject.name} — ${t('switch_project')}`
+                  : t('switch_project')
+              }
+            >
               <Button
                 type="text"
                 onClick={() => setProjectModalOpen(true)}
                 className={`header-shell-chip header-project-btn${isBreakpoint ? ' header-project-btn--mobile' : ''}`}
               >
-                <FolderOutlined style={{ fontSize: 13, flexShrink: 0 }} />
+                {renderEntityIcon(currentProject, <FolderOutlined style={{ fontSize: 13, flexShrink: 0 }} />)}
                 <span className="header-shell-chip-label">
-                  {currentProject
-                    ? currentProject.is_private && currentProject.owner_name
-                      ? `${currentProject.name} (${currentProject.owner_name})`
-                      : currentProject.name
-                    : t('select_project')}
+                  {currentProject ? currentProject.name : t('select_project')}
                 </span>
                 <DownOutlined className="header-shell-chip-chevron" />
               </Button>
             </Tooltip>
-            {!isBreakpoint && (
-              <Tooltip title={t('project_settings')}>
-                <Button
-                  type="text"
-                  icon={<SettingOutlined />}
-                  onClick={handleProjectSettings}
-                  className="header-shell-icon-btn icon-only-btn"
-                />
-              </Tooltip>
-            )}
           </>
         )}
 
@@ -383,6 +389,20 @@ export const LayoutHeader: React.FC<Props> = ({
 
         {/* Theme Controls & Profile */}
         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {failedDataSourcesCount > 0 && (
+            <Tooltip
+              title={t('data_sources_failing', { count: failedDataSourcesCount })}
+              placement="bottom"
+            >
+              <Button
+                type="text"
+                danger
+                icon={<WarningOutlined />}
+                onClick={() => router.push('/settings?tab=data-sources')}
+                className="header-shell-icon-btn icon-only-btn"
+              />
+            </Tooltip>
+          )}
           {onOpenDataSourceModal && (
             <Tooltip
               title={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
@@ -408,70 +428,6 @@ export const LayoutHeader: React.FC<Props> = ({
               />
             </Tooltip>
           )}
-
-          <Tooltip title={isDarkMode ? t('light_mode') : t('dark_mode')}>
-            <Button
-              type="text"
-              icon={isDarkMode ? <SunOutlined /> : <MoonOutlined />}
-              onClick={() => {
-                const next = !isDarkMode;
-                setIsDarkMode(next);
-                fetchApi('users/settings', {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ theme: next ? 'dark' : 'light' }),
-                }).catch(() => { });
-              }}
-              aria-label={isDarkMode ? t('light_mode') : t('dark_mode')}
-              className="header-shell-icon-btn icon-only-btn"
-            />
-          </Tooltip>
-
-          <Dropdown
-            menu={{
-              items: LOCALE_OPTIONS.map((opt) => ({
-                key: opt.value,
-                label: (
-                  <Tooltip
-                    title={t('language_item_tooltip', { native: opt.nativeName, region: opt.regionEn })}
-                    placement="left"
-                  >
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '-4px -12px', padding: '4px 12px' }}
-                    >
-                      <LocaleFlagIcon
-                        locale={opt.value}
-                        width={22}
-                        title={`${opt.nativeName} — ${opt.regionEn}`}
-                      />
-                      <span>{opt.label}</span>
-                    </div>
-                  </Tooltip>
-                ),
-                onClick: () => handleLanguageChange(opt.value),
-              })),
-              selectedKeys: [currentLocale],
-            }}
-            placement="bottomRight"
-            trigger={['click']}
-          >
-            <Tooltip
-              title={t('language_button_tooltip', { language: getLocaleLabel(currentLocale) })}
-              placement="bottom"
-            >
-              <Button
-                type="text"
-                aria-label={`${t('select_language')}: ${getLocaleLabel(currentLocale)}`}
-                className="header-shell-icon-btn icon-only-btn header-locale-btn"
-              >
-                <LocaleFlagIcon
-                  locale={currentLocale}
-                  width={18}
-                  title={`${getLocaleMeta(currentLocale).nativeName} — ${getLocaleMeta(currentLocale).regionEn}`}
-                />
-              </Button>
-            </Tooltip>
-          </Dropdown>
 
           <UserProfileDropdown showText={false} className="header-profile-trigger" />
         </div>
@@ -562,6 +518,14 @@ export const LayoutHeader: React.FC<Props> = ({
           <div style={{ marginBottom: 16 }}>
             <Text type="secondary">{t('welcome_org')}</Text>
           </div>
+          {organizations.length === 0 && (
+            <Alert
+              type="info"
+              showIcon
+              message={t('org_join_existing_hint')}
+              style={{ marginBottom: 16 }}
+            />
+          )}
           <Form form={orgForm} layout="vertical" onFinish={handleCreateOrganization}>
             <Form.Item
               name="name"

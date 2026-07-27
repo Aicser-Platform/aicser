@@ -20,6 +20,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
+import { fetchApi } from '@/utils/api';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -31,7 +32,7 @@ const ModelSelector = dynamic(
 
 const { Text } = Typography;
 
-/** Predefined model IDs per AI provider — aligned with LLM Stats & LiteLLM (latest). Default: gpt-4.1-mini. */
+/** Predefined model IDs per AI provider — aligned with LLM Stats & LiteLLM (latest). Default: gpt-5.6-terra. */
 type ProviderModelDef = {
   value: string;
   labelKey: string;
@@ -39,17 +40,21 @@ type ProviderModelDef = {
 };
 
 const OPENAI_AZURE_MODEL_DEFS: ProviderModelDef[] = [
-  { value: 'gpt-4.1-mini', labelKey: 'ai_model_gpt_4_1_mini', suffix: 'default' },
+  // GPT-5.6 (Sol/Terra/Luna) is the current flagship generation as of Jul 2026.
+  { value: 'gpt-5.6-terra', labelKey: 'ai_model_gpt_5_6_terra', suffix: 'default' },
+  { value: 'gpt-5.6-luna', labelKey: 'ai_model_gpt_5_6_luna' },
+  { value: 'gpt-5.6-sol', labelKey: 'ai_model_gpt_5_6_sol' },
+  { value: 'gpt-5.2', labelKey: 'ai_model_gpt_5_2' },
+  { value: 'gpt-5.1', labelKey: 'ai_model_gpt_5_1' },
   { value: 'gpt-5', labelKey: 'ai_model_gpt_5' },
   { value: 'gpt-5-mini', labelKey: 'ai_model_gpt_5_mini' },
   { value: 'gpt-5-nano', labelKey: 'ai_model_gpt_5_nano' },
-  { value: 'gpt-5.2', labelKey: 'ai_model_gpt_5_2' },
-  { value: 'gpt-5.1', labelKey: 'ai_model_gpt_5_1' },
+  // gpt-4.1-mini retires 2026-10-23; gpt-4o/gpt-4o-mini are legacy/at-risk (no firm
+  // date) — kept selectable via the custom-model field rather than listed here.
+  { value: 'gpt-4.1-mini', labelKey: 'ai_model_gpt_4_1_mini' },
   { value: 'gpt-4.1', labelKey: 'ai_model_gpt_4_1' },
   { value: 'gpt-4.1-nano', labelKey: 'ai_model_gpt_4_1_nano' },
   { value: 'o1-mini', labelKey: 'ai_model_o1_mini' },
-  { value: 'gpt-4o-mini', labelKey: 'ai_model_gpt_4o_mini' },
-  { value: 'gpt-4', labelKey: 'ai_model_gpt_4' },
   { value: 'gpt-5.1-codex-mini', labelKey: 'ai_model_gpt_5_1_codex_mini' },
 ];
 
@@ -57,19 +62,36 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
   openai: OPENAI_AZURE_MODEL_DEFS,
   azure_openai: OPENAI_AZURE_MODEL_DEFS,
   anthropic: [
+    { value: 'claude-sonnet-5', labelKey: 'ai_model_claude_sonnet_5', suffix: 'default' },
+    { value: 'claude-opus-4-8', labelKey: 'ai_model_claude_opus_4_8' },
+    { value: 'claude-haiku-4-5-20251001', labelKey: 'ai_model_claude_haiku_4_5' },
     { value: 'claude-3-7-sonnet-20250219', labelKey: 'ai_model_claude_3_7_sonnet' },
     { value: 'claude-3-5-sonnet-20240620', labelKey: 'ai_model_claude_3_5_sonnet' },
     { value: 'claude-3-haiku-20240307', labelKey: 'ai_model_claude_3_haiku' },
   ],
+  // gemini-2.0-flash was shut down 2026-06-01 and gemini-1.5-* is fully retired —
+  // dropped rather than kept as broken presets. The 2.5 family is nominally alive
+  // until Oct 2026 but has been intermittently 404ing since Jul 2026, so 3.x is
+  // the default now.
   google: [
+    { value: 'gemini-3.6-flash', labelKey: 'ai_model_gemini_3_6_flash', suffix: 'default' },
+    { value: 'gemini-3.5-flash-lite', labelKey: 'ai_model_gemini_3_5_flash_lite' },
     { value: 'gemini-3.1-pro-preview', labelKey: 'ai_model_gemini_3_1_pro_preview' },
     { value: 'gemini-3-flash-preview', labelKey: 'ai_model_gemini_3_flash_preview' },
     { value: 'gemini-2.5-pro', labelKey: 'ai_model_gemini_2_5_pro' },
     { value: 'gemini-2.5-flash', labelKey: 'ai_model_gemini_2_5_flash' },
-    { value: 'gemini-2.0-flash', labelKey: 'ai_model_gemini_2_0_flash' },
-    { value: 'gemini-flash-lite-latest', labelKey: 'ai_model_gemini_flash_lite', suffix: 'latest' },
-    { value: 'gemini-1.5-pro', labelKey: 'ai_model_gemini_1_5_pro' },
-    { value: 'gemini-1.5-flash', labelKey: 'ai_model_gemini_1_5_flash' },
+  ],
+  // DeepSeek retired the "deepseek-chat"/"deepseek-reasoner" aliases on 2026-07-24
+  // in favor of explicit V4 model ids.
+  deepseek: [
+    { value: 'deepseek-v4-flash', labelKey: 'ai_model_deepseek_v4_flash', suffix: 'default' },
+    { value: 'deepseek-v4-pro', labelKey: 'ai_model_deepseek_v4_pro' },
+  ],
+  // OpenRouter fronts hundreds of vendor/model slugs (e.g. "z-ai/glm-4.6") — no small
+  // fixed list covers it, so GLM 5.2 is the one preset called out explicitly; anything
+  // else goes through the custom-model field below.
+  openrouter: [
+    { value: 'z-ai/glm-5.2', labelKey: 'ai_model_glm_5_2' },
   ],
 };
 
@@ -85,10 +107,12 @@ const PROVIDER_I18N_KEYS: Record<string, { nameKey: string; descKey: string }> =
   anthropic: { nameKey: 'api_keys_provider_name_anthropic', descKey: 'api_keys_provider_desc_anthropic' },
   azure_openai: { nameKey: 'api_keys_provider_name_azure', descKey: 'api_keys_provider_desc_azure' },
   google: { nameKey: 'api_keys_provider_name_google', descKey: 'api_keys_provider_desc_google' },
+  deepseek: { nameKey: 'api_keys_provider_name_deepseek', descKey: 'api_keys_provider_desc_deepseek' },
+  openrouter: { nameKey: 'api_keys_provider_name_openrouter', descKey: 'api_keys_provider_desc_openrouter' },
   ollama: { nameKey: 'api_keys_provider_name_ollama', descKey: 'api_keys_provider_desc_ollama' },
 };
 
-const PROVIDER_CARD_ORDER = ['openai', 'anthropic', 'azure_openai', 'google', 'ollama'] as const;
+const PROVIDER_CARD_ORDER = ['openai', 'anthropic', 'google', 'azure_openai', 'deepseek', 'openrouter', 'ollama'] as const;
 
 import type { TabComponentProps } from '../page';
 
@@ -96,13 +120,16 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
   const router = useRouter();
   const searchParams = useSearchParams();
+  // 'ai-model' is a legacy subtab key from before "Default AI Model" was folded into
+  // "AI Providers" below — still accepted so old deep links/bookmarks land somewhere valid.
   const apiSubTabKeys = ['platform', 'providers', 'ai-model'] as const;
   const activeApiTab = useMemo(() => {
     const requested = searchParams?.get('subtab');
+    if (requested === 'ai-model') return 'providers';
     if (requested && apiSubTabKeys.includes(requested as (typeof apiSubTabKeys)[number])) {
       return requested;
     }
-    return 'platform';
+    return 'providers';
   }, [searchParams?.get('subtab')]);
   const [apiKeyForm] = Form.useForm();
   const [providerKeyForm] = Form.useForm();
@@ -123,6 +150,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     deleteApiKey,
     loadProviderApiKeys,
     saveProviderKey,
+    availableModels,
   } = useSettingsStore();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -215,17 +243,41 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   }) => {
     if (!editingProvider) return;
     const modelToSave = (values.model === '__custom__' ? values.model_custom : values.model) ?? '';
+    const savedProvider = editingProvider;
     try {
-      await saveProviderKey(editingProvider, {
+      await saveProviderKey(savedProvider, {
         api_key: values.api_key ?? '',
         model: modelToSave,
         endpoint: values.endpoint,
       });
-      message.success(t('api_key_provider_saved'));
       setAiModelsReloadNonce((n) => n + 1);
       setShowProviderKeyModal(false);
       setEditingProvider(null);
       providerKeyForm.resetFields();
+
+      // Previously this just showed "saved" regardless of whether the key actually
+      // works — the user only found out it was wrong the next time a real AI request
+      // failed. saveProviderKey() already refreshed availableModels; read it fresh
+      // from the store (not the destructured hook value, which is a stale closure
+      // from this render) and probe the new BYOK model's live connection status.
+      const savedModel = useSettingsStore
+        .getState()
+        .availableModels.find((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
+      if (savedModel) {
+        try {
+          const status = await fetchApi(`/ai/model-status?model_id=${savedModel.id}`);
+          if (status?.success === false || status?.available === false) {
+            message.warning(t('api_key_saved_but_invalid'));
+          } else {
+            message.success(t('api_key_provider_saved'));
+          }
+        } catch {
+          // Status probe itself failing isn't proof the key is bad — don't block save success on it.
+          message.success(t('api_key_provider_saved'));
+        }
+      } else {
+        message.success(t('api_key_provider_saved'));
+      }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : t('api_keys_provider_save_failed');
       message.error(msg);
@@ -324,27 +376,8 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           destroyInactiveTabPane
           items={[
             {
-              key: 'platform',
-              label: t('platform_api_keys'),
-              children: (
-                <div style={{ paddingTop: 4 }}>
-                  <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
-                    {t('platform_api_keys_desc')}
-                  </Text>
-                  <Table
-                    dataSource={apiKeys}
-                    columns={apiKeyColumns}
-                    rowKey="id"
-                    loading={loading}
-                    pagination={{ pageSize: 10 }}
-                    scroll={{ x: 'max-content' }}
-                  />
-                </div>
-              ),
-            },
-            {
               key: 'providers',
-              label: t('ai_provider_keys'),
+              label: t('ai_providers_tab'),
               children: (
                 <div style={{ paddingTop: 4 }}>
                   <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
@@ -408,21 +441,32 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                       </div>
                     ))}
                   </div>
-                </div>
-              ),
-            },
-            {
-              key: 'ai-model',
-              label: t('default_ai_model'),
-              children: (
-                <div style={{ paddingTop: 4 }}>
-                  <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
-                    {t('default_ai_model_desc')}
-                  </Text>
+
+                  {/* Default model lives right below the keys that power it, instead of a separate tab */}
+                  <Divider style={{ margin: '28px 0 20px' }} />
                   <ModelSelector
                     persistPreference
                     reloadNonce={aiModelsReloadNonce}
                     onChange={() => message.success(t('model_preference_saved'))}
+                  />
+                </div>
+              ),
+            },
+            {
+              key: 'platform',
+              label: t('platform_api_keys'),
+              children: (
+                <div style={{ paddingTop: 4 }}>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
+                    {t('platform_api_keys_desc')}
+                  </Text>
+                  <Table
+                    dataSource={apiKeys}
+                    columns={apiKeyColumns}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{ pageSize: 10 }}
+                    scroll={{ x: 'max-content' }}
                   />
                 </div>
               ),

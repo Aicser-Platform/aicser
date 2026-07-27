@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Spin } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 
 interface PageWrapperProps {
   children: React.ReactNode;
@@ -21,8 +21,8 @@ const PageWrapper: React.FC<PageWrapperProps> = React.memo(({
   if (loading) {
     return (
       <div className="page-container">
-        <div className="page-content flex items-center justify-center">
-          <Spin size="large" />
+        <div className="page-content">
+          <AppLoadingIndicator variant="inline" />
         </div>
       </div>
     );

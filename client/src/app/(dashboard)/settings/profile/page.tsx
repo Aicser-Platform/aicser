@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Spin } from 'antd';
 import { useTranslations } from 'next-intl';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 
 /**
  * Profile settings are a tab on the main /settings page.
@@ -15,9 +15,5 @@ export default function ProfileSettingsRedirect() {
   useEffect(() => {
     router.replace('/settings?tab=profile');
   }, [router]);
-  return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-      <Spin tip={t('loading')} />
-    </div>
-  );
+  return <AppLoadingIndicator variant="inline" tip={t('loading')} />;
 }

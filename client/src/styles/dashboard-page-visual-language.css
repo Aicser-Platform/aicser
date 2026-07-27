@@ -367,13 +367,6 @@
   background: transparent !important;
 }
 
-.page-wrapper.integrations-page .page-tab-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--page-section-gap);
-  width: 100%;
-}
-
 /* ── Header: keep actions on the same row (md+) ─────────── */
 
 @media (min-width: 768px) {

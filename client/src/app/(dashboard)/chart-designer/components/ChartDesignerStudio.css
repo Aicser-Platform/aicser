@@ -1,7 +1,7 @@
 /* Chart Designer Additional Refinements */
 
 .designer-theme {
-  --studio-sidebar-width: 200px;
+  --studio-sidebar-width: 280px;
 }
 
 .studio-wrapper {
@@ -201,10 +201,10 @@
 
 /* Simplified chart-first mode */
 .designer-simplified .chart-designer-sidebar {
-  width: var(--studio-sidebar-width, 200px);
-  min-width: var(--studio-sidebar-width, 200px);
-  max-width: var(--studio-sidebar-width, 200px);
-  flex: 0 0 var(--studio-sidebar-width, 200px);
+  width: var(--studio-sidebar-width, 280px);
+  min-width: var(--studio-sidebar-width, 280px);
+  max-width: var(--studio-sidebar-width, 280px);
+  flex: 0 0 var(--studio-sidebar-width, 280px);
   min-height: 100%;
   height: 100%;
   background: var(--studio-sidebar-bg);
@@ -308,6 +308,21 @@
   padding: 0 40px;
 }
 
+/* Empty picker is the main content here — not an absolute overlay over the canvas */
+.designer-simplified .canvas-empty {
+  position: relative;
+  inset: auto;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  height: 100%;
+  min-height: 280px;
+  z-index: auto;
+  pointer-events: auto;
+  padding: 24px 12px;
+}
+
 .designer-simplified .widget-card {
   border-radius: 12px;
   box-shadow: none;
@@ -352,7 +367,8 @@
 }
 
 .designer-simplified .widget-card-header {
-  display: flex !important;
+  /* Title lives in the designer toolbar — never force the card header visible */
+  display: none !important;
   height: 48px;
   padding: 0 40px;
   border-bottom: 1px solid var(--studio-border);
@@ -534,6 +550,18 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--ant-color-text);
+}
+
+.chart-designer-toolbar-title.ant-input {
+  padding-left: 0;
+  padding-right: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chart-designer-toolbar-title--empty {
+  opacity: 0.55;
+  font-weight: 500;
 }
 
 .chart-designer-toolbar-share {

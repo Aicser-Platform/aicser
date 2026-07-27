@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { Button, Empty, Select, Space, Spin, Tag, Tooltip, Tree, Typography } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Empty, Input, Select, Space, Spin, Tag, Tooltip, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import {
   CompressOutlined,
   DatabaseOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   TableOutlined,
 } from '@ant-design/icons';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
@@ -36,105 +37,126 @@ function getSchemaName(schemaName?: string): string {
   return schemaName || 'public';
 }
 
+function matchesSearch(name: string, search: string): boolean {
+  return name.toLowerCase().includes(search.toLowerCase());
+}
+
+/** A table/view is included if its own name matches (with all columns shown) or
+ *  at least one column matches (with only matching columns shown). Returns null
+ *  when searching and nothing in this table/view matches, so the caller can drop it. */
+function buildEntryNode<T extends { name: string; schema?: string; columns?: { name: string; type: string }[] }>(
+  entry: T,
+  keyPrefix: string,
+  columnKeyPrefix: string,
+  search: string,
+  icon: React.ReactNode,
+  extraTag: React.ReactNode,
+  onClick?: (name: string, schemaName: string) => void,
+  onColumnClick?: (name: string, columnName: string, schemaName: string) => void
+): DataNode | null {
+  const schemaName = getSchemaName(entry.schema);
+  const columns = entry.columns || [];
+  const nameMatches = !search || matchesSearch(entry.name, search);
+  const matchingColumns = !search || nameMatches ? columns : columns.filter((c) => matchesSearch(c.name, search));
+  if (search && !nameMatches && matchingColumns.length === 0) return null;
+
+  return {
+    key: `${keyPrefix}:${schemaName}.${entry.name}`,
+    title: (
+      <span
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick?.(entry.name, schemaName);
+        }}
+      >
+        {icon}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {schemaName !== 'public' ? `${schemaName}.${entry.name}` : entry.name}
+        </span>
+        {extraTag}
+      </span>
+    ),
+    children: matchingColumns.map((column) => ({
+      key: `${columnKeyPrefix}:${schemaName}.${entry.name}.${column.name}`,
+      title: (
+        <span
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onColumnClick?.(entry.name, column.name, schemaName);
+          }}
+        >
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {column.name}
+          </span>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {column.type}
+          </Text>
+        </span>
+      ),
+      isLeaf: true,
+    })),
+  };
+}
+
 function buildTreeData(
   schema: SchemaInfo | null | undefined,
   onTableClick?: (tableName: string, schemaName: string) => void,
-  onColumnClick?: (tableName: string, columnName: string, schemaName: string) => void
-): DataNode[] {
-  if (!schema) return [];
+  onColumnClick?: (tableName: string, columnName: string, schemaName: string) => void,
+  search = ''
+): { data: DataNode[]; matchKeys: string[] } {
+  if (!schema) return { data: [], matchKeys: [] };
 
-  const tableNodes: DataNode[] = (schema.tables || []).map((table) => {
-    const schemaName = getSchemaName(table.schema);
+  const tableNodes = (schema.tables || [])
+    .map((table) =>
+      buildEntryNode(
+        table,
+        'table',
+        'column',
+        search,
+        <TableOutlined style={{ color: 'var(--ant-color-primary)' }} />,
+        typeof table.rowCount === 'number' ? (
+          <Tag style={{ marginInlineEnd: 0 }}>{table.rowCount.toLocaleString()}</Tag>
+        ) : null,
+        onTableClick,
+        onColumnClick
+      )
+    )
+    .filter((node): node is DataNode => node !== null);
 
-    return {
-      key: `table:${schemaName}.${table.name}`,
-      title: (
-        <span
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTableClick?.(table.name, schemaName);
-          }}
-        >
-          <TableOutlined style={{ color: 'var(--ant-color-primary)' }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {schemaName !== 'public' ? `${schemaName}.${table.name}` : table.name}
-          </span>
-          {typeof table.rowCount === 'number' ? (
-            <Tag style={{ marginInlineEnd: 0 }}>{table.rowCount.toLocaleString()}</Tag>
-          ) : null}
-        </span>
-      ),
-      children: table.columns.map((column) => ({
-        key: `column:${schemaName}.${table.name}.${column.name}`,
-        title: (
-          <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
-            onClick={(event) => {
-              event.stopPropagation();
-              onColumnClick?.(table.name, column.name, schemaName);
-            }}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {column.name}
-            </span>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {column.type}
-            </Text>
-          </span>
-        ),
-        isLeaf: true,
-      })),
-    };
-  });
+  const viewNodes = (schema.views || [])
+    .map((view) =>
+      buildEntryNode(
+        view,
+        'view',
+        'view-column',
+        search,
+        <TableOutlined style={{ color: 'var(--ant-color-success)' }} />,
+        <Tag color="green" style={{ marginInlineEnd: 0 }}>view</Tag>,
+        onTableClick,
+        onColumnClick
+      )
+    )
+    .filter((node): node is DataNode => node !== null);
 
-  const viewNodes: DataNode[] = (schema.views || []).map((view) => {
-    const schemaName = getSchemaName(view.schema);
-
-    return {
-      key: `view:${schemaName}.${view.name}`,
-      title: (
-        <span
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTableClick?.(view.name, schemaName);
-          }}
-        >
-          <TableOutlined style={{ color: 'var(--ant-color-success)' }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {schemaName !== 'public' ? `${schemaName}.${view.name}` : view.name}
-          </span>
-          <Tag color="green" style={{ marginInlineEnd: 0 }}>view</Tag>
-        </span>
-      ),
-      children: (view.columns || []).map((column) => ({
-        key: `view-column:${schemaName}.${view.name}.${column.name}`,
-        title: (
-          <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}
-            onClick={(event) => {
-              event.stopPropagation();
-              onColumnClick?.(view.name, column.name, schemaName);
-            }}
-          >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {column.name}
-            </span>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {column.type}
-            </Text>
-          </span>
-        ),
-        isLeaf: true,
-      })),
-    };
-  });
-
-  return [
+  const data: DataNode[] = [
     ...(tableNodes.length ? [{ key: 'tables', title: `Tables (${tableNodes.length})`, children: tableNodes }] : []),
     ...(viewNodes.length ? [{ key: 'views', title: `Views (${viewNodes.length})`, children: viewNodes }] : []),
   ];
+
+  // While searching, auto-expand every group/table/view that has a match so results
+  // are visible without the user having to expand each one by hand.
+  const matchKeys = search
+    ? [
+        ...(tableNodes.length ? ['tables'] : []),
+        ...(viewNodes.length ? ['views'] : []),
+        ...tableNodes.map((n) => String(n.key)),
+        ...viewNodes.map((n) => String(n.key)),
+      ]
+    : [];
+
+  return { data, matchKeys };
 }
 
 const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
@@ -200,10 +222,18 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
     return () => window.removeEventListener('datasource-created', handleCreated);
   }, [refreshDataSources, selectAndLoad]);
 
-  const treeData = useMemo(
-    () => buildTreeData(selectedSchema, onTableClick, onColumnClick),
-    [onColumnClick, onTableClick, selectedSchema]
+  const [search, setSearch] = useState('');
+  const { data: treeData, matchKeys } = useMemo(
+    () => buildTreeData(selectedSchema, onTableClick, onColumnClick, search),
+    [onColumnClick, onTableClick, selectedSchema, search]
   );
+
+  // Collapsed by default (schema trees with 50+ tables are unusable fully expanded);
+  // expand automatically to reveal matches while the user is searching.
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  useEffect(() => {
+    if (search) setExpandedKeys(matchKeys);
+  }, [search, matchKeys]);
 
   const openConnectDataModal = () => {
     window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
@@ -343,10 +373,33 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
                   <Text type="secondary" style={{ fontSize: 12 }}>Loading schema</Text>
                 </div>
               </div>
-            ) : treeData.length ? (
-              <div className="schema-tree-wrapper" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                <Tree treeData={treeData} blockNode defaultExpandAll selectable={false} />
-              </div>
+            ) : selectedSchema ? (
+              <>
+                <Input
+                  size="small"
+                  allowClear
+                  prefix={<SearchOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
+                  placeholder="Filter tables and columns…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {treeData.length ? (
+                  <div className="schema-tree-wrapper" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                    <Tree
+                      treeData={treeData}
+                      blockNode
+                      selectable={false}
+                      expandedKeys={expandedKeys}
+                      onExpand={setExpandedKeys}
+                    />
+                  </div>
+                ) : (
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={search ? `No tables or columns match "${search}"` : 'No schema available'}
+                  />
+                )}
+              </>
             ) : selectedDataSource ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No schema available">
                 <Button

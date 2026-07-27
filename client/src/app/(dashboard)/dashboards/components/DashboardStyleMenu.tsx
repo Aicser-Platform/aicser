@@ -101,10 +101,15 @@ export function DashboardStyleMenu({
       }}
       trigger={['click']}
     >
-      <Button type="text" block icon={<BgColorsOutlined />} className="!justify-start !text-left text-text-secondary">
-        <span className="flex-1 text-left">{t('style_menu_label')}</span>
+      <Button
+        size="small"
+        type="text"
+        icon={<BgColorsOutlined />}
+        className="studio-context-btn studio-style-menu-btn !inline-flex !items-center !gap-1 !px-2 !h-8 shrink-0 text-text-secondary"
+        aria-label={t('style_menu_label')}
+      >
         <PaletteSwatch colors={activePalette.colors.slice(0, 4)} />
-        <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+        <DownOutlined style={{ fontSize: 9 }} />
       </Button>
     </Dropdown>
   );

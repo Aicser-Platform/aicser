@@ -17,10 +17,9 @@ import {
 import { useTranslations } from 'next-intl';
 import { socialFeedService, formatTimeAgo } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
-import { assetTypeLabelKey, resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
-import { FeedPreviewEmpty } from './FeedPreviewEmpty';
+import { resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
+import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
-import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 
 interface FeedGridCardProps {
@@ -55,6 +54,8 @@ const REACTION_PALETTE: Record<ReactionType, { color: string; softBg: string }> 
  * Single self-contained feed card for the grid view — header, title/description,
  * thumbnail, and a lean action row, all in one component (no Header/Body/Actions
  * split). Comments live on the detail page, not inline here.
+ * (The Header/Body/Actions `FeedCard` family still exists for saved/commented/discover
+ * views, which do need inline comment threads — see FeedCard/FeedCard.tsx.)
  */
 const FeedGridCard: React.FC<FeedGridCardProps> = ({
   item,
@@ -96,10 +97,8 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const currentReaction = item.userInteraction.reaction;
   const selectedReaction = currentReaction ? reactionOptions.find((option) => option.key === currentReaction) : null;
   const isBookmarked = item.userInteraction.isBookmarked;
-  const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
   const authorTitle = item.author.title?.trim();
   const description = useMemo(() => resolveFeedPostSummary(item), [item]);
-  const thumbnailUrl = resolveBackendMediaUrl(item.asset.thumbnailUrl);
 
   const handleOpen = useCallback(() => router.push(detailPath), [router, detailPath]);
   const handlePrefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
@@ -350,57 +349,15 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             )}
           </div>
 
-          {/* Thumbnail */}
-          <div className="px-3 pb-2.5">
-            <div
-              className="relative aspect-video w-full overflow-hidden rounded-lg bg-[var(--ant-color-bg-layout)] cursor-pointer"
-              role="button"
-              tabIndex={0}
-              onClick={handleOpen}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  handleOpen();
-                }
-              }}
-              aria-label={t('open_post')}
-            >
-              {thumbnailUrl ? (
-                <img
-                  src={thumbnailUrl}
-                  alt={item.title}
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : (
-                <FeedPreviewEmpty label={t('snapshot_unavailable')} compact />
-              )}
-              <div className="absolute right-2 top-2 z-10">
-                <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
-                  {assetTypeLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Tags */}
-          {item.tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1.5">
-              {item.tags.slice(0, 4).map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-secondary)]"
-                >
-                  {tag}
-                </span>
-              ))}
-              {item.tags.length > 4 && (
-                <span className="rounded-full bg-[var(--ant-color-fill-tertiary)] px-2.5 py-0.5 text-xs text-[var(--ant-color-text-tertiary)]">
-                  +{item.tags.length - 4}
-                </span>
-              )}
-            </div>
-          )}
+          {/* Thumbnail + tags — shared with FeedCardBody (the inline-comment card variant) */}
+          <FeedCardMedia
+            item={item}
+            maxPreviews={2}
+            previewClickable
+            onPreviewClick={handleOpen}
+            thumbnailWrapperClassName="px-3 pb-2.5"
+            tagsWrapperClassName="px-3 pb-1.5"
+          />
         </div>
 
         {/* Footer actions — pinned to the bottom of the card */}

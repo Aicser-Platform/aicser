@@ -24,8 +24,8 @@ import {
     Alert,
     Progress,
     Drawer,
-    Spin,
 } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
     PlusOutlined,
     DatabaseOutlined,
@@ -361,11 +361,7 @@ const DataSourcesPage: React.FC = () => {
     return (
         <PermissionGuard
             permission={Permission.DATA_VIEW}
-            loadingFallback={
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-                    <Spin size="large" />
-                </div>
-            }
+            loadingFallback={<AppLoadingIndicator variant="inline" />}
             fallback={
                 <DashboardPageShell maxWidth={720}>
                     <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />
@@ -608,10 +604,8 @@ const DataSourcesPage: React.FC = () => {
                 }
             >
                 {profileLoading && (
-                    <div style={{ textAlign: 'center', padding: 40 }}>
-                        <Spin size="large" tip={t('profiling_in_progress')}>
-                            <div style={{ minHeight: 60 }} />
-                        </Spin>
+                    <div style={{ padding: 24 }}>
+                        <AppLoadingIndicator variant="inline" tip={t('profiling_in_progress')} />
                     </div>
                 )}
                 {!profileLoading && !profileResult && (

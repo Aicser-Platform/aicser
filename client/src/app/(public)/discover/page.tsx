@@ -3,11 +3,12 @@
 export const dynamic = 'force-dynamic';
 
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
-import { Button, Empty, Input, Spin, message } from 'antd';
+import { Button, Empty, Input, message } from 'antd';
 import { TrophyOutlined, FireOutlined, MailOutlined, SearchOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import FeedCard from '@/app/(dashboard)/feed/components/FeedCard';
 import FeedCardSkeleton from '@/app/(dashboard)/feed/components/FeedCardSkeleton';
 import { socialFeedService, type FeedItem, type FeedLeaderboardItem } from '@/services/socialFeedService';
@@ -214,13 +215,7 @@ function DiscoverPageContent() {
 
 export default function DiscoverPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex justify-center py-16">
-          <Spin size="large" />
-        </div>
-      }
-    >
+    <Suspense fallback={<AppLoadingIndicator variant="inline" />}>
       <DiscoverPageContent />
     </Suspense>
   );

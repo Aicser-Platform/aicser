@@ -46,9 +46,24 @@ export function getLocaleMeta(value: string): LocaleOption {
 export interface TimezoneOption {
   value: string;
   label: string;
+  /** Current UTC offset (DST-aware), e.g. "GMT-5". Computed at load time. */
+  offset: string;
 }
 
-export const TIMEZONE_OPTIONS: TimezoneOption[] = [
+function getTimezoneOffset(timeZone: string): string {
+  if (timeZone === 'UTC') return 'GMT+0';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(new Date());
+    return parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
+  } catch {
+    return '';
+  }
+}
+
+const RAW_TIMEZONES: { value: string; label: string }[] = [
   { value: 'UTC', label: 'UTC' },
   { value: 'America/New_York', label: 'Eastern (US)' },
   { value: 'America/Chicago', label: 'Central (US)' },
@@ -69,33 +84,70 @@ export const TIMEZONE_OPTIONS: TimezoneOption[] = [
   { value: 'Asia/Phnom_Penh', label: 'Phnom Penh' },
 ];
 
-/** Date format options. */
-export const DATE_FORMAT_OPTIONS: { value: string; label: string }[] = [
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
-  { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY' },
+export const TIMEZONE_OPTIONS: TimezoneOption[] = RAW_TIMEZONES.map((tz) => ({
+  ...tz,
+  offset: getTimezoneOffset(tz.value),
+}));
+
+/** Date format options. `example` is the current date rendered in that pattern, for a live preview. */
+export interface DateFormatOption {
+  value: string;
+  label: string;
+  example: string;
+}
+
+function formatDateExample(pattern: string): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const yyyy = String(d.getFullYear());
+  switch (pattern) {
+    case 'MM/DD/YYYY':
+      return `${mm}/${dd}/${yyyy}`;
+    case 'DD/MM/YYYY':
+      return `${dd}/${mm}/${yyyy}`;
+    case 'YYYY-MM-DD':
+      return `${yyyy}-${mm}-${dd}`;
+    case 'DD.MM.YYYY':
+      return `${dd}.${mm}.${yyyy}`;
+    default:
+      return `${mm}/${dd}/${yyyy}`;
+  }
+}
+
+export const DATE_FORMAT_OPTIONS: DateFormatOption[] = [
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY', example: formatDateExample('MM/DD/YYYY') },
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY', example: formatDateExample('DD/MM/YYYY') },
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD', example: formatDateExample('YYYY-MM-DD') },
+  { value: 'DD.MM.YYYY', label: 'DD.MM.YYYY', example: formatDateExample('DD.MM.YYYY') },
 ];
 
-/** Currency options for display/formatting. */
-export const CURRENCY_OPTIONS: { value: string; label: string }[] = [
-  { value: 'USD', label: 'USD' },
-  { value: 'EUR', label: 'EUR' },
-  { value: 'GBP', label: 'GBP' },
-  { value: 'JPY', label: 'JPY' },
-  { value: 'CNY', label: 'CNY' },
-  { value: 'INR', label: 'INR' },
-  { value: 'AUD', label: 'AUD' },
-  { value: 'CAD', label: 'CAD' },
-  { value: 'CHF', label: 'CHF' },
-  { value: 'KRW', label: 'KRW' },
-  { value: 'KHR', label: 'KHR' },
-  { value: 'SGD', label: 'SGD' },
-  { value: 'THB', label: 'THB' },
-  { value: 'VND', label: 'VND' },
-  { value: 'MYR', label: 'MYR' },
-  { value: 'PHP', label: 'PHP' },
-  { value: 'IDR', label: 'IDR' },
-  { value: 'HKD', label: 'HKD' },
-  { value: 'NZD', label: 'NZD' },
+/** Currency options for display/formatting, with their standard symbol for quick recognition. */
+export interface CurrencyOption {
+  value: string;
+  label: string;
+  symbol: string;
+}
+
+export const CURRENCY_OPTIONS: CurrencyOption[] = [
+  { value: 'USD', label: 'USD', symbol: '$' },
+  { value: 'EUR', label: 'EUR', symbol: '€' },
+  { value: 'GBP', label: 'GBP', symbol: '£' },
+  { value: 'JPY', label: 'JPY', symbol: '¥' },
+  { value: 'CNY', label: 'CNY', symbol: 'CN¥' },
+  { value: 'INR', label: 'INR', symbol: '₹' },
+  { value: 'AUD', label: 'AUD', symbol: 'A$' },
+  { value: 'CAD', label: 'CAD', symbol: 'C$' },
+  { value: 'CHF', label: 'CHF', symbol: 'CHF' },
+  { value: 'KRW', label: 'KRW', symbol: '₩' },
+  { value: 'KHR', label: 'KHR', symbol: '៛' },
+  { value: 'SGD', label: 'SGD', symbol: 'S$' },
+  { value: 'THB', label: 'THB', symbol: '฿' },
+  { value: 'VND', label: 'VND', symbol: '₫' },
+  { value: 'MYR', label: 'MYR', symbol: 'RM' },
+  { value: 'PHP', label: 'PHP', symbol: '₱' },
+  { value: 'IDR', label: 'IDR', symbol: 'Rp' },
+  { value: 'HKD', label: 'HKD', symbol: 'HK$' },
+  { value: 'NZD', label: 'NZD', symbol: 'NZ$' },
 ];

@@ -22,12 +22,11 @@ import {
   Alert,
   Modal,
   Form,
-  Spin,
   Grid,
   Pagination,
-  Avatar,
 } from 'antd';
 import { useTranslations } from 'next-intl';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import MemoryOptimizedEditor, { type MemoryOptimizedEditorHandle } from '@/components/ai/MemoryOptimizedEditor';
 import {
   DatabaseOutlined,
@@ -49,7 +48,9 @@ import {
   ScissorOutlined,
   MoreOutlined,
   CaretRightOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
@@ -59,16 +60,27 @@ import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistory
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
-import { useAiModels } from '@/hooks/useAi';
-import { getAiProviderLogo } from '@/config/aiProviders';
-import { shortComposerModelDisplayName } from '@/components/ai/ModelSelector/ModelSelector';
+import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
 import { getChatHref } from '@/utils/appPaths';
 import {
   isSameQueryName,
   resolveQueryTabSaveName,
   snapshotNameFromTabTitle,
+  uniqueSavedQueryName,
 } from '@/utils/queryTabNaming';
+import {
+  clearSavedQueryBind,
+  columnsFromQueryResult,
+  wrapSqlAsSubquery,
+  buildChartDataFromRows,
+  buildChartQueryFromBind,
+  buildBindNavigateUrl,
+  buildMappingFromFields,
+  type SavedQueryBindPayload,
+} from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
+import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
+import { QueryVisualizeModal, type QueryVisualizeModalValues } from '@/components/data/SQLEditor/QueryVisualizeModal';
 
 const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -206,26 +218,40 @@ const MIN_EDITOR_HEIGHT = 100;
 const RUN_BAR_HEIGHT = 44;
 const TABS_ROW_HEIGHT = 32;
 const MIN_TOP_SECTION_HEIGHT = TABS_ROW_HEIGHT + MIN_EDITOR_HEIGHT + RUN_BAR_HEIGHT; // tabs + editor + run bar
-const MIN_RESULTS_PANE_HEIGHT = 140;
+// Results pane's minimum footprint — kept small since it's the resizable floor,
+// not its default (the results pane still gets whatever space is left over).
+const MIN_RESULTS_PANE_HEIGHT = 90;
 const DEFAULT_EDITOR_HEIGHT = 200;
 const DATA_PANEL_MIN = 260;
 const DATA_PANEL_MAX = 600;
 const DATA_PANEL_DEFAULT = 320;
 const computeMaxEditorHeight = (workspaceHeight?: number) => {
   if (typeof window === 'undefined') return 360;
+  // `||` (not `??`) on purpose: a not-yet-laid-out container reports clientHeight
+  // 0, which is defined (so `??` would accept it) but never a real measurement —
+  // treating it as real clamped the editor to its floor on every mount and then
+  // *persisted* that bogus small height, silently wiping the user's saved resize
+  // on every refresh/navigation.
   const base =
-    workspaceHeight ??
+    workspaceHeight ||
     (typeof document !== 'undefined'
       ? document.querySelector('.qe-workspace-main')?.clientHeight
-      : undefined) ??
+      : undefined) ||
     window.innerHeight;
-  const reserved = 180;
+  // Chrome above the resizable split (page header + AI assist bar) — tightened
+  // from an earlier, over-generous estimate that was silently capping the
+  // editor's default height well below what the viewport actually allowed.
+  const reserved = 140;
   const available = Math.max(MIN_TOP_SECTION_HEIGHT, base - reserved);
   return Math.max(MIN_TOP_SECTION_HEIGHT, available - MIN_RESULTS_PANE_HEIGHT);
 };
 const computeDefaultEditorHeight = () => {
   const max = computeMaxEditorHeight();
-  return Math.min(220, Math.max(MIN_TOP_SECTION_HEIGHT, Math.floor(max * 0.55)));
+  // Default to a generously tall code area (most of the available space) rather
+  // than a box that leaves a large empty void above the results pane on first
+  // load — matches how most SQL editors (and this one, once resized) look.
+  const target = Math.max(500, Math.floor(max * 0.88));
+  return Math.min(max, target, 760);
 };
 const buildPythonTemplate = (baseSql: string, dataSourceName?: string) => `# Python code to query data source
 import pandas as pd
@@ -246,6 +272,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   defaultSidebarOpen = false,
 }) => {
   const t = useTranslations('monaco_sql_editor');
+  const router = useRouter();
   const formatError = useFormatUserError();
   const authenticatedFetch = useAuthenticatedFetch();
   const { session, user: authUser } = useAuthStore();
@@ -488,30 +515,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
+  const aiGenerateAbortRef = useRef<AbortController | null>(null);
   const [aiModel, setAiModel] = useState<string | undefined>();
-  const { data: aiModels = [] } = useAiModels();
-  const availableAiModels = useMemo(() => aiModels.filter((m) => m.available), [aiModels]);
-  const aiModelOptions = useMemo(
-    () =>
-      availableAiModels.map((m) => {
-        const logo = getAiProviderLogo(m.provider);
-        return {
-          label: (
-            <Tooltip title={m.name} placement="left">
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                {logo && <Avatar src={logo} size={14} />}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {shortComposerModelDisplayName(m.name)}
-                </span>
-              </span>
-            </Tooltip>
-          ),
-          value: m.id,
-        };
-      }),
-    [availableAiModels]
-  );
-  const selectedAiModel = aiModel ?? availableAiModels[0]?.id;
+  const selectedAiModel = aiModel ?? 'auto';
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
@@ -529,6 +535,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [editingTabKey, setEditingTabKey] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState<string>('');
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [showVisualizeModal, setShowVisualizeModal] = useState(false);
+  const [visualizeConfirming, setVisualizeConfirming] = useState(false);
   const [modalSaveQueryName, setModalSaveQueryName] = useState('');
   const [savingSavedQuery, setSavingSavedQuery] = useState(false);
   const [snapshots, setSnapshots] = useState<any[]>([]);
@@ -556,7 +564,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_EDITOR_HEIGHT;
     const max = computeMaxEditorHeight();
-    const stored = Number(window.localStorage.getItem('qe_editor_height'));
+    const stored = Number(window.localStorage.getItem('qe_editor_height_v3'));
     const initial = Number.isFinite(stored) && stored > 0 ? stored : computeDefaultEditorHeight();
     return Math.min(Math.max(initial, MIN_TOP_SECTION_HEIGHT), max);
   });
@@ -582,6 +590,20 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     }
     return opts;
   }, [limitSource, rowLimit]);
+  // The window-resize listeners below only catch viewport changes — they miss the
+  // workspace shrinking/growing from its own sibling content (e.g. the AI bar
+  // wrapping onto a second line when its model selector overflows). Without this,
+  // editorHeight/maxEditorHeight go stale relative to the real available space and
+  // the split leaves empty/clipped space until the next window resize.
+  useEffect(() => {
+    const node = workspaceMainRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setEditorHeight((h) => clampEditorHeight(h));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [clampEditorHeight]);
   useEffect(() => {
     const nextMax = computeMaxEditorHeight();
     setMaxEditorHeight(nextMax);
@@ -589,7 +611,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       const clamped = Math.min(Math.max(h, MIN_TOP_SECTION_HEIGHT), nextMax);
       if (clamped !== h) {
         try {
-          window.localStorage.setItem('qe_editor_height', String(clamped));
+          window.localStorage.setItem('qe_editor_height_v3', String(clamped));
         } catch {
           /* ignore */
         }
@@ -611,7 +633,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       editorResizeStateRef.current.startHeight = editorHeight;
     }
     try {
-      window.localStorage.setItem('qe_editor_height', String(editorHeight));
+      window.localStorage.setItem('qe_editor_height_v3', String(editorHeight));
     } catch {
       // ignore storage failures
     }
@@ -1154,8 +1176,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       language: QueryLanguage;
       savedQueryId?: number | string | null;
       syncTabTitle?: boolean;
+      /** When true, auto-suffix name on collision instead of failing */
+      uniqueName?: boolean;
     }) => {
-      const trimmedName = opts.name.trim();
+      let trimmedName = opts.name.trim();
       if (!trimmedName || !opts.sql.trim()) {
         message.warning(t('no_query_to_save'));
         return null;
@@ -1165,34 +1189,80 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         tabKey: opts.tabKey,
         language: opts.language,
         activeQueryKey: opts.tabKey,
+        data_source_id: selectedDataSource?.id ? String(selectedDataSource.id) : undefined,
+        dataSourceId: selectedDataSource?.id ? String(selectedDataSource.id) : undefined,
+        dataSourceName: selectedDataSource?.name,
       };
 
       const scopeQs = queriesScopeParams ? `?${queriesScopeParams}` : '';
-      let targetId = opts.savedQueryId ?? null;
+      let targetId: number | string | null = opts.savedQueryId ?? null;
 
-      if (!targetId) {
+      if (targetId == null) {
         const tab = queryTabs.find((qt) => qt.key === opts.tabKey);
         if (tab?.savedQueryId != null) targetId = tab.savedQueryId;
       }
-      if (!targetId) {
+      if (targetId == null) {
         const byName = savedQueries.find((q: { name?: string; id?: number | string }) =>
           isSameQueryName(q.name, trimmedName),
         );
         if (byName?.id != null) targetId = byName.id;
       }
 
-      if (targetId != null && typeof targetId === 'number') {
-        await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
-        });
-      } else {
-        await authenticatedFetch(savedQueriesUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
-        });
+      if (opts.uniqueName) {
+        trimmedName = uniqueSavedQueryName(trimmedName, savedQueries, targetId);
+      }
+
+      const canPut = targetId != null && String(targetId).trim() !== '';
+
+      try {
+        if (canPut) {
+          await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+          });
+        } else {
+          const created = await authenticatedFetch(savedQueriesUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+          });
+          if (created?.id != null) targetId = created.id;
+        }
+      } catch (err: any) {
+        const msg = String(err?.message || err?.detail || JSON.stringify(err?.body || ''));
+        // Name collision → update existing row or retry with a unique name
+        if (/already exists/i.test(msg)) {
+          const existing = savedQueries.find((q: { name?: string; id?: number | string }) =>
+            isSameQueryName(q.name, trimmedName),
+          );
+          if (existing?.id != null && (targetId == null || String(existing.id) === String(targetId))) {
+            targetId = existing.id;
+            await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+            });
+          } else {
+            trimmedName = uniqueSavedQueryName(trimmedName, savedQueries, targetId);
+            if (targetId != null && String(targetId).trim() !== '') {
+              await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+              });
+            } else {
+              const created = await authenticatedFetch(savedQueriesUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+              });
+              if (created?.id != null) targetId = created.id;
+            }
+          }
+        } else {
+          throw err;
+        }
       }
 
       const list = await refreshSavedQueriesList();
@@ -1218,7 +1288,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         );
       }
 
-      return saved?.id ?? null;
+      return saved?.id ?? targetId ?? null;
     },
     [
       authenticatedFetch,
@@ -1227,7 +1297,260 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       refreshSavedQueriesList,
       savedQueries,
       savedQueriesUrl,
+      selectedDataSource,
       t,
+    ],
+  );
+
+  const openVisualizeModal = useCallback(() => {
+    const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+    if (!content) {
+      message.warning(t('no_query_to_save'));
+      return;
+    }
+    if (!selectedDataSourceId) {
+      message.warning(t('select_ds_first'));
+      return;
+    }
+    setShowVisualizeModal(true);
+  }, [sqlQuery, selectedDataSourceId, t]);
+
+  const confirmVisualizeQuery = useCallback(
+    async (values: QueryVisualizeModalValues) => {
+      const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+      const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+      const fallbackName = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
+      const name = (values.title || '').trim() || fallbackName;
+      const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+      if (!content || !selectedDataSourceId) return;
+      if (values.target === 'dashboard' && !values.dashboardId) {
+        message.warning('Select a dashboard first');
+        return;
+      }
+
+      setVisualizeConfirming(true);
+      try {
+        // Persist under the widget title (unique). Keep tab title unless user named the tab.
+        const savedId = await persistSavedQueryForTab({
+          name,
+          sql: content,
+          tabKey: tab?.key ?? activeQueryKey,
+          language: resolveLanguage(tab?.language ?? editorLanguage),
+          savedQueryId: tab?.savedQueryId,
+          uniqueName: true,
+          syncTabTitle: false,
+        });
+        if (savedId == null) {
+          message.error('Could not save query for visualization');
+          return;
+        }
+
+        // Discover columns: prefer current results, else probe SQL
+        let columns = columnsFromQueryResult({
+          data: Array.isArray(results) ? results.slice(0, 5) : [],
+        });
+        if (!columns.length) {
+          try {
+            const probe = await enhancedDataService.executeMultiEngineQuery(
+              wrapSqlAsSubquery(content, 5),
+              String(selectedDataSourceId),
+            );
+            columns = columnsFromQueryResult(probe as any);
+          } catch (err) {
+            console.warn('Column probe failed:', err);
+          }
+        }
+
+        const mapping = buildMappingFromFields({
+          chartType: values.chartType,
+          xField: values.xField,
+          yFields: values.yFields,
+          groupField: values.groupField,
+          columns,
+        });
+
+        let querySnapshotId: string | number | undefined;
+        let chartData: Record<string, unknown> | undefined;
+
+        if (values.dataMode === 'snapshot') {
+          if (!Array.isArray(results) || results.length === 0) {
+            message.warning('Run the query first to create a snapshot');
+            return;
+          }
+          const snapCols = columns.map((c) => c.name);
+          const snapRes = await authenticatedFetch(
+            queriesScopeParams ? `/api/queries/snapshots?${queriesScopeParams}` : '/api/queries/snapshots',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name,
+                sql: content,
+                data_source_id: selectedDataSourceId,
+                rows: jsonSafeRows(results.slice(0, 500) as Record<string, unknown>[]),
+                columns: snapCols,
+                preview_rows: Math.min(500, results.length),
+                organization_id: organizationId || undefined,
+                project_id: projectId || undefined,
+              }),
+            },
+          );
+          querySnapshotId = snapRes?.id ?? snapRes?.snapshot_id;
+          chartData = buildChartDataFromRows(results.slice(0, 500), {
+            chartType: values.chartType,
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+          });
+        } else if (Array.isArray(results) && results.length > 0) {
+          chartData = buildChartDataFromRows(results.slice(0, 500), {
+            chartType: values.chartType,
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+          });
+        }
+
+        const chartQuery = buildChartQueryFromBind({
+          savedQueryId: savedId,
+          querySnapshotId,
+          columns,
+          chartType: values.chartType,
+          dataMode: values.dataMode,
+          chartQuery: {
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+            yMetric: 'none',
+            sortBy: mapping.x ? 'x' : 'record_order',
+            ...(values.xGrain ? { xGrain: values.xGrain } : {}),
+            ...(mapping.groupField
+              ? { groupField: mapping.groupField, legend: mapping.groupField }
+              : {}),
+            ...(values.drillPath?.length ? { drillPath: values.drillPath } : {}),
+          },
+        });
+
+        // Upsert library chart then link (shared helper used by Chat + Designer too)
+        const { ensureLibraryChartAndPinToDashboard } = await import(
+          '@/components/charts/ensureLibraryChartAndPin'
+        );
+
+        let preCreatedChartId: string | undefined;
+        let libraryChartId: string | undefined;
+
+        if (values.target === 'dashboard' && values.dashboardId) {
+          const h = values.chartType === 'stat' ? 4 : 8;
+          const pinned = await ensureLibraryChartAndPinToDashboard({
+            dashboardId: values.dashboardId,
+            definition: {
+              title: name,
+              chartType: values.chartType,
+              dataSourceId: String(selectedDataSourceId),
+              chartQuery: chartQuery as any,
+              chartOptions: {
+                showLegend: values.chartType !== 'stat' && values.chartType !== 'table',
+                ...(chartData ? { __prefetchedChartData: chartData } : {}),
+              },
+              reuseSavedQuery: true,
+            },
+            // Placement is resolved against the target board inside the helper
+            layout: { w: 6, h },
+            mode: 'link',
+            projectId: projectId || currentProjectId,
+          });
+          preCreatedChartId = pinned.chartId;
+          libraryChartId = pinned.libraryChartId;
+
+          try {
+            const { useDashboardStore } = await import(
+              '@/app/(dashboard)/dashboards/stores/useDashboardStore'
+            );
+            const store = useDashboardStore.getState();
+            // Reload charts for this dashboard (fetchDashboards alone can leave a stale canvas)
+            await store.loadDashboardById(values.dashboardId);
+            store.setStudioMode('edit');
+            store.setSelectedWidgetId(`widget-${preCreatedChartId}`);
+            store.setPropertiesCollapsed(false);
+          } catch (refreshErr) {
+            console.warn('Dashboard store refresh after pin failed:', refreshErr);
+          }
+        } else {
+          const libraryChart = await chartBuilderService.createChart(
+            {
+              title: name,
+              chartType: values.chartType,
+              dataSourceId: String(selectedDataSourceId),
+              chartQuery: chartQuery as any,
+              chartOptions: {
+                showLegend: values.chartType !== 'stat' && values.chartType !== 'table',
+                ...(chartData ? { __prefetchedChartData: chartData } : {}),
+              },
+              reuseSavedQuery: true,
+            },
+            projectId || currentProjectId,
+          );
+          libraryChartId = libraryChart?.id ? String(libraryChart.id) : undefined;
+          preCreatedChartId = libraryChartId;
+          if (!libraryChartId) {
+            throw new Error('Library chart was not created');
+          }
+        }
+
+        const payload: SavedQueryBindPayload = {
+          savedQueryId: savedId,
+          querySnapshotId,
+          name,
+          sql: content,
+          dataSourceId: String(selectedDataSourceId),
+          columns,
+          chartType: values.chartType,
+          dataMode: values.dataMode,
+          target: values.target,
+          dashboardId: values.dashboardId,
+          preCreatedChartId,
+          chartQuery,
+          chartData,
+        };
+
+        clearSavedQueryBind();
+        if (values.target === 'chart-designer' && libraryChartId) {
+          try {
+            sessionStorage.setItem('chart_designer_select', libraryChartId);
+          } catch {
+            /* ignore */
+          }
+        }
+
+        setShowVisualizeModal(false);
+        message.success(
+          values.target === 'dashboard'
+            ? `Linked “${name}” to dashboard`
+            : `Opening Chart Designer with “${name}”…`,
+        );
+        router.push(
+          values.target === 'chart-designer'
+            ? `/chart-designer?chart=${libraryChartId}`
+            : buildBindNavigateUrl(payload),
+        );
+      } catch (e: unknown) {
+        message.error(formatError(e) || 'Could not visualize query');
+      } finally {
+        setVisualizeConfirming(false);
+      }
+    },
+    [
+      queryTabs,
+      activeQueryKey,
+      sqlQuery,
+      selectedDataSourceId,
+      persistSavedQueryForTab,
+      editorLanguage,
+      results,
+      authenticatedFetch,
+      queriesScopeParams,
+      organizationId,
+      projectId,
+      currentProjectId,
+      router,
+      formatError,
     ],
   );
 
@@ -1399,6 +1722,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         saveTabsToBackendRef.current(tabs, activeKey);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        // Skip when Monaco has focus — its own addAction keybinding (registered in
+        // onMonacoMount) already runs the query for this exact keypress; without this
+        // check both handlers fire and the query runs twice. This listener exists for
+        // the case where focus is elsewhere on the page (e.g. the row-limit control).
+        if (monacoEditorInstanceRef.current?.hasTextFocus?.()) return;
         e.preventDefault();
         runHandlerRef.current?.();
       }
@@ -1419,6 +1747,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
   // Ref for run handler so shortcuts (window + Monaco Ctrl+Enter) always call latest
   const runHandlerRef = useRef<() => void>(() => {});
+  // Monaco editor instance, so the window-level Ctrl+Enter fallback below can check
+  // hasTextFocus() and skip when Monaco's own action (registered in onMonacoMount)
+  // is already handling the same keypress — otherwise both fire and the query runs twice.
+  const monacoEditorInstanceRef = useRef<{ hasTextFocus?: () => boolean } | null>(null);
 
   // Debounced auto-save: persist current tab content to backend after 2s of no typing
   useEffect(() => {
@@ -1494,6 +1826,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     // Store refs for external use (e.g. setModelMarkers for error highlighting)
     monacoInstanceRef.current = monacoInstance;
     editorModelRef.current = (editor as any)?.getModel?.() ?? null;
+    monacoEditorInstanceRef.current = editor as { hasTextFocus?: () => boolean };
 
     const monaco = monacoInstance as {
       languages: {
@@ -1919,6 +2252,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       return;
     }
 
+    const abortController = new AbortController();
+    aiGenerateAbortRef.current = abortController;
     setAiGenerating(true);
     try {
       // authenticatedFetch (fetchApi) returns parsed JSON on success or throws on error
@@ -1934,6 +2269,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           current_sql: sqlQuery.trim() || undefined, // Send current SQL from editor
           model: selectedAiModel,
         }),
+        signal: abortController.signal,
       });
       console.log('AI generation result (Query Editor):', {
         success: result.success,
@@ -2029,14 +2365,24 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         });
       }
     } catch (error: unknown) {
-      console.error('AI generation error:', error);
-      message.error({
-        content: formatError(error, 'generic', t('ai_assistant_hint')),
-        duration: 5,
-      });
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      if (isAbort) {
+        message.info({ content: t('ai_generation_cancelled'), duration: 3 });
+      } else {
+        console.error('AI generation error:', error);
+        message.error({
+          content: formatError(error, 'generic', t('ai_assistant_hint')),
+          duration: 5,
+        });
+      }
     } finally {
+      aiGenerateAbortRef.current = null;
       setAiGenerating(false);
     }
+  };
+
+  const handleCancelAIGenerate = () => {
+    aiGenerateAbortRef.current?.abort();
   };
 
   // Python execution handler
@@ -2505,7 +2851,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }}>
           {IS_EE && (
           <div className="qe-ai-bar">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
               <Tooltip
                 title={
                   <div>
@@ -2537,35 +2883,50 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   />
                 </div>
               </Tooltip>
-              <Input
+              <Input.TextArea
                 placeholder={t('ai_assistant_placeholder')}
-                style={{ flex: 1, height: '32px', borderRadius: '6px' }}
-                size="middle"
+                style={{ flex: '1 1 160px', minWidth: 0, borderRadius: '6px', resize: 'none' }}
+                autoSize={{ minRows: 1, maxRows: 6 }}
                 value={aiAssistantInput}
                 onChange={(e) => setAiAssistantInput(e.target.value)}
-                onPressEnter={handleAIGenerate}
+                onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                  // Enter submits; Ctrl/Shift+Enter inserts a newline instead.
+                  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                    e.preventDefault();
+                    handleAIGenerate();
+                  }
+                }}
                 disabled={aiGenerating}
               />
-              <Select
-                value={selectedAiModel}
-                onChange={setAiModel}
-                options={aiModelOptions}
-                placeholder={availableAiModels.length === 0 ? 'No keys configured' : 'Select model'}
-                disabled={aiGenerating || availableAiModels.length === 0}
-                size="small"
-                popupMatchSelectWidth={false}
-                style={{ width: 'auto', minWidth: 90, maxWidth: 140, flexShrink: 0 }}
+              {aiGenerating ? (
+                <Tooltip title={t('cancel_generation')}>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<CloseCircleOutlined />}
+                    onClick={handleCancelAIGenerate}
+                  />
+                </Tooltip>
+              ) : (
+                <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<RocketOutlined />}
+                    onClick={handleAIGenerate}
+                    disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
+                  />
+                </Tooltip>
+              )}
+              <ModelSelector
+                compact
+                value={aiModel}
+                onModelChange={setAiModel}
+                disabled={aiGenerating}
+                persistPreference
+                style={{ minWidth: 0, maxWidth: 140, width: 'clamp(56px, 16vw, 140px)', flexShrink: 1 }}
+                dropdownWidth={200}
               />
-              <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<RocketOutlined />}
-                  onClick={handleAIGenerate}
-                  loading={aiGenerating}
-                  disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
-                />
-              </Tooltip>
             </div>
           </div>
           )}
@@ -2672,6 +3033,18 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     <Tooltip title={t('tooltip_saved_queries_snapshots')}>
                       <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
                     </Tooltip>
+                    {editorLanguage === 'sql' && (
+                      <Tooltip title="Visualize — add chart to a dashboard or Chart Designer">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<LineChartOutlined />}
+                          disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                          onClick={openVisualizeModal}
+                          aria-label="Visualize query"
+                        />
+                      </Tooltip>
+                    )}
                     {IS_EE && editorLanguage === 'sql' && (
                       <>
                         <Divider type="vertical" style={{ margin: '0 2px' }} />
@@ -3204,7 +3577,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               onTableClick={(tableName, schemaName) => {
                 const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
                 const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
-                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT 100`);
+                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT}`);
               }}
               onColumnClick={(tableName, columnName, schemaName) => {
                 const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
@@ -3244,6 +3617,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           onSaveQueryNameChange={setModalSaveQueryName}
           onSaveCurrentQuery={handleModalSaveCurrentQuery}
           savingCurrent={savingSavedQuery}
+          organizationId={organizationId}
+          projectId={projectId}
+          onSavedQueriesChanged={() => {
+            void refreshSavedQueriesList();
+          }}
           onLoadToNewTab={(record) => {
             const newKey = `q-${Date.now()}`;
             const newTab = buildTabFromSavedRecord(record, newKey);
@@ -3641,10 +4019,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }
       >
         {aiExplaining ? (
-          <div style={{ padding: '40px 0', textAlign: 'center' }}>
-            <Spin size="large" tip={t('explain_sql_analyzing')}>
-              <div style={{ minHeight: 60 }} />
-            </Spin>
+          <div style={{ padding: '24px 0' }}>
+            <AppLoadingIndicator variant="inline" tip={t('explain_sql_analyzing')} />
           </div>
         ) : (
           <div
@@ -3662,6 +4038,24 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           </div>
         )}
       </Modal>
+      <QueryVisualizeModal
+        open={showVisualizeModal}
+        confirming={visualizeConfirming}
+        onCancel={() => setShowVisualizeModal(false)}
+        onConfirm={(vals) => void confirmVisualizeQuery(vals)}
+        defaultTitle={
+          resolveQueryTabSaveName(
+            queryTabs.find((qt) => qt.key === activeQueryKey)?.title,
+            Math.max(1, queryTabs.findIndex((qt) => qt.key === activeQueryKey) + 1),
+          )
+        }
+        hasResultRows={Array.isArray(results) && results.length > 0}
+        projectId={projectId || currentProjectId}
+        resultRows={Array.isArray(results) ? (results as Array<Record<string, unknown>>).slice(0, 200) : []}
+        columns={columnsFromQueryResult({
+          data: Array.isArray(results) ? results.slice(0, 5) : [],
+        })}
+      />
       </>
       )}
     </div>

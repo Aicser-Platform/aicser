@@ -86,13 +86,56 @@ class ChartService:
 
     async def update(self, chart: Chart, data: dict) -> Chart:
         for key, value in data.items():
-            if hasattr(chart, key) and value is not None:
+            if not hasattr(chart, key):
+                continue
+            # Allow clearing nullable org fields (collection_id, tags overwrite, etc.)
+            if value is None and key in ("collection_id", "dashboard_id", "last_opened_at"):
+                setattr(chart, key, None)
+            elif value is not None:
                 setattr(chart, key, value)
         await self.db.flush()
         await self.db.refresh(chart)
         return chart
 
     async def delete(self, chart: Chart) -> None:
+        """Soft-delete chart into trash (unlink dashboard placements; keep row)."""
+        from datetime import datetime, timezone
+
+        chart_id = getattr(chart, "id", None)
+        if chart_id is not None:
+            await self.db.execute(
+                text("DELETE FROM dashboard_charts WHERE chart_id = :cid"),
+                {"cid": str(chart_id)},
+            )
+        if hasattr(chart, "is_deleted"):
+            chart.is_deleted = True
+            if hasattr(chart, "deleted_at"):
+                chart.deleted_at = datetime.now(timezone.utc)
+            await self.db.flush()
+            await self.db.commit()
+            return
+        await self.db.delete(chart)
+        await self.db.flush()
+        await self.db.commit()
+
+    async def restore(self, chart: Chart) -> Chart:
+        if hasattr(chart, "is_deleted"):
+            chart.is_deleted = False
+        if hasattr(chart, "deleted_at"):
+            chart.deleted_at = None
+        await self.db.flush()
+        await self.db.commit()
+        await self.db.refresh(chart)
+        return chart
+
+    async def purge(self, chart: Chart) -> None:
+        """Permanently delete a chart row (and any leftover placements)."""
+        chart_id = getattr(chart, "id", None)
+        if chart_id is not None:
+            await self.db.execute(
+                text("DELETE FROM dashboard_charts WHERE chart_id = :cid"),
+                {"cid": str(chart_id)},
+            )
         await self.db.delete(chart)
         await self.db.flush()
         await self.db.commit()
@@ -871,19 +914,91 @@ class ChartService:
         return next_query, next_x, next_y_metric, next_y_metrics, next_y_metrics_secondary, next_group_field
 
     async def _load_saved_query_sql(self, saved_query_id: str) -> Optional[str]:
-        try:
-            qid = uuid.UUID(str(saved_query_id))
-        except (ValueError, TypeError):
+        """Load SQL for a saved query. IDs are SERIAL integers (not UUIDs)."""
+        if saved_query_id is None or str(saved_query_id).strip() == "":
             return None
+        raw = str(saved_query_id).strip()
+        # Prefer integer PK (CE saved_queries.id SERIAL). Fall back to UUID string match.
+        params: Dict[str, Any] = {}
+        try:
+            params["id"] = int(raw)
+            id_expr = "id = :id"
+        except (TypeError, ValueError):
+            try:
+                params["id"] = str(uuid.UUID(raw))
+                id_expr = "CAST(id AS TEXT) = :id"
+            except (ValueError, TypeError):
+                return None
         res = await self.db.execute(
-            text("SELECT sql FROM saved_queries WHERE id = :id LIMIT 1"),
-            {"id": str(qid)},
+            text(f"SELECT sql FROM saved_queries WHERE {id_expr} LIMIT 1"),
+            params,
         )
         row = res.first()
         if not row:
             return None
-        sql = row[0] if isinstance(row, tuple) else row.sql
+        sql = row[0] if isinstance(row, tuple) else getattr(row, "sql", None)
         return str(sql).strip() if sql else None
+
+    async def _load_saved_query_row(self, saved_query_id: str) -> Optional[Dict[str, Any]]:
+        """Return {id, sql, metadata} for a saved query, or None."""
+        if saved_query_id is None or str(saved_query_id).strip() == "":
+            return None
+        raw = str(saved_query_id).strip()
+        try:
+            qid = int(raw)
+        except (TypeError, ValueError):
+            return None
+        res = await self.db.execute(
+            text("SELECT id, sql, metadata FROM saved_queries WHERE id = :id LIMIT 1"),
+            {"id": qid},
+        )
+        row = res.first()
+        if not row:
+            return None
+        meta = row[2] if isinstance(row, tuple) else getattr(row, "metadata", None)
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        return {
+            "id": row[0] if isinstance(row, tuple) else row.id,
+            "sql": row[1] if isinstance(row, tuple) else row.sql,
+            "metadata": meta if isinstance(meta, dict) else {},
+        }
+
+    async def _load_query_snapshot_rows(
+        self, snapshot_id: str
+    ) -> Optional[tuple]:
+        """Load frozen rows/columns from query_snapshots. Returns (rows, columns) or None."""
+        if snapshot_id is None or str(snapshot_id).strip() == "":
+            return None
+        try:
+            sid = int(str(snapshot_id).strip())
+        except (TypeError, ValueError):
+            return None
+        try:
+            res = await self.db.execute(
+                text(
+                    "SELECT rows, columns FROM query_snapshots WHERE id = :id LIMIT 1"
+                ),
+                {"id": sid},
+            )
+            row = res.first()
+            if not row:
+                return None
+            raw_rows = row[0] if isinstance(row, tuple) else getattr(row, "rows", None)
+            raw_cols = row[1] if isinstance(row, tuple) else getattr(row, "columns", None)
+            if isinstance(raw_rows, str):
+                raw_rows = json.loads(raw_rows)
+            if isinstance(raw_cols, str):
+                raw_cols = json.loads(raw_cols)
+            if not isinstance(raw_rows, list):
+                return None
+            return raw_rows, raw_cols if isinstance(raw_cols, list) else []
+        except Exception as exc:
+            logger.warning("Failed to load query snapshot %s: %s", snapshot_id, exc)
+            return None
 
     async def _ensure_data_source_schema(self, data_source: DataSource) -> None:
         """Lazily fetch schema for types that might not have it pre-populated (database, sample_duckdb, google_sheets)."""
@@ -949,7 +1064,31 @@ class ChartService:
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")
         if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip():
-            return await self._execute_with_sample_sql(chart, compiled_sql)
+            result = await self._execute_with_sample_sql(chart, compiled_sql)
+            return await self._finalize_stat_result(chart, result)
+
+        chart_query = chart.chart_query or {}
+        # Frozen query-editor snapshot (Power BI "pin visual" / Metabase static card style)
+        snapshot_id = chart_query.get("query_snapshot_id") or chart_query.get("snapshot_id")
+        if snapshot_id:
+            snap = await self._load_query_snapshot_rows(str(snapshot_id))
+            if snap is not None:
+                rows, _cols = snap
+                result = self._map_sql_rows_to_chart_data(rows, chart.chart_type, chart_query)
+                return await self._finalize_stat_result(chart, result)
+
+        # Prefer durable saved_query_id over chart_options.sample_sql so edits in
+        # Query Editor refresh the widget (chat pin used to stamp both).
+        saved_query_id = chart_query.get("saved_query_id")
+        if saved_query_id:
+            saved_sql = await self._load_saved_query_sql(str(saved_query_id))
+            if saved_sql:
+                result = await self._execute_saved_query_chart(chart, saved_sql)
+                return await self._finalize_stat_result(chart, result)
+            raise ValueError(
+                f"Saved query '{saved_query_id}' was not found or has no SQL — "
+                "re-bind the chart from Query Editor or pick another saved query."
+            )
 
         # Template charts store a pre-built JOIN query in chart_options.sample_sql.
         # Use it directly so JOINed fields (e.g. status_name) render correctly.
@@ -961,15 +1100,10 @@ class ChartService:
                 chart_options = {}
         sample_sql = chart_options.get("sample_sql") if isinstance(chart_options, dict) else None
         if sample_sql and isinstance(sample_sql, str) and sample_sql.strip():
-            return await self._execute_with_sample_sql(chart, sample_sql)
+            result = await self._execute_with_sample_sql(chart, sample_sql)
+            return await self._finalize_stat_result(chart, result)
 
         chart_query = chart.chart_query or {}
-        saved_query_id = chart_query.get("saved_query_id")
-        if saved_query_id:
-            saved_sql = await self._load_saved_query_sql(str(saved_query_id))
-            if saved_sql:
-                return await self._execute_with_sample_sql(chart, saved_sql)
-
         filters = chart_query.get("filters", [])
         metric_filters = chart_query.get("metricFilters", [])
 
@@ -1164,29 +1298,97 @@ class ChartService:
         # Stat charts must return {"value": N}. Normalize if the execution path
         # returned the generic {"x": [...], "y": [...]} shape instead.
         # Preserve series/y for sparklines and period-over-period on KPI cards.
-        if chart.chart_type == "stat" and "value" not in result:
-            y_data = result.get("y") or []
-            series = result.get("series") or []
-            series_data = series[0].get("data") if series and isinstance(series[0], dict) else []
-            val = None
-            if y_data:
-                val = y_data[-1]
-            elif series_data:
-                val = series_data[-1]
-            if val is not None:
-                normalized: Dict[str, Any] = {"value": val}
-                if y_data:
-                    normalized["y"] = y_data
-                if series:
-                    normalized["series"] = series
-                if len(y_data) >= 2:
-                    normalized["comparisonValue"] = y_data[-2]
-                    normalized["comparisonLabel"] = "prior period"
-                elif len(series_data) >= 2:
-                    normalized["comparisonValue"] = series_data[-2]
-                    normalized["comparisonLabel"] = "prior period"
-                result = normalized
+        # Headline value must match aggregation semantics (Total = sum of periods,
+        # not last bucket) — otherwise AI KPIs look contradictory.
+        if chart.chart_type == "stat" and isinstance(result, dict) and "value" not in result:
+            result = self._normalize_stat_timeseries_result(chart, result)
 
+        return await self._finalize_stat_result(
+            chart,
+            result,
+            filters=filters,
+            chart_options=chart_options if isinstance(chart_options, dict) else {},
+        )
+
+    async def _finalize_stat_result(
+        self,
+        chart: Chart,
+        result: Dict[str, Any],
+        filters: Optional[List[Dict[str, Any]]] = None,
+        chart_options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Normalize stat payloads and apply calendar PoP when configured."""
+        if chart.chart_type != "stat" or not isinstance(result, dict):
+            return result
+
+        opts = chart_options
+        if opts is None:
+            opts = chart.chart_options or {}
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except Exception:
+                    opts = {}
+        if not isinstance(opts, dict):
+            opts = {}
+
+        cq = chart.chart_query or {}
+        if not isinstance(cq, dict):
+            cq = {}
+        if cq.get("_skip_pop"):
+            return result
+
+        filt = filters if filters is not None else (cq.get("filters") or [])
+        return await self._apply_stat_period_comparison(chart, result, filt, opts)
+
+    async def _apply_stat_period_comparison(
+        self,
+        chart: Chart,
+        result: Dict[str, Any],
+        filters: List[Dict[str, Any]],
+        chart_options: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Re-query with shifted date filters for WoW/MoM/QoQ/YoY when possible."""
+        from src.core.time_intelligence import (
+            COMPARISON_PERIOD_LABELS,
+            VALID_COMPARISON_PERIODS,
+            shift_filters_for_comparison,
+        )
+
+        period = chart_options.get("comparisonPeriod")
+        if period not in VALID_COMPARISON_PERIODS:
+            return result
+
+        label = (
+            chart_options.get("comparisonPeriodLabel")
+            or COMPARISON_PERIOD_LABELS.get(period)
+            or "prior period"
+        )
+        shifted = shift_filters_for_comparison(filters, period)
+        if not shifted:
+            # Keep naive prior-point comparison but use the configured label.
+            if "comparisonValue" in result:
+                result = dict(result)
+                result["comparisonLabel"] = label
+            return result
+
+        try:
+            # Temporarily shift filters on the same chart; skip recursive PoP.
+            orig_query = chart.chart_query
+            pop_query = {**(dict(orig_query) if isinstance(orig_query, dict) else {}), "filters": shifted, "_skip_pop": True}
+            chart.chart_query = pop_query
+            try:
+                comp = await self.execute(chart)
+            finally:
+                chart.chart_query = orig_query
+            if isinstance(comp, dict) and comp.get("value") is not None:
+                result = dict(result)
+                result["comparisonValue"] = comp["value"]
+                result["comparisonLabel"] = label
+        except Exception:
+            if "comparisonValue" in result:
+                result = dict(result)
+                result["comparisonLabel"] = label
         return result
 
     # =========================================================
@@ -1424,22 +1626,139 @@ class ChartService:
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
-        return self._map_sql_rows_to_chart_data(rows, chart.chart_type)
+        rows = self._sort_and_limit_sql_rows(rows, chart.chart_query or {}, chart.chart_type)
+        return self._map_sql_rows_to_chart_data(rows, chart.chart_type, chart.chart_query or {})
+
+    async def _execute_saved_query_chart(self, chart: Chart, saved_sql: str) -> Dict[str, Any]:
+        """
+        Bind a saved SQL query as a virtual table (industry custom-SQL pattern).
+
+        - If the widget has field mappings (x / yMetrics), wrap the SQL as a subquery
+          and aggregate like a normal table chart so Build mappings work.
+        - Otherwise map raw result columns positionally / by name.
+        """
+        chart_query = dict(chart.chart_query or {})
+        x_field = chart_query.get("x") or chart_query.get("xField")
+        y_metrics = chart_query.get("yMetrics") or []
+        y_metrics_secondary = chart_query.get("yMetricsSecondary") or []
+        has_mapping = bool(x_field) or bool(y_metrics) or chart.chart_type in ("stat", "gauge")
+
+        if not has_mapping:
+            return await self._execute_with_sample_sql(chart, saved_sql)
+
+        # Prefer re-aggregation on the subquery when measures request real aggs.
+        needs_agg = False
+        for ym in list(y_metrics) + list(y_metrics_secondary):
+            if not isinstance(ym, dict):
+                continue
+            agg = str(ym.get("aggregation") or "none").lower()
+            if agg not in ("none", "", "null"):
+                needs_agg = True
+                break
+
+        if not needs_agg and chart.chart_type not in ("stat", "gauge"):
+            # Raw projected columns from the saved result — map by field names.
+            raw = await self._execute_with_sample_sql(chart, saved_sql)
+            # _execute_with_sample_sql already mapped; if fields exist, remap.
+            return raw
+
+        # Build SELECT … FROM (saved_sql) AS _aicser_saved with chart mappings.
+        sql = saved_sql.strip().rstrip(";")
+        from_clause = f"({sql}) AS _aicser_saved"
+
+        stmt = select(DataSource).where(DataSource.id == chart.data_source_id)
+        res = await self.db.execute(stmt)
+        data_source = res.scalar_one_or_none()
+        if not data_source:
+            raise ValueError("Data source not found")
+
+        filters = chart_query.get("filters") or []
+        metric_filters = chart_query.get("metricFilters") or []
+        group_field = chart_query.get("groupField")
+        sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
+        sort_order = self._normalize_sort_order(chart_query.get("sortOrder"))
+        limit = 5000
+        try:
+            if chart_query.get("limit") is not None:
+                limit = max(1, int(chart_query.get("limit")))
+        except Exception:
+            limit = 5000
+
+        y_metrics_list = list(y_metrics) + list(y_metrics_secondary)
+        n_primary = len(y_metrics) if y_metrics is not None else 1
+        has_y_metrics_defined = "yMetrics" in chart_query
+        order_clause = self._build_order_clause(
+            sort_by, sort_order, x_field, has_y_metrics=len(y_metrics_list) > 0
+        )
+
+        # Stat without x: single aggregate row
+        if chart.chart_type in ("stat", "gauge") and not x_field:
+            metric_aliases = []
+            select_fields = []
+            if y_metrics_list:
+                for i, ym in enumerate(y_metrics_list):
+                    expr = self._build_metric_sql(ym) or "COUNT(*)"
+                    alias = f"y_{i}"
+                    select_fields.append(f"{expr} AS {alias}")
+                    metric_aliases.append({"alias": alias, "name": self._metric_series_name(ym)})
+            else:
+                select_fields.append("COUNT(*) AS y")
+                metric_aliases.append({"alias": "y", "name": "Value"})
+            where_clause = self._apply_filters_db(filters if isinstance(filters, list) else [])
+            sql_exec = f"SELECT {', '.join(select_fields)} FROM {from_clause} {where_clause} LIMIT 1"
+            ds_dict = {
+                "id": data_source.id,
+                "type": data_source.type,
+                "db_type": data_source.db_type,
+                "format": data_source.format,
+                "schema": data_source.schema or {},
+                "connection_config": data_source.connection_config,
+                "project_id": str(data_source.project_id),
+                "user_id": str(data_source.user_id) if data_source.user_id else None,
+                "file_path": data_source.file_path,
+            }
+            multi = get_multi_engine_query_service()
+            exec_res = await multi.execute_query(sql_exec, ds_dict)
+            if not exec_res.get("success"):
+                raise Exception(f"Query execution failed: {exec_res.get('error')}")
+            rows = exec_res.get("data", []) or []
+            if not rows:
+                return {"value": 0}
+            row0 = rows[0]
+            alias = metric_aliases[0]["alias"]
+            return {"value": row0.get(alias) if isinstance(row0, dict) else None}
+
+        return await self._execute_db_source(
+            data_source,
+            x_field,
+            chart_query.get("aggregate"),
+            None if y_metrics else chart_query.get("yMetric"),
+            y_metrics_list,
+            has_y_metrics_defined,
+            group_field,
+            order_clause,
+            n_primary=n_primary,
+            x_grain=chart_query.get("xGrain"),
+            filters=filters if isinstance(filters, list) else [],
+            metric_filters=metric_filters if isinstance(metric_filters, list) else [],
+            limit=limit,
+            series_limit=chart_query.get("seriesLimit"),
+            chart_query={**chart_query, "tableName": "_aicser_saved", "joins": []},
+            from_clause_override=from_clause,
+        )
 
     def _map_sql_rows_to_chart_data(
-        self, rows: List[Dict[str, Any]], chart_type: Optional[str] = None
+        self,
+        rows: List[Dict[str, Any]],
+        chart_type: Optional[str] = None,
+        chart_query: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Map raw SQL result rows to the renderer's {x, y, series} / {value} shape.
 
-        compiled_semantic_sql (AI planner) and saved/template SQL return columns
-        under their real aliased names — e.g. `SELECT "product_type", SUM(...) AS
-        total` — NOT the literal columns ``x``/``y`` the dashboard renderer reads.
-        Reading ``row["x"]`` there yields ``None`` for every row, which is why
-        such widgets rendered all-``null`` categories / empty bars. We map by
-        position instead:
-
-          * stat            -> single headline value (``value``/``y`` alias, else first column)
-          * legacy x/y SQL  -> honor explicit ``x``/``y`` aliases (template charts)
+        Prefer explicit chart_query field mappings when column names match.
+        Otherwise:
+          * stat            -> single headline value
+          * legacy x/y SQL  -> honor explicit ``x``/``y`` aliases
           * grouped result  -> first column = category (x), remaining columns = series
         """
         if not rows:
@@ -1447,10 +1766,50 @@ class ChartService:
 
         first_row = rows[0]
         columns = list(first_row.keys())
+        cq = chart_query or {}
 
-        # Stat KPIs come from a single-row aggregate with no category dimension,
-        # so positional "first column = x" would consume the headline metric.
+        # Explicit Build mappings against result columns (saved-query / custom SQL).
+        x_field = cq.get("x") or cq.get("xField")
+        y_metrics = cq.get("yMetrics") or []
+        group_field = cq.get("groupField") or cq.get("legend")
+        col_lower = {str(c).lower(): c for c in columns}
+
+        def resolve_col(name: Optional[str]) -> Optional[str]:
+            if not name:
+                return None
+            if name in columns:
+                return name
+            return col_lower.get(str(name).lower())
+
+        x_col = resolve_col(x_field)
+        g_col = resolve_col(group_field)
+
         if chart_type == "stat":
+            if y_metrics and isinstance(y_metrics[0], dict):
+                y_col = resolve_col(y_metrics[0].get("field"))
+                if y_col:
+                    vals = [row.get(y_col) for row in rows if row.get(y_col) is not None]
+                    agg = str(y_metrics[0].get("aggregation") or "").lower()
+                    if not vals:
+                        return {"value": None}
+                    nums = []
+                    for v in vals:
+                        try:
+                            nums.append(float(v))
+                        except (TypeError, ValueError):
+                            continue
+                    if not nums:
+                        return {"value": vals[-1]}
+                    if agg in ("sum", "count", "distinct_count"):
+                        total = sum(nums)
+                        return {"value": int(round(total)) if agg.startswith("count") else total}
+                    if agg in ("avg", "average", "mean"):
+                        return {"value": sum(nums) / len(nums)}
+                    if agg == "max":
+                        return {"value": max(nums)}
+                    if agg == "min":
+                        return {"value": min(nums)}
+                    return {"value": nums[-1]}
             if "value" in first_row:
                 return {"value": first_row["value"]}
             if "y" in columns:
@@ -1458,6 +1817,28 @@ class ChartService:
                 return {"value": y_vals[-1] if y_vals else None}
             primary = columns[0] if columns else None
             return {"value": first_row.get(primary) if primary else None}
+
+        if x_col and y_metrics:
+            metric_series = []
+            for ym in y_metrics:
+                if not isinstance(ym, dict):
+                    continue
+                y_col = resolve_col(ym.get("field"))
+                if not y_col:
+                    continue
+                metric_series.append({
+                    "name": self._metric_series_name(ym),
+                    "data": [row.get(y_col) for row in rows],
+                })
+            if metric_series:
+                result = {
+                    "x": [row.get(x_col) for row in rows],
+                    "y": metric_series[0]["data"],
+                    "series": metric_series,
+                }
+                if g_col:
+                    result["group_field"] = [row.get(g_col) for row in rows]
+                return result
 
         # Template / saved SQL that already aliases its output as x / y.
         if "x" in columns or "y" in columns:
@@ -1481,6 +1862,74 @@ class ChartService:
             for col in series_cols
         ]
         return {"x": x_vals, "y": series[0]["data"], "series": series}
+
+    def _sort_and_limit_sql_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        chart_query: Dict[str, Any],
+        chart_type: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Apply sortBy/sortOrder/limit for the raw SQL (aggregation=none) path."""
+        if not rows:
+            return rows
+
+        cq = chart_query or {}
+        sort_by = self._normalize_sort_by(cq.get("sortBy"))
+        sort_order = self._normalize_sort_order(cq.get("sortOrder"))
+        ascending = sort_order != "desc"
+
+        columns = list(rows[0].keys())
+        col_lower = {str(c).lower(): c for c in columns}
+
+        def resolve(name: Optional[str]) -> Optional[str]:
+            if not name:
+                return None
+            if name in columns:
+                return name
+            return col_lower.get(str(name).lower())
+
+        x_col = resolve(cq.get("x") or cq.get("xField"))
+        y_metrics = cq.get("yMetrics") or []
+        y_col = None
+        if y_metrics and isinstance(y_metrics[0], dict):
+            y_col = resolve(y_metrics[0].get("field"))
+        if not y_col:
+            y_col = resolve("y") or (columns[1] if len(columns) > 1 else None)
+
+        sort_col: Optional[str] = None
+        if sort_by in (None, "", "record_order"):
+            sort_col = None
+        elif sort_by == "x":
+            sort_col = x_col or columns[0]
+        elif sort_by == "y":
+            sort_col = y_col
+        else:
+            sort_col = resolve(str(sort_by))
+
+        out = list(rows)
+        if sort_col:
+            def sort_key(row: Dict[str, Any]):
+                val = row.get(sort_col)
+                if val is None:
+                    return (1, "")
+                if isinstance(val, (int, float)):
+                    return (0, val)
+                try:
+                    return (0, float(val))
+                except (TypeError, ValueError):
+                    return (0, str(val).lower())
+
+            out.sort(key=sort_key, reverse=not ascending)
+
+        limit = 5000
+        try:
+            if cq.get("limit") is not None:
+                limit = max(1, int(cq.get("limit")))
+        except Exception:
+            limit = 5000
+        if chart_type not in ("stat", "gauge"):
+            out = out[:limit]
+        return out
 
     def _sample_template_fallback_result(self, chart: Chart) -> Dict[str, Any]:
         """
@@ -1522,10 +1971,21 @@ class ChartService:
             labels = ["Segment A", "Segment B", "Segment C", "Segment D"]
 
         y_vals = [value(i * 3, minimum=10, spread=240) for i, _ in enumerate(labels)]
+        # Never use the widget title as a series/column name — tables would show
+        # "Breakdown by Submitted Date" as the measure header.
+        cq = chart.chart_query if isinstance(chart.chart_query, dict) else {}
+        y_metrics = cq.get("yMetrics") or []
+        series_name = "Value"
+        if y_metrics and isinstance(y_metrics[0], dict):
+            series_name = self._metric_series_name(y_metrics[0])
+        elif cq.get("yMetric"):
+            series_name = str(cq.get("yMetric")).replace("_", " ").title()
+        elif cq.get("aggregate"):
+            series_name = str(cq.get("aggregate")).replace("_", " ").title()
         return {
             "x": labels,
             "y": y_vals,
-            "series": [{"name": chart.title or "Value", "data": y_vals}],
+            "series": [{"name": series_name, "data": y_vals}],
         }
 
     # =========================================================
@@ -1543,19 +2003,26 @@ class ChartService:
         limit: int = 5000,
         series_limit: Optional[int] = None,
         chart_query: Optional[Dict] = None,
+        from_clause_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         chart_query = chart_query or {}
         schema_info = data_source.schema or {}
-        table, schema = self._resolve_table_from_chart(chart_query, schema_info)
-
-        if not table:
-            raise ValueError("Table name missing in data source schema")
-
         joins = chart_query.get("joins") if isinstance(chart_query.get("joins"), list) else []
-        display_dimension = self._infer_fk_display_dimension(schema_info, self._bare_table_name(table), x_field, joins)
-        if display_dimension and display_dimension.get("join"):
-            joins = [*joins, display_dimension["join"]]
-        from_clause = self._build_from_clause(f"{schema}.{table}", joins)
+
+        if from_clause_override:
+            from_clause = from_clause_override
+            table, schema = "_aicser_saved", "main"
+            display_dimension = None
+        else:
+            table, schema = self._resolve_table_from_chart(chart_query, schema_info)
+
+            if not table:
+                raise ValueError("Table name missing in data source schema")
+
+            display_dimension = self._infer_fk_display_dimension(schema_info, self._bare_table_name(table), x_field, joins)
+            if display_dimension and display_dimension.get("join"):
+                joins = [*joins, display_dimension["join"]]
+            from_clause = self._build_from_clause(f"{schema}.{table}", joins)
         
         # USE MultiEngineQueryService for external databases
         ds_dict = {
@@ -1657,7 +2124,7 @@ class ChartService:
                 select_fields.append(f"{expr} AS {alias}")
                 metric_aliases.append({
                     "alias": alias,
-                    "name": ym.get("label") or field or agg_type.capitalize()
+                    "name": self._metric_series_name(ym)
                 })
         elif has_y_metrics_defined:
             # yMetrics explicitly provided but empty - return 0s so we see labels but no values
@@ -1786,10 +2253,16 @@ class ChartService:
                     continue
 
                 val = 0
+                if agg_type in ("count_distinct",):
+                    agg_type = "distinct_count"
                 if agg_type == "count":
-                    val = len(df)
+                    # Match SQL COUNT(field) = non-null count when a field is chosen
+                    if field and field in df.columns:
+                        val = int(pd.to_numeric(df[field], errors="coerce").count())
+                    else:
+                        val = len(df)
                 elif agg_type == "distinct_count":
-                    val = df[field].nunique() if field in df.columns else 0
+                    val = int(df[field].nunique(dropna=True)) if field and field in df.columns else 0
                 elif field in df.columns:
                     col_data = pd.to_numeric(df[field], errors='coerce').dropna()
                     if not col_data.empty:
@@ -1897,7 +2370,7 @@ class ChartService:
                     
                     output_metrics.append({
                         "alias": alias,
-                        "name": ym.get("label") or field or agg_type.capitalize(),
+                        "name": self._metric_series_name(ym),
                         "field": field,
                         "aggregation": agg_type
                     })
@@ -1967,6 +2440,10 @@ class ChartService:
             primary_y = "y" if "y" in grouped.columns else "y_0"
             if primary_y in grouped.columns:
                 grouped = grouped.sort_values(by=primary_y, ascending=(sort_order == "asc"))
+        elif isinstance(sort_by, str) and sort_by.startswith("y_") and sort_by in grouped.columns:
+            grouped = grouped.sort_values(by=sort_by, ascending=(sort_order == "asc"))
+        elif sort_by == "group" and group_field and group_field in grouped.columns:
+            grouped = grouped.sort_values(by=group_field, ascending=(sort_order == "asc"))
             
         # Group field secondary sort
         if group_field and group_field != x_field and group_field in grouped.columns:
@@ -2100,22 +2577,121 @@ class ChartService:
     def _build_order_clause(self, sort_by: str, sort_order: str, x_field: Optional[str], has_y_metrics: bool = False) -> str:
         sort_by = self._normalize_sort_by(sort_by)
         sort_order = self._normalize_sort_order(sort_order)
+        direction = "ASC" if sort_order == "asc" else "DESC"
         if sort_by == "x" and x_field:
             # Order by the "x" output alias, not the raw column: when date
             # bucketing (x_grain) is applied, SELECT/GROUP BY use date_trunc(...)
             # AS x, and ordering by the raw column breaks on engines (DuckDB)
             # that require it to appear in GROUP BY. The alias matches both cases.
-            return f"ORDER BY x {'ASC' if sort_order == 'asc' else 'DESC'}"
+            return f"ORDER BY x {direction}"
         if sort_by == "y":
             # If multiple metrics, sort by the first one y_0, else y
             alias = "y_0" if has_y_metrics else "y"
-            return f"ORDER BY {alias} {'DESC' if sort_order == 'desc' else 'ASC'}"
+            return f"ORDER BY {alias} {direction}"
+        # Sort by a specific metric alias (y_1, y_2, …)
+        if isinstance(sort_by, str) and sort_by.startswith("y_") and sort_by[2:].isdigit():
+            return f"ORDER BY {sort_by} {direction}"
+        if sort_by == "group":
+            return f"ORDER BY group_field {direction}"
         return ""
 
     def _normalize_sort_by(self, sort_by: Optional[str]) -> str:
-        if sort_by in (None, "", "order", "record_order"): return "record_order"
-        return sort_by if sort_by in ("x", "y") else "record_order"
-    
+        if sort_by in (None, "", "order", "record_order"):
+            return "record_order"
+        if sort_by in ("x", "y", "group"):
+            return sort_by
+        if isinstance(sort_by, str) and sort_by.startswith("y_") and sort_by[2:].isdigit():
+            return sort_by
+        return "record_order"
+
+    def _normalize_stat_timeseries_result(self, chart: Chart, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Collapse a period series into a KPI headline while keeping sparkline data.
+
+        Industry KPI pattern: big number = full-window aggregate; sparkline = buckets;
+        comparison = prior bucket (calendar PoP may override later).
+        """
+        y_data = result.get("y") or []
+        series = result.get("series") or []
+        series_data = series[0].get("data") if series and isinstance(series[0], dict) else []
+        points = [p for p in (y_data or series_data or []) if p is not None]
+        if not points:
+            return result
+
+        cq = chart.chart_query if isinstance(chart.chart_query, dict) else {}
+        metrics = cq.get("yMetrics") or []
+        agg = ""
+        if metrics and isinstance(metrics[0], dict):
+            agg = str(metrics[0].get("aggregation") or "").lower()
+        if not agg:
+            agg = str(cq.get("aggregate") or "").lower()
+
+        nums = []
+        for p in points:
+            try:
+                nums.append(float(p))
+            except (TypeError, ValueError):
+                continue
+        if not nums:
+            return result
+
+        if agg in ("sum", "count", "distinct_count"):
+            val: Any = sum(nums)
+            if agg in ("count", "distinct_count") and all(float(n).is_integer() for n in nums):
+                val = int(round(val))
+        elif agg in ("avg", "average", "mean"):
+            val = sum(nums) / len(nums)
+        elif agg == "max":
+            val = max(nums)
+        elif agg == "min":
+            val = min(nums)
+        else:
+            # Latest-period KPIs (no explicit agg / rate metrics)
+            val = nums[-1]
+
+        normalized: Dict[str, Any] = {"value": val}
+        if y_data:
+            normalized["y"] = y_data
+        if series:
+            normalized["series"] = series
+        if result.get("x") is not None:
+            normalized["x"] = result.get("x")
+        if len(nums) >= 2:
+            normalized["comparisonValue"] = nums[-2]
+            normalized["comparisonLabel"] = "prior period"
+            normalized["sparklineValues"] = nums
+        return normalized
+
+    def _metric_series_name(self, ym: Dict) -> str:
+        """Human-readable series label for charts/tables (BI Title Case, not widget title)."""
+        if ym.get("label"):
+            return str(ym["label"])
+        field = ym.get("field")
+        agg = (ym.get("aggregation") or "count").lower()
+        # Prefer clean field labels in tables ("Amount") over "Sum of amount"
+        pretty_field = str(field or "").replace("_", " ").strip()
+        if pretty_field:
+            pretty_field = " ".join(w.capitalize() for w in pretty_field.split())
+        if agg in ("none", ""):
+            return pretty_field or "Value"
+        if agg == "count" and not field:
+            return "Count"
+        if agg in ("sum",) and pretty_field:
+            return pretty_field
+        if agg in ("avg", "average", "mean") and pretty_field:
+            return f"Avg {pretty_field}"
+        if agg in ("count", "distinct_count") and pretty_field:
+            return f"{pretty_field} Count" if not pretty_field.lower().endswith("count") else pretty_field
+        pretty = {
+            "count": "Count",
+            "sum": "Sum",
+            "avg": "Avg",
+            "mean": "Avg",
+            "min": "Min",
+            "max": "Max",
+            "distinct_count": "Distinct Count",
+        }.get(agg, agg.capitalize())
+        return f"{pretty} of {pretty_field}" if pretty_field else pretty
+
     def _normalize_sort_order(self, sort_order: Optional[str]) -> str:
         if not sort_order: return "desc"
         return "asc" if sort_order.lower() in ("asc", "ascending") else "desc"
@@ -2327,13 +2903,28 @@ class ChartService:
         if agg_type is True or agg_type == "true":
             # If it's just a toggle, we look at y_metric. 
             # If y_metric is one of the valid functions, we use it.
-            if y_metric in ["count", "sum", "avg", "max", "min", "distinct_count"]:
+            if y_metric in ["count", "sum", "avg", "max", "min", "distinct_count", "count_distinct"]:
                 agg_type = y_metric
                 y_metric = None # It was the function, not the field
             else:
                 agg_type = "count"
         elif agg_type is False or agg_type == "false":
             return "COUNT(*)" # Default fallback
+
+        # Normalize aliases / casing
+        if isinstance(agg_type, str):
+            agg_type = agg_type.strip().lower()
+        if agg_type == "count_distinct":
+            agg_type = "distinct_count"
+        if agg_type in ("mean", "average"):
+            agg_type = "avg"
+
+        # Don't summarize — emit the bare column (caller must GROUP BY appropriately,
+        # or skip re-aggregation when all metrics are none).
+        if agg_type in ("none", "raw", ""):
+            if y_metric and self._is_valid_field_name(y_metric):
+                return self._quote_identifier(y_metric)
+            return "COUNT(*)"
 
         valid_aggregates = ["count", "sum", "avg", "max", "min", "distinct_count"]
         if agg_type not in valid_aggregates:

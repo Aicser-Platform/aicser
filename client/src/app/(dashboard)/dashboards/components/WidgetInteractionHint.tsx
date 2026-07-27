@@ -8,8 +8,13 @@ import { getDrillPath, getInteractionMode } from '../utils/drillDownHelpers';
 import { hasDrillThrough } from '../utils/drillThroughHelpers';
 import type { WidgetInstance } from '../stores/useDashboardStore';
 
+/** KPI / chrome widgets never show drill interaction chrome. */
+const HINT_EXCLUDED = new Set(['stat', 'gauge', 'text', 'divider', 'image', 'slicer', 'filter']);
+
 export function WidgetInteractionHint({ widget }: { widget: WidgetInstance }) {
   const t = useTranslations('dashboards');
+  if (HINT_EXCLUDED.has(widget.chartType)) return null;
+
   const drillPath = getDrillPath(widget);
   const mode = getInteractionMode(widget);
   const drillThrough = hasDrillThrough(widget);

@@ -13,6 +13,8 @@ export interface Project {
     created_at: string;
     updated_at: string;
     settings?: Record<string, any>;
+    icon_emoji?: string | null;
+    color?: string | null;
 }
 
 export interface CreateProjectPayload {
@@ -28,6 +30,8 @@ export interface UpdateProjectPayload {
     description?: string;
     is_public?: boolean;
     is_active?: boolean;
+    icon_emoji?: string | null;
+    color?: string | null;
 }
 // ── Project member management ─────────────────────────────────────────────────
 

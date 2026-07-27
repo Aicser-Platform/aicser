@@ -16,6 +16,8 @@ const LOGOS: Record<string, string> = {
   ollama: 'https://cdn.simpleicons.org/ollama/000000',
   groq: 'https://cdn.simpleicons.org/groq/F4A261',
   cohere: 'https://cdn.simpleicons.org/cohere/FF6B35',
+  deepseek: 'https://cdn.simpleicons.org/deepseek/4D6BFE',
+  openrouter: 'https://cdn.simpleicons.org/openrouter/6467F2',
 };
 
 export const AI_PROVIDER_LOGOS = LOGOS;

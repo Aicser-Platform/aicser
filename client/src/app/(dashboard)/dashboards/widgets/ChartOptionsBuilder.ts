@@ -18,6 +18,7 @@ import {
 import { buildSeriesForType } from './ChartSeriesBuilder';
 import { getPieLayout } from './chartLayoutUtils';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
+import { orientDataForHorizontalBar } from '@/components/charts/normalizeMultiMetricChartQuery';
 
 /** Format a numeric value according to the widget's configured valueFormat. */
 function fmtVal(v: unknown, valueFormat?: string): string {
@@ -94,9 +95,8 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   const effectivePalette = paletteName === 'custom' ? 'default' : paletteName;
   let chartColors = getColorsFromPalette(effectivePalette, colorCount);
 
-  if (colorCount > 8 && effectivePalette === 'default') {
-    chartColors = getColorsFromPalette('spectrum', colorCount);
-  }
+  // Beyond curated 20, extend via golden-angle (getColorsFromPalette) — keep brand default
+  // instead of switching to spectrum for mid-size category counts.
 
   // If a custom generated palette is picked, use it
   if (
@@ -215,7 +215,12 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     };
   }
 
-  const series = buildSeriesForType(type, data, finalConfig, chartColors);
+  const seriesRenderData =
+    type === 'bar' && finalConfig.barChartType === 'horizontal'
+      ? orientDataForHorizontalBar(data)
+      : data;
+
+  const series = buildSeriesForType(type, seriesRenderData, finalConfig, chartColors);
   let seriesArray = Array.isArray(series) ? series : [series];
 
   // ─── Legend series sort & limit ───────────────────────────────────────────
@@ -238,6 +243,33 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   const supportsMarkLines = ['bar', 'line', 'area', 'scatter', 'waterfall'].includes(type);
   if (supportsMarkLines && seriesArray.length > 0) {
     const markLineData: any[] = [];
+    /** Prefer data.y; fall back to first series (newer API often omits top-level y). */
+    const resolveYValues = (): number[] => {
+      const fromY = (data.y || []).map(Number).filter((v: number) => !isNaN(v));
+      if (fromY.length > 0) return fromY;
+      const fromSeries = (data.series?.[0]?.data || []).map(Number).filter((v: number) => !isNaN(v));
+      if (fromSeries.length > 0) return fromSeries;
+      // Multi-series: sum values per category index for overlays
+      const series = data.series || [];
+      if (series.length === 0) return [];
+      const len = Math.max(...series.map((s) => (s.data || []).length), 0);
+      const sums: number[] = [];
+      for (let i = 0; i < len; i++) {
+        let sum = 0;
+        let n = 0;
+        for (const s of series) {
+          const v = Number(s.data?.[i]);
+          if (!isNaN(v)) {
+            sum += v;
+            n += 1;
+          }
+        }
+        if (n > 0) sums.push(sum);
+      }
+      return sums;
+    };
+    const allY = resolveYValues();
+    const xCats = data.x || [];
 
     // Configurable reference lines (array of { value, label, color, type })
     const refLines: any[] = (config as any).referenceLines || [];
@@ -253,47 +285,51 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     });
 
     // Auto average line
-    if ((config as any).showAverageLine) {
-      const allY = (data.y || []).map(Number).filter((v: number) => !isNaN(v));
-      if (allY.length > 0) {
-        const avg = allY.reduce((a: number, b: number) => a + b, 0) / allY.length;
-        markLineData.push({
-          yAxis: avg,
-          name: 'Avg',
-          lineStyle: { color: '#52c41a', type: 'dashed', width: 1.5 },
-          label: { formatter: `Avg: ${avg.toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'end', fontSize: 11 },
-        });
-      }
+    if ((config as any).showAverageLine && allY.length > 0) {
+      const avg = allY.reduce((a: number, b: number) => a + b, 0) / allY.length;
+      markLineData.push({
+        yAxis: avg,
+        name: 'Avg',
+        lineStyle: { color: '#52c41a', type: 'dashed', width: 1.5 },
+        label: { formatter: `Avg: ${fmtVal(avg, valueFormatForSeries(finalConfig))}`, position: 'end', fontSize: 11 },
+      });
     }
 
-    // Trend line (linear regression) for line/area/scatter
-    if ((config as any).showTrendLine && ['line', 'area', 'scatter'].includes(type)) {
-      const allY = (data.y || []).map(Number).filter((v: number) => !isNaN(v));
-      if (allY.length >= 2) {
-        // Simple linear regression: y = mx + b
-        const n = allY.length;
-        const xArr = allY.map((_: number, i: number) => i);
-        const sumX = xArr.reduce((a: number, b: number) => a + b, 0);
-        const sumY = allY.reduce((a: number, b: number) => a + b, 0);
-        const sumXY = xArr.reduce((s: number, x: number, i: number) => s + x * allY[i], 0);
-        const sumX2 = xArr.reduce((s: number, x: number) => s + x * x, 0);
-        const denom = n * sumX2 - sumX * sumX || 1;
-        const m = (n * sumXY - sumX * sumY) / denom;
-        const b = (sumY - m * sumX) / n;
-        const trendData = xArr.map((x: number) => m * x + b);
-
-        seriesArray.push({
-          type: 'line',
-          name: 'Trend',
-          data: trendData,
-          smooth: true,
+    // Trend as a markLine segment (avoids a phantom series that races tooltip getRawIndex)
+    if ((config as any).showTrendLine && ['line', 'area', 'scatter', 'bar'].includes(type) && allY.length >= 2) {
+      const n = allY.length;
+      const xArr = allY.map((_: number, i: number) => i);
+      const sumX = xArr.reduce((a: number, b: number) => a + b, 0);
+      const sumY = allY.reduce((a: number, b: number) => a + b, 0);
+      const sumXY = xArr.reduce((s: number, x: number, i: number) => s + x * allY[i], 0);
+      const sumX2 = xArr.reduce((s: number, x: number) => s + x * x, 0);
+      const denom = n * sumX2 - sumX * sumX || 1;
+      const m = (n * sumXY - sumX * sumY) / denom;
+      const b0 = (sumY - m * sumX) / n;
+      const yStart = m * 0 + b0;
+      const yEnd = m * (n - 1) + b0;
+      const xStart = xCats[0] ?? 0;
+      const xEnd = xCats[n - 1] ?? n - 1;
+      markLineData.push([
+        {
+          coord: [xStart, yStart],
           symbol: 'none',
           lineStyle: { color: '#722ed1', type: 'dashed', width: 2 },
-          z: 5,
-          silent: true,
-          tooltip: { show: false },
-        });
-      }
+        },
+        {
+          coord: [xEnd, yEnd],
+          symbol: 'none',
+          name: 'Trend',
+          label: {
+            show: true,
+            formatter: 'Trend',
+            position: 'insideEndTop',
+            fontSize: 11,
+            color: '#722ed1',
+          },
+          lineStyle: { color: '#722ed1', type: 'dashed', width: 2 },
+        },
+      ]);
     }
 
     if (markLineData.length > 0 && seriesArray[0]) {
@@ -302,41 +338,69 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
         markLine: {
           silent: true,
           symbol: ['none', 'none'],
+          animation: false,
           data: markLineData,
         },
       };
     }
 
-    // ─── Anomaly highlighting via IQR ─────────────────────────────────────
-    if ((config as any).showAnomalies && ['line', 'area', 'bar', 'scatter'].includes(type)) {
-      const allY = (data.y || []).map(Number).filter((v: number) => !isNaN(v));
-      if (allY.length >= 4) {
-        const sorted = [...allY].sort((a, b) => a - b);
-        const q1 = sorted[Math.floor(sorted.length * 0.25)];
-        const q3 = sorted[Math.floor(sorted.length * 0.75)];
-        const iqr = q3 - q1;
-        const lo = q1 - 1.5 * iqr;
-        const hi = q3 + 1.5 * iqr;
+    // ─── Anomaly highlighting via IQR (fallback: modified z-score) ─────────
+    if ((config as any).showAnomalies && ['line', 'area', 'bar', 'scatter'].includes(type) && allY.length >= 3) {
+      const sorted = [...allY].sort((a, b) => a - b);
+      const q1 = sorted[Math.floor(sorted.length * 0.25)];
+      const q3 = sorted[Math.floor(sorted.length * 0.75)];
+      const iqr = q3 - q1;
+      let lo = q1 - 1.5 * iqr;
+      let hi = q3 + 1.5 * iqr;
 
-        const markPointData = allY
-          .map((v: number, i: number) => (v < lo || v > hi ? { coord: [data.x?.[i] ?? i, v] } : null))
-          .filter(Boolean);
+      // When IQR is flat (few distinct values), fall back to mean ± 2σ
+      if (iqr === 0 || !Number.isFinite(iqr)) {
+        const mean = allY.reduce((a, b) => a + b, 0) / allY.length;
+        const variance = allY.reduce((a, v) => a + (v - mean) ** 2, 0) / allY.length;
+        const sd = Math.sqrt(variance);
+        lo = mean - 2 * (sd || Math.abs(mean) * 0.01 || 1);
+        hi = mean + 2 * (sd || Math.abs(mean) * 0.01 || 1);
+      }
 
-        if (markPointData.length > 0 && seriesArray[0]) {
-          seriesArray[0] = {
-            ...seriesArray[0],
-            markPoint: {
-              data: markPointData,
-              symbol: 'circle',
-              symbolSize: 12,
-              itemStyle: { color: '#ff4d4f', opacity: 0.85 },
-              label: { show: false },
-              tooltip: {
-                formatter: (p: any) => `<strong>Outlier</strong><br/>Value: ${fmtVal(p.value[1], valueFormatForSeries(finalConfig, p.seriesName))}`,
+      const isCategoryX = type !== 'scatter';
+      const markPointData = allY
+        .map((v: number, i: number) => {
+          if (!(v < lo || v > hi)) return null;
+          if (isCategoryX) {
+            return {
+              name: 'Outlier',
+              xAxis: xCats[i] ?? i,
+              yAxis: v,
+              value: v,
+            };
+          }
+          return {
+            name: 'Outlier',
+            coord: [xCats[i] ?? i, v],
+            value: v,
+          };
+        })
+        .filter(Boolean);
+
+      if (markPointData.length > 0 && seriesArray[0]) {
+        seriesArray[0] = {
+          ...seriesArray[0],
+          markPoint: {
+            silent: true,
+            animation: false,
+            data: markPointData,
+            symbol: 'circle',
+            symbolSize: 12,
+            itemStyle: { color: '#ff4d4f', opacity: 0.85 },
+            label: { show: false },
+            tooltip: {
+              formatter: (p: any) => {
+                const val = Array.isArray(p?.value) ? p.value[p.value.length - 1] : p?.value;
+                return `<strong>Outlier</strong><br/>Value: ${fmtVal(val, valueFormatForSeries(finalConfig, p?.seriesName))}`;
               },
             },
-          };
-        }
+          },
+        };
       }
     }
   }
@@ -399,15 +463,23 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       ((type === 'line' || type === 'area') && finalConfig.lineStackMode === 'stacked-100');
     const isHorizontalBar = type === 'bar' && finalConfig.barChartType === 'horizontal';
 
+    // ECharts category index 0 is at the *bottom* for horizontal bars. Reverse so
+    // SQL ORDER BY / sortBy places the first row at the top (industry default).
+    // Series were already built from oriented data above — axes must match.
+    const orientedData =
+      type === 'bar' && finalConfig.barChartType === 'horizontal'
+        ? orientDataForHorizontalBar(data)
+        : data;
+
     // Configure X-axis with percentage support for horizontal stacked charts
     baseOptions.xAxis = [
       {
-        ...getXAxisConfig(data, finalConfig, type),
+        ...getXAxisConfig(orientedData, finalConfig, type),
       },
     ];
 
     // Support dual Y-axes if secondary series exist (including area charts)
-    const hasSecondary = data.secondarySeries && data.secondarySeries.length > 0;
+    const hasSecondary = orientedData.secondarySeries && orientedData.secondarySeries.length > 0;
     // const isHorizontalBar = type === 'bar' && finalConfig.barChartType === 'horizontal';
 
     if (hasSecondary) {
@@ -417,26 +489,26 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
           ? finalConfig.showYAxisLegend && finalConfig.barChartType === 'combo-line'
           : finalConfig.showYAxisLegend;
 
-      const primaryName = shouldShowYAxisLabels ? (config.yAxisLabel !== undefined ? config.yAxisLabel : data.series?.[0]?.name || '') : '';
-      const secondaryName = shouldShowYAxisLabels ? (config.yAxisSecondaryLabel !== undefined ? config.yAxisSecondaryLabel : data.secondarySeries?.[0]?.name || '') : '';
+      const primaryName = shouldShowYAxisLabels ? (config.yAxisLabel !== undefined ? config.yAxisLabel : orientedData.series?.[0]?.name || '') : '';
+      const secondaryName = shouldShowYAxisLabels ? (config.yAxisSecondaryLabel !== undefined ? config.yAxisSecondaryLabel : orientedData.secondarySeries?.[0]?.name || '') : '';
 
       // For horizontal bar charts, avoid duplicate category axes on both sides
       if (isHorizontalBar && finalConfig.barChartType !== 'combo-line') {
         // Only use single Y-axis for horizontal bar charts (unless it's combo-line)
         baseOptions.yAxis = [
           {
-            ...getYAxisConfig(finalConfig, data),
+            ...getYAxisConfig(finalConfig, orientedData),
             name: primaryName,
           },
         ];
       } else {
         baseOptions.yAxis = [
           {
-            ...getYAxisConfig(finalConfig, data),
+            ...getYAxisConfig(finalConfig, orientedData),
             name: primaryName,
           },
           {
-            ...getYAxisConfig(finalConfig, data),
+            ...getYAxisConfig(finalConfig, orientedData),
             name: secondaryName,
             position: 'right',
             splitLine: { show: false },
@@ -455,7 +527,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     } else {
       baseOptions.yAxis = [
         {
-          ...getYAxisConfig(finalConfig, data),
+          ...getYAxisConfig(finalConfig, orientedData),
         },
       ];
     }
@@ -489,7 +561,11 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       left: 'center',
       bottom: '5%',
       inRange: {
-        color: ['#e0f3f8', CHART_COLORS.primary, '#004a4d'],
+        color: [
+          (config as any).colorFrom || '#e0f3f8',
+          (config as any).colorMid || CHART_COLORS.primary,
+          (config as any).colorTo || '#004a4d',
+        ],
       },
     };
   }

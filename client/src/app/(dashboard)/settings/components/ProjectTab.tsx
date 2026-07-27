@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Skeleton, Space, Typography, message } from 'antd';
+import { Button, Empty, Skeleton, Space, message } from 'antd';
 import { AppstoreOutlined, BarsOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useQueryClient, useQueries } from '@tanstack/react-query';
@@ -16,8 +16,6 @@ import { listDataSources } from '@/api/dataSources';
 import { ProjectCard, type ProjectCardStats } from '@/components/Project/ProjectCard';
 import type { Project } from '@/types/project';
 import type { TabComponentProps } from '../page';
-
-const { Title, Text } = Typography;
 
 const SKELETON_COUNT = 6;
 const STATS_STALE_TIME = 5 * 60 * 1000;
@@ -93,13 +91,7 @@ export const ProjectTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Title level={4} style={{ marginBottom: 4 }}>
-            Projects
-          </Title>
-          <Text type="secondary">All projects in this organization</Text>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <Space.Compact>
           <Button
             type={layout === 'grid' ? 'primary' : 'default'}

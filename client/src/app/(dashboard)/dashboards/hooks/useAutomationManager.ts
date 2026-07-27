@@ -25,6 +25,8 @@ export interface ScheduledEmail {
   timezone: string;
   created_at: string;
   updated_at: string;
+  data_source_id?: string | null;
+  refresh_data_before_send?: boolean;
 }
 
 export interface AutomationFormState {
@@ -36,6 +38,8 @@ export interface AutomationFormState {
   enabled: boolean;
   subject: string;
   body: string;
+  dataSourceId: string | null;
+  refreshDataBeforeSend: boolean;
 }
 
 export type ScheduleType = 'once' | 'daily' | 'weekly' | 'monthly';
@@ -96,6 +100,8 @@ export const useAutomationManager = ({
     smartSummaryEnabled: boolean;
     subject: string;
     body: string;
+    dataSourceId: string | null;
+    refreshDataBeforeSend: boolean;
   }>({
     scheduleAt: getDefaultScheduleAt(),
     frequency: 'daily',
@@ -103,6 +109,8 @@ export const useAutomationManager = ({
     smartSummaryEnabled: true,
     subject: `Dashboard Update: ${activeDashboardName || 'Dashboard'}`,
     body: `Automated dashboard delivery for ${activeDashboardName || 'Dashboard'} (daily).`,
+    dataSourceId: null,
+    refreshDataBeforeSend: false,
   });
 
   // Automation list modal state
@@ -281,6 +289,8 @@ export const useAutomationManager = ({
           day_of_month: autoSendForm.frequency === 'monthly' ? autoSendForm.scheduleAt.date() : null,
           timezone,
           enabled: true,
+          data_source_id: autoSendForm.dataSourceId,
+          refresh_data_before_send: autoSendForm.refreshDataBeforeSend && !!autoSendForm.dataSourceId,
         }),
       });
 
@@ -345,6 +355,8 @@ export const useAutomationManager = ({
       enabled: Boolean(schedule.enabled),
       subject: schedule.subject || `Dashboard Update: ${activeDashboardName || 'Dashboard'}`,
       body: schedule.body || `Automated dashboard delivery for ${activeDashboardName || 'Dashboard'} (${frequency}).`,
+      dataSourceId: schedule.data_source_id ?? null,
+      refreshDataBeforeSend: Boolean(schedule.refresh_data_before_send),
     });
     setIsEditAutomationOpen(true);
   };
@@ -390,6 +402,9 @@ export const useAutomationManager = ({
           day_of_month: editingAutomationForm.frequency === 'monthly' ? editingAutomationForm.scheduleAt.date() : null,
           timezone: editingAutomationForm.timezone,
           enabled: enabledOverride ?? editingAutomationForm.enabled,
+          data_source_id: editingAutomationForm.dataSourceId,
+          refresh_data_before_send:
+            editingAutomationForm.refreshDataBeforeSend && !!editingAutomationForm.dataSourceId,
         }),
       });
 
@@ -425,6 +440,8 @@ export const useAutomationManager = ({
           day_of_month: frequency === 'monthly' ? schedule.day_of_month : null,
           timezone: schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           enabled,
+          data_source_id: schedule.data_source_id ?? null,
+          refresh_data_before_send: Boolean(schedule.refresh_data_before_send),
         }),
       });
       await refreshScheduledEmails();

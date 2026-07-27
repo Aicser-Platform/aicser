@@ -51,12 +51,43 @@ const NETWORK_OR_RATE_MSG =
   'Connection or server temporarily unavailable. Wait a moment and try again, or check your connection.';
 
 /**
+ * True when the user (or idle timeout) aborted a fetch/stream — not a real failure.
+ */
+export function isRequestAbortedError(error: unknown): boolean {
+  if (!error) return false;
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError') {
+    return true;
+  }
+  if (error instanceof Error && error.name === 'AbortError') {
+    return true;
+  }
+  const raw =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  const lower = raw.toLowerCase();
+  return (
+    lower.includes('aborterror') ||
+    lower.includes('bodystreambuffer was aborted') ||
+    lower.includes('the user aborted') ||
+    lower.includes('signal is aborted') ||
+    (lower.includes('aborted') && (lower.includes('fetch') || lower.includes('stream') || lower.includes('body')))
+  );
+}
+
+/**
  * Sanitizes error messages to prevent sensitive data leaks and maps common errors to user-friendly text.
  * @param error - Error object or string
  * @returns Sanitized error message safe for user display
  */
 export function sanitizeErrorMessage(error: unknown): string {
   if (!error) return 'An unexpected error occurred';
+
+  if (isRequestAbortedError(error)) {
+    return 'Request cancelled';
+  }
 
   let raw: string;
   if (typeof error === 'string') {

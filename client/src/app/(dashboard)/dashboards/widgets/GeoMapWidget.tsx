@@ -7,8 +7,8 @@ import { GlobalOutlined } from '@ant-design/icons';
 import { CHART_COLORS } from './WidgetRendererConfig';
 
 // Module-level GeoJSON cache — fetched once per page session
-let _geoJsonCache: Record<string, object> = {};
-let _pendingFetches: Record<string, Promise<object>> = {};
+const _geoJsonCache: Record<string, object> = {};
+const _pendingFetches: Record<string, Promise<object>> = {};
 
 async function loadGeoJson(mapName: string, url: string): Promise<object> {
   if (_geoJsonCache[mapName] !== undefined) return _geoJsonCache[mapName];

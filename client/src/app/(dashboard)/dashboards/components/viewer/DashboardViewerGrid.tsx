@@ -4,6 +4,8 @@ import React, { useMemo } from 'react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { DashboardWidgetCell } from '../DashboardWidgetCell';
 import { shouldShowWidgetHeader } from '../../utils/widgetCardHelpers';
+import { DashboardIcon } from '../../icons';
+import '../../icons/IconPicker.css';
 import type { LayoutItem, RuntimeFilter, WidgetInstance } from '../../stores/useDashboardStore';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -142,7 +144,14 @@ export function DashboardViewerGrid({
               <div className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}>
                 {showHeader && (
                   <div className="widget-card-header widget-card-header-stack">
-                    <span className="widget-card-title">{widget.title}</span>
+                    <span className="widget-card-title" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {widget.chartOptions?.headerIcon ? (
+                        <span className="widget-header-icon">
+                          <DashboardIcon icon={widget.chartOptions.headerIcon} size={14} />
+                        </span>
+                      ) : null}
+                      {widget.title}
+                    </span>
                     {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
                       <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
                     ) : null}

@@ -1,23 +1,14 @@
 /**
  * Aiser Platform - Global Styles
- * ✅ CRITICAL: Tailwind MUST come first
+ *
+ * CSS @import must precede all other rules (Turbopack / CSS spec).
+ * Tailwind directives come after imports; custom rules last so they win.
  */
 
 /* ========================================
-   TAILWIND CSS - MUST BE FIRST
-   ======================================== */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-  
-/* ========================================
-   THIRD-PARTY IMPORTS
+   THIRD-PARTY + DESIGN SYSTEM IMPORTS
    ======================================== */
 @import 'antd/dist/reset.css';
-
-/* ========================================
-   DESIGN SYSTEM IMPORTS
-   ======================================== */
 @import '../styles/layout-system.css';
 @import '../styles/aiser-color-system.css';
 @import '../styles/aiser-navigation-unified.css';
@@ -31,6 +22,13 @@
 @import '../styles/query-editor.css';
 @import '../styles/schema-explorer.css';
 @import '../styles/platform-loading.css';
+
+/* ========================================
+   TAILWIND CSS
+   ======================================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* ========================================
    GLOBAL RESET AND BASE STYLES
@@ -86,8 +84,22 @@ html:has(.login-page) body,
 html:has(.aicser-embed-root),
 html:has(.aicser-embed-root) body,
 html:has(.executive-report-fullpage),
-html:has(.executive-report-fullpage) body {
+html:has(.executive-report-fullpage) body,
+html:has(#dashboard-viewer-root),
+html:has(#dashboard-viewer-root) body,
+html:has(.shared-dashboard-error),
+html:has(.shared-dashboard-error) body,
+html:has(.shared-dashboard-loading),
+html:has(.shared-dashboard-loading) body {
   overflow-y: auto !important;
+}
+
+html:has(#dashboard-viewer-root) #__next,
+html:has(.shared-dashboard-error) #__next,
+html:has(.shared-dashboard-loading) #__next {
+  height: auto !important;
+  min-height: 100vh !important;
+  overflow-y: visible !important;
 }
 
 #__next {
@@ -129,6 +141,17 @@ a:hover {
   --ant-color-border: var(--color-border);
   --ant-color-text: var(--color-text-primary);
   --ant-color-text-secondary: var(--color-text-secondary);
+  /* Not part of the original 5-color system but referenced by ~20+ component
+     stylesheets (query editor tabs/results table, ERD canvas, schema explorer,
+     dashboard studio sidebar, chat query-result table, etc.) with no fallback —
+     left undefined, those rules were silently no-op-ing in production.
+     colorFillAlter ≈ AntD's subtle "alternate row" surface (one step up from
+     container); the rest is AntD's fill scale, faintest → strongest:
+     quinary < quaternary < tertiary. */
+  --ant-color-fill-alter: var(--color-bg-elevated);
+  --ant-color-fill-quinary: rgba(0, 0, 0, 0.02);
+  --ant-color-fill-quaternary: rgba(0, 0, 0, 0.04);
+  --ant-color-fill-tertiary: rgba(0, 0, 0, 0.08);
 }
 
 [data-theme='dark'],
@@ -140,6 +163,10 @@ html.dark {
   --ant-color-border: var(--color-border);
   --ant-color-text: var(--color-text-primary);
   --ant-color-text-secondary: var(--color-text-secondary);
+  --ant-color-fill-alter: var(--color-bg-elevated);
+  --ant-color-fill-quinary: rgba(255, 255, 255, 0.03);
+  --ant-color-fill-quaternary: rgba(255, 255, 255, 0.06);
+  --ant-color-fill-tertiary: rgba(255, 255, 255, 0.12);
 }
 
 /* ========================================
@@ -311,8 +338,34 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    ======================================== */
 
 /* Composer toolbar pill uses content width; keep min width for settings/other compact rows only. */
-.model-selector-compact:not(.model-selector-composer-embed) .ant-select-selector {
+.model-selector-compact:not(.model-selector-composer-embed):not(.model-selector-narrow) .ant-select-selector {
   min-width: 220px !important;
+}
+
+/* Narrow-toolbar trigger (query-editor AI bar, etc. — signaled by passing
+   `dropdownWidth`, same flag the popup sizing already keys off below). The
+   220px floor above fought the caller's own clamp()/maxWidth style on the
+   outer `.ant-select`, forcing this pill wider than its row had budgeted and
+   wrapping it onto its own line — which then starves the editor/results
+   split of the height it measured on mount, leaving stale empty space. */
+.model-selector-narrow .ant-select-selector {
+  min-width: 0 !important;
+}
+
+/* Dropdown popup: popupMatchSelectWidth={false} lets it size to content, which grew
+   past the small trigger pill's width (long model names + "Your key" badges) and
+   spilled over neighboring toolbar/panel content. Cap it to a sane width; long
+   names ellipsis inside the row instead (see ModelSelector's .model-option-name). */
+.model-selector-dropdown {
+  width: 260px !important;
+  max-width: 260px !important;
+}
+
+/* Narrow-toolbar variant — width comes from the Select's own
+   popupMatchSelectWidth={n} prop (set per caller via dropdownWidth), this
+   only caps how far it can still grow relative to viewport edge cases. */
+.model-selector-dropdown-compact {
+  max-width: min(220px, 92vw) !important;
 }
 
 /* ========================================

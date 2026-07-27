@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useDashboardStore, type RuntimeFilter, useCanUndo, useCanRedo, useUndo, useRedo } from '../stores/useDashboardStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
+import { buildDashboardAutoDescription } from '@/components/Feed/chatFeedDraft';
 import { chartService, type DashboardTemplate } from '../services/chartService';
 import {
   PlusOutlined,
@@ -45,8 +46,11 @@ import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 import { SchedulePublishModals } from './SchedulePublishModals';
 import { DashboardShareMenu } from './DashboardShareMenu';
 import { OverflowMenuButton } from './OverflowMenuButton';
+import { DashboardCollabCommentsPanel } from './DashboardCollabCommentsPanel';
 import { useAutomationManager } from '../hooks/useAutomationManager';
-import { exportDashboardCanvas } from '../services/exportDashboardService';
+import { exportDashboardCanvas, printDashboardOnly } from '../services/exportDashboardService';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import { shouldApplyWatermark } from '@/utils/watermark';
 import { maxLayoutY } from '../utils/layoutSanitize';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { getDashboardApiErrorMessage, isPublishOwnerError } from '../utils/dashboardApiErrors';
@@ -93,6 +97,12 @@ type DashboardTabsProps = {
   collabConnected?: boolean;
   collabPeerCount?: number;
   collabActiveUsers?: CollabUser[];
+  /** Live comments — toolbar trigger (not fixed on canvas). */
+  collabCommentsOpen?: boolean;
+  onCollabCommentsOpenChange?: (open: boolean) => void;
+  collabComments?: import('../utils/collaborationTypes').CollabComment[];
+  onCollabAddComment?: (text: string, widgetId?: string | null) => void;
+  selectedWidgetId?: string | null;
   /** Feed snapshot — when set, shows an icon button next to + Add instead of a banner. */
   feedPostId?: string | null;
   snapshotOutdated?: boolean;
@@ -114,6 +124,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   collabConnected = false,
   collabPeerCount = 0,
   collabActiveUsers = [],
+  collabCommentsOpen = false,
+  onCollabCommentsOpenChange,
+  collabComments = [],
+  onCollabAddComment,
+  selectedWidgetId = null,
   feedPostId,
   snapshotOutdated = false,
   snapshotVersion,
@@ -141,6 +156,8 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     addWidget: addWidgetToStore,
   } = useDashboardStore();
   const { currentProject, currentProjectId } = useProjectStore();
+  const { planType } = useSubscriptionStore();
+  const exportBranding = shouldApplyWatermark(planType);
 
   const activeDashboard = dashboards.find((d) => d.id === activeDashboardId);
   const sharedDashboardPath = buildSharedDashboardPath(activeDashboardId);
@@ -218,12 +235,31 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const [pendingTags, setPendingTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
 
-  // Folder state
-  const { folders, assignments, collapsedFolderIds, createFolder, renameFolder, deleteFolder, toggleCollapse, assignDashboard } = useFolderStore();
+  // Folder state — server-backed collections (same SSOT as DashboardsSection)
+  const {
+    folders,
+    assignments,
+    collapsedFolderIds,
+    hydrate: hydrateFolders,
+    createFolder,
+    renameFolder,
+    deleteFolder,
+    toggleCollapse,
+    assignDashboard,
+  } = useFolderStore();
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
 
+  useEffect(() => {
+    void hydrateFolders(currentProjectId);
+  }, [hydrateFolders, currentProjectId]);
+
   const { updateDashboardName, updateDashboardMeta, removeDashboard, duplicateDashboard, starredDashboardIds, toggleStarDashboard, updateDashboardTags } = useDashboardStore();
+
+  const publishAutoDescription = useMemo(
+    () => buildDashboardAutoDescription(widgets.map((w) => w.title)),
+    [widgets],
+  );
 
   const publishPreviewMetadata = useMemo(() => {
     if (!activeDashboardId || !activeDashboard) return undefined;
@@ -527,15 +563,32 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
       message.warning(t('select_dashboard_first'));
       return;
     }
+    const title = titleDraft.trim() || activeDashboard?.name || 'Dashboard';
+    const subtitle = subtitleDraft.trim() || undefined;
+    const isPdf = format === 'pdf';
     try {
-      await exportDashboardCanvas(format === 'pdf' ? 'pdf' : 'png', {
-        filename: activeDashboard?.name || 'dashboard',
+      await exportDashboardCanvas(isPdf ? 'pdf' : 'png', {
+        filename: title,
+        title,
+        subtitle,
+        branding: exportBranding,
+        // Always respect the user's active light/dark theme
+        matchTheme: true,
       });
-      message.success(format === 'pdf' ? td('toast_export_pdf_ok') : td('toast_export_png_ok'));
+      message.success(isPdf ? td('toast_export_pdf_ok') : td('toast_export_png_ok'));
     } catch (error) {
       const detail = error instanceof Error ? error.message : td('toast_export_failed');
       message.error(detail);
     }
+  };
+
+  const handleDashboardPrint = () => {
+    void printDashboardOnly({
+      title: titleDraft.trim() || activeDashboard?.name || 'Dashboard',
+      subtitle: subtitleDraft.trim() || undefined,
+      branding: exportBranding,
+      matchTheme: true,
+    });
   };
 
   const toggleFullscreen = () => {
@@ -657,7 +710,9 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                       trigger={['click']}
                       menu={{
                         onClick: ({ key }) => {
-                          assignDashboard(dash.id, key === '__root' ? null : key);
+                          void assignDashboard(dash.id, key === '__root' ? null : key).catch((err) => {
+                            message.error(err instanceof Error ? err.message : t('failed_move_folder'));
+                          });
                           closeOverflow();
                         },
                         items: [
@@ -740,9 +795,15 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             icon={<FolderAddOutlined />}
             onClick={(e) => {
               e.stopPropagation();
-              const id = createFolder('New Folder');
-              setEditingFolderId(id);
-              setNewFolderName('New Folder');
+              void (async () => {
+                try {
+                  const id = await createFolder('New Folder');
+                  setEditingFolderId(id);
+                  setNewFolderName('New Folder');
+                } catch (err) {
+                  message.error(err instanceof Error ? err.message : t('failed_create_folder'));
+                }
+              })();
             }}
             title={t('new_folder')}
             aria-label={t('new_folder')}
@@ -810,8 +871,22 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                         value={newFolderName}
                         className="flex-1 text-xs"
                         onChange={(e) => setNewFolderName(e.target.value)}
-                        onBlur={() => { if (newFolderName.trim()) renameFolder(folder.id, newFolderName); setEditingFolderId(null); }}
-                        onPressEnter={() => { if (newFolderName.trim()) renameFolder(folder.id, newFolderName); setEditingFolderId(null); }}
+                        onBlur={() => {
+                          if (newFolderName.trim()) {
+                            void renameFolder(folder.id, newFolderName).catch((err) => {
+                              message.error(err instanceof Error ? err.message : t('failed_rename_folder'));
+                            });
+                          }
+                          setEditingFolderId(null);
+                        }}
+                        onPressEnter={() => {
+                          if (newFolderName.trim()) {
+                            void renameFolder(folder.id, newFolderName).catch((err) => {
+                              message.error(err instanceof Error ? err.message : t('failed_rename_folder'));
+                            });
+                          }
+                          setEditingFolderId(null);
+                        }}
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
@@ -837,7 +912,10 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                               content: t('delete_folder_body'),
                               okText: t('delete'),
                               okType: 'danger',
-                              onOk: () => deleteFolder(folder.id),
+                              onOk: () =>
+                                deleteFolder(folder.id).catch((err) => {
+                                  message.error(err instanceof Error ? err.message : t('failed_delete_folder'));
+                                }),
                             });
                           }}
                         />
@@ -1112,19 +1190,48 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             )}
           </OverflowMenuButton>
 
+          {/* Primary edit tools — industry pattern: undo/redo next to mode, not buried in overflow */}
+          {isEditMode && (
+            <div className="studio-primary-history inline-flex items-center rounded-md border border-border-light overflow-hidden shrink-0">
+              <Tooltip title={t('undo_shortcut')}>
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-8 h-8 text-text-secondary hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                  disabled={!canUndo}
+                  onClick={() => undo?.()}
+                  aria-label={t('undo')}
+                >
+                  <UndoOutlined />
+                </button>
+              </Tooltip>
+              <Tooltip title={t('redo_shortcut')}>
+                <button
+                  type="button"
+                  className="flex items-center justify-center w-8 h-8 text-text-secondary border-l border-border-light hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                  disabled={!canRedo}
+                  onClick={() => redo?.()}
+                  aria-label={t('redo')}
+                >
+                  <RedoOutlined />
+                </button>
+              </Tooltip>
+            </div>
+          )}
+
           <button
             type="button"
             className={`inline-flex items-center gap-1.5 py-2 px-3 rounded-md border text-sm font-medium cursor-pointer shrink-0 transition-colors ${
               isEditMode
-                ? 'border-brand/45 bg-brand-subtle text-brand'
-                : 'border-border-light bg-bg-container text-text hover:border-brand'
+                ? 'border-border-light bg-bg-container text-text hover:border-brand'
+                : 'border-brand/45 bg-brand-subtle text-brand'
             }`}
             onClick={() => setStudioMode(isEditMode ? 'view' : 'edit')}
             title={isEditMode ? t('switch_to_view') : t('switch_to_edit')}
             aria-pressed={isEditMode}
+            aria-label={isEditMode ? t('mode_view_action') : t('mode_edit_action')}
           >
-            {isEditMode ? <EditOutlined /> : <EyeOutlined />}
-            <span>{isEditMode ? t('mode_editing') : t('mode_viewing')}</span>
+            {isEditMode ? <EyeOutlined /> : <EditOutlined />}
+            <span>{isEditMode ? t('mode_view_action') : t('mode_edit_action')}</span>
           </button>
 
           {feedPostId && (
@@ -1174,11 +1281,24 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             </AddBlockPopover>
           )}
 
+          {isEditMode && collabConnected && onCollabCommentsOpenChange && onCollabAddComment ? (
+            <DashboardCollabCommentsPanel
+              variant="toolbar"
+              open={collabCommentsOpen}
+              onOpenChange={onCollabCommentsOpenChange}
+              comments={collabComments}
+              selectedWidgetId={selectedWidgetId}
+              onAddComment={onCollabAddComment}
+              connected={collabConnected}
+            />
+          ) : null}
+
           <DashboardShareMenu
             dashboardId={activeDashboardId}
             dashboardName={activeDashboard?.name}
             onPreview={handlePreviewDashboard}
             onExport={(format) => void handleDashboardExport(format)}
+            onPrint={handleDashboardPrint}
             buildShareUrl={buildShareUrlWithContext}
             activePageId={activePageId}
             runtimeFilters={runtimeFilters}
@@ -1215,7 +1335,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         assetType="dashboard"
         assetId={activeDashboardId || undefined}
         defaultTitle={activeDashboard?.name || t('dashboard')}
-        defaultDescription={activeDashboard?.description || ''}
+        defaultDescription={activeDashboard?.description || publishAutoDescription || ''}
         previewMetadata={publishPreviewMetadata}
         snapshotPayload={publishSnapshotPayload}
         renderMode="snapshot"

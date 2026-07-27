@@ -1,5 +1,10 @@
 import type { DashboardFilter } from '@/types/dashboard';
 import { buildDefaultRuntimeFilters, type RuntimeFilter } from './filterOperators';
+import {
+  DASHBOARD_SWITCHABLE_CHART_TYPES,
+  isDashboardSwitchableChartType,
+  type DashboardSwitchableChartType,
+} from '@/components/charts/chartTypeCatalog';
 
 /** Merge global + page filter configs; page wins on duplicate field names. */
 export function mergeFilterConfigs(
@@ -31,24 +36,11 @@ export function mergeFilterDefaults(...configs: DashboardFilter[][]): RuntimeFil
   return buildDefaultRuntimeFilters(Array.from(byField.values()));
 }
 
-/** Chart types supported by dashboard WidgetRenderer (excludes table/stat/text/slicer). */
-export const DASHBOARD_CHART_TYPES = [
-  'bar',
-  'line',
-  'area',
-  'pie',
-  'donut',
-  'scatter',
-  'funnel',
-  'heatmap',
-] as const;
-
-export type DashboardChartType = (typeof DASHBOARD_CHART_TYPES)[number];
-
-export function isDashboardChartType(type: string): type is DashboardChartType {
-  return (DASHBOARD_CHART_TYPES as readonly string[]).includes(type);
-}
+/** Chart types supported by dashboard WidgetRenderer (alias of switchable catalog). */
+export const DASHBOARD_CHART_TYPES = DASHBOARD_SWITCHABLE_CHART_TYPES;
+export type DashboardChartType = DashboardSwitchableChartType;
+export const isDashboardChartType = isDashboardSwitchableChartType;
 
 export function normalizeDashboardChartType(type: string): DashboardChartType {
-  return isDashboardChartType(type) ? type : 'bar';
+  return isDashboardSwitchableChartType(type) ? type : 'bar';
 }

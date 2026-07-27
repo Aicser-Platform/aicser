@@ -2,12 +2,16 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Empty, Spin } from 'antd';
+import { Empty } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
+import { RawRowsTableWidget } from './RawRowsTableWidget';
 import { StatWidget } from './StatWidget';
 import { TextWidget } from './TextWidget';
 import { SlicerWidget } from './SlicerWidget';
 import { EmbedWidget } from './EmbedWidget';
+import { ImageWidget } from './ImageWidget';
+import { DashboardIcon } from '../icons';
 import { getCrossFilterValues } from '../utils/filterOperators';
 import type * as echarts from 'echarts';
 import { extractEchartsSnapshotOption } from '@/components/charts/resolveChatChart';
@@ -16,20 +20,27 @@ import { hasRenderableChartData } from '@/components/charts/chartDesignerBridge'
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
+import { DASHBOARD_CHART_TYPES } from '../utils/filterConfigMerge';
+
+const widgetChunkLoading = () => (
+  <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <AppLoadingIndicator variant="minimal" />
+  </div>
+);
 
 const GeoMapWidget = dynamic(
   () => import('./GeoMapWidget').then((m) => m.GeoMapWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 const EChartWidget = dynamic(
   () => import('./EChartWidget').then((m) => m.EChartWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 const RawEChartWidget = dynamic(
   () => import('./RawEChartWidget').then((m) => m.RawEChartWidget),
-  { ssr: false, loading: () => <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin /></div> }
+  { ssr: false, loading: widgetChunkLoading }
 );
 
 interface QueryMetric {
@@ -135,7 +146,10 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
   const echartsSnapshot = extractEchartsSnapshotOption(config);
   const prefetchedData = config?.__prefetchedChartData;
-  const effectiveData = prefetchedData ?? data;
+  // Prefer live chartData after Apply/refresh — prefetch is only a cold-start fallback.
+  const effectiveData = hasRenderableChartData(data)
+    ? data
+    : (prefetchedData ?? data);
   const metricFormats = React.useMemo(
     () => buildMetricFormats(query as Record<string, unknown>),
     [query]
@@ -167,19 +181,19 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         <RawEChartWidget option={snapshotOption} onChartReady={onChartReady} minHeight={minHeight} />
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
-            <Spin tip="Updating..." size="small" />
+            <AppLoadingIndicator variant="minimal" tip="Updating..." />
           </div>
         )}
       </div>
     );
   }
 
-  const isChartType = ['bar', 'line', 'area', 'pie', 'scatter', 'funnel', 'heatmap', 'donut', 'gauge', 'treemap', 'waterfall', 'bullet'].includes(type);
+  const isChartType = (DASHBOARD_CHART_TYPES as readonly string[]).includes(type) && type !== 'table' && type !== 'stat' && type !== 'geo';
   const isGeo = type === 'geo';
   const activeOverlayClass = 'widget-loading-overlay';
 
-  // Error state
-  if (error) {
+  // Error state — still prefer durable prefetch (Visualize / Chat pin) over a failed live fetch
+  if (error && !hasRenderableChartData(prefetchedData)) {
     const friendlyError = getFriendlyWidgetError(error);
     return (
       <div className="widget-center" title={friendlyError.technicalDetail}>
@@ -245,8 +259,15 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
               color: config.titleColor || 'var(--studio-text-secondary)',
               textTransform: config.uppercase ? 'uppercase' : 'none',
               letterSpacing: config.uppercase ? '0.06em' : undefined,
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
           >
+            {(config.icon || config.iconName) ? (
+              <span className="widget-section-divider-icon" style={{ color: config.titleColor || undefined }}>
+                <DashboardIcon icon={config.icon} legacyIconName={config.iconName} size={Math.max(12, (config.titleSize || 13) - 1)} />
+              </span>
+            ) : null}
             {title}
           </span>
           {!hideLine ? <hr className="widget-section-divider-line" /> : null}
@@ -270,31 +291,15 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     return <EmbedWidget config={config} readOnly={readOnly} />;
   }
 
-  // Image Widget
+  // Image Widget — upload or URL (inline setup mirrors embed properties)
   if (type === 'image') {
-    const src = config.imageUrl || config.src;
-    if (!src) {
-      return (
-        <div className="widget-center" style={{ flexDirection: 'column', gap: 8 }}>
-          <Empty description="No image URL set" imageStyle={{ height: 40 }} />
-          <span style={{ fontSize: 12, color: 'var(--studio-text-muted)' }}>Set URL in properties →</span>
-        </div>
-      );
-    }
     return (
-      <div style={{ width: '100%', height: '100%', overflow: 'hidden', display: 'flex', alignItems: config.align || 'center', justifyContent: config.justify || 'center' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={config.altText || ''}
-          style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
-            objectFit: config.objectFit || 'contain',
-            borderRadius: config.borderRadius || 0,
-          }}
-        />
-      </div>
+      <ImageWidget
+        config={config}
+        onUpdate={readOnly ? undefined : onUpdateConfig}
+        readOnly={readOnly}
+        isSelected={isSelected}
+      />
     );
   }
 
@@ -319,7 +324,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         />
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
-            <Spin tip="Updating…" size="small" />
+            <AppLoadingIndicator variant="minimal" tip="Updating…" />
           </div>
         )}
       </div>
@@ -337,13 +342,16 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         effectiveData.series.some((s: any) => Array.isArray(s.data) && s.data.length > 0)) ||
       (Array.isArray((effectiveData as { heatmap?: unknown[] }).heatmap) &&
         (effectiveData as { heatmap: unknown[] }).heatmap.length > 0) ||
-      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null));
+      ((type === 'stat' || type === 'gauge') && effectiveData.value !== undefined && effectiveData.value !== null) ||
+      // Chat-originated "table" charts carry a raw row array (not the {x,y,series}
+      // aggregation shape) — see hasRenderableChartData, which already special-cases this.
+      (Array.isArray(effectiveData) && effectiveData.length > 0));
 
   // Initial loading state (no data yet)
   if (isLoading && needsData && !hasData) {
     return (
       <div style={loadingOverlayStyle}>
-        <Spin tip="Loading data..." />
+        <AppLoadingIndicator variant="minimal" tip="Loading data..." />
       </div>
     );
   }
@@ -366,6 +374,23 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   const renderContent = () => {
     // Table
     if (type === 'table') {
+      // Chat-originated tables carry a raw row array, not TableWidget's {x,y,series}
+      // dimension/metric aggregation shape — those are structurally different data
+      // (arbitrary flat columns vs. a pivoted x/series breakdown), so render them
+      // with RawRowsTableWidget instead of feeding TableWidget a shape it can't use.
+      if (Array.isArray(effectiveData)) {
+        return (
+          <RawRowsTableWidget
+            rows={effectiveData as Record<string, unknown>[]}
+            config={config}
+            crossFilterField={query?.x}
+            activeCrossFilterValues={
+              query?.x ? getCrossFilterValues(runtimeFilters, query.x) : []
+            }
+            onCrossFilter={onFilter && query?.x ? (value) => onFilter(query.x!, value) : undefined}
+          />
+        );
+      }
       return (
         <TableWidget
           data={effectiveData}
@@ -382,7 +407,23 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
     // Stat / Metric
     if (type === 'stat') {
-      return <StatWidget data={effectiveData} config={config} />;
+      const crossField = query?.x;
+      return (
+        <StatWidget
+          data={effectiveData}
+          config={config}
+          filterValue={
+            crossField && effectiveData && Array.isArray((effectiveData as { x?: unknown[] }).x)
+              ? (effectiveData as { x: unknown[] }).x[(effectiveData as { x: unknown[] }).x.length - 1]
+              : undefined
+          }
+          onFilter={
+            onFilter && crossField
+              ? (value) => onFilter(crossField, value)
+              : undefined
+          }
+        />
+      );
     }
 
     // Chart
@@ -414,7 +455,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       {renderContent()}
       {isLoading && (
         <div className={activeOverlayClass} style={activeOverlayStyle}>
-          <Spin tip="Updating..." size="small" />
+          <AppLoadingIndicator variant="minimal" tip="Updating..." />
         </div>
       )}
     </div>

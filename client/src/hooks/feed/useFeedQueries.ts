@@ -178,9 +178,10 @@ interface ApprovalQueueResult {
 }
 
 /** Moderator-only approval queue. A 401/403 means "not a moderator", not an error — modeled as data, not a query error. */
-export function useApprovalQueueQuery() {
+export function useApprovalQueueQuery(options?: { enabled?: boolean }) {
   const query = useQuery({
     queryKey: feedKeys.approvalQueue,
+    enabled: options?.enabled ?? true,
     queryFn: async (): Promise<ApprovalQueueResult> => {
       try {
         const response = await socialFeedService.getApprovalQueue({ limit: APPROVAL_QUEUE_PAGE_SIZE, offset: 0 });

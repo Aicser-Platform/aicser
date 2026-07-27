@@ -12,6 +12,8 @@ import {
   Empty,
   Tag,
   Tooltip,
+  Spin,
+  Alert,
   message,
 } from 'antd';
 import {
@@ -43,12 +45,17 @@ function relativeTime(epoch: number): string {
 export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProps) {
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
   const versions = useDashboardStore((s) => s.dashboardVersions);
+  const isLoadingVersions = useDashboardStore((s) => s.isLoadingVersions);
+  const versionsError = useDashboardStore((s) => s.versionsError);
   const loadVersionHistory = useDashboardStore((s) => s.loadVersionHistory);
   const saveVersionSnapshot = useDashboardStore((s) => s.saveVersionSnapshot);
   const restoreVersionSnapshot = useDashboardStore((s) => s.restoreVersionSnapshot);
   const deleteVersionSnapshot = useDashboardStore((s) => s.deleteVersionSnapshot);
 
   const [snapshotLabel, setSnapshotLabel] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && activeDashboardId) {
@@ -56,17 +63,42 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
     }
   }, [open, activeDashboardId, loadVersionHistory]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const label = snapshotLabel.trim() || new Date().toLocaleString();
-    saveVersionSnapshot(label);
-    setSnapshotLabel('');
-    message.success('Version snapshot saved');
+    setIsSaving(true);
+    try {
+      await saveVersionSnapshot(label);
+      setSnapshotLabel('');
+      message.success('Version snapshot saved');
+    } catch {
+      message.error('Failed to save version snapshot');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleRestore = (version: DashboardVersion) => {
-    restoreVersionSnapshot(version.id);
-    message.success(`Restored: ${version.label}`);
-    onClose();
+  const handleRestore = async (version: DashboardVersion) => {
+    setRestoringId(version.id);
+    try {
+      await restoreVersionSnapshot(version.id);
+      message.success(`Restored: ${version.label}`);
+      onClose();
+    } catch {
+      message.error('Failed to restore this version');
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
+  const handleDelete = async (version: DashboardVersion) => {
+    setDeletingId(version.id);
+    try {
+      await deleteVersionSnapshot(version.id);
+    } catch {
+      message.error('Failed to delete this snapshot');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -87,8 +119,8 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
       {/* Save snapshot UI */}
       <div style={{ padding: '16px 16px 0' }}>
         <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-          Save a named snapshot of the current dashboard layout. Snapshots are stored locally in the
-          browser.
+          Save a named snapshot of the current dashboard layout. Snapshots are shared with your team and
+          kept on the server.
         </Text>
         <Space.Compact style={{ width: '100%' }}>
           <Input
@@ -97,9 +129,10 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
             onChange={(e) => setSnapshotLabel(e.target.value)}
             onPressEnter={handleSave}
             maxLength={80}
+            disabled={isSaving}
             prefix={<SaveOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
           />
-          <Button type="primary" onClick={handleSave}>
+          <Button type="primary" onClick={handleSave} loading={isSaving}>
             Save
           </Button>
         </Space.Compact>
@@ -111,7 +144,17 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
         </Text>
       </div>
 
-      {versions.length === 0 ? (
+      {versionsError && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <Alert type="error" showIcon message={versionsError} />
+        </div>
+      )}
+
+      {isLoadingVersions && versions.length === 0 ? (
+        <div style={{ padding: 32, textAlign: 'center' }}>
+          <Spin />
+        </div>
+      ) : versions.length === 0 ? (
         <div style={{ padding: 32 }}>
           <Empty
             description="No snapshots yet. Save one above to record the current state."
@@ -133,18 +176,29 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
                     okText="Restore"
                     cancelText="Cancel"
                   >
-                    <Button size="small" icon={<UndoOutlined />} />
+                    <Button
+                      size="small"
+                      icon={<UndoOutlined />}
+                      loading={restoringId === v.id}
+                      disabled={deletingId === v.id}
+                    />
                   </Popconfirm>
                 </Tooltip>,
                 <Popconfirm
                   key="delete"
                   title="Delete this snapshot?"
-                  onConfirm={() => deleteVersionSnapshot(v.id)}
+                  onConfirm={() => handleDelete(v)}
                   okText="Delete"
                   okButtonProps={{ danger: true }}
                   cancelText="Cancel"
                 >
-                  <Button size="small" danger icon={<DeleteOutlined />} />
+                  <Button
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deletingId === v.id}
+                    disabled={restoringId === v.id}
+                  />
                 </Popconfirm>,
               ]}
             >
@@ -160,7 +214,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
                       {relativeTime(v.savedAt)}
                     </Text>
                     <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
-                      {v.widgets.length} widget{v.widgets.length !== 1 ? 's' : ''}
+                      {v.widgetCount} widget{v.widgetCount !== 1 ? 's' : ''}
                     </Tag>
                   </Space>
                 }

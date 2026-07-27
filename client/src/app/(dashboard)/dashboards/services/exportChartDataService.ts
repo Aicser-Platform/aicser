@@ -81,7 +81,7 @@ const sanitizeFilename = (name: string) =>
     .replace(/[^a-z0-9]/gi, '_')
     .toLowerCase();
 
-function normalizeToRows(data: any, widget?: any): any[] {
+export function normalizeToRows(data: any, widget?: any): any[] {
   const xColumnName = widget?.chartQuery?.x || 'category';
   const yMetrics = widget?.chartQuery?.yMetrics || [];
   const yMetricsSecondary = widget?.chartQuery?.yMetricsSecondary || [];

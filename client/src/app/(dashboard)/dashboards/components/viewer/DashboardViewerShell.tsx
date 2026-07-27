@@ -26,6 +26,8 @@ import '../AddDashboardDrawer.css';
 import type { LayoutItem, WidgetInstance } from '../../stores/useDashboardStore';
 import type { DashboardFilter } from '@/types/dashboard';
 import { exportDashboardCanvas } from '../../services/exportDashboardService';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import { shouldApplyWatermark } from '@/utils/watermark';
 import { isEmbedChromeHidden } from '../../utils/isEmbedChromeHidden';
 import { navigateToStudio } from '../../utils/studioNavigation';
 import { AUTO_REFRESH_INTERVAL_OPTIONS } from '../../hooks/useDashboardRefresh';
@@ -110,6 +112,8 @@ export function DashboardViewerShell({
   const searchParams = useSearchParams();
   const { isDarkMode, setIsDarkMode } = useThemeMode();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { planType } = useSubscriptionStore();
+  const exportBranding = shouldApplyWatermark(planType);
   const hideChrome = variant === 'embed' || isEmbedChromeHidden(searchParams);
   const refreshRef = useRef(onManualRefresh);
   refreshRef.current = onManualRefresh;
@@ -165,14 +169,18 @@ export function DashboardViewerShell({
       try {
         await exportDashboardCanvas(format, {
           filename: meta.title,
+          title: meta.title,
+          subtitle: (meta.description || '').trim() || undefined,
           selector: '.dashboard-viewer-canvas',
+          branding: exportBranding,
+          matchTheme: true,
         });
         message.success(format === 'pdf' ? t('export_pdf_ok') : t('export_png_ok'));
       } catch (err) {
         message.error(err instanceof Error ? err.message : t('export_failed'));
       }
     },
-    [meta.title, t]
+    [meta.title, meta.description, t, exportBranding]
   );
 
   const goHome = useCallback(() => {
@@ -278,6 +286,24 @@ export function DashboardViewerShell({
               readOnly
             />
           )}
+
+          {hasConfiguredFilters ? (
+            <div className="shared-dashboard-filters">
+              <DashboardFilterPanel
+                variant="toolbar"
+                filters={combinedFiltersConfig}
+                runtimeFilters={runtimeFilters}
+                onChange={onRuntimeFiltersChange}
+                fetchOptions={fetchFilterOptions}
+                fetchFieldStats={fetchFilterFieldStats}
+                minimal
+                showHeader={false}
+                onClearAll={() => onRuntimeFiltersChange([])}
+                onRefresh={onManualRefresh}
+                refreshing={refreshing}
+              />
+            </div>
+          ) : null}
         </div>
 
         {dataFreshnessHint && (
@@ -285,24 +311,6 @@ export function DashboardViewerShell({
             {t('data_as_of', { when: dataFreshnessHint })}
           </p>
         )}
-
-        {hasConfiguredFilters ? (
-          <div className="w-full px-4 pt-2 border-b border-border-light shrink-0">
-            <DashboardFilterPanel
-              variant="toolbar"
-              filters={combinedFiltersConfig}
-              runtimeFilters={runtimeFilters}
-              onChange={onRuntimeFiltersChange}
-              fetchOptions={fetchFilterOptions}
-              fetchFieldStats={fetchFilterFieldStats}
-              minimal
-              showHeader={false}
-              onClearAll={() => onRuntimeFiltersChange([])}
-              onRefresh={onManualRefresh}
-              refreshing={refreshing}
-            />
-          </div>
-        ) : null}
 
         <div className="dashboard-workspace dashboard-workspace-viewer">
           <div className="dashboard-workspace-main">
@@ -314,7 +322,7 @@ export function DashboardViewerShell({
               onCrossFilter={onCrossFilter}
               onRetryWidget={onRetryWidget}
               refreshing={refreshing}
-              canvasMinHeight={hideChrome ? '100vh' : undefined}
+              canvasMinHeight={hideChrome ? '100vh' : 'auto'}
             />
           </div>
         </div>

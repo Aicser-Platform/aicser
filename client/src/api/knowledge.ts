@@ -48,6 +48,15 @@ export const deleteKnowledgeDocument = (
 ): Promise<{ success: boolean; message?: string }> =>
   fetchApi(`knowledge/documents/${docId}`, { method: 'DELETE' });
 
+export const updateKnowledgeDocument = (
+  docId: string,
+  body: { filename?: string; description?: string; metadata?: Record<string, unknown> },
+): Promise<KnowledgeDocument> =>
+  fetchApi(`knowledge/documents/${docId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  });
+
 export const searchKnowledge = (params: {
   query: string;
   data_source_id: string;

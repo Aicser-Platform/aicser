@@ -137,6 +137,14 @@ def _is_missing_table_error(e: Exception) -> bool:
     return "relation" in msg and "does not exist" in msg
 
 
+def _is_missing_column_error(e: Exception, column: str) -> bool:
+    msg = str(e).lower()
+    orig = getattr(e, "orig", None)
+    if orig is not None:
+        msg = msg + " " + (getattr(orig, "message", None) or str(orig) or "").lower()
+    return column.lower() in msg and ("does not exist" in msg or "undefined column" in msg)
+
+
 @router.get("/tabs")
 async def get_query_tabs(
     organization_id: Optional[str] = None,
@@ -229,23 +237,274 @@ async def list_saved_queries(
     await _guard_query(current_user, "query:execute", organization_id=organization_id, project_id=project_id)
     user_payload = _resolve_user_payload(current_user)
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    params = {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""}
     try:
-        res = await db.execute(text(
-            """
-            SELECT id, name, sql, metadata, created_at FROM saved_queries
-            WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-            ORDER BY updated_at DESC
-            """
-        ), {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""})
-        rows = [{"id": r[0], "name": r[1], "sql": r[2], "metadata": r[3], "created_at": r[4]} for r in res.fetchall()]
+        res = await db.execute(
+            text(
+                """
+                SELECT id, name, sql, metadata, created_at, collection_id FROM saved_queries
+                WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+                  AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+                  AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+                ORDER BY updated_at DESC
+                """
+            ),
+            params,
+        )
+        rows = [
+            {
+                "id": r[0],
+                "name": r[1],
+                "sql": r[2],
+                "metadata": r[3],
+                "created_at": r[4],
+                "collectionId": r[5],
+            }
+            for r in res.fetchall()
+        ]
         return {"success": True, "items": rows}
     except ProgrammingError as e:
         if _is_missing_table_error(e):
             logger.debug("saved_queries table missing (run migration 20260310_query_tabs): %s", e)
             return {"success": True, "items": []}
+        if _is_missing_column_error(e, "collection_id"):
+            await db.rollback()
+            res = await db.execute(
+                text(
+                    """
+                    SELECT id, name, sql, metadata, created_at FROM saved_queries
+                    WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+                      AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+                      AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+                    ORDER BY updated_at DESC
+                    """
+                ),
+                params,
+            )
+            rows = [
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "sql": r[2],
+                    "metadata": r[3],
+                    "created_at": r[4],
+                    "collectionId": None,
+                }
+                for r in res.fetchall()
+            ]
+            return {"success": True, "items": rows}
         raise
+
+
+@router.get("/collections")
+async def list_query_collections(
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    await ensure_tables(db)
+    await _guard_query(current_user, "query:execute", organization_id=organization_id, project_id=project_id)
+    user_payload = _resolve_user_payload(current_user)
+    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    try:
+        res = await db.execute(
+            text(
+                """
+                SELECT id, name, sort_order, created_at
+                FROM query_collections
+                WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+                  AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+                  AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+                ORDER BY sort_order ASC, lower(name) ASC
+                """
+            ),
+            {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
+        )
+        items = [{"id": r[0], "name": r[1], "sortOrder": r[2], "createdAt": r[3]} for r in res.fetchall()]
+        return {"success": True, "collections": items}
+    except ProgrammingError as e:
+        if _is_missing_table_error(e):
+            return {"success": True, "collections": []}
+        raise
+
+
+@router.post("/collections", status_code=201)
+async def create_query_collection(
+    payload: Dict[str, Any],
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
+    user_payload = _resolve_user_payload(current_user)
+    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    name = str(payload.get("name") or "").strip() or "Untitled"
+    try:
+        dup = await db.execute(
+            text(
+                """
+                SELECT id FROM query_collections
+                WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+                  AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+                  AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+                  AND lower(trim(name)) = lower(trim(:name))
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or "", "name": name},
+        )
+        if dup.fetchone():
+            raise HTTPException(status_code=409, detail=f'A collection named "{name}" already exists')
+        result = await db.execute(
+            text(
+                """
+                INSERT INTO query_collections (name, user_id, organization_id, project_id, sort_order, created_at, updated_at)
+                VALUES (:name, :user_id, NULLIF(:org_id, ''), NULLIF(:proj_id, ''), 0, NOW(), NOW())
+                RETURNING id, name
+                """
+            ),
+            {"name": name, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
+        )
+        row = result.fetchone()
+        await db.commit()
+        return {"id": row[0], "name": row[1]}
+    except HTTPException:
+        raise
+    except ProgrammingError as e:
+        if _is_missing_table_error(e):
+            raise HTTPException(status_code=503, detail="Query collections not available. Run migrations.")
+        raise
+
+
+@router.put("/collections/{collection_id}")
+async def rename_query_collection(
+    collection_id: int,
+    payload: Dict[str, Any],
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
+    user_payload = _resolve_user_payload(current_user)
+    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    owned = await db.execute(
+        text(
+            """
+            SELECT id FROM query_collections
+            WHERE id = :id AND CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+            """
+        ),
+        {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
+    )
+    if not owned.fetchone():
+        raise HTTPException(status_code=404, detail="Collection not found")
+    dup = await db.execute(
+        text(
+            """
+            SELECT id FROM query_collections
+            WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+              AND lower(trim(name)) = lower(trim(:name))
+              AND id <> :id
+            LIMIT 1
+            """
+        ),
+        {
+            "user_id": user_id,
+            "org_id": organization_id or "",
+            "proj_id": project_id or "",
+            "name": name,
+            "id": collection_id,
+        },
+    )
+    if dup.fetchone():
+        raise HTTPException(status_code=409, detail=f'A collection named "{name}" already exists')
+    await db.execute(
+        text("UPDATE query_collections SET name = :name, updated_at = NOW() WHERE id = :id"),
+        {"name": name, "id": collection_id},
+    )
+    await db.commit()
+    return {"id": collection_id, "name": name}
+
+
+@router.delete("/collections/{collection_id}", status_code=204)
+async def delete_query_collection(
+    collection_id: int,
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
+    user_payload = _resolve_user_payload(current_user)
+    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    owned = await db.execute(
+        text(
+            """
+            SELECT id FROM query_collections
+            WHERE id = :id AND CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+            """
+        ),
+        {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
+    )
+    if not owned.fetchone():
+        raise HTTPException(status_code=404, detail="Collection not found")
+    await db.execute(
+        text("UPDATE saved_queries SET collection_id = NULL WHERE collection_id = :id"),
+        {"id": collection_id},
+    )
+    await db.execute(text("DELETE FROM query_collections WHERE id = :id"), {"id": collection_id})
+    await db.commit()
+
+
+@router.put("/saved-queries/{query_id}/collection")
+async def assign_saved_query_collection(
+    query_id: int,
+    payload: Dict[str, Any],
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Assign or clear collection for a saved query (collection_id null = unfiled)."""
+    await ensure_tables(db)
+    await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
+    user_payload = _resolve_user_payload(current_user)
+    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    collection_id = payload.get("collectionId", payload.get("collection_id"))
+    owned = await db.execute(
+        text(
+            """
+            SELECT id FROM saved_queries
+            WHERE id = :id AND CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
+              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
+              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
+            """
+        ),
+        {"id": query_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
+    )
+    if not owned.fetchone():
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    await db.execute(
+        text("UPDATE saved_queries SET collection_id = :cid, updated_at = NOW() WHERE id = :id"),
+        {"cid": collection_id, "id": query_id},
+    )
+    await db.commit()
+    return {"success": True, "id": query_id, "collectionId": collection_id}
 
 
 # Max stored SQL length to avoid abuse (saved-queries and snapshots)
@@ -287,14 +546,16 @@ async def save_query(
         existing = check_res.fetchone()
         if existing:
             raise HTTPException(status_code=400, detail=f"Query name '{name}' already exists. Please use a unique name.")
-        await db.execute(text(
+        result = await db.execute(text(
             """
             INSERT INTO saved_queries (user_id, organization_id, project_id, name, sql, metadata, created_at, updated_at)
             VALUES (:user_id, NULLIF(:org_id, ''), NULLIF(:proj_id, ''), :name, :sql, CAST(:metadata AS JSONB), NOW(), NOW())
+            RETURNING id
             """
         ), {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or "", "name": name, "sql": sql, "metadata": json.dumps(metadata or {})})
+        new_id = result.scalar()
         await db.commit()
-        return {"success": True}
+        return {"success": True, "id": new_id, "name": name}
     except HTTPException:
         raise
     except ProgrammingError as e:

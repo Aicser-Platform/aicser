@@ -22,6 +22,7 @@ from src.modules.authentication.rbac.guard import require_permission
 from src.modules.knowledge.schemas import (
     CitationOut,
     KnowledgeDocumentOut,
+    KnowledgeDocumentUpdate,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     KnowledgeUploadResponse,
@@ -271,6 +272,60 @@ async def get_knowledge_document(
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    return KnowledgeDocumentOut(
+        id=str(doc.id),
+        data_source_id=doc.data_source_id,
+        filename=doc.filename,
+        file_type=doc.file_type,
+        chunk_count=doc.chunk_count or 0,
+        status=doc.status or "unknown",
+        error_message=doc.error_message,
+        metadata=doc.doc_metadata,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+    )
+
+
+# ── Update Document (rename / metadata) ──────────────────────────────────
+
+@router.patch("/documents/{doc_id}", response_model=KnowledgeDocumentOut)
+async def update_knowledge_document(
+    doc_id: str,
+    payload: KnowledgeDocumentUpdate,
+    session: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Rename a document or update metadata (no re-ingest)."""
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:create")
+
+    stmt = select(KnowledgeDocument).where(
+        KnowledgeDocument.id == doc_id,
+        KnowledgeDocument.user_id == user_id,
+    )
+    result = await session.execute(stmt)
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "filename" in data and data["filename"]:
+        doc.filename = str(data["filename"]).strip() or doc.filename
+
+    meta = dict(doc.doc_metadata or {}) if isinstance(doc.doc_metadata, dict) else {}
+    if "description" in data:
+        desc = data.get("description")
+        if desc is None or str(desc).strip() == "":
+            meta.pop("description", None)
+        else:
+            meta["description"] = str(desc).strip()
+    if "metadata" in data and isinstance(data.get("metadata"), dict):
+        meta.update(data["metadata"])
+    doc.doc_metadata = meta
+
+    await session.commit()
+    await session.refresh(doc)
 
     return KnowledgeDocumentOut(
         id=str(doc.id),

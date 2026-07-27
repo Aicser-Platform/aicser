@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { Badge, Button, Input, Table, Tag, Tabs, Tooltip, Typography } from 'antd';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Dropdown, Input, Table, Tag, Tabs, Tooltip, Typography, message } from 'antd';
 import {
   CopyOutlined,
   DeleteOutlined,
+  FolderOutlined,
   HistoryOutlined,
   ImportOutlined,
   PlusOutlined,
@@ -14,6 +15,12 @@ import {
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import { matchesActiveSavedQuery } from '@/utils/queryTabNaming';
+import { LibraryCollectionControls } from '@/components/library/LibraryCollectionControls';
+import {
+  queryCollectionService,
+  type QueryCollection,
+} from '@/services/queryCollectionService';
+import { formatApiValidationError } from '@/utils/validationErrorMessage';
 
 const { Text } = Typography;
 
@@ -23,6 +30,7 @@ export type SavedQueryRow = {
   sql?: string;
   metadata?: Record<string, unknown>;
   created_at?: string;
+  collectionId?: number | string | null;
 };
 
 export type SnapshotRow = {
@@ -48,6 +56,10 @@ export interface SavedQueriesSnapshotsPaneProps {
   onLoadSnapshotToTab: (record: SnapshotRow) => void;
   onLoadSnapshotResults: (record: SnapshotRow) => void;
   onDeleteSnapshot: (record: SnapshotRow) => void;
+  /** When set, enables collection filter/CRUD for saved queries. */
+  organizationId?: string | null;
+  projectId?: string | null;
+  onSavedQueriesChanged?: () => void;
 }
 
 function SqlPreview({ text }: { text?: string }) {
@@ -64,19 +76,23 @@ function SqlPreview({ text }: { text?: string }) {
 function SavedQueryActions({
   record,
   t,
+  collections,
   onLoadToNewTab,
   onLoadHere,
   onShowVersions,
   onDuplicateSaved,
   onDeleteSaved,
+  onAssignCollection,
 }: {
   record: SavedQueryRow;
   t: (key: string, values?: Record<string, unknown>) => string;
+  collections: QueryCollection[];
   onLoadToNewTab: (record: SavedQueryRow) => void;
   onLoadHere: (record: SavedQueryRow) => void;
   onShowVersions: (record: SavedQueryRow) => void;
   onDuplicateSaved: (record: SavedQueryRow) => void;
   onDeleteSaved: (record: SavedQueryRow) => void;
+  onAssignCollection?: (record: SavedQueryRow, collectionId: number | string | null) => void;
 }) {
   return (
     <div className="qe-saved-actions" onClick={(e) => e.stopPropagation()}>
@@ -120,6 +136,35 @@ function SavedQueryActions({
           onClick={() => onDuplicateSaved(record)}
         />
       </Tooltip>
+      {onAssignCollection ? (
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: [
+              {
+                key: 'unfiled',
+                label: t('unassigned'),
+                onClick: () => onAssignCollection(record, null),
+              },
+              ...collections.map((c) => ({
+                key: String(c.id),
+                label: c.name,
+                onClick: () => onAssignCollection(record, c.id),
+              })),
+            ],
+          }}
+        >
+          <Tooltip title={t('move_to_collection')}>
+            <Button
+              type="text"
+              size="small"
+              className="icon-only-btn qe-saved-action-btn"
+              icon={<FolderOutlined />}
+              aria-label={t('move_to_collection')}
+            />
+          </Tooltip>
+        </Dropdown>
+      ) : null}
       <Tooltip title={t('tooltip_delete_saved_query')}>
         <Button
           type="text"
@@ -201,8 +246,52 @@ export function SavedQueriesSnapshotsPane({
   onLoadSnapshotToTab,
   onLoadSnapshotResults,
   onDeleteSnapshot,
+  organizationId,
+  projectId,
+  onSavedQueriesChanged,
 }: SavedQueriesSnapshotsPaneProps) {
   const t = useTranslations('monaco_sql_editor');
+  const [collections, setCollections] = useState<QueryCollection[]>([]);
+  const [collectionId, setCollectionId] = useState<string | null>(null);
+
+  const refreshCollections = async () => {
+    try {
+      const rows = await queryCollectionService.list(organizationId, projectId);
+      setCollections(rows);
+    } catch {
+      setCollections([]);
+    }
+  };
+
+  useEffect(() => {
+    void refreshCollections();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId, projectId]);
+
+  const filteredQueries = useMemo(() => {
+    const rows = savedQueries.filter(Boolean);
+    if (!collectionId) return rows;
+    return rows.filter((q) => String(q.collectionId ?? '') === String(collectionId));
+  }, [savedQueries, collectionId]);
+
+  const assignCollection = useCallback(
+    async (record: SavedQueryRow, nextCollectionId: number | string | null) => {
+      if (record.id == null) return;
+      try {
+        await queryCollectionService.assign(
+          record.id,
+          nextCollectionId,
+          organizationId,
+          projectId,
+        );
+        message.success(t('collection_moved'));
+        onSavedQueriesChanged?.();
+      } catch (err) {
+        message.error(formatApiValidationError(err));
+      }
+    },
+    [organizationId, projectId, onSavedQueriesChanged, t],
+  );
 
   const savedColumns: ColumnsType<SavedQueryRow> = useMemo(
     () => [
@@ -250,24 +339,28 @@ export function SavedQueriesSnapshotsPane({
       {
         title: t('col_actions'),
         key: 'actions',
-        width: 140,
+        width: 168,
         fixed: 'right',
         align: 'center',
         render: (_: unknown, record) => (
           <SavedQueryActions
             record={record}
             t={t}
+            collections={collections}
             onLoadToNewTab={onLoadToNewTab}
             onLoadHere={onLoadHere}
             onShowVersions={onShowVersions}
             onDuplicateSaved={onDuplicateSaved}
             onDeleteSaved={onDeleteSaved}
+            onAssignCollection={assignCollection}
           />
         ),
       },
     ],
     [
       activeTab,
+      assignCollection,
+      collections,
       onDeleteSaved,
       onDuplicateSaved,
       onLoadHere,
@@ -288,7 +381,7 @@ export function SavedQueriesSnapshotsPane({
         render: (name: string, record) => (
           <span className="qe-saved-name-cell">
             <span className="qe-saved-name">{name}</span>
-            {activeTab && isSameSnapshotName(name, activeTab.title) ? (
+            {isSameSnapshotName(name, activeTab?.title || '') ? (
               <Badge status="processing" text={<span className="qe-saved-active-tag">{t('active_tab_query')}</span>} />
             ) : null}
           </span>
@@ -341,10 +434,58 @@ export function SavedQueriesSnapshotsPane({
         items={[
           {
             key: 'saved',
-            label: t('saved_queries_tab_count', { count: savedQueries.length }),
+            label: t('saved_queries_tab_count', { count: filteredQueries.length }),
             children: (
               <div className="qe-saved-tab-body">
                 <p className="qe-saved-help">{t('saved_queries_help')}</p>
+                <LibraryCollectionControls
+                  className="qe-saved-collections"
+                  collections={collections.map((c) => ({ id: String(c.id), name: c.name }))}
+                  value={collectionId}
+                  onChange={setCollectionId}
+                  onCollectionsChange={(next) =>
+                    setCollections(next.map((c) => ({ id: c.id, name: c.name })))
+                  }
+                  createCollection={async (name) => {
+                    const created = await queryCollectionService.create(
+                      name,
+                      organizationId,
+                      projectId,
+                    );
+                    return { id: String(created.id), name: created.name };
+                  }}
+                  renameCollection={async (id, name) => {
+                    const updated = await queryCollectionService.rename(
+                      id,
+                      name,
+                      organizationId,
+                      projectId,
+                    );
+                    return { id: String(updated.id), name: updated.name };
+                  }}
+                  deleteCollection={async (id) => {
+                    await queryCollectionService.delete(id, organizationId, projectId);
+                    onSavedQueriesChanged?.();
+                  }}
+                  labels={{
+                    allCollections: t('all_collections'),
+                    newCollection: t('new_collection'),
+                    renameCollection: t('rename_collection'),
+                    deleteCollection: t('delete_collection'),
+                    deleteConfirmTitle: t('delete_collection_title'),
+                    deleteConfirmBody: t('delete_collection_body'),
+                    create: t('create'),
+                    save: t('save'),
+                    namePlaceholder: t('collection_name_placeholder'),
+                    created: t('collection_created'),
+                    renamed: t('collection_renamed'),
+                    deleted: t('collection_deleted'),
+                    manageCollection: t('manage_collection'),
+                    manageCollections: t('manage_collections'),
+                    noCollections: t('no_collections_yet'),
+                    filterByCollection: t('filter_by_collection'),
+                  }}
+                />
                 <div className="qe-saved-save-row">
                   <Input
                     placeholder={t('save_query_name_placeholder')}
@@ -364,7 +505,7 @@ export function SavedQueriesSnapshotsPane({
                   </Button>
                 </div>
                 <Table
-                  dataSource={savedQueries.filter(Boolean)}
+                  dataSource={filteredQueries}
                   rowKey={(r) => String(r?.id ?? r?.name ?? Math.random())}
                   size="small"
                   className="qe-saved-table"

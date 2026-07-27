@@ -1,5 +1,6 @@
 import type { SharedChartProps } from '@/components/charts/echartsToSharedWidget';
 import { resolveSharedChartProps } from '@/components/charts/echartsToSharedWidget';
+import type { ChartData } from '@/app/(dashboard)/dashboards/widgets/WidgetRendererConfig';
 
 export type ChatChartDisplay =
   | { mode: 'shared'; props: SharedChartProps }
@@ -57,6 +58,23 @@ export function resolveChatChartDisplay(
   const cfg = rawConfig(config);
   if (cfg.series) {
     return { mode: 'echarts', config: cfg };
+  }
+  // resolveSharedChartProps only builds the {x,y,series} aggregation shape, so it
+  // returns null for a table-typed chart (or anything else it doesn't recognize) even
+  // when there's perfectly good row data to show. Without this, every caller of this
+  // resolver — buildChatChartPinPayload (Pin to Dashboard) included — silently dropped
+  // the query result for tables instead of carrying it through as chartData, same class
+  // of bug already fixed for the Chart Designer handoff in ChartMessage.tsx.
+  if (Array.isArray(queryResult) && queryResult.length > 0) {
+    return {
+      mode: 'shared',
+      props: {
+        chartType: 'table',
+        chartData: queryResult as unknown as ChartData,
+        chartOptions: {},
+        chartQuery: {},
+      },
+    };
   }
   return { mode: 'none' };
 }

@@ -30,7 +30,7 @@
   flex: 1;
   min-width: 0;
   border-radius: 6px;
-  background: var(--ant-color-fill-quaternary);
+  background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary) !important;
   box-shadow: none !important;
   font-size: 12px;
@@ -107,7 +107,7 @@
 }
 
 .schema-explorer-tree .ant-tree-treenode:hover {
-  background: var(--ant-color-fill-quaternary);
+  background: var(--ant-color-fill-tertiary);
 }
 
 .schema-explorer-tree .ant-tree-treenode.ant-tree-treenode-selected {
@@ -293,7 +293,7 @@
 }
 
 .schema-explorer-object-row:hover {
-  background: var(--ant-color-fill-quaternary);
+  background: var(--ant-color-fill-tertiary);
 }
 
 .schema-explorer-caret-slot {
@@ -329,7 +329,7 @@
 }
 
 .schema-explorer-column-row:hover {
-  background: var(--ant-color-fill-quaternary);
+  background: var(--ant-color-fill-tertiary);
 }
 
 /* Progress status — prevent shimmer / label clipping in chat */

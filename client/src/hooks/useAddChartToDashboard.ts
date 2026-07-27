@@ -5,14 +5,16 @@ import { useRouter } from 'next/navigation';
 import { message as antMessage } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useDashboardStore } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
-import { chartService } from '@/app/(dashboard)/dashboards/services/chartService';
 import {
   buildChatChartPinPayload,
+  rememberChatLibraryChart,
   type ChatMessagePinSource,
 } from '@/components/charts/buildChatChartPinPayload';
-import { sanitizeLayoutItem, maxLayoutY } from '@/app/(dashboard)/dashboards/utils/layoutSanitize';
+import { ensureLibraryChartAndPinToDashboard } from '@/components/charts/ensureLibraryChartAndPin';
+import { attachSavedQueryToPinPayload } from '@/services/savedQueryBindService';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { dashboardLibraryService } from '@/app/(dashboard)/dashboards/services/dashboardLibraryService';
 
 export const CREATE_NEW_DASHBOARD_ID = '__create_new__';
 
@@ -31,7 +33,6 @@ export function useAddChartToDashboard() {
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
   const addDashboard = useDashboardStore((s) => s.addDashboard);
-  const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const setSelectedWidgetId = useDashboardStore((s) => s.setSelectedWidgetId);
   const setPropertiesCollapsed = useDashboardStore((s) => s.setPropertiesCollapsed);
 
@@ -73,8 +74,19 @@ export function useAddChartToDashboard() {
       let dashboardList = useDashboardStore.getState().dashboards;
       if (dashboardList.length === 0) {
         try {
-          await fetchDashboards();
-          dashboardList = useDashboardStore.getState().dashboards;
+          // Light library probe — avoid N+1 full hydrate just for empty-state
+          const page = await dashboardLibraryService.list({
+            projectId: useProjectStore.getState().currentProjectId,
+            facet: 'recent',
+            limit: 1,
+            detail: 'summary',
+          });
+          if (page.total === 0) {
+            dashboardList = [];
+          } else {
+            await fetchDashboards();
+            dashboardList = useDashboardStore.getState().dashboards;
+          }
         } catch {
           antMessage.error(t('pin_dashboard_load_failed'));
           return;
@@ -146,23 +158,53 @@ export function useAddChartToDashboard() {
         dashboardId = await addDashboard(newDashboardName.trim());
       }
 
-      const payload = buildChatChartPinPayload(
+      let payload = buildChatChartPinPayload(
         pendingSource.source,
         pendingSource.dataSourceId ?? pendingSource.source.dataSourceId ?? null,
       );
-      const layoutState = needsCreate ? [] : useDashboardStore.getState().layout;
-      const chart = await chartService.createChart(dashboardId!, {
-        dataSourceId: payload.dataSourceId,
-        chartType: payload.chartType,
-        title: payload.title,
-        chartOptions: payload.chartOptions,
-        chartQuery: payload.chartQuery,
-        layout: sanitizeLayoutItem({ x: 0, y: 0, w: 6, h: 5 }, maxLayoutY(layoutState)),
+      const layoutState = needsCreate
+        ? []
+        : useDashboardStore.getState().dashboards.find((d) => String(d.id) === String(dashboardId))
+            ?.layout ?? [];
+      const projectId = useProjectStore.getState().currentProjectId;
+
+      // Same durable bind as Query Editor Visualize: save SQL → saved_query_id
+      payload = await attachSavedQueryToPinPayload(
+        payload,
+        pendingSource.source.sqlQuery ||
+          (typeof payload.chartOptions?.sample_sql === 'string'
+            ? payload.chartOptions.sample_sql
+            : null),
+        { projectId, source: 'ai_chat_pin' },
+      );
+
+      // Library chart first, then link placement (reuse prior materialization for this message)
+      const pinned = await ensureLibraryChartAndPinToDashboard({
+        dashboardId: dashboardId!,
+        definition: {
+          title: payload.title,
+          chartType: payload.chartType,
+          dataSourceId: payload.dataSourceId,
+          chartQuery: payload.chartQuery,
+          chartOptions: payload.chartOptions,
+          existingChartId: pendingSource.source.libraryChartId || undefined,
+          reuseSavedQuery: Boolean(
+            payload.chartQuery &&
+              typeof payload.chartQuery === 'object' &&
+              (payload.chartQuery as { saved_query_id?: unknown }).saved_query_id,
+          ),
+        },
+        existingLayout: layoutState,
+        layout: { w: 6, h: 5 },
+        mode: 'link',
+        projectId,
       });
 
+      rememberChatLibraryChart(pendingSource.source.messageId, pinned.libraryChartId);
+
       await fetchDashboards();
-      setActiveDashboardId(dashboardId!);
-      setSelectedWidgetId(`widget-${chart.id}`);
+      await useDashboardStore.getState().loadDashboardById(dashboardId!);
+      setSelectedWidgetId(`widget-${pinned.chartId}`);
       setPropertiesCollapsed(false);
       antMessage.success(
         needsCreate && modalDashboards.length === 0
@@ -173,7 +215,7 @@ export function useAddChartToDashboard() {
       setPendingSource(null);
       setCreatingNew(false);
       setNewDashboardName('');
-      router.push(`/dashboards?id=${dashboardId}&chart=${chart.id}`);
+      router.push(`/dashboards?id=${dashboardId}&chart=${pinned.chartId}&mode=edit`);
     } catch (err) {
       console.error('[useAddChartToDashboard]', err);
       antMessage.error(formatApiValidationError(err) || t('pin_dashboard_failed'));
@@ -188,7 +230,6 @@ export function useAddChartToDashboard() {
     modalDashboards.length,
     addDashboard,
     fetchDashboards,
-    setActiveDashboardId,
     setSelectedWidgetId,
     setPropertiesCollapsed,
     router,

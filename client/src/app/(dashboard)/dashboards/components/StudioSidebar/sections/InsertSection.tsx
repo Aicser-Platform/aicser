@@ -38,7 +38,7 @@ function buildChartOptionsForType(type: WidgetType, templateName: string): Recor
     case 'gauge':
       return { gaugeMin: 0, gaugeMax: 100, showLegend: false };
     case 'stat':
-      return { format: 'number', fontSize: 32, layout: 'compact', showSparkline: false };
+      return { format: 'number', fontSize: 32, layout: 'default', showSparkline: false };
     case 'pie':
     case 'donut':
       return { showLegend: true, showDataLabel: false, innerRadius: type === 'donut' ? 40 : 0 };

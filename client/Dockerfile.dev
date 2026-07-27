@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20.19-alpine
 
 WORKDIR /app
 
@@ -21,4 +21,4 @@ ENV NODE_MAX_OLD_SPACE_SIZE=4096
 # node_modules is preserved by a named volume so the npm install above
 # initialises it on the first run and refreshes it when manifests change.
 # setup-ee.js generates src/ee/index.ts so @/ee resolves for both webpack and Turbopack.
-CMD ["sh", "-c", "export NEXT_PUBLIC_EDITION=\"${NEXT_PUBLIC_EDITION:-$EDITION}\"; DEPS_HASH=\"$(sha256sum package.json package-lock.json 2>/dev/null | sha256sum | cut -d ' ' -f 1)\"; INSTALLED_HASH=\"\"; if [ -f ./node_modules/.aicser-deps-hash ]; then INSTALLED_HASH=\"$(cat ./node_modules/.aicser-deps-hash)\"; fi; if [ ! -x ./node_modules/.bin/next ] || [ \"$INSTALLED_HASH\" != \"$DEPS_HASH\" ]; then echo \"[dev] node_modules volume is missing or stale; installing dependencies...\"; npm install --no-audit --no-fund; echo \"$DEPS_HASH\" > ./node_modules/.aicser-deps-hash; fi; node scripts/setup-ee.js && if [ \"${NEXT_DEV_TURBO}\" = \"true\" ]; then NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev --turbo -H 0.0.0.0 -p ${PORT:-3000}; else NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev -H 0.0.0.0 -p ${PORT:-3000}; fi"]
+CMD ["sh", "-c", "export NEXT_PUBLIC_EDITION=\"${NEXT_PUBLIC_EDITION:-$EDITION}\"; DEPS_HASH=\"$(sha256sum package.json package-lock.json 2>/dev/null | sha256sum | cut -d ' ' -f 1)\"; INSTALLED_HASH=\"\"; if [ -f ./node_modules/.aicser-deps-hash ]; then INSTALLED_HASH=\"$(cat ./node_modules/.aicser-deps-hash)\"; fi; if [ ! -x ./node_modules/.bin/next ] || [ \"$${INSTALLED_HASH}\" != \"$${DEPS_HASH}\" ]; then echo \"[dev] node_modules volume is missing or stale; installing dependencies...\"; npm install --no-audit --no-fund; echo \"$${DEPS_HASH}\" > ./node_modules/.aicser-deps-hash; fi; node scripts/setup-ee.js && if [ \"${NEXT_DEV_TURBO}\" = \"true\" ]; then NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev --turbo -H 0.0.0.0 -p ${PORT:-3000}; else NODE_OPTIONS=\"--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE:-2048}\" ./node_modules/.bin/next dev --webpack -H 0.0.0.0 -p ${PORT:-3000}; fi"]

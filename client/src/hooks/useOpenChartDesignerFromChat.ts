@@ -10,11 +10,15 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   buildDesignerWidgetFromChat,
   markChartDesignerSelection,
+  prepareChartOptionsForPersist,
   storePendingChartDesignerImport,
   storeTempChartData,
 } from '@/components/charts/chartDesignerBridge';
 import type { ChatMessagePinSource } from '@/components/charts/buildChatChartPinPayload';
+import { rememberChatLibraryChart } from '@/components/charts/buildChatChartPinPayload';
 import type { SharedChartProps } from '@/components/charts/echartsToSharedWidget';
+import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
+import { attachSavedQueryToPinPayload } from '@/services/savedQueryBindService';
 import { formatApiValidationError, isValidUuid } from '@/utils/validationErrorMessage';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
@@ -58,18 +62,65 @@ export function useOpenChartDesignerFromChat() {
 
       setOpening(true);
       try {
-        const widgetToSave = buildDesignerWidgetFromChat(params.source, {
+        let widgetToSave = buildDesignerWidgetFromChat(params.source, {
           userId,
           title: params.title,
           sharedChartProps: params.sharedChartProps,
           dataSourceIdOverride: dsId,
         });
 
-        const chartId = await saveChart(widgetToSave, userId);
+        const projectId = useProjectStore.getState().currentProjectId;
+        const enriched = await attachSavedQueryToPinPayload(
+          {
+            title: widgetToSave.title,
+            chartQuery: (widgetToSave.chartQuery || {}) as Record<string, unknown>,
+            chartOptions: (widgetToSave.chartOptions || {}) as Record<string, unknown>,
+            dataSourceId: widgetToSave.dataSourceId ?? null,
+          },
+          params.source.sqlQuery,
+          { projectId, source: 'ai_chat_customize' },
+        );
+        widgetToSave = {
+          ...widgetToSave,
+          chartQuery: enriched.chartQuery as typeof widgetToSave.chartQuery,
+          chartOptions: enriched.chartOptions as typeof widgetToSave.chartOptions,
+        };
+
+        const reuseSavedQuery = Boolean(
+          widgetToSave.chartQuery &&
+            typeof widgetToSave.chartQuery === 'object' &&
+            (widgetToSave.chartQuery as { saved_query_id?: unknown }).saved_query_id,
+        );
+
+        // Prefer existing library chart for this message; else upsert
+        let chartId: string | null = params.source.libraryChartId
+          ? String(params.source.libraryChartId)
+          : widgetToSave.chartId
+            ? String(widgetToSave.chartId)
+            : null;
+        if (!chartId) {
+          const created = await chartBuilderService.createChart(
+            {
+              title: widgetToSave.title,
+              chartType: widgetToSave.chartType,
+              dataSourceId: widgetToSave.dataSourceId ?? null,
+              chartQuery: widgetToSave.chartQuery || {},
+              chartOptions: prepareChartOptionsForPersist(widgetToSave.chartOptions),
+              reuseSavedQuery,
+            },
+            projectId,
+          );
+          chartId = created?.id ? String(created.id) : null;
+        } else if (!params.source.libraryChartId) {
+          chartId = await saveChart(widgetToSave, userId);
+        }
+
         if (!chartId) {
           antMessage.error(t('customize_chart_failed'));
           return;
         }
+
+        rememberChatLibraryChart(params.source.messageId, chartId);
 
         const savedWidget = {
           ...widgetToSave,

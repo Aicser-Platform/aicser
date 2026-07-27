@@ -1,11 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import stableStringify from 'fast-json-stable-stringify';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { useChartDesignerStore } from '../../chart-designer/stores/useChartDesignerStore';
 import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
+import {
+  columnsFromQueryResult,
+  inferChartMapping,
+  wrapSqlAsSubquery,
+} from '../utils/queryBindBridge';
+import { preserveChartQueryOnTypeChange, normalizeChartOptionsOnTypeChange } from '../utils/chartTypeMappingPreserve';
+import { enhancedDataService } from '@/services/enhancedDataService';
+import { stripPinFreezeOptions } from '@/components/charts/chartDesignerBridge';
 
 interface UseWidgetPropertiesParams {
   selectedWidget: any;
@@ -31,6 +40,8 @@ export const useWidgetProperties = ({
 
   const { dataSources, isLoading } = useDataSources();
   const { schema: selectedSchemaInfo, isLoading: schemaLoading } = useDataSourceSchema(normalizedDataSourceId);
+  const [savedQueryColumns, setSavedQueryColumns] = useState<Array<{ name: string; type?: string }>>([]);
+  const [savedQueryColumnsLoading, setSavedQueryColumnsLoading] = useState(false);
 
   // Use individual selectors to get stable action references.
   // Subscribing to the whole store (useDashboardStore()) causes an infinite loop:
@@ -67,12 +78,54 @@ export const useWidgetProperties = ({
     return updatedWidget;
   };
 
-  const ensureChartQueryDefaults = (query: any = {}) => ({
-    ...query,
-    yMetric: query.yMetric ?? 'count',
-    yMetrics: query.yMetrics ?? [],
-    sortBy: query.sortBy ?? 'x',
-  });
+  const ensureChartQueryDefaults = (query: any = {}) => {
+    const next = {
+      ...query,
+      yMetric: query.yMetric ?? 'count',
+      yMetrics: query.yMetrics ?? [],
+      sortBy: query.sortBy ?? 'x',
+    };
+    // Chat pins sometimes store a column name in yMetric; promote to yMetrics.
+    const yMetricVal = next.yMetric;
+    const isAgg =
+      typeof yMetricVal === 'string' &&
+      ['count', 'sum', 'none', 'distinct_count', 'avg', 'min', 'max', 'mean'].includes(
+        String(yMetricVal).toLowerCase(),
+      );
+    if (
+      (!Array.isArray(next.yMetrics) || next.yMetrics.length === 0) &&
+      typeof yMetricVal === 'string' &&
+      yMetricVal &&
+      !isAgg
+    ) {
+      next.yMetrics = [{ field: yMetricVal, aggregation: 'none' }];
+      next.yMetric = 'none';
+    }
+    // Repair older multi-series pins: legend/data has N series but yMetrics only 1.
+    const plotted = selectedWidget?.chartData?.series;
+    if (
+      Array.isArray(plotted) &&
+      plotted.length > 1 &&
+      (!Array.isArray(next.yMetrics) || next.yMetrics.length < plotted.length) &&
+      !next.groupField &&
+      !next.legend
+    ) {
+      const names = plotted
+        .map((s: { name?: string }) => String(s?.name || '').trim())
+        .filter((n: string) => n && !/^series\s*\d*$/i.test(n));
+      if (names.length > 1) {
+        next.yMetrics = names.map((field: string) => ({ field, aggregation: 'none' }));
+        next.yMetric = 'none';
+      }
+    }
+    // Hydrate XOR: multi-Y clears legend break-by (same as Build panel edits)
+    if (Array.isArray(next.yMetrics) && next.yMetrics.length > 1 && (next.groupField || next.legend)) {
+      delete next.groupField;
+      delete next.legend;
+      delete next.group;
+    }
+    return next;
+  };
 
   const fieldName = (field?: unknown) => String(field || '').split('.').pop() || '';
   const isNumericType = (type?: unknown) => /(int|float|double|decimal|numeric|number|real)/i.test(String(type || ''));
@@ -91,8 +144,16 @@ export const useWidgetProperties = ({
   };
   const isMeasureColumn = (column: { name: string; type: string }) =>
     isNumericType(column.type) && !isDimensionLikeField(column.name);
-  const metricAggregationForColumn = (column?: { name: string; type: string }) =>
-    column && isMeasureColumn(column) ? 'sum' : 'count';
+  const isSqlBoundWidget = Boolean(
+    selectedWidget?.chartQuery?.saved_query_id ||
+      selectedWidget?.chartQuery?.query_snapshot_id ||
+      selectedWidget?.chartOptions?.sample_sql,
+  );
+  const metricAggregationForColumn = (column?: { name: string; type: string }) => {
+    // Custom SQL / saved query cards are pre-aggregated — Don't summarize (Metabase style).
+    if (isSqlBoundWidget) return 'none';
+    return column && isMeasureColumn(column) ? 'sum' : 'count';
+  };
   const pickDefaultMetricColumn = (
     columns: Array<{ name: string; type: string }>,
     excludeField?: unknown,
@@ -213,6 +274,12 @@ export const useWidgetProperties = ({
         ? hasMetric
         : true;
     const hasTable = Boolean(selectedWidget?.chartQuery?.tableName);
+    const hasSqlSource = Boolean(
+      selectedWidget?.chartQuery?.saved_query_id ||
+        selectedWidget?.chartQuery?.query_snapshot_id ||
+        (typeof selectedWidget?.chartOptions?.sample_sql === 'string' &&
+          selectedWidget.chartOptions.sample_sql.trim()),
+    );
 
     // Compute a hash of the current query only (not chartOptions)
     const currentQueryHash = stableStringify({
@@ -236,7 +303,7 @@ export const useWidgetProperties = ({
       (selectedWidget?.dataSourceId &&
         hasX &&
         hasY &&
-        (!isMetricOnlyWidget || hasTable));
+        (!isMetricOnlyWidget || hasTable || hasSqlSource));
 
     if (!selectedWidgetId || !canSync || hasValidData || hasFailedCurrentQuery) {
       return;
@@ -249,12 +316,23 @@ export const useWidgetProperties = ({
     debounceTimeout.current = setTimeout(() => {
       const syncChart = async () => {
         try {
+          // Drop pin freeze on any live query sync so canvas follows Build edits
+          const liveOptions = {
+            ...stripPinFreezeOptions(selectedWidget.chartOptions || {}),
+            __prefetchedChartData: undefined,
+            __echartsSnapshot: undefined,
+          };
           if (!selectedWidget.chartId) {
             if (createChartAndFetchData) {
-              await createChartAndFetchData({ ...selectedWidget, lastFetchedQueryHash: currentQueryHash });
+              await createChartAndFetchData({
+                ...selectedWidget,
+                chartOptions: liveOptions,
+                lastFetchedQueryHash: currentQueryHash,
+              });
             } else if (isDesigner) {
               await updateChartAndFetchData(selectedWidgetId, {
                 ...selectedWidget,
+                chartOptions: liveOptions,
                 lastFetchedQueryHash: currentQueryHash,
               });
             }
@@ -263,6 +341,7 @@ export const useWidgetProperties = ({
               dataSourceId: selectedWidget.dataSourceId,
               title: selectedWidget.title,
               chartQuery: selectedWidget.chartQuery,
+              chartOptions: liveOptions,
               lastFetchedQueryHash: currentQueryHash,
             });
           }
@@ -291,6 +370,8 @@ export const useWidgetProperties = ({
     selectedWidget?.chartQuery?.y,
     JSON.stringify(selectedWidget?.chartQuery?.xMetrics),
     selectedWidget?.chartQuery?.legend,
+    selectedWidget?.chartQuery?.groupField,
+    selectedWidget?.chartQuery?.saved_query_id,
     JSON.stringify(selectedWidget?.chartQuery?.filters),
     selectedWidget?.chartQuery?.tableName,
     JSON.stringify(selectedWidget?.chartQuery?.metricFilters),
@@ -310,6 +391,22 @@ export const useWidgetProperties = ({
   const selectedJoinsKey = JSON.stringify(selectedChartQuery?.joins || []);
 
   const selectedTableColumns = useMemo(() => {
+    // SQL / saved-query mode: columns come from the SQL result shape, not base tables.
+    const sqlMode =
+      Boolean(selectedChartQuery?.saved_query_id) ||
+      Boolean(selectedChartQuery?.query_snapshot_id) ||
+      (typeof selectedWidget?.chartOptions?.sample_sql === 'string' &&
+        selectedWidget.chartOptions.sample_sql.trim());
+    if (sqlMode && savedQueryColumns.length > 0) {
+      return savedQueryColumns.map((c) => ({
+        label: c.name,
+        value: c.name,
+        type: c.type || 'unknown',
+      }));
+    }
+    // While probing SQL columns, don't fall back to unrelated table schema.
+    if (sqlMode) return [];
+
     const tables = selectedSchemaInfo?.tables || [];
     if (!tables.length) return [];
 
@@ -356,6 +453,10 @@ export const useWidgetProperties = ({
     selectedSchemaInfo,
     selectedTableName,
     selectedJoinsKey,
+    selectedChartQuery?.saved_query_id,
+    selectedChartQuery?.query_snapshot_id,
+    selectedWidget?.chartOptions?.sample_sql,
+    savedQueryColumns,
   ]);
 
   /* ----------------------------------------
@@ -381,6 +482,21 @@ export const useWidgetProperties = ({
       return;
     }
 
+    // Switching chart type: preserve compatible mappings; trim by destination maxCount / XOR.
+    if (key === 'chartType' && selectedWidget) {
+      const nextQuery = preserveChartQueryOnTypeChange(selectedWidget, String(value));
+      const nextOptions = normalizeChartOptionsOnTypeChange(
+        String(value),
+        (selectedWidget.chartOptions || {}) as Record<string, unknown>,
+      );
+      updateLocalAndStore({
+        chartType: value,
+        chartQuery: ensureChartQueryDefaults(nextQuery),
+        chartOptions: nextOptions,
+      });
+      return;
+    }
+
     // If chartQuery (data-affecting), update and trigger normal flow
     const updated = updateLocalAndStore({ [key]: value });
     if (key === 'chartQuery' && updated) {
@@ -394,11 +510,53 @@ export const useWidgetProperties = ({
     const prevX = selectedWidget.chartQuery?.x;
     let nextQuery = ensureChartQueryDefaults({
       ...(selectedWidget.chartQuery || {}),
-      [key]: value,
+      ...(key === 'pivotSwap' ? {} : { [key]: value }),
     });
+
+    // Atomic Rows ↔ Columns swap (Tableau/Power BI pivot)
+    if (key === 'pivotSwap' && value && typeof value === 'object') {
+      const x = (value as { x?: string }).x;
+      const groupField = (value as { groupField?: string }).groupField;
+      nextQuery = ensureChartQueryDefaults({
+        ...(selectedWidget.chartQuery || {}),
+        x,
+        groupField: groupField || undefined,
+        legend: groupField || undefined,
+      });
+      if (!groupField) {
+        delete nextQuery.groupField;
+        delete nextQuery.legend;
+      }
+    }
 
     if (key === 'tableName') {
       nextQuery = ensureChartQueryDefaults(sanitizeQueryForTable(nextQuery, value));
+    }
+
+    // Clear date grain when X axis is cleared; soft-suggest grain for date-like X
+    if (key === 'x') {
+      if (!value) {
+        nextQuery = { ...nextQuery, xGrain: undefined };
+      } else if (
+        !nextQuery.xGrain &&
+        /date|time|year|month|week|day|quarter|hour|timestamp/i.test(String(value))
+      ) {
+        const name = String(value);
+        nextQuery = {
+          ...nextQuery,
+          xGrain: /year/i.test(name)
+            ? 'year'
+            : /quarter/i.test(name)
+              ? 'quarter'
+              : /month/i.test(name)
+                ? 'month'
+                : /week/i.test(name)
+                  ? 'week'
+                  : /hour/i.test(name)
+                    ? 'hour'
+                    : 'day',
+        };
+      }
     }
 
     // Smart default: if x is selected and yMetrics is empty or only contained the previous default x
@@ -421,21 +579,77 @@ export const useWidgetProperties = ({
       };
     }
 
-    // Auto title for scatter - Removed as per user request to keep title as chart type name
-    updateLocalAndStore({ chartQuery: nextQuery });
+    // Alias legend ↔ groupField so Build "Legend" drives backend groupField pivot.
+    if (key === 'legend') {
+      nextQuery = { ...nextQuery, groupField: value || undefined };
+    }
+    if (key === 'groupField') {
+      nextQuery = { ...nextQuery, legend: value || undefined, groupField: value || undefined };
+    }
+
+    // Legend break-by and multi-measure are mutually exclusive (Power BI / Tableau style).
+    // Pivot uses the first measure only; clear extras so the chart matches the config.
+    if ((key === 'groupField' || key === 'legend') && value) {
+      if (Array.isArray(nextQuery.yMetrics) && nextQuery.yMetrics.length > 1) {
+        nextQuery = { ...nextQuery, yMetrics: nextQuery.yMetrics.slice(0, 1) };
+      }
+      if (Array.isArray(nextQuery.yMetricsSecondary) && nextQuery.yMetricsSecondary.length > 0) {
+        nextQuery = { ...nextQuery, yMetricsSecondary: [] };
+      }
+    }
+    if (
+      (key === 'yMetrics' && Array.isArray(value) && value.length > 1) ||
+      (key === 'yMetricsSecondary' && Array.isArray(value) && value.length > 0)
+    ) {
+      if (nextQuery.groupField || nextQuery.legend) {
+        nextQuery = { ...nextQuery, groupField: undefined, legend: undefined };
+      }
+    }
+
+    const patch: Record<string, unknown> = { chartQuery: nextQuery };
+
+    // Auto-enable combo bars when secondary metrics are added (dual-axis UX).
+    if (
+      key === 'yMetricsSecondary' &&
+      Array.isArray(value) &&
+      value.length > 0 &&
+      selectedWidget?.chartType === 'bar' &&
+      selectedWidget?.chartOptions?.barChartType !== 'combo-line'
+    ) {
+      patch.chartOptions = {
+        ...(selectedWidget.chartOptions || {}),
+        barChartType: 'combo-line',
+        showLegend: true,
+      };
+    }
+
+    // Multi-metric / legend break → show legend so series are distinguishable.
+    if (
+      (key === 'yMetrics' && Array.isArray(value) && value.length > 1) ||
+      (key === 'groupField' && value) ||
+      (key === 'legend' && value)
+    ) {
+      patch.chartOptions = {
+        ...((patch.chartOptions as Record<string, unknown>) || selectedWidget?.chartOptions || {}),
+        showLegend: true,
+      };
+    }
+
+    updateLocalAndStore(patch);
   };
 
   const metricAggregationForField = (field: DashboardFieldDragPayload) => {
+    // Match click-path defaults: SQL/saved-query results are already projected.
+    if (isSqlBoundWidget || selectedWidget?.chartType === 'scatter') return 'none';
     const type = (field.columnType || '').toLowerCase();
-    const isNumeric =
-      isNumericType(type);
+    const isNumeric = isNumericType(type);
     return isNumeric && !isDimensionLikeField(field.columnName) ? 'sum' : 'count';
   };
 
   const appendMetric = (metrics: any[] = [], field: DashboardFieldDragPayload, replace = false) => {
     const nextMetric = {
       field: field.columnName,
-      aggregation: selectedWidget?.chartType === 'scatter' ? 'none' : metricAggregationForField(field),
+      aggregation: metricAggregationForField(field),
     };
     if (replace) return [nextMetric];
     if (metrics.some((metric) => metric.field === field.columnName)) return metrics;
@@ -444,9 +658,10 @@ export const useWidgetProperties = ({
 
   const applyDroppedField = (targetKey: string, field: DashboardFieldDragPayload) => {
     const currentQuery = selectedWidget?.chartQuery || {};
+    // Never stamp a physical table onto a SQL-bound widget from a field drag.
     let nextQuery = ensureChartQueryDefaults({
       ...currentQuery,
-      ...(field.tableName ? { tableName: field.tableName } : {}),
+      ...(!isSqlBoundWidget && field.tableName ? { tableName: field.tableName } : {}),
     });
 
     if (targetKey === 'yMetrics' || targetKey === 'yMetricsSecondary') {
@@ -540,15 +755,317 @@ export const useWidgetProperties = ({
     });
   };
 
+  /**
+   * Force persist + refetch now (Apply Changes).
+   * Clears pin freeze + error/hash so chat/QE/designer widgets can rebind live.
+   */
+  const forceSyncChart = async (opts?: { title?: string }) => {
+    if (!selectedWidgetId || !selectedWidget) return;
+
+    if (debounceTimeout.current) {
+      clearTimeout(debounceTimeout.current);
+      debounceTimeout.current = null;
+    }
+
+    const title = opts?.title ?? selectedWidget.title;
+    let chartQuery = ensureChartQueryDefaults(selectedWidget.chartQuery || {});
+    const enteringTableMode = Boolean(
+      chartQuery.tableName &&
+        !chartQuery.saved_query_id &&
+        !chartQuery.query_snapshot_id,
+    );
+    let chartOptions = stripPinFreezeOptions(selectedWidget.chartOptions || {}, {
+      clearSql: enteringTableMode,
+    });
+
+    // Trim metrics when switching to single-metric chart types.
+    const maxMetrics =
+      selectedWidget.chartType === 'stat' || selectedWidget.chartType === 'gauge' ? 1 : undefined;
+    if (maxMetrics && Array.isArray(chartQuery.yMetrics) && chartQuery.yMetrics.length > maxMetrics) {
+      chartQuery = { ...chartQuery, yMetrics: chartQuery.yMetrics.slice(0, maxMetrics) };
+    }
+
+    // Keep legend/groupField aliases aligned before persist.
+    if (chartQuery.legend && !chartQuery.groupField) {
+      chartQuery = { ...chartQuery, groupField: chartQuery.legend };
+    }
+    if (chartQuery.groupField && !chartQuery.legend) {
+      chartQuery = { ...chartQuery, legend: chartQuery.groupField };
+    }
+
+    if (
+      selectedWidget.chartType === 'bar' &&
+      (chartQuery.yMetricsSecondary?.length ?? 0) > 0 &&
+      chartOptions.barChartType !== 'combo-line'
+    ) {
+      chartOptions = { ...chartOptions, barChartType: 'combo-line', showLegend: true };
+    }
+
+    const queryHash = stableStringify({ chartQuery });
+
+    // Explicit nulls so store merge deletes freeze keys
+    const chartOptionsPatch = {
+      ...chartOptions,
+      __prefetchedChartData: undefined,
+      __echartsSnapshot: undefined,
+      ...(enteringTableMode ? { sample_sql: undefined } : {}),
+    };
+
+    updateLocalAndStore({
+      title,
+      chartQuery,
+      chartOptions: chartOptionsPatch,
+      error: null,
+      lastFetchedQueryHash: undefined,
+    });
+
+    try {
+      if (!selectedWidget.chartId) {
+        if (createChartAndFetchData) {
+          await createChartAndFetchData({
+            ...selectedWidget,
+            title,
+            chartQuery,
+            chartOptions,
+            lastFetchedQueryHash: queryHash,
+            error: null,
+          });
+        }
+      } else {
+        await updateChartAndFetchData(selectedWidgetId, {
+          dataSourceId: selectedWidget.dataSourceId,
+          title,
+          chartQuery,
+          chartOptions: chartOptionsPatch,
+          lastFetchedQueryHash: queryHash,
+        });
+      }
+    } catch (err) {
+      console.error('Force chart sync failed:', err);
+      throw err;
+    }
+  };
+
   const handleDataSourceChange = (dataSourceId: string) => {
-    // Reset chart query when switching data source to avoid stale column selections
+    // Full reset — exit SQL/pin freeze so table mode can rebuild on the new source
+    setSavedQueryColumns([]);
     updateLocalAndStore({
       dataSourceId,
       chartQuery: { yMetric: 'count', yMetrics: [], sortBy: 'x' },
+      chartOptions: {
+        ...stripPinFreezeOptions(selectedWidget?.chartOptions || {}, { clearSql: true }),
+        __prefetchedChartData: undefined,
+        __echartsSnapshot: undefined,
+        sample_sql: undefined,
+      },
+      chartData: null,
+      error: null,
+      lastFetchedQueryHash: undefined,
     });
-
-    // React Query will auto-fetch schema for the new normalizedDataSourceId
+    useDataSourceStore.getState().select(dataSourceId);
   };
+
+  /**
+   * Bind (or clear) a Query Editor saved SQL query as this widget's data shape.
+   * Discovers result columns so Build field pickers match the query output.
+   */
+  const bindSavedQuery = useCallback(
+    async (
+      queryId: string | number | undefined,
+      snapshot?: { id?: string | number; name?: string; sql?: string; metadata?: Record<string, unknown> },
+    ) => {
+      if (!selectedWidgetId || !selectedWidget) return;
+
+      if (queryId == null || queryId === '') {
+        setSavedQueryColumns([]);
+        updateLocalAndStore({
+          chartQuery: ensureChartQueryDefaults({
+            ...(selectedWidget.chartQuery || {}),
+            saved_query_id: undefined,
+            query_snapshot_id: undefined,
+          }),
+          chartOptions: {
+            ...(selectedWidget.chartOptions || {}),
+            sample_sql: undefined,
+            __prefetchedChartData: undefined,
+            __echartsSnapshot: undefined,
+          },
+        });
+        return;
+      }
+
+      const meta = (snapshot?.metadata || {}) as Record<string, unknown>;
+      const metaDs = meta.data_source_id || meta.dataSourceId;
+      const nextDsId = metaDs ? String(metaDs) : selectedWidget.dataSourceId;
+      const sql = typeof snapshot?.sql === 'string' ? snapshot.sql : undefined;
+
+      let columns: Array<{ name: string; type?: string }> = [];
+      if (sql && nextDsId) {
+        setSavedQueryColumnsLoading(true);
+        try {
+          const result = await enhancedDataService.executeMultiEngineQuery(
+            wrapSqlAsSubquery(sql),
+            String(nextDsId),
+          );
+          columns = columnsFromQueryResult(result as any);
+        } catch (err) {
+          console.warn('Could not discover saved-query columns:', err);
+        } finally {
+          setSavedQueryColumnsLoading(false);
+        }
+      }
+
+      setSavedQueryColumns(columns);
+
+      const inferred = inferChartMapping(columns, selectedWidget.chartType || 'bar', {
+        preferNoneAggregation: true,
+      });
+      // Saved SQL is usually pre-aggregated — map all numeric measures with aggregation none
+      // (same as Query Editor Visualize), not just the first measure with sum.
+      const prev = selectedWidget.chartQuery || {};
+      const preserved =
+        Array.isArray(prev.yMetrics) && prev.yMetrics.length && columns.length
+          ? prev.yMetrics.filter((m: { field?: string }) =>
+              columns.some((c) => c.name === m.field),
+            )
+          : [];
+      const yMetrics =
+        preserved.length > 0
+          ? preserved.map((m: { field: string; aggregation?: string }) => ({
+              field: m.field,
+              aggregation:
+                !m.aggregation || m.aggregation === 'sum' ? 'none' : m.aggregation,
+            }))
+          : (inferred.yMetrics || []).map((m) => ({
+              field: m.field,
+              aggregation: 'none',
+            }));
+
+      // Legend break-by only when single measure (XOR with multi-Y)
+      const groupField =
+        yMetrics.length <= 1
+          ? prev.groupField && columns.some((c) => c.name === prev.groupField)
+            ? prev.groupField
+            : inferred.groupField
+          : undefined;
+
+      const nextQuery = ensureChartQueryDefaults({
+        ...prev,
+        saved_query_id: String(queryId),
+        tableName: undefined,
+        joins: [],
+        x:
+          prev.x && columns.some((c) => c.name === prev.x)
+            ? prev.x
+            : inferred.x || columns[0]?.name,
+        yMetrics,
+        yMetric: 'none',
+        groupField: groupField || undefined,
+        legend: groupField || undefined,
+      });
+      if (!groupField) {
+        delete nextQuery.groupField;
+        delete nextQuery.legend;
+      }
+      delete nextQuery.tableName;
+
+      updateLocalAndStore({
+        ...(nextDsId ? { dataSourceId: nextDsId } : {}),
+        chartQuery: nextQuery,
+        chartOptions: {
+          ...(selectedWidget.chartOptions || {}),
+          // Prefer durable saved query over frozen sample_sql
+          sample_sql: undefined,
+        },
+        title:
+          selectedWidget.title && !/^(bar|line|area|pie|chart)/i.test(selectedWidget.title)
+            ? selectedWidget.title
+            : snapshot?.name || selectedWidget.title,
+      });
+    },
+    [selectedWidget, selectedWidgetId, updateWidget],
+  );
+
+  const rediscoverSqlColumns = useCallback(async () => {
+    if (!selectedWidget?.dataSourceId) return;
+    const sqid = selectedWidget?.chartQuery?.saved_query_id;
+    const sample =
+      typeof selectedWidget?.chartOptions?.sample_sql === 'string'
+        ? selectedWidget.chartOptions.sample_sql.trim()
+        : '';
+    if (!sqid && !sample) {
+      setSavedQueryColumns([]);
+      return;
+    }
+    setSavedQueryColumnsLoading(true);
+    try {
+      let sql = sample;
+      if (sqid) {
+        const { fetchApi } = await import('@/utils/api');
+        const res = await fetchApi('queries/saved-queries');
+        const list = (res as { items?: Array<{ id?: string | number; sql?: string }> })?.items || [];
+        const found = list.find((q) => String(q.id) === String(sqid));
+        if (found?.sql) sql = found.sql;
+      }
+      if (!sql?.trim()) {
+        setSavedQueryColumns([]);
+        return;
+      }
+      const result = await enhancedDataService.executeMultiEngineQuery(
+        wrapSqlAsSubquery(sql),
+        String(selectedWidget.dataSourceId),
+      );
+      setSavedQueryColumns(columnsFromQueryResult(result as any));
+    } catch {
+      /* keep prior columns if probe fails */
+    } finally {
+      setSavedQueryColumnsLoading(false);
+    }
+  }, [
+    selectedWidget?.chartQuery?.saved_query_id,
+    selectedWidget?.chartOptions?.sample_sql,
+    selectedWidget?.dataSourceId,
+  ]);
+
+  // Discover SQL result columns for saved_query_id and/or sample_sql (reload + pin).
+  useEffect(() => {
+    if (!isSqlBoundWidget || !selectedWidget?.dataSourceId) {
+      if (!isSqlBoundWidget) setSavedQueryColumns([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      if (cancelled) return;
+      await rediscoverSqlColumns();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isSqlBoundWidget,
+    selectedWidget?.chartQuery?.saved_query_id,
+    selectedWidget?.chartOptions?.sample_sql,
+    selectedWidget?.dataSourceId,
+    selectedWidgetId,
+    rediscoverSqlColumns,
+  ]);
+
+  // Returning from Query Editor: refresh bound SQL columns on window focus.
+  useEffect(() => {
+    if (!isSqlBoundWidget) return;
+    const onFocus = () => {
+      void rediscoverSqlColumns();
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void rediscoverSqlColumns();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [isSqlBoundWidget, rediscoverSqlColumns]);
 
   const handleRefreshData = async () => {
     if (selectedWidgetId) {
@@ -604,8 +1121,13 @@ export const useWidgetProperties = ({
     applyDroppedField,
     applyWidgetChanges,
     applySlicerChanges,
+    forceSyncChart,
+    bindSavedQuery,
+    savedQueryColumnsLoading,
+    rediscoverSqlColumns,
     handleDataSourceChange,
     handleRefreshData,
     handleDeleteChart,
+    isSqlBoundWidget,
   };
 };

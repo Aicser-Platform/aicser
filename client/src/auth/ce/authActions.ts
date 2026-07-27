@@ -59,6 +59,10 @@ export const ceAuthActions: AuthActions = {
 
   async logout(): Promise<void> {
     clearCeBearerToken();
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } finally {
+      clearCeBearerToken();
+    }
   },
 };

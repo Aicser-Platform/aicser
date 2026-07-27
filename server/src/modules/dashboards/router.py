@@ -17,16 +17,19 @@ from src.modules.dashboards.dashboard_schema import (
     DashboardResponse,
     DashboardListResponse,
 )
+from src.modules.dashboards.services.dashboard_library_service import DashboardLibraryService
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.dashboards.pages_router import router as pages_router
+from src.modules.dashboards.versions_router import router as versions_router
 from src.modules.dashboards import operations as dash_ops
 
 router = APIRouter()
 
 router.include_router(pages_router, prefix="/{dashboard_id}/pages", tags=["dashboard-pages"])
+router.include_router(versions_router, prefix="/{dashboard_id}/versions", tags=["dashboard-versions"])
 
 
 def _normalize_dashboard_config(config: Any) -> dict[str, Any]:
@@ -41,51 +44,154 @@ def _normalize_dashboard_config(config: Any) -> dict[str, Any]:
     return {}
 
 
-def _serialize_dashboard(dashboard: Any) -> dict[str, Any]:
+def _parse_optional_uuid(value: Optional[str], field_name: str) -> Optional[UUID]:
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+
+
+def _user_uuid(uid: Optional[str]) -> Optional[UUID]:
+    if not uid:
+        return None
+    try:
+        return UUID(str(uid))
+    except (TypeError, ValueError):
+        return None
+
+
+def _serialize_dashboard(dashboard: Any, *, lib: Optional[DashboardLibraryService] = None) -> dict[str, Any]:
+    if lib is not None:
+        return DashboardLibraryService.serialize_dashboard(dashboard, detail="full")
     return {
         "id": getattr(dashboard, "id", None),
         "project_id": getattr(dashboard, "project_id", None),
         "title": getattr(dashboard, "title", None) or getattr(dashboard, "name", None),
         "description": getattr(dashboard, "description", None),
         "config": _normalize_dashboard_config(getattr(dashboard, "config", None)),
+        "collectionId": str(dashboard.collection_id) if getattr(dashboard, "collection_id", None) else None,
+        "isFavorite": bool(getattr(dashboard, "is_favorite", False)),
+        "lastOpenedAt": getattr(dashboard, "last_opened_at", None),
+        "tags": getattr(dashboard, "tags", None) or [],
         "created_at": getattr(dashboard, "created_at", None),
         "updated_at": getattr(dashboard, "updated_at", None),
     }
 
 
-@router.get(
-    "/",
-    response_model=DashboardListResponse,
-)
-async def list_dashboards(
+@router.get("/collections")
+async def list_dashboard_collections(
     project_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_async_session),
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     uid = user_id_from_payload(extract_user_payload(current_user) if current_user else {})
     await require_permission(uid, "dashboard:view", project_id=str(project_id) if project_id else None)
-    service = DashboardService(db)
-    if is_ee_enabled() and project_id:
-        dashboards = await service.list_by_project(project_id)
-    elif uid:
-        # CE: scope to the caller's own dashboards (plus legacy rows with no
-        # recorded owner). list_all() has no owner filter at all and used to
-        # return every user's dashboards to every authenticated user.
-        try:
-            dashboards = await service.list_by_user(UUID(str(uid)))
-        except ValueError:
-            dashboards = []
-        except Exception as exc:
-            # Fallback for missing created_by column (migration not yet applied).
-            logger.warning("list_by_user failed (%s); falling back to list_all", exc)
-            try:
-                dashboards = await service.list_all()
-            except Exception:
-                dashboards = []
-    else:
-        dashboards = []
-    return {"dashboards": [_serialize_dashboard(dashboard) for dashboard in dashboards]}
+    lib = DashboardLibraryService(db)
+    rows = await lib.list_collections(
+        user_id=_user_uuid(uid),
+        project_id=project_id if is_ee_enabled() else None,
+    )
+    return {"collections": [DashboardLibraryService.serialize_collection(r) for r in rows]}
 
+
+@router.post("/collections", status_code=201)
+async def create_dashboard_collection(
+    payload: dict = Body(...),
+    project_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: dict = Depends(JWTCookieBearer()),
+):
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "dashboard:create", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    parent = _parse_optional_uuid(payload.get("parentId") or payload.get("parent_id"), "parentId")
+    row = await lib.create_collection(
+        name=str(payload.get("name") or ""),
+        user_id=_user_uuid(uid),
+        project_id=project_id if is_ee_enabled() else None,
+        parent_id=parent,
+        sort_order=int(payload.get("sortOrder") or payload.get("sort_order") or 0),
+    )
+    return DashboardLibraryService.serialize_collection(row)
+
+
+@router.put("/collections/{collection_id}")
+async def update_dashboard_collection(
+    collection_id: UUID,
+    payload: dict = Body(...),
+    project_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: dict = Depends(JWTCookieBearer()),
+):
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    row = await lib.get_collection(collection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    clear_parent = payload.get("parentId", "__omit__") is None or payload.get("parent_id", "__omit__") is None
+    parent = None
+    if "parentId" in payload or "parent_id" in payload:
+        raw = payload.get("parentId", payload.get("parent_id"))
+        parent = _parse_optional_uuid(raw, "parentId") if raw else None
+    updated = await lib.update_collection(
+        row,
+        name=payload.get("name"),
+        parent_id=parent,
+        sort_order=payload.get("sortOrder", payload.get("sort_order")),
+        clear_parent=clear_parent and parent is None and ("parentId" in payload or "parent_id" in payload),
+    )
+    return DashboardLibraryService.serialize_collection(updated)
+
+
+@router.delete("/collections/{collection_id}", status_code=204)
+async def delete_dashboard_collection(
+    collection_id: UUID,
+    project_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: dict = Depends(JWTCookieBearer()),
+):
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "dashboard:delete", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    row = await lib.get_collection(collection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    await lib.delete_collection(row)
+
+
+@router.get(
+    "/",
+    response_model=None,
+)
+async def list_dashboards(
+    project_id: Optional[UUID] = None,
+    q: Optional[str] = Query(None),
+    facet: str = Query("all"),
+    collection_id: Optional[UUID] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    detail: str = Query("summary"),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
+):
+    """Paginated dashboard library (default). Pass limit to page; omit for first page of 100."""
+    uid = user_id_from_payload(extract_user_payload(current_user) if current_user else {})
+    await require_permission(uid, "dashboard:view", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    page_limit = int(limit) if limit is not None else 100
+    return await lib.list_library(
+        user_id=_user_uuid(uid),
+        project_id=project_id if is_ee_enabled() else None,
+        q=q,
+        facet=facet,
+        collection_id=collection_id,
+        limit=page_limit,
+        offset=offset,
+        detail=detail,
+    )
 
 @router.post(
     "/",
@@ -122,6 +228,7 @@ async def create_dashboard(
 async def get_dashboard(
     dashboard_id: UUID,
     token: Optional[str] = Query(None),
+    touch: bool = Query(False),
     db: AsyncSession = Depends(get_async_session),
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
@@ -132,6 +239,49 @@ async def get_dashboard(
     dashboard = await service.get_by_id(dashboard_id)
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
+    if touch:
+        lib = DashboardLibraryService(db)
+        dashboard = await lib.touch(dashboard)
+    return _serialize_dashboard(dashboard)
+
+
+@router.post("/{dashboard_id}/touch")
+async def touch_dashboard(
+    dashboard_id: UUID,
+    current_user: dict = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    service = DashboardService(db)
+    dashboard = await service.get_by_id(dashboard_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    project_id = getattr(dashboard, "project_id", None)
+    await require_permission(uid, "dashboard:view", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    dashboard = await lib.touch(dashboard)
+    return _serialize_dashboard(dashboard)
+
+
+@router.post("/{dashboard_id}/favorite")
+async def favorite_dashboard(
+    dashboard_id: UUID,
+    payload: dict = Body(...),
+    current_user: dict = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    service = DashboardService(db)
+    dashboard = await service.get_by_id(dashboard_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    project_id = getattr(dashboard, "project_id", None)
+    await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
+    lib = DashboardLibraryService(db)
+    dashboard = await lib.set_favorite(
+        dashboard,
+        bool(payload.get("isFavorite", payload.get("is_favorite", True))),
+    )
     return _serialize_dashboard(dashboard)
 
 @router.put(
@@ -156,7 +306,15 @@ async def update_dashboard(
     await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
 
-    updated = await service.update(dashboard, payload.dict())
+    updated = await service.update(dashboard, payload.dict(exclude_unset=True))
+    lib = DashboardLibraryService(db)
+    data = payload.dict(exclude_unset=True)
+    if "collectionId" in data:
+        updated = await lib.assign_collection(updated, data.get("collectionId"))
+    if "isFavorite" in data and data.get("isFavorite") is not None:
+        updated = await lib.set_favorite(updated, bool(data.get("isFavorite")))
+    if "tags" in data and data.get("tags") is not None:
+        updated = await lib.set_tags(updated, list(data.get("tags") or []))
     return _serialize_dashboard(updated)
 
 
@@ -166,6 +324,7 @@ async def update_dashboard(
 )
 async def delete_dashboard(
     dashboard_id: UUID,
+    purge: bool = Query(False, description="Permanently delete instead of moving to trash"),
     current_user: dict = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
@@ -180,7 +339,27 @@ async def delete_dashboard(
     await require_permission(uid, "dashboard:delete", project_id=str(project_id) if project_id else None)
     await enforce_publish_owner_edit(db, dashboard_id, current_user)
 
-    await service.delete(dashboard)
+    if purge:
+        await service.purge(dashboard)
+    else:
+        await service.delete(dashboard)
+
+
+@router.post("/{dashboard_id}/restore")
+async def restore_dashboard(
+    dashboard_id: UUID,
+    current_user: dict = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    service = DashboardService(db)
+    dashboard = await service.get_by_id(dashboard_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    project_id = getattr(dashboard, "project_id", None)
+    await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
+    restored = await service.restore(dashboard)
+    return _serialize_dashboard(restored)
 
 
 @router.get("/{dashboard_id}/filter-options")

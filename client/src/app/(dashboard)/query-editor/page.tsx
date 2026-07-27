@@ -6,8 +6,9 @@ import { DEFAULT_QUERY_LIMIT } from '@/config/queryLimits';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingScreen from '@/components/LoadingScreen/LoadingScreen';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
-import { Card, Typography, Alert, Space, Button, Tooltip, Tag, Popover, message, Spin } from 'antd';
+import { Card, Typography, Alert, Space, Button, Tooltip, Tag, Popover, message } from 'antd';
 import { useTranslations } from 'next-intl';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { AccessDenied } from '@/components/layout/AccessDenied';
@@ -15,7 +16,7 @@ import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/constants/permissions';
 import {
   QuestionCircleOutlined,
-  RocketOutlined,
+  MessageOutlined,
   BulbOutlined,
   PlayCircleOutlined,
   DatabaseOutlined,
@@ -35,15 +36,14 @@ import {
   peekQueryEditorImport,
 } from '@/utils/queryEditorBridge';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { useDataSources } from '@/hooks/useDataSources';
 
 /* Lazy load Monaco editor for faster initial page load */
 function EditorLoadingPlaceholder() {
   const t = useTranslations('query_editor');
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-      <Spin size="large" tip={t('loading_editor')}>
-        <div style={{ minHeight: 80 }} />
-      </Spin>
+    <div style={{ flex: 1, minHeight: 400, display: 'flex' }}>
+      <AppLoadingIndicator variant="inline" tip={t('loading_editor')} />
     </div>
   );
 }
@@ -142,6 +142,7 @@ export default function QueryEditorPage() {
     (currentProject as { organizationId?: string } | null)?.organizationId ||
     undefined;
   const { isDarkMode } = useThemeMode();
+  const { dataSources } = useDataSources();
   const [publishOpen, setPublishOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -206,13 +207,7 @@ export default function QueryEditorPage() {
   return (
     <PermissionGuard
       permission={Permission.QUERY_EXECUTE}
-      loadingFallback={
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-          <Spin size="large" tip={t('loading_editor')}>
-            <div style={{ minHeight: 80 }} />
-          </Spin>
-        </div>
-      }
+      loadingFallback={<AppLoadingIndicator variant="inline" tip={t('loading_editor')} />}
       fallback={
         <AccessDenied
           title={t('no_query_permission')}
@@ -237,22 +232,27 @@ export default function QueryEditorPage() {
           }
           extra={
             <Space size={8} wrap className="qe-page-actions">
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<DatabaseOutlined />}
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
-                    }}
-                  >
-                    {t('add_data_source')}
-                  </Button>
+                  {/* Once at least one data source exists, the Sources panel's own "+"
+                      already covers this — a second, equally-prominent button here was
+                      just competing for attention. */}
+                  {dataSources.length === 0 && (
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<DatabaseOutlined />}
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
+                      }}
+                    >
+                      {t('add_data_source')}
+                    </Button>
+                  )}
 
                   {['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
                     <Button
                       type="default"
                       size="small"
-                      icon={<RocketOutlined />}
+                      icon={<MessageOutlined />}
                       onClick={() => router.push('/chat')}
                     >
                       {t('ask_ai_engine')}

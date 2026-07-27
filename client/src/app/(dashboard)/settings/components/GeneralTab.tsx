@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Select, Switch, Button, Row, Col, Typography, message, Spin, Flex } from 'antd';
-import { GlobalOutlined, SaveOutlined } from '@ant-design/icons';
+import { CalendarOutlined, ClockCircleOutlined, DollarOutlined, GlobalOutlined, SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import {
@@ -160,9 +160,15 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           <Col xs={24} md={12}>
             <Form.Item name="timezone" label={t('timezone')} rules={[{ required: true }]}>
               <Select placeholder={t('select_timezone')} showSearch optionFilterProp="label">
-                {TIMEZONE_OPTIONS.map(({ value, label }) => (
+                {TIMEZONE_OPTIONS.map(({ value, label, offset }) => (
                   <Option key={value} value={value} label={label}>
-                    {label}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 8 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <ClockCircleOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />
+                        {label}
+                      </span>
+                      {offset && <Text type="secondary" style={{ fontSize: 12 }}>{offset}</Text>}
+                    </span>
                   </Option>
                 ))}
               </Select>
@@ -171,9 +177,15 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           <Col xs={24} md={12}>
             <Form.Item name="dateFormat" label={t('date_format')}>
               <Select placeholder={t('select_date_format')}>
-                {DATE_FORMAT_OPTIONS.map(({ value, label }) => (
-                  <Option key={value} value={value}>
-                    {label}
+                {DATE_FORMAT_OPTIONS.map(({ value, label, example }) => (
+                  <Option key={value} value={value} label={label}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 8 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        <CalendarOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />
+                        {label}
+                      </span>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{example}</Text>
+                    </span>
                   </Option>
                 ))}
               </Select>
@@ -182,17 +194,26 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           <Col xs={24} md={12}>
             <Form.Item name="currency" label={t('currency')}>
               <Select placeholder={t('select_currency')}>
-                {CURRENCY_OPTIONS.map(({ value, label }) => (
-                  <Option key={value} value={value}>
-                    {label}
+                {CURRENCY_OPTIONS.map(({ value, label, symbol }) => (
+                  <Option key={value} value={value} label={label}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <DollarOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />
+                      {label}
+                      <Text type="secondary" style={{ fontSize: 12 }}>{symbol}</Text>
+                    </span>
                   </Option>
                 ))}
               </Select>
             </Form.Item>
           </Col>
         </Row>
+      </Card>
 
-      <p className='text-lg font-semibold'>{t('display_preferences')}</p>
+      <Card
+        size="small"
+        title={t('display_preferences')}
+        style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
+      >
         <Row gutter={[16, 0]}>
           <Col xs={24} md={12}>
             <Form.Item name="theme" label={t('theme')} tooltip={t('theme_tooltip')} style={{ marginBottom: 16 }}>

@@ -33,6 +33,13 @@
   justify-content: center;
 }
 
+/* Unified Filter control (single button — opens menu) */
+.studio-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+}
+
 .studio-last-refreshed {
   font-size: 11px;
   color: var(--ant-color-text-tertiary);
@@ -343,7 +350,7 @@
   padding: 0;
 }
 
-/* Force light capture surface for PNG/PDF export from dark studio */
+/* Theme-aware capture surfaces for PNG/PDF export */
 .dashboard-export-light,
 .dashboard-export-light .widget-card,
 .dashboard-export-light .dashboard-container {
@@ -356,6 +363,19 @@
   box-shadow: none !important;
 }
 
+.dashboard-export-dark,
+.dashboard-export-dark .widget-card,
+.dashboard-export-dark .dashboard-container {
+  background: #0d1117 !important;
+  color: #e6edf3 !important;
+}
+
+.dashboard-export-dark .widget-card {
+  background: #161b22 !important;
+  border-color: #30363d !important;
+  box-shadow: none !important;
+}
+
 html[data-theme='dark'] .dashboard-canvas-wrapper,
 html[data-theme='dark'] .studio-canvas-area {
   --studio-bg: #0d1117;
@@ -363,9 +383,17 @@ html[data-theme='dark'] .studio-canvas-area {
 }
 
 .dashboard-export-light .dashboard-canvas-wrapper,
-.dashboard-export-light .studio-canvas-area {
+.dashboard-export-light .studio-canvas-area,
+.dashboard-export-light.dashboard-container {
   --studio-bg: #ffffff;
   --studio-card-bg: #ffffff;
+}
+
+.dashboard-export-dark .dashboard-canvas-wrapper,
+.dashboard-export-dark .studio-canvas-area,
+.dashboard-export-dark.dashboard-container {
+  --studio-bg: #0d1117;
+  --studio-card-bg: #161b22;
 }
 
 .dashboard-export-light .widget-card {
@@ -417,57 +445,334 @@ html[data-theme='dark'] .studio-canvas-area {
 
 /* ─── Print / browser PDF ────────────────────────────────────────────────── */
 @media print {
-  /* Hide all chrome */
+  @page {
+    size: landscape;
+    margin: 6mm;
+  }
+
+  /* Nuclear hide: only the dashboard sheet + print header/footer are visible.
+     Stops app header (sidebar collapse), nav rail, avatars, watermarks, etc. */
+  body.dashboard-print-mode * {
+    visibility: hidden !important;
+  }
+
+  body.dashboard-print-mode .dashboard-print-root,
+  body.dashboard-print-mode .dashboard-print-root *,
+  body.dashboard-print-mode .dashboard-container,
+  body.dashboard-print-mode .dashboard-container *,
+  body.dashboard-print-mode .dashboard-viewer-canvas,
+  body.dashboard-print-mode .dashboard-viewer-canvas *,
+  body.dashboard-print-mode .dashboard-print-sheet,
+  body.dashboard-print-mode .dashboard-print-sheet * {
+    visibility: visible !important;
+  }
+
+  body.dashboard-print-mode .aiser-watermark-overlay,
+  body.dashboard-print-mode .aiser-watermark-corner,
+  body.dashboard-print-mode .drag-handle-icon,
+  body.dashboard-print-mode .react-resizable-handle,
+  body.dashboard-print-mode .widget-focus-btn,
+  body.dashboard-print-mode .widget-text-floating-actions,
+  body.dashboard-print-mode .sidebar-toggle,
+  body.dashboard-print-mode .sidebar-toggle-btn,
+  body.dashboard-print-mode .studio-panel-collapse-btn,
+  body.dashboard-print-mode .properties-panel-collapse-btn,
+  body.dashboard-print-mode .no-print,
+  body.dashboard-print-mode .no-export {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Fallback when print mode class missing (e.g. Ctrl+P without Share → Print) */
   .dashboard-tabs-bar,
+  .dashboard-studio-toolbar,
   .studio-toolbar,
   .studio-sidebar,
+  .studio-sidebar-rail,
+  .studio-sidebar-panel,
+  .studio-panel-collapse-btn,
   .properties-panel,
+  .properties-panel-collapse-btn,
+  .studio-context,
   .studio-context-bar,
+  .studio-context-row,
   .dashboard-page-tabs,
+  .dashboard-page-chrome,
   .ant-layout-sider,
+  .ant-layout-header,
+  .layout-app-header,
+  .layout-header,
+  .header-shell,
+  .app-navigation-sider,
+  .sidebar-toggle,
+  .sidebar-toggle-btn,
+  .dashboard-collab-comments-anchor,
+  .dashboard-collab-comments-trigger,
+  .dashboard-collab-comments-drawer,
+  .dashboard-collab-overlay,
+  .mobile-bottom-nav,
   .widget-card-header .ant-dropdown-trigger,
   .drag-handle-icon,
   .widget-focus-btn,
+  .widget-text-floating-actions,
   .add-block-popover-trigger,
   .studio-multi-select-bar,
+  .widget-interaction-hint-wrap,
+  .react-resizable-handle,
+  .aiser-watermark-overlay,
+  .no-print,
+  .no-export,
   header,
-  nav {
+  nav,
+  footer {
     display: none !important;
   }
 
-  /* Expand canvas to full page */
+  /* Expand canvas to full printable area — no viewport clip */
+  html,
+  body,
+  .page-content,
+  .layout-main-column,
+  .studio-body,
   .studio-canvas-area,
+  .studio-canvas-scroll,
   .studio-wrapper,
+  .dashboard-workspace,
+  .dashboard-workspace-main,
+  .dashboard-container,
+  .dashboard-viewer-canvas,
+  .react-grid-layout,
   .ant-layout,
   .ant-layout-content {
     overflow: visible !important;
     height: auto !important;
     max-height: none !important;
+    min-height: 0 !important;
   }
 
-  /* Ensure white background */
+  .dashboard-workspace,
+  .dashboard-workspace-main,
+  .studio-canvas-area,
+  .studio-canvas-scroll {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.dashboard-print-mode .dashboard-print-root {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.dashboard-print-mode .dashboard-container,
+  body.dashboard-print-mode .dashboard-viewer-canvas {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Industry paper standard: always a light document sheet (Tableau / Power BI / Looker).
+     Dark UI is temporarily flipped to light before print; do not keep dark board on white paper. */
+  html,
   body,
-  .studio-canvas-area {
-    background: #fff !important;
+  .studio-canvas-area,
+  .studio-wrapper,
+  .dashboard-workspace,
+  .dashboard-workspace-main,
+  .dashboard-container,
+  .dashboard-viewer-canvas,
+  .dashboard-print-root {
+    background: #ffffff !important;
+    color: #24292f !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Show all grid items without clipping */
+  body.dashboard-print-mode .dashboard-print-root {
+    background: #ffffff !important;
+  }
+
+  body.dashboard-print-mode .widget-card {
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: none !important;
+    color: #24292f !important;
+  }
+
+  body.dashboard-print-mode .widget-card.widget-type-text {
+    border: none !important;
+    background: transparent !important;
+  }
+
+  body.dashboard-print-mode .widget-card-title,
+  body.dashboard-print-mode .widget-card-subtitle,
+  body.dashboard-print-mode .studio-stat-value,
+  body.dashboard-print-mode .studio-stat-label {
+    color: #24292f !important;
+  }
+
   .react-grid-layout {
     overflow: visible !important;
+    width: 100% !important;
   }
 
+  .react-grid-item,
   .widget-card {
     break-inside: avoid;
     box-shadow: none !important;
-    border: 1px solid #e0e0e0 !important;
+    border: 1px solid #e5e7eb !important;
+    overflow: visible !important;
   }
+
+  .widget-card.widget-type-text {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .widget-card-header,
+  .widget-card-header-titles,
+  .widget-card-title,
+  .widget-card-subtitle,
+  .widget-card-body,
+  .text-widget,
+  .text-widget-body,
+  .studio-stat-label,
+  .studio-stat-value {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    max-height: none !important;
+    -webkit-line-clamp: unset !important;
+  }
+
+  .widget-card-title {
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Print-only title / Powered-by sheets injected by printDashboardOnly() */
+  .dashboard-print-header {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0 0 10px;
+    margin: 0 0 10px;
+    border-bottom: 1px solid #e1e4e8;
+    color: #24292f !important;
+  }
+
+  .dashboard-print-header-text {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .dashboard-print-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 650;
+    line-height: 1.3;
+    color: #1f2328 !important;
+    white-space: normal;
+    overflow: visible;
+    word-break: break-word;
+  }
+
+  .dashboard-print-subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: rgba(36, 41, 47, 0.62) !important;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .dashboard-print-logo {
+    flex-shrink: 0;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .dashboard-print-footer {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 0 0;
+    margin: 10px 0 0;
+    border-top: 1px solid #e1e4e8;
+    font-size: 12px;
+    color: rgba(36, 41, 47, 0.55) !important;
+  }
+}
+
+/* Print sheets are invisible on screen — only appear when printing */
+.dashboard-print-sheet {
+  display: none;
+}
+
+/* Export snapshot: don't clip titles / narrative / KPI labels */
+.dashboard-export-light .widget-card-title,
+.dashboard-export-dark .widget-card-title,
+.dashboard-export-light .widget-card-subtitle,
+.dashboard-export-dark .widget-card-subtitle,
+.dashboard-export-light .text-widget-wrapper,
+.dashboard-export-dark .text-widget-wrapper,
+.dashboard-export-light .text-widget-editor,
+.dashboard-export-dark .text-widget-editor,
+.dashboard-export-light .studio-stat-label,
+.dashboard-export-dark .studio-stat-label {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  -webkit-line-clamp: unset !important;
+  max-height: none !important;
+}
+
+.dashboard-export-light .text-widget-toolbar,
+.dashboard-export-dark .text-widget-toolbar,
+.dashboard-export-light .ant-divider,
+.dashboard-export-dark .ant-divider {
+  display: none !important;
+}
+
+.dashboard-export-light .widget-type-stat,
+.dashboard-export-dark .widget-type-stat,
+.dashboard-export-light .widget-type-stat .widget-card-body,
+.dashboard-export-dark .widget-type-stat .widget-card-body,
+.dashboard-export-light .studio-stat-root,
+.dashboard-export-dark .studio-stat-root,
+.dashboard-export-light .studio-stat-label,
+.dashboard-export-dark .studio-stat-label {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* Executive KPI cards need enough row height for value + label + trend */
+.widget-card.widget-type-stat .studio-stat-executive {
+  min-height: 120px;
 }
 
 /* When window.print() is triggered, add a helper class so non-print-media can also hide chrome */
 body.dashboard-print-mode .studio-toolbar,
+body.dashboard-print-mode .dashboard-studio-toolbar,
 body.dashboard-print-mode .studio-sidebar,
-body.dashboard-print-mode .properties-panel {
-  /* handled by @media print — this class is a signal only */
+body.dashboard-print-mode .studio-sidebar-rail,
+body.dashboard-print-mode .studio-sidebar-panel,
+body.dashboard-print-mode .studio-context,
+body.dashboard-print-mode .properties-panel,
+body.dashboard-print-mode .layout-app-header,
+body.dashboard-print-mode .app-navigation-sider,
+body.dashboard-print-mode .sidebar-toggle,
+body.dashboard-print-mode .sidebar-toggle-btn {
+  /* @media print uses visibility; this class is the print-mode signal */
 }
 
 /* ==========================================
@@ -583,7 +888,11 @@ body.dashboard-print-mode .properties-panel {
 }
 
 .dashboard-collab-comments-trigger {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  box-shadow: none;
+}
+
+.dashboard-collab-comments-trigger--toolbar {
+  box-shadow: none;
 }
 
 .dashboard-collab-comments-scope {

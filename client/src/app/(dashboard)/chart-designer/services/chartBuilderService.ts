@@ -69,17 +69,39 @@ class ChartBuilderService {
   }
 
   /** List charts for the current scope (CE: user's; EE: project's). */
-  async listCharts(projectId?: string | number | null): Promise<StandaloneChartResponse[]> {
+  async listCharts(
+    projectId?: string | number | null,
+    opts?: {
+      q?: string;
+      facet?: string;
+      collectionId?: string;
+      limit?: number;
+      offset?: number;
+      detail?: 'summary' | 'full';
+    },
+  ): Promise<StandaloneChartResponse[]> {
     const pid = this.requireScope(projectId);
+    const params = new URLSearchParams();
+    if (pid) params.set('project_id', pid);
+    params.set('limit', String(opts?.limit ?? 200));
+    params.set('offset', String(opts?.offset ?? 0));
+    params.set('detail', opts?.detail ?? 'full');
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.facet) params.set('facet', opts.facet);
+    if (opts?.collectionId) params.set('collection_id', opts.collectionId);
     const data = await fetchApi<{ success?: boolean; charts?: StandaloneChartResponse[] }>(
-      this.collectionEndpoint(pid),
+      `chart?${params.toString()}`,
     );
     return Array.isArray(data?.charts) ? data.charts : [];
   }
 
-  /** Create a new standalone chart. */
+  /** Create a new standalone chart (or reuse by saved_query_id when reuseSavedQuery). */
   async createChart(
-    payload: StandaloneChartWritePayload,
+    payload: StandaloneChartWritePayload & {
+      reuseSavedQuery?: boolean;
+      collectionId?: string | null;
+      tags?: string[];
+    },
     projectId?: string | number | null,
   ): Promise<StandaloneChartResponse> {
     const pid = this.requireScope(projectId);

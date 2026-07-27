@@ -17,9 +17,11 @@ describe('dateFilterPresets', () => {
     expect(detectDatePresetKey(null, null)).toBeNull();
   });
 
-  it('presetRangeByKey returns formatted bounds', () => {
-    const range = presetRangeByKey('last7');
-    expect(range.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(range.to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  it('mtd and thisMonth end at today', () => {
+    const today = dayjs().format('YYYY-MM-DD');
+    expect(presetRangeByKey('mtd').to).toBe(today);
+    expect(presetRangeByKey('thisMonth').to).toBe(today);
+    expect(presetRangeByKey('qtd').to).toBe(today);
+    expect(presetRangeByKey('thisQtr').to).toBe(today);
   });
 });

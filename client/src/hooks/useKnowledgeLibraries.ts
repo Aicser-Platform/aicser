@@ -42,6 +42,23 @@ export const useDeleteKnowledgeLibrary = () => {
   });
 };
 
+export const useUpdateKnowledgeLibrary = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      libraryId,
+      ...body
+    }: {
+      libraryId: string;
+      name?: string;
+      description?: string;
+      settings?: Record<string, unknown>;
+      is_active?: boolean;
+    }) => api.updateKnowledgeLibrary(libraryId, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: libraryKeys.all }),
+  });
+};
+
 export const useBackfillKnowledgeLibraries = () => {
   const qc = useQueryClient();
   return useMutation({

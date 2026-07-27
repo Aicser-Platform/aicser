@@ -1524,6 +1524,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             sheet_url: sheetUrl,
             ...(googleSheetGid?.trim() ? { gid: googleSheetGid.trim() } : {}),
           };
+          if (!existingDataSource?.id && !currentProject?.id) {
+            message.error(t('err_select_project'));
+            setLoading(false);
+            return;
+          }
           try {
             if (existingDataSource?.id) {
               const result = await authenticatedFetch(`/api/data/sources/${existingDataSource.id}`, {
@@ -1554,7 +1559,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                   type: 'google_sheets',
                   description: dataSourceConfig.description || undefined,
                   connection_config: connectionConfigSheets,
-                  project_id: String(currentProject!.id),
+                  project_id: String(currentProject.id),
                 }),
               });
               if (result?.success && result?.data_source) {
@@ -1778,6 +1783,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           setLoading(false);
           return;
         }
+        if (!existingDataSource?.id && !currentProject?.id) {
+          message.error(t('err_select_project'));
+          setLoading(false);
+          return;
+        }
         const connectionConfigSample = { domain: selectedSampleDomain };
         try {
           if (existingDataSource?.id) {
@@ -1808,7 +1818,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 type: 'sample_duckdb',
                 description: dataSourceConfig.description || undefined,
                 connection_config: connectionConfigSample,
-                project_id: String(currentProject!.id),
+                project_id: String(currentProject.id),
               }),
             });
             if (result?.success && result?.data_source) {

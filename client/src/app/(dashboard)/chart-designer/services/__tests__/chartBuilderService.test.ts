@@ -27,7 +27,7 @@ describe('chartBuilderService — CE scoping (user_id)', () => {
   it('listCharts omits project_id', async () => {
     const { chartBuilderService } = await loadService('ce');
     await chartBuilderService.listCharts(PROJECT);
-    expect(fetchApi).toHaveBeenCalledWith('chart');
+    expect(fetchApi).toHaveBeenCalledWith('chart?limit=200&offset=0&detail=full');
   });
 
   it('createChart omits project_id and sends the payload body', async () => {
@@ -53,7 +53,9 @@ describe('chartBuilderService — EE scoping (project_id)', () => {
   it('listCharts appends project_id', async () => {
     const { chartBuilderService } = await loadService('enterprise');
     await chartBuilderService.listCharts(PROJECT);
-    expect(fetchApi).toHaveBeenCalledWith(`chart?project_id=${PROJECT}`);
+    expect(fetchApi).toHaveBeenCalledWith(
+      `chart?project_id=${PROJECT}&limit=200&offset=0&detail=full`,
+    );
   });
 
   it('createChart appends project_id', async () => {

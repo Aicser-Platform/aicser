@@ -18,6 +18,7 @@ import {
   Form,
   Input,
   Select,
+  Alert,
 } from 'antd';
 import {
   DeleteOutlined,
@@ -29,20 +30,19 @@ import {
   UploadOutlined,
   MessageOutlined,
   PlusOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getChatHref } from '@/utils/appPaths';
-import { PermissionGuard } from '@/components/PermissionGuard';
-import { Permission } from '@/hooks/usePermissions';
-import { usePermissions } from '@/hooks/usePermissions';
 import { AccessDenied } from '@/components/layout/AccessDenied';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
-import { UnifiedAISearchPanel } from '@/components/search/UnifiedAISearchPanel';
 import { KnowledgeCitationDrawer } from '@/components/knowledge/KnowledgeCitationDrawer';
+import { KnowledgeSearchPanel } from '@/components/knowledge/KnowledgeSearchPanel';
 import {
   useKnowledgeDocuments,
   useDeleteKnowledgeDocument,
+  useUpdateKnowledgeDocument,
   useUploadKnowledgeDocument,
   useReindexKnowledgeBase,
 } from '@/hooks/useKnowledge';
@@ -50,13 +50,15 @@ import {
   useKnowledgeLibraries,
   useCreateKnowledgeLibrary,
   useDeleteKnowledgeLibrary,
-  useBackfillKnowledgeLibraries,
+  useUpdateKnowledgeLibrary,
 } from '@/hooks/useKnowledgeLibraries';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { formatApiValidationError } from '@/utils/validationErrorMessage';
+import { Permission, usePermissions } from '@/hooks/usePermissions';
 import type { KnowledgeDocument, KnowledgeLibrary } from '@/api/knowledge';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const t = useTranslations('knowledge');
@@ -73,7 +75,6 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   );
   const createLibrary = useCreateKnowledgeLibrary();
   const deleteLibrary = useDeleteKnowledgeLibrary();
-  const backfill = useBackfillKnowledgeLibraries();
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -106,7 +107,12 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   }, [activeLibrary]);
 
   useEffect(() => {
-    if (urlTab && ['libraries', 'documents', 'search'].includes(urlTab)) {
+    if (!urlTab) return;
+    if (urlTab === 'search' || urlTab === 'retrieval') {
+      setActiveTab('retrieval');
+      return;
+    }
+    if (['libraries', 'documents'].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -117,6 +123,18 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     setCitationDrawerOpen(true);
     if (urlTab === 'documents') setActiveTab('documents');
   }, [fromCitation, citationDocumentId, urlTab]);
+
+  const library = libraries.find((l) => l.id === activeLibrary) ?? null;
+  const activeDataSourceId = library?.data_source_id ?? null;
+
+  const { documents, isLoading: docsLoading, refetch } = useKnowledgeDocuments(
+    activeDataSourceId ?? undefined,
+  );
+  const { mutateAsync: deleteDocument, isPending: deleting } = useDeleteKnowledgeDocument();
+  const { mutateAsync: updateDocument, isPending: renamingDoc } = useUpdateKnowledgeDocument();
+  const updateLibrary = useUpdateKnowledgeLibrary();
+  const uploadDoc = useUploadKnowledgeDocument();
+  const reindexKb = useReindexKnowledgeBase();
 
   useEffect(() => {
     if (!highlightDocumentId || docsLoading) return;
@@ -129,21 +147,23 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     return () => window.clearTimeout(timer);
   }, [highlightDocumentId, docsLoading, documents.length]);
 
-  const library = libraries.find((l) => l.id === activeLibrary) ?? null;
-  const activeDataSourceId = library?.data_source_id ?? null;
-
-  const { documents, isLoading: docsLoading, refetch } = useKnowledgeDocuments(
-    activeDataSourceId ?? undefined,
-  );
-  const { mutateAsync: deleteDocument, isPending: deleting } = useDeleteKnowledgeDocument();
-  const uploadDoc = useUploadKnowledgeDocument();
-  const reindexKb = useReindexKnowledgeBase();
+  const openAiSearch = (libraryId?: string | null) => {
+    router.push(
+      libraryId
+        ? getChatHref({ mode: 'ai_search', library_id: libraryId })
+        : getChatHref({ mode: 'ai_search' }),
+    );
+  };
 
   const scopeTag = (lib: KnowledgeLibrary) =>
     lib.scope === 'project' ? (
-      <Tag bordered className="page-table-tag" color="blue">{t('scope_project')}</Tag>
+      <Tag bordered className="page-table-tag" color="blue">
+        {t('scope_project')}
+      </Tag>
     ) : (
-      <Tag bordered className="page-table-tag" color="purple">{t('scope_company')}</Tag>
+      <Tag bordered className="page-table-tag" color="purple">
+        {t('scope_company')}
+      </Tag>
     );
 
   const handleDeleteLibrary = (lib: KnowledgeLibrary) => {
@@ -154,6 +174,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       onOk: async () => {
         await deleteLibrary.mutateAsync(lib.id);
         message.success(t('library_deleted'));
+        if (selectedLibraryId === lib.id) setSelectedLibraryId(null);
         void refetchLibs();
       },
     });
@@ -168,6 +189,65 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         await deleteDocument(doc.id);
         message.success(t('deleted_success'));
         void refetch();
+        void refetchLibs();
+      },
+    });
+  };
+
+  const handleRenameDoc = (doc: KnowledgeDocument) => {
+    let nextName = doc.filename;
+    Modal.confirm({
+      title: t('rename_document'),
+      content: (
+        <Input
+          defaultValue={doc.filename}
+          onChange={(e) => {
+            nextName = e.target.value;
+          }}
+          maxLength={512}
+        />
+      ),
+      okText: t('save'),
+      onOk: async () => {
+        const name = nextName.trim();
+        if (!name || name === doc.filename) return;
+        try {
+          await updateDocument({ docId: doc.id, filename: name });
+          message.success(t('renamed_success'));
+          void refetch();
+        } catch (err) {
+          message.error(formatApiValidationError(err) || t('rename_failed'));
+          throw err;
+        }
+      },
+    });
+  };
+
+  const handleRenameLibrary = (lib: KnowledgeLibrary) => {
+    let nextName = lib.name;
+    Modal.confirm({
+      title: t('rename_library'),
+      content: (
+        <Input
+          defaultValue={lib.name}
+          onChange={(e) => {
+            nextName = e.target.value;
+          }}
+          maxLength={120}
+        />
+      ),
+      okText: t('save'),
+      onOk: async () => {
+        const name = nextName.trim();
+        if (!name || name === lib.name) return;
+        try {
+          await updateLibrary.mutateAsync({ libraryId: lib.id, name });
+          message.success(t('library_renamed'));
+          void refetchLibs();
+        } catch (err) {
+          message.error(formatApiValidationError(err) || t('rename_failed'));
+          throw err;
+        }
       },
     });
   };
@@ -175,9 +255,9 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   const statusIcon = (status: string) => {
     switch (status) {
       case 'ready':
-        return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+        return <CheckCircleOutlined style={{ color: 'var(--ant-color-success)' }} />;
       case 'failed':
-        return <CloseCircleOutlined style={{ color: '#ff4d4f' }} />;
+        return <CloseCircleOutlined style={{ color: 'var(--ant-color-error)' }} />;
       case 'processing':
         return <LoadingOutlined />;
       default:
@@ -193,7 +273,9 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       render: (name: string) => (
         <Space>
           <BookOutlined />
-          <Text ellipsis style={{ maxWidth: 280 }}>{name}</Text>
+          <Text ellipsis style={{ maxWidth: 280 }}>
+            {name}
+          </Text>
         </Space>
       ),
     },
@@ -206,7 +288,11 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         <Tooltip title={record.error_message ?? undefined}>
           <Space>
             {statusIcon(status)}
-            <Tag bordered className="page-table-tag" color={status === 'ready' ? 'success' : status === 'failed' ? 'error' : 'processing'}>
+            <Tag
+              bordered
+              className="page-table-tag"
+              color={status === 'ready' ? 'success' : status === 'failed' ? 'error' : 'processing'}
+            >
               {status}
             </Tag>
           </Space>
@@ -222,10 +308,26 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     {
       title: t('col_actions'),
       key: 'actions',
-      width: 80,
+      width: 100,
       render: (_: unknown, record: KnowledgeDocument) =>
         canManage ? (
-          <Button type="text" danger icon={<DeleteOutlined />} loading={deleting} onClick={() => handleDeleteDoc(record)} />
+          <Space>
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              loading={renamingDoc}
+              aria-label={t('rename')}
+              onClick={() => handleRenameDoc(record)}
+            />
+            <Button
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleting}
+              aria-label={t('delete_confirm_title')}
+              onClick={() => handleDeleteDoc(record)}
+            />
+          </Space>
         ) : null,
     },
   ];
@@ -238,7 +340,14 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       render: (name: string, row: KnowledgeLibrary) => (
         <Space>
           <BookOutlined />
-          <Button type="link" style={{ padding: 0 }} onClick={() => setSelectedLibraryId(row.id)}>
+          <Button
+            type="link"
+            style={{ padding: 0 }}
+            onClick={() => {
+              setSelectedLibraryId(row.id);
+              setActiveTab('documents');
+            }}
+          >
             {name}
           </Button>
           {scopeTag(row)}
@@ -255,23 +364,34 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     {
       title: t('col_actions'),
       key: 'actions',
-      width: 160,
+      width: 220,
       render: (_: unknown, row: KnowledgeLibrary) => (
-        <Space>
-          <Button
-            size="small"
-            icon={<MessageOutlined />}
-            onClick={() => router.push(getChatHref({ mode: 'ai_search', library_id: row.id }))}
-          >
+        <Space wrap>
+          <Button size="small" icon={<MessageOutlined />} onClick={() => openAiSearch(row.id)}>
             {t('open_in_chat')}
           </Button>
-          {canManage && (
-            <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteLibrary(row)} />
-          )}
+          {canManage ? (
+            <>
+              <Button size="small" icon={<EditOutlined />} onClick={() => handleRenameLibrary(row)}>
+                {t('rename')}
+              </Button>
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleDeleteLibrary(row)}
+              />
+            </>
+          ) : null}
         </Space>
       ),
     },
   ];
+
+  const librarySelectOptions = libraries.map((l) => ({ value: l.id, label: l.name }));
+  const retrievalDataSourceOptions = libraries
+    .filter((l) => l.data_source_id)
+    .map((l) => ({ value: l.data_source_id, label: l.name }));
 
   const tabItems = [
     {
@@ -285,7 +405,25 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
           dataSource={libraries}
           loading={libsLoading}
           pagination={{ pageSize: 10 }}
-          locale={{ emptyText: t('no_libraries') }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <Space direction="vertical" size={4}>
+                    <Text strong>{t('empty_libraries_title')}</Text>
+                    <Text type="secondary">{t('empty_libraries_desc')}</Text>
+                  </Space>
+                }
+              >
+                {canManage ? (
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+                    {t('create_library')}
+                  </Button>
+                ) : null}
+              </Empty>
+            ),
+          }}
         />
       ),
     },
@@ -293,7 +431,10 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       key: 'documents',
       label: t('tab_documents'),
       children: !library ? (
-        <Empty description={t('select_library')} />
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={t('documents_need_library')}
+        />
       ) : (
         <Table
           className="page-data-table"
@@ -302,6 +443,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
           dataSource={documents}
           loading={docsLoading}
           pagination={{ pageSize: 20 }}
+          locale={{ emptyText: t('no_documents_yet') }}
           onRow={(record) => ({
             id: `knowledge-doc-${record.id}`,
             style:
@@ -315,28 +457,41 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       ),
     },
     {
-      key: 'search',
-      label: t('tab_search'),
+      key: 'retrieval',
+      label: t('tab_retrieval'),
       children: (
-        <div style={{ padding: '8px 0' }}>
-          <UnifiedAISearchPanel defaultTab="knowledge" defaultLibraryId={selectedLibraryId} />
-          <div style={{ marginTop: 24, textAlign: 'center', paddingTop: 16, borderTop: '1px solid var(--ant-color-border-secondary)' }}>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              {t('search_tab_ai_engine_hint')}
-            </Text>
-            <Button
-              icon={<MessageOutlined />}
-              onClick={() =>
-                router.push(
-                  selectedLibraryId
-                    ? getChatHref({ mode: 'ai_search', library_id: selectedLibraryId })
-                    : getChatHref({ mode: 'ai_search' }),
-                )
-              }
-            >
-              {t('open_ai_search_mode')}
-            </Button>
-          </div>
+        <div style={{ maxWidth: 880 }}>
+          {!library ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={t('retrieval_empty_library')}
+            />
+          ) : (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={t('tab_search_hint')}
+                action={
+                  <Button size="small" icon={<MessageOutlined />} onClick={() => openAiSearch(library.id)}>
+                    {t('open_ai_search_cta')}
+                  </Button>
+                }
+              />
+              <KnowledgeSearchPanel
+                dataSourceId={activeDataSourceId}
+                dataSourceOptions={retrievalDataSourceOptions}
+                showDataSourceSelector={retrievalDataSourceOptions.length > 1}
+                onDataSourceChange={(id) => {
+                  const match = libraries.find((l) => l.data_source_id === id);
+                  if (match) setSelectedLibraryId(match.id);
+                }}
+                showRetrievalHint={false}
+                defaultTopK={8}
+              />
+            </>
+          )}
         </div>
       ),
     },
@@ -350,70 +505,75 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         description={t('subtitle')}
         extra={
           <Space wrap>
-            {canManage && (
+            {canManage ? (
               <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateOpen(true)}>
                 {t('create_library')}
               </Button>
-            )}
-            {canManage && libraries.length === 0 && orgIdStr ? (
-              <Button loading={backfill.isPending} onClick={async () => {
-                const res = await backfill.mutateAsync(orgIdStr);
-                message.success(t('backfill_created', { count: res.created }));
-                void refetchLibs();
-              }}>
-                {t('import_legacy')}
-              </Button>
             ) : null}
+            <Button icon={<MessageOutlined />} onClick={() => openAiSearch(library?.id)}>
+              {t('open_ai_search_mode')}
+            </Button>
             {library ? (
               <>
                 <Select
-                  style={{ minWidth: 220 }}
+                  style={{ minWidth: 200 }}
                   value={library.id}
                   onChange={setSelectedLibraryId}
-                  options={libraries.map((l) => ({ value: l.id, label: l.name }))}
+                  options={librarySelectOptions}
+                  placeholder={t('select_library')}
                 />
-                <Button icon={<ReloadOutlined />} onClick={() => { void refetch(); void refetchLibs(); }} />
-                {canManage && (
-                <>
                 <Button
-                  loading={reindexKb.isPending}
-                  onClick={async () => {
-                    if (!activeDataSourceId) return;
-                    const result = await reindexKb.mutateAsync(activeDataSourceId);
-                    message.success(result.message || t('reindex_started'));
-                  }}
-                >
-                  {t('reindex')}
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<UploadOutlined />}
-                  loading={uploadDoc.isPending}
+                  icon={<ReloadOutlined />}
                   onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = '.pdf,.txt,.md,.docx,.csv';
-                    input.onchange = async () => {
-                      const file = input.files?.[0];
-                      if (!file || !activeDataSourceId) return;
-                      await uploadDoc.mutateAsync({ file, dataSourceId: activeDataSourceId });
-                      message.success(t('upload_success'));
-                      void refetch();
-                      void refetchLibs();
-                    };
-                    input.click();
+                    void refetch();
+                    void refetchLibs();
                   }}
-                >
-                  {t('upload_document')}
-                </Button>
-                </>
-                )}
-                <Button
-                  icon={<MessageOutlined />}
-                  onClick={() => router.push(getChatHref({ mode: 'ai_search', library_id: library.id }))}
-                >
-                  {t('open_in_chat')}
-                </Button>
+                />
+                {canManage ? (
+                  <>
+                    <Button
+                      loading={reindexKb.isPending}
+                      onClick={async () => {
+                        if (!activeDataSourceId) return;
+                        try {
+                          const result = await reindexKb.mutateAsync(activeDataSourceId);
+                          message.success(result.message || t('reindex_started'));
+                        } catch (err) {
+                          message.error(formatApiValidationError(err));
+                        }
+                      }}
+                    >
+                      {t('reindex')}
+                    </Button>
+                    <Button
+                      icon={<UploadOutlined />}
+                      loading={uploadDoc.isPending}
+                      onClick={() => {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.pdf,.txt,.md,.docx,.csv';
+                        input.onchange = async () => {
+                          const file = input.files?.[0];
+                          if (!file || !activeDataSourceId) return;
+                          try {
+                            await uploadDoc.mutateAsync({
+                              file,
+                              dataSourceId: activeDataSourceId,
+                            });
+                            message.success(t('upload_success'));
+                            void refetch();
+                            void refetchLibs();
+                          } catch (err) {
+                            message.error(formatApiValidationError(err));
+                          }
+                        };
+                        input.click();
+                      }}
+                    >
+                      {t('upload_document')}
+                    </Button>
+                  </>
+                ) : null}
               </>
             ) : null}
           </Space>
@@ -421,9 +581,9 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       />
 
       <div className="page-body">
-      <Card className="page-section-card content-card">
-        <Tabs className="page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
-      </Card>
+        <Card className="page-section-card content-card">
+          <Tabs className="page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+        </Card>
       </div>
 
       <KnowledgeCitationDrawer
@@ -448,23 +608,30 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         onCancel={() => setCreateOpen(false)}
         onOk={() => void form.submit()}
         confirmLoading={createLibrary.isPending}
+        destroyOnHidden
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={async (values) => {
             if (!orgIdStr) return;
-            await createLibrary.mutateAsync({
-              name: values.name,
-              description: values.description,
-              organization_id: orgIdStr,
-              scope: values.scope,
-              project_id: values.scope === 'project' ? projectIdStr : undefined,
-            });
-            message.success(t('library_created'));
-            setCreateOpen(false);
-            form.resetFields();
-            void refetchLibs();
+            try {
+              const created = await createLibrary.mutateAsync({
+                name: values.name,
+                description: values.description,
+                organization_id: orgIdStr,
+                scope: values.scope,
+                project_id: values.scope === 'project' ? projectIdStr : undefined,
+              });
+              message.success(t('library_created'));
+              setCreateOpen(false);
+              form.resetFields();
+              setSelectedLibraryId(created.id);
+              setActiveTab('documents');
+              void refetchLibs();
+            } catch (err) {
+              message.error(formatApiValidationError(err));
+            }
           }}
         >
           <Form.Item name="name" label={t('library_name')} rules={[{ required: true }]}>
