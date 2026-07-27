@@ -7,6 +7,7 @@ _MODULE_PATH = os.path.join(
     os.pardir,
     os.pardir,
     os.pardir,
+    "ee",
     "modules",
     "ai",
     "utils",

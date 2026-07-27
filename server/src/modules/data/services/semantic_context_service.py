@@ -7,6 +7,7 @@ Single source used by chart execution, NL2SQL hints, and Platform Services.
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import re
 from typing import Any, Dict, List, Optional
@@ -19,6 +20,47 @@ from src.modules.data.models import DataModelRelationship, DataSource
 logger = logging.getLogger(__name__)
 
 _FIELD_EXPR = re.compile(r"^[a-zA-Z0-9_().,\"'\s*+\-/]+$")
+
+
+def _table_name_from_source_ref(source_ref: Any) -> Optional[str]:
+    """Derive the YAML semantic table name from source_ref=/.../<table>.yml."""
+    if not source_ref:
+        return None
+    leaf = str(source_ref).rstrip("/").split("/")[-1]
+    if leaf.endswith((".yml", ".yaml")):
+        return leaf.rsplit(".", 1)[0]
+    return None
+
+
+def _table_name_from_expression(expression: Any) -> Optional[str]:
+    if not expression:
+        return None
+    match = re.search(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\.\s*[A-Za-z_][A-Za-z0-9_]*\b", str(expression))
+    return match.group(1) if match else None
+
+
+def _normalize_semantic_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    for row in rows:
+        raw_params = row.get("type_params")
+        if isinstance(raw_params, str):
+            try:
+                row["type_params"] = json.loads(raw_params)
+            except Exception:
+                row["type_params"] = {}
+        table_name = (
+            (row.get("type_params") or {}).get("table")
+            if isinstance(row.get("type_params"), dict)
+            else None
+        ) or _table_name_from_source_ref(row.get("source_ref")) or _table_name_from_expression(row.get("expression"))
+        if table_name:
+            row["table_name"] = str(table_name)
+        if isinstance(row.get("type_params"), dict):
+            params = row["type_params"]
+            if params.get("ai_context"):
+                row["ai_context"] = str(params["ai_context"])
+            if isinstance(params.get("drill_fields"), list):
+                row["drill_fields"] = [str(v) for v in params["drill_fields"]]
+    return rows
 
 
 async def list_modeled_join_paths(db: AsyncSession, data_source_id: str) -> List[Dict[str, str]]:
@@ -63,7 +105,7 @@ async def _fetch_semantic_metric(db: AsyncSession, metric_id: str) -> Optional[D
     try:
         result = await db.execute(
             sa_text(
-                "SELECT id, name, expression, description, certified, metric_type "
+                "SELECT id, name, expression, description, certified, metric_type, source_ref, type_params "
                 "FROM semantic_metrics WHERE id = :id AND is_active = true LIMIT 1"
             ),
             {"id": metric_id},
@@ -72,7 +114,28 @@ async def _fetch_semantic_metric(db: AsyncSession, metric_id: str) -> Optional[D
         if not row:
             return None
         keys = result.keys()
-        return dict(zip(keys, row))
+        return _normalize_semantic_rows([dict(zip(keys, row))])[0]
+    except Exception:
+        return None
+
+
+async def _fetch_semantic_metric_by_name(
+    db: AsyncSession, data_source_id: str, metric_name: str
+) -> Optional[Dict[str, Any]]:
+    try:
+        result = await db.execute(
+            sa_text(
+                "SELECT id, name, expression, description, certified, metric_type, source_ref, type_params "
+                "FROM semantic_metrics "
+                "WHERE data_source_id = :ds AND name = :name AND is_active = true "
+                "ORDER BY certified DESC LIMIT 1"
+            ),
+            {"ds": data_source_id, "name": metric_name},
+        )
+        row = result.fetchone()
+        if not row:
+            return None
+        return _normalize_semantic_rows([dict(zip(result.keys(), row))])[0]
     except Exception:
         return None
 
@@ -85,14 +148,35 @@ async def _fetch_semantic_dimensions(db: AsyncSession, dim_ids: List[str]) -> Li
         params = {f"id{i}": dim_ids[i] for i in range(len(dim_ids))}
         result = await db.execute(
             sa_text(
-                f"SELECT id, name, expression, description FROM semantic_dimensions "
+                f"SELECT id, name, expression, description, source_ref FROM semantic_dimensions "
                 f"WHERE id IN ({placeholders}) AND is_active = true"
             ),
             params,
         )
         rows = result.fetchall()
         keys = result.keys()
-        return [dict(zip(keys, row)) for row in rows]
+        return _normalize_semantic_rows([dict(zip(keys, row)) for row in rows])
+    except Exception:
+        return []
+
+
+async def _fetch_semantic_dimensions_by_names(
+    db: AsyncSession, data_source_id: str, names: List[str]
+) -> List[Dict[str, Any]]:
+    if not names:
+        return []
+    try:
+        placeholders = ", ".join(f":name{i}" for i in range(len(names)))
+        params = {f"name{i}": names[i] for i in range(len(names))}
+        params["ds"] = data_source_id
+        result = await db.execute(
+            sa_text(
+                f"SELECT id, name, expression, description, source_ref FROM semantic_dimensions "
+                f"WHERE data_source_id = :ds AND name IN ({placeholders}) AND is_active = true"
+            ),
+            params,
+        )
+        return _normalize_semantic_rows([dict(zip(result.keys(), row)) for row in result.fetchall()])
     except Exception:
         return []
 
@@ -110,21 +194,41 @@ async def resolve_semantic_chart_query(
     """
     cq = copy.deepcopy(chart_query or {})
     metric_id = cq.get("semantic_metric_id")
+    metric_name = cq.get("semantic_metric_name")
     data_source_id = cq.get("data_source_id")
 
-    if metric_id and data_source_id:
+    if (metric_id or metric_name) and data_source_id:
         try:
             from ee.modules.semantic.compiler import SemanticQueryCompiler
-            from ee.modules.semantic.query_spec import SemanticQuerySpec
+            from ee.modules.semantic.query_spec import SemanticFilter, SemanticQuerySpec
 
             ctx = await get_unified_semantic_context(db, str(data_source_id))
-            metric = await _fetch_semantic_metric(db, str(metric_id))
+            metric = (
+                await _fetch_semantic_metric(db, str(metric_id))
+                if metric_id
+                else await _fetch_semantic_metric_by_name(db, str(data_source_id), str(metric_name))
+            )
             if metric and metric.get("certified"):
                 dim_keys = [str(i) for i in (cq.get("semantic_dimension_ids") or [])]
+                if not dim_keys and cq.get("semantic_dimension_names"):
+                    dim_names = [str(i) for i in (cq.get("semantic_dimension_names") or [])]
+                    dim_rows = await _fetch_semantic_dimensions_by_names(db, str(data_source_id), dim_names)
+                    dim_keys = [str(d.get("name") or d.get("id")) for d in dim_rows if d.get("name") or d.get("id")]
+                filters = [
+                    SemanticFilter(
+                        field=str(f["field"]),
+                        operator=str(f.get("operator") or f.get("op") or "eq"),
+                        value=f.get("value"),
+                    )
+                    for f in (cq.get("filters") or [])
+                    if isinstance(f, dict) and f.get("field")
+                ]
                 spec = SemanticQuerySpec(
                     data_source_id=str(data_source_id),
                     metric=str(metric.get("name") or metric_id),
                     dimensions=dim_keys,
+                    filters=filters,
+                    time_grain=cq.get("time_grain") or cq.get("xGrain"),
                     limit=int(cq.get("limit") or 5000),
                 )
                 from ee.modules.semantic.rls import rls_filters_for_user
@@ -310,22 +414,23 @@ async def get_unified_semantic_context(
 
         m_res = await db.execute(
             sa_text(
-                f"SELECT id, name, expression, description, category, certified, metric_type, source "
-                f"FROM semantic_metrics WHERE {m_where} ORDER BY name LIMIT 50"
+                f"SELECT id, name, expression, description, category, certified, metric_type, source, "
+                f"source_ref, type_params "
+                f"FROM semantic_metrics WHERE {m_where} ORDER BY name LIMIT 500"
             ),
             params,
         )
-        metrics = [dict(zip(m_res.keys(), row)) for row in m_res.fetchall()]
+        metrics = _normalize_semantic_rows([dict(zip(m_res.keys(), row)) for row in m_res.fetchall()])
         certified_count = sum(1 for m in metrics if m.get("certified"))
 
         d_res = await db.execute(
             sa_text(
-                f"SELECT id, name, expression, description, certified "
-                f"FROM semantic_dimensions WHERE {d_where} ORDER BY name LIMIT 50"
+                f"SELECT id, name, expression, description, certified, values_sample, source_ref "
+                f"FROM semantic_dimensions WHERE {d_where} ORDER BY name LIMIT 500"
             ),
             params,
         )
-        dimensions = [dict(zip(d_res.keys(), row)) for row in d_res.fetchall()]
+        dimensions = _normalize_semantic_rows([dict(zip(d_res.keys(), row)) for row in d_res.fetchall()])
     except Exception as exc:
         logger.debug("get_unified_semantic_context semantic tables: %s", exc)
 
@@ -357,6 +462,20 @@ async def get_unified_semantic_context(
         prompt_sections.append(
             f"CERTIFIED METRICS — use these exact SQL expressions when asked for these KPIs: {sql_snippets}."
         )
+        ai_notes = [
+            f"{m['name']}: {m['ai_context']}"
+            for m in certified[:10]
+            if m.get("ai_context")
+        ]
+        if ai_notes:
+            prompt_sections.append("CERTIFIED METRIC AI CONTEXT: " + " ".join(ai_notes))
+        drill_notes = [
+            f"{m['name']} drill fields: {', '.join(m['drill_fields'][:8])}"
+            for m in certified[:10]
+            if m.get("drill_fields")
+        ]
+        if drill_notes:
+            prompt_sections.append("DEFAULT DRILL FIELDS: " + "; ".join(drill_notes) + ".")
 
     if uncertified:
         names = ", ".join(
@@ -371,6 +490,13 @@ async def get_unified_semantic_context(
             expr = (d.get("expression") or "").strip()
             if expr and expr != d["name"]:
                 entry += f"={expr}"
+            raw_vals = d.get("values_sample")
+            try:
+                vals = json.loads(raw_vals) if isinstance(raw_vals, str) else (raw_vals or [])
+            except Exception:
+                vals = []
+            if vals:
+                entry += " (e.g. " + ", ".join(str(v) for v in vals[:4]) + ")"
             dim_parts.append(entry)
         prompt_sections.append("Grouping dimensions: " + ", ".join(dim_parts) + ".")
 

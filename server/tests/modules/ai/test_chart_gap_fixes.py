@@ -23,7 +23,7 @@ import importlib.util
 # ---------------------------------------------------------------------------
 _UTILS_DIR = os.path.join(
     os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
-    "modules", "ai", "utils"
+    "ee", "modules", "ai", "utils"
 )
 _UTILS_DIR = os.path.normpath(_UTILS_DIR)
 

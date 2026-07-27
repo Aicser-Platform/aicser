@@ -421,11 +421,11 @@ class DataConnectivityService:
                 return pd.DataFrame({"text": lines})
             raise ValueError(f"Unsupported upload format for parquet conversion: {ext}")
 
-        df = await asyncio.to_thread(_read_into_dataframe)
+        df = _read_into_dataframe()
 
         from src.modules.data.services.data_cleaning_service import clean_dataframe
 
-        df, cleaning_report = await asyncio.to_thread(clean_dataframe, df)
+        df, cleaning_report = clean_dataframe(df)
         logger.info(
             "🧹 Ingest cleaning: %s null tokens, actions on %d columns",
             cleaning_report.null_tokens_replaced,
@@ -434,8 +434,7 @@ class DataConnectivityService:
         cleaned_schema = self._infer_schema_from_dataframe(df)
 
         parquet_buffer = io.BytesIO()
-        await asyncio.to_thread(
-            df.to_parquet,
+        df.to_parquet(
             parquet_buffer,
             index=False,
             compression="zstd",

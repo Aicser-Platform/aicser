@@ -45,7 +45,7 @@ export const RolesTab                = (): null => null;
 export const AgentSkillsTab          = (): null => null;
 export const AgentWorkflowsTab       = (): null => null;
 export const BriefingsTab            = (): null => null;
-export const SemanticStudio          = (_props: AnyComponentProps): null => null;
+export const SemanticWorkspace       = (_props: AnyComponentProps): null => null;
 export const ConnectModelVisualizeWizard = (_props: AnyComponentProps): null => null;
 export const CitationSourcesStrip    = (_props: AnyComponentProps): null => null;
 export const ThoughtProcessDisplay   = (_props: AnyComponentProps): null => null;

@@ -8,7 +8,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AISER_EDITION=community \
     ENVIRONMENT=development \
     DEBUG=true \
-    WATCHFILES_FORCE_POLLING=true
+    WATCHFILES_FORCE_POLLING=true \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install system dependencies (without Microsoft ODBC driver to avoid signature issues)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -48,8 +51,8 @@ ENV PATH="/venv/bin:$PATH"
 
 COPY requirements.txt ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --upgrade pip setuptools wheel \
-    && pip install -r requirements.txt
+    python -m pip install --upgrade --timeout 120 --retries 10 pip setuptools wheel \
+    && python -m pip install --timeout 120 --retries 10 -r requirements.txt
 
 # Fail the image build if Telegram deps are missing (avoids uvicorn crash at import time)
 RUN python -c "import telegram.ext; print('python-telegram-bot OK')"

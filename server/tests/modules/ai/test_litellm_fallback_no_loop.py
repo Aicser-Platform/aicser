@@ -11,6 +11,7 @@ After the fix:
 
 import sys
 import types
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -64,8 +65,17 @@ def _make_service() -> LiteLLMService:
     return service
 
 
-@pytest.mark.asyncio
-async def test_fallback_does_not_loop_back_to_failed_model(monkeypatch):
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()
+
+
+def test_fallback_does_not_loop_back_to_failed_model(monkeypatch):
     calls = {"azure": 0, "openai": 0}
 
     async def fake_acompletion(**params):
@@ -79,8 +89,10 @@ async def test_fallback_does_not_loop_back_to_failed_model(monkeypatch):
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
 
     service = _make_service()
-    result = await service.generate_completion(
-        prompt="hello", model_id="fake_azure", timeout=2.0, num_retries=0
+    result = _run(
+        service.generate_completion(
+            prompt="hello", model_id="fake_azure", timeout=2.0, num_retries=0
+        )
     )
 
     # Both providers are down → overall failure (not a crash, not a hang).
@@ -101,8 +113,7 @@ def _ok_response():
     return types.SimpleNamespace(choices=[choice], usage=None)
 
 
-@pytest.mark.asyncio
-async def test_gpt41_mini_honors_caller_temperature(monkeypatch):
+def test_gpt41_mini_honors_caller_temperature(monkeypatch):
     """gpt-4.1-mini is a standard chat model — it must NOT be forced to temperature=1.0."""
     captured = {}
 
@@ -113,8 +124,10 @@ async def test_gpt41_mini_honors_caller_temperature(monkeypatch):
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
 
     service = _make_service()
-    result = await service.generate_completion(
-        prompt="generate sql", model_id="fake_azure", temperature=0.1, timeout=2.0
+    result = _run(
+        service.generate_completion(
+            prompt="generate sql", model_id="fake_azure", temperature=0.1, timeout=2.0
+        )
     )
 
     assert result.get("success") is True
@@ -122,8 +135,7 @@ async def test_gpt41_mini_honors_caller_temperature(monkeypatch):
     assert captured.get("temperature") == 0.1, f"expected 0.1, got {captured.get('temperature')}"
 
 
-@pytest.mark.asyncio
-async def test_o_series_model_still_forced_to_reasoning_temperature(monkeypatch):
+def test_o_series_model_still_forced_to_reasoning_temperature(monkeypatch):
     """True reasoning models (o3) must still get temperature=1.0 + max_completion_tokens."""
     captured = {}
 
@@ -135,8 +147,10 @@ async def test_o_series_model_still_forced_to_reasoning_temperature(monkeypatch)
 
     service = _make_service()
     service.available_models["fake_azure"]["model"] = "azure/o3-mini"
-    result = await service.generate_completion(
-        prompt="reason", model_id="fake_azure", temperature=0.1, timeout=2.0
+    result = _run(
+        service.generate_completion(
+            prompt="reason", model_id="fake_azure", temperature=0.1, timeout=2.0
+        )
     )
 
     assert result.get("success") is True
@@ -144,8 +158,7 @@ async def test_o_series_model_still_forced_to_reasoning_temperature(monkeypatch)
     assert "max_completion_tokens" in captured
 
 
-@pytest.mark.asyncio
-async def test_transient_azure_500_retries_same_model_when_no_fallback(monkeypatch):
+def test_transient_azure_500_retries_same_model_when_no_fallback(monkeypatch):
     """When the only other provider is unavailable, a transient 500 still retries the same model."""
     calls = {"azure": 0}
 
@@ -162,8 +175,10 @@ async def test_transient_azure_500_retries_same_model_when_no_fallback(monkeypat
     # Remove the OpenAI option entirely → no cross-provider fallback exists.
     service.available_models.pop("fake_openai")
 
-    result = await service.generate_completion(
-        prompt="hello", model_id="fake_azure", timeout=2.0, num_retries=0
+    result = _run(
+        service.generate_completion(
+            prompt="hello", model_id="fake_azure", timeout=2.0, num_retries=0
+        )
     )
 
     assert result.get("success") is False

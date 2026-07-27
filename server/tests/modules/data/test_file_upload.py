@@ -2,13 +2,14 @@
 Test file upload functionality for data API
 Tests the /data/upload endpoint with various scenarios
 """
-import pytest
+import asyncio
 import io
 import sys
 from typing import Optional
 from unittest.mock import patch, MagicMock, AsyncMock, Mock, ANY
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import httpx
+import pytest
 
 
 # Mock all heavy dependencies BEFORE any app imports
@@ -125,7 +126,25 @@ def app(mock_data_service):
 @pytest.fixture
 def client(app):
     """Create test client"""
-    return TestClient(app)
+    return _InlineASGIClient(app)
+
+
+class _InlineASGIClient:
+    """Minimal no-thread ASGI client for environments where TestClient portals hang."""
+
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    def post(self, url: str, **kwargs):
+        async def _request():
+            transport = httpx.ASGITransport(app=self.app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.post(url, **kwargs)
+
+        return asyncio.run(_request())
 
 
 @pytest.fixture
