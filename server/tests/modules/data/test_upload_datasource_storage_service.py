@@ -75,6 +75,7 @@ async def test_ee_upload_datasource_storage_uses_azure(monkeypatch):
     azure_module.AzureBlobStorageService = lambda: fake_azure
 
     monkeypatch.setenv("AISER_EDITION", "enterprise")
+    monkeypatch.delenv("STORAGE_BACKEND", raising=False)
     monkeypatch.setitem(
         sys.modules,
         "ee.modules.data.services.azure_blob_storage_service",

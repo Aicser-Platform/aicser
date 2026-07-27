@@ -20,14 +20,17 @@ def orchestrator():
     except ImportError as e:
         pytest.skip(f"LangGraph not available: {e}")
     litellm = LiteLLMService()
-    return LangGraphMultiAgentOrchestrator(
-        async_session_factory=None,
-        sync_session_factory=None,
-        litellm_service=litellm,
-        data_service=None,
-        multi_query_service=None,
-        chart_service=None,
-    )
+    try:
+        return LangGraphMultiAgentOrchestrator(
+            async_session_factory=None,
+            sync_session_factory=None,
+            litellm_service=litellm,
+            data_service=None,
+            multi_query_service=None,
+            chart_service=None,
+        )
+    except ImportError as e:
+        pytest.skip(f"LangGraph not available: {e}")
 
 
 def test_graph_builds_and_compiles(orchestrator):

@@ -2,48 +2,21 @@
 
 export const dynamic = 'force-dynamic';
 
-import React from 'react';
-import nextDynamic from 'next/dynamic';
-import { Button } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
-import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { DashboardPageLoading } from '@/components/layout/DashboardPageShell';
 
-const SemanticStudio = nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), {
-  ssr: false,
-});
-
-export default function SemanticStudioPage() {
+/** The per-source Studio moved into the /semantic-layer workbench; keep old links working. */
+export default function SemanticWorkspaceRedirect() {
   const params = useParams();
   const router = useRouter();
-  const t = useTranslations('semantic_studio');
-  const dataSourceId = String(params?.id || '');
-  const authenticatedFetch = useAuthenticatedFetch();
-  const [name, setName] = React.useState<string>('');
 
-  React.useEffect(() => {
-    if (!dataSourceId) return;
-    authenticatedFetch(`/api/data/sources/${dataSourceId}`)
-      .then((res) => setName(res?.data_source?.name || res?.name || dataSourceId))
-      .catch(() => setName(dataSourceId));
-  }, [authenticatedFetch, dataSourceId]);
+  useEffect(() => {
+    const id = String(params?.id || '');
+    router.replace(
+      id ? `/semantic-layer?source=${encodeURIComponent(id)}` : '/semantic-layer'
+    );
+  }, [params, router]);
 
-  return (
-    <DashboardPageShell maxWidth={1400}>
-      <DashboardPageHeader
-        title={name || t('page_title')}
-        description={t('page_subtitle')}
-        extra={
-          <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/semantic-layer')}>
-            {t('back_to_hub')}
-          </Button>
-        }
-      />
-      <div className="page-body">
-      <SemanticStudio dataSourceId={dataSourceId} dataSourceName={name} />
-      </div>
-    </DashboardPageShell>
-  );
+  return <DashboardPageLoading />;
 }

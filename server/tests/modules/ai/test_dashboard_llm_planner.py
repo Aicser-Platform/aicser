@@ -111,6 +111,37 @@ def test_materialize_text_widget_content():
     assert "Q4" in text_w["chart_options"]["content"]
 
 
+def test_materialize_certified_semantic_metric_widget():
+    plan = DashboardLLMPlan(
+        dashboard_title="Sales Performance",
+        pages=[
+            DashboardPagePlan(
+                role="overview",
+                name="Overview",
+                widgets=[
+                    DashboardWidgetPlan(
+                        title="Revenue by Region",
+                        chart_type="bar",
+                        layout=DashboardWidgetLayout(x=0, y=2, w=8, h=5),
+                        table_name="sales",
+                        semantic_metric="total_revenue",
+                        semantic_dimension="region",
+                    )
+                ],
+            )
+        ],
+    )
+    _, widgets = materialize_dashboard_plan(
+        plan,
+        SALES_SCHEMA,
+        semantic_names={"metrics": {"total_revenue"}, "dimensions": {"region"}},
+    )
+    query = widgets[0]["chart_query"]
+    assert query["semantic_metric_name"] == "total_revenue"
+    assert query["semantic_dimension_names"] == ["region"]
+    assert "yMetrics" not in query
+
+
 @pytest.mark.asyncio
 async def test_llm_refine_hydrates_user_byok_before_completion(monkeypatch):
     """The planner must register the user's BYOK key on the LiteLLM service before

@@ -120,6 +120,32 @@ def test_generate_suggestions_with_tables():
     assert "revenue" in combined or "month" in combined or "trend" in combined or "summarize" in combined
 
 
+def test_discovery_llm_text_fallback_extracts_bullet_questions():
+    try:
+        from src.modules.ai.utils.question_discovery import (
+            _extract_questions_from_llm_text,
+            _is_discovery_excluded_column,
+            _question_mentions_schema_field,
+        )
+    except ImportError as e:
+        pytest.skip(f"question_discovery not available: {e}")
+
+    raw = """
+    Here are suggested questions:
+    1. Revenue by month
+    - Top products by quantity
+    * Average payment by status
+    """
+    assert _extract_questions_from_llm_text(raw, 2) == [
+        "Revenue by month",
+        "Top products by quantity",
+    ]
+    assert _question_mentions_schema_field("Revenue by month", ["revenue", "month"])
+    assert not _question_mentions_schema_field("Create a dashboard", ["revenue", "month"])
+    assert _is_discovery_excluded_column("accessToken")
+    assert not _is_discovery_excluded_column("revenue")
+
+
 def test_discover_schema_extraction_logic():
     """Simulate discover endpoint: raw get_source_schema response -> schema with tables."""
     # get_source_schema returns { "success": True, "schema": { "tables": [...] } }

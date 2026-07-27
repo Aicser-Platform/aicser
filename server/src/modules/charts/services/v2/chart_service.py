@@ -1059,7 +1059,10 @@ class ChartService:
         from src.modules.data.services.semantic_context_service import resolve_semantic_chart_query
 
         if chart.chart_query:
-            chart.chart_query = await resolve_semantic_chart_query(self.db, dict(chart.chart_query))
+            semantic_chart_query = dict(chart.chart_query)
+            if chart.data_source_id and not semantic_chart_query.get("data_source_id"):
+                semantic_chart_query["data_source_id"] = str(chart.data_source_id)
+            chart.chart_query = await resolve_semantic_chart_query(self.db, semantic_chart_query)
 
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")

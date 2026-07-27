@@ -136,6 +136,7 @@ services:
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_uploads:/app/uploads
+      - server_ee_semantic:/app/semantic
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -212,6 +213,7 @@ volumes:
   postgres_ee_data:
   redis_ee_data:
   server_ee_uploads:
+  server_ee_semantic:
 
 networks:
   default:

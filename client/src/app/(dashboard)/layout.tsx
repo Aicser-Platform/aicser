@@ -2,11 +2,9 @@
 
 import CustomLayout from '@/layouts/DashboardLayout/DashboardLayout';
 import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
-import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import '@/app/globals.css';
 
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
@@ -66,27 +64,6 @@ function SubscriptionInitializer() {
   }, [isAuthenticated]);
 
   return null;
-}
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const t = useTranslations('layout');
-  const { isAuthenticated, authLoading } = useAuthStore();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (!isAuthenticated) {
-      const search = window.location.search;
-      const hash = window.location.hash;
-      router.replace(`/login${search}${hash}`);
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  if (authLoading) {
-    return <AppLoadingIndicator variant="full" tip={t('loading')} />;
-  }
-  if (!isAuthenticated) return null;
-  return <>{children}</>;
 }
 
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ children }) => {

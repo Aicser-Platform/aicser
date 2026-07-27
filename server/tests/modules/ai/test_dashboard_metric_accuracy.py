@@ -311,4 +311,4 @@ def test_materialize_runs_validator_and_labels():
     names = [w["name"] for w in widgets]
     assert "Bad metric" not in names           # surrogate-key metric dropped
     assert meta.get("dropped_widgets")
-    assert "Loan Amount USD" in names          # raw snake_case label humanized
+    assert "Loan Amount by Branch" in names    # raw snake_case label humanized + dimensional title

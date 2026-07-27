@@ -1,7 +1,30 @@
+import asyncio
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+import httpx
 from unittest.mock import patch
 import pytest
+
+
+_ECHARTS_LLM_RESULT = {
+    "success": True,
+    "content": """Here is your chart\n```json\n{\n  \"title\": {\"text\": \"Sales by Month\"},\n  \"xAxis\": {\"type\": \"category\", \"data\":[\"Jan\",\"Feb\"]},\n  \"yAxis\": {\"type\": \"value\"},\n  \"series\": [{\"type\": \"bar\", \"data\": [10,20]}]\n}\n```""",
+}
+
+
+class _InlineASGIClient:
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    def post(self, url: str, **kwargs):
+        async def _request():
+            transport = httpx.ASGITransport(app=self.app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+            ) as client:
+                return await client.post(url, **kwargs)
+
+        return asyncio.run(_request())
 
 
 @pytest.fixture(scope="session")
@@ -16,8 +39,7 @@ def app_ai_router():
 
 @pytest.fixture(scope="session")
 def client_ai_router(app_ai_router):
-    with TestClient(app_ai_router) as client:
-        yield client
+    return _InlineASGIClient(app_ai_router)
 
 
 def test_echarts_generate_requires_auth(client_ai_router):
@@ -29,11 +51,11 @@ def test_echarts_generate_requires_auth(client_ai_router):
 def test_echarts_generate_success_with_auth(client_ai_router):
     # Patch LLM call to avoid external dependency
     with patch(
-        "app.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
-        return_value={
-            "success": True,
-            "content": """Here is your chart\n```json\n{\n  \"title\": {\"text\": \"Sales by Month\"},\n  \"xAxis\": {\"type\": \"category\", \"data\":[\"Jan\",\"Feb\"]},\n  \"yAxis\": {\"type\": \"value\"},\n  \"series\": [{\"type\": \"bar\", \"data\": [10,20]}]\n}\n```""",
-        },
+        "src.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
+        return_value=_ECHARTS_LLM_RESULT,
+    ), patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
+        return_value=_ECHARTS_LLM_RESULT,
     ):
         resp = client_ai_router.post(
             "/ai/echarts/generate",
@@ -48,29 +70,26 @@ def test_echarts_generate_success_with_auth(client_ai_router):
 
 
 def test_ai_rate_limit_enforced():
-    # Use the full app with middleware
-    from src.main import app as full_app
+    from src.core.middleware import RateLimitMiddleware
 
-    client = TestClient(full_app)
+    app = FastAPI()
 
-    # Patch LLM to be fast and deterministic
-    with patch(
-        "app.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
-        return_value={
-            "success": True,
-            "content": """```json\n{\n  \"series\":[{\"type\":\"bar\",\"data\":[]}]\n}\n```""",
-        },
-    ):
-        status_counts = {200: 0, 429: 0}
-        # Default limit is 60/min; send a little over
-        for _ in range(65):
-            r = client.post(
-                "/ai/echarts/generate",
-                headers={"Authorization": "Bearer test-token"},
-                json={"query": "q"},
-            )
-            if r.status_code in status_counts:
-                status_counts[r.status_code] += 1
-        # We expect at least one 429 once the limit is exceeded
-        assert status_counts[429] >= 1
+    @app.post("/ai/echarts/generate")
+    async def _ok():
+        return {"success": True}
 
+    app.add_middleware(RateLimitMiddleware)
+    client = _InlineASGIClient(app)
+
+    status_counts = {200: 0, 429: 0}
+    # Default limit is 60/min; send a little over
+    for _ in range(65):
+        r = client.post(
+            "/ai/echarts/generate",
+            headers={"Authorization": "Bearer test-token"},
+            json={"query": "q"},
+        )
+        if r.status_code in status_counts:
+            status_counts[r.status_code] += 1
+    # We expect at least one 429 once the limit is exceeded
+    assert status_counts[429] >= 1

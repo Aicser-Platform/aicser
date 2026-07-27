@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from src.modules.data.services.semantic_context_service import (
+    _normalize_semantic_rows,
     format_join_paths_for_prompt,
     infer_primary_table_sql,
     resolve_semantic_chart_query,
@@ -22,6 +23,11 @@ def test_format_join_paths_for_prompt():
 def test_infer_primary_table_sql():
     sql = infer_primary_table_sql({"schema": "public", "tables": [{"name": "orders", "schema": "public"}]})
     assert "public.orders" in sql
+
+
+def test_normalize_semantic_rows_derives_table_from_expression():
+    rows = [{"name": "revenue", "expression": "SUM(fact_sales.revenue_usd)", "type_params": {}}]
+    assert _normalize_semantic_rows(rows)[0]["table_name"] == "fact_sales"
 
 
 @pytest.mark.asyncio

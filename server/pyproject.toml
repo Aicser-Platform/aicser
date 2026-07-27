@@ -77,6 +77,8 @@ pgvector = {version = ">=0.3.0", optional = true}
 # Additional utilities
 sqlalchemy-utils = "^0.41.1"
 PyYAML = "^6.0.1"
+# Round-trip-safe YAML (comment-preserving) for the semantic layer definitions
+"ruamel.yaml" = ">=0.18"
 psutil = "^5.9.8"
 python-socketio = "^5.16.3"
 python-engineio = "^4.13.3"
