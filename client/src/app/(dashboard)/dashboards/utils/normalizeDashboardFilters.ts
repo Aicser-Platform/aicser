@@ -20,6 +20,8 @@ const DATE_PRESET_ALIASES: Record<string, DatePresetKey> = {
   last7: 'last7',
   last_30_days: 'last30',
   last30: 'last30',
+  mtd: 'mtd',
+  qtd: 'qtd',
   this_month: 'thisMonth',
   last_month: 'lastMonth',
   this_quarter: 'thisQtr',

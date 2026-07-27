@@ -1,7 +1,7 @@
 import { API_URL, fetchApi } from '@/utils/api';
 import { drainSSEBuffer } from '@/utils/sseBuffer';
 import { getCeBearerToken } from '@/auth/ce/bearerToken';
-import { supabase, useSupabaseForApiAuth } from '@/auth/authClient';
+import { supabase, isSupabaseAuthConfigured } from '@/auth/authClient';
 
 async function buildStreamHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -24,7 +24,7 @@ async function buildStreamHeaders(): Promise<Record<string, string>> {
     const ce = getCeBearerToken();
     if (ce) {
       headers.Authorization = `Bearer ${ce}`;
-    } else if (useSupabaseForApiAuth() && supabase) {
+    } else if (isSupabaseAuthConfigured() && supabase) {
       const {
         data: { session },
       } = await supabase.auth.getSession();

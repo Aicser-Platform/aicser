@@ -43,8 +43,11 @@ fix-permissions.sh
 node_modules/.cache/
 
 .next/
+.next-local/
+.next-ee-local/
 .next-dev/
 .next.broken/
+.next-verify/
 tmp/
 tmp/next-dev-cache/
 .next/cache/

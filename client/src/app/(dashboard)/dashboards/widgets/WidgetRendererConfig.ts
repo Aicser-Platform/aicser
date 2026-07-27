@@ -29,113 +29,200 @@ export const isDark = () => {
 };
 
 // Color palettes for charts
+// Categorical sets sized for up to ~20 series (Tableau 20 / ColorBrewer guidance).
+// Brand teal leads "default"; hues stay maximally distinct (not sequential tints).
 export const COLOR_PALETTES = {
   default: [
-    '#00c2cb', // Teal (Primary)
-    '#2c3e50', // Dark Blue
-    '#e74c3c', // Red
-    '#3498db', // Blue
-    '#2ecc71', // Green
-    '#f39c12', // Orange
-    '#9b59b6', // Purple
-    '#1abc9c', // Mint
-    '#d35400', // Dark Orange
-    '#8e44ad', // Dark Purple
-    '#c0392b', // Dark Red
-    '#16a085', // Sea Green
+    '#00c2cb', // Brand teal
+    '#4e79a7', // Blue
+    '#f28e2b', // Orange
+    '#e15759', // Red
+    '#76b7b2', // Seafoam
+    '#59a14f', // Green
+    '#edc949', // Yellow
+    '#af7aa1', // Purple
+    '#ff9da7', // Pink
+    '#9c755f', // Brown
+    '#86bcb6', // Light teal
+    '#ffbe7d', // Peach
+    '#8cd17d', // Light green
+    '#b07aa1', // Mauve
+    '#d37295', // Rose
+    '#499894', // Dark teal
+    '#a0cbe8', // Sky
+    '#d4a6c8', // Lilac
+    '#bab0ac', // Gray
+    '#79706e', // Charcoal
   ],
   vibrant: [
-    '#ff5e5e', // Coral
-    '#ffbd39', // Gold
-    '#1ac0c6', // Turquoise
-    '#454ade', // Royal Blue
-    '#805ad5', // Purple
-    '#f56565', // Red-Pink
-    '#48bb78', // Leaf Green
-    '#ed8936', // Pumpkin
-    '#4299e1', // Sky Blue
-    '#0bc5ea', // Cyan
-    '#667eea', // Indigo
-    '#f6ad55', // Peach
+    '#00c2cb', '#ff5e5e', '#ffbd39', '#454ade', '#48bb78',
+    '#ed8936', '#805ad5', '#0bc5ea', '#f56565', '#667eea',
+    '#38a169', '#dd6b20', '#d53f8c', '#3182ce', '#d69e2e',
+    '#319795', '#e53e3e', '#5a67d8', '#68d391', '#f6ad55',
   ],
   cool: [
-    '#3498db', '#5dade2', '#85c1e9', '#aed6f1', '#d6eaf8',
-    '#5499c7', '#2980b9', '#2471a3', '#1f618d', '#1a5276',
-    '#154360', '#54a0ff'
+    '#00c2cb', '#3498db', '#5dade2', '#2980b9', '#1abc9c',
+    '#48c9b0', '#5dade2', '#2471a3', '#76d7c4', '#5499c7',
+    '#1f618d', '#17a2b8', '#5d6d7e', '#85c1e9', '#148f77',
+    '#2e86ab', '#aed6f1', '#1a5276', '#73c6b6', '#2874a6',
   ],
   warm: [
-    '#e67e22', '#f39c12', '#d35400', '#e74c3c', '#c0392b',
-    '#f1948a', '#ec7063', '#eb984e', '#f5b041', '#f8c471',
-    '#dc7633', '#ba4a00'
+    '#f39c12', '#e74c3c', '#e67e22', '#c0392b', '#d35400',
+    '#f5b041', '#ec7063', '#dc7633', '#f1948a', '#af601a',
+    '#cb4335', '#e59866', '#922b21', '#b9770e', '#cd6155',
+    '#a04000', '#f0b27a', '#7b241c', '#d68910', '#943126',
   ],
   nature: [
-    '#27ae60', '#2ecc71', '#1abc9c', '#16a085', '#27ae60',
-    '#76d7c4', '#52be80', '#229954', '#1d8348', '#196f3d',
-    '#145a32', '#a9dfbf'
+    '#27ae60', '#1abc9c', '#2ecc71', '#16a085', '#52be80',
+    '#148f77', '#229954', '#76d7c4', '#196f3d', '#48c9b0',
+    '#1d8348', '#0e6655', '#82e0aa', '#117a65', '#145a32',
+    '#45b39d', '#239b56', '#0b5345', '#a9dfbf', '#28b463',
   ],
   corporate: [
-    '#2c3e50', '#34495e', '#5d6d7e', '#85929e', '#aeb6bf',
-    '#d6dbdf', '#212f3d', '#283747', '#2e4053', '#34495e',
-    '#566573', '#1c2833'
+    '#00c2cb', '#2c3e50', '#34495e', '#5d6d7e', '#1abc9c',
+    '#2980b9', '#85929e', '#16a085', '#1a5276', '#7f8c8d',
+    '#212f3d', '#5499c7', '#566573', '#148f77', '#283747',
+    '#aab7b8', '#1c2833', '#5dade2', '#707b7c', '#154360',
   ],
   pastel: [
-    '#ff9ff3', '#feca57', '#ff6b6b', '#48dbfb', '#1dd1a1',
-    '#00d2d3', '#54a0ff', '#5f27cd', '#c8d6e5', '#222f3e',
-    '#ff9f43', '#ee5253'
+    '#7fdbda', '#ff9ff3', '#feca57', '#ff6b6b', '#48dbfb',
+    '#1dd1a1', '#54a0ff', '#5f27cd', '#ff9f43', '#c8d6e5',
+    '#ff9ff3', '#00d2d3', '#ff6b81', '#7bed9f', '#70a1ff',
+    '#eccc68', '#a29bfe', '#fd79a8', '#55efc4', '#74b9ff',
   ],
   infographic: [
     '#00c2cb', '#ffcc00', '#ff6666', '#66cc99', '#9966ff',
     '#ff9933', '#3399ff', '#cc33ff', '#33cc33', '#ff3366',
-    '#006699', '#666666'
+    '#006699', '#ff9900', '#6699ff', '#99cc33', '#cc6699',
+    '#33cccc', '#ff6633', '#6666cc', '#99ff66', '#666666',
   ],
   spectrum: [
     '#4dc3ff', '#44d7b6', '#6dd400', '#ffcf00', '#ff9f00',
-    '#ff5b5b', '#e02020', '#fa6400', '#f7b500', '#6dd400',
-    '#0091ff', '#6236ff'
-  ]
+    '#ff5b5b', '#e02020', '#fa6400', '#f7b500', '#0091ff',
+    '#6236ff', '#b620e0', '#6dd400', '#32c5ff', '#44d7b6',
+    '#f7b500', '#fa6400', '#e02020', '#6b52ff', '#00c2cb',
+  ],
 };
 
-// Function to get colors from palette name with optional count for dynamic generation
-export const getColorsFromPalette = (paletteName: string, count?: number): string[] => {
-  const palette = COLOR_PALETTES[paletteName as keyof typeof COLOR_PALETTES];
-  
-  if (paletteName === 'diverse' && count) {
-    return generateDiversePalette(count);
-  }
-
-  if (palette && count && count > palette.length) {
-    // If we need more colors than the palette provides, use the golden angle to extend it
-    const extended = [...palette];
-    for (let i = palette.length; i < count; i++) {
-        const hue = (200 + (i * 137.5)) % 360; // Distribute hues
-        extended.push(`hsl(${hue}, 65%, 50%)`);
-    }
-    return extended;
-  }
-  
-  return palette || COLOR_PALETTES.default;
-};
+/** First / fallback series color — brand teal (not ECharts default blue). */
+export const BRAND_SERIES_FALLBACK = COLOR_PALETTES.default[0];
 
 // Generates a set of distinct colors using golden angle distribution for maximum hue diversity
 export const generateDiversePalette = (count: number): string[] => {
   const colors: string[] = [];
-  // Use golden angle approximation (137.5 degrees) for optimal distribution of hues
   for (let i = 0; i < count; i++) {
-    const hue = (200 + (i * 137.508)) % 360; 
-    const saturation = 60 + (i % 2) * 10; // Slight variation in saturation
-    const lightness = 50 + (i % 3) * 5;    // Slight variation in lightness
+    const hue = (200 + (i * 137.508)) % 360;
+    const saturation = 60 + (i % 2) * 10;
+    const lightness = 50 + (i % 3) * 5;
     colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
   }
   return colors;
 };
 
+/** Get colors from palette name; extends past 20 with golden-angle hues when needed. */
+export const getColorsFromPalette = (paletteName: string, count?: number): string[] => {
+  const palette = COLOR_PALETTES[paletteName as keyof typeof COLOR_PALETTES];
+
+  if (paletteName === 'diverse' && count) {
+    return generateDiversePalette(count);
+  }
+
+  if (palette && count && count > palette.length) {
+    const extended = [...palette];
+    for (let i = palette.length; i < count; i++) {
+      const hue = (200 + (i * 137.508)) % 360;
+      const sat = 58 + (i % 3) * 8;
+      const light = 46 + (i % 2) * 8;
+      extended.push(`hsl(${hue}, ${sat}%, ${light}%)`);
+    }
+    return extended;
+  }
+
+  return palette ? [...palette] : [...COLOR_PALETTES.default];
+};
+
+const ECHARTS_DEFAULT_PALETTE = new Set(
+  ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0'].map(
+    (c) => c.toLowerCase(),
+  ),
+);
+
+function normalizeHexColor(color: unknown): string | null {
+  if (typeof color !== 'string') return null;
+  const c = color.trim().toLowerCase();
+  return c.startsWith('#') ? c : null;
+}
+
+function shouldReplaceChartColor(color: unknown): boolean {
+  const hex = normalizeHexColor(color);
+  if (!hex) return false;
+  return ECHARTS_DEFAULT_PALETTE.has(hex);
+}
+
+/**
+ * Apply Aicser categorical palette to an ECharts option (chat + dashboard).
+ * Sets top-level `color` and remaps locked ECharts-default series/bar colors.
+ */
+export function applyAicserChartColors<T extends Record<string, any>>(
+  config: T,
+  paletteName: string = 'default',
+  seriesCount?: number,
+): T {
+  if (!config || typeof config !== 'object') return config;
+  const need = Math.max(seriesCount || 0, 20);
+  const colors = getColorsFromPalette(paletteName, need);
+  const next: Record<string, any> = { ...config, color: [...colors] };
+
+  const remapItemStyle = (itemStyle: any, index: number) => {
+    if (!itemStyle || typeof itemStyle !== 'object') return itemStyle;
+    if (itemStyle.color && !shouldReplaceChartColor(itemStyle.color)) return itemStyle;
+    return { ...itemStyle, color: colors[index % colors.length] };
+  };
+
+  if (Array.isArray(next.series)) {
+    next.series = next.series.map((series: any, si: number) => {
+      if (!series || typeof series !== 'object') return series;
+      const s = { ...series };
+      if (s.itemStyle) s.itemStyle = remapItemStyle(s.itemStyle, si);
+      if (Array.isArray(s.data)) {
+        s.data = s.data.map((d: any, di: number) => {
+          if (!d || typeof d !== 'object' || Array.isArray(d)) return d;
+          if (!d.itemStyle) return d;
+          return { ...d, itemStyle: remapItemStyle(d.itemStyle, di) };
+        });
+      }
+      return s;
+    });
+  }
+
+  // Always apply brand categorical palette at the option root.
+  if (Array.isArray(config.color) && config.color.some((c: unknown) => shouldReplaceChartColor(c))) {
+    next.color = [...colors];
+  }
+
+  return next as T;
+}
+
+export function seriesColorAt(index: number, paletteName: string = 'default'): string {
+  const colors = getColorsFromPalette(paletteName);
+  return colors[Math.max(0, index) % colors.length] || BRAND_SERIES_FALLBACK;
+}
+
+export function categoryColor(
+  category: string,
+  categories: string[],
+  catColors?: Record<string, string> | null,
+  paletteName: string = 'default',
+): string {
+  const mapped = catColors?.[category];
+  if (mapped && !shouldReplaceChartColor(mapped)) return mapped;
+  const idx = categories.indexOf(category);
+  return seriesColorAt(idx >= 0 ? idx : 0, paletteName);
+}
+
 export const CHART_COLORS = {
   primary: '#00c2cb',
-  secondary: [
-    '#00c2cb', '#2c3e50', '#e74c3c', '#3498db', '#2ecc71', 
-    '#f39c12', '#9b59b6', '#1abc9c', '#d35400', '#8e44ad', 
-    '#c0392b', '#16a085'
-  ],
+  secondary: [...COLOR_PALETTES.default],
   get text() {
     const dark = isDark();
     return {
@@ -190,6 +277,10 @@ export interface ChartConfig {
   showDataLabel?: boolean;
   showGridline?: boolean;
   showAxis?: boolean;
+  showTrendLine?: boolean;
+  showAverageLine?: boolean;
+  showAnomalies?: boolean;
+  referenceLines?: Array<{ value?: number; label?: string; color?: string; style?: string }>;
   showYAxisLegend?: boolean;
   smooth?: boolean;
   stacked?: boolean;
@@ -253,8 +344,6 @@ export interface ChartConfig {
   valueFormat?: ChartValueFormat;
   /** Optional per-series display formats, keyed by metric field/label/series name. */
   metricFormats?: Record<string, ChartValueFormat>;
-  /** Highlight statistical outliers (IQR method) with markPoints on line/bar/area/scatter charts. */
-  showAnomalies?: boolean;
   /** Widget-level border width in pixels (0 = none) */
   borderWidth?: number;
   /** Widget-level border color */

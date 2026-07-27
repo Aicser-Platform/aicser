@@ -48,7 +48,9 @@ import {
   ScissorOutlined,
   MoreOutlined,
   CaretRightOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
@@ -65,7 +67,20 @@ import {
   isSameQueryName,
   resolveQueryTabSaveName,
   snapshotNameFromTabTitle,
+  uniqueSavedQueryName,
 } from '@/utils/queryTabNaming';
+import {
+  clearSavedQueryBind,
+  columnsFromQueryResult,
+  wrapSqlAsSubquery,
+  buildChartDataFromRows,
+  buildChartQueryFromBind,
+  buildBindNavigateUrl,
+  buildMappingFromFields,
+  type SavedQueryBindPayload,
+} from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
+import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
+import { QueryVisualizeModal, type QueryVisualizeModalValues } from '@/components/data/SQLEditor/QueryVisualizeModal';
 
 const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -257,6 +272,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   defaultSidebarOpen = false,
 }) => {
   const t = useTranslations('monaco_sql_editor');
+  const router = useRouter();
   const formatError = useFormatUserError();
   const authenticatedFetch = useAuthenticatedFetch();
   const { session, user: authUser } = useAuthStore();
@@ -519,6 +535,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [editingTabKey, setEditingTabKey] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState<string>('');
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [showVisualizeModal, setShowVisualizeModal] = useState(false);
+  const [visualizeConfirming, setVisualizeConfirming] = useState(false);
   const [modalSaveQueryName, setModalSaveQueryName] = useState('');
   const [savingSavedQuery, setSavingSavedQuery] = useState(false);
   const [snapshots, setSnapshots] = useState<any[]>([]);
@@ -1158,8 +1176,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       language: QueryLanguage;
       savedQueryId?: number | string | null;
       syncTabTitle?: boolean;
+      /** When true, auto-suffix name on collision instead of failing */
+      uniqueName?: boolean;
     }) => {
-      const trimmedName = opts.name.trim();
+      let trimmedName = opts.name.trim();
       if (!trimmedName || !opts.sql.trim()) {
         message.warning(t('no_query_to_save'));
         return null;
@@ -1169,34 +1189,80 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         tabKey: opts.tabKey,
         language: opts.language,
         activeQueryKey: opts.tabKey,
+        data_source_id: selectedDataSource?.id ? String(selectedDataSource.id) : undefined,
+        dataSourceId: selectedDataSource?.id ? String(selectedDataSource.id) : undefined,
+        dataSourceName: selectedDataSource?.name,
       };
 
       const scopeQs = queriesScopeParams ? `?${queriesScopeParams}` : '';
-      let targetId = opts.savedQueryId ?? null;
+      let targetId: number | string | null = opts.savedQueryId ?? null;
 
-      if (!targetId) {
+      if (targetId == null) {
         const tab = queryTabs.find((qt) => qt.key === opts.tabKey);
         if (tab?.savedQueryId != null) targetId = tab.savedQueryId;
       }
-      if (!targetId) {
+      if (targetId == null) {
         const byName = savedQueries.find((q: { name?: string; id?: number | string }) =>
           isSameQueryName(q.name, trimmedName),
         );
         if (byName?.id != null) targetId = byName.id;
       }
 
-      if (targetId != null && typeof targetId === 'number') {
-        await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
-        });
-      } else {
-        await authenticatedFetch(savedQueriesUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
-        });
+      if (opts.uniqueName) {
+        trimmedName = uniqueSavedQueryName(trimmedName, savedQueries, targetId);
+      }
+
+      const canPut = targetId != null && String(targetId).trim() !== '';
+
+      try {
+        if (canPut) {
+          await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+          });
+        } else {
+          const created = await authenticatedFetch(savedQueriesUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+          });
+          if (created?.id != null) targetId = created.id;
+        }
+      } catch (err: any) {
+        const msg = String(err?.message || err?.detail || JSON.stringify(err?.body || ''));
+        // Name collision → update existing row or retry with a unique name
+        if (/already exists/i.test(msg)) {
+          const existing = savedQueries.find((q: { name?: string; id?: number | string }) =>
+            isSameQueryName(q.name, trimmedName),
+          );
+          if (existing?.id != null && (targetId == null || String(existing.id) === String(targetId))) {
+            targetId = existing.id;
+            await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+            });
+          } else {
+            trimmedName = uniqueSavedQueryName(trimmedName, savedQueries, targetId);
+            if (targetId != null && String(targetId).trim() !== '') {
+              await authenticatedFetch(`/api/queries/saved-queries/${targetId}${scopeQs}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+              });
+            } else {
+              const created = await authenticatedFetch(savedQueriesUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmedName, sql: opts.sql, metadata }),
+              });
+              if (created?.id != null) targetId = created.id;
+            }
+          }
+        } else {
+          throw err;
+        }
       }
 
       const list = await refreshSavedQueriesList();
@@ -1222,7 +1288,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         );
       }
 
-      return saved?.id ?? null;
+      return saved?.id ?? targetId ?? null;
     },
     [
       authenticatedFetch,
@@ -1231,7 +1297,260 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       refreshSavedQueriesList,
       savedQueries,
       savedQueriesUrl,
+      selectedDataSource,
       t,
+    ],
+  );
+
+  const openVisualizeModal = useCallback(() => {
+    const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+    if (!content) {
+      message.warning(t('no_query_to_save'));
+      return;
+    }
+    if (!selectedDataSourceId) {
+      message.warning(t('select_ds_first'));
+      return;
+    }
+    setShowVisualizeModal(true);
+  }, [sqlQuery, selectedDataSourceId, t]);
+
+  const confirmVisualizeQuery = useCallback(
+    async (values: QueryVisualizeModalValues) => {
+      const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+      const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+      const fallbackName = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
+      const name = (values.title || '').trim() || fallbackName;
+      const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+      if (!content || !selectedDataSourceId) return;
+      if (values.target === 'dashboard' && !values.dashboardId) {
+        message.warning('Select a dashboard first');
+        return;
+      }
+
+      setVisualizeConfirming(true);
+      try {
+        // Persist under the widget title (unique). Keep tab title unless user named the tab.
+        const savedId = await persistSavedQueryForTab({
+          name,
+          sql: content,
+          tabKey: tab?.key ?? activeQueryKey,
+          language: resolveLanguage(tab?.language ?? editorLanguage),
+          savedQueryId: tab?.savedQueryId,
+          uniqueName: true,
+          syncTabTitle: false,
+        });
+        if (savedId == null) {
+          message.error('Could not save query for visualization');
+          return;
+        }
+
+        // Discover columns: prefer current results, else probe SQL
+        let columns = columnsFromQueryResult({
+          data: Array.isArray(results) ? results.slice(0, 5) : [],
+        });
+        if (!columns.length) {
+          try {
+            const probe = await enhancedDataService.executeMultiEngineQuery(
+              wrapSqlAsSubquery(content, 5),
+              String(selectedDataSourceId),
+            );
+            columns = columnsFromQueryResult(probe as any);
+          } catch (err) {
+            console.warn('Column probe failed:', err);
+          }
+        }
+
+        const mapping = buildMappingFromFields({
+          chartType: values.chartType,
+          xField: values.xField,
+          yFields: values.yFields,
+          groupField: values.groupField,
+          columns,
+        });
+
+        let querySnapshotId: string | number | undefined;
+        let chartData: Record<string, unknown> | undefined;
+
+        if (values.dataMode === 'snapshot') {
+          if (!Array.isArray(results) || results.length === 0) {
+            message.warning('Run the query first to create a snapshot');
+            return;
+          }
+          const snapCols = columns.map((c) => c.name);
+          const snapRes = await authenticatedFetch(
+            queriesScopeParams ? `/api/queries/snapshots?${queriesScopeParams}` : '/api/queries/snapshots',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name,
+                sql: content,
+                data_source_id: selectedDataSourceId,
+                rows: jsonSafeRows(results.slice(0, 500) as Record<string, unknown>[]),
+                columns: snapCols,
+                preview_rows: Math.min(500, results.length),
+                organization_id: organizationId || undefined,
+                project_id: projectId || undefined,
+              }),
+            },
+          );
+          querySnapshotId = snapRes?.id ?? snapRes?.snapshot_id;
+          chartData = buildChartDataFromRows(results.slice(0, 500), {
+            chartType: values.chartType,
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+          });
+        } else if (Array.isArray(results) && results.length > 0) {
+          chartData = buildChartDataFromRows(results.slice(0, 500), {
+            chartType: values.chartType,
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+          });
+        }
+
+        const chartQuery = buildChartQueryFromBind({
+          savedQueryId: savedId,
+          querySnapshotId,
+          columns,
+          chartType: values.chartType,
+          dataMode: values.dataMode,
+          chartQuery: {
+            x: mapping.x,
+            yMetrics: mapping.yMetrics,
+            yMetric: 'none',
+            sortBy: mapping.x ? 'x' : 'record_order',
+            ...(values.xGrain ? { xGrain: values.xGrain } : {}),
+            ...(mapping.groupField
+              ? { groupField: mapping.groupField, legend: mapping.groupField }
+              : {}),
+            ...(values.drillPath?.length ? { drillPath: values.drillPath } : {}),
+          },
+        });
+
+        // Upsert library chart then link (shared helper used by Chat + Designer too)
+        const { ensureLibraryChartAndPinToDashboard } = await import(
+          '@/components/charts/ensureLibraryChartAndPin'
+        );
+
+        let preCreatedChartId: string | undefined;
+        let libraryChartId: string | undefined;
+
+        if (values.target === 'dashboard' && values.dashboardId) {
+          const h = values.chartType === 'stat' ? 4 : 8;
+          const pinned = await ensureLibraryChartAndPinToDashboard({
+            dashboardId: values.dashboardId,
+            definition: {
+              title: name,
+              chartType: values.chartType,
+              dataSourceId: String(selectedDataSourceId),
+              chartQuery: chartQuery as any,
+              chartOptions: {
+                showLegend: values.chartType !== 'stat' && values.chartType !== 'table',
+                ...(chartData ? { __prefetchedChartData: chartData } : {}),
+              },
+              reuseSavedQuery: true,
+            },
+            // Placement is resolved against the target board inside the helper
+            layout: { w: 6, h },
+            mode: 'link',
+            projectId: projectId || currentProjectId,
+          });
+          preCreatedChartId = pinned.chartId;
+          libraryChartId = pinned.libraryChartId;
+
+          try {
+            const { useDashboardStore } = await import(
+              '@/app/(dashboard)/dashboards/stores/useDashboardStore'
+            );
+            const store = useDashboardStore.getState();
+            // Reload charts for this dashboard (fetchDashboards alone can leave a stale canvas)
+            await store.loadDashboardById(values.dashboardId);
+            store.setStudioMode('edit');
+            store.setSelectedWidgetId(`widget-${preCreatedChartId}`);
+            store.setPropertiesCollapsed(false);
+          } catch (refreshErr) {
+            console.warn('Dashboard store refresh after pin failed:', refreshErr);
+          }
+        } else {
+          const libraryChart = await chartBuilderService.createChart(
+            {
+              title: name,
+              chartType: values.chartType,
+              dataSourceId: String(selectedDataSourceId),
+              chartQuery: chartQuery as any,
+              chartOptions: {
+                showLegend: values.chartType !== 'stat' && values.chartType !== 'table',
+                ...(chartData ? { __prefetchedChartData: chartData } : {}),
+              },
+              reuseSavedQuery: true,
+            },
+            projectId || currentProjectId,
+          );
+          libraryChartId = libraryChart?.id ? String(libraryChart.id) : undefined;
+          preCreatedChartId = libraryChartId;
+          if (!libraryChartId) {
+            throw new Error('Library chart was not created');
+          }
+        }
+
+        const payload: SavedQueryBindPayload = {
+          savedQueryId: savedId,
+          querySnapshotId,
+          name,
+          sql: content,
+          dataSourceId: String(selectedDataSourceId),
+          columns,
+          chartType: values.chartType,
+          dataMode: values.dataMode,
+          target: values.target,
+          dashboardId: values.dashboardId,
+          preCreatedChartId,
+          chartQuery,
+          chartData,
+        };
+
+        clearSavedQueryBind();
+        if (values.target === 'chart-designer' && libraryChartId) {
+          try {
+            sessionStorage.setItem('chart_designer_select', libraryChartId);
+          } catch {
+            /* ignore */
+          }
+        }
+
+        setShowVisualizeModal(false);
+        message.success(
+          values.target === 'dashboard'
+            ? `Linked “${name}” to dashboard`
+            : `Opening Chart Designer with “${name}”…`,
+        );
+        router.push(
+          values.target === 'chart-designer'
+            ? `/chart-designer?chart=${libraryChartId}`
+            : buildBindNavigateUrl(payload),
+        );
+      } catch (e: unknown) {
+        message.error(formatError(e) || 'Could not visualize query');
+      } finally {
+        setVisualizeConfirming(false);
+      }
+    },
+    [
+      queryTabs,
+      activeQueryKey,
+      sqlQuery,
+      selectedDataSourceId,
+      persistSavedQueryForTab,
+      editorLanguage,
+      results,
+      authenticatedFetch,
+      queriesScopeParams,
+      organizationId,
+      projectId,
+      currentProjectId,
+      router,
+      formatError,
     ],
   );
 
@@ -2714,6 +3033,18 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     <Tooltip title={t('tooltip_saved_queries_snapshots')}>
                       <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
                     </Tooltip>
+                    {editorLanguage === 'sql' && (
+                      <Tooltip title="Visualize — add chart to a dashboard or Chart Designer">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<LineChartOutlined />}
+                          disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                          onClick={openVisualizeModal}
+                          aria-label="Visualize query"
+                        />
+                      </Tooltip>
+                    )}
                     {IS_EE && editorLanguage === 'sql' && (
                       <>
                         <Divider type="vertical" style={{ margin: '0 2px' }} />
@@ -3286,6 +3617,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           onSaveQueryNameChange={setModalSaveQueryName}
           onSaveCurrentQuery={handleModalSaveCurrentQuery}
           savingCurrent={savingSavedQuery}
+          organizationId={organizationId}
+          projectId={projectId}
+          onSavedQueriesChanged={() => {
+            void refreshSavedQueriesList();
+          }}
           onLoadToNewTab={(record) => {
             const newKey = `q-${Date.now()}`;
             const newTab = buildTabFromSavedRecord(record, newKey);
@@ -3702,6 +4038,24 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           </div>
         )}
       </Modal>
+      <QueryVisualizeModal
+        open={showVisualizeModal}
+        confirming={visualizeConfirming}
+        onCancel={() => setShowVisualizeModal(false)}
+        onConfirm={(vals) => void confirmVisualizeQuery(vals)}
+        defaultTitle={
+          resolveQueryTabSaveName(
+            queryTabs.find((qt) => qt.key === activeQueryKey)?.title,
+            Math.max(1, queryTabs.findIndex((qt) => qt.key === activeQueryKey) + 1),
+          )
+        }
+        hasResultRows={Array.isArray(results) && results.length > 0}
+        projectId={projectId || currentProjectId}
+        resultRows={Array.isArray(results) ? (results as Array<Record<string, unknown>>).slice(0, 200) : []}
+        columns={columnsFromQueryResult({
+          data: Array.isArray(results) ? results.slice(0, 5) : [],
+        })}
+      />
       </>
       )}
     </div>

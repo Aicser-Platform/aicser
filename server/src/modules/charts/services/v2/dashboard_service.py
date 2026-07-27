@@ -82,8 +82,12 @@ class DashboardService:
         data: Mapping[str, Any],
     ) -> Dashboard:
         normalized = self._normalize_data(data)
+        # Library fields handled by DashboardLibraryService — don't setattr unknown keys
+        skip = {"collectionId", "isFavorite", "tags", "collection_id", "is_favorite"}
         for key, value in normalized.items():
-            if value is not None:
+            if key in skip:
+                continue
+            if value is not None and hasattr(dashboard, key):
                 setattr(dashboard, key, value)
         if "description" in data:
             dashboard.description = data.get("description")
@@ -94,27 +98,48 @@ class DashboardService:
         return dashboard
 
     async def delete(self, dashboard: Dashboard) -> None:
-        """Remove dashboard and dependent rows (widgets, pages, charts, shares, analytics)."""
+        """Soft-delete dashboard into trash. Structure kept for restore."""
+        from datetime import datetime, timezone
+
+        if hasattr(dashboard, "is_deleted"):
+            dashboard.is_deleted = True
+            if hasattr(dashboard, "deleted_at"):
+                dashboard.deleted_at = datetime.now(timezone.utc)
+            await self.db.commit()
+            return
+        await self.purge(dashboard)
+
+    async def restore(self, dashboard: Dashboard) -> Dashboard:
+        if hasattr(dashboard, "is_deleted"):
+            dashboard.is_deleted = False
+        if hasattr(dashboard, "deleted_at"):
+            dashboard.deleted_at = None
+        await self.db.commit()
+        await self.db.refresh(dashboard)
+        return dashboard
+
+    async def purge(self, dashboard: Dashboard) -> None:
+        """Permanently remove dashboard and dependent rows.
+
+        Chart library SSOT: placements are unlinked; chart rows are kept so other
+        boards / Chart Designer still share the same definition. Charts that only
+        pointed at this dashboard via charts.dashboard_id have that FK cleared.
+        """
         from sqlalchemy import delete, select, update
 
         from src.core.edition import is_ee_enabled
         from src.modules.charts.models import Chart, DashboardEmbed, QueryPattern
-        from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
         from src.modules.dashboards.models import (
             DashboardAnalytics,
             DashboardChart,
             DashboardPage,
             DashboardShare,
+            DashboardVersion,
             dashboard_widgets_table,
         )
 
         dashboard_id = dashboard.id
 
-        # Legacy widget rows (FK to dashboard and pages). The dashboard_widgets
-        # table itself is only created by an EE-gated migration (see
-        # alembic/versions/2026_05_24_ee_platform_tables.py's _is_ee_enabled()
-        # check), so it doesn't exist in CE — attempting this delete there
-        # raised UndefinedTableError and aborted the whole dashboard delete.
         if is_ee_enabled():
             await self.db.execute(
                 delete(dashboard_widgets_table).where(
@@ -122,27 +147,30 @@ class DashboardService:
                 )
             )
 
-        chart_service = DashboardChartService(self.db)
-        charts = await chart_service.list_charts(dashboard_id)
-
+        # Detach placements only — never destroy shared library charts
         await self.db.execute(
             delete(DashboardChart).where(DashboardChart.dashboard_id == dashboard_id)
         )
 
-        for chart in charts:
-            await self.db.delete(chart)
-
-        orphan_charts = await self.db.execute(
-            select(Chart).where(Chart.dashboard_id == dashboard_id)
+        await self.db.execute(
+            update(Chart)
+            .where(Chart.dashboard_id == dashboard_id)
+            .values(dashboard_id=None)
         )
-        for chart in orphan_charts.scalars():
-            await self.db.delete(chart)
 
         await self.db.execute(
             update(QueryPattern)
             .where(QueryPattern.dashboard_id == dashboard_id)
             .values(dashboard_id=None)
         )
+
+        # Versions cascade via FK; delete explicitly for clarity
+        try:
+            await self.db.execute(
+                delete(DashboardVersion).where(DashboardVersion.dashboard_id == dashboard_id)
+            )
+        except Exception:
+            pass
 
         pages_result = await self.db.execute(
             select(DashboardPage).where(DashboardPage.dashboard_id == dashboard_id)
@@ -160,13 +188,6 @@ class DashboardService:
             delete(DashboardEmbed).where(DashboardEmbed.dashboard_id == dashboard_id)
         )
 
-        # scheduled_emails is on the EE-only migration branch
-        # (f11a9f2c63b1_ee_tables.py, branch_labels=('ee',)) and never
-        # exists in CE. The previous try/except: pass here swallowed that
-        # UndefinedTableError but left the transaction aborted -- every
-        # statement after it (including the commit below) then failed with
-        # InFailedSQLTransactionError, a second 500 hiding behind the
-        # dashboard_widgets one.
         if is_ee_enabled():
             try:
                 from sqlalchemy import text

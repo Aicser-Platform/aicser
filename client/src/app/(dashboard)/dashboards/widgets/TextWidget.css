@@ -1,3 +1,8 @@
+/**
+ * Text block — document-style surface (Notion / Coda pattern).
+ * Title + body share one continuous column; compact toolbar only while editing.
+ */
+
 .text-widget-wrapper {
   height: 100%;
   width: 100%;
@@ -6,65 +11,136 @@
   position: relative;
   overflow: hidden;
   background: transparent;
-  border-radius: 8px;
+  border-radius: 0;
   container-type: inline-size;
   cursor: text;
+  padding: 2px 2px 6px;
+  gap: 0;
 }
 
+.text-widget-heading-row {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 4px 2px;
+}
+
+.text-widget-heading {
+  margin: 0;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--ant-color-text);
+  user-select: none;
+}
+
+.text-widget-heading-input {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  padding: 0 4px !important;
+  height: 28px !important;
+}
+
+.text-widget-heading-add {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ant-color-text-quaternary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.text-widget-heading-add:hover {
+  color: var(--ant-color-text-secondary);
+}
+
+/* Single compact strip — no filled chrome, no Ant Divider bars */
 .text-widget-toolbar {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: max-content;
-  max-width: calc(100% - 16px);
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  padding: 4px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  border-radius: 20px;
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 4px;
+  padding: 0 2px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  z-index: 1000;
+  justify-content: flex-start;
+  gap: 0;
+  z-index: 2;
   flex-wrap: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-x: auto;
   scrollbar-width: none;
+  min-height: 26px;
 }
 
-@container (max-width: 400px) {
-  .text-widget-toolbar {
-    padding: 2px 4px;
-    gap: 1px;
-  }
-  .text-widget-toolbar .ant-divider-vertical {
-    margin: 0 2px;
-  }
+.text-widget-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
-@container (max-width: 300px) {
+.text-widget-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.text-widget-toolbar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 12px;
+  margin: 0 4px;
+  background: var(--ant-color-border-secondary);
+  opacity: 0.85;
+}
+
+.text-widget-color-trigger {
+  display: inline-flex;
+  align-items: center;
+}
+
+.text-widget-toolbar .ant-btn {
+  color: var(--ant-color-text-secondary);
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.text-widget-toolbar .ant-btn .anticon {
+  font-size: 12px;
+}
+
+@container (max-width: 280px) {
   .text-widget-toolbar {
-    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 2px;
   }
 }
 
 .text-widget-editor {
   flex: 1;
   width: 100%;
-  height: 100%;
-  padding: 0;
+  min-height: 0;
+  padding: 0 4px;
   overflow-y: auto;
   border: none;
   background: transparent;
-  line-height: 1.6;
+  line-height: 1.55;
   font-family: inherit;
   outline: none;
   white-space: pre-wrap;
-  word-wrap: break-word; /* Ensure text wraps */
-  min-height: 100%;
+  word-wrap: break-word;
 }
 
 .text-widget-editor.read-only {
@@ -75,68 +151,77 @@
   background: transparent;
 }
 
-.dark .text-widget-wrapper {
+.text-widget-editor .text-widget-placeholder,
+.text-widget-editor p.text-widget-placeholder {
+  color: var(--ant-color-text-quaternary) !important;
+  font-style: italic;
+  margin: 0;
+}
+
+.text-widget-editor p {
+  margin: 0 0 0.55em;
+}
+
+.text-widget-editor p:last-child {
+  margin-bottom: 0;
+}
+
+.dark .text-widget-wrapper,
+html[data-theme='dark'] .text-widget-wrapper {
   background: transparent;
 }
 
-.dark .text-widget-toolbar {
-  background: rgba(22, 27, 34, 0.8);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+.dark .text-widget-toolbar,
+html[data-theme='dark'] .text-widget-toolbar {
+  background: transparent;
+  border: none;
 }
 
-.dark .text-widget-editor {
-  color: #e6edf3;
+.dark .text-widget-editor,
+html[data-theme='dark'] .text-widget-editor {
+  color: var(--ant-color-text);
 }
 
 .text-widget-editor blockquote {
-  border-left: 4px solid #e1e4e8;
-  padding-left: 16px;
-  margin: 16px 0;
-  color: #6a737d;
-}
-
-.dark .text-widget-editor blockquote {
-  border-left-color: #30363d;
-  color: #8b949e;
+  border-left: 3px solid var(--ant-color-border);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--ant-color-text-secondary);
 }
 
 .text-widget-editor ul {
-  padding-left: 24px;
-  margin: 16px 0;
+  padding-left: 22px;
+  margin: 8px 0;
   list-style-type: disc !important;
 }
 
 .text-widget-editor ol {
-  padding-left: 24px;
-  margin: 16px 0;
+  padding-left: 22px;
+  margin: 8px 0;
   list-style-type: decimal !important;
 }
 
 .text-widget-editor a {
-  color: #0366d6;
+  color: var(--ant-color-primary);
   text-decoration: underline;
 }
 
-.dark .text-widget-editor a {
-  color: #58a6ff;
-}
-
-/* Ensure empty div has a place for cursor */
 .text-widget-editor:empty:before {
   content: attr(placeholder);
-  color: #8b949e;
+  color: var(--ant-color-text-quaternary);
   font-style: italic;
 }
 
 .font-size-select {
-  width: 70px !important;
-  font-size: 12px !important;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 12px;
-  margin-left: 4px;
+  width: 58px !important;
+  font-size: 11px !important;
+  background: transparent !important;
+  border-radius: 4px;
+  margin-left: 0;
 }
 
-.dark .font-size-select {
-  background: rgba(255, 255, 255, 0.12);
+.font-size-select .ant-select-selector {
+  padding-inline: 4px !important;
+  height: 24px !important;
+  min-height: 24px !important;
 }

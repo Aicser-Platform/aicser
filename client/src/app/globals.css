@@ -1,23 +1,14 @@
 /**
  * Aiser Platform - Global Styles
- * ✅ CRITICAL: Tailwind MUST come first
+ *
+ * CSS @import must precede all other rules (Turbopack / CSS spec).
+ * Tailwind directives come after imports; custom rules last so they win.
  */
 
 /* ========================================
-   TAILWIND CSS - MUST BE FIRST
-   ======================================== */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-  
-/* ========================================
-   THIRD-PARTY IMPORTS
+   THIRD-PARTY + DESIGN SYSTEM IMPORTS
    ======================================== */
 @import 'antd/dist/reset.css';
-
-/* ========================================
-   DESIGN SYSTEM IMPORTS
-   ======================================== */
 @import '../styles/layout-system.css';
 @import '../styles/aiser-color-system.css';
 @import '../styles/aiser-navigation-unified.css';
@@ -31,6 +22,13 @@
 @import '../styles/query-editor.css';
 @import '../styles/schema-explorer.css';
 @import '../styles/platform-loading.css';
+
+/* ========================================
+   TAILWIND CSS
+   ======================================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* ========================================
    GLOBAL RESET AND BASE STYLES
@@ -86,8 +84,22 @@ html:has(.login-page) body,
 html:has(.aicser-embed-root),
 html:has(.aicser-embed-root) body,
 html:has(.executive-report-fullpage),
-html:has(.executive-report-fullpage) body {
+html:has(.executive-report-fullpage) body,
+html:has(#dashboard-viewer-root),
+html:has(#dashboard-viewer-root) body,
+html:has(.shared-dashboard-error),
+html:has(.shared-dashboard-error) body,
+html:has(.shared-dashboard-loading),
+html:has(.shared-dashboard-loading) body {
   overflow-y: auto !important;
+}
+
+html:has(#dashboard-viewer-root) #__next,
+html:has(.shared-dashboard-error) #__next,
+html:has(.shared-dashboard-loading) #__next {
+  height: auto !important;
+  min-height: 100vh !important;
+  overflow-y: visible !important;
 }
 
 #__next {

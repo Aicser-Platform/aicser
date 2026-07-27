@@ -4,9 +4,33 @@
  */
 
 import * as echarts from 'echarts';
-import { ChartConfig, ChartData, CHART_COLORS, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
-import { formatNumber } from '../utils/numberFormatter';
+import { ChartConfig, ChartData, ChartValueFormat, CHART_COLORS, formatByValueFormat, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
 import { getPieLayout, getChartSliceBorderColor } from './chartLayoutUtils';
+
+function resolveLabelFormat(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
+  const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
+  const formats = config.metricFormats ? Object.values(config.metricFormats) : [];
+  const format = seriesFormat || (formats.length === 1 ? formats[0] : undefined) || config.valueFormat;
+  return format && format !== 'auto' ? format : undefined;
+}
+
+function extractLabelValue(params: any): unknown {
+  const v = params?.value;
+  if (Array.isArray(v)) return v[v.length - 1];
+  return v;
+}
+
+/** Data-label formatter aligned with Value Format (Format tab). */
+function dataLabelFormatter(config: ChartConfig, seriesName?: string, percentStacked = false) {
+  return (params: any) => {
+    const raw = extractLabelValue(params);
+    if (percentStacked) {
+      const value = typeof raw === 'number' ? raw : Number(raw) || 0;
+      return value > 5 ? `${value.toFixed(1)}%` : '';
+    }
+    return formatByValueFormat(raw, resolveLabelFormat(config, seriesName || params?.seriesName));
+  };
+}
 
 // Helper to convert hex color to rgba
 const hexToRgba = (hex: string, alpha: number): string => {
@@ -83,13 +107,7 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
       label: {
         show: config.showDataLabel,
         position: isHorizontalBar ? 'inside' : 'top', // Inside positioning for better readability in stacked charts
-        formatter: isPercentStacked
-          ? (params: any) => {
-              const value = typeof params.value === 'number' ? params.value : 0;
-              // Only show label if segment is large enough (>5%)
-              return value > 5 ? `${value.toFixed(2)}%` : '';
-            }
-          : undefined,
+        formatter: dataLabelFormatter(config, s.name, isPercentStacked),
         fontSize: config.axisLabelFontSize ?? 11,
         color: isStackedBar
           ? '#fff'
@@ -150,12 +168,7 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
     label: {
       show: config.showDataLabel,
       position: isHorizontalBar ? 'inside' : 'top',
-      formatter: isPercentStacked
-        ? (params: any) => {
-            const value = typeof params.value === 'number' ? params.value : 0;
-            return `${value.toFixed(2)}%`;
-          }
-        : undefined,
+      formatter: dataLabelFormatter(config, 'Value', isPercentStacked),
       fontSize: config.axisLabelFontSize ?? 11,
       color: isStackedBar
         ? '#fff'
@@ -221,12 +234,7 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
             ? CHART_COLORS.text.primary
             : (config.axisLabelColor ?? CHART_COLORS.text.primary),
         fontSize: config.axisLabelFontSize ?? 11,
-        formatter: isPercentStacked
-          ? (params: any) => {
-              const value = typeof params.value === 'number' ? params.value : 0;
-              return `${value.toFixed(2)}%`;
-            }
-          : undefined,
+        formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
       },
       data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
       yAxisIndex: 0,
@@ -251,12 +259,7 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
             ? CHART_COLORS.text.primary
             : (config.axisLabelColor ?? CHART_COLORS.text.primary),
         fontSize: config.axisLabelFontSize ?? 11,
-        formatter: isPercentStacked
-          ? (params: any) => {
-              const value = typeof params.value === 'number' ? params.value : 0;
-              return `${value.toFixed(2)}%`;
-            }
-          : undefined,
+        formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
       },
       data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
       yAxisIndex: 1,
@@ -281,12 +284,7 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
           ? CHART_COLORS.text.primary
           : (config.axisLabelColor ?? CHART_COLORS.text.primary),
       fontSize: config.axisLabelFontSize ?? 11,
-      formatter: isPercentStacked
-        ? (params: any) => {
-            const value = typeof params.value === 'number' ? params.value : 0;
-            return `${value.toFixed(2)}%`;
-          }
-        : undefined,
+      formatter: dataLabelFormatter(config, 'Value', isPercentStacked),
     },
     data: data?.y || [],
     lineStyle: { width: config.lineWidth ?? 3, color: primaryColor },
@@ -347,12 +345,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
               ? CHART_COLORS.text.primary
               : (config.axisLabelColor ?? CHART_COLORS.text.primary),
           fontSize: config.axisLabelFontSize ?? 11,
-          formatter: isPercentStacked
-            ? (params: any) => {
-                const value = typeof params.value === 'number' ? params.value : 0;
-                return `${value.toFixed(2)}%`;
-              }
-            : undefined,
+          formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
         },
         data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
         areaStyle: {
@@ -394,12 +387,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
               ? CHART_COLORS.text.primary
               : (config.axisLabelColor ?? CHART_COLORS.text.primary),
           fontSize: config.axisLabelFontSize ?? 11,
-          formatter: isPercentStacked
-            ? (params: any) => {
-                const value = typeof params.value === 'number' ? params.value : 0;
-                return `${value.toFixed(2)}%`;
-              }
-            : undefined,
+          formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
         },
         data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
         areaStyle: {
@@ -440,12 +428,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
           ? CHART_COLORS.text.primary
           : (config.axisLabelColor ?? CHART_COLORS.text.primary),
       fontSize: config.axisLabelFontSize ?? 11,
-      formatter: isPercentStacked
-        ? (params: any) => {
-            const value = typeof params.value === 'number' ? params.value : 0;
-            return `${value.toFixed(2)}%`;
-          }
-        : undefined,
+      formatter: dataLabelFormatter(config, 'Value', isPercentStacked),
     },
     data: data?.y || [],
     lineStyle: { width: config.lineWidth ?? 3, color: primaryColor },
@@ -512,8 +495,8 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
           show: config.showDataLabel && i === seriesCount - 1 && !isZeroSum,
           formatter: (params: any) => {
             if (params.name && params.value !== undefined) {
-              const percentage = total > 0 ? ((params.value / total) * 100).toFixed(2) : '0.00';
-              const formattedValue = formatNumber(params.value, { decimals: 1, compact: true });
+              const percentage = total > 0 ? ((params.value / total) * 100).toFixed(1) : '0.0';
+              const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config, s.name));
               return `${params.name}: ${formattedValue} (${percentage}%)`;
             }
             return params.name || '';
@@ -578,8 +561,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
         if (params.name && params.value !== undefined) {
           // Calculate percentage
           const percentage = total > 0 ? ((params.value / total) * 100).toFixed(1) : '0.0';
-          // Format with compact notation: "Central: 847.2k (19.3%)"
-          const formattedValue = formatNumber(params.value, { decimals: 1, compact: true });
+          const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config));
           return `${params.name}: ${formattedValue} (${percentage}%)`;
         }
         return params.name || '';
@@ -831,7 +813,7 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
             : (config.axisLabelColor ?? CHART_COLORS.text.primary),
         formatter: (params: any) => {
           const val = Array.isArray(params.data) ? params.data[1] : params.data;
-          return val?.toLocaleString() ?? '';
+          return formatByValueFormat(val, resolveLabelFormat(config, s.name));
         },
       },
       data: s.data.map((item, idx) => {
@@ -857,7 +839,11 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
         config.axisLabelColor === 'default'
           ? CHART_COLORS.text.primary
           : (config.axisLabelColor ?? CHART_COLORS.text.primary),
-      formatter: (params: any) => params.data[1]?.toLocaleString() ?? '',
+      formatter: (params: any) =>
+        formatByValueFormat(
+          Array.isArray(params.data) ? params.data[1] : params.data,
+          resolveLabelFormat(config),
+        ),
     },
     data: (data?.y || []).map((val, idx) => {
       const xVal = data.x?.[idx];

@@ -18,7 +18,7 @@ describe('ComputedMetricEditor', () => {
         onCancel={vi.fn()}
       />
     );
-    expect(screen.getByText('fx Computed Metric')).toBeTruthy();
+    expect(screen.getByText('fx Computed metric (ratio)')).toBeTruthy();
     expect(screen.getByText('Display format')).toBeTruthy();
   });
 

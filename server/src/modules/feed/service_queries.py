@@ -962,6 +962,37 @@ class FeedServiceQueryMixin:
                     color="#0ea5e9",
                 )
             )
+            # User-owned feed collections (CRUD via /api/feed/collections)
+            owned = (
+                await self.db.execute(
+                    select(FeedCollection)
+                    .where(FeedCollection.owner_id == user_id)
+                    .order_by(FeedCollection.updated_at.desc())
+                    .limit(50)
+                )
+            ).scalars().all()
+            if owned:
+                owned_ids = [c.id for c in owned]
+                count_rows = (
+                    await self.db.execute(
+                        select(
+                            FeedCollectionItemModel.collection_id,
+                            func.count(FeedCollectionItemModel.id),
+                        )
+                        .where(FeedCollectionItemModel.collection_id.in_(owned_ids))
+                        .group_by(FeedCollectionItemModel.collection_id)
+                    )
+                ).all()
+                count_map = {row[0]: int(row[1] or 0) for row in count_rows}
+                for coll in owned:
+                    collections.append(
+                        FeedSidebarCollection(
+                            id=str(coll.id),
+                            name=coll.name,
+                            count=count_map.get(coll.id, 0),
+                            color="#14b8a6",
+                        )
+                    )
 
         event_filters: List[Any] = []
         if organization_id:

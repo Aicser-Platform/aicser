@@ -1,4 +1,3 @@
-
 import { getBackendUrlForApi } from '@/utils/backendUrl';
 import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 import { NextRequest, NextResponse } from 'next/server';
@@ -6,9 +5,16 @@ import { NextRequest, NextResponse } from 'next/server';
 const backendBase = getBackendUrlForApi();
 const backendUrl = `${backendBase}/api/chart`;
 
-async function forwardRequest(method: string, id: string, request?: NextRequest) {
+/**
+ * Forward /api/chart/:path* → backend /api/chart/:path* including query string.
+ * Covers /collections, /:id, /:id/touch, /:id/favorite, /:id/data, etc.
+ */
+async function forwardRequest(method: string, pathParts: string[], request?: NextRequest) {
   try {
-    const targetUrl = `${backendUrl}/${id}`;
+    const suffix = pathParts.filter(Boolean).map(encodeURIComponent).join('/');
+    const { searchParams } = request ? new URL(request.url) : { searchParams: new URLSearchParams() };
+    const query = searchParams.toString();
+    const targetUrl = `${backendUrl}/${suffix}${query ? `?${query}` : ''}`;
 
     const options: RequestInit = {
       method,
@@ -19,8 +25,6 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
     };
 
     if (request && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-      // Forward the raw body verbatim (matches the /api/dashboards proxy). Avoid
-      // json()/re-stringify so we never alter or drop the request body.
       const rawText = await request.text();
       if (rawText) options.body = rawText;
     }
@@ -38,7 +42,7 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
         }
       }
       const errorText = await response.text().catch(() => 'Unknown error');
-      console.error(`[API Proxy ID] Backend error: ${response.status} - ${errorText}`);
+      console.error(`[API Proxy Chart Path] Backend error: ${response.status} - ${errorText}`);
       return NextResponse.json(
         { success: false, error: errorText || `Backend error: ${response.status}` },
         { status: response.status },
@@ -52,35 +56,34 @@ async function forwardRequest(method: string, id: string, request?: NextRequest)
     const data = await response.json();
     return NextResponse.json(data);
   } catch (error) {
-    console.error(`[API Proxy ID] Exception:`, error);
+    console.error(`[API Proxy Chart Path] Exception:`, error);
     return NextResponse.json({ success: false, error: 'Backend connection failed' }, { status: 500 });
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return forwardRequest('GET', params.id, request);
+type Ctx = { params: Promise<{ path: string[] }> };
+
+async function resolvePath(ctx: Ctx): Promise<string[]> {
+  const resolved = await ctx.params;
+  return resolved.path || [];
 }
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return forwardRequest('POST', params.id, request);
+export async function GET(request: NextRequest, ctx: Ctx) {
+  return forwardRequest('GET', await resolvePath(ctx), request);
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return forwardRequest('PUT', params.id, request);
+export async function POST(request: NextRequest, ctx: Ctx) {
+  return forwardRequest('POST', await resolvePath(ctx), request);
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return forwardRequest('DELETE', params.id, request);
+export async function PUT(request: NextRequest, ctx: Ctx) {
+  return forwardRequest('PUT', await resolvePath(ctx), request);
+}
+
+export async function DELETE(request: NextRequest, ctx: Ctx) {
+  return forwardRequest('DELETE', await resolvePath(ctx), request);
+}
+
+export async function PATCH(request: NextRequest, ctx: Ctx) {
+  return forwardRequest('PATCH', await resolvePath(ctx), request);
 }

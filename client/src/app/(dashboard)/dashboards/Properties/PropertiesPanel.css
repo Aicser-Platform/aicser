@@ -1,17 +1,62 @@
 .properties-panel {
+  /* Docked like the left Dashboards panel — pushes canvas, never overlays widgets.
+     Cols stay at 12 so opening only narrows column pixels, never remaps x/w. */
+  position: relative;
+  z-index: 20;
   width: 320px;
   min-width: 320px;
+  max-width: 320px;
   height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--ant-color-bg-container);
   border-left: 1px solid var(--ant-color-border);
   overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.28s ease, min-width 0.28s ease, max-width 0.28s ease, border-color 0.28s ease;
 }
 
 .properties-panel.collapsed {
   width: 0;
   min-width: 0;
+  max-width: 0;
+  border: none;
+  pointer-events: none;
+}
+
+.properties-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px 16px;
+  border-bottom: 1px solid var(--ant-color-border);
+  flex-shrink: 0;
+}
+
+.properties-panel-header-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.properties-panel-collapse-btn.ant-btn {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  color: var(--ant-color-text-tertiary);
+}
+
+.properties-panel-collapse-btn.ant-btn:hover {
+  color: var(--ant-color-text);
+  background: var(--ant-color-fill-secondary);
 }
 
 .properties-panel-tabs {
@@ -19,6 +64,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .properties-panel-tabs .ant-tabs-content-holder {
@@ -29,19 +75,33 @@
 
 .properties-panel-tabs .ant-tabs-nav {
   margin-bottom: 0;
-  padding: 0 16px;
+  padding: 0 8px;
+}
+
+.properties-panel-tabs .ant-tabs-nav-list {
+  width: 100%;
 }
 
 .properties-panel-tabs .ant-tabs-tab {
   font-size: 11px;
-  padding: 6px 10px;
+  padding: 6px 8px;
+  margin: 0 !important;
+  flex: 1;
+  justify-content: center;
+}
+
+.properties-panel-tabs .ant-tabs-tab-btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .properties-panel-body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 8px 12px 12px;
+  padding: 4px 14px 16px;
   overflow-y: auto;
   flex: 1;
 }
@@ -56,13 +116,345 @@
 }
 
 .pp-section-label {
-  font-size: 11px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--ant-color-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.01em;
   margin-bottom: 4px;
   margin-top: 12px;
+}
+
+.pp-section-label-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-quaternary);
+  cursor: help;
+}
+
+.properties-panel-body > .pp-section-label:first-child,
+.properties-panel-body > div:first-child > .pp-section-label {
+  margin-top: 0;
+}
+
+/* Field labels in Build/Format/Filters/Analytics — same quiet muted style */
+.properties-panel .section-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ant-color-text-secondary) !important;
+}
+
+.properties-panel .required-star {
+  color: var(--ant-color-error);
+  margin-left: 2px;
+}
+
+.properties-panel .toggle-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pp-format-section {
+  margin-bottom: 16px;
+}
+
+.pp-format-section > .pp-section-label:first-child {
+  margin-top: 0;
+}
+
+.pp-format-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-format-stack > .panel-section {
+  margin: 0;
+}
+
+.pp-format-stack .pp-section-label {
+  margin-top: 0;
+  margin-bottom: 4px;
+}
+
+.pp-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.pp-ref-line-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.pp-ref-line-remove {
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ant-color-error);
+  line-height: 1;
+}
+
+.pp-text-action {
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  align-self: flex-start;
+}
+
+.pp-label-with-extra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.pp-label-with-extra > .pp-section-label {
+  margin-top: 0;
+  margin-bottom: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pp-label-extra {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+  transform: translateY(1px);
+}
+
+.pp-label-extra .ant-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pp-data-mode-badge {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+  background: var(--ant-color-fill-tertiary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 4px;
+  padding: 2px 8px;
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-advanced-collapse .ant-collapse-header {
+  padding: 4px 0 !important;
+  align-items: center !important;
+}
+
+.pp-advanced-collapse .ant-collapse-content-box {
+  padding: 4px 0 8px !important;
+}
+
+.pp-advanced-collapse .pp-section-label {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.pp-filter-empty {
+  padding: 4px 0 8px;
+}
+
+.pp-fields-panel {
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.pp-fields-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.pp-fields-group-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-quaternary);
+  margin-bottom: 4px;
+}
+
+.pp-fields-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pp-mode-coach {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ant-color-text-secondary);
+}
+
+.pp-fields-empty {
+  font-size: 11px;
+  color: var(--ant-color-text-quaternary);
+  padding: 4px 0;
+}
+
+.pp-field-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  border-radius: 4px;
+  padding: 2px 6px 2px 8px;
+  cursor: grab;
+  font-size: 12px;
+  color: var(--ant-color-text);
+  line-height: 1.3;
+}
+
+.pp-field-chip:active {
+  cursor: grabbing;
+}
+
+.pp-field-chip:hover {
+  border-color: var(--ant-color-primary);
+}
+
+.pp-field-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.pp-field-chip-type {
+  margin: 0 !important;
+  font-size: 10px !important;
+  line-height: 16px !important;
+  padding: 0 4px !important;
+}
+
+.pp-sql-block {
+  margin: 4px 0 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary);
+  overflow: hidden;
+}
+
+.pp-sql-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 4px 2px 10px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.pp-sql-toolbar-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pp-sql-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ant-color-text-secondary);
+  text-transform: uppercase;
+}
+
+.pp-sql-badge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--ant-color-text-tertiary);
+  background: var(--ant-color-fill-secondary);
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.pp-sql-dirty {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-warning);
+  flex-shrink: 0;
+}
+
+.pp-sql-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.pp-sql-icon-btn.ant-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  color: var(--ant-color-text-tertiary);
+}
+
+.pp-sql-icon-btn.ant-btn:hover {
+  color: var(--ant-color-text);
+  background: var(--ant-color-fill-secondary);
+}
+
+.pp-sql-textarea.ant-input,
+.pp-sql-textarea.ant-input-disabled {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  resize: vertical;
+  color: var(--ant-color-text);
+}
+
+.pp-sql-textarea.ant-input:focus {
+  box-shadow: none !important;
+}
+
+.pp-sql-bind-hint {
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 6px;
+}
+
+
+.pp-empty-state {
+  padding: 24px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ant-color-text-quaternary);
 }
 
 .pp-chart-type-row {

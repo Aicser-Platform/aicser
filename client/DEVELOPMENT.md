@@ -444,6 +444,38 @@ The ChatPanel stylesheet itself is fine (~100KB source); the failure is a stale/
 
 ---
 
+### `npm ci` fails with `EACCES` (permission denied)
+
+Docker dev containers often create `node_modules`, `.next`, `next-env.d.ts`, and `src/ee` as `root` or `nobody`. Local `npm ci` / `postinstall` / `next build` then cannot write shims or install packages.
+
+**Fix (from repo root):**
+
+```bash
+sudo ./scripts/fix-docker-permissions.sh
+cd client && rm -rf node_modules .next && npm ci
+```
+
+If Docker still owns `.next` and you cannot `chown`, build into a local dist dir:
+
+```bash
+cd client
+NEXT_DIST_DIR=.next-local NEXT_PUBLIC_EDITION=community npm run build
+```
+
+If `chown` fails on your filesystem, remove the blocked paths as root and reinstall:
+
+```bash
+sudo rm -rf client/node_modules client/.next
+sudo chown -R "$USER:$USER" client/src/ee
+cd client && npm ci
+```
+
+Use **Node 20.9+** (see `.nvmrc` or `nvm use 20`) — Next.js 16 requires it. System Node 18 on WSL will not match `engines`.
+
+See also `NEXT16_REACT19_UPGRADE.md` for the Next 16 / React 19 upgrade notes.
+
+---
+
 ### Checklist before committing
 
 - [ ] No `any` — use proper types or `unknown`

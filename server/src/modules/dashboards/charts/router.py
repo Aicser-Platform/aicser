@@ -49,6 +49,8 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "seriesLimit": chart_query.get("seriesLimit"),
             "joins": chart_query.get("joins") or [],
             "saved_query_id": chart_query.get("saved_query_id"),
+            "query_snapshot_id": chart_query.get("query_snapshot_id") or chart_query.get("snapshot_id"),
+            "groupField": chart_query.get("groupField") or chart_query.get("legend"),
             "semantic_metric_id": chart_query.get("semantic_metric_id"),
             "semantic_dimension_ids": chart_query.get("semantic_dimension_ids") or [],
             "drillPath": chart_query.get("drillPath") or [],
@@ -107,6 +109,71 @@ async def create_chart(
     service = DashboardChartService(db)
     chart = await service.create(dashboard_id, chart_payload, layout)
     return serialize_chart(chart)
+
+
+# -------------------------
+# LINK EXISTING LIBRARY CHART (no copy)
+# -------------------------
+@router.post("/link", status_code=status.HTTP_201_CREATED)
+async def link_chart(
+    dashboard_id: UUID = Path(..., description="Dashboard ID"),
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    """Place an existing chart definition on this dashboard (shared instance)."""
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:edit")
+    await enforce_publish_owner_edit(db, dashboard_id, current_user)
+
+    raw_id = payload.get("chartId") or payload.get("chart_id")
+    if not raw_id:
+        raise HTTPException(status_code=400, detail="chartId is required")
+    try:
+        chart_id = UUID(str(raw_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid chartId")
+
+    layout = payload.get("layout")
+    mode = str(payload.get("mode") or "link").strip().lower()
+    service = DashboardChartService(db)
+
+    if mode == "copy":
+        source = await service.chart_service.get(chart_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Chart not found")
+        chart = await service.copy_chart_to_dashboard(dashboard_id, source, layout)
+        return {**serialize_chart(chart), "linked": False, "copied": True}
+
+    try:
+        chart, created = await service.link_existing(dashboard_id, chart_id, layout)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    return {**serialize_chart(chart), "linked": True, "created": created}
+
+
+@router.delete("/{chart_id}/link", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_chart(
+    dashboard_id: UUID,
+    chart_id: UUID,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    """Remove placement from dashboard without deleting the library chart."""
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_permission(uid, "chart:edit")
+    await enforce_publish_owner_edit(db, dashboard_id, current_user)
+    service = DashboardChartService(db)
+    ok = await service.detach(dashboard_id, chart_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Chart placement not found")
 
 
 # -------------------------
@@ -336,9 +403,23 @@ async def update_chart(
 async def delete_chart(
     dashboard_id: UUID,
     chart_id: UUID,
+    purge: bool = Query(
+        False,
+        description="If true, also delete the library chart when nothing else references it "
+        "(default: unlink only — Metabase/Looker/Tableau 'remove from dashboard' semantics).",
+    ),
     db: AsyncSession = Depends(get_async_session),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
+    """Remove a chart from this dashboard.
+
+    Default: detach placement only (keeps the shared library definition).
+    Optional purge=true: delete the chart row when usage_count reaches 0.
+    """
+    from sqlalchemy import func, select
+
+    from src.modules.dashboards.models import DashboardChart
+
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -352,8 +433,14 @@ async def delete_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    dashboard_chart = await service.get_dashboard_chart(dashboard_id, chart_id)
-    if dashboard_chart:
-        await db.delete(dashboard_chart)
-    await service.chart_service.delete(chart)
-    await db.commit()
+    await service.detach(dashboard_id, chart_id)
+
+    if purge:
+        remaining = await db.execute(
+            select(func.count())
+            .select_from(DashboardChart)
+            .where(DashboardChart.chart_id == chart_id)
+        )
+        if int(remaining.scalar() or 0) == 0:
+            await service.chart_service.delete(chart)
+            await db.commit()

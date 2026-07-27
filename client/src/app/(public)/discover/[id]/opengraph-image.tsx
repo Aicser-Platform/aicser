@@ -6,10 +6,11 @@ export const alt = 'Aicser Discover insight';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-type Props = { params: { id: string } };
+type Props = { params: Promise<{ id: string }> };
 
 export default async function DiscoverOpenGraphImage({ params }: Props) {
-  const item = await fetchPublicFeedItemMeta(params.id);
+  const { id } = await params;
+  const item = await fetchPublicFeedItemMeta(id);
   const title = item?.title?.trim() || 'Public data insight';
   const author = item?.author?.name || item?.author?.username || 'Aicser creator';
   const description =

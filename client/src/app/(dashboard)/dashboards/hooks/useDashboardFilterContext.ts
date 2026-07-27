@@ -105,6 +105,12 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     setInitialLoadDone(false);
     skipPageDefaultsRef.current = false;
     prevFiltersRef.current = [];
+    // Clear page state immediately so a stale page UUID from another dashboard
+    // cannot hide widgets (unassigned layout only shows on the default page).
+    setPages([]);
+    setActivePageId(null);
+    defaultPageIdRef.current = null;
+    prevPageIdRef.current = null;
     const urlPage = searchParams?.get('page') || searchParams?.get('page_id');
     const urlFilters = searchParams?.get('filters');
     const urlDrill = searchParams?.get('drill');
@@ -220,7 +226,11 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           setPages(pageList);
           const defaultPage = String(dash?.config?.default_page_id || pageList[0]?.id || '');
           defaultPageIdRef.current = defaultPage || null;
-          const nextPageId = urlPage || defaultPage || null;
+          const urlPageValid =
+            urlPage && pageList.some((p) => String(p.id) === String(urlPage))
+              ? String(urlPage)
+              : null;
+          const nextPageId = urlPageValid || defaultPage || null;
           resolvedPageId = nextPageId;
           setActivePageId(nextPageId);
           const activePage = pageList.find((p) => p.id === nextPageId);
@@ -242,7 +252,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
             /* ignore */
           }
         } else {
-          const activePage = pageList.find((p) => p.id === (urlPage || defaultPageIdRef.current));
+          const activePage = pageList.find((p) => p.id === (resolvedPageId || defaultPageIdRef.current));
           const defaults = mergeFilterDefaults(cfgFilters, activePage?.filters || []);
           if (defaults.length) {
             setRuntimeFilters(defaults);
@@ -313,7 +323,9 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
 
     const params = new URLSearchParams();
     params.set('id', String(activeDashboardId));
-    if (activePageId) params.set('page', activePageId);
+    const pageBelongs =
+      activePageId && pages.some((p) => String(p.id) === String(activePageId));
+    if (pageBelongs) params.set('page', String(activePageId));
     if (runtimeFilters.length) {
       params.set('filters', encodeURIComponent(JSON.stringify(runtimeFilters)));
     }
@@ -325,7 +337,7 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     const current = window.location.search.replace(/^\?/, '');
     if (next === current) return;
     router.replace(`?${next}`, { scroll: false });
-  }, [activeDashboardId, activePageId, runtimeFilters, widgetDrillState, router]);
+  }, [activeDashboardId, activePageId, pages, runtimeFilters, widgetDrillState, router]);
 
   // Same scoping rules as the shared viewer: widgets on the active page only,
   // unassigned/stale-page widgets on the default page, empty pages stay empty
@@ -560,6 +572,9 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
       // check here too, that same degenerate layout still overwrites the
       // real positions in the store (and gets cached per-dashboard on the
       // next switch), even though it never reaches the database.
+      //
+      // Collision policy lives in DashboardCanvas.commitLayout (swap / minimal
+      // nudge on gesture end) — do not re-resolve here or mid-drag gets shoved.
       if (!initialLoadDoneRef.current) return;
       updatePageLayout(activePageId, nextPageLayout, defaultPageIdRef.current);
     },

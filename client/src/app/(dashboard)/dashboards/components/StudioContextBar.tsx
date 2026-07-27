@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import { Badge, Button, Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { FilterOutlined, SettingOutlined, ReloadOutlined, DownOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import { FilterOutlined, SettingOutlined, ReloadOutlined, FullscreenExitOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { DashboardFilter } from '@/types/dashboard';
 import { DashboardPageTabs, type DashboardPageItem } from './DashboardPageTabs';
@@ -63,6 +63,7 @@ type Props = {
   /** Fullscreen presentation — minimal chrome: pages, refresh, runtime filters, exit. */
   presentationMode?: boolean;
   presentationTitle?: string;
+  presentationSubtitle?: string;
   onExitPresentation?: () => void;
   dataSourceIds?: string[];
 };
@@ -107,6 +108,7 @@ export function StudioContextBar({
   readOnly = false,
   presentationMode = false,
   presentationTitle,
+  presentationSubtitle,
   onExitPresentation,
   dataSourceIds = [],
 }: Props) {
@@ -122,16 +124,6 @@ export function StudioContextBar({
       onFiltersPanelOpenChange(true);
     }
   }, [readOnly, hasConfiguredFilters, onFiltersPanelOpenChange]);
-
-  const handleFilterClick = () => {
-    if (!hasConfiguredFilters) {
-      if (!readOnly) {
-        onFiltersEditorOpenChange(true);
-      }
-      return;
-    }
-    onFiltersPanelOpenChange(!filtersPanelOpen);
-  };
 
   const filterMenuItems: MenuProps['items'] = readOnly
     ? [
@@ -156,10 +148,20 @@ export function StudioContextBar({
           : []),
       ]
     : [
+        ...(hasConfiguredFilters
+          ? [
+              {
+                key: 'toggle',
+                icon: <FilterOutlined />,
+                label: filtersPanelOpen ? t('hide_filters') : t('show_filters'),
+                onClick: () => onFiltersPanelOpenChange(!filtersPanelOpen),
+              },
+            ]
+          : []),
         {
           key: 'configure',
           icon: <SettingOutlined />,
-          label: t('manage_filters'),
+          label: hasConfiguredFilters ? t('manage_filters') : t('filter_tooltip_configure'),
           onClick: () => {
             onPageFiltersEditorOpenChange?.(false);
             onFiltersEditorOpenChange(true);
@@ -175,15 +177,6 @@ export function StudioContextBar({
                   onPageFiltersEditorOpenChange?.(true);
                   onFiltersEditorOpenChange(true);
                 },
-              },
-            ]
-          : []),
-        ...(hasConfiguredFilters
-          ? [
-              {
-                key: 'toggle',
-                label: filtersPanelOpen ? t('hide_filters') : t('show_filters'),
-                onClick: () => onFiltersPanelOpenChange(!filtersPanelOpen),
               },
             ]
           : []),
@@ -237,6 +230,18 @@ export function StudioContextBar({
   return (
     <div className={`studio-context${presentationMode ? ' studio-context-presentation' : ''}`}>
       <div className="studio-context-row flex items-center justify-between gap-3 flex-wrap">
+        {presentationMode && presentationTitle ? (
+          <div className="studio-context-presentation-identity min-w-0">
+            <div className="studio-context-presentation-title" title={presentationTitle}>
+              {presentationTitle}
+            </div>
+            {presentationSubtitle?.trim() ? (
+              <div className="studio-context-presentation-subtitle" title={presentationSubtitle}>
+                {presentationSubtitle.trim()}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="studio-context-pages flex-1 min-w-0">
           <DashboardPageTabs
             pages={pages}
@@ -267,7 +272,7 @@ export function StudioContextBar({
                 >
                   <Button
                     size="small"
-                    className="studio-context-btn studio-refresh-dropdown-trigger"
+                    className="studio-context-btn studio-refresh-dropdown-trigger !w-8 !h-8 !p-0"
                     icon={<ReloadOutlined spin={refreshing} />}
                     disabled={refreshing}
                     aria-haspopup="menu"
@@ -278,33 +283,22 @@ export function StudioContextBar({
             </div>
           )}
 
-          {!readOnly && !presentationMode && (
-          <Button.Group>
-            <Tooltip
-              title={
-                hasConfiguredFilters
-                  ? t('filter_tooltip_apply')
-                  : t('filter_tooltip_configure')
-              }
-            >
-              <Button
-                size="small"
-                type={filtersPanelOpen && hasConfiguredFilters ? 'primary' : 'default'}
-                ghost={filtersPanelOpen && hasConfiguredFilters}
-                icon={<FilterOutlined />}
-                className="text-xs"
-                onClick={handleFilterClick}
-              >
-                {t('filter_verb')}
-                {activeFilterCount > 0 && (
-                  <Badge count={activeFilterCount} size="small" className="!ml-1.5" />
-                )}
-              </Button>
-            </Tooltip>
+          {!presentationMode && (hasConfiguredFilters || !readOnly) && (
             <Dropdown menu={{ items: filterMenuItems }} trigger={['click']}>
-              <Button size="small" icon={<DownOutlined />} className="!px-1.5 text-xs" />
+              <Tooltip title={t('filter_verb')}>
+                <Button
+                  size="small"
+                  type={filtersPanelOpen && hasConfiguredFilters ? 'primary' : 'default'}
+                  ghost={filtersPanelOpen && hasConfiguredFilters}
+                  className="studio-filter-btn studio-context-btn !w-8 !h-8 !p-0 !inline-flex !items-center !justify-center"
+                  aria-label={t('filter_verb')}
+                >
+                  <Badge count={activeFilterCount} size="small" offset={[4, -2]}>
+                    <FilterOutlined />
+                  </Badge>
+                </Button>
+              </Tooltip>
             </Dropdown>
-          </Button.Group>
           )}
 
           <>

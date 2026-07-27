@@ -74,6 +74,10 @@ export type WidgetInstance = {
     field?: string;
     mode?: 'single' | 'multi';
     dataSourceId?: string;
+    /** Bound Query Editor saved SQL (integer id as string). */
+    saved_query_id?: string | number;
+    /** Frozen query-editor snapshot (integer id). */
+    query_snapshot_id?: string | number;
     sortOrder?: 'asc' | 'desc';
     limit?: number;
     seriesLimit?: number;
@@ -111,6 +115,9 @@ export interface Dashboard {
   description?: string;
   tags?: string[];
   config?: Record<string, unknown>;
+  isFavorite?: boolean;
+  collectionId?: string | null;
+  chartCount?: number;
   widgets: WidgetInstance[];
   layout: LayoutItem[];
 }

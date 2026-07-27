@@ -36,13 +36,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  context: RouteContext
-) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
-    const rawParams = context?.params;
-    const params = rawParams && typeof rawParams.then === 'function' ? await rawParams : rawParams;
+    const params = await Promise.resolve(context?.params ?? {});
     const provider = Array.isArray(params?.path) ? params.path[0] : undefined;
     if (!provider) {
       return NextResponse.json({ detail: 'provider is required' }, { status: 400 });

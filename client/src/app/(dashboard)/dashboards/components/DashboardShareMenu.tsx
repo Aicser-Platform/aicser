@@ -28,6 +28,8 @@ type Props = {
   dashboardName?: string;
   onPreview?: () => void;
   onExport?: (format: string) => void;
+  /** Industry-style print: dashboard only + title/branding */
+  onPrint?: () => void;
   buildShareUrl: () => string;
   activePageId?: string | null;
   runtimeFilters?: RuntimeFilter[];
@@ -46,6 +48,7 @@ export function DashboardShareMenu({
   dashboardName,
   onPreview,
   onExport,
+  onPrint,
   buildShareUrl,
   activePageId,
   runtimeFilters = [],
@@ -149,6 +152,10 @@ export function DashboardShareMenu({
       icon: <PrinterOutlined />,
       label: 'Print / Save as PDF',
       onClick: () => {
+        if (onPrint) {
+          onPrint();
+          return;
+        }
         document.body.classList.add('dashboard-print-mode');
         window.print();
         const cleanup = () => {

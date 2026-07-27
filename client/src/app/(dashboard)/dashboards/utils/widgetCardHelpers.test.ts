@@ -10,9 +10,24 @@ describe('shouldShowWidgetHeader', () => {
     expect(shouldShowWidgetHeader({ chartType: 'bar', title: '' })).toBe(true);
   });
 
-  it('hides text widget header until title or selection', () => {
+  it('never shows card header for text — title renders inside TextWidget', () => {
     expect(shouldShowWidgetHeader({ chartType: 'text', title: '' })).toBe(false);
-    expect(shouldShowWidgetHeader({ chartType: 'text', title: 'Notes' })).toBe(true);
-    expect(shouldShowWidgetHeader({ chartType: 'text', title: '' }, { isSelected: true })).toBe(true);
+    expect(shouldShowWidgetHeader({ chartType: 'text', title: 'Notes' })).toBe(false);
+    expect(shouldShowWidgetHeader({ chartType: 'text', title: 'Notes' }, { isSelected: true })).toBe(false);
+  });
+
+  it('hides KPI header for inline-title layouts unless selected', () => {
+    expect(
+      shouldShowWidgetHeader({ chartType: 'stat', title: 'Revenue', chartOptions: { layout: 'executive' } }),
+    ).toBe(false);
+    expect(
+      shouldShowWidgetHeader(
+        { chartType: 'stat', title: 'Revenue', chartOptions: { layout: 'tile' } },
+        { isSelected: true },
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowWidgetHeader({ chartType: 'stat', title: 'Revenue', chartOptions: { layout: 'default' } }),
+    ).toBe(true);
   });
 });

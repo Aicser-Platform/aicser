@@ -113,10 +113,12 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
     <Layout
       className={isBreakpoint ? 'layout-app-shell layout--mobile-nav' : 'layout-app-shell'}
       style={{
-        height: '100vh',
+        height: '100dvh',
+        maxHeight: '100dvh',
         margin: 0,
         padding: 0,
         background: 'var(--ant-color-bg-layout)',
+        overflow: 'hidden',
       }}
       hasSider={!isBreakpoint}
     >
@@ -156,12 +158,14 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
       <Layout
         className="layout-main-column"
         style={{
-          height: '100vh',
+          height: '100dvh',
+          maxHeight: '100dvh',
           display: 'flex',
           flexDirection: 'column',
           marginTop: 0,
           padding: 0,
           background: 'var(--ant-color-bg-layout)',
+          overflow: 'hidden',
         }}
       >
         <LayoutHeader

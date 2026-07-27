@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Button, Card, Empty, List, Select, Space, Typography, Avatar } from 'antd';
+import React, { useState } from 'react';
+import { Button, Card, Empty, Input, List, Modal, Select, Space, Typography, Avatar, message, Tooltip, Dropdown } from 'antd';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -12,12 +12,21 @@ import {
   TrophyOutlined,
   FolderOpenOutlined,
   ClockCircleOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import type { AssetType, FeedSidebarData, LeaderboardSortBy, LeaderboardTimeRange } from '@/services/socialFeedService';
+import { socialFeedService } from '@/services/socialFeedService';
 import { useTranslations } from 'next-intl';
+import { formatApiValidationError } from '@/utils/validationErrorMessage';
+import { useQueryClient } from '@tanstack/react-query';
 
 const { Text } = Typography;
+
+const SYNTHETIC_COLLECTION_IDS = new Set(['saved-items', 'commented-items']);
 
 interface FeedSidebarProps {
   data: FeedSidebarData;
@@ -33,6 +42,7 @@ interface FeedSidebarProps {
   onSaveItem: (postId: string) => void;
   onTagClick?: (tag: string) => void;
   showRecommended?: boolean;
+  onCollectionsChanged?: () => void;
 }
 
 const FeedSidebar: React.FC<FeedSidebarProps> = ({
@@ -49,9 +59,87 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
   onSaveItem,
   onTagClick,
   showRecommended = true,
+  onCollectionsChanged,
 }) => {
   const t = useTranslations('feed');
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [activeCollection, setActiveCollection] = useState<{ id: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const refreshCollections = () => {
+    onCollectionsChanged?.();
+    void queryClient.invalidateQueries({ queryKey: ['feed', 'sidebar'] });
+  };
+
+  const openCollection = (collectionId: string) => {
+    if (collectionId === 'saved-items') {
+      router.push('/feed/saved');
+      return;
+    }
+    if (collectionId === 'commented-items') {
+      router.push('/feed/comments');
+      return;
+    }
+    router.push(`/feed/collections/${collectionId}`);
+  };
+
+  const handleCreate = async () => {
+    const name = draftName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      await socialFeedService.createCollection({ name });
+      message.success(t('collection_created'));
+      setCreateOpen(false);
+      setDraftName('');
+      refreshCollections();
+    } catch (err) {
+      message.error(formatApiValidationError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRename = async () => {
+    if (!activeCollection) return;
+    const name = draftName.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      await socialFeedService.updateCollection(activeCollection.id, { name });
+      message.success(t('collection_renamed'));
+      setRenameOpen(false);
+      setActiveCollection(null);
+      refreshCollections();
+    } catch (err) {
+      message.error(formatApiValidationError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteCollection = (collection: { id: string; name: string }) => {
+    Modal.confirm({
+      title: t('collection_delete_title', { name: collection.name }),
+      content: t('collection_delete_body'),
+      okText: t('collection_delete'),
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          await socialFeedService.deleteCollection(collection.id);
+          message.success(t('collection_deleted'));
+          refreshCollections();
+        } catch (err) {
+          message.error(formatApiValidationError(err));
+          throw err;
+        }
+      },
+    });
+  };
 
   const trendIcon = (trend: 'up' | 'down' | 'new' | 'stable') => {
     if (trend === 'up') return <ArrowUpOutlined className="text-[var(--ant-color-success)] text-xs" />;
@@ -75,17 +163,6 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
     if (rank === 2) return `${base} bg-gradient-to-br from-gray-200 to-gray-400 text-white shadow-sm`;
     if (rank === 3) return `${base} bg-gradient-to-br from-orange-200 to-orange-400 text-white shadow-sm`;
     return `${base} bg-[var(--ant-color-bg-layout)] text-[var(--ant-color-text-secondary)] border border-[var(--ant-color-border)]`;
-  };
-
-  const openCollection = (collectionId: string) => {
-    if (collectionId === 'saved-items') {
-      router.push('/feed/saved');
-      return;
-    }
-    if (collectionId === 'commented-items') {
-      router.push('/feed/comments');
-      return;
-    }
   };
 
   const formatActivityAction = (action: string) => {
@@ -293,31 +370,82 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       <Card
         className={cardStyles}
         styles={cardStylesProp}
-        title={<span className="font-medium text-[var(--ant-color-text)]">{t('collections')}</span>}
+        title={
+          <div className="flex items-center justify-between gap-2 w-full">
+            <span className="font-medium text-[var(--ant-color-text)]">{t('collections')}</span>
+            <Tooltip title={t('collection_create')}>
+              <Button
+                type="text"
+                size="small"
+                icon={<PlusOutlined />}
+                aria-label={t('collection_create')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraftName('');
+                  setCreateOpen(true);
+                }}
+              />
+            </Tooltip>
+          </div>
+        }
       >
         <List
           dataSource={data.collections ?? []}
-          renderItem={(collection) => (
-            <div
-              className="flex items-center gap-3 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors cursor-pointer group"
-              onClick={() => openCollection(collection.id)}
-            >
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm"
-                style={{ backgroundColor: `${collection.color}15`, color: collection.color }}
-              >
-                <FolderOpenOutlined />
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-semibold text-[var(--ant-color-text)] group-hover:text-[var(--ant-color-primary)] transition-colors">
-                  {collection.name}
+          locale={{ emptyText: <div className="p-4 text-[var(--ant-color-text-description)]">{t('no_collections')}</div> }}
+          renderItem={(collection) => {
+            const isUserCollection = !SYNTHETIC_COLLECTION_IDS.has(collection.id);
+            return (
+              <div className="flex items-center gap-2 p-3 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors group">
+                <div
+                  className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                  onClick={() => openCollection(collection.id)}
+                >
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm"
+                    style={{ backgroundColor: `${collection.color}15`, color: collection.color }}
+                  >
+                    <FolderOpenOutlined />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-[var(--ant-color-text)] group-hover:text-[var(--ant-color-primary)] transition-colors truncate">
+                      {collection.name}
+                    </div>
+                    <div className="text-xs text-[var(--ant-color-text-secondary)] mt-0.5">
+                      {t('collections_n_items', { count: collection.count })}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-[var(--ant-color-text-secondary)] mt-0.5">
-                  {t('collections_n_items', { count: collection.count })}
-                </div>
+                {isUserCollection ? (
+                  <Dropdown
+                    trigger={['click']}
+                    menu={{
+                      items: [
+                        {
+                          key: 'rename',
+                          icon: <EditOutlined />,
+                          label: t('collection_rename'),
+                          onClick: () => {
+                            setActiveCollection({ id: collection.id, name: collection.name });
+                            setDraftName(collection.name);
+                            setRenameOpen(true);
+                          },
+                        },
+                        {
+                          key: 'delete',
+                          icon: <DeleteOutlined />,
+                          label: t('collection_delete'),
+                          danger: true,
+                          onClick: () => handleDeleteCollection({ id: collection.id, name: collection.name }),
+                        },
+                      ],
+                    }}
+                  >
+                    <Button type="text" size="small" icon={<MoreOutlined />} aria-label={t('collection_manage')} />
+                  </Dropdown>
+                ) : null}
               </div>
-            </div>
-          )}
+            );
+          }}
         />
       </Card>
 
@@ -394,6 +522,45 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
           )}
         />
       </Card>
+
+      <Modal
+        title={t('collection_create')}
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => void handleCreate()}
+        confirmLoading={busy}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          placeholder={t('collection_name_placeholder')}
+          maxLength={80}
+          onPressEnter={() => void handleCreate()}
+        />
+      </Modal>
+
+      <Modal
+        title={t('collection_rename')}
+        open={renameOpen}
+        onCancel={() => {
+          setRenameOpen(false);
+          setActiveCollection(null);
+        }}
+        onOk={() => void handleRename()}
+        confirmLoading={busy}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          placeholder={t('collection_name_placeholder')}
+          maxLength={80}
+          onPressEnter={() => void handleRename()}
+        />
+      </Modal>
     </div>
   );
 };

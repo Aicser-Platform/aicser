@@ -4,6 +4,7 @@ import React from 'react';
 import { Table, Typography, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { formatTableValue } from '../utils/numberFormatter';
+import { columnHeaderFromKey } from '@/utils/columnLabels';
 import './TableWidget.css';
 import { useTranslations } from 'next-intl';
 import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
@@ -33,6 +34,33 @@ interface TableWidgetProps {
   crossFilterField?: string;
   activeCrossFilterValues?: string[];
   onCrossFilter?: (value: unknown) => void;
+}
+
+function measureColumnTitle(
+  seriesName: string,
+  query?: TableWidgetProps['query'],
+  widgetTitle?: string,
+): string {
+  const raw = String(seriesName || '').trim();
+  const title = String(widgetTitle || '').trim();
+  const looksLikeWidgetTitle =
+    Boolean(title) &&
+    (raw.toLowerCase() === title.toLowerCase() ||
+      /^breakdown\b/i.test(raw) ||
+      /\sby\s/i.test(raw));
+  if (looksLikeWidgetTitle) {
+    const ym = query?.yMetrics?.[0];
+    if (ym?.field) {
+      const agg = String(ym.aggregation || '').toLowerCase();
+      const fieldLabel = columnHeaderFromKey(ym.field);
+      if (agg === 'count') return 'Count';
+      if (agg === 'avg' || agg === 'average' || agg === 'mean') return `Avg ${fieldLabel}`;
+      return fieldLabel;
+    }
+    if (query?.yMetric) return columnHeaderFromKey(query.yMetric);
+    return 'Value';
+  }
+  return columnHeaderFromKey(raw);
 }
 
 /**
@@ -87,9 +115,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     colEntries.push({
       fieldName: xField,
       column: {
-        title: query?.x || t('category'),
+        title: columnHeaderFromKey(query?.x || t('category')),
         dataIndex: 'x',
         key: 'x',
+        ellipsis: true,
         className: 'table-cell-category',
         sorter: (a, b) => {
           if (a.key === 'total') return 1;
@@ -141,9 +170,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       colEntries.push({
         fieldName: s.name,
         column: {
-          title: s.name,
+          title: measureColumnTitle(s.name, query, title),
           dataIndex: s.name,
           key: s.name,
+          ellipsis: true,
           align: 'right',
           className: 'table-cell-number table-cell-y',
           sorter: (a, b) => {
@@ -194,9 +224,10 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       colEntries.push({
         fieldName: yField,
         column: {
-          title: query?.yMetric || t('value'),
+          title: columnHeaderFromKey(query?.yMetric || t('value')),
           dataIndex: 'y',
           key: 'y',
+          ellipsis: true,
           align: 'right',
           className: 'table-cell-number table-cell-y',
           sorter: (a, b) => {
@@ -272,6 +303,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
         size={size}
         bordered={bordered}
         sticky
+        scroll={{ x: 'max-content' }}
         rowClassName={(record) => {
           if (record.key === 'total') return 'table-row-total';
           if (activeSet.has(String(record.x))) return 'table-row-cross-filter-active';

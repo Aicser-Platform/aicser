@@ -607,18 +607,20 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  /* A subtle translucent tint over whatever's beneath reads as "still the same
-     table, just the header row" — colorBgElevated (used elsewhere for the
-     chart title bar) is too big a jump here and shows as a visible seam. */
-  background: var(--ant-color-fill-quaternary) !important;
-  text-transform: uppercase;
-  font-weight: 700;
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  /* Same surface as body — weight + bottom rule only (no tinted header band) */
+  background: var(--ant-color-bg-container) !important;
+  text-transform: none;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.01em;
   color: var(--ant-color-text-secondary) !important;
   border: none !important;
   border-bottom: 1px solid var(--ant-color-border) !important;
-  padding: 10px 16px !important;
+  padding: 10px 14px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
 }
 
 /* Remove vertical dividers in Ant Design table headers */

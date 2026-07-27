@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Button, Typography, Dropdown, message, Input, Tooltip, Modal } from 'antd';
+import { Button, Typography, Dropdown, message, Input, Tooltip, Modal, Table } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import {
@@ -19,20 +19,26 @@ import {
   RobotOutlined,
   LockOutlined,
   UnlockOutlined,
+  TableOutlined,
 } from '@ant-design/icons';
 import { ExplainChartDrawer } from '../components/ExplainChartDrawer';
 import { DashboardWidgetCell } from '../components/DashboardWidgetCell';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { getCrossFilterValues } from '../utils/filterOperators';
 import { shouldShowWidgetHeader } from '../utils/widgetCardHelpers';
+import { DashboardIcon } from '../icons';
+import '../icons/IconPicker.css';
 import { isLayoutSlotWidget } from '../utils/layoutScaffolds';
 import '../components/AddDashboardDrawer.css';
 import { WidgetBlockPicker } from '../components/WidgetBlockPicker';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { exportChartByWidget } from '../services/exportChartImageService';
-import { exportCSV, exportExcel } from '../services/exportChartDataService';
+import { exportCSV, exportExcel, normalizeToRows } from '../services/exportChartDataService';
 import { useDashboardStore, useUndo, useRedo } from '../stores/useDashboardStore';
 import { useTranslations } from 'next-intl';
+import { columnHeaderFromKey } from '@/utils/columnLabels';
+import { formatNumber } from '../utils/numberFormatter';
+import { resolveLayoutCollisions, hasLayoutOverlaps } from '../utils/layoutSanitize';
 
 const { Text } = Typography;
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -77,7 +83,7 @@ export default function DashboardCanvas({
   removeWidget: (id: string) => void;
   duplicateWidget?: (id: string) => void;
   onAddWidget: (template?: any) => void;
-  onDropWidget?: (template: any) => void;
+  onDropWidget?: (template: any, position?: { x: number; y: number }) => void;
   setPropertiesCollapsed: (collapsed: boolean) => void;
   onUpdateWidget?: (id: string, updates: any) => void;
   onLayoutSync?: (l: any[]) => void;
@@ -111,23 +117,151 @@ export default function DashboardCanvas({
     return nextLayout.map(({ static: _static, moved: _moved, ...item }) => ({ ...item }));
   }, []);
 
+  /** Only mirror RGL into React state while the user is actively dragging/resizing.
+   *  Mount/breakpoint/WidthProvider noise must not rewrite saved layout. */
+  const layoutGestureRef = React.useRef(false);
+  /** Snapshot so Escape / cancelled gestures restore neighbors untouched. */
+  const layoutBeforeGestureRef = React.useRef<any[] | null>(null);
+  const gestureCancelledRef = React.useRef(false);
+
   const commitLayout = useCallback(
-    (nextLayout: any[], options?: { sync?: boolean }) => {
+    (
+      nextLayout: any[],
+      options?: {
+        sync?: boolean;
+        movedId?: string | null;
+        before?: { x: number; y: number; w: number; h: number } | null;
+        /** Skip collision resolve (Escape restore of a known-clean snapshot). */
+        skipResolve?: boolean;
+      },
+    ) => {
       const cleanedLayout = cleanLayout(nextLayout);
+      const resolvedLayout = options?.skipResolve
+        ? cleanedLayout
+        : resolveLayoutCollisions(cleanedLayout, {
+            movedId: options?.movedId ?? null,
+            cols: GRID_COLS,
+            before: options?.before ?? null,
+          });
 
       if (onPageLayoutChange) {
-        onPageLayoutChange(cleanedLayout);
+        onPageLayoutChange(resolvedLayout);
       } else {
-        setLayout(cleanedLayout);
+        setLayout(resolvedLayout);
       }
 
       if (options?.sync) {
-        onLayoutSync?.(cleanedLayout);
+        onLayoutSync?.(resolvedLayout);
       }
 
-      return cleanedLayout;
+      return resolvedLayout;
     },
     [cleanLayout, onLayoutSync, onPageLayoutChange, setLayout]
+  );
+
+  /** Stable RGL layouts map — always 12 cols so properties overlay never changes grid units. */
+  const rglLayouts = useMemo(() => {
+    const withStatic = layout.map((item) => ({
+      ...item,
+      static: !isEditing || !!widgetById.get(item.i)?.isLocked,
+      minW: Math.max(GRID_MIN_W, Number(item.minW) || GRID_MIN_W),
+      minH: Math.max(GRID_MIN_H, Number(item.minH) || GRID_MIN_H),
+    }));
+    return {
+      lg: withStatic,
+      md: withStatic,
+      sm: withStatic,
+      xs: withStatic,
+      xxs: withStatic,
+    };
+  }, [layout, isEditing, widgetById]);
+
+  /** One-shot heal for layouts saved while allowOverlap left stacked widgets. */
+  useEffect(() => {
+    if (!isEditing || layoutGestureRef.current) return;
+    if (!layout.length || !hasLayoutOverlaps(layout)) return;
+    commitLayout(layout, { sync: true });
+  }, [isEditing, layout, commitLayout]);
+
+  const handleLayoutChange = useCallback(
+    (current: any[]) => {
+      if (!isEditing || !layoutGestureRef.current || gestureCancelledRef.current) return;
+      // During drag/resize keep neighbors put (allowOverlap). Resolve once on stop.
+      commitLayout(current, { sync: false, skipResolve: true });
+    },
+    [commitLayout, isEditing]
+  );
+
+  const beginLayoutGesture = useCallback(() => {
+    layoutGestureRef.current = true;
+    gestureCancelledRef.current = false;
+    layoutBeforeGestureRef.current = layout.map((item) => ({ ...item }));
+  }, [layout]);
+
+  /** Suppress the synthetic click that browsers fire after HTML5 drop / RGL drag,
+   *  so the properties panel opens only on intentional click/select. */
+  const suppressPropertiesOpenUntilRef = React.useRef(0);
+
+  const suppressPropertiesOpenBriefly = useCallback(() => {
+    suppressPropertiesOpenUntilRef.current = Date.now() + 450;
+  }, []);
+
+  const openPropertiesIfAllowed = useCallback(() => {
+    if (Date.now() < suppressPropertiesOpenUntilRef.current) return;
+    setPropertiesCollapsed(false);
+  }, [setPropertiesCollapsed]);
+
+  const cancelLayoutGesture = useCallback(() => {
+    if (!layoutBeforeGestureRef.current) return;
+    gestureCancelledRef.current = true;
+    layoutGestureRef.current = false;
+    suppressPropertiesOpenBriefly();
+    commitLayout(layoutBeforeGestureRef.current.map((item) => ({ ...item })), {
+      sync: false,
+      skipResolve: true,
+    });
+  }, [commitLayout, suppressPropertiesOpenBriefly]);
+
+  const endLayoutGesture = useCallback(
+    (nextLayout: any[], movedId?: string | null, beforeItem?: { x: number; y: number; w: number; h: number } | null) => {
+      layoutGestureRef.current = false;
+      suppressPropertiesOpenBriefly();
+
+      // Escape (or other cancel) already restored the snapshot — ignore the stop event.
+      if (gestureCancelledRef.current) {
+        gestureCancelledRef.current = false;
+        const snapshot = layoutBeforeGestureRef.current;
+        layoutBeforeGestureRef.current = null;
+        if (snapshot) {
+          commitLayout(snapshot.map((item) => ({ ...item })), {
+            sync: false,
+            skipResolve: true,
+          });
+        }
+        return;
+      }
+
+      const beforeFromSnapshot =
+        beforeItem ||
+        (movedId && layoutBeforeGestureRef.current
+          ? layoutBeforeGestureRef.current.find((item) => String(item.i) === String(movedId))
+          : null);
+
+      layoutBeforeGestureRef.current = null;
+      commitLayout(nextLayout, {
+        sync: true,
+        movedId: movedId ?? null,
+        before: beforeFromSnapshot
+          ? {
+              x: Number(beforeFromSnapshot.x),
+              y: Number(beforeFromSnapshot.y),
+              w: Number(beforeFromSnapshot.w),
+              h: Number(beforeFromSnapshot.h),
+            }
+          : null,
+      });
+    },
+    [commitLayout, suppressPropertiesOpenBriefly]
   );
 
   const canvasZoom = useDashboardStore((s) => s.canvasZoom);
@@ -149,6 +283,7 @@ export default function DashboardCanvas({
   const [tempTitle, setTempTitle] = useState('');
   const [designerRowHeight, setDesignerRowHeight] = useState(40);
   const [focusedWidgetId, setFocusedWidgetId] = useState<string | null>(null);
+  const [tableWidgetId, setTableWidgetId] = useState<string | null>(null);
   const [explainWidgetId, setExplainWidgetId] = useState<string | null>(null);
 
   const handleFocusWidget = useCallback((widgetId: string) => {
@@ -187,6 +322,13 @@ export default function DashboardCanvas({
         target.closest('.tiptap') ||
         target.closest('[data-gramm]')
       ) {
+        return;
+      }
+
+      // Escape during drag/resize — cancel and restore pre-gesture layout
+      if (e.key === 'Escape' && layoutGestureRef.current) {
+        e.preventDefault();
+        cancelLayoutGesture();
         return;
       }
 
@@ -282,29 +424,40 @@ export default function DashboardCanvas({
 
         if (e.shiftKey) {
           // Resize
+          const before = { x, y, w, h };
           if (e.key === 'ArrowLeft') w = Math.max(GRID_MIN_W, w - 1);
           if (e.key === 'ArrowRight') w = Math.min(GRID_COLS - x, w + 1);
           if (e.key === 'ArrowUp') h = Math.max(GRID_MIN_H, h - 1);
           if (e.key === 'ArrowDown') h = h + 1;
+          const next = [...layout];
+          next[itemIdx] = { ...item, x, y, w, h };
+          commitLayout(next, {
+            sync: true,
+            movedId: selectedWidgetId,
+            before,
+          });
         } else {
           // Move
           if (e.key === 'ArrowLeft') x = Math.max(0, x - 1);
           if (e.key === 'ArrowRight') x = Math.min(GRID_COLS - w, x + 1);
           if (e.key === 'ArrowUp') y = Math.max(0, y - 1);
           if (e.key === 'ArrowDown') y = y + 1;
+          const next = [...layout];
+          next[itemIdx] = { ...item, x, y, w, h };
+          commitLayout(next, {
+            sync: true,
+            movedId: selectedWidgetId,
+          });
         }
-
-        const next = [...layout];
-        next[itemIdx] = { ...item, x, y, w, h };
-        commitLayout(next, { sync: true });
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, widgetById, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout]);
+  }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, widgetById, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout, cancelLayoutGesture]);
 
-  const { dashboards, fetchDashboards, activeDashboardId, setActiveDashboardId, copyWidgetToDashboard } = useDashboardStore();
+  const { dashboards, fetchDashboards, activeDashboardId, setActiveDashboardId, linkWidgetToDashboard } =
+    useDashboardStore();
 
   useEffect(() => {
     if (dashboards.length === 0) {
@@ -314,19 +467,23 @@ export default function DashboardCanvas({
 
   const handleCopyToDashboard = async (targetDashboardId: string, widget: any) => {
     try {
-      // Find current layout for this widget
       const layoutItem = layout.find((l) => l.i === widget.id);
-      
-      // Use the optimistic store action — no full re-fetch, no UI disruption
-      await copyWidgetToDashboard(widget, layoutItem, targetDashboardId);
-      message.success('Widget copied to dashboard successfully');
+      // Prefer link (shared library definition) when the widget already has a chartId.
+      // Fall back to copy for unsaved / ephemeral widgets.
+      if (widget?.chartId) {
+        await linkWidgetToDashboard(widget, layoutItem, targetDashboardId, 'link');
+        message.success('Widget linked to dashboard');
+      } else {
+        await useDashboardStore.getState().copyWidgetToDashboard(widget, layoutItem, targetDashboardId);
+        message.success('Widget copied to dashboard successfully');
+      }
 
       if (isDesigner) {
-        router.push('/dashboards');
+        router.push(`/dashboards?id=${targetDashboardId}&mode=edit`);
       }
     } catch (error) {
-      console.error('Failed to copy widget:', error);
-      message.error('Failed to copy widget to dashboard');
+      console.error('Failed to pin widget:', error);
+      message.error('Failed to add widget to dashboard');
     }
   };
 
@@ -372,6 +529,16 @@ export default function DashboardCanvas({
       case 'focus':
         handleFocusWidget(widgetId);
         break;
+
+      case 'view-table': {
+        const rows = normalizeToRows(widget.chartData, widget);
+        if (!rows.length) {
+          message.info(td('view_table_empty'));
+          break;
+        }
+        setTableWidgetId(widgetId);
+        break;
+      }
 
       case 'explain':
         setExplainWidgetId(widgetId);
@@ -420,9 +587,18 @@ export default function DashboardCanvas({
     },
     {
       key: 'focus',
-      label: td('focus_widget') || 'Expand / Focus',
+      label: td('focus_widget'),
       icon: <FullscreenOutlined />,
     },
+    ...(!isNonChart
+      ? [
+          {
+            key: 'view-table',
+            label: td('view_table'),
+            icon: <TableOutlined />,
+          },
+        ]
+      : []),
     {
       key: 'duplicate',
       label: td('duplicate_widget'),
@@ -535,10 +711,25 @@ export default function DashboardCanvas({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={(e) => {
         if (!isEditing) return;
+        e.preventDefault();
         setIsDragOver(false);
+        // Drop synthesizes a click on whatever lands under the cursor — ignore it.
+        suppressPropertiesOpenBriefly();
         try {
           const data = e.dataTransfer.getData('application/json');
-          if (data) onDropWidget?.(JSON.parse(data));
+          if (!data) return;
+          const template = JSON.parse(data);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const marginX = isDesigner ? 0 : 8;
+          const marginY = isDesigner ? 0 : 8;
+          const rowHeight = isDesigner ? designerRowHeight : 42;
+          const width = Math.max(1, rect.width);
+          const colWidth = (width - marginX * (GRID_COLS - 1)) / GRID_COLS;
+          const relX = e.clientX - rect.left;
+          const relY = e.clientY - rect.top;
+          const gridX = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(relX / (colWidth + marginX))));
+          const gridY = Math.max(0, Math.floor(relY / (rowHeight + marginY)));
+          onDropWidget?.(template, { x: gridX, y: gridY });
         } catch (err) {
           console.error(err);
         }
@@ -603,38 +794,31 @@ export default function DashboardCanvas({
         </div>
       )}
 
-      {/* breakpoints already match react-grid-layout's own documented defaults (width
-          thresholds in px at which each named breakpoint kicks in). cols is a real
-          responsive scale rather than a flat 12 everywhere so narrow viewports reflow
-          widgets instead of just compressing them — xxs floors at 3 because the
-          smallest widget templates (KPI Card, Slicer, Gauge; see widgetTemplates.tsx)
-          default to w:3, so anything lower would immediately clip them. */}
+      {/* Free placement. Overlap allowed while gesturing so RGL does not cascade
+          neighbors downward; on stop we swap or nudge just enough. Escape restores. */}
       <ResponsiveGridLayout
         className="layout"
-        layouts={{
-          lg: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
-          md: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
-          sm: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
-          xs: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
-          xxs: layout.map((item) => ({ ...item, static: !isEditing || !!widgetById.get(item.i)?.isLocked })),
-        }}
+        layouts={rglLayouts}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={{ lg: 12, md: 12, sm: 8, xs: 4, xxs: 3 }}
+        cols={{ lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }}
         rowHeight={isDesigner ? designerRowHeight : 42}
         margin={isDesigner ? [0, 0] : [8, 8]}
         containerPadding={[0, 0]}
         compactType={null}
-        preventCollision
+        preventCollision={false}
+        allowOverlap={true}
+        isBounded={isEditing}
         isDraggable={isEditing}
         isResizable={isEditing}
-        /* Do not persist from onLayoutChange. React Grid Layout also fires it on
-           mount/page restore/breakpoint recalculation, which can overwrite saved
-           page layout with generated default positions. Persist only final user actions. */
-        onDragStop={(nextLayout) => {
-          commitLayout(nextLayout, { sync: true });
+        resizeHandles={['se', 'nw']}
+        onLayoutChange={handleLayoutChange}
+        onDragStart={beginLayoutGesture}
+        onResizeStart={beginLayoutGesture}
+        onDragStop={(nextLayout, oldItem, newItem) => {
+          endLayoutGesture(nextLayout, newItem?.i, oldItem);
         }}
-        onResizeStop={(nextLayout) => {
-          commitLayout(nextLayout, { sync: true });
+        onResizeStop={(nextLayout, oldItem, newItem) => {
+          endLayoutGesture(nextLayout, newItem?.i, oldItem);
         }}
         draggableHandle=".widget-card-header, .drag-handle"
         draggableCancel=".no-drag"
@@ -643,7 +827,7 @@ export default function DashboardCanvas({
           const isText = w.chartType === 'text';
           const isSelected = selectedWidgetId === w.id;
           const isMultiSelected = selectedWidgetIds.has(w.id);
-          const showHeader = shouldShowWidgetHeader(w, { isSelected });
+          const showHeader = shouldShowWidgetHeader(w, { isSelected, isDesigner });
           const crossFilterField = w.chartQuery?.x as string | undefined;
           const isCrossFilterSource =
             !!crossFilterField && getCrossFilterValues(runtimeFilters, crossFilterField).length > 0;
@@ -675,20 +859,28 @@ export default function DashboardCanvas({
                   // Normal click: clear multi-selection, select single widget
                   clearMultiSelection();
                   setSelectedWidgetId(w.id);
-                  setPropertiesCollapsed(false);
+                  openPropertiesIfAllowed();
                 }}
                 style={{
                   backgroundColor: w.chartOptions?.backgroundColor || undefined,
-                  ...(w.chartOptions?.borderWidth && Number(w.chartOptions.borderWidth) > 0 ? {
-                    border: `${w.chartOptions.borderWidth}px solid ${w.chartOptions.borderColor || '#d9d9d9'}`,
-                  } : {}),
-                  ...(w.chartOptions?.boxShadow && w.chartOptions.boxShadow !== 'none' ? {
-                    boxShadow: ({
-                      sm: '0 1px 4px rgba(0,0,0,0.10)',
-                      md: '0 4px 12px rgba(0,0,0,0.15)',
-                      lg: '0 8px 24px rgba(0,0,0,0.22)',
-                    } as Record<string, string>)[w.chartOptions.boxShadow as string],
-                  } : {}),
+                  ...(w.chartType === 'text'
+                    ? { border: 'none', boxShadow: 'none' }
+                    : w.chartOptions?.borderWidth && Number(w.chartOptions.borderWidth) > 0
+                      ? {
+                          border: `${w.chartOptions.borderWidth}px solid ${w.chartOptions.borderColor || '#d9d9d9'}`,
+                        }
+                      : {}),
+                  ...(w.chartType !== 'text' &&
+                  w.chartOptions?.boxShadow &&
+                  w.chartOptions.boxShadow !== 'none'
+                    ? {
+                        boxShadow: ({
+                          sm: '0 1px 4px rgba(0,0,0,0.10)',
+                          md: '0 4px 12px rgba(0,0,0,0.15)',
+                          lg: '0 8px 24px rgba(0,0,0,0.22)',
+                        } as Record<string, string>)[w.chartOptions.boxShadow as string],
+                      }
+                    : {}),
                 }}
               >
                 <div
@@ -720,14 +912,29 @@ export default function DashboardCanvas({
                         e.stopPropagation();
                         startEditing(w);
                       }}
-                      title={isEditing ? 'Double click to edit title' : undefined}
+                      title={
+                        isEditing
+                          ? `${w.title || ''} — Double click to edit`
+                          : w.title || undefined
+                      }
                       style={{
                         cursor: isEditing ? 'pointer' : 'default',
                         userSelect: 'none',
                         fontWeight: w.chartOptions?.titleFontWeight || '700',
                         color: w.chartOptions?.titleColor || undefined,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 0,
                       }}
                     >
+                      {w.chartOptions?.headerIcon ? (
+                        <span
+                          className="widget-header-icon"
+                          style={{ color: (w.chartOptions.headerIcon as { color?: string })?.color || w.chartOptions?.titleColor || undefined }}
+                        >
+                          <DashboardIcon icon={w.chartOptions.headerIcon} size={14} />
+                        </span>
+                      ) : null}
                       {w.title}
                     </Text>
                   )}
@@ -751,12 +958,21 @@ export default function DashboardCanvas({
                     </Tooltip>
                   )}
 
-                  {selectedWidgetId === w.id && !editingWidgetId && isEditing && (
+                  {(selectedWidgetId === w.id && !editingWidgetId) && (
                     <Dropdown
                       trigger={['click']}
                       placement="bottomRight"
+                      overlayClassName="widget-overflow-dropdown"
+                      getPopupContainer={() => document.body}
                       menu={{
-                        items: getMenuItems(w.id),
+                        items: isEditing
+                          ? getMenuItems(w.id)
+                          : getMenuItems(w.id).filter((item: any) => {
+                              if (!item || item.type === 'divider') return false;
+                              return ['focus', 'view-table', 'explain', 'export-data', 'export-image'].includes(
+                                item.key,
+                              );
+                            }),
                         onClick: ({ key }) => handleMenuClick(key, w.id),
                       }}
                     >
@@ -777,7 +993,38 @@ export default function DashboardCanvas({
                 </div>
                 )}
 
-              <div className={`widget-card-body ${isText && !showHeader && isEditing ? 'drag-handle' : 'no-drag'}`}>
+                {/* Text: title lives inside TextWidget; keep ⋯ menu when selected */}
+                {isText && isSelected && (
+                  <div className="widget-text-floating-actions no-drag">
+                    <Dropdown
+                      trigger={['click']}
+                      placement="bottomRight"
+                      overlayClassName="widget-overflow-dropdown"
+                      getPopupContainer={() => document.body}
+                      menu={{
+                        items: isEditing
+                          ? getMenuItems(w.id)
+                          : getMenuItems(w.id).filter((item: any) => {
+                              if (!item || item.type === 'divider') return false;
+                              return ['focus', 'view-table', 'explain', 'export-data', 'export-image'].includes(
+                                item.key,
+                              );
+                            }),
+                        onClick: ({ key }) => handleMenuClick(key, w.id),
+                      }}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        className="no-drag"
+                        icon={<MoreOutlined />}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Dropdown>
+                  </div>
+                )}
+
+              <div className="widget-card-body no-drag">
                 <DashboardWidgetCell
                   widget={w}
                   dashboardId={dashboardId}
@@ -788,8 +1035,17 @@ export default function DashboardCanvas({
                   onUpdateConfig={
                     readOnly
                       ? undefined
-                      : (updates) =>
-                          onUpdateWidget?.(w.id, { chartOptions: { ...(w.chartOptions || {}), ...updates } })
+                      : (updates) => {
+                          if (updates && typeof updates === 'object' && '__widgetTitle' in updates) {
+                            onUpdateWidget?.(w.id, {
+                              title: String((updates as { __widgetTitle?: unknown }).__widgetTitle ?? ''),
+                            });
+                            return;
+                          }
+                          onUpdateWidget?.(w.id, {
+                            chartOptions: { ...(w.chartOptions || {}), ...updates },
+                          });
+                        }
                   }
                   isDesigner={isDesigner}
                   isSelected={selectedWidgetId === w.id}
@@ -818,26 +1074,76 @@ export default function DashboardCanvas({
       />
       )}
 
-      {/* Widget Focus / Expand Modal */}
+      {/* Widget Focus / View Full Modal — size by widget type; stay above studio chrome */}
       {focusedWidgetId && (() => {
         const fw = widgets.find((w) => w.id === focusedWidgetId);
         if (!fw) return null;
+        const chartType = String(fw.chartType || '').toLowerCase();
+        const isKpi = chartType === 'stat' || chartType === 'gauge' || chartType === 'kpi';
+        const isPie = chartType === 'pie' || chartType === 'donut';
+        const isTableish = chartType === 'table' || chartType === 'pivot' || chartType === 'heatmap';
+        const isChrome =
+          chartType === 'text' ||
+          chartType === 'image' ||
+          chartType === 'divider' ||
+          chartType === 'filter' ||
+          chartType === 'slicer';
+
+        let modalWidth: number | string = 880;
+        let bodyMinHeight = 420;
+        let bodyMaxHeight = 'min(72vh, 560px)';
+        if (isKpi) {
+          modalWidth = 480;
+          bodyMinHeight = 240;
+          bodyMaxHeight = 'min(50vh, 320px)';
+        } else if (isPie) {
+          modalWidth = 640;
+          bodyMinHeight = 360;
+          bodyMaxHeight = 'min(65vh, 480px)';
+        } else if (isTableish) {
+          modalWidth = 'min(960px, 92vw)';
+          bodyMinHeight = 360;
+          bodyMaxHeight = 'min(75vh, 640px)';
+        } else if (isChrome) {
+          modalWidth = 640;
+          bodyMinHeight = 200;
+          bodyMaxHeight = 'min(55vh, 400px)';
+        }
+
         return (
           <Modal
             open
+            centered
+            destroyOnHidden
             onCancel={handleExitFocus}
             footer={null}
-            width="90vw"
-            style={{ top: 24 }}
-            styles={{ body: { padding: 0, height: 'calc(90vh - 80px)', display: 'flex', flexDirection: 'column' } }}
+            width={modalWidth}
+            zIndex={1200}
+            className={`studio-widget-inspect-modal${isKpi ? ' studio-widget-inspect-modal--kpi' : ''}`}
+            afterOpenChange={(open) => {
+              if (open) {
+                // Let ECharts ResizeObserver/layout settle after modal size is known
+                requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+              }
+            }}
+            styles={{
+              body: {
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: bodyMinHeight,
+                height: typeof bodyMaxHeight === 'string' ? bodyMinHeight : bodyMinHeight,
+                maxHeight: bodyMaxHeight,
+              },
+            }}
             title={
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <FullscreenExitOutlined />
-                <span>{fw.title || 'Widget Preview'}</span>
+                <span>{fw.title || td('focus_widget')}</span>
               </div>
             }
           >
-            <div style={{ flex: 1, minHeight: 0, position: 'relative', padding: 16 }}>
+            <div className="studio-widget-inspect-host">
               <DashboardWidgetCell
                 widget={fw}
                 dashboardId={dashboardId}
@@ -849,6 +1155,72 @@ export default function DashboardCanvas({
                 isSelected
               />
             </div>
+          </Modal>
+        );
+      })()}
+
+      {/* View Table Modal — width scales with columns; scroll inside, not the whole app chrome */}
+      {tableWidgetId && (() => {
+        const tw = widgets.find((w) => w.id === tableWidgetId);
+        if (!tw) return null;
+        const rows = normalizeToRows(tw.chartData, tw);
+        const keys = rows.length ? Object.keys(rows[0]) : [];
+        const columns = keys.map((key) => ({
+          title: columnHeaderFromKey(key),
+          dataIndex: key,
+          key,
+          ellipsis: true,
+          render: (val: unknown) => {
+            if (val === null || val === undefined) return '—';
+            if (typeof val === 'object') return JSON.stringify(val);
+            if (typeof val === 'number' && Number.isFinite(val)) {
+              return formatNumber(val, { decimals: 2, compact: false });
+            }
+            if (typeof val === 'string' && val.trim() !== '' && !Number.isNaN(Number(val))) {
+              const n = Number(val);
+              if (Number.isFinite(n)) return formatNumber(n, { decimals: 2, compact: false });
+            }
+            return String(val);
+          },
+        }));
+        const modalWidth = Math.min(960, Math.max(520, 160 + keys.length * 120));
+        const scrollY = Math.min(520, Math.max(200, Math.min(rows.length, 14) * 38 + 8));
+        return (
+          <Modal
+            open
+            centered
+            destroyOnHidden
+            onCancel={() => setTableWidgetId(null)}
+            footer={null}
+            width={modalWidth}
+            zIndex={1200}
+            className="studio-widget-inspect-modal studio-widget-inspect-modal--table"
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span>
+                  {td('view_table')}
+                  <span style={{ marginLeft: 8, opacity: 0.65, fontWeight: 400, fontSize: 13 }}>
+                    {tw.title || 'Widget'} · {rows.length} {rows.length === 1 ? 'row' : 'rows'}
+                  </span>
+                </span>
+              </div>
+            }
+          >
+            <Table
+              size="small"
+              bordered
+              className="query-results-table"
+              dataSource={rows.map((r, i) => ({ ...r, key: i }))}
+              columns={columns}
+              scroll={{ x: 'max-content', y: scrollY }}
+              pagination={{
+                pageSize: 25,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '25', '50', '100'],
+                size: 'small',
+                showTotal: (total, range) => `${range[0]}–${range[1]} of ${total}`,
+              }}
+            />
           </Modal>
         );
       })()}

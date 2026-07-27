@@ -3,6 +3,7 @@
 import React from 'react';
 import { Steps, Typography } from 'antd';
 import { CheckCircleOutlined } from '@ant-design/icons';
+import { isContentWidgetType, isControlWidgetType } from './widgetPropertyProfile';
 import { useTranslations } from 'next-intl';
 import type { WidgetInstance } from '../stores/useDashboardStore';
 
@@ -14,16 +15,22 @@ type Props = {
 export function PropertiesSetupSteps({ widget, onFocusSection }: Props) {
   const t = useTranslations('dashboards');
 
-  if (!widget || widget.chartType === 'text') return null;
+  if (!widget || isContentWidgetType(widget.chartType)) return null;
 
-  const isSlicer = widget.chartType === 'slicer' || widget.chartType === 'filter';
+  const isSlicer = isControlWidgetType(widget.chartType);
   const hasSource = Boolean(widget.dataSourceId || (widget.chartQuery as { dataSourceId?: string })?.dataSourceId);
-  const hasTable = Boolean(widget.chartQuery?.tableName);
+  const hasSavedQuery = Boolean((widget.chartQuery as { saved_query_id?: unknown })?.saved_query_id);
+  const hasSampleSql = Boolean(
+    typeof widget.chartOptions?.sample_sql === 'string' && widget.chartOptions.sample_sql.trim(),
+  );
+  const hasSqlDataset = hasSavedQuery || hasSampleSql;
+  const hasTable = Boolean(widget.chartQuery?.tableName) || hasSqlDataset;
   const hasFields = Boolean(
     (widget.chartQuery as { field?: string })?.field ||
       widget.chartQuery?.x ||
       widget.chartQuery?.yMetrics?.length ||
-      widget.chartQuery?.aggregate
+      widget.chartQuery?.aggregate ||
+      hasSqlDataset
   );
   const hasStyle = Boolean(widget.chartOptions && Object.keys(widget.chartOptions).length > 0);
 

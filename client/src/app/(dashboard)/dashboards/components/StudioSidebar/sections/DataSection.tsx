@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDataSources, useDataSourceSchema, dataSourceKeys } from '@/hooks/useDataSources';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import { useDashboardStore } from '../../../stores/useDashboardStore';
 import { setDashboardFieldDragData } from '../../../utils/dashboardFieldDrag';
 
 const { Text } = Typography;
@@ -174,11 +176,51 @@ export function DataSection() {
   const [showHiddenFields, setShowHiddenFields] = useState(false);
   const [hiddenFields, setHiddenFields] = useState<Set<string>>(new Set());
 
+  const selectedWidgetId = useDashboardStore((s) => s.selectedWidgetId);
+  const widgets = useDashboardStore((s) => s.widgets);
+  const updateWidget = useDashboardStore((s) => s.updateWidget);
+  const selectGlobalDataSource = useDataSourceStore((s) => s.select);
+  const selectedWidget = useMemo(
+    () => widgets.find((w) => w.id === selectedWidgetId) ?? null,
+    [widgets, selectedWidgetId],
+  );
+
+  // Prefer the selected widget's data source, then first available.
+  // If the widget has no source yet, bind it to the explorer selection.
   useEffect(() => {
+    const fromWidget = selectedWidget?.dataSourceId
+      ? String(selectedWidget.dataSourceId)
+      : null;
+    if (fromWidget && fromWidget !== activeSourceId) {
+      setActiveSourceId(fromWidget);
+      selectGlobalDataSource(fromWidget);
+      setActiveTableId(null);
+      setSelectedColumnName(null);
+      return;
+    }
+    if (
+      selectedWidgetId &&
+      selectedWidget &&
+      !fromWidget &&
+      activeSourceId
+    ) {
+      updateWidget(selectedWidgetId, { dataSourceId: activeSourceId });
+      selectGlobalDataSource(activeSourceId);
+      return;
+    }
     if (!activeSourceId && dataSources[0]?.id) {
       setActiveSourceId(dataSources[0].id);
+      selectGlobalDataSource(dataSources[0].id);
     }
-  }, [activeSourceId, dataSources]);
+  }, [
+    selectedWidgetId,
+    selectedWidget,
+    selectedWidget?.dataSourceId,
+    dataSources,
+    activeSourceId,
+    selectGlobalDataSource,
+    updateWidget,
+  ]);
 
   const { schema, isLoading: schemaLoading, error } = useDataSourceSchema(activeSourceId);
   const tables = useMemo(() => normalizeTables(schema), [schema]);
@@ -275,6 +317,38 @@ export function DataSection() {
               setActiveSourceId(id);
               setActiveTableId(null);
               setSelectedColumnName(null);
+              selectGlobalDataSource(id);
+              // Keep the selected chart bound to the same source the explorer shows
+              if (selectedWidgetId && selectedWidget && String(selectedWidget.dataSourceId || '') !== String(id)) {
+                const sqlBound = Boolean(
+                  selectedWidget.chartQuery?.saved_query_id ||
+                    selectedWidget.chartQuery?.query_snapshot_id ||
+                    (typeof selectedWidget.chartOptions?.sample_sql === 'string' &&
+                      selectedWidget.chartOptions.sample_sql.trim()),
+                );
+                // Align with Properties: changing DS exits SQL / pin freeze so mappings rebuild.
+                updateWidget(selectedWidgetId, {
+                  dataSourceId: id,
+                  chartQuery: {
+                    yMetric: 'count',
+                    yMetrics: [],
+                    sortBy: 'x',
+                  },
+                  chartOptions: {
+                    ...(selectedWidget.chartOptions || {}),
+                    sample_sql: undefined,
+                    __prefetchedChartData: undefined,
+                    __echartsSnapshot: undefined,
+                  },
+                  ...(sqlBound
+                    ? {
+                        chartData: null,
+                        error: null,
+                        lastFetchedQueryHash: undefined,
+                      }
+                    : {}),
+                });
+              }
             }}
             options={dataSources.map((source) => ({ value: source.id, label: source.name }))}
             style={{ width: '100%' }}

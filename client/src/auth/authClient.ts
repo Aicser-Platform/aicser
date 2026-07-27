@@ -4,11 +4,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // EE overrides this via ee/src/ee/auth/authClient.ts (real Supabase client).
 export const supabase: SupabaseClient | null = null;
 
-export function useSupabaseForApiAuth(): boolean {
+export function isSupabaseAuthConfigured(): boolean {
   return false;
 }
 
-export function isSupabaseAuthConfigured(): boolean {
+/** @deprecated Prefer `isSupabaseAuthConfigured` — name must not start with `use` (not a React hook). */
+export function shouldUseSupabaseForApiAuth(): boolean {
   return false;
 }
 

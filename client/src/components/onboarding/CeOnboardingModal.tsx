@@ -97,7 +97,7 @@ export function CeOnboardingModal({ onConnectData }: CeOnboardingModalProps) {
       footer={null}
       width={520}
       centered
-      destroyOnClose
+      destroyOnHidden
       title={t('modal_title')}
       maskClosable={false}
     >

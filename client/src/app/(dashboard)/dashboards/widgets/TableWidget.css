@@ -1,6 +1,6 @@
 /**
- * Aiser Platform - Table Widget Premium Styles
- * Enhanced aesthetic for data tables, matching requested sample UI
+ * Aiser Platform - Table Widget Styles
+ * Unified with industry BI table patterns: one surface, token colors, Title Case headers.
  */
 
 .table-widget-container {
@@ -8,22 +8,22 @@
   display: flex !important;
   flex-direction: column !important;
   background: var(--ant-color-bg-container) !important;
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   overflow: hidden !important;
-  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.05)) !important;
-  padding: 12px !important; 
+  box-shadow: none !important;
+  padding: 0 !important;
+  border: none !important;
 }
 
-/* Container for the table and its scrollable area */
 .table-widget-container .ant-table-wrapper {
-  flex: 1 !important; /* Always fill available vertical space */
+  flex: 1 !important;
   min-height: 0 !important;
   display: flex !important;
   flex-direction: column !important;
-  margin-top: 4px !important;
+  margin: 0 !important;
   border: none !important;
   background: transparent !important;
-  overflow: hidden !important; 
+  overflow: hidden !important;
 }
 
 .table-widget-container .ant-spin-nested-loading {
@@ -40,87 +40,97 @@
   background: transparent !important;
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif) !important;
   flex: 1 !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .table-widget-container .ant-table-container {
-  border: 1px solid var(--ant-color-border, #f0f0f0) !important;
-  border-radius: 12px !important;
+  border: none !important;
+  border-radius: 0 !important;
   background: var(--ant-color-bg-container) !important;
   display: flex !important;
   flex-direction: column !important;
-  flex: 0 1 auto !important; /* Shrink to content if possible */
+  flex: 0 1 auto !important;
   min-height: 0 !important;
   width: 100% !important;
-  overflow: hidden !important; /* Container itself shouldn't scroll, only its body */
+  overflow: hidden !important;
 }
 
-/* Ensure the body is the scrollable part when data is long */
 .table-widget-container .ant-table-body {
   overflow-y: auto !important;
   flex: 1 !important;
 }
 
-[data-theme='dark'] .table-widget-container .ant-table-container {
-  border: 1px solid var(--ant-color-border, #30363d) !important;
-}
-
-/* Header styling — same token-based background as every other table in the
-   app (query editor, chat results, global default); no more hardcoded hex. */
+/* Header — same surface as body (Linear/Notion); weight + bottom rule for hierarchy */
 .table-widget-container .ant-table-thead > tr > th {
-  background: var(--ant-color-fill-quaternary) !important;
-  border-right: 1px solid var(--ant-color-border, #f0f0f0) !important;
-  border-bottom: 2px solid var(--ant-color-border, #f0f0f0) !important;
-  font-weight: 700 !important;
-  color: var(--ant-color-text) !important;
-  padding: 12px 16px !important;
-  font-size: 13px !important;
+  background: var(--ant-color-bg-container) !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--ant-color-border) !important;
+  font-weight: 600 !important;
+  color: var(--ant-color-text-secondary) !important;
+  padding: 10px 14px !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
   text-transform: none !important;
-  letter-spacing: normal !important;
+  letter-spacing: 0.01em !important;
   font-family: var(--font-sans) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 240px !important;
 }
 
 .table-widget-container .ant-table-thead > tr > th::before {
-  display: none !important; 
+  display: none !important;
 }
 
-/* Body styling */
+.table-widget-container .ant-table-thead > tr > th .ant-table-column-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Body */
 .table-widget-container .ant-table-tbody > tr > td {
-  padding: 12px 16px !important;
-  border-bottom: 1px solid var(--ant-color-border, #f0f0f0) !important;
-  transition: all 0.2s ease !important;
-  font-size: 14px !important;
+  padding: 10px 14px !important;
+  border-bottom: 1px solid var(--ant-color-border-secondary) !important;
+  transition: background 0.15s ease !important;
+  font-size: 13px !important;
   color: var(--ant-color-text) !important;
+  background: var(--ant-color-bg-container) !important;
+}
+
+.table-widget-container .ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
 }
 
 .table-widget-container .ant-table-tbody > tr:hover > td {
-  background: var(--ant-color-fill-quaternary, rgba(0, 0, 0, 0.02)) !important;
+  background: var(--ant-color-fill-tertiary) !important;
 }
 
-/* Zebra striping */
+/* Subtle zebra — avoid navy-band clash with dark container */
 .table-widget-container .ant-table-tbody > tr:nth-child(even) > td {
-  background: rgba(0, 0, 0, 0.01) !important;
+  background: color-mix(in srgb, var(--ant-color-fill-tertiary) 55%, transparent) !important;
 }
 
-[data-theme='dark'] .table-widget-container .ant-table-tbody > tr:nth-child(even) > td {
-  background: rgba(255, 255, 255, 0.01) !important;
+.table-widget-container .ant-table-tbody > tr:nth-child(even):hover > td {
+  background: var(--ant-color-fill-tertiary) !important;
 }
 
-/* Updated for requested font consistency (no mono) */
 .table-widget-container .table-cell-number {
   font-family: var(--font-sans) !important;
+  font-variant-numeric: tabular-nums !important;
   font-weight: 500 !important;
   text-align: right !important;
 }
 
 .table-widget-container .table-cell-category {
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   font-family: var(--font-sans) !important;
 }
 
-/* Scrollbar styling for the table container */
 .table-widget-container .ant-table-body {
   scrollbar-width: thin !important;
-  scrollbar-color: var(--ant-color-border, #d9d9d9) transparent !important;
+  scrollbar-color: var(--ant-color-border) transparent !important;
 }
 
 .table-widget-container .ant-table-body::-webkit-scrollbar {
@@ -129,53 +139,56 @@
 }
 
 .table-widget-container .ant-table-body::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border, #d9d9d9) !important;
+  background: var(--ant-color-border) !important;
   border-radius: 10px !important;
 }
 
 .table-widget-container .ant-table-body::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-primary, #00c2cb) !important;
+  background: var(--ant-color-primary) !important;
 }
 
-/* Pagination styling - Grounded footer dock */
+/*
+ * Pagination — same surface as the table (Stripe/Linear pattern).
+ * No navy band; only a top separator.
+ */
 .table-widget-container .ant-pagination {
-  margin: auto 0 0 0 !important; /* Push to the very bottom of the widget */
-  padding: 12px 16px !important;
-  background: var(--ant-color-bg-elevated, #fbfcfd) !important; 
-  border-top: 1px solid var(--ant-color-border, #f0f0f0) !important;
+  margin: auto 0 0 0 !important;
+  padding: 10px 14px !important;
+  background: var(--ant-color-bg-container) !important;
+  border-top: 1px solid var(--ant-color-border) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: flex-end !important;
-  border-radius: 0 0 12px 12px !important;
+  border-radius: 0 !important;
   width: 100% !important;
 }
 
 .table-widget-container .ant-pagination-total-text {
   margin-right: auto !important;
   font-weight: 500 !important;
-  color: var(--ant-color-text-description) !important;
-}
-
-[data-theme='dark'] .table-widget-container .ant-pagination {
-  background: #0f172a !important;
-  border-top: 1px solid var(--ant-color-border, #30363d) !important;
+  font-size: 12px !important;
+  color: var(--ant-color-text-secondary) !important;
 }
 
 .table-widget-container .ant-pagination-item {
   border-radius: 6px !important;
   border: 1px solid transparent !important;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition: background 0.15s ease, border-color 0.15s ease !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  line-height: 26px !important;
+  font-size: 12px !important;
 }
 
 .table-widget-container .ant-pagination-item:hover {
-  background: var(--ant-color-fill-secondary, rgba(0, 0, 0, 0.04)) !important;
-  border-color: var(--ant-color-border, #f0f0f0) !important;
+  background: var(--ant-color-fill-secondary) !important;
+  border-color: var(--ant-color-border) !important;
 }
 
 .table-widget-container .ant-pagination-item-active {
-  background: var(--ant-color-primary, #00c2cb) !important;
-  border-color: var(--ant-color-primary, #00c2cb) !important;
-  box-shadow: 0 2px 4px rgba(0, 194, 203, 0.2) !important;
+  background: var(--ant-color-primary) !important;
+  border-color: var(--ant-color-primary) !important;
+  box-shadow: none !important;
 }
 
 .table-widget-container .ant-pagination-item-active a {
@@ -187,27 +200,26 @@
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  min-width: 28px !important;
+  height: 28px !important;
 }
 
 .table-widget-container .ant-pagination-prev .ant-pagination-item-link,
 .table-widget-container .ant-pagination-next .ant-pagination-item-link {
   border-radius: 6px !important;
   border: 1px solid transparent !important;
-  transition: all 0.2s ease !important;
 }
 
-/* Empty state enhancement */
 .table-widget-container .ant-empty {
   padding: 48px 0 !important;
   margin: 0 !important;
 }
 
-/* Total Row Styling - Matches sample UI */
 .table-widget-container .table-row-total > td {
   background: var(--ant-color-fill-quaternary) !important;
   color: var(--ant-color-text) !important;
   font-weight: 700 !important;
-  border-top: 2px solid var(--ant-color-border, #f0f0f0) !important;
+  border-top: 1px solid var(--ant-color-border) !important;
 }
 
 .table-widget-container .table-row-cross-filter-active > td {
@@ -218,10 +230,9 @@
   background: rgba(0, 194, 203, 0.15) !important;
 }
 
-/* Column borders */
 .table-widget-container .ant-table-thead > tr > th,
 .table-widget-container .ant-table-tbody > tr > td {
-  border-right: 1px solid var(--ant-color-border, #f0f0f0) !important;
+  border-right: none !important;
 }
 
 .table-widget-container .ant-table-thead > tr > th:last-child,
@@ -229,11 +240,6 @@
   border-right: none !important;
 }
 
-/* Separation line between columns */
 .table-widget-container .table-cell-y {
-  border-left: 1px solid var(--ant-color-border, #f0f0f0) !important;
-}
-
-[data-theme='dark'] .table-widget-container .table-cell-y {
-  border-left: 1px solid var(--ant-color-border, #30363d) !important;
+  border-left: none !important;
 }

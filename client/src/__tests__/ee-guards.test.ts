@@ -28,13 +28,14 @@ describe('EE page guard — redirect logic', () => {
 });
 
 describe('CE fallback — store stubs return safe shapes', () => {
+  // Cold-import of ee-fallback pulls EnhancedDataPanel; allow extra time under jsdom.
   it('useConversationStore stub is safe to destructure', async () => {
     const { useConversationStore } = await import('../ee-fallback');
     const { conversations, isLoading, loadConversations } = useConversationStore();
     expect(Array.isArray(conversations)).toBe(true);
     expect(isLoading).toBe(false);
     expect(typeof loadConversations).toBe('function');
-  });
+  }, 20_000);
 
   it('useOnboardingStore stub exposes onboardingCompleted and startOnboarding', async () => {
     const { useOnboardingStore } = await import('../ee-fallback');

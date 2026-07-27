@@ -38,4 +38,11 @@ def set_auth_token_cookie(response: Response, token: str) -> None:
 
 
 def clear_auth_token_cookie(response: Response) -> None:
-    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+    # Must match set_auth_token_cookie attributes or Secure cookies survive logout.
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path="/",
+        secure=auth_cookie_secure(),
+        httponly=True,
+        samesite="lax",
+    )

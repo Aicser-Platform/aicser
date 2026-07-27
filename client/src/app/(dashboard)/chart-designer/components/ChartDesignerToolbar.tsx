@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
-import { Button, Dropdown, Modal, Tooltip, Typography, message } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { ShareAltOutlined, CodeOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
@@ -14,8 +14,6 @@ import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
-
-const { Text } = Typography;
 
 interface ChartDesignerToolbarProps {
   selectedWidget: ChartDesignerWidget | null;
@@ -34,6 +32,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     undefined;
 
   const saveChart = useChartDesignerStore((s) => s.saveChart);
+  const updateWidget = useChartDesignerStore((s) => s.updateWidget);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
   const { createEmbedCode, loading: embedLoading } = useEmbedCode();
 
@@ -47,6 +46,19 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const [embedOpen, setEmbedOpen] = useState(false);
   const [embedUrl, setEmbedUrl] = useState('');
   const [embedToken, setEmbedToken] = useState<string | undefined>();
+  const [titleDraft, setTitleDraft] = useState('');
+
+  useEffect(() => {
+    setTitleDraft(selectedWidget?.title?.trim() || '');
+  }, [selectedWidget?.id, selectedWidget?.title]);
+
+  const commitTitle = useCallback(() => {
+    if (!selectedWidget) return;
+    const next = titleDraft.trim() || t('untitled_chart');
+    if (next !== (selectedWidget.title || '')) {
+      updateWidget(selectedWidget.id, { title: next });
+    }
+  }, [selectedWidget, titleDraft, t, updateWidget]);
 
   const ensureChartId = useCallback(async (): Promise<string | undefined> => {
     if (!selectedWidget) return undefined;
@@ -159,9 +171,24 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   return (
     <>
       <div className="chart-designer-toolbar">
-        <Text className="chart-designer-toolbar-title" ellipsis>
-          {selectedWidget ? title : t('toolbar_no_selection')}
-        </Text>
+        {selectedWidget ? (
+          <Input
+            className="chart-designer-toolbar-title"
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitTitle}
+            onPressEnter={(e) => {
+              (e.target as HTMLInputElement).blur();
+            }}
+            placeholder={t('untitled_chart')}
+            variant="borderless"
+            maxLength={120}
+          />
+        ) : (
+          <span className="chart-designer-toolbar-title chart-designer-toolbar-title--empty">
+            {t('toolbar_no_selection')}
+          </span>
+        )}
         <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
           <Tooltip title={selectedWidget ? t('share_menu_tooltip') : t('share_select_chart')}>
             <Button

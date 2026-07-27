@@ -2694,6 +2694,7 @@ async def create_dashboard_from_template(
 
         from src.modules.charts.services.v2.dashboard_service import DashboardService as DashboardV2Service
         from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
+        from src.modules.dashboards.pages_service import DashboardPagesService
 
         dashboard_service = DashboardV2Service(db)
         dashboard = await dashboard_service.create(
@@ -2709,6 +2710,11 @@ async def create_dashboard_from_template(
             }
         )
 
+        # Ensure a default page so studio page-scoping never hides template widgets.
+        pages_svc = DashboardPagesService(db)
+        default_page = await pages_svc.create_page(dashboard.id, "Page 1")
+        default_page_id = str(default_page.id)
+
         dashboard_chart_service = DashboardChartService(db)
         created_charts: List[Dict[str, Any]] = []
         sql_pack: List[Dict[str, str]] = []
@@ -2723,11 +2729,16 @@ async def create_dashboard_from_template(
         for widget in template["widgets"]:
             widget_table = widget.get("table", template["primary_table"])
             widget_data_source = data_source_map.get(widget_table, data_source)
+            chart_query = dict(widget.get("chart_query") or {})
+            if widget_table and not chart_query.get("tableName"):
+                chart_query["tableName"] = widget_table
+            layout = dict(widget.get("layout") or {})
+            layout["page_id"] = default_page_id
             chart_payload = {
                 "data_source_id": widget_data_source["id"],
                 "chart_type": widget["chart_type"],
                 "title": widget["name"],
-                "chart_query": widget["chart_query"],
+                "chart_query": chart_query,
                 "chart_options": {
                     "showLegend": True,
                     "showDataLabel": False,
@@ -2745,7 +2756,7 @@ async def create_dashboard_from_template(
             chart = await dashboard_chart_service.create(
                 dashboard_id=dashboard.id,
                 chart_payload=chart_payload,
-                layout=widget.get("layout"),
+                layout=layout,
             )
 
             created_charts.append(
@@ -2757,7 +2768,7 @@ async def create_dashboard_from_template(
                     "dataSourceId": chart.data_source_id,
                     "chartQuery": chart.chart_query,
                     "chartOptions": chart.chart_options,
-                    "layout": widget.get("layout"),
+                    "layout": layout,
                 }
             )
             sql_pack.append(
@@ -2766,6 +2777,9 @@ async def create_dashboard_from_template(
                     "sql": widget["sample_sql"],
                 }
             )
+
+        # Reload dashboard so response config includes default_page_id
+        await db.refresh(dashboard)
 
         return {
             "success": True,
@@ -2897,18 +2911,21 @@ from uuid import UUID  # noqa: E402 – UUID already imported by many callers
 
 
 def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
-    """Returns (chart_payload, layout)"""
+    """Returns (chart_payload, layout) — keep in sync with dashboard charts normalize."""
     chart_query = payload.get("chartQuery") or {}
     chart_options = payload.get("chartOptions") or {}
     layout = payload.get("layout")
     if layout:
         chart_options["layout"] = layout
 
+    chart_type = payload.get("chartType")
+    is_text = chart_type == "text"
+
     chart_payload = {
         "data_source_id": payload.get("dataSourceId"),
-        "chart_type": payload.get("chartType"),
+        "chart_type": chart_type,
         "title": payload.get("title"),
-        "chart_query": {
+        "chart_query": {} if is_text else {
             "tableName": chart_query.get("tableName"),
             "x": chart_query.get("x") or chart_query.get("xField"),
             "xGrain": chart_query.get("xGrain"),
@@ -2920,7 +2937,7 @@ def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "y": chart_query.get("y"),
             "legend": chart_query.get("legend"),
             "groupBy": chart_query.get("groupBy"),
-            "groupField": chart_query.get("groupField"),
+            "groupField": chart_query.get("groupField") or chart_query.get("legend"),
             "groupSortBy": chart_query.get("groupSortBy"),
             "groupOrder": chart_query.get("groupOrder"),
             "sortBy": chart_query.get("sortBy"),
@@ -2929,6 +2946,15 @@ def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "metricFilters": chart_query.get("metricFilters", []),
             "limit": chart_query.get("limit"),
             "seriesLimit": chart_query.get("seriesLimit"),
+            "joins": chart_query.get("joins") or [],
+            # Required for Query Editor / Visualize live bind
+            "saved_query_id": chart_query.get("saved_query_id"),
+            "query_snapshot_id": chart_query.get("query_snapshot_id") or chart_query.get("snapshot_id"),
+            "semantic_metric_id": chart_query.get("semantic_metric_id"),
+            "semantic_dimension_ids": chart_query.get("semantic_dimension_ids") or [],
+            "drillPath": chart_query.get("drillPath") or [],
+            "interactionMode": chart_query.get("interactionMode"),
+            "drillThrough": chart_query.get("drillThrough"),
         },
         "chart_options": chart_options,
     }
@@ -2945,17 +2971,15 @@ def _parse_optional_uuid(value: Optional[str], field_name: str) -> Optional[UUID
         raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
 
 
-def _serialize_standalone_chart(chart) -> dict:
-    return {
-        "id": str(chart.id),
-        "dataSourceId": chart.data_source_id,
-        "chartType": chart.chart_type,
-        "title": chart.title,
-        "chartQuery": chart.chart_query,
-        "chartOptions": chart.chart_options,
-        "userId": str(chart.user_id) if chart.user_id else None,
-        "projectId": str(chart.project_id) if chart.project_id else None,
-    }
+def _serialize_standalone_chart(chart, *, usage_count: int = 0, dashboards=None, detail: str = "full") -> dict:
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    return ChartLibraryService.serialize_chart(
+        chart,
+        usage_count=usage_count,
+        dashboards=dashboards,
+        detail=detail,
+    )
 
 
 # NOTE: No router-level RBAC guard here. A router-level async dependency runs
@@ -2976,6 +3000,19 @@ def _enforce_standalone_chart_access(chart, user_id) -> None:
         raise HTTPException(status_code=403, detail="Not authorized to access this chart")
 
 
+def _serialize_collection(row) -> dict:
+    return {
+        "id": str(row.id),
+        "name": row.name,
+        "parentId": str(row.parent_id) if row.parent_id else None,
+        "userId": str(row.user_id) if row.user_id else None,
+        "projectId": str(row.project_id) if row.project_id else None,
+        "sortOrder": int(row.sort_order or 0),
+        "createdAt": row.created_at.isoformat() if row.created_at else None,
+        "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
 @standalone_chart_router.post("", status_code=status.HTTP_201_CREATED)
 async def standalone_create_chart(
     project_id: Optional[str] = None,
@@ -2984,6 +3021,8 @@ async def standalone_create_chart(
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
     from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -3002,19 +3041,54 @@ async def standalone_create_chart(
     chart_payload["project_id"] = project_uuid
     if payload.get("dashboardId"):
         chart_payload["dashboard_id"] = payload.get("dashboardId")
+    if payload.get("collectionId") or payload.get("collection_id"):
+        chart_payload["collection_id"] = _parse_optional_uuid(
+            str(payload.get("collectionId") or payload.get("collection_id")),
+            "collection_id",
+        )
+    if payload.get("tags") is not None and isinstance(payload.get("tags"), list):
+        chart_payload["tags"] = payload.get("tags")
+
+    # Upsert by saved_query_id when requested — avoids duplicate library charts
+    reuse = bool(payload.get("reuseSavedQuery") or payload.get("reuse_saved_query"))
+    saved_qid = None
+    cq = chart_payload.get("chart_query") or {}
+    if isinstance(cq, dict):
+        saved_qid = cq.get("saved_query_id")
+    if reuse and saved_qid:
+        lib = ChartLibraryService(db)
+        existing = await lib.find_reusable_by_saved_query(
+            user_id=user_uuid,
+            project_id=project_uuid,
+            saved_query_id=str(saved_qid),
+            chart_type=chart_payload.get("chart_type"),
+        )
+        if existing:
+            service = ChartService(db)
+            updated = await service.update(existing, {k: v for k, v in chart_payload.items() if v is not None})
+            await db.commit()
+            return _serialize_standalone_chart(updated, detail="full")
 
     service = ChartService(db)
     chart = await service.create(chart_payload)
-    return _serialize_standalone_chart(chart)
+    return _serialize_standalone_chart(chart, detail="full")
 
 
 @standalone_chart_router.get("")
 async def standalone_list_charts(
     project_id: Optional[str] = None,
+    q: Optional[str] = Query(None),
+    facet: Optional[str] = Query("all"),
+    collection_id: Optional[str] = Query(None),
+    data_source_id: Optional[str] = Query(None),
+    limit: Optional[int] = Query(50),
+    offset: Optional[int] = Query(0),
+    detail: Optional[str] = Query("summary"),
     db: AsyncSession = Depends(get_async_session),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
-    from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -3029,18 +3103,131 @@ async def standalone_list_charts(
     if is_ee_enabled() and not project_uuid:
         raise HTTPException(status_code=400, detail="Project ID is required")
 
-    service = ChartService(db)
-    # CE: scope charts by the creating user (project_id is NULL).
-    # EE: scope charts by project (shared across project members).
-    charts = (
-        await service.list_by_project_id(project_uuid)
-        if project_uuid
-        else await service.list_by_user_id(user_uuid)
+    lib = ChartLibraryService(db)
+    # Backward compatible: omit pagination → still paginated with high default when limit unset
+    return await lib.list_library(
+        user_id=user_uuid,
+        project_id=project_uuid,
+        q=q,
+        facet=facet or "all",
+        collection_id=_parse_optional_uuid(collection_id, "collection_id") if collection_id else None,
+        data_source_id=data_source_id,
+        limit=limit if limit is not None else 50,
+        offset=offset or 0,
+        detail=detail or "summary",
     )
-    return {
-        "success": True,
-        "charts": [_serialize_standalone_chart(c) for c in charts],
-    }
+
+
+@standalone_chart_router.get("/collections")
+async def list_chart_collections(
+    project_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:view", project_id=project_id)
+    user_uuid = _parse_optional_uuid(str(user_id), "user_id")
+    project_uuid = _parse_optional_uuid(project_id, "project_id")
+    if not is_ee_enabled():
+        project_uuid = None
+    if is_ee_enabled() and not project_uuid:
+        raise HTTPException(status_code=400, detail="Project ID is required")
+    lib = ChartLibraryService(db)
+    rows = await lib.list_collections(user_id=user_uuid, project_id=project_uuid)
+    return {"success": True, "collections": [_serialize_collection(r) for r in rows]}
+
+
+@standalone_chart_router.post("/collections", status_code=status.HTTP_201_CREATED)
+async def create_chart_collection(
+    project_id: Optional[str] = None,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit", project_id=project_id)
+    user_uuid = _parse_optional_uuid(str(user_id), "user_id")
+    project_uuid = _parse_optional_uuid(project_id, "project_id")
+    if not is_ee_enabled():
+        project_uuid = None
+    if is_ee_enabled() and not project_uuid:
+        raise HTTPException(status_code=400, detail="Project ID is required")
+    lib = ChartLibraryService(db)
+    parent = payload.get("parentId") or payload.get("parent_id")
+    row = await lib.create_collection(
+        name=str(payload.get("name") or "Untitled"),
+        user_id=user_uuid,
+        project_id=project_uuid,
+        parent_id=_parse_optional_uuid(str(parent), "parent_id") if parent else None,
+        sort_order=int(payload.get("sortOrder") or payload.get("sort_order") or 0),
+    )
+    return _serialize_collection(row)
+
+
+@standalone_chart_router.put("/collections/{collection_id}")
+async def update_chart_collection(
+    collection_id: UUID,
+    project_id: Optional[str] = None,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit", project_id=project_id)
+    lib = ChartLibraryService(db)
+    row = await lib.get_collection(collection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if not is_ee_enabled() and str(row.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    parent = payload.get("parentId") if "parentId" in payload else payload.get("parent_id")
+    clear_parent = "parentId" in payload and payload.get("parentId") is None
+    updated = await lib.update_collection(
+        row,
+        name=payload.get("name"),
+        parent_id=_parse_optional_uuid(str(parent), "parent_id") if parent else None,
+        sort_order=payload.get("sortOrder") if payload.get("sortOrder") is not None else payload.get("sort_order"),
+        clear_parent=clear_parent,
+    )
+    return _serialize_collection(updated)
+
+
+@standalone_chart_router.delete("/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_chart_collection(
+    collection_id: UUID,
+    project_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit", project_id=project_id)
+    lib = ChartLibraryService(db)
+    row = await lib.get_collection(collection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    if not is_ee_enabled() and str(row.user_id) != str(user_id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    await lib.delete_collection(row)
 
 
 @standalone_chart_router.post("/execute", status_code=status.HTTP_200_OK)
@@ -3088,9 +3275,60 @@ async def standalone_execute_chart(
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Chart execution failed") from exc
     return {
-        "chart": _serialize_standalone_chart(chart),
+        "chart": _serialize_standalone_chart(chart, detail="full"),
         "data": data,
     }
+
+
+@standalone_chart_router.post("/{chart_id}/touch", status_code=status.HTTP_200_OK)
+async def standalone_touch_chart(
+    chart_id: UUID,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:view")
+    service = ChartService(db)
+    chart = await service.get(chart_id)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    _enforce_standalone_chart_access(chart, user_id)
+    lib = ChartLibraryService(db)
+    chart = await lib.touch_opened(chart)
+    usage, dashboards = await lib.usage_for_chart(chart.id)
+    return _serialize_standalone_chart(chart, usage_count=usage, dashboards=dashboards, detail="summary")
+
+
+@standalone_chart_router.post("/{chart_id}/favorite", status_code=status.HTTP_200_OK)
+async def standalone_favorite_chart(
+    chart_id: UUID,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit")
+    service = ChartService(db)
+    chart = await service.get(chart_id)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    _enforce_standalone_chart_access(chart, user_id)
+    lib = ChartLibraryService(db)
+    chart = await lib.set_favorite(chart, bool(payload.get("isFavorite", payload.get("is_favorite", True))))
+    usage, dashboards = await lib.usage_for_chart(chart.id)
+    return _serialize_standalone_chart(chart, usage_count=usage, dashboards=dashboards, detail="summary")
 
 
 @standalone_chart_router.get("/{chart_id}")
@@ -3100,6 +3338,8 @@ async def standalone_get_chart(
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
     from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -3113,8 +3353,9 @@ async def standalone_get_chart(
         raise HTTPException(status_code=404, detail="Chart not found")
 
     _enforce_standalone_chart_access(chart, user_id)
-
-    return _serialize_standalone_chart(chart)
+    lib = ChartLibraryService(db)
+    usage, dashboards = await lib.usage_for_chart(chart.id)
+    return _serialize_standalone_chart(chart, usage_count=usage, dashboards=dashboards, detail="full")
 
 
 @standalone_chart_router.put("/{chart_id}", status_code=status.HTTP_200_OK)
@@ -3126,6 +3367,8 @@ async def standalone_update_chart(
 ):
     """Update chart data (title, type, query, options)"""
     from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
     user_id = current_user.get("id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -3142,16 +3385,25 @@ async def standalone_update_chart(
 
     chart_payload, _ = _normalize_chart_payload(payload)
     update_data = {k: v for k, v in chart_payload.items() if v is not None}
+    if "collectionId" in payload or "collection_id" in payload:
+        raw = payload.get("collectionId", payload.get("collection_id"))
+        update_data["collection_id"] = _parse_optional_uuid(str(raw), "collection_id") if raw else None
+    if "isFavorite" in payload or "is_favorite" in payload:
+        update_data["is_favorite"] = bool(payload.get("isFavorite", payload.get("is_favorite")))
+    if "tags" in payload and isinstance(payload.get("tags"), list):
+        update_data["tags"] = payload.get("tags")
 
     updated_chart = await service.update(chart, update_data)
     await service.db.commit()
-
-    return _serialize_standalone_chart(updated_chart)
+    lib = ChartLibraryService(db)
+    usage, dashboards = await lib.usage_for_chart(updated_chart.id)
+    return _serialize_standalone_chart(updated_chart, usage_count=usage, dashboards=dashboards, detail="full")
 
 
 @standalone_chart_router.delete("/{chart_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def standalone_delete_chart(
     chart_id: UUID,
+    purge: bool = Query(False, description="Permanently delete instead of moving to trash"),
     db: AsyncSession = Depends(get_async_session),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
@@ -3169,5 +3421,33 @@ async def standalone_delete_chart(
 
     _enforce_standalone_chart_access(chart, user_id)
 
-    await service.delete(chart)
-    await db.commit()
+    if purge:
+        await service.purge(chart)
+    else:
+        await service.delete(chart)
+
+
+@standalone_chart_router.post("/{chart_id}/restore")
+async def standalone_restore_chart(
+    chart_id: UUID,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+):
+    from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:edit")
+
+    service = ChartService(db)
+    chart = await service.get(chart_id)
+    if not chart:
+        raise HTTPException(status_code=404, detail="Chart not found")
+    _enforce_standalone_chart_access(chart, user_id)
+    restored = await service.restore(chart)
+    lib = ChartLibraryService(db)
+    usage, dashboards = await lib.usage_for_chart(restored.id)
+    return _serialize_standalone_chart(restored, usage_count=usage, dashboards=dashboards, detail="full")

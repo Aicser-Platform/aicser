@@ -19,6 +19,12 @@ class KnowledgeSearchRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
 
 
+class KnowledgeDocumentUpdate(BaseModel):
+    filename: Optional[str] = Field(default=None, min_length=1, max_length=512)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class KnowledgeDocumentOut(BaseModel):
     id: str
     data_source_id: str

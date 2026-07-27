@@ -27,11 +27,13 @@
   min-width: 0 !important;
   min-height: 0 !important;
   height: 100vh !important;
+  height: 100dvh !important;
   width: auto !important;
   margin-left: var(--sidebar-width, 256px) !important;
   padding-top: var(--app-header-height, 64px) !important;
   box-sizing: border-box !important;
   transition: margin-left 0.2s ease !important;
+  overflow: hidden !important;
 }
 
 /* ── Fixed sidebar (custom SidebarNav, not Ant Menu) ──────── */
@@ -419,9 +421,22 @@ div.page-container,
   box-sizing: border-box !important;
   padding: 0 !important;
   margin: 0 !important;
+  gap: 0 !important;
 }
 
 .page-content:has(.chat-page-container) {
+  overflow: hidden !important;
+  min-height: 0 !important;
+}
+
+/* Chat column + panel must fill the shell — never grow the page past the viewport */
+.chat-page-container > .chat-page-main,
+.chat-page-container .chat-panel {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
   overflow: hidden !important;
 }
 
@@ -466,8 +481,13 @@ div.page-container,
   .layout-app-shell > .layout-main-column {
     margin-left: 0 !important;
     width: 100% !important;
+    /* Reserve space for fixed MobileBottomNav; content box fills the rest */
     padding-bottom: var(--mobile-bottom-nav-height, 0px) !important;
     height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
   }
 
   .layout-app-header.ant-layout-header,
@@ -480,6 +500,16 @@ div.page-container,
   .layout--mobile-nav .layout-page-content {
     height: 100% !important;
     max-height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Chat: dock composer to bottom of content area (no page-level scroll gap) */
+  .page-content:has(.chat-page-container),
+  .page-content > .chat-page-container,
+  .chat-page-container {
+    overflow: hidden !important;
+    min-height: 0 !important;
   }
 
   .header-shell-chip.ant-btn {

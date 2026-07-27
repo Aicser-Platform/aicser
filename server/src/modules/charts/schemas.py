@@ -105,9 +105,11 @@ class AggregationType(str, Enum):
     AVG = "avg"
     COUNT = "count"
     COUNT_DISTINCT = "count_distinct"
+    DISTINCT_COUNT = "distinct_count"  # canonical UI / v2 token
     MAX = "max"
     MIN = "min"
     SUM = "sum"
+    NONE = "none"
 
 
 class FilterOperator(str, Enum):

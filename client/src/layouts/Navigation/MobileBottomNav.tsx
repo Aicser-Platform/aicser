@@ -115,7 +115,7 @@ export function MobileBottomNav() {
           body: { padding: '8px 0 16px', maxHeight: 'min(70vh, 520px)', overflowY: 'auto' },
           header: { borderBottom: '1px solid var(--ant-color-border-secondary)' },
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <SidebarNav
           items={moreItems}

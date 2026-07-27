@@ -13,6 +13,33 @@ def _conversation_fk():
     return [ForeignKey("conversation.id")] if is_ee_enabled() else []
 
 
+class ChartCollection(Base):
+    """
+    Server-backed folder/collection for Chart Designer library.
+    Table: chart_collections
+    """
+    __tablename__ = "chart_collections"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+        index=True,
+    )
+    name = Column(Text, nullable=False)
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chart_collections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class Chart(Base):
     """
     Charts model matching database schema.
@@ -46,6 +73,18 @@ class Chart(Base):
     # Ownership
     dashboard_id = Column(UUID(as_uuid=True), ForeignKey("dashboards.id"), nullable=True)
     project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
+    # Library organization
+    collection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("chart_collections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    is_favorite = Column(Boolean, nullable=False, server_default=text("false"), index=True)
+    last_opened_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    tags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    is_deleted = Column(Boolean, nullable=False, server_default=text("false"), index=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -24,7 +24,7 @@ import { useFeaturebaseStore } from '@/stores/useFeaturebaseStore';
 import { useRouter } from 'next/navigation';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
-import { getLocaleMeta } from '@/config/locales';
+import { getLocaleMeta, LOCALE_OPTIONS } from '@/config/locales';
 import { fetchApi } from '@/utils/api';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
@@ -61,6 +61,21 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ theme: dark ? 'dark' : 'light' }),
     }).catch(() => {});
+  };
+
+  const handleLocaleChange = async (locale: string) => {
+    if (locale === currentLocale) return;
+    try {
+      await fetchApi('users/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: locale }),
+      });
+      window.dispatchEvent(new CustomEvent('aicser-locale-change', { detail: locale }));
+      message.success(t('language_switched', { language: getLocaleMeta(locale).label }));
+    } catch {
+      message.error(t('language_switch_failed'));
+    }
   };
 
   // Fetch profile and subscription/usage on mount
@@ -335,7 +350,18 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           </span>
         </div>
       ),
-      onClick: () => router.push('/settings?tab=general'),
+      children: LOCALE_OPTIONS.map(({ value, label, nativeName, regionEn }) => ({
+        key: `locale-${value}`,
+        label: (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <LocaleFlagIcon locale={value} width={16} title={`${nativeName} — ${regionEn}`} />
+            {label}
+          </span>
+        ),
+        onClick: () => {
+          void handleLocaleChange(value);
+        },
+      })),
     },
     {
       type: 'divider' as const,

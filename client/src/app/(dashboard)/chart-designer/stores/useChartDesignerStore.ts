@@ -10,6 +10,8 @@ import {
   mapApiChartToDesignerWidget,
   hydrateDesignerWidget,
   shouldFetchDesignerChartData,
+  mergeChartOptions,
+  stripPinFreezeOptions,
 } from '@/components/charts/chartDesignerBridge';
 import { ApiError } from '@/utils/api';
 import {
@@ -171,7 +173,20 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
   updateWidget: (id, updates) =>
     set((state) => ({
-      widgets: state.widgets.map((w) => (w.id === id ? { ...w, ...updates } : w)),
+      widgets: state.widgets.map((w) => {
+        if (w.id !== id) return w;
+        const next = { ...w, ...updates };
+        if (updates.chartOptions) {
+          next.chartOptions = mergeChartOptions(w.chartOptions, updates.chartOptions);
+        }
+        if (updates.chartQuery) {
+          next.chartQuery = mergeChartOptions(
+            (w.chartQuery || {}) as Record<string, unknown>,
+            updates.chartQuery as Record<string, unknown>,
+          );
+        }
+        return next;
+      }),
     })),
 
   removeWidget: (id) =>
@@ -512,9 +527,22 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
     const widget = get().widgets.find((w) => w.id === widgetId);
     if (!widget) return;
 
+    const mergedOptions = updates.chartOptions
+      ? mergeChartOptions(widget.chartOptions, {
+          ...stripPinFreezeOptions(updates.chartOptions),
+          __prefetchedChartData: undefined,
+          __echartsSnapshot: undefined,
+        })
+      : widget.chartOptions;
+
+    const nextUpdates = {
+      ...updates,
+      ...(updates.chartOptions ? { chartOptions: mergedOptions } : {}),
+    };
+
     // 1. Update local state immediately
-    get().updateWidget(widgetId, updates);
-    const updatedWidget = { ...widget, ...updates };
+    get().updateWidget(widgetId, nextUpdates);
+    const updatedWidget = { ...widget, ...nextUpdates, chartOptions: mergedOptions };
 
     // 2. If it's a saved chart, sync to DB
     if (updatedWidget.chartId) {

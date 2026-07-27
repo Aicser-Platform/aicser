@@ -29,10 +29,23 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
     id: 'kpi-row',
     nameKey: 'preset_kpi_row',
     layout: [
-      { x: 0, y: 0, w: 4, h: 3 },
-      { x: 4, y: 0, w: 4, h: 3 },
-      { x: 8, y: 0, w: 4, h: 3 },
+      { x: 0, y: 0, w: 3, h: 3 },
+      { x: 3, y: 0, w: 3, h: 3 },
+      { x: 6, y: 0, w: 3, h: 3 },
+      { x: 9, y: 0, w: 3, h: 3 },
       { x: 0, y: 3, w: 12, h: 6 },
+    ],
+  },
+  {
+    id: 'kpi-rail',
+    nameKey: 'preset_kpi_rail',
+    layout: [
+      { x: 0, y: 0, w: 3, h: 3 },
+      { x: 0, y: 3, w: 3, h: 3 },
+      { x: 0, y: 6, w: 3, h: 3 },
+      { x: 0, y: 9, w: 3, h: 3 },
+      { x: 3, y: 0, w: 9, h: 6 },
+      { x: 3, y: 6, w: 9, h: 6 },
     ],
   },
   {

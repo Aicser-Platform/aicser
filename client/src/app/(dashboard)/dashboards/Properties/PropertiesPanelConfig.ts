@@ -6,7 +6,6 @@
 export interface ChartTypeConfig {
   label: string;
   fields: ChartFieldConfig[];
-  supportsPieSort?: boolean;
 }
 
 export interface ChartFieldConfig {
@@ -18,11 +17,79 @@ export interface ChartFieldConfig {
   options?: SegmentedOption[];
   conditionalRender?: (query: any, chartOptions?: any) => boolean; // Updated to accept chartOptions
   maxCount?: number;
+  /** For select fields that accept multiple values (e.g. drillPath) */
+  mode?: 'multiple' | 'tags';
+  allowClear?: boolean;
+  /** Shown under Build → More options (progressive disclosure for non-technical users). */
+  advanced?: boolean;
 }
 
 export interface SegmentedOption {
   label: string;
   value: string | boolean;
+}
+
+/** Date bucketing for X — matches chart_service._get_date_trunc grains */
+export const X_GRAIN_OPTIONS: SegmentedOption[] = [
+  { label: 'None (raw values)', value: '' },
+  { label: 'Year', value: 'year' },
+  { label: 'Quarter', value: 'quarter' },
+  { label: 'Month', value: 'month' },
+  { label: 'Week', value: 'week' },
+  { label: 'Day', value: 'day' },
+  { label: 'Hour', value: 'hour' },
+];
+
+const X_GRAIN_FIELD: ChartFieldConfig = {
+  key: 'xGrain',
+  type: 'select',
+  label: 'Date grouping',
+  required: false,
+  options: X_GRAIN_OPTIONS,
+  allowClear: true,
+  conditionalRender: (query) => {
+    if (query?.xGrain) return true;
+    const x = String(query?.x || '');
+    return /date|time|year|month|week|day|quarter|hour|timestamp/i.test(x);
+  },
+};
+
+const ADDITIONAL_DIMS_FIELD: ChartFieldConfig = {
+  key: 'drillPath',
+  type: 'select',
+  label: 'Drill-down levels',
+  required: false,
+  mode: 'multiple',
+  allowClear: true,
+  advanced: true,
+};
+
+/** Insert date grain after X and additional dims after legend (or after Y if no legend). */
+function withDimensionShelves(fields: ChartFieldConfig[]): ChartFieldConfig[] {
+  const out: ChartFieldConfig[] = [];
+  let insertedGrain = false;
+  let insertedExtra = false;
+  for (const field of fields) {
+    out.push(field);
+    if (field.key === 'x' && !insertedGrain) {
+      out.push(X_GRAIN_FIELD);
+      insertedGrain = true;
+    }
+    if (field.key === 'groupField' && !insertedExtra) {
+      out.push(ADDITIONAL_DIMS_FIELD);
+      insertedExtra = true;
+    }
+  }
+  if (!insertedExtra) {
+    // table / pie: put after yMetrics
+    const yIdx = out.findIndex((f) => f.key === 'yMetrics');
+    if (yIdx >= 0) {
+      out.splice(yIdx + 1, 0, ADDITIONAL_DIMS_FIELD);
+    } else {
+      out.push(ADDITIONAL_DIMS_FIELD);
+    }
+  }
+  return out;
 }
 
 export interface ComputedMetricSide {
@@ -44,7 +111,7 @@ export interface ComputedMetric {
 export const METRIC_OPTIONS: SegmentedOption[] = [
   { label: "Don't summarize", value: 'none' },
   { label: 'Count', value: 'count' },
-  { label: 'Count (Distinct)', value: 'distinct_count' },
+  { label: 'Count distinct', value: 'distinct_count' },
   { label: 'Sum', value: 'sum' },
   { label: 'Average', value: 'avg' },
   { label: 'Minimum', value: 'min' },
@@ -89,17 +156,17 @@ export const AREA_STACK_MODE_OPTIONS = [
 export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
   pie: {
     label: 'Pie Chart',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'Pie Slice (Field)',
+        label: 'Slice by',
         required: false, // In Power BI you can have just values
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Values',
+        label: 'Numbers',
         required: true,
       },
       {
@@ -108,22 +175,27 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         label: 'Filters',
         required: false,
       },
-    ],
-    supportsPieSort: true,
+      {
+        key: 'metricFilters',
+        type: 'metric-filter-list',
+        label: 'Keep totals…',
+        required: false,
+      },
+    ]),
   },
   donut: {
     label: 'Donut Chart',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'Pie Slice (Field)',
+        label: 'Slice by',
         required: false,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Values',
+        label: 'Numbers',
         required: true,
       },
       {
@@ -135,36 +207,38 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
-    ],
-    supportsPieSort: true,
+    ]),
   },
   bar: {
     label: 'Bar Chart',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'X-axis',
+        label: 'Category',
         required: true,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Y-axis',
+        label: 'Numbers',
         required: true,
+      },
+      {
+        key: 'groupField',
+        type: 'select',
+        label: 'Split by',
+        required: false,
       },
       {
         key: 'yMetricsSecondary',
         type: 'metric-list',
-        label: 'Secondary y-axis (Line Chart)',
+        label: 'Second measure (line)',
         required: false,
-        conditionalRender: (query: any, chartOptions: any) => {
-          // Only show secondary axis when chart type is combo-line
-          return chartOptions?.barChartType === 'combo-line';
-        },
+        advanced: true,
       },
       {
         key: 'filters',
@@ -175,31 +249,38 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
-    ],
+    ]),
   },
   line: {
     label: 'Line Chart',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'X-axis',
+        label: 'Category',
         required: true,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Y-axis',
+        label: 'Numbers',
         required: true,
+      },
+      {
+        key: 'groupField',
+        type: 'select',
+        label: 'Split by',
+        required: false,
       },
       {
         key: 'yMetricsSecondary',
         type: 'metric-list',
-        label: 'Secondary y-axis',
+        label: 'Second measure',
         required: false,
+        advanced: true,
       },
       {
         key: 'filters',
@@ -210,25 +291,31 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
-    ],
+    ]),
   },
   area: {
     label: 'Area Chart',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'X-axis',
+        label: 'Category',
         required: true,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Y-axis',
+        label: 'Numbers',
         required: true,
+      },
+      {
+        key: 'groupField',
+        type: 'select',
+        label: 'Split by',
+        required: false,
       },
       {
         key: 'filters',
@@ -239,25 +326,31 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
-    ],
+    ]),
   },
   table: {
     label: 'Table',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'Grouping (Row)',
+        label: 'Row grouping',
         required: true,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Columns (Metrics)',
+        label: 'Numbers',
         required: true,
+      },
+      {
+        key: 'groupField',
+        type: 'select',
+        label: 'Split by',
+        required: false,
       },
       {
         key: 'filters',
@@ -268,10 +361,10 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
-    ],
+    ]),
   },
   scatter: {
     label: 'Scatter Chart',
@@ -279,21 +372,21 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'xMetrics',
         type: 'metric-list',
-        label: 'X-Axis',
+        label: 'Horizontal (X)',
         required: true,
         maxCount: 1,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Y-Axis',
+        label: 'Vertical (Y)',
         required: true,
         maxCount: 1,
       },
       {
         key: 'legend',
         type: 'select',
-        label: 'Legend',
+        label: 'Color by',
         required: false,
       },
       {
@@ -305,7 +398,7 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
     ],
@@ -322,7 +415,7 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Values',
+        label: 'Numbers',
         required: true,
         maxCount: 1,
       },
@@ -335,30 +428,30 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       {
         key: 'metricFilters',
         type: 'metric-filter-list',
-        label: 'Metric Filters',
+        label: 'Keep totals…',
         required: false,
       },
     ],
   },
   heatmap: {
     label: 'Heatmap',
-    fields: [
+    fields: withDimensionShelves([
       {
         key: 'x',
         type: 'select',
-        label: 'X-axis',
+        label: 'Across (columns)',
         required: true,
       },
       {
         key: 'groupField',
         type: 'select',
-        label: 'Y-axis (rows)',
+        label: 'Down (rows)',
         required: true,
       },
       {
         key: 'yMetrics',
         type: 'metric-list',
-        label: 'Values',
+        label: 'Numbers',
         required: true,
         maxCount: 1,
       },
@@ -368,7 +461,7 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         label: 'Filters',
         required: false,
       },
-    ],
+    ]),
   },
   stat: {
     label: 'KPI / Stat',
@@ -390,6 +483,7 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
   },
   text: {
     label: 'Text Block',
+    // Format: fontSize, textAlign, color (ChartSpecificFields). Inline rich-text toolbar while editing.
     fields: [],
   },
   slicer: {
@@ -513,10 +607,12 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
   },
   divider: {
     label: 'Section Divider',
+    // Format: sectionTitle, uppercase, hideLine, titleSize
     fields: [],
   },
   image: {
     label: 'Image',
+    // Format / inline: imageUrl (URL or data URI), altText, objectFit, borderRadius
     fields: [],
   },
   geo: {
@@ -545,6 +641,7 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
   },
   embed: {
     label: 'Embed / iframe',
+    // Format: url, frameTitle, allowScrolling, borderRadius
     fields: [],
   },
 };

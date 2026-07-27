@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import * as echarts from 'echarts';
 import { buildChartOptions } from './ChartOptionsBuilder';
 import { ChartData, ChartConfig, isDark } from './WidgetRendererConfig';
@@ -28,6 +28,9 @@ type CoreProps = EChartWidgetProps & {
 /**
  * Renders an ECharts chart with automatic resizing.
  * Watermark matches /chat: DOM overlay + useOverlay (no ECharts graphic), plan-gated.
+ *
+ * Reference-line shake fix: options are fingerprinted so identical content does not
+ * re-run setOption; updates disable animation so markLines do not re-tween.
  */
 function EChartWidgetCore({
   type,
@@ -44,6 +47,8 @@ function EChartWidgetCore({
   const echartsInstance = useRef<echarts.ECharts | null>(null);
   const onChartReadyRef = useRef(onChartReady);
   onChartReadyRef.current = onChartReady;
+  const hasPaintedRef = useRef(false);
+  const lastOptionsKeyRef = useRef('');
 
   const [isDarkMode, setIsDarkMode] = React.useState(false);
   const isDashboardWidget = !isDesigner;
@@ -51,8 +56,24 @@ function EChartWidgetCore({
     (config as { __source?: string; suppressWatermark?: boolean }).__source === 'ai_chat' ||
     (config as { suppressWatermark?: boolean }).suppressWatermark;
   const showWatermark = shouldApplyWatermark(planType) && !skipWatermark;
-  /** Chat + chart designer: full center mark; dashboard tiles: softer subtle mark */
   const watermarkSubtle = isDashboardWidget;
+
+  const optionsKey = useMemo(() => {
+    try {
+      return JSON.stringify({
+        type,
+        data,
+        config,
+        isDesigner,
+        isDashboardWidget,
+        showWatermark,
+        planType,
+        isDarkMode,
+      });
+    } catch {
+      return `${type}-${Date.now()}`;
+    }
+  }, [type, data, config, isDesigner, isDashboardWidget, showWatermark, planType, isDarkMode]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -60,8 +81,33 @@ function EChartWidgetCore({
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
     setIsDarkMode(isDark());
-
     return () => observer.disconnect();
+  }, []);
+
+  // Init + resize observer once (not on every options rebuild — that caused jitter).
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el) return;
+
+    if (!echartsInstance.current) {
+      echartsInstance.current = echarts.init(el, null, { renderer: 'canvas' });
+    }
+
+    let raf = 0;
+    const scheduleResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => echartsInstance.current?.resize());
+    };
+    const onWin = () => scheduleResize();
+    window.addEventListener('resize', onWin);
+    const resizeObserver = new ResizeObserver(() => scheduleResize());
+    resizeObserver.observe(el);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onWin);
+      resizeObserver.disconnect();
+    };
   }, []);
 
   useEffect(() => {
@@ -74,10 +120,11 @@ function EChartWidgetCore({
     if (!hasData) return;
 
     if (!echartsInstance.current) {
-      echartsInstance.current = echarts.init(chartRef.current, null, {
-        renderer: 'canvas',
-      });
+      echartsInstance.current = echarts.init(chartRef.current, null, { renderer: 'canvas' });
     }
+
+    if (lastOptionsKeyRef.current === optionsKey) return;
+    lastOptionsKeyRef.current = optionsKey;
 
     let options = buildChartOptions(type, data, {
       ...config,
@@ -87,32 +134,28 @@ function EChartWidgetCore({
     if (showWatermark) {
       options = addWatermarkToChart(options, planType, { isDark: isDarkMode, useOverlay: true });
     }
-    // Clear any active tooltip before a notMerge setOption. ECharts otherwise tries to
-    // restore/re-show the tooltip against freshly-rebuilt internals, which can throw
-    // "can't access property innerHTML, el is null" (TooltipHTMLContent) — reproducible
-    // when the chart re-renders (e.g. live preview) while the pointer is over a slice.
+
+    const firstPaint = !hasPaintedRef.current;
+    hasPaintedRef.current = true;
+
     echartsInstance.current.dispatchAction({ type: 'hideTip' });
-    echartsInstance.current.setOption(options, { notMerge: true, lazyUpdate: false });
+    // First paint may animate in; subsequent updates must not re-animate markLines.
+    // lazyUpdate:false avoids tooltip getRawIndex crashes while zrender shapes are stale
+    // (common when toggling overlays or opening View Full).
+    echartsInstance.current.setOption(
+      {
+        ...options,
+        animation: firstPaint,
+        animationDurationUpdate: 0,
+        stateAnimation: { duration: 0 },
+      },
+      { notMerge: true, lazyUpdate: false },
+    );
 
     if (onChartReadyRef.current) {
       onChartReadyRef.current(echartsInstance.current);
     }
-
-    const scheduleResize = () => {
-      requestAnimationFrame(() => echartsInstance.current?.resize());
-    };
-
-    const handleResize = () => scheduleResize();
-    window.addEventListener('resize', handleResize);
-
-    const resizeObserver = new ResizeObserver(() => scheduleResize());
-    resizeObserver.observe(chartRef.current);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      resizeObserver.disconnect();
-    };
-  }, [type, data, config, isDarkMode, isDesigner, isDashboardWidget, showWatermark, planType]);
+  }, [optionsKey, type, data, config, isDarkMode, isDesigner, isDashboardWidget, showWatermark, planType]);
 
   useEffect(() => {
     if (!echartsInstance.current || !crossFilterField) return;
@@ -121,8 +164,18 @@ function EChartWidgetCore({
 
   useEffect(() => {
     return () => {
-      echartsInstance.current?.dispose();
+      const inst = echartsInstance.current;
+      if (inst) {
+        try {
+          inst.dispatchAction({ type: 'hideTip' });
+        } catch {
+          /* ignore */
+        }
+        inst.dispose();
+      }
       echartsInstance.current = null;
+      hasPaintedRef.current = false;
+      lastOptionsKeyRef.current = '';
     };
   }, []);
 

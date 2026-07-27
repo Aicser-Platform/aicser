@@ -13,6 +13,10 @@ vi.mock('@/hooks/useAi', () => ({
   useGenerateSql: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock('@/components/ai/ModelSelector/ModelSelector', () => ({
+  ModelSelector: () => null,
+}));
+
 describe('NL2SqlPromptBar', () => {
   beforeEach(() => vi.clearAllMocks());
 

@@ -22,6 +22,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getChatHref, isEnterpriseEdition } from '@/utils/appPaths';
 import { DashboardPageHeader } from '@/components/layout/DashboardPageShell';
 
+/** Feed publication moderation queue — hidden until re-enabled. */
+const SHOW_FEED_APPROVALS_UI = false;
+
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useFeedFiltersStore } from '@/stores/useFeedFiltersStore';
 import FeedFilters from './components/FeedFilters';
@@ -110,7 +113,7 @@ const SocialFeedPage: React.FC = () => {
   );
 
   const { approvalQueue, canModerateApprovals, accessResolved: approvalAccessResolved, isLoading: loadingApprovals } =
-    useApprovalQueueQuery();
+    useApprovalQueueQuery({ enabled: SHOW_FEED_APPROVALS_UI });
   const approveMutation = useApprovePublicationMutation();
   const rejectMutation = useRejectPublicationMutation();
 
@@ -478,7 +481,7 @@ const SocialFeedPage: React.FC = () => {
                 </div>
               )}
 
-              {approvalAccessResolved && canModerateApprovals && (
+              {SHOW_FEED_APPROVALS_UI && approvalAccessResolved && canModerateApprovals && (
                 <div className="mb-6 rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <h2 className="text-base font-semibold text-[var(--ant-color-text)] m-0">
@@ -705,43 +708,45 @@ const SocialFeedPage: React.FC = () => {
           setDiscoveryOpen(false);
         }}
       />
-      <Modal
-        title={
-          <div className="flex items-center gap-2 text-[var(--ant-color-error)]">
-            <span className="text-lg font-semibold text-[var(--ant-color-text)] border-b border-[var(--ant-color-border-secondary)] pb-2 block w-full mb-2">
-              {t('reject_publication')}
-            </span>
-          </div>
-        }
-        open={Boolean(rejectTargetId)}
-        okText={t('reject')}
-        okType="danger"
-        okButtonProps={{
-          className: 'bg-[var(--ant-color-error)] hover:bg-[var(--ant-color-error-hover)] h-9 font-medium shadow-sm',
-        }}
-        cancelButtonProps={{ className: 'h-9 font-medium hover:bg-[var(--ant-color-bg-layout)] transition-colors' }}
-        confirmLoading={rejectMutation.isPending}
-        onCancel={closeRejectModal}
-        onOk={handleRejectPublication}
-        className="rounded-xl overflow-hidden"
-      >
-        <p className="text-sm font-medium text-[var(--ant-color-text)] mb-2 mt-4">{t('reason_for_rejection')}</p>
-        <Input.TextArea
-          autoSize={{ minRows: 3, maxRows: 6 }}
-          value={rejectReason}
-          maxLength={500}
-          onChange={(event) => setRejectReason(event.target.value)}
-          placeholder={t('reason_rejection_placeholder')}
-          className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-error)] hover:border-[var(--ant-color-border-secondary)] text-sm py-2 px-3"
-        />
-        <div
-          className={`text-right mt-1.5 text-xs ${
-            rejectReason.length > 450 ? 'text-[var(--ant-color-error)]' : 'text-[var(--ant-color-text-description)]'
-          }`}
+      {SHOW_FEED_APPROVALS_UI ? (
+        <Modal
+          title={
+            <div className="flex items-center gap-2 text-[var(--ant-color-error)]">
+              <span className="text-lg font-semibold text-[var(--ant-color-text)] border-b border-[var(--ant-color-border-secondary)] pb-2 block w-full mb-2">
+                {t('reject_publication')}
+              </span>
+            </div>
+          }
+          open={Boolean(rejectTargetId)}
+          okText={t('reject')}
+          okType="danger"
+          okButtonProps={{
+            className: 'bg-[var(--ant-color-error)] hover:bg-[var(--ant-color-error-hover)] h-9 font-medium shadow-sm',
+          }}
+          cancelButtonProps={{ className: 'h-9 font-medium hover:bg-[var(--ant-color-bg-layout)] transition-colors' }}
+          confirmLoading={rejectMutation.isPending}
+          onCancel={closeRejectModal}
+          onOk={handleRejectPublication}
+          className="rounded-xl overflow-hidden"
         >
-          {rejectReason.length}/500
-        </div>
-      </Modal>
+          <p className="text-sm font-medium text-[var(--ant-color-text)] mb-2 mt-4">{t('reason_for_rejection')}</p>
+          <Input.TextArea
+            autoSize={{ minRows: 3, maxRows: 6 }}
+            value={rejectReason}
+            maxLength={500}
+            onChange={(event) => setRejectReason(event.target.value)}
+            placeholder={t('reason_rejection_placeholder')}
+            className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-error)] hover:border-[var(--ant-color-border-secondary)] text-sm py-2 px-3"
+          />
+          <div
+            className={`text-right mt-1.5 text-xs ${
+              rejectReason.length > 450 ? 'text-[var(--ant-color-error)]' : 'text-[var(--ant-color-text-description)]'
+            }`}
+          >
+            {rejectReason.length}/500
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 };

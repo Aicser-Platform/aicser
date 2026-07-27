@@ -1,8 +1,18 @@
-/** Heuristic chart type recommendations based on field types. */
+/** Heuristic chart type recommendations based on field types (aligned with chat pivot core). */
 export type ColumnHint = { name: string; type?: string };
 
 const DATE_TYPES = /date|time|timestamp|datetime/i;
 const NUMERIC_TYPES = /int|float|double|decimal|number|numeric|real|money/i;
+
+export type RecommendedChartType =
+  | 'line'
+  | 'bar'
+  | 'area'
+  | 'pie'
+  | 'donut'
+  | 'scatter'
+  | 'table'
+  | 'stat';
 
 export function inferColumnKind(col?: ColumnHint): 'date' | 'numeric' | 'category' {
   const t = (col?.type || '').toLowerCase();
@@ -15,16 +25,17 @@ export function inferColumnKind(col?: ColumnHint): 'date' | 'numeric' | 'categor
 export function recommendChartTypes(
   xField?: string,
   yFields: string[] = [],
-  columns: ColumnHint[] = []
-): Array<'line' | 'bar' | 'area' | 'pie' | 'scatter' | 'table'> {
+  columns: ColumnHint[] = [],
+): RecommendedChartType[] {
   const xCol = columns.find((c) => c.name === xField);
   const xKind = inferColumnKind(xCol);
   const yKinds = yFields.map((f) => inferColumnKind(columns.find((c) => c.name === f)));
 
   if (!xField && yFields.length === 0) return ['bar', 'table'];
+  if (!xField && yFields.length === 1) return ['stat', 'bar', 'table'];
   if (xKind === 'date') return ['line', 'area', 'bar'];
   if (yKinds.filter((k) => k === 'numeric').length >= 2) return ['scatter', 'line', 'bar'];
-  if (xKind === 'category' && yFields.length <= 1) return ['bar', 'pie', 'table'];
+  if (xKind === 'category' && yFields.length <= 1) return ['bar', 'pie', 'donut', 'table'];
   return ['bar', 'line', 'table'];
 }
 

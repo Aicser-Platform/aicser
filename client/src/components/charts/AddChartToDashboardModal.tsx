@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Alert, Input, Modal, Select } from 'antd';
+import { Alert, Input, Modal } from 'antd';
 import { useTranslations } from 'next-intl';
 import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
+import { DashboardLibrarySelect } from '@/app/(dashboard)/dashboards/components/DashboardLibrarySelect';
 
 type AddChartToDashboardModalProps = {
   open: boolean;
@@ -33,14 +34,9 @@ export function AddChartToDashboardModal({
   subtitle,
 }: AddChartToDashboardModalProps) {
   const t = useTranslations('chat');
-  const noDashboards = dashboards.length === 0;
+  const noDashboards = dashboards.length === 0 && !targetDashboardId;
   const showCreateForm =
-    noDashboards || creatingNew || targetDashboardId === CREATE_NEW_DASHBOARD_ID;
-
-  const selectOptions = [
-    ...dashboards.map((d) => ({ value: d.id, label: d.label })),
-    { value: CREATE_NEW_DASHBOARD_ID, label: t('pin_dashboard_create_new') },
-  ];
+    creatingNew || targetDashboardId === CREATE_NEW_DASHBOARD_ID;
 
   return (
     <Modal
@@ -55,26 +51,28 @@ export function AddChartToDashboardModal({
       }
       confirmLoading={confirmLoading}
     >
-      {noDashboards ? (
+      {noDashboards && !showCreateForm ? (
         <Alert
           type="info"
           showIcon
           message={t('pin_dashboard_no_dashboards')}
           style={{ marginBottom: 12 }}
         />
-      ) : (
-        <Select
-          style={{ width: '100%' }}
-          placeholder={t('pin_dashboard_select')}
+      ) : null}
+
+      {!showCreateForm || !noDashboards ? (
+        <DashboardLibrarySelect
           value={
             targetDashboardId === CREATE_NEW_DASHBOARD_ID
               ? CREATE_NEW_DASHBOARD_ID
-              : (targetDashboardId ?? undefined)
+              : targetDashboardId
           }
-          onChange={onTargetChange}
-          options={selectOptions}
+          onChange={(id) => onTargetChange(id || CREATE_NEW_DASHBOARD_ID)}
+          placeholder={t('pin_dashboard_select')}
+          defaultFacet="recent"
+          extraOptions={[{ value: CREATE_NEW_DASHBOARD_ID, label: t('pin_dashboard_create_new') }]}
         />
-      )}
+      ) : null}
 
       {showCreateForm ? (
         <Input

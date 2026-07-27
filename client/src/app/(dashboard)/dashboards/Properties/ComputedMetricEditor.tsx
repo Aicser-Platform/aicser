@@ -128,7 +128,7 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
 
   return (
     <Modal
-      title="fx Computed Metric"
+      title="fx Computed metric (ratio)"
       open={open}
       onOk={handleSave}
       onCancel={onCancel}
@@ -137,6 +137,9 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
       width={420}
       destroyOnHidden
     >
+      <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
+        Ratio only: (numerator ÷ denominator), optionally ×100 for a percent. Not free-form math.
+      </div>
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
         <div>
           <Text style={{ fontSize: 11, fontWeight: 600 }}>Metric Name</Text>

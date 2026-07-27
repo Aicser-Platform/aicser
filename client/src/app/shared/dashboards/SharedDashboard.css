@@ -6,6 +6,8 @@
   --shared-dot-color: rgba(0, 0, 0, 0.05);
   --shared-header-bg: var(--studio-bg, var(--color-bg-base, #f3f4f6));
   min-height: 100vh;
+  height: auto;
+  overflow: visible;
   background-color: var(--studio-bg, var(--color-bg-base, #f3f4f6));
   background-image: radial-gradient(var(--shared-dot-color) 1px, transparent 1px);
   background-size: 24px 24px;
@@ -143,20 +145,36 @@
   margin-left: 4px;
 }
 
-/* Main content */
+/* Main content — document scroll (not studio flex trap) */
 .shared-dashboard-content {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   padding: 12px 16px 48px;
   max-width: 100%;
   min-width: 0;
-  min-height: 0;
+  min-height: auto;
+  overflow: visible;
 }
 
 .shared-dashboard-content .dashboard-workspace-viewer {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+/* Studio workspace rules use overflow:hidden for in-app canvas; viewer is full-page */
+.shared-dashboard-container .dashboard-workspace,
+.shared-dashboard-container .dashboard-workspace-main {
+  flex: 1 1 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.shared-dashboard-container .dashboard-canvas-wrapper,
+.shared-dashboard-container .dashboard-viewer-canvas {
+  min-height: auto !important;
+  overflow: visible;
 }
 
 .shared-dashboard-toolbar {
@@ -172,11 +190,19 @@
   border: 1px solid var(--studio-border, var(--color-border));
   background: var(--studio-card-bg, var(--color-bg-container));
   box-shadow: var(--studio-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shared-dashboard-filters .report-filter-toolbar {
+  border: none;
+  background: transparent;
+  padding: 0;
+  min-height: 44px;
 }
 
 .dashboard-canvas-wrapper {
   margin-top: 4px;
-  min-height: calc(100vh - 180px);
 }
 
 /* Widget cards inherit studio styles; ensure parity in shared context */
@@ -304,6 +330,17 @@
   .shared-dashboard-header {
     flex-wrap: wrap;
     padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .shared-dashboard-header-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 100%;
+  }
+
+  .shared-dashboard-title-block {
+    max-width: min(100%, calc(100vw - 120px));
   }
 
   .shared-dashboard-header-divider {
@@ -466,22 +503,50 @@
     display: none !important;
   }
 
+  @page {
+    size: landscape;
+    margin: 6mm;
+  }
+
+  /* Light document sheet — match Studio print (industry paper standard) */
   .shared-dashboard-container {
-    background: #fff !important;
+    background: #ffffff !important;
     background-image: none !important;
+    color: #24292f !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .shared-dashboard-content {
     padding: 0 !important;
+    overflow: visible !important;
   }
 
   .widget-card {
     break-inside: avoid;
     box-shadow: none !important;
-    border: 1px solid #ddd !important;
+    border: 1px solid #e5e7eb !important;
+    background: #ffffff !important;
+    color: #24292f !important;
+  }
+
+  .widget-card.widget-type-text {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .aiser-watermark-overlay {
+    display: none !important;
   }
 
   .dashboard-viewer-canvas {
     min-height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    background: #ffffff !important;
   }
 }

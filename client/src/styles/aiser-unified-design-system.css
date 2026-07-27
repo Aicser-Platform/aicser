@@ -515,6 +515,16 @@
   color: var(--ant-color-primary) !important;
 }
 
+.analysis-data-tabs.ant-tabs .ant-tabs-content-holder,
+.analysis-data-tabs.ant-tabs .ant-tabs-tabpane {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.analysis-data-tabs.ant-tabs .ant-tabs-content-holder {
+  overflow-x: hidden;
+}
+
 .workspace-inline-tabs.query-editor-query-tabs.ant-tabs > .ant-tabs-nav {
   margin: 0 !important;
 }
@@ -582,8 +592,23 @@
    (colorBgElevated, colorBorder). Forcing padding/height here previously
    stretched short modals (flex:1 on the body) and added extra outer margin,
    making every modal feel oversized regardless of its actual content. */
+
+/* Adaptive viewport centering for all Ant Design modals (incl. Modal.info/confirm).
+   Mirrors AntD `centered` without requiring every call site to set the prop.
+   Content height stays intrinsic — we only center the dialog in the viewport. */
 .ant-modal-wrap {
   z-index: 1050 !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+}
+
+.ant-modal-wrap .ant-modal {
+  top: 0 !important;
+  padding-bottom: 0 !important;
+  margin: 16px auto !important;
+  max-width: min(100%, calc(100vw - 32px));
 }
 
 .ant-modal-mask {

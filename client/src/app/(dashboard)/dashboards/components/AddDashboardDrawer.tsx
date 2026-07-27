@@ -97,7 +97,7 @@ export function AddDashboardDrawer({
       width={360}
       open={open}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
     >
       {tab === 'blocks' ? (
         <Input

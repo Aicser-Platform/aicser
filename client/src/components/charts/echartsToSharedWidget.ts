@@ -1,6 +1,14 @@
 import type { ChartData } from '@/app/(dashboard)/dashboards/widgets/WidgetRendererConfig';
 import { hydrateChartConfigFromQueryResult, rawChartConfig } from '@/components/charts/hydrateChartConfig';
+import {
+  categoriesFromEchartsConfig,
+  extractBarOrientationOptions,
+  measureHintsFromEchartsConfig,
+  promoteChartQueryToMultiMetrics,
+} from '@/components/charts/normalizeMultiMetricChartQuery';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
+
+import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
 
 export type SharedChartProps = {
   chartType: string;
@@ -9,7 +17,11 @@ export type SharedChartProps = {
   chartQuery: Record<string, unknown>;
 };
 
-const SUPPORTED = new Set(['bar', 'line', 'area', 'pie', 'donut', 'scatter', 'funnel', 'heatmap']);
+const SUPPORTED = new Set<string>([
+  ...DASHBOARD_SWITCHABLE_CHART_TYPES,
+  'bar_race',
+  'line_race',
+]);
 
 const CHART_ANIMATION_DEFAULTS = {
   animation: true,
@@ -28,7 +40,49 @@ function rawConfig(config: unknown): Record<string, unknown> {
   return rawChartConfig(config);
 }
 
+function extractStatValue(cfg: Record<string, unknown>): number | null {
+  const series = cfg.series as Array<Record<string, unknown>> | undefined;
+  const first = series?.[0];
+  if (!first) return null;
+  const raw = first.data;
+  if (Array.isArray(raw) && raw.length > 0) {
+    const d0 = raw[0];
+    if (d0 && typeof d0 === 'object' && 'value' in (d0 as object)) {
+      const n = Number((d0 as { value: unknown }).value);
+      return Number.isFinite(n) ? n : null;
+    }
+    const n = Number(d0);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (typeof first.value === 'number') return first.value;
+  return null;
+}
+
+function buildStatFromConfig(cfg: Record<string, unknown>): SharedChartProps | null {
+  const value = extractStatValue(cfg);
+  if (value == null) return null;
+  const titleObj = cfg.title;
+  const title =
+    typeof titleObj === 'object' && titleObj !== null
+      ? String((titleObj as { text?: string }).text || '')
+      : String(titleObj || '');
+  const meta = (cfg._chart_query as Record<string, unknown>) || {};
+  return {
+    chartType: 'stat',
+    chartData: { value },
+    chartOptions: {
+      title: title || 'KPI',
+      format: 'number',
+      showTrend: false,
+      layout: 'default',
+      ...CHART_ANIMATION_DEFAULTS,
+    },
+    chartQuery: meta,
+  };
+}
+
 function inferChartType(cfg: Record<string, unknown>): string | null {
+  if (cfg.aiserWidgetType === 'stat') return 'stat';
   const series = cfg.series as Array<Record<string, unknown>> | undefined;
   const first = series?.[0];
   if (!first?.type) return null;
@@ -40,6 +94,7 @@ function inferChartType(cfg: Record<string, unknown>): string | null {
   }
   if (chartType === 'heatmap') return 'heatmap';
   if (cfg.visualMap && chartType === 'scatter') return 'heatmap';
+  if (chartType === 'gauge' || chartType === 'stat') return 'stat';
   return SUPPORTED.has(chartType) ? chartType : null;
 }
 
@@ -146,9 +201,15 @@ function buildFromQueryResult(
     (message as { ai_metadata?: { chart_query?: Record<string, unknown> } })?.ai_metadata?.chart_query ||
     {};
 
-  let xKey = String(meta.x || meta.xField || meta.x_axis || '');
-  let yKey = String(meta.yMetric || meta.yField || meta.metric || '');
-  const groupKeyRaw = String(meta.group || meta.groupField || meta.groupBy || '');
+  const promoted = promoteChartQueryToMultiMetrics(meta as Record<string, unknown>, {
+    queryResult: rows,
+    measureHints: measureHintsFromEchartsConfig(
+      (message as { echartsConfig?: Record<string, unknown> })?.echartsConfig,
+    ),
+  });
+
+  let xKey = String(promoted.x || meta.x || meta.xField || meta.x_axis || '');
+  const groupKeyRaw = String(promoted.groupField || meta.group || meta.groupField || meta.groupBy || '');
   const groupKey = groupKeyRaw && keys.includes(groupKeyRaw) && groupKeyRaw !== xKey ? groupKeyRaw : '';
 
   if (!xKey || !keys.includes(xKey)) {
@@ -157,13 +218,33 @@ function buildFromQueryResult(
       keys.find((k) => k !== groupKey && !/^(id|_id)$/i.test(k)) ||
       keys[0];
   }
-  if (!yKey || !keys.includes(yKey)) {
+
+  const yMetrics =
+    promoted.yMetrics?.filter((m) => m.field && keys.includes(m.field) && m.field !== xKey && m.field !== groupKey) ||
+    [];
+  let yKey = yMetrics[0]?.field || String(meta.yMetric || meta.yField || meta.metric || '');
+  if (!yKey || !keys.includes(yKey) || isAggModeToken(yKey)) {
     yKey =
       keys.find((k) => k !== xKey && k !== groupKey && typeof rows[0][k] === 'number') ||
       keys.find((k) => k !== xKey && k !== groupKey && !Number.isNaN(Number(rows[0][k]))) ||
       keys[1];
   }
   if (!xKey || !yKey) return null;
+
+  const chartQuery = promoteChartQueryToMultiMetrics(
+    {
+      ...meta,
+      x: xKey,
+      yMetrics: yMetrics.length
+        ? yMetrics
+        : [{ field: yKey, aggregation: 'none' }],
+      groupField: groupKey || undefined,
+      group: groupKey || undefined,
+      yMetric: 'none',
+      aggregate: meta.aggregate || 'none',
+    },
+    { queryResult: rows },
+  );
 
   // The original chart may have been grouped (e.g. "revenue by month, split by region").
   // Re-derive from the raw rows using that same grouping rather than flattening to one
@@ -193,7 +274,7 @@ function buildFromQueryResult(
         chartType,
         chartData: { x: xOrder, y: series[0]?.data ?? [], series },
         chartOptions: {},
-        chartQuery: { x: xKey, yMetric: yKey, group: groupKey, aggregate: meta.aggregate || 'sum' },
+        chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: groupKey },
       };
     }
 
@@ -203,30 +284,55 @@ function buildFromQueryResult(
     const collapsed = xOrder.map((x) => {
       const perX = sums.get(x);
       let total = 0;
-      perX?.forEach((v) => { total += v; });
+      perX?.forEach((v) => {
+        total += v;
+      });
       return total;
     });
     return {
       chartType,
       chartData: { x: xOrder, y: collapsed, series: [{ name: String(yKey), data: collapsed }] },
       chartOptions: {},
-      chartQuery: { x: xKey, yMetric: yKey, aggregate: meta.aggregate || 'sum' },
+      chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: undefined },
     };
   }
 
+  const measureFields =
+    (chartQuery.yMetrics || [])
+      .map((m) => m.field)
+      .filter((f) => f && keys.includes(f) && f !== xKey) || [yKey];
+
+  // Single-series chart types keep the first measure only
+  const fieldsForType =
+    chartType === 'pie' || chartType === 'donut' || chartType === 'funnel' || chartType === 'stat'
+      ? measureFields.slice(0, 1)
+      : measureFields;
+
   const x = rows.map((r) => String(r[xKey] ?? ''));
-  const data = rows.map((r) => Number(r[yKey]) || 0);
+  const series = fieldsForType.map((field) => ({
+    name: String(field),
+    data: rows.map((r) => Number(r[field]) || 0),
+  }));
 
   return {
     chartType,
     chartData: {
       x,
-      y: data,
-      series: [{ name: String(yKey), data }],
+      y: series[0]?.data || [],
+      series,
     },
     chartOptions: {},
-    chartQuery: { x: xKey, yMetric: yKey, aggregate: meta.aggregate || 'sum' },
+    chartQuery: {
+      ...chartQuery,
+      yMetrics: fieldsForType.map((field) => ({ field, aggregation: 'none' })),
+    },
   };
+}
+
+function isAggModeToken(value: string): boolean {
+  return ['count', 'sum', 'none', 'distinct_count', 'avg', 'min', 'max', 'mean'].includes(
+    value.trim().toLowerCase(),
+  );
 }
 
 function buildScatterFromEchartsConfig(cfg: Record<string, unknown>): SharedChartProps | null {
@@ -371,6 +477,29 @@ function buildFromDatasetEncode(cfg: Record<string, unknown>, chartType: string)
 
   if (!mappedSeries.length || !x.length) return null;
 
+  const measureFields = mappedSeries
+    .map((s, i) => {
+      const enc = series[i]?.encode as Record<string, unknown> | undefined;
+      let metricKey = encodeDimensionName(enc, 'y') || yKey;
+      if (metricKey && !Number.isNaN(Number(metricKey))) {
+        metricKey = dimensions[Number(metricKey)] || metricKey;
+      }
+      return metricKey;
+    })
+    .filter(Boolean) as string[];
+
+  const chartQuery = promoteChartQueryToMultiMetrics(
+    {
+      x: xKey,
+      yMetrics: uniqueMeasureFields(measureFields).map((field) => ({
+        field,
+        aggregation: 'none',
+      })),
+      yMetric: 'none',
+    },
+    { queryResult: rows, measureHints: measureHintsFromEchartsConfig(cfg) },
+  );
+
   return {
     chartType,
     chartData: {
@@ -378,9 +507,25 @@ function buildFromDatasetEncode(cfg: Record<string, unknown>, chartType: string)
       y: mappedSeries[0]?.data || [],
       series: mappedSeries,
     },
-    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true },
-    chartQuery: { x: xKey, yMetric: yKey },
+    chartOptions: {
+      ...CHART_ANIMATION_DEFAULTS,
+      animation: cfg.animation ?? true,
+      ...extractBarOrientationOptions(cfg),
+    },
+    chartQuery: chartQuery as Record<string, unknown>,
   };
+}
+
+function uniqueMeasureFields(fields: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const f of fields) {
+    const key = String(f || '').trim();
+    if (!key || seen.has(key.toLowerCase())) continue;
+    seen.add(key.toLowerCase());
+    out.push(key);
+  }
+  return out;
 }
 
 function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string): SharedChartProps | null {
@@ -406,7 +551,8 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
   }
 
   const xAxis = Array.isArray(cfg.xAxis) ? (cfg.xAxis[0] as Record<string, unknown>) : (cfg.xAxis as Record<string, unknown>);
-  const xRaw = (xAxis?.data as unknown[]) || [];
+  const categories = categoriesFromEchartsConfig(cfg);
+  const xRaw = categories.length ? categories : ((xAxis?.data as unknown[]) || []);
   const x = xRaw.map((v) => String(v ?? ''));
 
   const mappedSeries = series
@@ -431,11 +577,23 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
     series: mappedSeries,
   };
 
+  const meta = (cfg._chart_query as Record<string, unknown>) || {};
+  const chartQuery = promoteChartQueryToMultiMetrics(meta, {
+    measureHints: [
+      ...measureHintsFromEchartsConfig(cfg),
+      ...mappedSeries.map((s) => s.name),
+    ],
+  });
+
   return {
     chartType,
     chartData,
-    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true },
-    chartQuery: {},
+    chartOptions: {
+      ...CHART_ANIMATION_DEFAULTS,
+      animation: cfg.animation ?? true,
+      ...extractBarOrientationOptions(cfg),
+    },
+    chartQuery: chartQuery as Record<string, unknown>,
   };
 }
 
@@ -453,6 +611,12 @@ export function resolveSharedChartProps(
   const chartType = inferChartType(cfg);
   if (!chartType) return null;
 
+  if (chartType === 'stat') {
+    const fromStat = buildStatFromConfig(cfg);
+    if (fromStat) return tagChatSource(fromStat);
+    // Fall through to query rows if gauge/stat series empty
+  }
+
   // Prefer populated ECharts option over re-inferring columns from query rows
   const series = (cfg.series as Array<Record<string, unknown>>) || [];
   const hasPopulatedSeries = series.some((s) => {
@@ -465,12 +629,30 @@ export function resolveSharedChartProps(
     Array.isArray((cfg.dataset as Record<string, unknown>).source) &&
     ((cfg.dataset as Record<string, unknown>).source as unknown[]).length > 0;
 
-  if (hasPopulatedSeries || hasDatasetSource) {
+  if (chartType !== 'stat' && (hasPopulatedSeries || hasDatasetSource)) {
     const fromCfg = buildFromEchartsConfig(cfg, chartType);
     if (fromCfg) return tagChatSource(fromCfg);
   }
 
   if (queryResult && queryResult.length > 0) {
+    if (chartType === 'stat' && queryResult.length === 1) {
+      const row = queryResult[0];
+      const numerics = Object.keys(row).filter((k) => isNumericCellValue(row[k]));
+      const yKey =
+        String(
+          ((message as { executionMetadata?: { chart_query?: { yMetric?: string } } })?.executionMetadata
+            ?.chart_query?.yMetric ||
+            '') as string,
+        ) || numerics[0];
+      if (yKey && row[yKey] != null) {
+        return tagChatSource({
+          chartType: 'stat',
+          chartData: { value: Number(row[yKey]) },
+          chartOptions: { title: yKey, format: 'number', showTrend: false, layout: 'default' },
+          chartQuery: { yMetric: yKey },
+        });
+      }
+    }
     const fromRows = buildFromQueryResult(queryResult, chartType, message);
     if (fromRows) {
       fromRows.chartOptions = {

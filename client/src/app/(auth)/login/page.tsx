@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Alert, Button, Form, Input, Modal, Divider, Segmented } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -65,8 +66,22 @@ export default function LoginPage() {
   // Supabase email-confirmation / magic-link redirects land back here with the
   // session already established client-side by supabase-js — exchange it for
   // an Aicser session instead of leaving the user staring at the login form.
+  // Only run when the URL actually has callback material; otherwise a leftover
+  // Supabase session after logout would auto-login again.
   useEffect(() => {
     if (!IS_EE || isAuthenticated) return;
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const hash = (url.hash || '').replace(/^#/, '');
+    const hp = hash ? new URLSearchParams(hash) : null;
+    const hasCallback =
+      url.searchParams.has('code') ||
+      (hp != null &&
+        (hp.has('access_token') ||
+          hp.has('refresh_token') ||
+          ['recovery', 'signup', 'magiclink', 'invite'].includes(hp.get('type') || '')));
+    if (!hasCallback) return;
+
     import('@/ee').then(async (mod) => {
       const completed = await mod.completeSupabaseRedirectSession();
       if (completed) {
@@ -309,7 +324,7 @@ export default function LoginPage() {
           <p className="branding-title">{t('welcome_title')}</p>
           <p className="branding-subtitle">{t('welcome_subtitle')}</p>
           <p className="branding-subtitle">
-            <a href="/discover">{t('explore_discover')}</a>
+            <Link href="/discover">{t('explore_discover')}</Link>
           </p>
           <Image
             src="/Aiser Demo Gif.gif"

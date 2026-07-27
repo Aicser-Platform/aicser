@@ -233,13 +233,15 @@
   transition: all var(--transition-fast, 0.2s) !important;
 }
 
-/* Number cells */
+/* Number cells — tabular nums, same sans as body (widget overrides beat this) */
 .table-cell-number,
-.ant-table-cell:has(.ant-typography-secondary),
-.ant-table-cell:has([style*="mono"]),
 .ant-table-cell-align-right {
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace) !important;
   font-variant-numeric: tabular-nums !important;
+}
+
+.table-widget-container .table-cell-number,
+.table-widget-container .ant-table-cell-align-right {
+  font-family: var(--font-sans, inherit) !important;
 }
 
 /* ========================================

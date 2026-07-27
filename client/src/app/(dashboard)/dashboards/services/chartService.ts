@@ -6,12 +6,16 @@ const DASHBOARDS_BASE = 'dashboards';
 
 export interface ChartQuery {
   x?: string;
+  /** Date bucketing for X: year | quarter | month | week | day | hour */
+  xGrain?: string;
   aggregate?: boolean;
-  yMetric?: 'count' | 'sum' | 'none' | 'distinct_count' | 'avg' | 'min' | 'max';
+  yMetric?: 'count' | 'sum' | 'none' | 'distinct_count' | 'avg' | 'min' | 'max' | 'mean';
   yMetrics?: { field: string; aggregation: string }[];
   yMetricsSecondary?: { field: string; aggregation: string }[];
+  xMetrics?: { field: string; aggregation: string }[];
   groupBy?: boolean;
   groupField?: string;
+  legend?: string;
   groupSortBy?: 'field' | 'order';
   groupOrder?: 'asc' | 'desc';
   sortBy?: string;
@@ -39,12 +43,16 @@ export interface ChartQuery {
     relationshipId?: string;
     modelJoin?: boolean;
   }[];
+  /** Drill hierarchy / additional category dimensions beyond X + Legend */
   drillPath?: string[];
   interactionMode?: 'drill' | 'cross_filter';
   drillThrough?: {
     targetPageId: string;
     filterField?: string;
   };
+  tableName?: string;
+  saved_query_id?: string | number;
+  query_snapshot_id?: string | number;
 }
 
 export interface Chart {
@@ -179,10 +187,64 @@ class ChartService {
     });
   }
 
-  async listDashboards(projectId?: string | number | null): Promise<DashboardResponse[]> {
-    const url = projectId ? `${DASHBOARDS_BASE}?project_id=${projectId}` : DASHBOARDS_BASE;
-    const data = await this.authenticatedFetch(url, { method: 'GET' });
+  async listDashboards(
+    projectId?: string | number | null,
+    opts?: {
+      q?: string;
+      facet?: string;
+      collectionId?: string | null;
+      limit?: number;
+      offset?: number;
+      detail?: 'summary' | 'full';
+    },
+  ): Promise<DashboardResponse[]> {
+    const params = new URLSearchParams();
+    if (projectId != null && projectId !== '') params.set('project_id', String(projectId));
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.facet) params.set('facet', opts.facet);
+    if (opts?.collectionId) params.set('collection_id', opts.collectionId);
+    params.set('limit', String(opts?.limit ?? 100));
+    params.set('offset', String(opts?.offset ?? 0));
+    params.set('detail', opts?.detail ?? 'summary');
+    const qs = params.toString();
+    const data = await this.authenticatedFetch(`${DASHBOARDS_BASE}?${qs}`, { method: 'GET' });
     return data.dashboards || [];
+  }
+
+  async listDashboardsPage(
+    projectId?: string | number | null,
+    opts?: {
+      q?: string;
+      facet?: string;
+      collectionId?: string | null;
+      limit?: number;
+      offset?: number;
+      detail?: 'summary' | 'full';
+    },
+  ): Promise<{
+    dashboards: DashboardResponse[];
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  }> {
+    const { dashboardLibraryService } = await import('./dashboardLibraryService');
+    const page = await dashboardLibraryService.list({
+      projectId,
+      q: opts?.q,
+      facet: (opts?.facet as any) || 'all',
+      collectionId: opts?.collectionId,
+      limit: opts?.limit,
+      offset: opts?.offset,
+      detail: opts?.detail,
+    });
+    return {
+      dashboards: page.dashboards as unknown as DashboardResponse[],
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+      hasMore: page.hasMore,
+    };
   }
 
   async getDashboard(dashboardId: string, opts?: DashboardAccessOptions): Promise<DashboardResponse> {
@@ -270,6 +332,44 @@ class ChartService {
     return await this.authenticatedFetch(this.getChartsEndpoint(dashboardId), {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Place an existing library chart on a dashboard (shared instance).
+   * Pass mode: 'copy' to create an independent duplicate instead.
+   */
+  async linkChart(
+    dashboardId: string,
+    payload: {
+      chartId: string;
+      mode?: 'link' | 'copy';
+      layout?: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        pageId?: string;
+        page_id?: string;
+      };
+    },
+  ): Promise<Chart & { linked?: boolean; created?: boolean; copied?: boolean }> {
+    const body: Record<string, unknown> = {
+      chartId: payload.chartId,
+      mode: payload.mode || 'link',
+    };
+    if (payload.layout) {
+      body.layout = sanitizeLayoutItem(payload.layout);
+    }
+    return await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/link`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async unlinkChart(dashboardId: string, chartId: string): Promise<void> {
+    await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/${chartId}/link`, {
+      method: 'DELETE',
     });
   }
 

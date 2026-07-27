@@ -46,6 +46,24 @@
   color: var(--ant-color-text) !important;
 }
 
+/*
+ * Progress bubbles own their chrome via ThoughtProcessDisplay — strip the
+ * elevated card here so we don't stack border/padding with .ai-progress-premium-container.
+ * Specificity must beat .modern-message.ai-message .message-bubble above.
+ */
+.ai-message .message-bubble.message-bubble--progress,
+.ai-message-bubble.message-bubble--progress,
+.message-bubble.ai.message-bubble--progress,
+.ai-message .message-content-wrapper .message-bubble.message-bubble--progress,
+.modern-message.ai-message .message-bubble.message-bubble--progress,
+.message-container.ai-message .message-bubble.message-bubble--progress {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
 /* User Message Boxes - Use Primary Color (never affected by panel color) */
 .user-message .message-bubble,
 .user-message-bubble,

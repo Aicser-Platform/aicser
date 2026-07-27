@@ -38,7 +38,7 @@ export function buildWidgetFromTemplate(
     defaultChartOptions = {
       format: 'number',
       fontSize: 32,
-      layout: 'compact',
+      layout: 'default',
       showSparkline: false,
     };
     defaultChartQuery = { yMetric: 'count', yMetrics: [], sortBy: 'x' };

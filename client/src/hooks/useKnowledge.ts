@@ -41,6 +41,22 @@ export const useDeleteKnowledgeDocument = () => {
   });
 };
 
+export const useUpdateKnowledgeDocument = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      docId,
+      ...body
+    }: {
+      docId: string;
+      filename?: string;
+      description?: string;
+      metadata?: Record<string, unknown>;
+    }) => api.updateKnowledgeDocument(docId, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: knowledgeKeys.all }),
+  });
+};
+
 export const useSearchKnowledge = () =>
   useMutation({
     mutationFn: (params: {

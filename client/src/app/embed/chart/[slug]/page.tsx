@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useState } from 'react';
 import nextDynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Alert, Spin, Typography } from 'antd';
 import { getBackendUrl } from '@/utils/backendUrl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
@@ -97,8 +97,9 @@ function EmbedChartContent({ slug }: { slug: string }) {
   );
 }
 
-export default function EmbedChartPage({ params }: { params: { slug: string } }) {
-  const slug = params?.slug || '';
+export default function EmbedChartPage() {
+  const routeParams = useParams();
+  const slug = typeof routeParams?.slug === 'string' ? routeParams.slug : '';
   return (
     <Suspense fallback={<Spin style={{ margin: 48 }} />}>
       <EmbedChartContent slug={slug} />

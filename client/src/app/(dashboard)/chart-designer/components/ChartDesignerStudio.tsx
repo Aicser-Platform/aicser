@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { ConfigProvider, Spin } from 'antd';
+import { ConfigProvider, Spin, message } from 'antd';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../dashboards/DashboardStudio.css';
@@ -16,6 +16,16 @@ import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
 
 import { useProjectStore } from '@/stores/useProjectStore';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import { useSearchParams } from 'next/navigation';
+import {
+  peekSavedQueryBind,
+  consumeSavedQueryBind,
+  buildChartQueryFromBind,
+} from '../../dashboards/utils/queryBindBridge';
+import { chartBuilderService } from '../services/chartBuilderService';
+import { mapApiChartToDesignerWidget } from '@/components/charts/chartDesignerBridge';
+import type { WidgetTemplate } from '../../dashboards/widgetTemplates';
 
 const generateWidgetId = () => `w_designer_${Date.now()}`;
 const DESIGNER_DEFAULT_CHART_HEIGHT = 24;
@@ -53,6 +63,9 @@ export default function ChartDesignerStudio() {
   const { user, isAuthenticated } = useAuth();
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const clearStore = useChartDesignerStore((state) => state.clearStore);
+  const searchParams = useSearchParams();
+  const createChartAndFetchData = useChartDesignerStore((state) => state.createChartAndFetchData);
+  const bindAppliedRef = React.useRef(false);
 
   useEffect(() => {
     if (isAuthenticated && user?.id) {
@@ -70,15 +83,93 @@ export default function ChartDesignerStudio() {
     setPropertiesCollapsed(false);
   }, [setSidebarCollapsed, setPropertiesCollapsed]);
 
+  // Query Editor → chart designer bind (AFTER fetchCharts finishes — avoids wipe race)
+  useEffect(() => {
+    if (searchParams?.get('bind_saved_query') !== '1') return;
+    if (isLoading) return; // wait for store hydrate
+    if (bindAppliedRef.current) return;
+
+    if (!peekSavedQueryBind()) return;
+
+    const payload = consumeSavedQueryBind();
+    if (!payload) return;
+    bindAppliedRef.current = true;
+
+    // Library chart already created — open it instead of duplicating
+    if (payload.preCreatedChartId) {
+      void chartBuilderService
+        .getChart(String(payload.preCreatedChartId))
+        .then((chart) => {
+          if (!chart?.id) return;
+          const mapped = mapApiChartToDesignerWidget(chart as Record<string, unknown>, user?.id || '');
+          if (!useChartDesignerStore.getState().widgets.some((w) => String(w.chartId) === String(chart.id))) {
+            addWidget(mapped.widget, mapped.layout);
+          }
+          setSelectedWidgetId(mapped.widget.id);
+          setPropertiesCollapsed(false);
+          message.success(`Opened “${mapped.widget.title}” from query`);
+        })
+        .catch((err) => {
+          console.error(err);
+          message.warning('Could not open library chart');
+        });
+      return;
+    }
+
+    const chartQuery = buildChartQueryFromBind(payload);
+    const chartType = payload.chartType || 'bar';
+    const id = generateWidgetId();
+    const widget: ChartDesignerWidget = {
+      id,
+      title: payload.name || 'Query chart',
+      chartType,
+      dataSourceId: payload.dataSourceId,
+      chartQuery,
+      chartOptions: { showLegend: chartType !== 'stat' && chartType !== 'table' },
+      chartData: payload.chartData,
+    };
+    addWidget(widget, {
+      i: id,
+      x: 0,
+      y: 0,
+      w: 12,
+      h: chartType === 'stat' ? 10 : DESIGNER_DEFAULT_CHART_HEIGHT,
+    });
+    setSelectedWidgetId(id);
+    setPropertiesCollapsed(false);
+    void createChartAndFetchData(widget).then(() => {
+      message.success(`Created “${widget.title}” from query`);
+    }).catch((err) => {
+      console.error(err);
+      message.warning('Chart created locally — data may need Apply Changes');
+    });
+  }, [
+    searchParams,
+    isLoading,
+    user?.id,
+    addWidget,
+    setSelectedWidgetId,
+    setPropertiesCollapsed,
+    createChartAndFetchData,
+  ]);
+
   // Add widget from template
   const handleAddTemplate = useCallback(
-    (template: any) => {
+    (template: WidgetTemplate) => {
+      const dsState = useDataSourceStore.getState();
+      const dataSourceId =
+        (dsState.selectedId != null ? String(dsState.selectedId) : undefined) ||
+        (Array.isArray(dsState.dataSources) && dsState.dataSources[0]?.id
+          ? String(dsState.dataSources[0].id)
+          : undefined);
+
       const newWidget: ChartDesignerWidget = {
         id: generateWidgetId(),
         title: template.name,
         chartType: template.type,
         chartQuery: {},
         chartOptions: {},
+        dataSourceId,
         isLoading: false,
         error: null,
         userId: user?.id,
@@ -97,8 +188,9 @@ export default function ChartDesignerStudio() {
 
       addWidget(newWidget, newLayout);
       setSelectedWidgetId(newWidget.id);
+      setPropertiesCollapsed(false);
     },
-    [addWidget, user?.id, setSelectedWidgetId]
+    [addWidget, user?.id, setSelectedWidgetId, setPropertiesCollapsed],
   );
 
   const onUpdateWidget = useCallback(
@@ -148,7 +240,7 @@ export default function ChartDesignerStudio() {
       <div className="studio-wrapper designer-theme designer-simplified" id="designer-wrapper">
         <div className="studio-body">
           {/* Left Sidebar - Chart List */}
-          <ChartDesignerSidebar />
+          <ChartDesignerSidebar onAddTemplate={handleAddTemplate} />
 
           {/* Canvas Area */}
           <main className="studio-canvas-area designer-canvas">

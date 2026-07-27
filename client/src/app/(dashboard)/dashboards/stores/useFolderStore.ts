@@ -1,104 +1,118 @@
 'use client';
 
 /**
- * useFolderStore — lightweight client-side folder hierarchy for dashboards.
- *
- * Folders are stored in localStorage (no backend schema change needed).
- * A folder-assignment map tracks which dashboard belongs to which folder.
- * Unassigned dashboards float at the root level.
+ * Dashboard collections store — server-backed (dashboard_collections),
+ * mirrors Chart Designer collections. Hydrates on demand; persists via API.
  */
 
 import { create } from 'zustand';
+import { dashboardLibraryService } from '../services/dashboardLibraryService';
+import { useProjectStore } from '@/stores/useProjectStore';
 
 export interface DashboardFolder {
   id: string;
   name: string;
   createdAt: number;
-  /** Collapse state is also local */
   collapsed?: boolean;
-}
-
-const FOLDERS_KEY = 'aicser_dashboard_folders';
-const ASSIGNMENTS_KEY = 'aicser_dashboard_folder_assignments';
-
-function loadFolders(): DashboardFolder[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(FOLDERS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function loadAssignments(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(ASSIGNMENTS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveFolders(folders: DashboardFolder[]) {
-  try { localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders)); } catch {}
-}
-
-function saveAssignments(assignments: Record<string, string>) {
-  try { localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments)); } catch {}
 }
 
 interface FolderState {
   folders: DashboardFolder[];
-  /** dashboardId → folderId */
+  /** dashboardId → collectionId */
   assignments: Record<string, string>;
-  /** locally collapsed folder ids */
   collapsedFolderIds: Set<string>;
+  hydrated: boolean;
+  hydrating: boolean;
 
-  createFolder: (name: string) => string;
-  renameFolder: (id: string, name: string) => void;
-  deleteFolder: (id: string) => void;
+  hydrate: (projectId?: string | number | null) => Promise<void>;
+  createFolder: (name: string) => Promise<string>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
   toggleCollapse: (id: string) => void;
-  assignDashboard: (dashboardId: string, folderId: string | null) => void;
+  assignDashboard: (dashboardId: string, folderId: string | null) => Promise<void>;
   getFolderForDashboard: (dashboardId: string) => string | null;
 }
 
+function projectId(): string | number | null {
+  return useProjectStore.getState().currentProjectId;
+}
+
 export const useFolderStore = create<FolderState>()((set, get) => ({
-  folders: loadFolders(),
-  assignments: loadAssignments(),
-  collapsedFolderIds: new Set<string>(),
+  folders: [],
+  assignments: {},
+  collapsedFolderIds: new Set(),
+  hydrated: false,
+  hydrating: false,
 
-  createFolder: (name) => {
-    const id = `folder_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const folder: DashboardFolder = { id, name: name.trim() || 'New Folder', createdAt: Date.now() };
-    set((s) => {
-      const next = [...s.folders, folder];
-      saveFolders(next);
-      return { folders: next };
-    });
-    return id;
+  hydrate: async (explicitProjectId) => {
+    if (get().hydrating) return;
+    set({ hydrating: true });
+    try {
+      const pid = explicitProjectId ?? projectId();
+      const collections = await dashboardLibraryService.listCollections(pid);
+      // Assignments come from dashboard list (summary) — first pages are enough for tab navigator
+      const page = await dashboardLibraryService.list({
+        projectId: pid,
+        facet: 'all',
+        limit: 200,
+        offset: 0,
+        detail: 'summary',
+      });
+      const assignments: Record<string, string> = {};
+      for (const d of page.dashboards) {
+        if (d.collectionId) assignments[String(d.id)] = String(d.collectionId);
+      }
+      set({
+        folders: collections.map((c) => ({
+          id: c.id,
+          name: c.name,
+          createdAt: Date.now(),
+        })),
+        assignments,
+        hydrated: true,
+      });
+    } catch (err) {
+      console.error('[useFolderStore.hydrate]', err);
+      set({ folders: [], assignments: {}, hydrated: true });
+    } finally {
+      set({ hydrating: false });
+    }
   },
 
-  renameFolder: (id, name) => {
-    set((s) => {
-      const next = s.folders.map((f) => (f.id === id ? { ...f, name: name.trim() || f.name } : f));
-      saveFolders(next);
-      return { folders: next };
-    });
+  createFolder: async (name) => {
+    const created = await dashboardLibraryService.createCollection(
+      name.trim() || 'New Folder',
+      projectId(),
+    );
+    set((s) => ({
+      folders: [
+        ...s.folders,
+        { id: created.id, name: created.name, createdAt: Date.now() },
+      ],
+    }));
+    return created.id;
   },
 
-  deleteFolder: (id) => {
+  renameFolder: async (id, name) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    await dashboardLibraryService.renameCollection(id, nextName, projectId());
+    set((s) => ({
+      folders: s.folders.map((f) => (f.id === id ? { ...f, name: nextName } : f)),
+    }));
+  },
+
+  deleteFolder: async (id) => {
+    await dashboardLibraryService.deleteCollection(id, projectId());
     set((s) => {
-      // unassign all dashboards from this folder
       const nextAssignments = { ...s.assignments };
       Object.entries(nextAssignments).forEach(([dashId, fid]) => {
         if (fid === id) delete nextAssignments[dashId];
       });
-      const nextFolders = s.folders.filter((f) => f.id !== id);
-      saveFolders(nextFolders);
-      saveAssignments(nextAssignments);
-      return { folders: nextFolders, assignments: nextAssignments };
+      return {
+        folders: s.folders.filter((f) => f.id !== id),
+        assignments: nextAssignments,
+      };
     });
   },
 
@@ -111,12 +125,12 @@ export const useFolderStore = create<FolderState>()((set, get) => ({
     });
   },
 
-  assignDashboard: (dashboardId, folderId) => {
+  assignDashboard: async (dashboardId, folderId) => {
+    await dashboardLibraryService.assignCollection(dashboardId, folderId);
     set((s) => {
       const next = { ...s.assignments };
       if (folderId) next[dashboardId] = folderId;
       else delete next[dashboardId];
-      saveAssignments(next);
       return { assignments: next };
     });
   },

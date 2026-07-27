@@ -47,10 +47,11 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   billing: 'billing',
 };
 
-/** Nav key → parent group key, for breadcrumb trails (e.g. Data & Model > Semantic layer). */
+/** Nav key → parent group key, for breadcrumb trails (e.g. Data & Model > Semantic layer).
+ * Flat top-level pages (Chat, Query Editor, Dashboards, Chart Designer) intentionally
+ * omit parents so we don't duplicate the page heading with a one-level crumb trail.
+ */
 export const NAV_PARENT_GROUP: Record<string, string> = {
-  dashboards: 'dashboard-studio',
-  'chart-designer': 'dashboard-studio',
   data: 'grp-data',
   'semantic-model': 'grp-data',
   knowledge: 'grp-data',

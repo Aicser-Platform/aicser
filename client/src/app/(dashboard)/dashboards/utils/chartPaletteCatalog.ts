@@ -1,15 +1,15 @@
 import { COLOR_PALETTES } from '../widgets/WidgetRendererConfig';
 
-/** Dashboard + widget chart color presets (shared catalog). */
+/** Dashboard + widget chart color presets (shared catalog). UI shows 8 swatches; full set is 20. */
 export const CHART_PALETTE_CATALOG = [
-  { id: 'default', labelKey: 'palette_default', colors: COLOR_PALETTES.default.slice(0, 5) },
-  { id: 'vibrant', labelKey: 'palette_vibrant', colors: COLOR_PALETTES.vibrant.slice(0, 5) },
-  { id: 'cool', labelKey: 'palette_cool', colors: COLOR_PALETTES.cool.slice(0, 5) },
-  { id: 'warm', labelKey: 'palette_warm', colors: COLOR_PALETTES.warm.slice(0, 5) },
-  { id: 'nature', labelKey: 'palette_nature', colors: COLOR_PALETTES.nature.slice(0, 5) },
-  { id: 'corporate', labelKey: 'palette_corporate', colors: COLOR_PALETTES.corporate.slice(0, 5) },
-  { id: 'pastel', labelKey: 'palette_pastel', colors: COLOR_PALETTES.pastel.slice(0, 5) },
-  { id: 'infographic', labelKey: 'palette_infographic', colors: COLOR_PALETTES.infographic.slice(0, 5) },
+  { id: 'default', labelKey: 'palette_default', colors: COLOR_PALETTES.default.slice(0, 8) },
+  { id: 'vibrant', labelKey: 'palette_vibrant', colors: COLOR_PALETTES.vibrant.slice(0, 8) },
+  { id: 'cool', labelKey: 'palette_cool', colors: COLOR_PALETTES.cool.slice(0, 8) },
+  { id: 'warm', labelKey: 'palette_warm', colors: COLOR_PALETTES.warm.slice(0, 8) },
+  { id: 'nature', labelKey: 'palette_nature', colors: COLOR_PALETTES.nature.slice(0, 8) },
+  { id: 'corporate', labelKey: 'palette_corporate', colors: COLOR_PALETTES.corporate.slice(0, 8) },
+  { id: 'pastel', labelKey: 'palette_pastel', colors: COLOR_PALETTES.pastel.slice(0, 8) },
+  { id: 'infographic', labelKey: 'palette_infographic', colors: COLOR_PALETTES.infographic.slice(0, 8) },
 ] as const;
 
 export type ChartPaletteId = (typeof CHART_PALETTE_CATALOG)[number]['id'] | 'custom';

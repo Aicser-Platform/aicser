@@ -54,7 +54,7 @@
   min-height: 0;
 }
 
-/* Sidebars are now handled in their own CSS files with absolute positioning to prevent layout shifts */
+/* Left/right studio panels dock in flex flow (collapse = canvas expands). */
 
 /* Canvas & Content */
 .studio-canvas-area {
@@ -87,7 +87,7 @@
   border-radius: 10px;
 }
 
-.dark ::webkit-scrollbar-thumb {
+.dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -103,7 +103,8 @@
   padding-bottom: 40px;
   background: transparent;
   position: relative;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* No width/position transitions — they race with RGL WidthProvider + breakpoint math */
+  transition: none;
   flex-shrink: 0;
 }
 
@@ -121,8 +122,8 @@
 
 /* React Grid Layout fixes for proper widget sizing */
 .react-grid-item {
-  transition: all 200ms ease;
-  transition-property: left, top, width, height;
+  /* Disable left/top/size animation so panel open / resize commits don't "slide" widgets */
+  transition: none !important;
   box-sizing: border-box;
 }
 
@@ -132,47 +133,99 @@
   box-sizing: border-box;
 }
 
-/* Resize Handles - Essential for RGL resizing */
+/* Resize handles — SE + NW.
+ *
+ * Critical: react-resizable/css/styles.css rotates NW/NE/SW handles
+ * (transform: rotate(180deg) etc.) because its default SVG is SE-only.
+ * That rotation flips our corner mark inward. Override transform + glyph
+ * so each handle’s L sits on the widget’s outer corner. */
 .react-grid-item > .react-resizable-handle {
   position: absolute;
-  width: 24px;
-  height: 24px;
-  bottom: 0;
-  right: 0;
-  cursor: se-resize;
+  width: 20px;
+  height: 20px;
   z-index: 100;
   opacity: 0;
   transition: opacity 0.2s ease;
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  background: none !important; /* Force hide default RGL dots/icons */
+  display: block !important;
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: none !important;
+  background-image: none !important;
+  transform: none !important;
+  transform-origin: center center;
 }
 
 .react-grid-item:hover > .react-resizable-handle,
-.react-grid-item.resizing > .react-resizable-handle {
+.react-grid-item.resizing > .react-resizable-handle,
+.react-grid-item:has(.widget-card.selected) > .react-resizable-handle {
   opacity: 1;
 }
 
 .react-grid-item > .react-resizable-handle::after {
   content: "";
   position: absolute;
-  right: 6px;
-  bottom: 6px;
   width: 8px;
   height: 8px;
-  border-right: 2px solid rgba(0, 0, 0, 0.4);
-  border-bottom: 2px solid rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
   transition: border-color 0.2s;
+  pointer-events: none;
 }
 
-.react-grid-item:hover > .react-resizable-handle:hover::after {
-    border-color: var(--ant-color-primary);
+/* Bottom-right — L opens into the widget from the outer SE corner */
+.react-grid-item > .react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  left: auto;
+  top: auto;
+  cursor: se-resize;
 }
 
-.dark .react-grid-item > .react-resizable-handle::after {
-  border-right-color: rgba(255, 255, 255, 0.4);
-  border-bottom-color: rgba(255, 255, 255, 0.4);
+.react-grid-item > .react-resizable-handle-se::after {
+  right: 4px;
+  bottom: 4px;
+  left: auto;
+  top: auto;
+  border-right: 2px solid rgba(0, 0, 0, 0.45);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.45);
+  border-left: none;
+  border-top: none;
+}
+
+/* Top-left — L opens into the widget from the outer NW corner (no rotate) */
+.react-grid-item > .react-resizable-handle-nw {
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  cursor: nw-resize;
+}
+
+.react-grid-item > .react-resizable-handle-nw::after {
+  left: 4px;
+  top: 4px;
+  right: auto;
+  bottom: auto;
+  border-left: 2px solid rgba(0, 0, 0, 0.45);
+  border-top: 2px solid rgba(0, 0, 0, 0.45);
+  border-right: none;
+  border-bottom: none;
+}
+
+.react-grid-item:hover > .react-resizable-handle:hover::after,
+.react-grid-item:has(.widget-card.selected) > .react-resizable-handle:hover::after {
+  border-color: var(--ant-color-primary);
+}
+
+.dark .react-grid-item > .react-resizable-handle-se::after {
+  border-right-color: rgba(255, 255, 255, 0.45);
+  border-bottom-color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .react-grid-item > .react-resizable-handle-nw::after {
+  border-left-color: rgba(255, 255, 255, 0.45);
+  border-top-color: rgba(255, 255, 255, 0.45);
 }
 
 
@@ -186,13 +239,14 @@
   display: flex;
   flex-direction: column;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  /* Soft depth — avoid light rim that reads as a white border on dark themes */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
 
 .widget-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  border-color: var(--ant-color-border);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.22);
+  border-color: color-mix(in srgb, var(--ant-color-border) 55%, transparent);
 }
 
 .widget-card.selected {
@@ -420,12 +474,13 @@
   z-index: 2;
 }
 
-/* Nested table/stat shells — avoid double card chrome */
+/* Nested table shells — avoid double card chrome; keep single border surface */
 .widget-card .table-widget-container {
   background: transparent !important;
   box-shadow: none !important;
+  border: none !important;
   border-radius: 0 !important;
-  padding: 8px 12px 12px !important;
+  padding: 0 !important;
 }
 
 .widget-card.widget-type-stat .widget-content-root {
@@ -485,37 +540,57 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   text-align: center;
 }
 
-/* Text widgets should look like other chart widgets */
+/* Text widgets — borderless narrative surface; selection = horizontal rules only */
 .widget-card.widget-type-text {
-  background: var(--ant-color-bg-container);
-  border-color: var(--ant-color-border);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  background: transparent !important;
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
-.widget-card.widget-type-text:hover,
+.widget-card.widget-type-text:hover {
+  background: transparent !important;
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 .widget-card.widget-type-text.selected {
-  background: var(--ant-color-bg-container);
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  background: transparent !important;
+  border: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  /* Notion-style: thin top + bottom accent lines, no container chrome */
+  border-top: 1px solid var(--ant-color-primary) !important;
+  border-bottom: 1px solid var(--ant-color-primary) !important;
+  border-radius: 0 !important;
 }
 
 .widget-card.widget-type-text .widget-card-header {
-  opacity: 1;
-  height: 40px;
-  padding: 0 16px;
-  transition: opacity 0.2s;
-  background: rgba(0, 0, 0, 0.01);
-  border-bottom: 1px solid transparent;
+  display: none !important;
 }
 
 .widget-card.widget-type-text .widget-card-body {
-  padding: 16px 20px;
-  padding-top: 4px;
+  padding: 8px 12px 10px;
 }
 
-.widget-card.widget-type-text .widget-card-title {
-  font-size: 14px;
-  color: var(--ant-color-text);
+.widget-card.widget-type-text .widget-text-floating-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.widget-card.widget-type-text.selected .widget-text-floating-actions,
+.widget-card.widget-type-text:hover .widget-text-floating-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Section divider block — line only, or title + extending rule */
@@ -904,18 +979,37 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 
 .studio-context-presentation .studio-context-row {
   flex-wrap: nowrap;
+  align-items: center;
+}
+
+.studio-context-presentation-identity {
+  flex: 0 1 auto;
+  max-width: min(320px, 36vw);
+  min-width: 0;
+  margin-right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .studio-context-presentation-title {
-  flex: 0 1 auto;
-  max-width: min(240px, 28vw);
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
   color: var(--ant-color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-right: 8px;
+}
+
+.studio-context-presentation-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .studio-context-presentation .studio-context-pages {
@@ -938,7 +1032,7 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 .dashboard-page-chrome {
   flex-shrink: 0;
   width: 100%;
-  padding: 12px 16px 0;
+  padding: 8px 16px 0;
   border-bottom: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-layout);
   position: sticky;
@@ -946,9 +1040,76 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   z-index: 12;
 }
 
+/* Dense icon toolbar on the page chrome — matches View/Add density above */
+.studio-context-actions .studio-refresh-dropdown-trigger.ant-btn,
+.studio-context-actions .studio-filter-btn.ant-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.studio-context-actions .studio-style-menu-btn.ant-btn {
+  height: 32px;
+  padding-inline: 8px;
+}
+
 .dashboard-page-chrome-viewer {
   padding: 0 24px 8px;
   margin-bottom: 4px;
   border-bottom: none;
   background: transparent;
+}
+
+/* View Full / View Table — sized to widget type; above sidebar chrome (z-index 1200) */
+.studio-widget-inspect-modal .ant-modal-content {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.studio-widget-inspect-modal .ant-modal-body {
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.studio-widget-inspect-modal--kpi .ant-modal-body {
+  overflow: hidden;
+}
+
+.studio-widget-inspect-modal--table .ant-modal-body {
+  padding-top: 8px;
+  overflow: auto;
+}
+
+.studio-widget-inspect-modal .widget-card {
+  box-shadow: none;
+}
+
+.studio-widget-inspect-host {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.studio-widget-inspect-modal--kpi .studio-widget-inspect-host {
+  padding: 20px;
+}
+
+.studio-widget-inspect-host .widget-content-root,
+.studio-widget-inspect-host .widget-chart-shell,
+.studio-widget-inspect-host .widget-chart-canvas {
+  flex: 1;
+  min-height: 240px;
+  height: 100%;
+  width: 100%;
 }

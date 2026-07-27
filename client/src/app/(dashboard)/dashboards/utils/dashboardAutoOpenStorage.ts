@@ -1,14 +1,16 @@
-/** User preference: auto-open Dashboard Studio when AI starts building. */
+/** User preference: auto-open Dashboard Studio when AI starts building.
+ * Default OFF so users stay in chat to see the live preview and refine. */
 
 const STORAGE_KEY = 'aiser_dashboard_auto_open_studio';
 
 export function isDashboardAutoOpenEnabled(): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined') return false;
   try {
     const v = localStorage.getItem(STORAGE_KEY);
-    return v === null || v === '1';
+    // Explicit opt-in only (null → off)
+    return v === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 

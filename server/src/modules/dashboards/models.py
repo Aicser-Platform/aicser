@@ -22,6 +22,33 @@ def _project_fk():
     return [ForeignKey("projects.id")] if is_ee_enabled() else []
 
 
+class DashboardCollection(Base):
+    """
+    Server-backed folder/collection for Dashboard Studio library.
+    Table: dashboard_collections
+    """
+    __tablename__ = "dashboard_collections"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+        index=True,
+    )
+    name = Column(Text, nullable=False)
+    parent_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dashboard_collections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class DashboardChart(Base):
     """
     DashboardChart model matching database schema.
@@ -66,6 +93,16 @@ class Dashboard(BaseModel):
     # and stay visible rather than being guessed at or hidden (see
     # alembic/versions/2026_07_06_dashboard_created_by.py).
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Library organization (mirrors charts)
+    collection_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("dashboard_collections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    is_favorite = Column(Boolean, nullable=False, server_default=text("false"), index=True)
+    last_opened_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    tags = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
 
     @property
     def title(self):

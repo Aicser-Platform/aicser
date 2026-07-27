@@ -809,6 +809,67 @@ class SocialFeedService {
       body: JSON.stringify({ reason }),
     });
   }
+
+  async listCollections(): Promise<{
+    collections: Array<{
+      id: string;
+      name: string;
+      description?: string | null;
+      isPublic?: boolean;
+      itemCount?: number;
+      createdAt?: string;
+      updatedAt?: string;
+    }>;
+  }> {
+    return this.request('feed/collections');
+  }
+
+  async createCollection(payload: {
+    name: string;
+    description?: string;
+    organization_id?: string;
+    project_id?: string;
+    is_public?: boolean;
+  }) {
+    return this.request('feed/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateCollection(
+    collectionId: string,
+    payload: { name?: string; description?: string; is_public?: boolean },
+  ) {
+    return this.request(`feed/collections/${collectionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async deleteCollection(collectionId: string): Promise<{ success: boolean }> {
+    return this.request(`feed/collections/${collectionId}`, { method: 'DELETE' });
+  }
+
+  async getCollection(collectionId: string) {
+    return this.request(`feed/collections/${collectionId}`);
+  }
+
+  async addCollectionItem(collectionId: string, postId: string, note?: string) {
+    return this.request(`feed/collections/${collectionId}/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ post_id: postId, note }),
+    });
+  }
+
+  async removeCollectionItem(collectionId: string, itemId: string): Promise<{ success: boolean }> {
+    return this.request(`feed/collections/${collectionId}/items/${itemId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const socialFeedService = new SocialFeedService();

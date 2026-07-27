@@ -114,6 +114,10 @@ const getSelectedOrganizationId = (): string | null => {
 let eeTokenExchangePromise: Promise<string | null> | null = null;
 
 async function exchangeEeTokenForAicserBearer(providerToken: string): Promise<string | null> {
+  const { canAcceptAuthSession, getLogoutEpoch, isStaleLogoutEpoch } = await import('@/auth/logoutBarrier');
+  if (!canAcceptAuthSession()) return null;
+
+  const epochAtStart = getLogoutEpoch();
   if (!eeTokenExchangePromise) {
     eeTokenExchangePromise = fetch('/api/auth/token-exchange', {
       method: 'POST',
@@ -123,6 +127,7 @@ async function exchangeEeTokenForAicserBearer(providerToken: string): Promise<st
     })
       .then(async (res) => {
         if (!res.ok) return null;
+        if (isStaleLogoutEpoch(epochAtStart) || !canAcceptAuthSession()) return null;
         const data = (await res.json().catch(() => ({}))) as { access_token?: string };
         if (data.access_token) {
           setCeBearerToken(data.access_token);
@@ -169,11 +174,17 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
       defaultHeaders['Authorization'] = `Bearer ${ce}`;
     } else {
       // EE fallback: use raw Supabase session (pre-exchange or Keycloak flow).
+      // Skip during logout — exchanging here re-mints the session and auto-logs back in.
       try {
-        const eeToken = await getEeApiAuthToken();
-        if (eeToken) {
-          const exchanged = await exchangeEeTokenForAicserBearer(eeToken);
-          defaultHeaders['Authorization'] = `Bearer ${exchanged || eeToken}`;
+        const { canAcceptAuthSession } = await import('@/auth/logoutBarrier');
+        if (!canAcceptAuthSession()) {
+          /* intentional no-op during logout */
+        } else {
+          const eeToken = await getEeApiAuthToken();
+          if (eeToken) {
+            const exchanged = await exchangeEeTokenForAicserBearer(eeToken);
+            defaultHeaders['Authorization'] = `Bearer ${exchanged || eeToken}`;
+          }
         }
       } catch (error) {
         console.warn('Failed to get EE auth session:', error);

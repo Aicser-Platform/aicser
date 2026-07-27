@@ -6,6 +6,8 @@
 export interface NumberFormatOptions {
   decimals?: number;
   currency?: boolean;
+  /** Currency / unit prefix when currency=true. Default '$'. */
+  currencySymbol?: string;
   percent?: boolean;
   compact?: boolean;
   prefix?: string;
@@ -28,15 +30,36 @@ export const formatNumber = (value: number | string | null | undefined, options:
     return '0';
   }
 
-  const { decimals = 2, currency = false, percent = false, compact = true, prefix = '', suffix = '' } = options;
+  const {
+    decimals = 2,
+    currency = false,
+    currencySymbol = '$',
+    percent = false,
+    compact = true,
+    prefix = '',
+    suffix = '',
+  } = options;
 
   let formattedValue: string;
   const absValue = Math.abs(numValue);
-  const isNegative = numValue < 0;
 
-  // Handle percentage formatting
+  // Handle percentage formatting.
+  // Values already on a 0–100 (or larger) scale must NOT be multiplied again —
+  // only unit-interval ratios (|v| ≤ 1) are scaled ×100 (industry-standard).
   if (percent) {
-    formattedValue = (numValue * 100).toFixed(decimals) + '%';
+    const scaled = Math.abs(numValue) <= 1 ? numValue * 100 : numValue;
+    const absScaled = Math.abs(scaled);
+    if (compact && absScaled >= 1000) {
+      if (absScaled >= 1_000_000_000) {
+        formattedValue = (scaled / 1_000_000_000).toFixed(decimals) + 'B%';
+      } else if (absScaled >= 1_000_000) {
+        formattedValue = (scaled / 1_000_000).toFixed(decimals) + 'M%';
+      } else {
+        formattedValue = (scaled / 1_000).toFixed(decimals) + 'k%';
+      }
+    } else {
+      formattedValue = scaled.toFixed(decimals) + '%';
+    }
   }
   // Handle compact notation for large numbers
   else if (compact && absValue >= 1000) {
@@ -64,8 +87,7 @@ export const formatNumber = (value: number | string | null | undefined, options:
 
   // Add currency prefix if specified
   if (currency) {
-    const currencySymbol = '$'; // Could be configurable
-    formattedValue = currencySymbol + formattedValue;
+    formattedValue = `${currencySymbol || '$'}${formattedValue}`;
   }
 
   // Add custom prefix and suffix
@@ -84,10 +106,14 @@ export const formatAxisLabel = (value: number): string => {
 /**
  * Format numbers for chart tooltips with more detail
  */
-export const formatTooltipValue = (value: number, format?: 'currency' | 'percent' | 'number'): string => {
+export const formatTooltipValue = (
+  value: number,
+  format?: 'currency' | 'percent' | 'number',
+  currencySymbol?: string,
+): string => {
   switch (format) {
     case 'currency':
-      return formatNumber(value, { currency: true, decimals: 2, compact: true });
+      return formatNumber(value, { currency: true, currencySymbol, decimals: 2, compact: true });
     case 'percent':
       return formatNumber(value, { percent: true, decimals: 1, compact: false });
     case 'number':
@@ -99,16 +125,28 @@ export const formatTooltipValue = (value: number, format?: 'currency' | 'percent
 /**
  * Format numbers for stat widgets (KPI displays)
  */
-export const formatStatValue = (value: number | string, format?: 'currency' | 'percent' | 'number'): string => {
+export const formatStatValue = (
+  value: number | string,
+  format?: 'currency' | 'percent' | 'number',
+  currencySymbol?: string,
+  unitSuffix?: string,
+): string => {
+  let formatted: string;
   switch (format) {
     case 'currency':
-      return formatNumber(value, { currency: true, decimals: 2, compact: true });
+      formatted = formatNumber(value, { currency: true, currencySymbol, decimals: 2, compact: true });
+      break;
     case 'percent':
-      return formatNumber(value, { percent: true, decimals: 1, compact: false });
+      formatted = formatNumber(value, { percent: true, decimals: 1, compact: false });
+      break;
     case 'number':
     default:
-      return formatNumber(value, { decimals: 2, compact: true });
+      formatted = formatNumber(value, { decimals: 2, compact: true });
   }
+  if (unitSuffix && format !== 'currency' && format !== 'percent') {
+    return `${formatted}${unitSuffix}`;
+  }
+  return formatted;
 };
 
 /**

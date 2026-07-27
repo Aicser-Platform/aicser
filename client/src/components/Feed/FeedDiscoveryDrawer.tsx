@@ -54,7 +54,7 @@ const FeedDiscoveryDrawer: React.FC<FeedDiscoveryDrawerProps> = ({
       height="85vh"
       open={open}
       onClose={onClose}
-      destroyOnClose={false}
+      destroyOnHidden={false}
     >
       <FeedSidebar
         data={data}

@@ -80,7 +80,7 @@ export function FilterSelectField({
         }
         onChange((v as string | string[] | null) ?? (isMulti ? [] : null));
       }}
-      dropdownRender={
+      popupRender={
         isMulti && showSelectAll && !disabled && options.length > 1
           ? (menu) => (
               <>
