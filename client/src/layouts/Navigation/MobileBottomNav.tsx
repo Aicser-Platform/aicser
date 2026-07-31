@@ -3,16 +3,12 @@
 import React from 'react';
 import {
   AppstoreOutlined,
-  BellOutlined,
-  BookOutlined,
   CodeOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   EllipsisOutlined,
   MessageOutlined,
-  NodeIndexOutlined,
   SettingOutlined,
-  ApiOutlined,
   AreaChartOutlined,
 } from '@ant-design/icons';
 import { Drawer } from 'antd';
@@ -20,6 +16,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { selectedKeyForPathname } from './navConfig';
 import SidebarNav, { type SidebarNavIconMap } from './SidebarNav';
+import { useAiAvailability } from '@/hooks/useAiAvailability';
 import {
   CE_MOBILE_TABS,
   EE_MOBILE_TABS,
@@ -44,10 +41,6 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
 const MORE_ICONS: SidebarNavIconMap = {
   'query-editor': <CodeOutlined />,
   'chart-designer': <AreaChartOutlined />,
-  'semantic-model': <NodeIndexOutlined />,
-  knowledge: <BookOutlined />,
-  alerts: <BellOutlined />,
-  'platform-services': <ApiOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -57,9 +50,15 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const selectedKey = React.useMemo(() => selectedKeyForPathname(pathname), [pathname]);
   const [moreOpen, setMoreOpen] = React.useState(false);
+  const aiAvailability = useAiAvailability(true, isEnterpriseEdition);
+  const showAiNav = isEnterpriseEdition && aiAvailability.available;
 
-  const tabs = isEnterpriseEdition ? EE_MOBILE_TABS : CE_MOBILE_TABS;
-  const moreActive = isMoreNavActive(selectedKey, isEnterpriseEdition);
+  const tabs = isEnterpriseEdition && showAiNav
+    ? EE_MOBILE_TABS
+    : isEnterpriseEdition
+      ? EE_MOBILE_TABS.filter((tab) => tab.key !== 'chat')
+      : CE_MOBILE_TABS;
+  const moreActive = isMoreNavActive(selectedKey, isEnterpriseEdition, showAiNav);
   const moreItems = isEnterpriseEdition ? enterpriseMoreNavItems() : communityMoreNavItems();
 
   const navigate = (href: string) => {

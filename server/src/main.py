@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    version=settings.APP_VERSION or os.getenv("AISER_VERSION") or "0.0.1",
     openapi_url="/docs/json",
     docs_url="/docs",
     redoc_url="/redoc",

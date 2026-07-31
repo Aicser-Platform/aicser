@@ -286,10 +286,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             setSelectedModel(nextId);
             if (!fromParent) handleChange?.(initial);
 
-            // Probe connection status for each available model
-            for (const m of list) {
-                if (m.available) testModelConnection(m.id);
-            }
+            await Promise.all(list.filter((m) => m.available).map((m) => testModelConnection(m.id)));
         } catch (err: any) {
             const msg = err?.message || t('failed_load_ai_models');
             if (!composerEmbed) {
@@ -315,6 +312,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     try {
       const data = await fetchApi(`/ai/model-status?model_id=${modelId}`);
       setModelStatus((prev) => ({ ...prev, [modelId]: data }));
+      setModels((prev) => prev.map((model) => (
+        model.id === modelId ? { ...model, available: data?.available !== false && data?.success !== false } : model
+      )));
     } catch {
       setModelStatus((prev) => ({ ...prev, [modelId]: { success: true } }));
     }

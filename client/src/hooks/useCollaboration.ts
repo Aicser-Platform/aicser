@@ -292,13 +292,18 @@ export function useCollaboration(dashboardId: string) {
       }
     }, 300);
 
-    const unsubscribe = useDashboardStore.subscribe((state) => {
-      emitWidgetChanges(state.widgets, state.layout);
-    });
-
     const initial = useDashboardStore.getState();
     prevWidgetsRef.current = initial.widgets;
     prevLayoutRef.current = initial.layout;
+    let observedWidgets = initial.widgets;
+    let observedLayout = initial.layout;
+
+    const unsubscribe = useDashboardStore.subscribe((state) => {
+      if (state.widgets === observedWidgets && state.layout === observedLayout) return;
+      observedWidgets = state.widgets;
+      observedLayout = state.layout;
+      emitWidgetChanges(state.widgets, state.layout);
+    });
 
     const cursorPrune = window.setInterval(() => {
       const cutoff = Date.now() - CURSOR_STALE_MS;

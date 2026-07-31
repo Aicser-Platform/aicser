@@ -50,10 +50,14 @@ FROM python:3.11-slim-bookworm AS runner
 
 WORKDIR /app
 
+ARG AISER_VERSION=1.1.1
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PATH="/app/.venv/bin:$PATH"
+    PATH="/app/.venv/bin:$PATH" \
+    AISER_VERSION=$AISER_VERSION \
+    APP_VERSION=$AISER_VERSION
 
 # Install runtime dependencies + Microsoft ODBC + Chromium system libs
 RUN apt-get update && apt-get install -y --no-install-recommends \

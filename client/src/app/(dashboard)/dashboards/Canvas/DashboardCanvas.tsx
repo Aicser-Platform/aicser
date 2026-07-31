@@ -456,14 +456,19 @@ export default function DashboardCanvas({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, widgetById, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout, cancelLayoutGesture]);
 
-  const { dashboards, fetchDashboards, activeDashboardId, setActiveDashboardId, linkWidgetToDashboard } =
-    useDashboardStore();
+  const dashboards = useDashboardStore((s) => s.dashboards);
+  const isLoadingDashboards = useDashboardStore((s) => s.isLoadingDashboards);
+  const hasLoadedDashboards = useDashboardStore((s) => s.hasLoadedDashboards);
+  const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
+  const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
+  const linkWidgetToDashboard = useDashboardStore((s) => s.linkWidgetToDashboard);
 
   useEffect(() => {
-    if (dashboards.length === 0) {
-      fetchDashboards();
+    if (!hasLoadedDashboards && !isLoadingDashboards) {
+      void fetchDashboards();
     }
-  }, [dashboards.length, fetchDashboards]);
+  }, [fetchDashboards, hasLoadedDashboards, isLoadingDashboards]);
 
   const handleCopyToDashboard = async (targetDashboardId: string, widget: any) => {
     try {

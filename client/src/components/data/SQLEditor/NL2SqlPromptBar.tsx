@@ -6,6 +6,9 @@ import { ThunderboltOutlined } from '@ant-design/icons';
 import { useGenerateSql } from '@/hooks/useAi';
 import { ApiError } from '@/utils/api';
 import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
+import { useAiAvailability } from '@/hooks/useAiAvailability';
+
+const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 type Props = {
   dataSourceId?: string;
@@ -18,8 +21,18 @@ export default function NL2SqlPromptBar({ dataSourceId, onInsert }: Props) {
   // treats any truthy controlled value as authoritative and skips loading it.
   const [model, setModel] = useState<string | undefined>(undefined);
   const { mutateAsync, isPending } = useGenerateSql();
+  const aiAvailability = useAiAvailability(true, IS_EE);
+  const aiAvailable = !IS_EE || aiAvailability.available;
+
+  if (IS_EE && !aiAvailability.loading && !aiAvailability.available) {
+    return null;
+  }
 
   const handleGenerate = async () => {
+    if (!aiAvailable) {
+      message.warning('AI is unavailable. Add or update an AI provider key in Settings.');
+      return;
+    }
     if (!question.trim()) {
       message.warning('Enter a question first.');
       return;

@@ -9,11 +9,6 @@ import {
   CodeOutlined,
   AppstoreOutlined,
   AreaChartOutlined,
-  BookOutlined,
-  RadarChartOutlined,
-  NodeIndexOutlined,
-  BellOutlined,
-  ApiOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -21,6 +16,7 @@ import React from 'react';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useTranslations } from 'next-intl';
+import { useAiAvailability } from '@/hooks/useAiAvailability';
 import {
   NAV_ROUTES,
   NAV_LABEL_KEYS,
@@ -53,11 +49,6 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
-  'semantic-model': <NodeIndexOutlined />,
-  knowledge: <BookOutlined />,
-  'grp-operate': <RadarChartOutlined />,
-  alerts: <BellOutlined />,
-  'platform-services': <ApiOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -113,6 +104,8 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   );
   const routeOpenGroups = React.useMemo(() => openKeysForPathname(pathname), [pathname]);
   const settingsItems = React.useMemo(() => buildSettingsItems(isEnterpriseEdition), []);
+  const aiAvailability = useAiAvailability(true, isEnterpriseEdition);
+  const showAiNav = isEnterpriseEdition && aiAvailability.available;
 
   const onNavigate = React.useCallback(
     (href: string) => {
@@ -125,7 +118,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const enterpriseItems = React.useMemo<NavItemDef[]>(
     () => [
-      { kind: 'link', key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat },
+      ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
       { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
       { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
       {
@@ -144,21 +137,10 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
         labelKey: NAV_LABEL_KEYS['grp-data'],
         children: [
           { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-          { key: 'semantic-model', labelKey: NAV_LABEL_KEYS['semantic-model'], href: NAV_ROUTES['semantic-model'] },
-          { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
-        ],
-      },
-      {
-        kind: 'group',
-        key: 'grp-operate',
-        labelKey: NAV_LABEL_KEYS['grp-operate'],
-        children: [
-          { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
-          { key: 'platform-services', labelKey: NAV_LABEL_KEYS['platform-services'], href: NAV_ROUTES['platform-services'] },
         ],
       },
     ],
-    []
+    [showAiNav]
   );
 
   const communityItems = React.useMemo<NavItemDef[]>(

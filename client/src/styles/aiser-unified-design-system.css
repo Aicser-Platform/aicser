@@ -598,10 +598,13 @@
    Content height stays intrinsic — we only center the dialog in the viewport. */
 .ant-modal-wrap {
   z-index: 1050 !important;
-  display: flex !important;
+  overflow: auto;
+}
+
+.ant-modal-wrap:not(.ant-modal-hidden):not([style*="display: none"]):not([style*="display:none"]) {
+  display: flex;
   align-items: center;
   justify-content: center;
-  overflow: auto;
 }
 
 .ant-modal-wrap .ant-modal {

@@ -107,12 +107,15 @@ const DataSourcesPage: React.FC = () => {
     const qc = useQueryClient();
     const refreshDataSources = () => qc.invalidateQueries({ queryKey: ['data-sources'] });
     const authenticatedFetch = useAuthenticatedFetch();
+    const { hasPermission, loading: permissionsLoading } = usePermissions();
+    const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
 
     // Open edit modal when navigating from settings with ?edit=<id>
     const openedEditIdRef = React.useRef<string | null>(null);
     const editId = searchParams?.get('edit');
     useEffect(() => {
         if (!editId || dataSources.length === 0) return;
+        if (!canManageDataSettings) return;
         if (openedEditIdRef.current === editId) return;
         const ds = dataSources.find((d) => d.id === editId);
         if (ds) {
@@ -120,7 +123,7 @@ const DataSourcesPage: React.FC = () => {
             handleEditDataSource(ds).finally(() => router.replace('/data', { scroll: false }));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- only run when editId or data list length changes
-    }, [editId, dataSources.length]);
+    }, [editId, dataSources.length, canManageDataSettings]);
 
     const modelId = searchParams?.get('model');
     const openedModelIdRef = React.useRef<string | null>(null);
@@ -264,31 +267,35 @@ const DataSourcesPage: React.FC = () => {
             width: 120,
             render: (date: string) => date ? new Date(date).toLocaleDateString() : '-',
         },
-        {
-            title: t('col_actions'),
-            key: 'actions',
-            width: 160,
-            align: 'right' as const,
-            render: (_: any, record: DataSource) => (
-                <Space>
-                    <Tooltip title={t('edit_connection')}>
-                        <Button
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={() => handleEditDataSource(record)}
-                        />
-                    </Tooltip>
-                    <Tooltip title={t('delete')}>
-                        <Button
-                            size="small"
-                            icon={<DeleteOutlined />}
-                            danger
-                            onClick={() => handleDeleteDataSource(record)}
-                        />
-                    </Tooltip>
-                </Space>
-            ),
-        },
+        ...(canManageDataSettings
+            ? [
+                {
+                    title: t('col_actions'),
+                    key: 'actions',
+                    width: 160,
+                    align: 'right' as const,
+                    render: (_: any, record: DataSource) => (
+                        <Space>
+                            <Tooltip title={t('edit_connection')}>
+                                <Button
+                                    size="small"
+                                    icon={<EditOutlined />}
+                                    onClick={() => handleEditDataSource(record)}
+                                />
+                            </Tooltip>
+                            <Tooltip title={t('delete')}>
+                                <Button
+                                    size="small"
+                                    icon={<DeleteOutlined />}
+                                    danger
+                                    onClick={() => handleDeleteDataSource(record)}
+                                />
+                            </Tooltip>
+                        </Space>
+                    ),
+                },
+            ]
+            : []),
     ];
 
     const filteredDataSources = useMemo(() => {
@@ -374,7 +381,7 @@ const DataSourcesPage: React.FC = () => {
                 title={t('title')}
                 description={t('description')}
                 extra={
-                    <PermissionGuard permission={Permission.DATA_EDIT}>
+                    <PermissionGuard permission={Permission.ORG_DELETE}>
                         <Tooltip
                             title={
                                 canAddDataSource
@@ -490,11 +497,11 @@ const DataSourcesPage: React.FC = () => {
                                             : t('empty_none')
                                     }
                                 >
-                                    {!searchTerm && statusFilter === 'all' && typeFilter === 'all' && (
+                                    {!searchTerm && statusFilter === 'all' && typeFilter === 'all' && canManageDataSettings && (
                                         <Button
                                             type="primary"
                                             icon={<PlusOutlined />}
-                                            onClick={() => setModalVisible(true)}
+                                            onClick={handleAddDataSource}
                                             disabled={!canAddDataSource}
                                         >
                                             {t('connect_data_source')}

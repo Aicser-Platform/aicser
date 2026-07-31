@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from src.core.cache import cache
 from src.core.edition import is_ee_enabled
+from src.core.licensing import service as licensing_service
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             from src.modules.knowledge.models import KnowledgeDocument, DocumentChunk  # noqa: F401
             from src.modules.dashboards.models import Dashboard  # noqa: F401
             from src.modules.charts.models import ChatVisualization, DashboardEmbed  # noqa: F401
+            from src.core.licensing.models import LicenseStateRecord  # noqa: F401
             logger.info("All database models imported successfully")
         except Exception as e:
             logger.warning("Failed to import some models: %s", e)
@@ -132,6 +134,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 asyncio.create_task(schedule_retention_cleanup())
         except Exception as e:
             logger.warning("Failed to start retention cleanup: %s", e)
+
+        # Self-hosted EE license-key activation/validation — no-op unless this
+        # instance is both self-host and has AISER_EDITION_LICENSE_KEY set.
+        try:
+            await licensing_service.bootstrap()
+            asyncio.create_task(licensing_service.refresh_loop())
+        except Exception as e:
+            logger.warning("Licensing bootstrap failed: %s", e)
 
         if is_ee_enabled():
             # Register EE's auth provider so CE's router resolves login/register

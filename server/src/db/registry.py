@@ -22,6 +22,8 @@ from src.modules.feed.models import (
     FeedCollectionItem, FeedNotification, FeedShare, FeedSnapshot,
     FeedChatDraft, FeedDigestSubscription,
 )
+from src.core.licensing.models import LicenseStateRecord
+from src.core.system_settings.models import SystemSetting
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────
 # NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)

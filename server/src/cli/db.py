@@ -12,7 +12,7 @@ def upgrade():
     """Migrate the database."""
     # Use sync version of alembic commands
     try:
-        alembic_main(["--raiseerr", "upgrade", "head"])
+        alembic_main(["--raiseerr", "upgrade", "heads"])
     except Exception as e:
         click.echo(f"Error during migration: {e}", err=True)
         raise click.Abort()

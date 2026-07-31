@@ -72,6 +72,62 @@ cp .env.example .env
 docker compose -f docker-compose.dev.ce.yml up
 ```
 
+## Enterprise Self-Host Images
+
+Enterprise images are built from a checkout that includes the private EE
+submodules. Secrets are supplied at runtime through the VPS `.env`; do not bake
+API keys, database passwords, or license keys into images.
+The app version shown in the user menu is stamped into the image at build time.
+
+Build local self-host images:
+
+```bash
+git submodule update --init --recursive
+NEXT_PUBLIC_API_URL=https://api.example.com \
+make -C deploy ee-self-host-build
+```
+
+Build and push to a registry:
+
+```bash
+REGISTRY=ghcr.io/YOUR_ORG IMAGE_TAG=2026.07.31 PUSH=1 \
+AISER_VERSION=1.1.2 \
+NEXT_PUBLIC_API_URL=https://api.example.com \
+make -C deploy ee-self-host-build
+```
+
+Or publish from GitHub Actions:
+
+```text
+Actions → Publish EE Self-Host Images to GHCR → Run workflow
+```
+
+For private EE submodules, add a repository secret named
+`EE_SUBMODULE_TOKEN` with read access to the private submodule repositories.
+The workflow publishes:
+
+```text
+ghcr.io/aicser-platform/aicser-server-ee
+ghcr.io/aicser-platform/aicser-client-ee
+```
+
+Run on a VPS:
+
+```bash
+mkdir -p /opt/aiser
+cp deploy/docker-compose.ee.self-host.yml /opt/aiser/
+cp deploy/.env.ee.self-host.example /opt/aiser/.env
+# edit /opt/aiser/.env
+cd /opt/aiser
+docker login ghcr.io
+docker compose --env-file .env -f docker-compose.ee.self-host.yml pull
+docker compose --env-file .env -f docker-compose.ee.self-host.yml up -d
+```
+
+The default self-host stack uses local authentication. After first login,
+workspace admins can update SMTP/Resend and S3-compatible storage from Settings
+→ Integrations → Email & Storage.
+
 ## License
 
 - `server/src/`, `client/src/` — [AGPL-3.0](LICENSE)

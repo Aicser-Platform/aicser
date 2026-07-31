@@ -41,6 +41,7 @@ export const OrganizationSettingsTab = (): null => null;
 export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
 export const SubscriptionSettingsTab = (): null => null;
+export const LicenseSettingsTab      = (): null => null;
 export const RolesTab                = (): null => null;
 export const AgentSkillsTab          = (): null => null;
 export const AgentWorkflowsTab       = (): null => null;

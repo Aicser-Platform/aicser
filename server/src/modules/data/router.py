@@ -156,6 +156,28 @@ def _ce_can_read_data_source(row: Any, user_id: str) -> bool:
     return owner_id is None or str(owner_id) == user_id
 
 
+async def _require_data_settings_owner(
+    user_id: str,
+    *,
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> None:
+    """Require org-owner-level access for managing data source settings in EE."""
+    if not is_ee_enabled():
+        return
+    if not organization_id and not project_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization owner access is required to manage data source settings",
+        )
+    await require_permission(
+        user_id,
+        "org:delete",
+        organization_id=organization_id,
+        project_id=project_id,
+    )
+
+
 # logger should be available for functions defined below
 logger = logging.getLogger(__name__)
 
@@ -708,12 +730,13 @@ async def connect_database(request: DatabaseConnectionRequest, current_token: Un
             logger.warning('connect_database attempted without authenticated user')
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Authentication required')
 
-        # RBAC: verify user has data:connect permission
-        await require_permission(
+        requested_project_id = request.project_id
+        if not requested_project_id and isinstance(request.custom_fields, dict):
+            requested_project_id = request.custom_fields.get("project_id")
+        await _require_data_settings_owner(
             user_id,
-            "data:connect",
             organization_id=str(user_payload.get("organization_id") or user_payload.get("org_id") or "") or None,
-            project_id=str(user_payload.get("project_id") or "") or None,
+            project_id=str(requested_project_id or "") or None,
         )
 
         # Enforce data source limit based on plan
@@ -1056,6 +1079,7 @@ async def create_data_source(
         description = body.get("description")
         config = body.get("config") or body.get("connection_config") or {}
         project_id = body.get("project_id")
+        await _require_data_settings_owner(user_id, project_id=str(project_id or "") or None)
         format_val = body.get("format") or (ds_type if ds_type != "file" else "api" if ds_type == "api" else "file")
         from src.modules.data.services.data_sources_crud import DataSourceCreate as CRUDDataSourceCreate
         from src.db.session import async_session
@@ -1126,15 +1150,6 @@ async def upload_file(
             logger.warning('get_data_source attempted without authenticated user')
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Authentication required')
 
-        # RBAC: verify user has data:upload permission
-        upload_payload = current_token if isinstance(current_token, dict) else {}
-        await require_permission(
-            user_id,
-            "data:upload",
-            organization_id=str(upload_payload.get("organization_id") or upload_payload.get("org_id") or "") or None,
-            project_id=str(project_id or "") or None,
-        )
-
         # Enforce data source limit based on plan.
         # enforce_data_source_limit also resolves the real org_id from user_roles when the
         # token lacks it, and returns the resolved value — so capture it here.
@@ -1156,6 +1171,7 @@ async def upload_file(
 
         # CE has no project system — store uploads by user_id only
         project_id = None if not is_ee_enabled() else await _resolve_upload_project_id(user_id, project_id)
+        await _require_data_settings_owner(user_id, project_id=str(project_id or "") or None)
         
         # Validate file - check if file is None or missing
         if file is None:
@@ -1548,21 +1564,17 @@ async def update_data_source(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Data source not found",
                 )
-            creator_ok = (
-                getattr(row, "user_id", None) is not None
-                and str(row.user_id) == user_id
-            )
-            if not creator_ok:
-                if not is_ee_enabled():
-                    # CE: no project role system — only the creator may update
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Not authorized to update this data source",
-                    )
-                # EE: allow any project member to update
-                user_projects, _ = await ProjectService.get_user_projects(user_id)
-                project_ids = [str(p.id) for p in user_projects]
-                if not (row.project_id is not None and str(row.project_id) in project_ids):
+            if is_ee_enabled():
+                await _require_data_settings_owner(
+                    user_id,
+                    project_id=str(row.project_id) if row.project_id else None,
+                )
+            else:
+                creator_ok = (
+                    getattr(row, "user_id", None) is not None
+                    and str(row.user_id) == user_id
+                )
+                if not creator_ok:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Not authorized to update this data source",
@@ -1665,6 +1677,10 @@ async def patch_business_metadata(
             data_source = result.scalar_one_or_none()
             if not data_source:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data source not found")
+            await _require_data_settings_owner(
+                user_id,
+                project_id=str(data_source.project_id) if data_source.project_id else None,
+            )
 
             current_schema = dict(data_source.schema) if isinstance(data_source.schema, dict) else {}
             bm = dict(current_schema.get("business_metadata") or {})
@@ -1856,14 +1872,10 @@ async def delete_data_source(data_source_id: str, current_token: Union[str, dict
                         detail="Not authorized to delete this data source",
                     )
             else:
-                # EE: verify user has access via project membership
-                user_projects, _ = await ProjectService.get_user_projects(user_id)
-                project_ids = [str(p.id) for p in user_projects]
-                if str(data_source.project_id) not in project_ids:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Not authorized to delete this data source",
-                    )
+                await _require_data_settings_owner(
+                    user_id,
+                    project_id=str(data_source.project_id) if data_source.project_id else None,
+                )
 
             # Soft-delete; list filters is_active == True so it disappears
             data_source.is_active = False

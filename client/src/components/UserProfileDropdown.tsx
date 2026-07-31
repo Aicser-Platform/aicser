@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dropdown, Avatar, Badge, Button, Progress, message } from 'antd';
 import {
   UserOutlined,
@@ -26,6 +26,9 @@ import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import { getLocaleMeta, LOCALE_OPTIONS } from '@/config/locales';
 import { fetchApi } from '@/utils/api';
+import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
+import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
+import { getBuildTimeAiserVersionLabel } from '@/utils/appVersion';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -53,6 +56,25 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const { isDarkMode, setIsDarkMode } = useThemeMode();
   const currentLocale = useLocale();
+  const { isSelfHost } = useWorkspaceConfig({ enabled: isEnterpriseEdition });
+  const showHostedBilling = isEnterpriseEdition && !isSelfHostDeploymentFromEnv() && !isSelfHost;
+  const [appVersionLabel, setAppVersionLabel] = useState(getBuildTimeAiserVersionLabel);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/meta/version', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { label?: string } | null) => {
+        const label = data?.label?.trim();
+        if (!cancelled && label) setAppVersionLabel(label);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleThemeChange = (dark: boolean) => {
     setIsDarkMode(dark);
@@ -85,11 +107,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
 
   const { init: initSubscription } = useSubscriptionStore();
   React.useEffect(() => {
-    if (isEnterpriseEdition) {
+    if (showHostedBilling) {
       void initSubscription();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showHostedBilling]);
 
   // Derive display name: prefer first+last name from profile, fallback to email prefix
   const displayName = profile?.first_name
@@ -111,7 +133,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const projectsLimit = projects?.unlimited ? Infinity : (projects?.limit ?? 1);
 
   const handleDropdownVisibleChange = (open: boolean) => {
-    if (open && isEnterpriseEdition) {
+    if (open && showHostedBilling) {
       void refreshUsage({ silent: true });
     }
   };
@@ -134,6 +156,9 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
     const base = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Unknown';
     return isTrial ? `${base} Trial` : base;
   };
+  const profileSubtitle = showHostedBilling
+    ? (subLoading ? '...' : t('plan_display', { plan: getPlanDisplayName(planType) }))
+    : (user?.email || t('user'));
 
   const handleUpgrade = async (planType: string, isYearly: boolean) => {
     setUpgradeLoading(true);
@@ -191,7 +216,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           },
         ]
       : []),
-    ...(isEnterpriseEdition
+    ...(showHostedBilling
       ? [
           {
             type: 'divider' as const,
@@ -404,7 +429,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       key: 'about',
       label: (
         <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--ant-color-text-tertiary)' }}>
-          {t('powered_by')} <b>Aicser •</b> v1.1.1
+          {t('powered_by')} <b>Aicser •</b> {appVersionLabel}
         </div>
       ),
       disabled: true,
@@ -443,16 +468,14 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 {displayName}
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400" style={{ lineHeight: '1.3' }}>
-                {isEnterpriseEdition
-                  ? (subLoading ? '...' : t('plan_display', { plan: getPlanDisplayName(planType) }))
-                  : (user?.email || t('user'))}
+                {isEnterpriseEdition ? profileSubtitle : (user?.email || t('user'))}
               </div>
             </div>
           )}
         </div>
       </Dropdown>
 
-      {isEnterpriseEdition && (
+      {showHostedBilling && (
         <PricingModal
           visible={pricingModalVisible}
           onClose={() => setPricingModalVisible(false)}
