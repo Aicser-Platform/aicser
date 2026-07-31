@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card, Skeleton, Tag, Tooltip } from 'antd';
-import { TeamOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { TeamOutlined, DatabaseOutlined, UserOutlined } from '@ant-design/icons';
 import type { Project } from '@/types/project';
 
 export interface ProjectCardStats {
@@ -54,6 +54,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onSelect,
 }) => {
   const isGrid = layout === 'grid';
+  const ownerName = project.owner_name || 'Unknown';
 
   const statChips = (
     <div className={`flex items-center gap-2 ${isGrid ? '' : 'shrink-0'}`}>
@@ -66,6 +67,16 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <span className="truncate text-[15px] font-semibold text-[var(--ant-color-text)]">{project.name}</span>
+        <Tooltip title={`Owned by ${ownerName}`}>
+          <Tag
+            icon={<UserOutlined />}
+            color="default"
+            style={{ marginInlineEnd: 0, maxWidth: 180 }}
+            className="truncate"
+          >
+            Owner: {ownerName}
+          </Tag>
+        </Tooltip>
         {isActive && (
           <Tag color="cyan" style={{ marginInlineEnd: 0 }}>
             Active

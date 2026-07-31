@@ -697,6 +697,9 @@
   "chat": {
     "loading": "Loading chat...",
     "loading_data_panel": "Loading data panel...",
+    "ai_provider_key_required_title": "Configure an AI provider key",
+    "ai_provider_key_required_desc": "AI Engine is available, but no working AI provider key is configured yet. Add a provider key before starting an AI analysis.",
+    "configure_api_key_action": "Go to API Keys",
     "new_conversation": "New Conversation",
     "create": "Create",
     "placeholder": "Conversation name (optional)",

@@ -47,6 +47,12 @@ def _fingerprint(instance_id: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _parse_claim_datetime(value: object) -> dt.datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return dt.datetime.fromisoformat(value)
+
+
 async def _get_or_create_row(db) -> LicenseStateRecord:
     result = await db.execute(select(LicenseStateRecord).limit(1))
     row = result.scalars().first()
@@ -70,7 +76,9 @@ async def _apply_result(db, row: LicenseStateRecord, result: client.ActivationRe
         or row.max_users
     )
     row.features = claims.get("features", [])
-    row.expires_at = dt.datetime.fromtimestamp(claims["exp"], tz=dt.timezone.utc)
+    row.expires_at = result.license_expires_at or _parse_claim_datetime(
+        claims.get("license_expires_at")
+    )
     row.last_validated_at = dt.datetime.now(dt.timezone.utc)
     row.last_error = None
     await db.commit()

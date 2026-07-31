@@ -1,6 +1,6 @@
 """
-Azure Blob Storage service for user profile avatar uploads.
-Stores images under  avatars/<user_id>/<uuid>.<ext>
+Object storage service for user profile avatar uploads.
+Stores images under orgs/<org_id>/users/<user_id>/avatars/avatar.webp.
 """
 
 import asyncio
@@ -9,9 +9,10 @@ import logging
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import quote, unquote, urlparse
 
-from PIL import Image
-
+import boto3
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import (
     BlobServiceClient,
@@ -19,7 +20,9 @@ from azure.storage.blob import (
     ContentSettings,
     generate_blob_sas,
 )
-from azure.core.exceptions import ResourceNotFoundError, AzureError
+from botocore.config import Config
+from botocore.exceptions import ClientError
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,93 @@ logger = logging.getLogger(__name__)
 def is_avatar_data_uri(avatar_url: str) -> bool:
     """Return True for CE avatars stored directly in users.avatar_url."""
     return avatar_url.startswith("data:image/")
+
+
+def _s3_env_config() -> dict:
+    return {
+        "provider": os.getenv("S3_PROVIDER", "aws").strip() or "aws",
+        "endpoint_url": os.getenv("S3_ENDPOINT_URL", "").strip(),
+        "access_key_id": os.getenv("S3_ACCESS_KEY_ID", "").strip(),
+        "secret_access_key": os.getenv("S3_SECRET_ACCESS_KEY", "").strip(),
+        "bucket_name": os.getenv("S3_BUCKET_NAME", "").strip(),
+        "region": os.getenv("S3_REGION", "us-east-1").strip() or "us-east-1",
+    }
+
+
+def _s3_client_from_config(config: dict):
+    endpoint_url = config.get("endpoint_url") or None
+    addressing_style = "path" if endpoint_url else "virtual"
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=config.get("access_key_id"),
+        aws_secret_access_key=config.get("secret_access_key"),
+        region_name=config.get("region") or "us-east-1",
+        config=Config(s3={"addressing_style": addressing_style}),
+    )
+
+
+def _s3_public_url(object_key: str, config: dict) -> str:
+    bucket = config["bucket_name"]
+    endpoint_url = (config.get("endpoint_url") or "").rstrip("/")
+    encoded_key = quote(object_key, safe="/")
+    if endpoint_url:
+        return f"{endpoint_url}/{bucket}/{encoded_key}"
+    region = config.get("region") or "us-east-1"
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{encoded_key}"
+
+
+def _s3_key_from_url(avatar_url: str, config: dict) -> Optional[str]:
+    bucket = config.get("bucket_name") or ""
+    if not bucket:
+        return None
+
+    parsed = urlparse(avatar_url)
+    endpoint_url = (config.get("endpoint_url") or "").rstrip("/")
+
+    if endpoint_url:
+        endpoint = urlparse(endpoint_url)
+        expected_prefix = f"/{bucket}/"
+        if parsed.netloc == endpoint.netloc and parsed.path.startswith(expected_prefix):
+            return unquote(parsed.path[len(expected_prefix):])
+        return None
+
+    host = parsed.netloc
+    virtual_prefix = f"{bucket}.s3."
+    if host.startswith(virtual_prefix) and parsed.path.startswith("/"):
+        return unquote(parsed.path.lstrip("/"))
+
+    path_prefix = f"/{bucket}/"
+    if host.startswith("s3.") and parsed.path.startswith(path_prefix):
+        return unquote(parsed.path[len(path_prefix):])
+
+    return None
+
+
+def generate_avatar_s3_url(
+    avatar_url: str, expiry_hours: int = 1, config: dict | None = None
+) -> str:
+    """Return a presigned S3 URL for a stored avatar URL when S3 is configured."""
+    config = {**_s3_env_config(), **(config or {})}
+    if not all(
+        [config["access_key_id"], config["secret_access_key"], config["bucket_name"]]
+    ):
+        return avatar_url
+
+    object_key = _s3_key_from_url(avatar_url, config)
+    if not object_key:
+        return avatar_url
+
+    try:
+        client = _s3_client_from_config(config)
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": config["bucket_name"], "Key": object_key},
+            ExpiresIn=max(60, int(expiry_hours * 3600)),
+        )
+    except Exception as exc:
+        logger.warning("S3 avatar presign skipped: %s", exc)
+        return avatar_url
 
 
 def generate_avatar_sas_url(avatar_url: str, expiry_hours: int = 1) -> str:
@@ -41,6 +131,10 @@ def generate_avatar_sas_url(avatar_url: str, expiry_hours: int = 1) -> str:
     """
     if is_avatar_data_uri(avatar_url):
         return avatar_url
+
+    s3_url = generate_avatar_s3_url(avatar_url, expiry_hours=expiry_hours)
+    if s3_url != avatar_url:
+        return s3_url
 
     account_key = os.getenv("AZURE_STORAGE_ACCOUNT_KEY", "")
     container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "")
@@ -87,8 +181,8 @@ ALLOWED_CONTENT_TYPES = {
 
 
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
-AVATAR_MAX_DIMENSION = 256              # px — longest side capped at this
-AVATAR_WEBP_QUALITY = 85               # 0-100; 85 is a good size/quality balance
+AVATAR_MAX_DIMENSION = 256  # px — longest side capped at this
+AVATAR_WEBP_QUALITY = 85  # 0-100; 85 is a good size/quality balance
 
 
 def compress_image_to_webp(file_content: bytes) -> bytes:
@@ -221,7 +315,8 @@ class AvatarStorageService:
 
         if len(file_content) > MAX_AVATAR_SIZE_BYTES:
             raise ValueError(
-                f"File too large ({len(file_content)} bytes). Maximum is {MAX_AVATAR_SIZE_BYTES} bytes (5 MB)."
+                f"File too large ({len(file_content)} bytes). "
+                f"Maximum is {MAX_AVATAR_SIZE_BYTES} bytes (5 MB)."
             )
 
         blob_name = (
@@ -295,4 +390,87 @@ class AvatarStorageService:
             return False
         except AzureError as e:
             logger.error(f"❌ Failed to delete avatar blob: {str(e)}")
+            raise
+
+
+class S3AvatarStorageService:
+    """S3-compatible storage service for profile avatar images."""
+
+    def __init__(self, config: dict | None = None) -> None:
+        resolved = {**_s3_env_config(), **(config or {})}
+        if not all(
+            [resolved["access_key_id"], resolved["secret_access_key"], resolved["bucket_name"]]
+        ):
+            raise ValueError(
+                "S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_BUCKET_NAME are required"
+            )
+
+        self.config = resolved
+        self.bucket_name = resolved["bucket_name"]
+        self._client = _s3_client_from_config(resolved)
+
+    def _compress_to_webp(self, file_content: bytes) -> bytes:
+        return compress_image_to_webp(file_content)
+
+    def _generate_user_blob_name(self, org_id: str, user_id: str) -> str:
+        return f"orgs/{org_id}/users/{user_id}/avatars/avatar.webp"
+
+    async def upload_avatar(
+        self,
+        file_content: bytes,
+        org_id: str,
+        content_type: str,
+        user_id: Optional[str] = None,
+    ) -> str:
+        if content_type not in ALLOWED_CONTENT_TYPES:
+            raise ValueError(
+                f"Unsupported image type '{content_type}'. "
+                f"Allowed: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}"
+            )
+
+        if len(file_content) > MAX_AVATAR_SIZE_BYTES:
+            raise ValueError(
+                f"File too large ({len(file_content)} bytes). Maximum is {MAX_AVATAR_SIZE_BYTES} bytes (5 MB)."
+            )
+
+        if not user_id:
+            raise ValueError("user_id is required for S3 avatar upload")
+
+        object_key = self._generate_user_blob_name(org_id, user_id)
+        webp_content = await asyncio.to_thread(self._compress_to_webp, file_content)
+
+        def _put() -> None:
+            self._client.put_object(
+                Bucket=self.bucket_name,
+                Key=object_key,
+                Body=webp_content,
+                ContentType="image/webp",
+                Metadata={"org_id": org_id, "user_id": user_id},
+            )
+
+        try:
+            await asyncio.to_thread(_put)
+            public_url = _s3_public_url(object_key, self.config)
+            logger.info("✅ Avatar uploaded to S3: %s", object_key)
+            return public_url
+        except ClientError as exc:
+            logger.error("❌ Failed to upload S3 avatar %s: %s", object_key, exc)
+            raise
+
+    async def delete_avatar(self, avatar_url: str) -> bool:
+        object_key = _s3_key_from_url(avatar_url, self.config)
+        if not object_key:
+            logger.warning("⚠️ Cannot parse S3 object key from URL: %s", avatar_url)
+            return False
+
+        def _delete() -> bool:
+            self._client.delete_object(Bucket=self.bucket_name, Key=object_key)
+            return True
+
+        try:
+            result = await asyncio.to_thread(_delete)
+            logger.info("✅ Deleted S3 avatar: %s", object_key)
+            return result
+        except ClientError as exc:
+            logger.error("❌ Failed to delete S3 avatar %s: %s", object_key, exc)
             raise

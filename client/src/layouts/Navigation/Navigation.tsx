@@ -16,7 +16,7 @@ import React from 'react';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useTranslations } from 'next-intl';
-import { useAiAvailability } from '@/hooks/useAiAvailability';
+import { isAiFrontendEnabled } from '@/utils/aiAvailability';
 import {
   NAV_ROUTES,
   NAV_LABEL_KEYS,
@@ -104,8 +104,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   );
   const routeOpenGroups = React.useMemo(() => openKeysForPathname(pathname), [pathname]);
   const settingsItems = React.useMemo(() => buildSettingsItems(isEnterpriseEdition), []);
-  const aiAvailability = useAiAvailability(true, isEnterpriseEdition);
-  const showAiNav = isEnterpriseEdition && aiAvailability.available;
+  const showAiNav = isEnterpriseEdition && isAiFrontendEnabled();
 
   const onNavigate = React.useCallback(
     (href: string) => {

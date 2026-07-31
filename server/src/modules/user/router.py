@@ -6,6 +6,7 @@ Mounted at /api/users in core/api.py.
 
 import json
 import logging
+import os
 import secrets
 import uuid as _uuid
 from datetime import datetime
@@ -22,9 +23,11 @@ from src.modules.user.schemas import UserProfileUpdate, UserProfileResponse
 from src.core.edition import is_ee_enabled
 from src.modules.user.avatar_storage_service import (
     AvatarStorageService,
+    S3AvatarStorageService,
     ALLOWED_CONTENT_TYPES,
     MAX_AVATAR_SIZE_BYTES,
     compress_image_to_webp,
+    generate_avatar_s3_url,
     generate_avatar_sas_url,
     is_avatar_data_uri,
 )
@@ -43,6 +46,28 @@ _user_settings_repo = UserSettingRepository()
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _resolve_avatar_display_url(avatar_url: str) -> str:
+    if not avatar_url or is_avatar_data_uri(avatar_url):
+        return avatar_url
+
+    try:
+        from src.core.system_settings.runtime_config import get_effective_storage_config
+
+        storage_config = await get_effective_storage_config()
+        if (
+            storage_config.get("enabled")
+            and str(storage_config.get("backend") or "").strip().lower() == "s3"
+        ):
+            return generate_avatar_s3_url(avatar_url, config=storage_config)
+    except Exception:
+        logger.debug(
+            "Runtime avatar storage config unavailable; using env/default URL resolver",
+            exc_info=True,
+        )
+
+    return generate_avatar_sas_url(avatar_url)
 
 
 def _require_user_id(current_token: Union[str, dict]) -> str:
@@ -72,10 +97,9 @@ async def get_profile(
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # Replace raw private blob URL with a time-limited SAS URL so the browser
-    # can load the avatar image from the private Azure Blob Storage container.
-    if profile.get("avatar_url") and not is_avatar_data_uri(profile["avatar_url"]):
-        profile["avatar_url"] = generate_avatar_sas_url(profile["avatar_url"])
+    # Replace raw private object URLs with signed display URLs when needed.
+    if profile.get("avatar_url"):
+        profile["avatar_url"] = await _resolve_avatar_display_url(profile["avatar_url"])
 
     return profile
 
@@ -130,14 +154,19 @@ async def upload_avatar(
 
         webp_bytes = compress_image_to_webp(file_content)
         data_uri = f"data:image/webp;base64,{base64.b64encode(webp_bytes).decode()}"
-        logger.info("CE avatar compressed: %d bytes → %d bytes (data URI)", len(file_content), len(webp_bytes))
+        logger.info(
+            "CE avatar compressed: %d bytes → %d bytes (data URI)",
+            len(file_content),
+            len(webp_bytes),
+        )
         svc = UserService(db)
         updated = await svc.update_profile(user_id=user_id, data={"avatar_url": data_uri})
         if updated is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
         return updated
 
-    # EE: upload to Azure Blob Storage.
+    # EE: upload to configured object storage. S3 stores a stable object URL in
+    # users.avatar_url and profile reads return a presigned URL when needed.
     # Look up the user's organization so we can place the avatar under orgs/{org_id}/
     from sqlalchemy import text
     org_row = await db.execute(
@@ -151,8 +180,28 @@ async def upload_avatar(
     org_id_row = org_row.fetchone()
     org_id = str(org_id_row[0]) if org_id_row else user_id  # fallback to user_id if no org
 
+    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
+    storage_config = None
     try:
-        avatar_svc = AvatarStorageService()
+        from src.core.system_settings.runtime_config import get_effective_storage_config
+
+        effective_storage = await get_effective_storage_config()
+        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
+        if effective_storage.get("enabled") and effective_backend == "s3":
+            storage_backend = "s3"
+            storage_config = effective_storage
+    except Exception:
+        logger.debug(
+            "Runtime storage config unavailable; using env avatar storage backend",
+            exc_info=True,
+        )
+
+    try:
+        avatar_svc = (
+            S3AvatarStorageService(config=storage_config)
+            if storage_backend == "s3"
+            else AvatarStorageService()
+        )
     except ValueError as e:
         logger.error(f"Avatar storage not configured: {e}")
         raise HTTPException(
@@ -175,7 +224,7 @@ async def upload_avatar(
 
     # Return a SAS URL so the frontend can immediately display the new avatar.
     if updated.get("avatar_url"):
-        updated["avatar_url"] = generate_avatar_sas_url(updated["avatar_url"])
+        updated["avatar_url"] = await _resolve_avatar_display_url(updated["avatar_url"])
 
     return updated
 
@@ -237,8 +286,8 @@ async def get_bulk_profiles(
             profile = await svc.get_profile(uid)
             if profile:
                 avatar = profile.get("avatar_url")
-                if avatar and not is_avatar_data_uri(avatar):
-                    avatar = generate_avatar_sas_url(avatar)
+                if avatar:
+                    avatar = await _resolve_avatar_display_url(avatar)
                 results.append(BulkProfileItem(
                     user_id=profile.get("user_id") or uid,
                     email=profile.get("email"),

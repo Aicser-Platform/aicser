@@ -33,11 +33,16 @@ class LicenseServerError(Exception):
 class ActivationResult:
     entitlement_token: str
     expires_at: datetime
+    license_expires_at: datetime | None = None
     max_users: int | None = None
 
 
 def _base_url() -> str:
     return settings.LICENSE_SERVER_URL.rstrip("/")
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 async def _post(path: str, payload: dict) -> dict:
@@ -74,6 +79,7 @@ async def activate(
     return ActivationResult(
         entitlement_token=body["entitlement_token"],
         expires_at=datetime.fromisoformat(body["expires_at"]),
+        license_expires_at=_parse_optional_datetime(body.get("license_expires_at")),
         max_users=body.get("max_users"),
     )
 
@@ -87,6 +93,7 @@ async def validate(*, license_id: str, instance_id: str) -> ActivationResult:
     return ActivationResult(
         entitlement_token=body["entitlement_token"],
         expires_at=datetime.fromisoformat(body["expires_at"]),
+        license_expires_at=_parse_optional_datetime(body.get("license_expires_at")),
         max_users=body.get("max_users"),
     )
 

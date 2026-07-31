@@ -34,6 +34,7 @@ async def _cleanup_license_state_rows():
 
 def _claims(**overrides):
     now = dt.datetime.now(dt.timezone.utc)
+    license_expires_at = now + dt.timedelta(days=365)
     return {
         "license_id": "lic-1",
         "customer_id": "cust-1",
@@ -43,6 +44,7 @@ def _claims(**overrides):
         "instance_id": "inst-1",
         "iat": int(now.timestamp()),
         "exp": int((now + dt.timedelta(days=30)).timestamp()),
+        "license_expires_at": license_expires_at.isoformat(),
         **overrides,
     }
 
@@ -62,7 +64,9 @@ async def test_bootstrap_first_activation_creates_row_and_updates_state(monkeypa
     monkeypatch.setenv("AISER_EDITION_LICENSE_KEY", "AICSER-ENT-AAAA-BBBB-CCCC-DDDD")
 
     activate_result = client.ActivationResult(
-        entitlement_token="eyJ...", expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30)
+        entitlement_token="eyJ...",
+        expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=30),
+        license_expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=365),
     )
     with (
         patch.object(client, "activate", new=AsyncMock(return_value=activate_result)) as mock_activate,
@@ -83,6 +87,38 @@ async def test_bootstrap_first_activation_creates_row_and_updates_state(monkeypa
     assert rows[0].license_id == "lic-1"
     assert rows[0].is_valid is True
     assert rows[0].max_users == 30
+    assert rows[0].expires_at == activate_result.license_expires_at
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_uses_license_expiry_not_token_expiry(monkeypatch):
+    monkeypatch.setattr(state_module.state, "requires_validation", lambda: True)
+    monkeypatch.setenv("AISER_EDITION_LICENSE_KEY", "AICSER-ENT-AAAA-BBBB-CCCC-DDDD")
+    token_expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=60)
+    license_expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=365)
+    activate_result = client.ActivationResult(
+        entitlement_token="eyJ...",
+        expires_at=token_expires_at,
+        license_expires_at=license_expires_at,
+    )
+
+    with (
+        patch.object(client, "activate", new=AsyncMock(return_value=activate_result)),
+        patch.object(
+            verify,
+            "verify_entitlement_token",
+            new=AsyncMock(
+                return_value=_claims(
+                    exp=int(token_expires_at.timestamp()),
+                    license_expires_at=license_expires_at.isoformat(),
+                )
+            ),
+        ),
+    ):
+        await service.bootstrap()
+
+    assert state_module.state.expires_at == license_expires_at
+    assert state_module.state.expires_at != token_expires_at
 
 
 @pytest.mark.asyncio

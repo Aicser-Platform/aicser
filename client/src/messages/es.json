@@ -686,6 +686,9 @@
     "checkout_proceed": "Proceed to Checkout →"
   },
   "chat": {
+    "ai_provider_key_required_title": "Configure an AI provider key",
+    "ai_provider_key_required_desc": "AI Engine is available, but no working AI provider key is configured yet. Add a provider key before starting an AI analysis.",
+    "configure_api_key_action": "Go to API Keys",
     "loading": "Cargando chat...",
     "loading_data_panel": "Cargando panel...",
     "new_conversation": "Nueva conversación",

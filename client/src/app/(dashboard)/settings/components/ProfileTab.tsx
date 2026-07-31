@@ -126,6 +126,7 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               beforeUpload={(file) => {
                 uploadAvatar(file).then((url) => {
                   if (url) message.success(t('profile_avatar_updated'));
+                  else message.error(t('profile_avatar_upload_failed'));
                 });
                 return false;
               }}
