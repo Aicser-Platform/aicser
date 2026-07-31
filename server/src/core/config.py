@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
     AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1-mini")
 
     # Reasoning-tier model (optional; for complex/ambiguous queries when REASONING_MODEL_* set)
@@ -160,6 +160,15 @@ class Settings(BaseSettings):
     # REQUIRE_MFA: bool = os.getenv("REQUIRE_MFA", "false").lower() == "true"
     # AUDIT_LOGGING: bool = os.getenv("AUDIT_LOGGING", "true").lower() == "true"
     # DATA_PRIVACY_MODE: bool = os.getenv("DATA_PRIVACY_MODE", "true").lower() == "true"
+
+    # Licensing: self-hosted EE license-key validation against aicser-license-server.
+    # Empty by default — production SaaS never sets this. See src/core/licensing/.
+    AISER_EDITION_LICENSE_KEY: str = os.getenv("AISER_EDITION_LICENSE_KEY", "")
+    LICENSE_SERVER_URL: str = os.getenv("LICENSE_SERVER_URL", "https://license.aicser.com")
+    # Instance-local grace period for offline tolerance — not the license server's
+    # per-license grace_period_days (not exposed by its public API).
+    LICENSE_GRACE_PERIOD_DAYS: int = int(os.getenv("LICENSE_GRACE_PERIOD_DAYS", "3"))
+    LICENSE_REFRESH_INTERVAL_MINUTES: int = int(os.getenv("LICENSE_REFRESH_INTERVAL_MINUTES", "15"))
 
     # Cube.js Environment Variables (with defaults)
     CUBE_DB_TYPE: str = os.getenv("CUBE_DB_TYPE", "postgres")

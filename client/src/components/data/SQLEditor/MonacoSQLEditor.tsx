@@ -61,6 +61,7 @@ import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/Sav
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
 import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
+import { useAiAvailability } from '@/hooks/useAiAvailability';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
 import { getChatHref } from '@/utils/appPaths';
 import {
@@ -518,6 +519,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const aiGenerateAbortRef = useRef<AbortController | null>(null);
   const [aiModel, setAiModel] = useState<string | undefined>();
   const selectedAiModel = aiModel ?? 'auto';
+  const aiAvailability = useAiAvailability(true, IS_EE);
+  const aiAvailable = !IS_EE || aiAvailability.available;
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
@@ -2155,6 +2158,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   };
 
   const handleAIExplainSQL = async () => {
+    if (!aiAvailable) {
+      message.warning('AI is unavailable. Add or update an AI provider key in Settings.');
+      return;
+    }
     const sql = getCurrentSQL();
     if (!sql) { message.warning(t('no_query_to_save')); return; }
     setAiExplaining(true);
@@ -2198,6 +2205,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   };
 
   const handleAIOptimizeSQL = async () => {
+    if (!aiAvailable) {
+      message.warning('AI is unavailable. Add or update an AI provider key in Settings.');
+      return;
+    }
     const sql = getCurrentSQL();
     if (!sql) { message.warning(t('no_query_to_save')); return; }
     if (!selectedDataSourceId) { message.warning(t('select_ds_first')); return; }
@@ -2242,6 +2253,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   };
 
   const handleAIGenerate = async () => {
+    if (!aiAvailable) {
+      message.warning('AI is unavailable. Add or update an AI provider key in Settings.');
+      return;
+    }
     if (!aiAssistantInput.trim()) {
       message.warning(t('enter_query_description'));
       return;
@@ -2849,7 +2864,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           height: '100%',
           maxHeight: '100%'
         }}>
-          {IS_EE && (
+          {IS_EE && aiAvailable && (
           <div className="qe-ai-bar">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', minWidth: 0 }}>
               <Tooltip
@@ -3045,7 +3060,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         />
                       </Tooltip>
                     )}
-                    {IS_EE && editorLanguage === 'sql' && (
+                    {IS_EE && aiAvailable && editorLanguage === 'sql' && (
                       <>
                         <Divider type="vertical" style={{ margin: '0 2px' }} />
                         <Tooltip title={t('explain_sql_tooltip')}>

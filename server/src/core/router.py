@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.core.edition import is_ee_enabled
 from src.core.config import settings
+from src.core.licensing.dependencies import require_valid_license
 
 # ── CE imports (always loaded) ────────────────────────────────────────────────
 from src.modules.authentication.router import router as auth_api_router
@@ -27,6 +28,7 @@ from src.modules.translations.router import router as translations_router
 from src.modules.user.router import router as user_router
 from src.modules.debug.router import router as debug_router
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.core.licensing.router import router as licensing_router
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ api_router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledg
 api_router.include_router(media_router, prefix="/api/media/feed-thumbnails", tags=["media"])
 api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
 api_router.include_router(pricing_router)
+api_router.include_router(licensing_router, prefix="/api/licensing", tags=["licensing"])
 api_router.include_router(translations_router, prefix="/api")
 
 if not is_ee_enabled():
@@ -85,29 +88,50 @@ if is_ee_enabled():
         from ee.modules.chats.router import router as chat_module_router
         from ee.modules.chats.conversations.router import router as conversation_router
         from ee.modules.chats.assets.router import router as assets_router
-        api_router.include_router(chat_module_router, prefix="/chats", tags=["chats"])
-        api_router.include_router(conversation_router, prefix="/conversations", tags=["conversations"])
-        api_router.include_router(assets_router, prefix="/assets", tags=["assets"])
+        api_router.include_router(
+            chat_module_router, prefix="/chats", tags=["chats"],
+            dependencies=[Depends(require_valid_license)],
+        )
+        api_router.include_router(
+            conversation_router, prefix="/conversations", tags=["conversations"],
+            dependencies=[Depends(require_valid_license)],
+        )
+        api_router.include_router(
+            assets_router, prefix="/assets", tags=["assets"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Chats router not loaded: %s", _err)
 
     try:
         from ee.modules.ai.router import router as ai_router
         from ee.modules.ai.api_streaming import router as ai_streaming_router
-        api_router.include_router(ai_streaming_router, prefix="/ai", tags=["ai-streaming"])
-        api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+        api_router.include_router(
+            ai_streaming_router, prefix="/ai", tags=["ai-streaming"],
+            dependencies=[Depends(require_valid_license)],
+        )
+        api_router.include_router(
+            ai_router, prefix="/ai", tags=["ai"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("AI router not loaded: %s", _err)
 
     try:
         from ee.modules.alerts.router import router as alerts_router
-        api_router.include_router(alerts_router, prefix="/api/alerts", tags=["alerts"])
+        api_router.include_router(
+            alerts_router, prefix="/api/alerts", tags=["alerts"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Alerts router not loaded: %s", _err)
 
     try:
         from ee.modules.decision_os.router import router as decision_os_router
-        api_router.include_router(decision_os_router, prefix="/api/decision-os", tags=["decision-os"])
+        api_router.include_router(
+            decision_os_router, prefix="/api/decision-os", tags=["decision-os"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("DecisionOS router not loaded: %s", _err)
 
@@ -119,60 +143,99 @@ if is_ee_enabled():
 
     try:
         from ee.modules.authentication.rbac.router import router as rbac_router
-        api_router.include_router(rbac_router, prefix="/api/rbac", tags=["RBAC"])
+        api_router.include_router(
+            rbac_router, prefix="/api/rbac", tags=["RBAC"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("RBAC router not loaded: %s", _err)
 
     try:
         from ee.modules.organizations.router import router as organizations_router
-        api_router.include_router(organizations_router, prefix="/api/organizations", tags=["organizations"])
+        api_router.include_router(
+            organizations_router, prefix="/api/organizations", tags=["organizations"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Organizations router not loaded: %s", _err)
 
     try:
         from ee.modules.invitations.router import router as invitations_router
-        api_router.include_router(invitations_router, prefix="/api/invitations", tags=["invitations"])
+        api_router.include_router(
+            invitations_router, prefix="/api/invitations", tags=["invitations"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Invitations router not loaded: %s", _err)
 
     try:
         from ee.modules.project.router import router as project_router
-        api_router.include_router(project_router, prefix="/api/projects", tags=["projects"])
+        api_router.include_router(
+            project_router, prefix="/api/projects", tags=["projects"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Projects router not loaded: %s", _err)
 
     try:
         from ee.modules.platform.router import router as platform_intelligence_router
-        api_router.include_router(platform_intelligence_router, prefix="/api", tags=["platform-intelligence"])
+        api_router.include_router(
+            platform_intelligence_router, prefix="/api", tags=["platform-intelligence"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Platform intelligence router not loaded: %s", _err)
 
     try:
         from ee.modules.schedule_email.router import router as schedule_email_router
-        api_router.include_router(schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"])
+        api_router.include_router(
+            schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Schedule email router not loaded: %s", _err)
 
     try:
+        from ee.modules.admin_config.router import router as admin_config_router
+        api_router.include_router(
+            admin_config_router, prefix="/api/admin", tags=["admin-config"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Admin config router not loaded: %s", _err)
+
+    try:
         from src.modules.embed.router import router as embed_router
-        api_router.include_router(embed_router, prefix="/api/embed", tags=["embed"])
+        api_router.include_router(
+            embed_router, prefix="/api/embed", tags=["embed"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Embed router not loaded: %s", _err)
 
     try:
         from ee.modules.embed.assistant_router import router as embed_assistant_router
-        api_router.include_router(embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"])
+        api_router.include_router(
+            embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Embed assistants router not loaded: %s", _err)
 
     try:
         from ee.modules.knowledge.library_router import router as knowledge_library_router
-        api_router.include_router(knowledge_library_router, prefix="/knowledge/libraries", tags=["knowledge-libraries"])
+        api_router.include_router(
+            knowledge_library_router, prefix="/knowledge/libraries", tags=["knowledge-libraries"],
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Knowledge libraries router not loaded: %s", _err)
 
     try:
         from ee.modules.telegram.router import router as telegram_router
-        api_router.include_router(telegram_router, prefix="/api/v1")
+        api_router.include_router(
+            telegram_router, prefix="/api/v1",
+            dependencies=[Depends(require_valid_license)],
+        )
     except Exception as _err:
         logger.warning("Telegram router not loaded: %s", _err)

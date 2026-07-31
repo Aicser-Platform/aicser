@@ -11,17 +11,19 @@ function RedirectAuthenticatedInner({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isLogoutRoute = pathname === '/logout';
+  const isInviteRoute = pathname?.startsWith('/invite/');
 
   useEffect(() => {
     if (isLogoutRoute) return;
+    if (isInviteRoute) return;
     if (authLoading || !isAuthenticated) return;
-    const next = searchParams.get('next');
+    const next = searchParams?.get('next');
     const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : getDefaultAppPath();
     router.replace(dest);
-  }, [authLoading, isAuthenticated, isLogoutRoute, router, searchParams]);
+  }, [authLoading, isAuthenticated, isInviteRoute, isLogoutRoute, router, searchParams]);
 
-  if (authLoading && !isLogoutRoute) return null;
-  if (isAuthenticated && !isLogoutRoute) return null;
+  if (authLoading && !isLogoutRoute && !isInviteRoute) return null;
+  if (isAuthenticated && !isLogoutRoute && !isInviteRoute) return null;
   return <>{children}</>;
 }
 

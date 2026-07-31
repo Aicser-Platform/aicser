@@ -36,6 +36,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: aiser-keycloak-ee
+    profiles:
+      - keycloak
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
@@ -51,10 +53,18 @@ services:
     build:
       context: ../server
       dockerfile: Dockerfile.prod
+      args:
+        AISER_VERSION: ${AISER_VERSION:-1.1.1}
     container_name: aiser-server-ee
     environment:
+      APP_VERSION: ${AISER_VERSION:-1.1.1}
+      AISER_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_EDITION: enterprise
-      AISER_EDITION_LICENSE_KEY: ${LICENSE_KEY:-}
+      AISER_EDITION_LICENSE_KEY: ${AISER_EDITION_LICENSE_KEY:-}
+      AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
+      LICENSE_SERVER_URL: ${LICENSE_SERVER_URL:-https://license.aicser.com}
+      LICENSE_GRACE_PERIOD_DAYS: ${LICENSE_GRACE_PERIOD_DAYS:-3}
+      LICENSE_REFRESH_INTERVAL_MINUTES: ${LICENSE_REFRESH_INTERVAL_MINUTES:-15}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
       POSTGRES_SERVER: postgres
       POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
@@ -66,22 +76,22 @@ services:
       REDIS_URL: redis://redis:6379
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
-      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5-mini}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-4.1-mini}
       AZURE_OPENAI_GPT41_API_KEY: ${AZURE_OPENAI_GPT41_API_KEY}
       AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT}
       AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION}
       AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
       AZURE_API_KEY: ${AZURE_OPENAI_API_KEY}
       AZURE_API_BASE: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      AZURE_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_SECRET: ${JWT_SECRET:-}
       SAMPLE_DATA_DUCKDB_PATH: ${SAMPLE_DATA_DUCKDB_PATH:-}
-      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://keycloak:8080}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_BACKEND_CLIENT_ID:-aiser-backend}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-aiser-backend-dev-secret}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
       AZURE_TENANT_ID: ${AZURE_TENANT_ID}
@@ -93,6 +103,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -125,6 +136,8 @@ services:
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8001:8000"
     depends_on:
@@ -132,8 +145,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      keycloak:
-        condition: service_started
     entrypoint:
       - /bin/sh
       - -c
@@ -158,11 +169,15 @@ services:
       args:
         EDITION: enterprise
         NEXT_PUBLIC_EDITION: enterprise
+        AISER_VERSION: ${AISER_VERSION:-1.1.1}
+        NEXT_PUBLIC_AISER_VERSION: ${AISER_VERSION:-1.1.1}
+        NEXT_PUBLIC_AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
+        NEXT_PUBLIC_AI_ENABLED: ${NEXT_PUBLIC_AI_ENABLED:-true}
         NEXT_PUBLIC_AUTH_PROVIDER: ${NEXT_PUBLIC_AUTH_PROVIDER:-local}
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8001}
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-        NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-http://localhost:8080}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-}
         NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
@@ -175,9 +190,13 @@ services:
       NODE_ENV: production
       EDITION: enterprise
       NEXT_PUBLIC_EDITION: enterprise
+      AISER_VERSION: ${AISER_VERSION:-1.1.1}
+      NEXT_PUBLIC_AISER_VERSION: ${AISER_VERSION:-1.1.1}
+      NEXT_PUBLIC_AISER_DEPLOYMENT_MODE: ${AISER_DEPLOYMENT_MODE:-self_host}
+      NEXT_PUBLIC_AI_ENABLED: ${NEXT_PUBLIC_AI_ENABLED:-true}
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:${DEV_KEYCLOAK_PORT:-8080}
+      NEXT_PUBLIC_KEYCLOAK_URL: ${NEXT_PUBLIC_KEYCLOAK_URL:-}
       NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-aiser}
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}

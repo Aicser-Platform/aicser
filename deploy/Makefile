@@ -8,6 +8,9 @@ DEV_EE_EXTRAS := $(DEV_EE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
 DEV_LEGACY := $(COMPOSE) -p deploy $(DEV_BASE)
 CE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ce.yml
 EE         := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.yml
+EE_SELF_HOST := $(COMPOSE) -f $(DEPLOY_DIR)/docker-compose.ee.self-host.yml
+EE_SELF_HOST_LOCAL_ENV ?= $(DEPLOY_DIR)/.env.ee.self-host.local.example
+EE_SELF_HOST_LOCAL := $(COMPOSE) --env-file $(EE_SELF_HOST_LOCAL_ENV) -f $(DEPLOY_DIR)/docker-compose.ee.self-host.yml -f $(DEPLOY_DIR)/docker-compose.ee.self-host.local.yml
 
 # ── Dev (live-reload, volume-mounted) ────────────────────────────────────────
 
@@ -129,6 +132,31 @@ ee-recreate:
 ee-reset:
 	$(EE) down -v
 
+# ── EE self-host image flow ──────────────────────────────────────────────────
+ee-self-host-build:
+	bash $(DEPLOY_DIR)/scripts/build-ee-self-host-images.sh
+
+ee-self-host-up:
+	$(EE_SELF_HOST) up -d
+
+ee-self-host-pull:
+	$(EE_SELF_HOST) pull
+
+ee-self-host-logs:
+	$(EE_SELF_HOST) logs -f
+
+ee-self-host-down:
+	$(EE_SELF_HOST) down
+
+ee-self-host-local-up:
+	$(EE_SELF_HOST_LOCAL) up -d
+
+ee-self-host-local-logs:
+	$(EE_SELF_HOST_LOCAL) logs -f
+
+ee-self-host-local-down:
+	$(EE_SELF_HOST_LOCAL) down
+
 # ── RBAC seed ─────────────────────────────────────────────────────────────────
 # Run inside the already-running EE container (prod build)
 seed-rbac-ee:
@@ -143,4 +171,7 @@ seed-rbac-dev:
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
         ee ee-down ee-logs ee-client-light ee-restart ee-restart-client \
-        ee-recreate ee-reset seed-rbac-ee seed-rbac-dev
+        ee-recreate ee-reset ee-self-host-build ee-self-host-up \
+        ee-self-host-pull ee-self-host-logs ee-self-host-down \
+        ee-self-host-local-up ee-self-host-local-logs ee-self-host-local-down \
+        seed-rbac-ee seed-rbac-dev

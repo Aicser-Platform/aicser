@@ -16,6 +16,7 @@ import os
 from typing import Optional
 
 from src.core.edition import is_ee_enabled
+from src.core.system_settings.runtime_config import get_effective_storage_config
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +66,22 @@ class UploadDatasourceStorageService:
 
         return AzureBlobStorageService()
 
-    def _s3_storage(self):
+    def _s3_storage(self, config: dict | None = None):
         from ee.modules.data.services.s3_storage_service import S3StorageService
 
-        return S3StorageService()
+        return S3StorageService(config=config)
+
+    async def _resolved_backend(self) -> tuple[str, dict | None]:
+        if not is_ee_enabled():
+            return "postgresql", None
+        try:
+            config = await get_effective_storage_config()
+            backend = str(config.get("backend") or "").lower().strip()
+            if config.get("enabled") and backend in ("s3", "azure_blob", "postgresql"):
+                return backend, config
+        except Exception:
+            logger.exception("Failed to resolve runtime storage config; falling back to env")
+        return self.storage_type, None
 
     async def store_file(
         self,
@@ -81,11 +94,11 @@ class UploadDatasourceStorageService:
         user_id: Optional[str] = None,
     ) -> str:
         """Store uploaded datasource content and return its object key."""
-        backend = self.storage_type
+        backend, storage_config = await self._resolved_backend()
 
         if backend == "s3":
             logger.info("Using S3 storage for datasource upload")
-            return await self._s3_storage().store_file(
+            return await self._s3_storage(storage_config).store_file(
                 file_content=file_content,
                 project_id=project_id,
                 original_filename=original_filename,
@@ -122,10 +135,10 @@ class UploadDatasourceStorageService:
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().get_file(object_key, project_id)
 
-        backend = self.storage_type
+        backend, storage_config = await self._resolved_backend()
 
         if backend == "s3":
-            return await self._s3_storage().get_file(object_key, project_id)
+            return await self._s3_storage(storage_config).get_file(object_key, project_id)
 
         if backend == "postgresql":
             return await self._postgres_storage().get_file(object_key, project_id)
@@ -138,10 +151,10 @@ class UploadDatasourceStorageService:
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().delete_file(object_key, project_id)
 
-        backend = self.storage_type
+        backend, storage_config = await self._resolved_backend()
 
         if backend == "s3":
-            return await self._s3_storage().delete_file(object_key, project_id)
+            return await self._s3_storage(storage_config).delete_file(object_key, project_id)
 
         if backend == "postgresql":
             return await self._postgres_storage().delete_file(object_key, project_id)

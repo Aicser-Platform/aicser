@@ -36,14 +36,18 @@ import {
   CloseOutlined,
   ProjectOutlined,
   ApartmentOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { usePermissions, Permission } from '@/hooks/usePermissions';
 import PricingModal from '@/components/PricingModal';
 import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
+import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
 
 // ── Tab components ─────────────────────────────────────────────────────────────
 import { ProfileTab } from './components/ProfileTab';
@@ -66,6 +70,10 @@ const IntegrationTab = nextDynamic((() => import('@/ee').then((m) => ({ default:
 const SubscriptionTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
   { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const LicenseTab = nextDynamic(
+  (() => import('@/ee').then((m) => ({ default: m.LicenseSettingsTab }))) as any,
+  { ssr: false },
 ) as React.ComponentType<TabComponentProps>;
 const RolesTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.RolesTab }))) as any,
@@ -97,6 +105,9 @@ export interface TabComponentProps {
 }
 
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
+const ADMIN_SETTINGS_PERMISSION = Permission.ORG_EDIT;
+const TEAM_SETTINGS_PERMISSION = Permission.ORG_MANAGE_USERS;
+const PROJECT_SETTINGS_PERMISSION = [Permission.PROJECT_CREATE, Permission.PROJECT_EDIT];
 
 export const dynamic = 'force-dynamic';
 
@@ -107,6 +118,7 @@ interface NavItem {
   label: string;
   icon: React.ReactNode;
   eeOnly?: boolean;
+  requiredPermission?: Permission | Permission[];
   component: React.ComponentType<TabComponentProps>;
   description?: string;
 }
@@ -151,6 +163,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Project',
         icon: <ProjectOutlined />,
         eeOnly: true,
+        requiredPermission: PROJECT_SETTINGS_PERMISSION,
         component: ProjectTab,
         description: 'Name, description, project settings',
       },
@@ -159,6 +172,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Organization',
         icon: <BankOutlined />,
         eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: OrganizationTab,
         description: 'Logo, name, branding',
       },
@@ -167,6 +181,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Team',
         icon: <TeamOutlined />,
         eeOnly: true,
+        requiredPermission: TEAM_SETTINGS_PERMISSION,
         component: TeamTab,
         description: 'Members and invitations',
       },
@@ -175,6 +190,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Roles & Access',
         icon: <SecurityScanOutlined />,
         eeOnly: true,
+        requiredPermission: TEAM_SETTINGS_PERMISSION,
         component: RolesTab,
         description: 'Permissions and RBAC',
       },
@@ -183,8 +199,18 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Billing',
         icon: <CreditCardOutlined />,
         eeOnly: true,
+        requiredPermission: Permission.ORG_MANAGE_BILLING,
         component: SubscriptionTab,
         description: 'Plan, usage, invoices',
+      },
+      {
+        key: 'license',
+        label: 'License',
+        icon: <SafetyCertificateOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: LicenseTab,
+        description: 'Enterprise license status',
       },
     ],
   },
@@ -195,6 +221,7 @@ const NAV_GROUPS: NavGroup[] = [
         key: 'data-sources',
         label: 'Data Sources',
         icon: <DatabaseOutlined />,
+        requiredPermission: Permission.DATA_CONNECT,
         component: DataSourcesTab,
         description: 'Connected databases and files',
       },
@@ -203,6 +230,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Integrations',
         icon: <LinkOutlined />,
         eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: IntegrationTab,
         description: 'Slack, Jira, Salesforce…',
       },
@@ -215,62 +243,71 @@ const NAV_GROUPS: NavGroup[] = [
         key: 'api-keys',
         label: 'API Keys',
         icon: <KeyOutlined />,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: ApiKeysTab,
         description: 'Programmatic access tokens',
       },
-      {
-        key: 'embed',
-        label: 'Embed',
-        icon: <CodeOutlined />,
-        eeOnly: true,
-        component: EmbedTab,
-        description: 'Embed charts in your apps',
-      },
-      {
-        key: 'audit',
-        label: 'Audit Log',
-        icon: <AuditOutlined />,
-        eeOnly: true,
-        component: AuditLogTab,
-        description: 'Activity history',
-      },
+      // {
+      //   key: 'embed',
+      //   label: 'Embed',
+      //   icon: <CodeOutlined />,
+      //   eeOnly: true,
+      //   component: EmbedTab,
+      //   description: 'Embed charts in your apps',
+      // },
+      // {
+      //   key: 'audit',
+      //   label: 'Audit Log',
+      //   icon: <AuditOutlined />,
+      //   eeOnly: true,
+      //   component: AuditLogTab,
+      //   description: 'Activity history',
+      // },
     ],
   },
-  {
-    label: 'AI Agent',
-    items: [
-      {
-        key: 'agent-skills',
-        label: 'Skills',
-        icon: <ThunderboltOutlined />,
-        eeOnly: true,
-        component: AgentSkillsTab,
-        description: 'Custom tool integrations',
-      },
-      {
-        key: 'agent-workflows',
-        label: 'Workflows',
-        icon: <ApartmentOutlined />,
-        eeOnly: true,
-        component: AgentWorkflowsTab,
-        description: 'Multi-step agent plans',
-      },
-      {
-        key: 'briefings',
-        label: 'Briefings',
-        icon: <FileTextOutlined />,
-        eeOnly: true,
-        component: BriefingsTab,
-        description: 'Scheduled AI reports',
-      },
-    ],
-  },
+  // {
+  //   label: 'AI Agent',
+  //   items: [
+  //     {
+  //       key: 'agent-skills',
+  //       label: 'Skills',
+  //       icon: <ThunderboltOutlined />,
+  //       eeOnly: true,
+  //       component: AgentSkillsTab,
+  //       description: 'Custom tool integrations',
+  //     },
+  //     {
+  //       key: 'agent-workflows',
+  //       label: 'Workflows',
+  //       icon: <ApartmentOutlined />,
+  //       eeOnly: true,
+  //       component: AgentWorkflowsTab,
+  //       description: 'Multi-step agent plans',
+  //     },
+  //     {
+  //       key: 'briefings',
+  //       label: 'Briefings',
+  //       icon: <FileTextOutlined />,
+  //       eeOnly: true,
+  //       component: BriefingsTab,
+  //       description: 'Scheduled AI reports',
+  //     },
+  //   ],
+  // },
 ];
 
-const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+function hasRequiredPermission(
+  item: NavItem,
+  hasPermission: (permission: Permission) => boolean,
+  hasAnyPermission: (permissions: Permission[]) => boolean
+): boolean {
+  if (!item.requiredPermission) return true;
+  return Array.isArray(item.requiredPermission)
+    ? hasAnyPermission(item.requiredPermission)
+    : hasPermission(item.requiredPermission);
+}
 
-function resolveSettingsTab(tabParam: string | null | undefined, eeEnabled: boolean): string {
-  const visibleItems = ALL_ITEMS.filter((item) => !item.eeOnly || eeEnabled);
+function resolveSettingsTab(tabParam: string | null | undefined, visibleItems: NavItem[]): string {
   const visibleKeys = new Set(visibleItems.map((item) => item.key));
   if (tabParam && visibleKeys.has(tabParam)) return tabParam;
   return 'profile';
@@ -283,12 +320,38 @@ const SettingsPage: React.FC = () => {
   const searchParams = useSearchParams();
   const { currentProject } = useProjectStore();
   const { currentOrganization } = useOrganizationStore();
+  const { hasPermission, hasAnyPermission } = usePermissions({
+    organizationId: currentOrganization?.id,
+  });
+  const { isSelfHost } = useWorkspaceConfig({ enabled: isEE });
+  const showHostedBilling = isEE && !isSelfHostDeploymentFromEnv() && !isSelfHost;
   const { planType, init: initSubscription } = useSubscriptionStore();
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pageAction, setPageAction] = useState<React.ReactNode>(null);
 
-  const activeTab = resolveSettingsTab(searchParams?.get('tab'), isEE);
+  const visibleNavGroups = useMemo(
+    () =>
+      NAV_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter(
+          (item) =>
+            (item.key !== 'billing-subscription' || showHostedBilling) &&
+            (!item.eeOnly || isEE) &&
+            hasRequiredPermission(item, hasPermission, hasAnyPermission)
+        ),
+      })).filter((group) => group.items.length > 0),
+    [hasPermission, hasAnyPermission, showHostedBilling]
+  );
+  const visibleItems = useMemo(() => visibleNavGroups.flatMap((group) => group.items), [visibleNavGroups]);
+  const requestedTab = searchParams?.get('tab');
+  const activeTab = resolveSettingsTab(requestedTab, visibleItems);
+
+  useEffect(() => {
+    if (requestedTab && requestedTab !== activeTab) {
+      router.replace(`/settings?tab=${activeTab}`, { scroll: false });
+    }
+  }, [activeTab, requestedTab, router]);
 
   const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
   if (prevActiveTab !== activeTab) {
@@ -308,9 +371,11 @@ const SettingsPage: React.FC = () => {
     loadApiKeys();
     loadTeamMembers(currentOrganization?.id);
     loadDataSources(currentProject?.id as string | undefined);
-    void initSubscription();
+    if (showHostedBilling) {
+      void initSubscription();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id]);
+  }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id, showHostedBilling]);
 
   useEffect(() => {
     loadSettingsByTab(activeTab, currentOrganization?.id, { projectId: currentProject?.id as string | undefined });
@@ -328,22 +393,20 @@ const SettingsPage: React.FC = () => {
     setPageAction(node);
   }, []);
 
-  const activeItem = useMemo(() => ALL_ITEMS.find((i) => i.key === activeTab), [activeTab]);
+  const activeItem = useMemo(() => visibleItems.find((i) => i.key === activeTab), [activeTab, visibleItems]);
   const ActiveComponent = (activeItem?.component ?? ProfileTab) as React.ComponentType<TabComponentProps>;
 
   // ── Sidebar nav ──────────────────────────────────────────────────────────────
   const SidebarNav = () => (
     <nav className="w-full">
-      {NAV_GROUPS.map((group) => {
-        const visibleItems = group.items.filter((item) => !item.eeOnly || isEE);
-        if (!visibleItems.length) return null;
+      {visibleNavGroups.map((group) => {
         return (
           <div key={group.label} className="mb-[18px]">
             {/* Group label — matches main sidebar's section label style */}
             <div className="mb-0.5 px-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ant-color-text-quaternary)]">
               {group.label}
             </div>
-            {visibleItems.map((item) => {
+            {group.items.map((item) => {
               const isActive = activeTab === item.key;
               return (
                 <Tooltip key={item.key} title={item.description} placement="right" mouseEnterDelay={0.7}>
@@ -456,13 +519,15 @@ const SettingsPage: React.FC = () => {
         </main>
       </div>
 
-      <PricingModal
-        visible={pricingModalVisible}
-        onClose={() => setPricingModalVisible(false)}
-        onUpgrade={() => setPricingModalVisible(false)}
-        currentPlan={planType}
-        loading={false}
-      />
+      {showHostedBilling && (
+        <PricingModal
+          visible={pricingModalVisible}
+          onClose={() => setPricingModalVisible(false)}
+          onUpgrade={() => setPricingModalVisible(false)}
+          currentPlan={planType}
+          loading={false}
+        />
+      )}
     </DashboardPageShell>
   );
 };

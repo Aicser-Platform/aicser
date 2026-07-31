@@ -19,6 +19,14 @@ const IS_EE = ['enterprise', 'ee'].includes(
 );
 const CE_PERMISSIONS = Object.values(Permission);
 
+function permissionListIncludes(permissions: string[], permission: Permission): boolean {
+  if (permissions.includes(permission) || permissions.includes('*')) {
+    return true;
+  }
+  const [resource] = permission.split(':');
+  return permissions.includes(`${resource}:*`);
+}
+
 interface UsePermissionsOptions {
   organizationId?: string | number;
   projectId?: string | number;
@@ -147,21 +155,21 @@ export function usePermissions(options: UsePermissionsOptions = {}): UsePermissi
 
   const hasPermission = useCallback(
     (permission: Permission): boolean => {
-      return permissions.includes(permission);
+      return permissionListIncludes(permissions, permission);
     },
     [permissions]
   );
 
   const hasAnyPermission = useCallback(
     (permissionList: Permission[]): boolean => {
-      return permissionList.some((perm) => permissions.includes(perm));
+      return permissionList.some((perm) => permissionListIncludes(permissions, perm));
     },
     [permissions]
   );
 
   const hasAllPermissions = useCallback(
     (permissionList: Permission[]): boolean => {
-      return permissionList.every((perm) => permissions.includes(perm));
+      return permissionList.every((perm) => permissionListIncludes(permissions, perm));
     },
     [permissions]
   );

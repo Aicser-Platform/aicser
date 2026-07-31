@@ -18,6 +18,7 @@ import { DatabaseOutlined, SearchOutlined, PlusOutlined, EditOutlined, DeleteOut
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { usePermissions, Permission } from '@/hooks/usePermissions';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
@@ -33,6 +34,8 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<SettingsDataSource | null>(null);
   const { currentProject } = useProjectStore();
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
 
   const {
     dataSources,
@@ -64,11 +67,13 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
   // Register "Add Data Source" button in page header
   useEffect(() => {
     onSetAction?.(
-      <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
-        {t('add_data_source')}
-      </Button>
+      canManageDataSettings ? (
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
+          {t('add_data_source')}
+        </Button>
+      ) : null
     );
-  }, [onSetAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onSetAction, canManageDataSettings]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleModalClose = () => {
     setAddModalVisible(false);
@@ -173,35 +178,39 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
       key: 'last_sync',
       render: (date: string) => (date ? new Date(date).toLocaleDateString() : t('never')),
     },
-    {
-      title: t('col_actions'),
-      key: 'actions',
-      width: 120,
-      render: (_: unknown, record: SettingsDataSource) => (
-        <Space>
-          <Tooltip title={t('edit_connection')}>
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEdit(record)}
-              disabled={!!deletingId}
-            />
-          </Tooltip>
-          <Tooltip title={t('delete')}>
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              loading={deletingId === record.id}
-              onClick={() => handleDelete(record)}
-              disabled={!!deletingId}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
+    ...(canManageDataSettings
+      ? [
+          {
+            title: t('col_actions'),
+            key: 'actions',
+            width: 120,
+            render: (_: unknown, record: SettingsDataSource) => (
+              <Space>
+                <Tooltip title={t('edit_connection')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => handleEdit(record)}
+                    disabled={!!deletingId}
+                  />
+                </Tooltip>
+                <Tooltip title={t('delete')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={deletingId === record.id}
+                    onClick={() => handleDelete(record)}
+                    disabled={!!deletingId}
+                  />
+                </Tooltip>
+              </Space>
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -240,9 +249,11 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
 
         {dataSources.length === 0 ? (
           <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
-              {t('add_first_data_source')}
-            </Button>
+            {canManageDataSettings ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
+                {t('add_first_data_source')}
+              </Button>
+            ) : null}
           </Empty>
         ) : (
           <Table

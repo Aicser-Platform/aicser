@@ -1,0 +1,139 @@
+name: Publish EE Self-Host Images to GHCR
+
+on:
+  push:
+    tags:
+      - "ee-v*"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Extra image tag to publish, for example 2026.07.31"
+        required: false
+        type: string
+      aiser_version:
+        description: "Version shown in the app footer; defaults to image_tag, tag name, or short SHA"
+        required: false
+        type: string
+      next_public_api_url:
+        description: "Browser-facing API URL baked into the client image"
+        required: false
+        default: "http://localhost:8000"
+        type: string
+      next_public_sso_provider:
+        description: "Optional SSO provider shown by the client; leave empty for local auth"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  SERVER_IMAGE: ghcr.io/aicser-platform/aicser-server-ee
+  CLIENT_IMAGE: ghcr.io/aicser-platform/aicser-client-ee
+
+jobs:
+  publish:
+    name: Build and publish EE self-host images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with EE submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.EE_SUBMODULE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Verify EE submodules
+        run: |
+          test -d server/ee/modules
+          test -d client/ee/src/ee
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Server image metadata
+        id: server-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.SERVER_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag != '' }}
+
+      - name: Client image metadata
+        id: client-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.CLIENT_IMAGE }}
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag != '' }}
+
+      - name: Resolve app version
+        id: app-version
+        shell: bash
+        env:
+          INPUT_AISER_VERSION: ${{ inputs.aiser_version || '' }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag || '' }}
+        run: |
+          version="$INPUT_AISER_VERSION"
+          if [ -z "$version" ]; then
+            version="$INPUT_IMAGE_TAG"
+          fi
+          if [ -z "$version" ]; then
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+              version="${GITHUB_REF_NAME#ee-v}"
+            else
+              version="sha-${GITHUB_SHA::7}"
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push EE server
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile.prod
+          push: true
+          tags: ${{ steps.server-meta.outputs.tags }}
+          labels: ${{ steps.server-meta.outputs.labels }}
+          build-args: |
+            AISER_VERSION=${{ steps.app-version.outputs.version }}
+          cache-from: type=gha,scope=server-ee
+          cache-to: type=gha,mode=max,scope=server-ee
+
+      - name: Build and push EE client
+        uses: docker/build-push-action@v6
+        with:
+          context: ./client
+          file: ./client/Dockerfile.prod
+          push: true
+          tags: ${{ steps.client-meta.outputs.tags }}
+          labels: ${{ steps.client-meta.outputs.labels }}
+          build-args: |
+            EDITION=enterprise
+            NEXT_PUBLIC_EDITION=enterprise
+            NEXT_PUBLIC_AISER_DEPLOYMENT_MODE=self_host
+            AISER_VERSION=${{ steps.app-version.outputs.version }}
+            NEXT_PUBLIC_AISER_VERSION=${{ steps.app-version.outputs.version }}
+            NEXT_PUBLIC_API_URL=${{ inputs.next_public_api_url || 'http://localhost:8000' }}
+            NEXT_PUBLIC_AUTH_PROVIDER=local
+            NEXT_PUBLIC_AI_ENABLED=true
+            NEXT_PUBLIC_SSO_PROVIDER=${{ inputs.next_public_sso_provider || '' }}
+            NEXT_BUILD_CPUS=1
+            NEXT_BUILD_MAX_OLD_SPACE_SIZE=3072
+          cache-from: type=gha,scope=client-ee
+          cache-to: type=gha,mode=max,scope=client-ee

@@ -2,7 +2,17 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /** Routes that don't require authentication. */
-const PUBLIC_PATHS = ['/login', '/logout', '/api/auth/', '/discover', '/embed/', '/embedded/', '/offline'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/logout',
+  '/api/auth/',
+  '/discover',
+  '/embed/',
+  '/embedded/',
+  '/offline',
+  '/invite/accept',
+  '/invite/set-password',
+];
 
 /** Static asset prefixes — always allowed. */
 const STATIC_PREFIXES = ['/_next/', '/public/', '/icons/', '/images/', '/favicon', '/sw.js'];
@@ -32,7 +42,7 @@ function corsHeaders(origin: string): Record<string, string> {
  * Handles API CORS + auth cookie guard. Keep a single file under src/proxy.ts.
  */
 export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
   const origin = request.headers.get('origin') ?? '*';
 
   if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
@@ -53,7 +63,7 @@ export function proxy(request: NextRequest) {
   const token = request.cookies.get('auth_token');
   if (!token) {
     const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('next', pathname);
+    loginUrl.searchParams.set('next', `${pathname}${search}`);
     return NextResponse.redirect(loginUrl);
   }
 

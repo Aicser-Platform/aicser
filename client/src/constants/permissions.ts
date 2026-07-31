@@ -8,6 +8,7 @@ export enum Permission {
   ORG_VIEW_ANALYTICS = 'org:view_analytics',
 
   PROJECT_VIEW = 'project:view',
+  PROJECT_CREATE = 'project:create',
   PROJECT_EDIT = 'project:edit',
   PROJECT_DELETE = 'project:delete',
   PROJECT_MANAGE_MEMBERS = 'project:manage_members',

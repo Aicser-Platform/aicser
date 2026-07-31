@@ -27,6 +27,8 @@ export default defineConfig({
       'ee/src/ee/components/ai/chat/**/*.test.tsx',
       'ee/src/ee/components/ai/chat/**/*.test.ts',
       'ee/src/ee/app/(dashboard)/chat/utils/**/*.test.ts',
+      'ee/src/ee/services/**/*.test.ts',
+      'ee/src/ee/app/\\(dashboard\\)/settings/components/**/*.test.tsx',
     ],
   },
 });
