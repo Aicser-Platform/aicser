@@ -9,6 +9,7 @@ import logging
 import os
 import secrets
 import uuid as _uuid
+import base64
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -85,6 +86,26 @@ def _require_user_id(current_token: Union[str, dict]) -> str:
     return str(uid)
 
 
+async def _store_avatar_as_data_uri(
+    db: AsyncSession,
+    user_id: str,
+    file_content: bytes,
+) -> dict:
+    """Store a compressed avatar directly in users.avatar_url."""
+    webp_bytes = compress_image_to_webp(file_content)
+    data_uri = f"data:image/webp;base64,{base64.b64encode(webp_bytes).decode()}"
+    logger.info(
+        "Avatar compressed: %d bytes -> %d bytes (data URI)",
+        len(file_content),
+        len(webp_bytes),
+    )
+    svc = UserService(db)
+    updated = await svc.update_profile(user_id=user_id, data={"avatar_url": data_uri})
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return updated
+
+
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
     current_token: dict = Depends(JWTCookieBearer()),
@@ -150,25 +171,34 @@ async def upload_avatar(
 
     # CE: store avatar as a base64 WebP data URI directly in the database.
     if not is_ee_enabled():
-        import base64
+        return await _store_avatar_as_data_uri(db, user_id, file_content)
 
-        webp_bytes = compress_image_to_webp(file_content)
-        data_uri = f"data:image/webp;base64,{base64.b64encode(webp_bytes).decode()}"
-        logger.info(
-            "CE avatar compressed: %d bytes → %d bytes (data URI)",
-            len(file_content),
-            len(webp_bytes),
+    # EE: S3/Azure store a stable object URL in users.avatar_url and profile
+    # reads return a signed display URL when needed. Self-host PostgreSQL keeps
+    # the compressed data URI in the user row, same as CE.
+    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
+    storage_config = None
+    try:
+        from src.core.system_settings.runtime_config import get_effective_storage_config
+
+        effective_storage = await get_effective_storage_config()
+        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
+        if effective_storage.get("enabled") and effective_backend:
+            storage_backend = effective_backend
+            if effective_backend == "s3":
+                storage_config = effective_storage
+    except Exception:
+        logger.debug(
+            "Runtime storage config unavailable; using env avatar storage backend",
+            exc_info=True,
         )
-        svc = UserService(db)
-        updated = await svc.update_profile(user_id=user_id, data={"avatar_url": data_uri})
-        if updated is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-        return updated
 
-    # EE: upload to configured object storage. S3 stores a stable object URL in
-    # users.avatar_url and profile reads return a presigned URL when needed.
-    # Look up the user's organization so we can place the avatar under orgs/{org_id}/
+    if storage_backend == "postgresql":
+        return await _store_avatar_as_data_uri(db, user_id, file_content)
+
+    # Look up the user's organization so we can place the avatar under orgs/{org_id}/.
     from sqlalchemy import text
+
     org_row = await db.execute(
         text(
             "SELECT organization_id FROM user_roles "
@@ -179,22 +209,6 @@ async def upload_avatar(
     )
     org_id_row = org_row.fetchone()
     org_id = str(org_id_row[0]) if org_id_row else user_id  # fallback to user_id if no org
-
-    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
-    storage_config = None
-    try:
-        from src.core.system_settings.runtime_config import get_effective_storage_config
-
-        effective_storage = await get_effective_storage_config()
-        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
-        if effective_storage.get("enabled") and effective_backend == "s3":
-            storage_backend = "s3"
-            storage_config = effective_storage
-    except Exception:
-        logger.debug(
-            "Runtime storage config unavailable; using env avatar storage backend",
-            exc_info=True,
-        )
 
     try:
         avatar_svc = (

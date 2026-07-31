@@ -67,3 +67,61 @@ async def test_ce_avatar_upload_persists_data_uri_without_cloud_storage(monkeypa
     webp_bytes = base64.b64decode(encoded)
     assert webp_bytes.startswith(b"RIFF")
     assert b"WEBP" in webp_bytes[:16]
+
+
+@pytest.mark.asyncio
+async def test_ee_postgresql_avatar_upload_persists_data_uri_without_cloud_storage(monkeypatch):
+    captured = {}
+    user_id = str(uuid4())
+
+    class FakeUserService:
+        def __init__(self, db):
+            self.db = db
+
+        async def update_profile(self, user_id, data):
+            captured["user_id"] = user_id
+            captured["data"] = data
+            return {
+                "id": user_id,
+                "user_id": user_id,
+                "avatar_url": data["avatar_url"],
+            }
+
+    def fail_cloud_storage(*args, **kwargs):
+        raise AssertionError("PostgreSQL avatar upload must not initialize cloud storage")
+
+    async def fake_effective_storage_config():
+        return {
+            "enabled": True,
+            "configured": True,
+            "source": "env",
+            "backend": "postgresql",
+        }
+
+    from src.core.system_settings import runtime_config
+
+    monkeypatch.setattr(user_router, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(user_router, "UserService", FakeUserService)
+    monkeypatch.setattr(user_router, "AvatarStorageService", fail_cloud_storage)
+    monkeypatch.setattr(user_router, "S3AvatarStorageService", fail_cloud_storage)
+    monkeypatch.setattr(
+        runtime_config,
+        "get_effective_storage_config",
+        fake_effective_storage_config,
+    )
+
+    result = await user_router.upload_avatar(
+        file=DummyUploadFile(_png_bytes()),
+        current_token={"sub": user_id},
+        db=object(),
+    )
+
+    avatar_url = captured["data"]["avatar_url"]
+    assert captured["user_id"] == user_id
+    assert avatar_url.startswith("data:image/webp;base64,")
+    assert result["avatar_url"] == avatar_url
+
+    encoded = avatar_url.split(",", 1)[1]
+    webp_bytes = base64.b64decode(encoded)
+    assert webp_bytes.startswith(b"RIFF")
+    assert b"WEBP" in webp_bytes[:16]
