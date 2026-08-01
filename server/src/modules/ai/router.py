@@ -115,19 +115,13 @@ async def list_models(request: Request):
 async def model_status(model_id: str, request: Request):
     user_id = await _optional_user_id(request)
     saved_keys = await _saved_provider_keys(user_id)
-    provider = model_id.split("/", 1)[0] if "/" in model_id else ""
-    if provider == "azure":
-        provider = "azure_openai"
-    if provider not in PROVIDER_MODELS:
-        provider = next(
-            (
-                candidate
-                for candidate, provider_models in PROVIDER_MODELS.items()
-                if any(item.get("id") == model_id for item in provider_models)
-            ),
-            "openai",
-        )
-    available = bool(saved_keys.get(provider, {}).get("api_key")) or _has_env_provider(provider)
+    provider = provider_for_model(model_id, saved_keys)
+    saved_config = saved_keys.get(provider, {})
+    available = (
+        bool(saved_config.get("api_key"))
+        or (provider == "ollama" and bool(saved_config.get("endpoint")))
+        or _has_env_provider(provider)
+    )
     return {
         "success": True,
         "available": available,

@@ -19,6 +19,12 @@ def test_provider_for_model_by_prefix():
     assert provider_for_model("gemini/gemini-1.5-pro") == "google"
 
 
+def test_provider_for_bare_ollama_model_from_saved_config():
+    keys = {"ollama": {"endpoint": "http://ollama:11434", "model": "llama3.2:1b"}}
+    assert provider_for_model("llama3.2:1b", keys) == "ollama"
+    assert provider_for_model("ollama/llama3.2:1b", keys) == "ollama"
+
+
 def test_provider_for_model_unknown_defaults_by_name():
     assert provider_for_model("claude-4-something") == "anthropic"
     assert provider_for_model("gpt-9") == "openai"
@@ -31,6 +37,7 @@ def test_litellm_model_string():
     assert litellm_model_string("google", "gemini-2.0-flash") == "gemini/gemini-2.0-flash"
     assert litellm_model_string("azure_openai", "azure/gpt-4o") == "azure/gpt-4o"
     assert litellm_model_string("ollama", "ollama/llama3.1") == "ollama/llama3.1"
+    assert litellm_model_string("ollama", "llama3.2:1b") == "ollama/llama3.2:1b"
 
 
 def test_provider_models_shape():

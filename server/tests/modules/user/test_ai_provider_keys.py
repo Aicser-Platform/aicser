@@ -64,3 +64,22 @@ async def test_ai_provider_keys_mask_decrypted_value_and_preserve_existing_key(m
     updated = decrypt_credentials(json.loads(repo.values[(user_id, "provider_key.openai")]))
     assert updated["api_key"] == "sk-test-1234"
     assert updated["model"] == "gpt-4o"
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_key_allows_endpoint_without_api_key(monkeypatch):
+    user_id = "user-1"
+    repo = _FakeSettingsRepo()
+    monkeypatch.setattr(user_router, "_user_settings_repo", repo)
+    monkeypatch.setenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    await user_router.save_ai_provider_key(
+        "ollama",
+        ProviderKeyPayload(endpoint="http://ollama:11434", model="llama3.2:1b"),
+        current_token={"sub": user_id},
+    )
+
+    saved = decrypt_credentials(json.loads(repo.values[(user_id, "provider_key.ollama")]))
+    assert saved["endpoint"] == "http://ollama:11434"
+    assert saved["model"] == "llama3.2:1b"
+    assert "api_key" not in saved
