@@ -170,7 +170,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           name: t(nameKey),
           key,
           description: t(descKey),
-          comingSoon: key === 'ollama',
+          comingSoon: false,
         };
       }),
     [t]
@@ -232,6 +232,13 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       });
     } else {
       providerKeyForm.resetFields();
+      if (provider === 'ollama') {
+        providerKeyForm.setFieldsValue({
+          endpoint: 'http://ollama:11434',
+          model: '__custom__',
+          model_custom: 'llama3.2:1b',
+        });
+      }
     }
   };
 
@@ -541,7 +548,11 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
       {/* Provider Key Modal */}
       <Modal
-        title={t('configure_provider_api_key', { provider: editingProviderDisplayName })}
+        title={
+          editingProvider === 'ollama'
+            ? editingProviderDisplayName
+            : t('configure_provider_api_key', { provider: editingProviderDisplayName })
+        }
         open={showProviderKeyModal}
         onCancel={() => {
           setShowProviderKeyModal(false);
@@ -551,21 +562,32 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         footer={null}
       >
         <Form form={providerKeyForm} layout="vertical" onFinish={handleSaveProviderKey}>
-          <Form.Item
-            name="api_key"
-            label={t('api_key')}
-            rules={[{ required: true, message: t('api_key_enter_required') }]}
-            extra={t('api_key_stored_securely')}
-          >
-            <Input.Password placeholder={t('api_key_placeholder')} autoComplete="off" />
-          </Form.Item>
-          {editingProvider === 'azure_openai' && (
+          {editingProvider !== 'ollama' && (
+            <Form.Item
+              name="api_key"
+              label={t('api_key')}
+              rules={[{ required: true, message: t('api_key_enter_required') }]}
+              extra={t('api_key_stored_securely')}
+            >
+              <Input.Password placeholder={t('api_key_placeholder')} autoComplete="off" />
+            </Form.Item>
+          )}
+          {(editingProvider === 'azure_openai' || editingProvider === 'ollama') && (
             <Form.Item
               name="endpoint"
               label={t('endpoint_url')}
-              rules={[{ required: true, message: t('azure_endpoint_required') }]}
+              rules={[
+                {
+                  required: true,
+                  message: editingProvider === 'ollama' ? t('endpoint_url') : t('azure_endpoint_required'),
+                },
+              ]}
             >
-              <Input placeholder={t('azure_endpoint_placeholder')} type="url" autoComplete="off" />
+              <Input
+                placeholder={editingProvider === 'ollama' ? 'http://ollama:11434' : t('azure_endpoint_placeholder')}
+                type="url"
+                autoComplete="off"
+              />
             </Form.Item>
           )}
           <Form.Item name="model" label={t('default_model')} extra={t('default_model_help')}>

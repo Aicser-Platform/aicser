@@ -145,7 +145,7 @@ export interface ApiKeyFormValues {
 }
 
 export interface ProviderKeyFormValues {
-  api_key: string;
+  api_key?: string;
   model?: string;
   endpoint?: string;
 }

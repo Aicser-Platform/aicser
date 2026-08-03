@@ -87,10 +87,22 @@ def provider_for_model(model_id: str, keys: dict[str, dict[str, Any]] | None = N
     so when the caller has the user's saved BYOK configs handy, check those first:
     if some provider's saved `model` matches exactly, that's authoritative.
     """
+    model_id = (model_id or "").strip()
     if keys:
         for provider, cfg in keys.items():
-            if (cfg.get("model") or "").strip() == model_id:
+            configured_model = (cfg.get("model") or "").strip()
+            if configured_model == model_id:
                 return provider
+            if provider == "ollama" and configured_model:
+                if configured_model.removeprefix("ollama/") == model_id.removeprefix("ollama/"):
+                    return provider
+
+        ollama_cfg = keys.get("ollama") or {}
+        if ollama_cfg.get("endpoint") and "/" not in model_id and ":" in model_id:
+            return "ollama"
+
+    if not model_id:
+        return "openai"
 
     if "/" in model_id:
         prefix = model_id.split("/", 1)[0]
@@ -110,12 +122,16 @@ def provider_for_model(model_id: str, keys: dict[str, dict[str, Any]] | None = N
         return "google"
     if low.startswith("deepseek"):
         return "deepseek"
+    if "/" not in model_id and ":" in model_id:
+        return "ollama"
     # gpt-*, o1/o3-*, and anything unrecognized default to openai
     return "openai"
 
 
 def litellm_model_string(provider: str, model_id: str) -> str:
     """Format a model id for litellm's provider-prefixed routing."""
+    if provider == "ollama":
+        return model_id if model_id.startswith("ollama/") else f"ollama/{model_id}"
     if provider == "openrouter":
         return model_id if model_id.startswith("openrouter/") else f"openrouter/{model_id}"
     if "/" in model_id:

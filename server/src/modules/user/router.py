@@ -270,7 +270,7 @@ class ApiKeyCreateRequest(BaseModel):
 
 
 class ProviderKeyPayload(BaseModel):
-    api_key: str
+    api_key: Optional[str] = None
     model: Optional[str] = None
     endpoint: Optional[str] = None
 
@@ -499,6 +499,7 @@ async def save_ai_provider_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
     key_normalized = provider.strip().lower().replace(" ", "_")
     api_key_val = (payload.api_key or "").strip()
+    endpoint_val = (payload.endpoint or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
     existing_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
     existing: dict = {}
@@ -511,13 +512,16 @@ async def save_ai_provider_key(
         existing["api_key"] = api_key_val
     elif existing.get("api_key"):
         api_key_val = existing["api_key"]
-    else:
+    elif key_normalized != "ollama":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="api_key is required for new provider key")
+    if key_normalized == "ollama" and not (endpoint_val or existing.get("endpoint")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint is required for Ollama")
     store = {
-        "api_key": api_key_val,
         "model": (payload.model or "").strip() or existing.get("model"),
-        "endpoint": (payload.endpoint or "").strip() or existing.get("endpoint"),
+        "endpoint": endpoint_val or existing.get("endpoint"),
     }
+    if api_key_val:
+        store["api_key"] = api_key_val
     try:
         store = encrypt_credentials(store)
     except RuntimeError as exc:

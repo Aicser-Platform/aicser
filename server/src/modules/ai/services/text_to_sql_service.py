@@ -122,11 +122,19 @@ def _get_default_data_service():
 
 
 def _env_api_key(provider: str) -> str | None:
+    if provider == "ollama":
+        return None
     for env_name in ENV_KEYS.get(provider, ()):
         val = os.getenv(env_name)
         if val:
             return val
     return None
+
+
+def _env_api_base(provider: str) -> str | None:
+    if provider != "ollama":
+        return None
+    return os.getenv("OLLAMA_BASE_URL") or os.getenv("OLLAMA_HOST") or None
 
 
 def _response_content(resp: Any) -> str:
@@ -190,20 +198,27 @@ class TextToSqlService:
         provider = provider_for_model(chosen_model, keys)
         cfg = keys.get(provider) or {}
         api_key = cfg.get("api_key") or _env_api_key(provider)
-        if not api_key:
+        api_base = cfg.get("endpoint") or _env_api_base(provider)
+        if provider == "ollama":
+            if not api_base:
+                raise NoProviderKeyError(provider)
+        elif not api_key:
             raise NoProviderKeyError(provider)
 
         schema, ds_type = await self._load_schema(data_source_id)
         dialect = dialect_for_type(ds_type)
         messages = build_messages(question, schema, dialect)
 
-        resp = await self._completion(
-            model=litellm_model_string(provider, chosen_model),
-            messages=messages,
-            api_key=api_key,
-            api_base=cfg.get("endpoint") or None,
-            temperature=0,
-        )
+        completion_kwargs = {
+            "model": litellm_model_string(provider, chosen_model),
+            "messages": messages,
+            "temperature": 0,
+        }
+        if api_key:
+            completion_kwargs["api_key"] = api_key
+        if api_base:
+            completion_kwargs["api_base"] = api_base
+        resp = await self._completion(**completion_kwargs)
         sql = extract_sql(_response_content(resp))
         warning = None if is_read_only_sql(sql) else (
             "Generated statement is not a read-only SELECT; review before running."

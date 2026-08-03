@@ -90,6 +90,15 @@ def _fake_completion_returning(sql_text):
     return _completion
 
 
+def _capturing_completion(sql_text, calls):
+    async def _completion(**kwargs):
+        calls.append(kwargs)
+        msg = types.SimpleNamespace(content=sql_text)
+        choice = types.SimpleNamespace(message=msg)
+        return types.SimpleNamespace(choices=[choice])
+    return _completion
+
+
 def _fake_data_service(ds_type="postgresql"):
     ds = AsyncMock()
     ds.get_data_source_by_id.return_value = {"id": "d1", "type": ds_type, "name": "db"}
@@ -113,6 +122,23 @@ async def test_generate_returns_sql_and_metadata():
     assert out["provider"] == "openai"
     assert out["dialect"] == "postgres"
     assert out["warning"] is None
+
+
+async def test_generate_uses_ollama_endpoint_without_api_key():
+    calls = []
+    svc = TextToSqlService(
+        data_service=_fake_data_service(),
+        completion=_capturing_completion("SELECT * FROM orders LIMIT 10", calls),
+        provider_keys_fn=AsyncMock(
+            return_value={"ollama": {"endpoint": "http://ollama:11434", "model": "llama3.2:1b"}}
+        ),
+    )
+    out = await svc.generate(user_id="u1", question="show orders", data_source_id="d1", model="auto")
+    assert out["provider"] == "ollama"
+    assert out["model"] == "llama3.2:1b"
+    assert calls[0]["model"] == "ollama/llama3.2:1b"
+    assert calls[0]["api_base"] == "http://ollama:11434"
+    assert "api_key" not in calls[0]
 
 
 async def test_generate_warns_on_non_select():
