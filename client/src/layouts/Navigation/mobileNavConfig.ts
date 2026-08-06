@@ -40,6 +40,7 @@ export function isMoreNavActive(selectedKey: string, isEnterprise: boolean, aiEn
 export function enterpriseMoreNavItems(): NavItemDef[] {
   return [
     { kind: 'link', key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
+    { kind: 'link', key: 'semantic-model', labelKey: 'semantic_layer', href: NAV_ROUTES['semantic-model'] },
     { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
     { kind: 'divider' },
     { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },

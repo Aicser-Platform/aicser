@@ -35,14 +35,15 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY requirements.txt .
 
 # Install Python dependencies + Playwright browsers (used for chart/dashboard PNG export).
-# playwright is not always present in the exported requirements pin; install explicitly
-# like Dockerfile.dev, then use `python -m playwright` so PATH/venv scripts are reliable.
+# Playwright's --with-deps path runs apt-get again and can fail on Docker
+# Desktop with transient apt signature errors, so system libs stay in the
+# explicit apt layers while this step installs only the browser binary.
 RUN pip install --upgrade pip setuptools wheel \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
- && python -m playwright install chromium --with-deps \
+ && python -m playwright install chromium \
  && find /app/.venv -name "*.pyc" -delete \
  && find /app/.venv -name "__pycache__" -type d -exec rm -rf {} +
 

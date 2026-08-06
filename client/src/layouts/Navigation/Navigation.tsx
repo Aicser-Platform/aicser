@@ -49,6 +49,7 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
+  'semantic-model': <DatabaseOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -136,6 +137,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
         labelKey: NAV_LABEL_KEYS['grp-data'],
         children: [
           { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+          { key: 'semantic-model', labelKey: NAV_LABEL_KEYS['semantic-model'], href: NAV_ROUTES['semantic-model'] },
         ],
       },
     ],

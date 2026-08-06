@@ -120,6 +120,52 @@ def test_metric_table_ownership_selects_non_first_schema_table():
     assert "FROM accounting.dim_customer" not in sql
 
 
+def test_multi_sheet_file_metric_keeps_logical_table_for_duckdb_rewrite():
+    compiler = SemanticQueryCompiler(
+        metrics=[
+            {
+                "name": "gold_score",
+                "expression": 'SUM(gold."SCORE")',
+                "metric_type": "simple",
+                "table_name": "gold",
+                "type_params": {"table": "gold", "measure": "score"},
+            }
+        ],
+        dimensions=[],
+        join_paths=[],
+        schema_info={
+            "columns": [{"name": "SCORE", "type": "DOUBLE"}],
+            "duckdb_tables": {"Gold": "sheet_3_Gold"},
+            "tables": [{"name": "Gold", "columns": [{"name": "SCORE", "type": "DOUBLE"}]}],
+        },
+        dialect="file",
+    )
+    sql = compiler.compile(SemanticQuerySpec(data_source_id="ds", metric="gold_score")).sql
+    assert 'FROM main."Gold" AS gold' in sql
+    assert 'SUM(gold."SCORE") AS metric_value' in sql
+    assert 'FROM "data"' not in sql
+
+
+def test_single_table_file_metric_keeps_data_table_backcompat():
+    compiler = SemanticQueryCompiler(
+        metrics=[
+            {
+                "name": "total_score",
+                "expression": 'SUM(data."SCORE")',
+                "metric_type": "simple",
+                "table_name": "data",
+            }
+        ],
+        dimensions=[],
+        join_paths=[],
+        schema_info={"columns": [{"name": "SCORE", "type": "DOUBLE"}]},
+        dialect="file",
+    )
+    sql = compiler.compile(SemanticQuerySpec(data_source_id="ds", metric="total_score")).sql
+    assert 'FROM "data"' in sql
+    assert 'SUM("SCORE") AS metric_value' in sql
+
+
 def test_dimension_table_ownership_uses_modeled_join_and_qualified_physical_table():
     compiler = SemanticQueryCompiler(
         metrics=[

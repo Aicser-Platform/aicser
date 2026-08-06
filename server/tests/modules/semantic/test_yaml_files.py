@@ -120,7 +120,8 @@ def test_draft_yaml_directory_creates_and_validates(tmp_path):
     }
     result = draft_yaml_directory(root, "ds-new", schema_info, "duckdb", "My Loans!")
     assert result["dir"].endswith("my-loans")
-    assert any(p.endswith("loans.yml") for p in result["written"])
+    assert any(p.endswith("model/tables/loans.yml") for p in result["written"])
+    assert any(p.endswith("model/views/loans_view.yml") for p in result["written"])
     listed = list_yaml_files(root, "ds-new")
     assert listed is not None and listed["issues"] == []
 
@@ -153,20 +154,39 @@ def test_draft_yaml_directory_snake_cases_database_identifiers(tmp_path):
     assert listed is not None
     assert listed["issues"] == []
     paths = {f["path"] for f in listed["files"]}
-    assert "quizmedix/attempt_answer.yml" in paths
+    assert "quizmedix/model/tables/attempt_answer.yml" in paths
     content = next(f["content"] for f in listed["files"] if f["path"].endswith("attempt_answer.yml"))
     assert "name: attempt_answer" in content
     assert "name: selected_index" in content
     assert "measure: selected_index" in content
     assert "column: '\"selectedIndex\"'" in content
-    assert "quizmedix/table_user.yml" in paths
+    assert "quizmedix/model/tables/table_user.yml" in paths
+    assert "quizmedix/model/views/attempt_answer_view.yml" in paths
 
 
-def test_draft_refuses_when_directory_exists(semantic_root):
+def test_draft_refuses_when_slug_and_suffix_directories_exist(semantic_root):
     from ee.modules.semantic.yaml_files import draft_yaml_directory
 
+    (semantic_root / "orders-source-ds123").mkdir()
     with pytest.raises(ValueError, match="already exists"):
         draft_yaml_directory(semantic_root, "ds-123", {"tables": []}, "duckdb", "orders source")
+
+
+def test_draft_uses_data_source_suffix_when_source_name_collides(semantic_root):
+    from ee.modules.semantic.yaml_files import draft_yaml_directory, list_yaml_files
+
+    schema_info = {
+        "tables": [{
+            "name": "customers",
+            "schema": "public",
+            "columns": [{"name": "customer_id", "type": "varchar"}],
+        }]
+    }
+    result = draft_yaml_directory(semantic_root, "ds-456", schema_info, "duckdb", "orders source")
+    assert result["dir"].endswith("orders-source-ds456")
+    listed = list_yaml_files(semantic_root, "ds-456")
+    assert listed is not None
+    assert any(p["path"].startswith("orders-source-ds456/") for p in listed["files"])
 
 
 def test_semantic_router_normalizes_flat_file_schema_for_drafting():

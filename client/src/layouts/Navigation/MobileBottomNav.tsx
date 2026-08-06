@@ -40,6 +40,7 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
 
 const MORE_ICONS: SidebarNavIconMap = {
   'query-editor': <CodeOutlined />,
+  'semantic-model': <DatabaseOutlined />,
   'chart-designer': <AreaChartOutlined />,
   settings: <SettingOutlined />,
 };
