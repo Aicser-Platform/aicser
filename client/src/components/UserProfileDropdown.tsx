@@ -44,7 +44,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const router = useRouter();
   const { openHelp } = useFeaturebaseStore();
   const { user, logout } = useAuthStore();
-  const { planType, usage, subscription, loading: subLoading, refreshUsage } = useSubscriptionStore();
+  const { planType, usage, subscription, loading: subLoading, refresh } = useSubscriptionStore();
   const onboardingStore = useOnboardingStore();
   const { startOnboarding } = useOnboarding();
   const onboardingCompleted: boolean =
@@ -134,7 +134,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
 
   const handleDropdownVisibleChange = (open: boolean) => {
     if (open && showHostedBilling) {
-      void refreshUsage({ silent: true });
+      void refresh();
     }
   };
 

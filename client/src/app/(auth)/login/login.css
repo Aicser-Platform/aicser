@@ -123,6 +123,15 @@ html[data-theme='dark'] .login-page {
   line-height: 1.45;
 }
 
+.login-reset-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  line-height: 1.25;
+  font-weight: 650;
+  text-align: center;
+  color: var(--login-text);
+}
+
 .login-error-alert {
   margin-bottom: 1rem;
   max-width: 100%;
@@ -195,6 +204,12 @@ html[data-theme='dark'] .login-page {
   border-color: var(--ant-color-primary) !important;
   color: var(--login-link) !important;
   background: var(--ant-color-primary-bg, rgba(0, 194, 203, 0.08)) !important;
+}
+
+.login-oauth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
 }
 
 .terms-privacy-text {

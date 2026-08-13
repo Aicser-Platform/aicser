@@ -17,6 +17,10 @@ export async function GET(request: NextRequest) {
 
     // Forward auth so backend can validate (cookie or Bearer)
     Object.assign(headers, buildProxyAuthHeaders(request));
+    const organizationId = request.headers.get('X-Organization-Id') || request.headers.get('x-organization-id');
+    if (organizationId) {
+      headers['X-Organization-Id'] = organizationId;
+    }
 
     const response = await fetch(backendUrl, {
       method: 'GET',
@@ -56,7 +60,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
 
 
 

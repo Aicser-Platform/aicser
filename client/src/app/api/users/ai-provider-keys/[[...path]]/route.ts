@@ -21,10 +21,18 @@ async function proxyJson(response: Response) {
   }
 }
 
+function forwardOrganizationHeader(request: NextRequest, headers: Record<string, string>) {
+  const organizationId = request.headers.get('X-Organization-Id') || request.headers.get('x-organization-id');
+  if (organizationId) {
+    headers['X-Organization-Id'] = organizationId;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const backendUrl = getBackendUrlForProxy();
     const headers = buildProxyAuthHeaders(request);
+    forwardOrganizationHeader(request, headers);
     const response = await fetch(`${backendUrl}/api/users/ai-provider-keys`, {
       method: 'GET',
       headers,
@@ -49,6 +57,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       'Content-Type': 'application/json',
       ...buildProxyAuthHeaders(request),
     };
+    forwardOrganizationHeader(request, headers);
     const response = await fetch(`${backendUrl}/api/users/ai-provider-keys/${provider}`, {
       method: 'PUT',
       headers,

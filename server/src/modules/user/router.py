@@ -13,11 +13,12 @@ import base64
 from datetime import datetime
 from typing import List, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File, status
 from pydantic import BaseModel
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_async_session
+from src.db.session import async_session, get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.user.service import UserService
 from src.modules.user.schemas import UserProfileUpdate, UserProfileResponse
@@ -84,6 +85,114 @@ def _require_user_id(current_token: Union[str, dict]) -> str:
             detail="User ID not found in token",
         )
     return str(uid)
+
+
+def _request_organization_id(request: Request) -> Optional[str]:
+    org_id = (
+        request.headers.get("X-Organization-Id")
+        or request.headers.get("x-organization-id")
+        or request.query_params.get("organization_id")
+    )
+    org_id = (org_id or "").strip()
+    return org_id or None
+
+
+async def _user_is_org_member(user_id: str, organization_id: str) -> bool:
+    if not is_ee_enabled() or not organization_id:
+        return False
+    try:
+        from src.modules.authentication.rbac.models import UserRole
+
+        uid = _uuid.UUID(str(user_id))
+        oid = _uuid.UUID(str(organization_id))
+        async with async_session() as session:
+            result = await session.execute(
+                select(UserRole.id)
+                .where(
+                    and_(
+                        UserRole.user_id == uid,
+                        UserRole.organization_id == oid,
+                        UserRole.project_id.is_(None),
+                        UserRole.is_active == True,
+                        UserRole.is_deleted == False,
+                    )
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+    except Exception:
+        return False
+
+
+async def _require_org_provider_key_manager(user_id: str, organization_id: str) -> None:
+    if not is_ee_enabled():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization BYOK is enterprise-only")
+    try:
+        from src.modules.authentication.rbac.rbac_service import RBACService
+
+        allowed = await RBACService.check_permission(
+            user_id=user_id,
+            permission_code="org:edit",
+            organization_id=organization_id,
+        )
+    except Exception:
+        allowed = False
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only organization owners and admins can manage shared AI provider keys",
+        )
+
+
+async def _get_org_ai_provider_settings(user_id: str, organization_id: Optional[str]) -> dict:
+    if not organization_id or not await _user_is_org_member(user_id, organization_id):
+        return {}
+    try:
+        from src.modules.organizations.models import Organization
+
+        oid = _uuid.UUID(str(organization_id))
+        async with async_session() as session:
+            result = await session.execute(
+                select(Organization.settings).where(
+                    and_(
+                        Organization.id == oid,
+                        Organization.is_active == True,
+                        Organization.is_deleted == False,
+                    )
+                )
+            )
+            settings = result.scalar_one_or_none() or {}
+            if not isinstance(settings, dict):
+                return {}
+            keys = settings.get("ai_provider_keys") or {}
+            return keys if isinstance(keys, dict) else {}
+    except Exception:
+        return {}
+
+
+async def _save_org_ai_provider_setting(organization_id: str, provider: str, value: str) -> None:
+    from src.modules.organizations.models import Organization
+
+    oid = _uuid.UUID(str(organization_id))
+    async with async_session() as session:
+        result = await session.execute(
+            select(Organization).where(
+                and_(
+                    Organization.id == oid,
+                    Organization.is_active == True,
+                    Organization.is_deleted == False,
+                )
+            )
+        )
+        org = result.scalars().first()
+        if org is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+        settings = dict(org.settings or {})
+        keys = dict(settings.get("ai_provider_keys") or {})
+        keys[provider] = value
+        settings["ai_provider_keys"] = keys
+        org.settings = settings
+        await session.commit()
 
 
 async def _store_avatar_as_data_uri(
@@ -467,23 +576,40 @@ async def delete_api_key(
 
 @router.get("/ai-provider-keys")
 async def get_ai_provider_keys(
+    request: Request,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """Return AI provider keys with api_key masked. Never returns raw keys."""
     user_id = _require_user_id(current_token)
+    organization_id = _request_organization_id(request)
+    org_kv = await _get_org_ai_provider_settings(user_id, organization_id)
     all_kv = await _user_settings_repo.get_all_settings(user_id)
     result = {}
-    for k, v in all_kv.items():
-        if k.startswith("provider_key."):
-            provider = k.split(".", 2)[1]
-            try:
-                data = json.loads(v)
-                data = decrypt_credentials(data)
-                if isinstance(data, dict) and "api_key" in data:
+    for provider, v in org_kv.items():
+        try:
+            data = json.loads(v)
+            data = decrypt_credentials(data)
+            if isinstance(data, dict):
+                if "api_key" in data:
                     data["api_key"] = mask_key(data["api_key"])
-                result[provider] = data
-            except Exception:
-                pass
+                data["scope"] = "organization"
+            result[provider] = data
+        except Exception:
+            pass
+    for k, v in all_kv.items():
+        if not k.startswith("provider_key."):
+            continue
+        provider = k.split(".", 2)[1]
+        try:
+            data = json.loads(v)
+            data = decrypt_credentials(data)
+            if isinstance(data, dict):
+                if "api_key" in data:
+                    data["api_key"] = mask_key(data["api_key"])
+                data["scope"] = "personal"
+            result[provider] = data
+        except Exception:
+            pass
     return result
 
 
@@ -491,6 +617,7 @@ async def get_ai_provider_keys(
 async def save_ai_provider_key(
     provider: str,
     payload: ProviderKeyPayload,
+    request: Request,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """Save AI provider key. Raw key is stored server-side and never logged or returned."""
@@ -498,14 +625,33 @@ async def save_ai_provider_key(
     if not provider:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
     key_normalized = provider.strip().lower().replace(" ", "_")
+    organization_id = _request_organization_id(request)
+    use_org_scope = bool(organization_id)
+    if use_org_scope:
+        if not await _user_is_org_member(user_id, organization_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization membership is required")
+        await _require_org_provider_key_manager(user_id, organization_id)
+
     api_key_val = (payload.api_key or "").strip()
     endpoint_val = (payload.endpoint or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
-    existing_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
+    existing_raw_value = None
+    if use_org_scope and organization_id:
+        existing_org_keys = await _get_org_ai_provider_settings(user_id, organization_id)
+        existing_raw_value = existing_org_keys.get(key_normalized)
+        if not existing_raw_value and api_key_val.startswith("••••"):
+            # Backward compatibility: keys saved before org BYOK lived in the
+            # owner's personal settings. Let an owner/admin publish that masked
+            # existing key to the org without re-entering the raw secret.
+            personal_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
+            existing_raw_value = personal_raw.value if personal_raw else None
+    else:
+        existing_raw = await _user_settings_repo.get_setting(user_id, f"provider_key.{key_normalized}")
+        existing_raw_value = existing_raw.value if existing_raw else None
     existing: dict = {}
-    if existing_raw and existing_raw.value:
+    if existing_raw_value:
         try:
-            existing = decrypt_credentials(json.loads(existing_raw.value))
+            existing = decrypt_credentials(json.loads(existing_raw_value))
         except Exception:
             pass
     if api_key_val and not api_key_val.startswith("••••"):
@@ -529,10 +675,11 @@ async def save_ai_provider_key(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         )
-    await _user_settings_repo.set_setting(
-        user_id, f"provider_key.{key_normalized}", json.dumps(store)
-    )
-    return {"success": True, "provider": key_normalized}
+    if use_org_scope and organization_id:
+        await _save_org_ai_provider_setting(organization_id, key_normalized, json.dumps(store))
+        return {"success": True, "provider": key_normalized, "scope": "organization"}
+    await _user_settings_repo.set_setting(user_id, f"provider_key.{key_normalized}", json.dumps(store))
+    return {"success": True, "provider": key_normalized, "scope": "personal"}
 
 
 # ─── AI model preference ─────────────────────────────────────────────────────

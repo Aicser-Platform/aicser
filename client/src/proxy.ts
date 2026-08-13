@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server';
 const PUBLIC_PATHS = [
   '/login',
   '/logout',
+  '/reset-password',
   '/api/auth/',
   '/discover',
   '/embed/',
@@ -19,7 +20,7 @@ const STATIC_PREFIXES = ['/_next/', '/public/', '/icons/', '/images/', '/favicon
 
 /** Root public files (e.g. `/aiser-logo.png`) must not be auth-gated — Next/Image fetches them. */
 const STATIC_FILE_RE =
-  /\.(?:avif|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|eot|mp4|webm|map|txt|json|webmanifest)$/i;
+  /\.(?:avif|png|jpe?g|gif|webp|svg|ico|js|mjs|css|woff2?|ttf|eot|mp4|webm|map|txt|json|webmanifest)$/i;
 
 function isPublic(pathname: string): boolean {
   if (STATIC_PREFIXES.some((p) => pathname.startsWith(p))) return true;

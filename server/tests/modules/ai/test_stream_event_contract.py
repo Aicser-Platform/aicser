@@ -303,7 +303,7 @@ async def test_stream_bills_only_on_terminal_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
     class _FakeLiteLLMService:
-        async def hydrate_user_byok_models(self, _user_id):
+        async def hydrate_user_byok_models(self, _user_id, _organization_id=None):
             return None
 
         async def resolve_working_model_id(self, model_id):
@@ -385,4 +385,3 @@ async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
     )
     _ = await _collect_sse_events(response)
     assert seen_keys == ["abc123key"]
-

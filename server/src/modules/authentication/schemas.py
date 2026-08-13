@@ -14,10 +14,24 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
-
-
 class ChangePasswordRequest(BaseModel):
     password: str = Field(min_length=8)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    password: str = Field(min_length=8)
+    token: Optional[str] = None
+    email: Optional[EmailStr] = None
+    code: Optional[str] = Field(default=None, min_length=6, max_length=12)
+
+
+class PasswordResetMessageResponse(BaseModel):
+    message: str
+
 
 class UserResponse(BaseModel):
     id: UUID

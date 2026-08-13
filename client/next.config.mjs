@@ -65,6 +65,12 @@ const pricingModalNoop = path.resolve(__dirname, 'src/components/PricingModal.no
 const edition = (process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase();
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const eeEntry = isEnterprise ? path.dirname(eeIndex) : eeFallback;
+const eeSubscriptionStore = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/stores/useSubscriptionStore.ts')
+  : eeFallback;
+const eeSubscriptionStoreTurbo = isEnterprise
+  ? './ee/src/ee/stores/useSubscriptionStore.ts'
+  : './src/ee-fallback.ts';
 const sentryEnabled = Boolean(
   process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
 );
@@ -112,6 +118,7 @@ const nextConfig = {
       ...(!isEnterprise
         ? { '@/ee/components/PricingModal': './src/components/PricingModal.noop.tsx' }
         : {}),
+      '@/ee/stores/useSubscriptionStore': eeSubscriptionStoreTurbo,
       ...antdEllipsisAlias,
     },
   },
@@ -123,6 +130,7 @@ const nextConfig = {
     };
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
+      '@/ee/stores/useSubscriptionStore': eeSubscriptionStore,
       '@/ee': eeEntry,
       ...(!isEnterprise
         ? { '@/ee/components/PricingModal': pricingModalNoop }

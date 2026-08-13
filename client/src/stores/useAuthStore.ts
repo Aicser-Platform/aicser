@@ -36,6 +36,7 @@ export interface AuthState {
   loginError: string | null;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, username: string, password: string) => Promise<SignupResult>;
+  forgotPassword: (email: string) => Promise<string | undefined>;
   logout: () => Promise<void>;
   setLoginError: (v: string | null) => void;
   clearLoginError: () => void;
@@ -214,6 +215,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
     } finally {
       set({ actionLoading: false });
     }
+  },
+
+  forgotPassword: async (email) => {
+    return getAuthActions().forgotPassword(email);
   },
 
   logout: async () => {

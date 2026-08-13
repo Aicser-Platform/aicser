@@ -122,12 +122,17 @@ export const eeAuthActions: AuthActions = {
   async signup(): Promise<SignupResult> {
     return { success: false, is_verified: false, message: 'EE not available' };
   },
+  async forgotPassword(): Promise<string | undefined> {
+    return undefined;
+  },
   async logout(): Promise<void> {},
 };
 export const supabase = null;
 export async function completeSupabaseRedirectSession(): Promise<boolean> {
   return false;
 }
+export type SupabaseOAuthProvider = 'google' | 'github' | 'azure';
+export async function loginWithSupabaseOAuth(_provider: SupabaseOAuthProvider): Promise<void> {}
 export async function getEeApiAuthToken(): Promise<string | null> {
   return null;
 }

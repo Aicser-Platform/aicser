@@ -29,7 +29,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Organization-Id');
     }
     if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -60,6 +60,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       req.headers.cookie ? String(req.headers.cookie) : undefined,
       req.headers.authorization ? String(req.headers.authorization) : undefined,
     );
+    const organizationId = req.headers['x-organization-id'];
+    if (organizationId) {
+      headers['X-Organization-Id'] = Array.isArray(organizationId) ? organizationId[0] : String(organizationId);
+    }
 
     const fetchOptions: any = { method: req.method, headers, redirect: 'follow' };
 

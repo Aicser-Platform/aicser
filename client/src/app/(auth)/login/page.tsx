@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { Alert, Button, Form, Input, Modal, Divider, Segmented } from 'antd';
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { GithubOutlined, GoogleOutlined, LockOutlined, UserOutlined, WindowsOutlined } from '@ant-design/icons';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
@@ -10,17 +10,50 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getDefaultAppPath } from '@/utils/appPaths';
 import { MARKETING_HOME_URL, PRIVACY_URL, TERMS_URL } from '@/constants/legalUrls';
+import type { SupabaseOAuthProvider } from '@/ee';
 import './login.css';
 
 export const dynamic = 'force-dynamic';
 
 const IS_EE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+const AUTH_PROVIDER = (process.env.NEXT_PUBLIC_AUTH_PROVIDER ?? '').trim().toLowerCase();
+const IS_SUPABASE_AUTH =
+  IS_EE && (AUTH_PROVIDER === 'supabase' || AUTH_PROVIDER === 'supbase');
+const IS_KEYCLOAK_SSO =
+  IS_EE && (process.env.NEXT_PUBLIC_SSO_PROVIDER ?? '').trim().toLowerCase() === 'keycloak';
+
+const SUPABASE_OAUTH_PROVIDER_LABELS: Record<SupabaseOAuthProvider, string> = {
+  google: 'Google',
+  github: 'GitHub',
+  azure: 'Microsoft',
+};
+
+const SUPABASE_OAUTH_PROVIDER_ICONS: Record<SupabaseOAuthProvider, ReactNode> = {
+  google: <GoogleOutlined />,
+  github: <GithubOutlined />,
+  azure: <WindowsOutlined />,
+};
+
+const CONFIGURED_SUPABASE_OAUTH_PROVIDERS: SupabaseOAuthProvider[] = (
+  process.env.NEXT_PUBLIC_SUPABASE_OAUTH_PROVIDERS || 'google'
+)
+  .split(',')
+  .map((provider) => provider.trim().toLowerCase())
+  .filter((provider): provider is SupabaseOAuthProvider =>
+    provider === 'google' || provider === 'github' || provider === 'azure',
+  );
+const SUPABASE_OAUTH_PROVIDERS: SupabaseOAuthProvider[] =
+  CONFIGURED_SUPABASE_OAUTH_PROVIDERS.length > 0 ? CONFIGURED_SUPABASE_OAUTH_PROVIDERS : ['google'];
 
 interface FormValues {
   identifier: string;
   password: string;
   username?: string;
   confirmPassword?: string;
+}
+
+interface ForgotPasswordValues {
+  email: string;
 }
 
 export default function LoginPage() {
@@ -32,10 +65,33 @@ export default function LoginPage() {
     searchParams?.get('mode') === 'register';
   const [isSignUp, setIsSignUp] = useState(initialSignUp);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+  const [forgotError, setForgotError] = useState<string | null>(null);
   const [ssoLoading, setSsoLoading] = useState(false);
+  const [oauthLoadingProvider, setOauthLoadingProvider] = useState<SupabaseOAuthProvider | null>(null);
   const [signupMessage, setSignupMessage] = useState<string | null>(null);
-  const { login, signup, actionLoading: loading, isAuthenticated, authLoading, loginError, clearLoginError } = useAuth();
+  const [authForm] = Form.useForm<FormValues>();
+  const [forgotForm] = Form.useForm<ForgotPasswordValues>();
+  const {
+    login,
+    signup,
+    forgotPassword,
+    actionLoading: loading,
+    isAuthenticated,
+    authLoading,
+    loginError,
+    clearLoginError,
+  } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (authLoading || isAuthenticated) return;
+    const next = searchParams?.get('next');
+    if (next?.startsWith('/reset-password') && !next.startsWith('//')) {
+      router.replace(next);
+    }
+  }, [authLoading, isAuthenticated, router, searchParams]);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
@@ -45,7 +101,7 @@ export default function LoginPage() {
   }, [authLoading, isAuthenticated, router, searchParams]);
 
   useEffect(() => {
-    if (!IS_EE) return;
+    if (!IS_KEYCLOAK_SSO) return;
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     if (!code) return;
@@ -132,6 +188,42 @@ export default function LoginPage() {
     }
   };
 
+  const openForgotPassword = () => {
+    const email = authForm.getFieldValue('identifier');
+    if (email) {
+      forgotForm.setFieldsValue({ email });
+    }
+    setForgotMessage(null);
+    setForgotError(null);
+    setForgotOpen(true);
+  };
+
+  const onForgotFinish = async (values: ForgotPasswordValues) => {
+    setForgotLoading(true);
+    setForgotMessage(null);
+    setForgotError(null);
+    try {
+      const message = await forgotPassword(values.email);
+      setForgotMessage(message || t('reset_email_sent'));
+    } catch (err) {
+      setForgotError(err instanceof Error ? err.message : t('reset_send_failed'));
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const onSupabaseOAuth = async (provider: SupabaseOAuthProvider) => {
+    clearLoginError();
+    setOauthLoadingProvider(provider);
+    try {
+      const mod = await import('@/ee');
+      await mod.loginWithSupabaseOAuth(provider);
+    } catch (err) {
+      console.error(err);
+      setOauthLoadingProvider(null);
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-form-section">
@@ -184,6 +276,7 @@ export default function LoginPage() {
             ) : null}
 
             <Form
+              form={authForm}
               key={isSignUp ? 'signup' : 'signin'}
               name="auth"
               onFinish={onFinish}
@@ -241,7 +334,7 @@ export default function LoginPage() {
 
               {!isSignUp ? (
                 <div className="login-forgot-row">
-                  <button type="button" className="login-inline-link" onClick={() => setForgotOpen(true)}>
+                  <button type="button" className="login-inline-link" onClick={openForgotPassword}>
                     {t('forgot_password')}
                   </button>
                 </div>
@@ -283,25 +376,45 @@ export default function LoginPage() {
                 <Divider plain className="login-divider">
                   {t('or_continue_with')}
                 </Divider>
-                <Button
-                  block
-                  size="large"
-                  type="default"
-                  className="login-sso-btn"
-                  loading={ssoLoading}
-                  disabled={process.env.NEXT_PUBLIC_SSO_PROVIDER !== 'keycloak'}
-                  onClick={async () => {
-                    setSsoLoading(true);
-                    try {
-                      const mod = await import('@/ee');
-                      mod.loginWithKeycloak();
-                    } catch {
-                      setSsoLoading(false);
-                    }
-                  }}
-                >
-                  {t('sign_in_with_org')}
-                </Button>
+                {IS_SUPABASE_AUTH ? (
+                  <div className="login-oauth-buttons">
+                    {SUPABASE_OAUTH_PROVIDERS.map((provider) => (
+                      <Button
+                        key={provider}
+                        block
+                        size="large"
+                        type="default"
+                        className="login-sso-btn"
+                        icon={SUPABASE_OAUTH_PROVIDER_ICONS[provider]}
+                        loading={oauthLoadingProvider === provider}
+                        disabled={Boolean(oauthLoadingProvider)}
+                        onClick={() => onSupabaseOAuth(provider)}
+                      >
+                        {t('sign_in_with_provider', { provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider] })}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <Button
+                    block
+                    size="large"
+                    type="default"
+                    className="login-sso-btn"
+                    loading={ssoLoading}
+                    disabled={!IS_KEYCLOAK_SSO}
+                    onClick={async () => {
+                      setSsoLoading(true);
+                      try {
+                        const mod = await import('@/ee');
+                        mod.loginWithKeycloak();
+                      } catch {
+                        setSsoLoading(false);
+                      }
+                    }}
+                  >
+                    {t('sign_in_with_org')}
+                  </Button>
+                )}
               </>
             ) : null}
 
@@ -348,10 +461,43 @@ export default function LoginPage() {
         width={400}
         styles={{ content: { maxWidth: 'calc(100vw - 2rem)' } }}
       >
-        <p className="login-modal-text">{t('reset_unavailable')}</p>
-        <Button type="primary" block onClick={() => setForgotOpen(false)}>
-          {t('cancel')}
-        </Button>
+        <p className="login-modal-text">{t('reset_instructions')}</p>
+        {forgotMessage ? <Alert type="success" showIcon message={forgotMessage} className="login-error-alert" /> : null}
+        {forgotError ? <Alert type="error" showIcon message={forgotError} className="login-error-alert" /> : null}
+        {forgotMessage && !IS_SUPABASE_AUTH ? (
+          <Button
+            type="link"
+            block
+            onClick={() => {
+              setForgotOpen(false);
+              router.push('/reset-password');
+            }}
+          >
+            {t('reset_with_code')}
+          </Button>
+        ) : null}
+        <Form form={forgotForm} layout="vertical" size="large" onFinish={onForgotFinish}>
+          <Form.Item
+            name="email"
+            label={t('email')}
+            required
+            rules={[
+              { required: true, message: t('email_required') },
+              { type: 'email', message: t('email_invalid') },
+            ]}
+          >
+            <Input
+              placeholder={t('email_placeholder')}
+              autoComplete="email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={forgotLoading} block>
+            {t('send_instructions')}
+          </Button>
+        </Form>
       </Modal>
     </div>
   );

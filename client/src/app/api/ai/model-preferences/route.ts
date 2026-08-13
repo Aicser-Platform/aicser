@@ -13,6 +13,10 @@ async function proxyModelPreferences(request: NextRequest, method: string) {
       'Content-Type': 'application/json',
       ...buildProxyAuthHeaders(request),
     };
+    const organizationId = request.headers.get('X-Organization-Id') || request.headers.get('x-organization-id');
+    if (organizationId) {
+      headers['X-Organization-Id'] = organizationId;
+    }
 
     const init: RequestInit = { method, headers, credentials: 'include' };
     if (method !== 'GET' && method !== 'HEAD') {

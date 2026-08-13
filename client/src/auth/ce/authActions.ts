@@ -57,6 +57,20 @@ export const ceAuthActions: AuthActions = {
     };
   },
 
+  async forgotPassword(email: string): Promise<string | undefined> {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email }),
+    });
+    const data = await readAuthJson(res);
+    if (!res.ok) {
+      throw new Error(parseAuthResponseError(res.status, data));
+    }
+    return data.message;
+  },
+
   async logout(): Promise<void> {
     clearCeBearerToken();
     try {
