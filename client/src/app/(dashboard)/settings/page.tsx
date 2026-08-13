@@ -243,7 +243,6 @@ const NAV_GROUPS: NavGroup[] = [
         key: 'api-keys',
         label: 'API Keys',
         icon: <KeyOutlined />,
-        requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: ApiKeysTab,
         description: 'Programmatic access tokens',
       },

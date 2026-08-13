@@ -30,6 +30,10 @@ export async function POST(request: NextRequest) {
     }
 
     Object.assign(headers, buildProxyAuthHeaders(request));
+    const organizationId = request.headers.get('X-Organization-Id') || request.headers.get('x-organization-id');
+    if (organizationId) {
+      headers['X-Organization-Id'] = organizationId;
+    }
 
     const response = await fetch(url.toString(), {
       method: 'POST',

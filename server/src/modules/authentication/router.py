@@ -3,10 +3,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from src.db.session import get_async_session
-from src.modules.authentication.schemas import LoginRequest, RegisterRequest, UserResponse, ChangePasswordRequest
+from src.modules.authentication.schemas import (
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    LoginRequest,
+    PasswordResetMessageResponse,
+    RegisterRequest,
+    ResetPasswordRequest,
+    UserResponse,
+)
 from src.modules.authentication.service import (
+    PASSWORD_RESET_PUBLIC_MESSAGE,
     create_access_token,
     change_user_password,
+    request_password_reset,
+    reset_password_with_token_or_code,
 )
 from src.modules.authentication.cookies import clear_auth_token_cookie, set_auth_token_cookie
 from src.core.production import is_production
@@ -71,6 +82,37 @@ async def logout(response: Response):
     return {"message": "Logged out"}
 
 
+@router.post("/auth/forgot-password", response_model=PasswordResetMessageResponse)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_async_session),
+):
+    await request_password_reset(
+        db,
+        body.email,
+        request_ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"message": PASSWORD_RESET_PUBLIC_MESSAGE}
+
+
+@router.post("/auth/reset-password", response_model=PasswordResetMessageResponse)
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_async_session),
+):
+    try:
+        await reset_password_with_token_or_code(
+            db,
+            password=body.password,
+            token=body.token,
+            email=str(body.email) if body.email else None,
+            code=body.code,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"message": "Password updated. You can sign in with your new password."}
 
 
 @router.post("/auth/change-password")

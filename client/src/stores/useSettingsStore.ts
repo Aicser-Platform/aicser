@@ -91,6 +91,7 @@ interface SettingsState {
   updateTeamMemberRole: (orgId: string, userId: string, roleId: string) => Promise<void>;
   removeTeamMember: (orgId: string, userId: string) => Promise<void>;
   inviteTeamMember: (orgId: string, payload: { email: string; role_id: string }) => Promise<void>;
+  cancelInvitation: (orgId: string, invitationId: string) => Promise<void>;
   loadDataSources: (projectId?: string) => Promise<void>;
 
   // Reset
@@ -518,6 +519,7 @@ export const useSettingsStore = create<SettingsState>()(
 
           const pendingMembers: TeamMember[] = (rawInvites || []).map((inv) => ({
             user_id: inv.id,
+            invitation_id: inv.id,
             email: inv.email,
             role_id: inv.role_id,
             role_name: '',
@@ -592,6 +594,21 @@ export const useSettingsStore = create<SettingsState>()(
           });
         } catch (error) {
           console.error('Failed to invite member:', error);
+          throw error;
+        } finally {
+          set((state) => { state.loading = false; });
+        }
+      },
+
+      cancelInvitation: async (orgId, invitationId) => {
+        set((state) => { state.loading = true; });
+        try {
+          await fetchApi(`/api/invitations/organizations/${orgId}/${invitationId}`, {
+            method: 'DELETE',
+          });
+          await get().loadTeamMembers(orgId);
+        } catch (error) {
+          console.error('Failed to cancel invitation:', error);
           throw error;
         } finally {
           set((state) => { state.loading = false; });

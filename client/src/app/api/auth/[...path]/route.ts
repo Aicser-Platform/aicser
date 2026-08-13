@@ -16,7 +16,11 @@ async function handle(
   const { path } = await context.params;
   const upstreamPath = path.join('/');
   const search = request.nextUrl.search;
-  const isAuthMutation = upstreamPath === 'login' || upstreamPath === 'register';
+  const isAuthMutation =
+    upstreamPath === 'login' ||
+    upstreamPath === 'register' ||
+    upstreamPath === 'forgot-password' ||
+    upstreamPath === 'reset-password';
 
   const headers = new Headers();
   headers.set('content-type', request.headers.get('content-type') ?? 'application/json');

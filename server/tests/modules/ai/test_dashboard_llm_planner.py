@@ -124,7 +124,7 @@ async def test_llm_refine_hydrates_user_byok_before_completion(monkeypatch):
     calls: list = []
 
     class FakeLiteLLM:
-        async def hydrate_user_byok_models(self, user_id):
+        async def hydrate_user_byok_models(self, user_id, organization_id=None):
             calls.append(("hydrate", user_id))
 
         async def generate_completion(self, **kwargs):

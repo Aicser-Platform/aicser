@@ -71,6 +71,7 @@ export interface ProviderApiKeys {
 
 export interface TeamMember {
   user_id: string;
+  invitation_id?: string;
   email: string;
   first_name?: string;
   last_name?: string;

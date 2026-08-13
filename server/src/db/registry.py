@@ -24,6 +24,7 @@ from src.modules.feed.models import (
 )
 from src.core.licensing.models import LicenseStateRecord
 from src.core.system_settings.models import SystemSetting
+from src.modules.authentication.models import PasswordResetToken
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────
 # NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)
