@@ -14,14 +14,22 @@ import {
   Tooltip,
   message,
 } from 'antd';
-import { DatabaseOutlined, SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { usePermissions, Permission } from '@/hooks/usePermissions';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
+import DataSourceAccessDrawer from './DataSourceAccessDrawer';
 import type { DataSource as SettingsDataSource } from '../types';
 import type { TabComponentProps } from '../page';
 
@@ -33,9 +41,11 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<SettingsDataSource | null>(null);
+  const [accessSource, setAccessSource] = useState<SettingsDataSource | null>(null);
   const { currentProject } = useProjectStore();
   const { hasPermission, loading: permissionsLoading } = usePermissions();
   const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
+  const canManageAccess = isEnterpriseEdition && canManageDataSettings;
 
   const {
     dataSources,
@@ -183,9 +193,20 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
           {
             title: t('col_actions'),
             key: 'actions',
-            width: 120,
+            width: canManageAccess ? 160 : 120,
             render: (_: unknown, record: SettingsDataSource) => (
               <Space>
+                {canManageAccess ? (
+                  <Tooltip title={t('data_source_access_manage')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<SafetyCertificateOutlined />}
+                      onClick={() => setAccessSource(record)}
+                      disabled={!!deletingId}
+                    />
+                  </Tooltip>
+                ) : null}
                 <Tooltip title={t('edit_connection')}>
                   <Button
                     type="text"
@@ -281,6 +302,11 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
               }
             : null
         }
+      />
+      <DataSourceAccessDrawer
+        open={!!accessSource}
+        dataSource={accessSource}
+        onClose={() => setAccessSource(null)}
       />
     </Card>
     </>

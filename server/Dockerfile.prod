@@ -5,24 +5,37 @@ FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /app
 
+ARG ODBC18_DEB_AMD64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_amd64.deb
+ARG ODBC18_DEB_ARM64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_arm64.deb
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install build dependencies + Microsoft ODBC driver
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    libsnappy-dev \
-    unixodbc-dev \
-    curl \
-    gnupg \
-    libgssapi-krb5-2 \
- && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
- && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
-    > /etc/apt/sources.list.d/mssql-release.list \
- && apt-get update \
- && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
- && rm -rf /var/lib/apt/lists/*
+# Install build dependencies + Microsoft ODBC driver.
+# Use the direct driver package to avoid adding the Microsoft apt repository in
+# Docker builds, which is more fragile in restricted/network-cached environments.
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get -o Acquire::Retries=5 update; \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      libpq-dev \
+      libsnappy-dev \
+      unixodbc-dev \
+      ca-certificates \
+      curl \
+      libgssapi-krb5-2; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) url="${ODBC18_DEB_AMD64}" ;; \
+      arm64) url="${ODBC18_DEB_ARM64}" ;; \
+      *) echo "Unsupported architecture for msodbcsql18: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/msodbcsql18.deb "$url"; \
+    echo "msodbcsql18 msodbcsql/ACCEPT_EULA boolean true" | debconf-set-selections; \
+    DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/msodbcsql18.deb || apt-get install -y -f --no-install-recommends; \
+    rm -f /tmp/msodbcsql18.deb; \
+    rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
 RUN python -m venv /app/.venv
@@ -31,15 +44,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Install Python dependencies
 COPY requirements.txt .
 
-# Install Python dependencies + Playwright browsers (used for chart/dashboard PNG export).
-# playwright is not always present in the exported requirements pin; install explicitly
-# like Dockerfile.dev, then use `python -m playwright` so PATH/venv scripts are reliable.
+# Install Python dependencies + Playwright browser binaries used for
+# chart/dashboard PNG export. Browser system libraries belong in the runner
+# stage; installing them here only inflates the build cache because this stage
+# copies out the venv and Playwright cache, not apt-installed packages.
 RUN pip install --upgrade pip setuptools wheel \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
- && python -m playwright install chromium --with-deps \
+ && python -m playwright install chromium \
  && find /app/.venv -name "*.pyc" -delete \
  && find /app/.venv -name "__pycache__" -type d -exec rm -rf {} +
 
@@ -51,6 +65,8 @@ FROM python:3.11-slim-bookworm AS runner
 WORKDIR /app
 
 ARG AISER_VERSION=1.1.1
+ARG ODBC18_DEB_AMD64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_amd64.deb
+ARG ODBC18_DEB_ARM64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_arm64.deb
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -59,32 +75,39 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AISER_VERSION=$AISER_VERSION \
     APP_VERSION=$AISER_VERSION
 
-# Install runtime dependencies + Microsoft ODBC + Chromium system libs
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    libsnappy1v5 \
-    unixodbc \
-    curl \
-    gnupg \
-    libgssapi-krb5-2 \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
- && curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft.gpg \
- && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
-    > /etc/apt/sources.list.d/mssql-release.list \
- && apt-get update \
- && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
- && apt-get purge -y gnupg \
- && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies + Microsoft ODBC + Chromium system libs.
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get -o Acquire::Retries=5 update; \
+    apt-get install -y --no-install-recommends \
+      libpq5 \
+      libsnappy1v5 \
+      unixodbc \
+      ca-certificates \
+      curl \
+      libgssapi-krb5-2 \
+      libnss3 \
+      libatk1.0-0 \
+      libatk-bridge2.0-0 \
+      libcups2 \
+      libxkbcommon0 \
+      libxcomposite1 \
+      libxdamage1 \
+      libxfixes3 \
+      libxrandr2 \
+      libgbm1 \
+      libasound2; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) url="${ODBC18_DEB_AMD64}" ;; \
+      arm64) url="${ODBC18_DEB_ARM64}" ;; \
+      *) echo "Unsupported architecture for msodbcsql18: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/msodbcsql18.deb "$url"; \
+    echo "msodbcsql18 msodbcsql/ACCEPT_EULA boolean true" | debconf-set-selections; \
+    DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/msodbcsql18.deb || apt-get install -y -f --no-install-recommends; \
+    rm -f /tmp/msodbcsql18.deb; \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python environment and Playwright browsers
 COPY --from=builder /app/.venv /app/.venv

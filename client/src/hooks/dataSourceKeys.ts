@@ -5,6 +5,8 @@ export const dataSourceKeys = {
   list: (projectId?: string | null) => ['data-sources', 'list', projectId ?? null] as const,
   detail: (id: string) => ['data-sources', id] as const,
   schema: (id: string) => ['data-sources', id, 'schema'] as const,
+  accessGrants: (id: string) => ['data-sources', id, 'access-grants'] as const,
+  rlsPolicies: (id: string) => ['data-sources', id, 'rls-policies'] as const,
 };
 
 export const isEnterpriseEdition = ['enterprise', 'ee'].includes(

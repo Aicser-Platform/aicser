@@ -10,7 +10,19 @@ from src.core.edition import is_ee_enabled
 
 # ── CE models (always imported) ───────────────────────────────────────────────
 from src.modules.user.models import User
-from src.modules.data.models import DataSource, ProjectDataSource, FileStorage, ConnectorRuntimeJob
+from src.modules.data.models import (
+    DataSource,
+    DataSourceAccessGrant,
+    DataSourceRLSPolicy,
+    DataSourceRLSRule,
+    DataIngestionJob,
+    DataLakeObject,
+    DataCDCState,
+    SemanticLayerArtifact,
+    ProjectDataSource,
+    FileStorage,
+    ConnectorRuntimeJob,
+)
 from src.modules.dashboards.models import Dashboard, DashboardChart
 from src.modules.charts.models import Chart, QueryPattern
 from src.modules.knowledge.models import (

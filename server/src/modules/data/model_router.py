@@ -7,15 +7,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Body, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.edition import is_ee_enabled
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.data.models import DataSource
 from src.modules.data.model_service import DataModelService
-from src.modules.project.service import ProjectService
+from src.modules.data.services.data_source_access_service import (
+    DATA_SOURCE_PERMISSION_EDIT,
+    DATA_SOURCE_PERMISSION_VIEW,
+    DataSourceAccessService,
+)
 
 router = APIRouter()
 
@@ -33,48 +35,32 @@ async def _require_data_source_access(
     *,
     write: bool = False,
 ) -> DataSource:
-    """Mirror datasource access checks used by /data/sources endpoints."""
+    """Require grant-based access matching the main /data/sources endpoints."""
     user_id = _user_id_from_payload(current_user)
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
-    result = await db.execute(
-        select(DataSource).where(
-            DataSource.id == data_source_id,
-            DataSource.is_active.is_(True),
-        )
+    data_source = await DataSourceAccessService.get_data_source(
+        data_source_id,
+        session=db,
     )
-    ds = result.scalar_one_or_none()
-    if not ds:
+    if not data_source or data_source.is_active is not True:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data source not found")
 
-    creator_ok = getattr(ds, "user_id", None) is not None and str(ds.user_id) == user_id
-    if creator_ok:
-        return ds
-
-    if not is_ee_enabled():
-        shared_read_ok = not write and getattr(ds, "user_id", None) is None
-        if shared_read_ok:
-            return ds
+    permission = DATA_SOURCE_PERMISSION_EDIT if write else DATA_SOURCE_PERMISSION_VIEW
+    allowed = await DataSourceAccessService.can_access(
+        user_id,
+        data_source_id,
+        permission,
+        project_id=str(data_source.project_id) if data_source.project_id else None,
+        session=db,
+    )
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to access this data source",
         )
-
-    if ds.project_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this data source",
-        )
-
-    user_projects, _ = await ProjectService.get_user_projects(user_id)
-    project_ids = {str(project.id) for project in user_projects}
-    if str(ds.project_id) not in project_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this data source",
-        )
-    return ds
+    return data_source
 
 
 class RelationshipCreateRequest(BaseModel):
@@ -199,6 +185,7 @@ async def list_calc_fields(
     """List all calculated fields for this data source."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_data_source_access(db, data_source_id, current_user)
     from sqlalchemy import text as sa_text
     try:
         result = await db.execute(
@@ -227,6 +214,7 @@ async def create_calc_field(
     """Create a calculated field (stored in semantic_metrics with source=calculated)."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
     import uuid as _uuid
     from sqlalchemy import text as sa_text
 
@@ -273,6 +261,7 @@ async def delete_calc_field(
     """Soft-delete a calculated field."""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
+    await _require_data_source_access(db, data_source_id, current_user, write=True)
     from sqlalchemy import text as sa_text
     await db.execute(
         sa_text(
@@ -295,9 +284,7 @@ async def get_model_context(
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
-    ds = await svc.get_data_source(data_source_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Data source not found")
+    await _require_data_source_access(db, data_source_id, current_user)
     from src.modules.data.services.semantic_context_service import get_unified_semantic_context
 
     ctx = await get_unified_semantic_context(db, data_source_id, project_id)

@@ -619,6 +619,21 @@ class DataConnectivityService:
                                 logger.warning(f"Invalid project_id format: {project_id}, storing without project")
                         else:
                             project_id_uuid = project_id
+
+                    organization_id_uuid = None
+                    if project_id_uuid and is_ee_enabled():
+                        try:
+                            from src.modules.project.models import Project
+
+                            organization_id_uuid = (
+                                await db.execute(
+                                    sa.select(Project.organization_id).where(
+                                        Project.id == project_id_uuid
+                                    )
+                                )
+                            ).scalar_one_or_none()
+                        except Exception:
+                            organization_id_uuid = None
                     
                     # Resolve user_id UUID so CE list endpoint can find this record by owner
                     user_id_uuid = None
@@ -645,6 +660,7 @@ class DataConnectivityService:
                         }),
                         user_id=user_id_uuid,
                         project_id=project_id_uuid if project_id else None,
+                        organization_id=organization_id_uuid,
                         is_active=True,
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
@@ -653,6 +669,27 @@ class DataConnectivityService:
                     
                     db.add(new_source)
                     await db.flush()
+                    if is_ee_enabled() and project_id_uuid:
+                        try:
+                            from src.modules.data.services.data_source_access_service import (
+                                DataSourceAccessService,
+                            )
+
+                            await DataSourceAccessService.grant_project_access(
+                                data_source_id=connection_id,
+                                organization_id=str(organization_id_uuid)
+                                if organization_id_uuid
+                                else None,
+                                project_id=str(project_id_uuid),
+                                created_by=str(user_id_uuid) if user_id_uuid else None,
+                                session=db,
+                            )
+                        except Exception as grant_error:
+                            logger.warning(
+                                "Project grant creation skipped for data source %s: %s",
+                                connection_id,
+                                grant_error,
+                            )
                     if schema_info.get('tables'):
                         try:
                             from src.modules.data.model_service import DataModelService
@@ -1239,6 +1276,7 @@ class DataConnectivityService:
                     # Create new
                     # Use project_id from data_source dict (passed from options)
                     project_id = data_source.get('project_id')
+                    organization_id = data_source.get('organization_id')
                     
                     if not project_id and is_ee_enabled():
                         raise ValueError(f"project_id is required when creating data source {data_source.get('id')}. Ensure project_id is passed in options.")
@@ -1252,6 +1290,23 @@ class DataConnectivityService:
                             # If conversion fails, try converting integer ID to UUID
                             # This handles legacy numeric IDs that may be sent
                             raise ValueError(f"Invalid project_id format: {project_id}. Must be a valid UUID.")
+                    organization_id_uuid = None
+                    if organization_id:
+                        try:
+                            organization_id_uuid = UUID(str(organization_id))
+                        except (ValueError, AttributeError):
+                            organization_id_uuid = None
+                    if organization_id_uuid is None and project_id and is_ee_enabled():
+                        try:
+                            from src.modules.project.models import Project
+
+                            organization_id_uuid = (
+                                await db.execute(
+                                    select(Project.organization_id).where(Project.id == project_id)
+                                )
+                            ).scalar_one_or_none()
+                        except Exception:
+                            organization_id_uuid = None
                     
                     # Normalize user_id to UUID (nullable)
                     user_id_str = data_source.get('user_id')
@@ -1274,9 +1329,29 @@ class DataConnectivityService:
                         original_filename=data_source.get('original_filename'),
                         sample_data=data_source.get('sample_data'),  # Save sample_data as JSON
                         project_id=project_id,  # Required - validated above
+                        organization_id=organization_id_uuid,
                         user_id=user_id_uuid  # Track who uploaded this data source
                     )
                     db.add(new_data_source)
+                    if is_ee_enabled() and project_id:
+                        try:
+                            from src.modules.data.services.data_source_access_service import (
+                                DataSourceAccessService,
+                            )
+
+                            await DataSourceAccessService.grant_project_access(
+                                data_source_id=data_source["id"],
+                                organization_id=str(organization_id_uuid) if organization_id_uuid else None,
+                                project_id=str(project_id),
+                                created_by=str(user_id_uuid) if user_id_uuid else None,
+                                session=db,
+                            )
+                        except Exception as grant_error:
+                            logger.warning(
+                                "Project grant creation skipped for data source %s: %s",
+                                data_source["id"],
+                                grant_error,
+                            )
                     logger.info(f"✅ Saved new data source {data_source['id']} to database (project_id={project_id}).")
                 
                 await db.commit()
@@ -1354,6 +1429,7 @@ class DataConnectivityService:
             # Generate data source metadata
             user_id = options.get('user_id') if options else None
             project_id = options.get('project_id') if options else None
+            organization_id = options.get('organization_id') if options else None
             name = options.get('name') if options else original_filename
             
             # Get file size from temp file
@@ -1380,7 +1456,8 @@ class DataConnectivityService:
                 'content_type': f"application/{file_extension}",
                 'storage_type': options.get('storage_type', 'postgresql'),
                 'user_id': user_id,  # Pass user_id from options for audit
-                'project_id': project_id  # Pass project_id from options (REQUIRED)
+                'project_id': project_id,  # Pass project_id from options (REQUIRED)
+                'organization_id': organization_id,
             }
 
             storage_meta = options.get("storage_meta") or {}

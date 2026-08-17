@@ -10,36 +10,35 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBUG=true \
     WATCHFILES_FORCE_POLLING=true
 
-# Install system dependencies (without Microsoft ODBC driver to avoid signature issues)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    libsnappy-dev \
-    unixodbc-dev \
-    ca-certificates \
-    curl \
-    netcat-openbsd \
-    wget \
-    gnupg \
-    libgssapi-krb5-2 \
-    && curl -sSL -O https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb \
-    && rm packages-microsoft-prod.deb \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Microsoft ODBC Driver 18 via direct .deb (avoids packages.microsoft.com repo signature issues)
 ARG ODBC18_DEB_AMD64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_amd64.deb
 ARG ODBC18_DEB_ARM64=https://packages.microsoft.com/debian/12/prod/pool/main/m/msodbcsql18/msodbcsql18_18.6.1.1-1_arm64.deb
+
+# Install system dependencies + Microsoft ODBC Driver 18 via direct .deb
+# instead of adding packages.microsoft.com as an apt repository.
 RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get -o Acquire::Retries=5 update; \
+    apt-get install -y --no-install-recommends \
+      build-essential \
+      libpq-dev \
+      libsnappy-dev \
+      unixodbc-dev \
+      ca-certificates \
+      curl \
+      netcat-openbsd \
+      wget \
+      libgssapi-krb5-2; \
     arch="$(dpkg --print-architecture)"; \
-    case "$arch" in amd64) url="${ODBC18_DEB_AMD64}";; arm64) url="${ODBC18_DEB_ARM64}";; *) echo "Unsupported arch: $arch"; exit 1;; esac; \
-    curl -sSL -o /tmp/msodbcsql18.deb "$url"; \
+    case "$arch" in \
+      amd64) url="${ODBC18_DEB_AMD64}" ;; \
+      arm64) url="${ODBC18_DEB_ARM64}" ;; \
+      *) echo "Unsupported architecture for msodbcsql18: $arch"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/msodbcsql18.deb "$url"; \
     echo "msodbcsql18 msodbcsql/ACCEPT_EULA boolean true" | debconf-set-selections; \
-    DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/msodbcsql18.deb || true; \
-    apt-get update && apt-get install -y -f --no-install-recommends && rm -rf /var/lib/apt/lists/*; \
-    rm -f /tmp/msodbcsql18.deb
+    DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/msodbcsql18.deb || apt-get install -y -f --no-install-recommends; \
+    rm -f /tmp/msodbcsql18.deb; \
+    rm -rf /var/lib/apt/lists/*
 
 # Create virtualenv and install dependencies
 RUN python -m venv /venv

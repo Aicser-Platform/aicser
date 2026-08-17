@@ -1,9 +1,17 @@
-import sys
-import types
-
 import pytest
 
-from src.modules.data.services import upload_datasource_storage_service as storage_module
+from src.modules.data.services import (
+    upload_datasource_storage_service as storage_module,
+)
+
+
+async def _disabled_runtime_storage_config():
+    return {
+        "enabled": False,
+        "configured": False,
+        "source": "none",
+        "backend": "disabled",
+    }
 
 
 class _FakePostgresStorage:
@@ -71,14 +79,18 @@ async def test_ce_upload_datasource_storage_uses_postgres(monkeypatch):
 @pytest.mark.asyncio
 async def test_ee_upload_datasource_storage_uses_azure(monkeypatch):
     fake_azure = _FakeAzureStorage()
-    azure_module = types.ModuleType("ee.modules.data.services.azure_blob_storage_service")
-    azure_module.AzureBlobStorageService = lambda: fake_azure
 
     monkeypatch.setenv("AISER_EDITION", "enterprise")
-    monkeypatch.setitem(
-        sys.modules,
-        "ee.modules.data.services.azure_blob_storage_service",
-        azure_module,
+    monkeypatch.delenv("STORAGE_BACKEND", raising=False)
+    monkeypatch.setattr(
+        storage_module,
+        "get_effective_storage_config",
+        _disabled_runtime_storage_config,
+    )
+    monkeypatch.setattr(
+        storage_module.UploadDatasourceStorageService,
+        "_azure_storage",
+        lambda self: fake_azure,
     )
 
     service = storage_module.UploadDatasourceStorageService()
@@ -94,7 +106,9 @@ async def test_ee_upload_datasource_storage_uses_azure(monkeypatch):
     )
 
     assert service.storage_type == "azure_blob"
-    assert object_key == "projects/project-1/data-sources/source-1/compressed/file.parquet"
+    assert (
+        object_key == "projects/project-1/data-sources/source-1/compressed/file.parquet"
+    )
     assert fake_azure.calls[0][0] == "store"
 
 
@@ -135,15 +149,18 @@ class _FakeS3Storage:
 @pytest.mark.asyncio
 async def test_ee_storage_backend_s3_selects_s3_service(monkeypatch):
     fake_s3 = _FakeS3Storage()
-    s3_module = types.ModuleType("ee.modules.data.services.s3_storage_service")
-    s3_module.S3StorageService = lambda: fake_s3
 
     monkeypatch.setenv("AISER_EDITION", "enterprise")
     monkeypatch.setenv("STORAGE_BACKEND", "s3")
-    monkeypatch.setitem(
-        sys.modules,
-        "ee.modules.data.services.s3_storage_service",
-        s3_module,
+    monkeypatch.setattr(
+        storage_module,
+        "get_effective_storage_config",
+        _disabled_runtime_storage_config,
+    )
+    monkeypatch.setattr(
+        storage_module.UploadDatasourceStorageService,
+        "_s3_storage",
+        lambda self, config=None: fake_s3,
     )
 
     service = storage_module.UploadDatasourceStorageService()
@@ -166,12 +183,19 @@ async def test_ee_storage_backend_s3_selects_s3_service(monkeypatch):
 @pytest.mark.asyncio
 async def test_ee_s3_get_file_delegates_to_s3_service(monkeypatch):
     fake_s3 = _FakeS3Storage()
-    s3_module = types.ModuleType("ee.modules.data.services.s3_storage_service")
-    s3_module.S3StorageService = lambda: fake_s3
 
     monkeypatch.setenv("AISER_EDITION", "enterprise")
     monkeypatch.setenv("STORAGE_BACKEND", "s3")
-    monkeypatch.setitem(sys.modules, "ee.modules.data.services.s3_storage_service", s3_module)
+    monkeypatch.setattr(
+        storage_module,
+        "get_effective_storage_config",
+        _disabled_runtime_storage_config,
+    )
+    monkeypatch.setattr(
+        storage_module.UploadDatasourceStorageService,
+        "_s3_storage",
+        lambda self, config=None: fake_s3,
+    )
 
     service = storage_module.UploadDatasourceStorageService()
     content = await service.get_file(
