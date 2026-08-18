@@ -49,6 +49,8 @@ export interface QueryResult {
     execution_time: number;
     engine: string;
     query_id?: string;
+    cached?: boolean;
+    rls_applied?: boolean;
     error?: string;
     metadata?: Record<string, any>;
 }
@@ -256,7 +258,8 @@ class EnhancedDataService {
         dataSourceId: string,
         engine?: string,
         optimization: boolean = true,
-        signal?: AbortSignal
+        signal?: AbortSignal,
+        projectId?: string | number | null
     ): Promise<QueryResult> {
         try {
             // fetchApi already parses JSON and throws on non-2xx responses
@@ -270,6 +273,7 @@ class EnhancedDataService {
                     data_source_id: dataSourceId,
                     engine,
                     optimization,
+                    project_id: projectId != null ? String(projectId) : undefined,
                 }),
                 signal,
             });
@@ -282,6 +286,8 @@ class EnhancedDataService {
                 execution_time: result.execution_time || 0,
                 engine: result.engine || engine || 'unknown',
                 query_id: result.query_id,
+                cached: result.cached,
+                rls_applied: result.rls_applied,
                 error: result.error,
                 metadata: result.metadata,
             };

@@ -42,6 +42,7 @@ import {
   ApiOutlined,
   FileOutlined,
   RocketOutlined,
+  SafetyCertificateOutlined,
   ThunderboltOutlined,
   UnorderedListOutlined,
   QuestionCircleOutlined,
@@ -377,6 +378,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     return !defaultSidebarOpen;
   });
   const [executionTime, setExecutionTime] = useState<number | null>(null);
+  // Row-level security silently drops rows; the results toolbar has to say so.
+  const [rlsApplied, setRlsApplied] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [resultLimitApplied, setResultLimitApplied] = useState(false);
   const [executionStatus, setExecutionStatus] = useState<string>('');
@@ -1357,6 +1360,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             const probe = await enhancedDataService.executeMultiEngineQuery(
               wrapSqlAsSubquery(content, 5),
               String(selectedDataSourceId),
+              undefined,
+              true,
+              undefined,
+              projectId || currentProjectId,
             );
             columns = columnsFromQueryResult(probe as any);
           } catch (err) {
@@ -2432,7 +2439,14 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       if (extractedSQL) {
         // If Python code contains SQL, execute the SQL directly
         const engineParam = selectedEngine && selectedEngine !== 'auto' ? selectedEngine : undefined;
-        const result = await enhancedDataService.executeMultiEngineQuery(extractedSQL, dsId, engineParam);
+        const result = await enhancedDataService.executeMultiEngineQuery(
+          extractedSQL,
+          dsId,
+          engineParam,
+          true,
+          undefined,
+          projectId || currentProjectId,
+        );
 
         const executionTime = Date.now() - startTime;
 
@@ -2579,7 +2593,14 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       // Use enhancedDataService to run multi-engine queries (server-side routing)
       // If engine is 'auto' or empty, pass undefined to let backend auto-select
       const engineParam = selectedEngine && selectedEngine !== 'auto' ? selectedEngine : undefined;
-      const result = await enhancedDataService.executeMultiEngineQuery(executedSql, dsId, engineParam, true, abortController.signal);
+      const result = await enhancedDataService.executeMultiEngineQuery(
+        executedSql,
+        dsId,
+        engineParam,
+        true,
+        abortController.signal,
+        projectId || currentProjectId,
+      );
 
       const executionTime = Date.now() - startTime;
 
@@ -2611,6 +2632,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
         setResults(resultData);
         setResultLimitApplied(appendedLimit);
+        setRlsApplied(Boolean(result.rls_applied));
         setExecutionTime(result.execution_time || executionTime);
         // Update resolved engine state for display
         const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
@@ -3365,6 +3387,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                           </Tooltip>
                         ) : null}
                       </span>
+                      {rlsApplied ? (
+                        <Tooltip title={t('rls_applied_tip')}>
+                          <Tag color="warning" icon={<SafetyCertificateOutlined />} style={{ marginInlineEnd: 0 }}>
+                            {t('rls_applied_label')}
+                          </Tag>
+                        </Tooltip>
+                      ) : null}
                       <Space size={4}>
                         {results.length > 0 && (
                           <Tooltip title={t('ask_ai_results_tip')}>

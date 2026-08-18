@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Card,
   Table,
@@ -23,13 +24,11 @@ import {
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
-import { useProjectStore } from '@/stores/useProjectStore';
 import { usePermissions, Permission } from '@/hooks/usePermissions';
-import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
+import { useCanManageDataAccess } from '@/hooks/access/useCanManageDataAccess';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
-import DataSourceAccessDrawer from './DataSourceAccessDrawer';
 import type { DataSource as SettingsDataSource } from '../types';
 import type { TabComponentProps } from '../page';
 
@@ -41,11 +40,11 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editingSource, setEditingSource] = useState<SettingsDataSource | null>(null);
-  const [accessSource, setAccessSource] = useState<SettingsDataSource | null>(null);
-  const { currentProject } = useProjectStore();
+  const router = useRouter();
   const { hasPermission, loading: permissionsLoading } = usePermissions();
   const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
-  const canManageAccess = isEnterpriseEdition && canManageDataSettings;
+  // Same rule as the Data page, and the same one the server enforces.
+  const canManageAccess = useCanManageDataAccess();
 
   const {
     dataSources,
@@ -56,7 +55,7 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
     loadDataSources,
   } = useSettingsStore();
 
-  const reloadDataSources = () => loadDataSources(currentProject?.id as string | undefined);
+  const reloadDataSources = () => loadDataSources();
 
   const handleEdit = async (record: SettingsDataSource) => {
     try {
@@ -202,7 +201,7 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
                       type="text"
                       size="small"
                       icon={<SafetyCertificateOutlined />}
-                      onClick={() => setAccessSource(record)}
+                      onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
                       disabled={!!deletingId}
                     />
                   </Tooltip>
@@ -261,54 +260,44 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
         {/* Add button is in the page header via onSetAction */}
       </div>
 
-      <Card
-        size="small"
-        bordered={false}
-        style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
-      >
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+          {dataSources.length === 0 ? (
+            <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
+              {canManageDataSettings ? (
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
+                  {t('add_first_data_source')}
+                </Button>
+              ) : null}
+            </Empty>
+          ) : (
+            <Table
+              dataSource={filteredDataSources}
+              columns={dataSourceColumns}
+              rowKey="id"
+              pagination={{ pageSize: 10 }}
+              scroll={{ x: 'max-content' }}
+            />
+          )}
+        </Space>
 
-        {dataSources.length === 0 ? (
-          <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
-            {canManageDataSettings ? (
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAddDataSource}>
-                {t('add_first_data_source')}
-              </Button>
-            ) : null}
-          </Empty>
-        ) : (
-          <Table
-            dataSource={filteredDataSources}
-            columns={dataSourceColumns}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-            scroll={{ x: 'max-content' }}
-          />
-        )}
-      </Space>
-
-      <UniversalDataSourceModal
-        isOpen={addModalVisible}
-        onClose={handleModalClose}
-        onDataSourceCreated={handleDataSourceCreated}
-        existingDataSource={
-          editingSource
-            ? {
-                id: editingSource.id,
-                name: editingSource.name || '',
-                type: editingSource.type || 'database',
-                connection_config: (editingSource as any).connection_config,
-                description: (editingSource as any).description,
-              }
-            : null
-        }
-      />
-      <DataSourceAccessDrawer
-        open={!!accessSource}
-        dataSource={accessSource}
-        onClose={() => setAccessSource(null)}
-      />
-    </Card>
+        <UniversalDataSourceModal
+          isOpen={addModalVisible}
+          onClose={handleModalClose}
+          onDataSourceCreated={handleDataSourceCreated}
+          existingDataSource={
+            editingSource
+              ? {
+                  id: editingSource.id,
+                  name: editingSource.name || '',
+                  type: editingSource.type || 'database',
+                  connection_config: (editingSource as any).connection_config,
+                  description: (editingSource as any).description,
+                }
+              : null
+          }
+        />
+      </Card>
     </>
   );
 };
