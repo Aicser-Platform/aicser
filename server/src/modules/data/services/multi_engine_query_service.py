@@ -47,6 +47,13 @@ import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time
 #  Always apply fall back here ??
+from src.core.edition import is_ee_enabled
+from src.modules.data.services.query_identity import (
+    QueryAccess,
+    QueryIdentity,
+    RowSecurityIdentityRequired,
+    SystemQuery,
+)
 from src.shared.query_limits import PANDAS_FALLBACK_MAX_ROWS
 
 logger = logging.getLogger(__name__)
@@ -319,6 +326,30 @@ def invalidate_api_response_cache(data_source_id: Optional[str] = None) -> None:
         logger.debug("API response cache invalidated for %s", data_source_id)
 
 
+def invalidate_query_result_cache() -> None:
+    """Clear cached SQL query results after access-control or RLS changes."""
+    if _multi_engine_service is not None:
+        _multi_engine_service.query_cache.clear()
+
+    try:
+        from src.core.cache import cache
+
+        if not cache:
+            return
+        if cache.redis_client:
+            keys = cache._scan_keys("qe:*")
+            if keys:
+                cache.redis_client.delete(*keys)
+                logger.debug("Query execution Redis cache cleared (%s keys)", len(keys))
+        fallback_keys = [
+            key for key in cache.fallback_cache.keys() if str(key).startswith("qe:")
+        ]
+        for key in fallback_keys:
+            del cache.fallback_cache[key]
+    except Exception as exc:
+        logger.debug("Query execution cache invalidation skipped: %s", exc)
+
+
 class QueryEngine(Enum):
     """Supported query engines"""
 
@@ -399,6 +430,125 @@ class MultiEngineQueryService:
             logger.debug(f"Spark availability check failed: {e}")
             return False
 
+    async def _source_has_row_security(self, data_source_id: str) -> bool:
+        """Whether this source has any active grant or row-filter policy.
+
+        Sources that never opted into row security keep working without an
+        identity; sources that did are never readable without one.
+        """
+        if not data_source_id:
+            return False
+        try:
+            from sqlalchemy import select
+
+            from src.db.session import async_session
+            from src.modules.data.models import (
+                DataSourceAccessGrant,
+                DataSourceRLSPolicy,
+            )
+
+            async with async_session() as session:
+                for model in (DataSourceRLSPolicy, DataSourceAccessGrant):
+                    found = await session.execute(
+                        select(model.id)
+                        .where(
+                            model.data_source_id == data_source_id,
+                            model.is_active == True,  # noqa: E712
+                            model.is_deleted == False,  # noqa: E712
+                        )
+                        .limit(1)
+                    )
+                    if found.scalar_one_or_none() is not None:
+                        return True
+            return False
+        except Exception:
+            # Unable to prove the source is unsecured, so treat it as secured.
+            logger.exception(
+                "Row-security probe failed for source %s; assuming secured",
+                data_source_id,
+            )
+            return True
+
+    async def _apply_sql_rls(self, query: str, **kwargs: Any) -> Tuple[str, bool]:
+        """Thin seam over the EE enforcement service, opening its own session."""
+        from ee.modules.data.services.data_source_rls_enforcement_service import (
+            DataSourceRLSEnforcementService,
+        )
+        from src.db.session import async_session
+
+        async with async_session() as session:
+            return await DataSourceRLSEnforcementService.apply_sql_rls(
+                query, session=session, **kwargs
+            )
+
+    async def _enforce_row_security(
+        self,
+        query: str,
+        data_source: Dict[str, Any],
+        access: QueryAccess,
+        dialect: Optional[str] = None,
+    ) -> Tuple[str, bool]:
+        """Return the query to run, filtered for whoever is asking.
+
+        Raises RowSecurityIdentityRequired rather than returning unfiltered rows.
+        """
+        if not is_ee_enabled() or not query:
+            return query, False
+
+        data_source_id = str(
+            data_source.get("id") or data_source.get("data_source_id") or ""
+        )
+
+        if isinstance(access, SystemQuery):
+            if await self._source_has_row_security(data_source_id):
+                logger.warning(
+                    "Unattributed read of secured source %s — reason: %s",
+                    data_source_id,
+                    access.reason,
+                )
+            return query, False
+
+        if access is None:
+            if await self._source_has_row_security(data_source_id):
+                logger.error(
+                    "Refusing to read secured source %s without an identity. "
+                    "Pass QueryIdentity, or SystemQuery(reason=...) for a job.",
+                    data_source_id,
+                )
+                raise RowSecurityIdentityRequired(
+                    "This data source has row security configured, so the query "
+                    "cannot run without knowing who is asking."
+                )
+            return query, False
+
+        try:
+            from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+
+            resolved = dialect or resolve_dialect(data_source)
+        except Exception:
+            resolved = dialect
+
+        try:
+            return await self._apply_sql_rls(
+                query,
+                user_id=access.user_id,
+                data_source_id=data_source_id,
+                organization_id=access.organization_id,
+                project_id=access.project_id,
+                token_payload=dict(access.token_payload or {}),
+                dialect=resolved,
+            )
+        except RowSecurityIdentityRequired:
+            raise
+        except Exception as exc:
+            # A filter we could not compute must not degrade into "no filter".
+            logger.exception(
+                "Row-security enforcement failed for source %s", data_source_id
+            )
+            raise RowSecurityIdentityRequired(
+                "Row security could not be applied to this query."
+            ) from exc
+
     async def execute_query(
         self,
         query: str,
@@ -406,8 +556,52 @@ class MultiEngineQueryService:
         engine: Optional[QueryEngine] = None,
         optimization: bool = True,
         allow_spark: bool = True,
+        cache_context: Optional[Dict[str, Any]] = None,
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
-        """Execute query using optimal or specified engine"""
+        """Execute a query on behalf of ``identity``, with row security applied.
+
+        This is the only entry point to the engines. The filter is applied here
+        rather than by callers, so chat, dashboards, charts and the HTTP handlers
+        cannot reach data by a route that skips it.
+        """
+        try:
+            query, rls_applied = await self._enforce_row_security(
+                query, data_source, identity
+            )
+        except RowSecurityIdentityRequired as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "data": [],
+                "columns": [],
+                "row_count": 0,
+            }
+
+        result = await self._execute_query_unfiltered(
+            query,
+            data_source,
+            engine=engine,
+            # A filtered query is user-specific; skip the optimizer's rewrites.
+            optimization=False if rls_applied else optimization,
+            allow_spark=allow_spark,
+            cache_context=cache_context,
+        )
+        if rls_applied and isinstance(result, dict):
+            result["rls_applied"] = True
+        return result
+
+    async def _execute_query_unfiltered(
+        self,
+        query: str,
+        data_source: Dict[str, Any],
+        engine: Optional[QueryEngine] = None,
+        optimization: bool = True,
+        allow_spark: bool = True,
+        cache_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Engine selection and execution. Never call this directly — it does no
+        access checking; ``execute_query`` is the guarded entry point."""
         try:
             logger.info(f"🔍 Executing query with optimization: {optimization}")
             # Org/Project scoped cache (Redis-backed if available) in addition to in-memory TTL cache
@@ -415,14 +609,20 @@ class MultiEngineQueryService:
 
             cache_key_scoped = None
             try:
+                cache_context = cache_context or {}
                 scope = {
-                    "org": data_source.get("organization_id") or "",
-                    "proj": data_source.get("project_id") or "",
+                    "org": cache_context.get("organization_id")
+                    or data_source.get("organization_id")
+                    or "",
+                    "proj": cache_context.get("project_id")
+                    or data_source.get("project_id")
+                    or "",
                 }
                 engine_tag = engine.value if engine else "auto"
                 key_payload = json.dumps(
                     {
                         "scope": scope,
+                        "cache_context": cache_context,
                         "source": data_source.get("id")
                         or data_source.get("data_source_id")
                         or "",
@@ -660,7 +860,12 @@ class MultiEngineQueryService:
             logger.info(f"🎯 Selected engine: {selected_engine_value}")
 
             # Check cache first
-            cache_key = self._generate_cache_key(query, data_source, engine)
+            cache_key = self._generate_cache_key(
+                query,
+                data_source,
+                engine,
+                cache_context=cache_context,
+            )
             if optimization and cache_key in self.query_cache:
                 cached_result = self.query_cache[cache_key]
                 try:
@@ -732,7 +937,10 @@ class MultiEngineQueryService:
             }
 
     async def execute_parallel_queries(
-        self, queries: List[Dict[str, Any]], data_source: Dict[str, Any]
+        self,
+        queries: List[Dict[str, Any]],
+        data_source: Dict[str, Any],
+        identity: QueryAccess = None,
     ) -> List[Dict[str, Any]]:
         """Execute multiple queries in parallel across different engines"""
         try:
@@ -744,7 +952,7 @@ class MultiEngineQueryService:
                 query = query_info["query"]
                 engine = QueryEngine(query_info.get("engine", "auto"))
 
-                task = self.execute_query(query, data_source, engine)
+                task = self.execute_query(query, data_source, engine, identity=identity)
                 tasks.append(task)
 
             # Execute all queries in parallel
@@ -776,6 +984,7 @@ class MultiEngineQueryService:
         data_source: Dict[str, Any],
         engine: Optional[QueryEngine] = None,
         optimization: bool = True,
+        identity: QueryAccess = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute multiple SQL statements sequentially.
@@ -793,6 +1002,7 @@ class MultiEngineQueryService:
                     data_source=data_source,
                     engine=engine,
                     optimization=optimization,
+                    identity=identity,
                 )
                 r["query_index"] = i
                 results.append(r)
@@ -941,13 +1151,26 @@ class MultiEngineQueryService:
         return result
 
     def _generate_cache_key(
-        self, query: str, data_source: Dict[str, Any], engine: QueryEngine
+        self,
+        query: str,
+        data_source: Dict[str, Any],
+        engine: QueryEngine,
+        cache_context: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Generate cache key for query result"""
         import hashlib
 
-        key_data = f"{query}_{data_source.get('id', '')}_{engine.value}"
-        return hashlib.md5(key_data.encode()).hexdigest()
+        key_payload = json.dumps(
+            {
+                "query": query,
+                "source": data_source.get("id", ""),
+                "engine": engine.value,
+                "cache_context": cache_context or {},
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.md5(key_payload.encode()).hexdigest()
 
 
 class BaseQueryEngine:

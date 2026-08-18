@@ -1,4 +1,5 @@
 import os
+import sys
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -170,6 +171,186 @@ async def test_ee_project_grant_requires_membership_and_permission(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ee_owner_can_query_legacy_source_without_grant(monkeypatch):
+    user_id = uuid4()
+    organization_id = uuid4()
+    project_id = uuid4()
+
+    async def get_source(*_args, **_kwargs):
+        return SimpleNamespace(
+            user_id=user_id,
+            organization_id=organization_id,
+            project_id=project_id,
+        )
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "get_data_source",
+        staticmethod(get_source),
+    )
+
+    assert await DataSourceAccessService.can_query(
+        str(user_id),
+        "ds-1",
+        session=_Session([]),
+    )
+    assert await DataSourceAccessService.can_manage(
+        str(user_id),
+        "ds-1",
+        session=_Session([]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_ee_data_admin_accepts_concrete_data_permissions(monkeypatch):
+    checked_permissions = []
+
+    class FakeRBACService:
+        @staticmethod
+        async def check_permission(*, permission_code, **_kwargs):
+            checked_permissions.append(permission_code)
+            return permission_code == "data:edit"
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setitem(
+        sys.modules,
+        "src.modules.authentication.rbac.rbac_service",
+        SimpleNamespace(RBACService=FakeRBACService),
+    )
+
+    assert await DataSourceAccessService._is_org_data_admin(
+        str(uuid4()),
+        str(uuid4()),
+    )
+    assert checked_permissions == ["data:*", "data:delete", "data:edit"]
+
+
+@pytest.mark.asyncio
+async def test_ee_effective_roles_include_ids_and_names(monkeypatch):
+    org_role_id = uuid4()
+    project_role_id = uuid4()
+
+    class FakeRBACService:
+        @staticmethod
+        async def get_user_roles(_user_id, _organization_id, project_id):
+            if project_id:
+                return [SimpleNamespace(id=project_role_id, name="project_editor")]
+            return [SimpleNamespace(id=org_role_id, name="org_admin")]
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setitem(
+        sys.modules,
+        "src.modules.authentication.rbac.rbac_service",
+        SimpleNamespace(RBACService=FakeRBACService),
+    )
+
+    org_roles, project_roles = await DataSourceAccessService._effective_role_names(
+        str(uuid4()),
+        str(uuid4()),
+        str(uuid4()),
+    )
+
+    assert org_roles == {"org_admin", str(org_role_id)}
+    assert project_roles == {"project_editor", str(project_role_id)}
+
+
+@pytest.mark.asyncio
+async def test_ee_data_admin_still_needs_query_grant(monkeypatch):
+    organization_id = uuid4()
+
+    async def get_source(*_args, **_kwargs):
+        return SimpleNamespace(organization_id=organization_id)
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "get_data_source",
+        staticmethod(get_source),
+    )
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_is_org_data_admin",
+        staticmethod(_true),
+    )
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_effective_role_names",
+        staticmethod(_empty_roles),
+    )
+
+    assert await DataSourceAccessService.can_manage(
+        str(uuid4()),
+        "ds-1",
+        session=_Session([]),
+    )
+    assert not await DataSourceAccessService.can_query(
+        str(uuid4()),
+        "ds-1",
+        session=_Session([_ExecuteResult(scalars=[])]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_ee_data_admin_list_bypass_is_management_only(monkeypatch):
+    organization_id = uuid4()
+    user_id = uuid4()
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_is_org_data_admin",
+        staticmethod(_true),
+    )
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_effective_role_names",
+        staticmethod(_empty_roles),
+    )
+
+    assert await DataSourceAccessService.list_accessible_source_ids(
+        str(user_id),
+        str(organization_id),
+        permission=DATA_SOURCE_PERMISSION_MANAGE,
+        session=_Session([_ExecuteResult(scalars=["ds-admin"])]),
+    ) == ["ds-admin"]
+
+    assert await DataSourceAccessService.list_accessible_source_ids(
+        str(user_id),
+        str(organization_id),
+        permission=DATA_SOURCE_PERMISSION_VIEW,
+        session=_Session([_ExecuteResult(scalars=[]), _ExecuteResult(rows=[])]),
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_ee_list_accessible_source_ids_includes_owned_legacy_sources(monkeypatch):
+    organization_id = uuid4()
+    user_id = uuid4()
+
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_is_org_data_admin",
+        staticmethod(_false),
+    )
+    monkeypatch.setattr(
+        DataSourceAccessService,
+        "_effective_role_names",
+        staticmethod(_empty_roles),
+    )
+
+    assert await DataSourceAccessService.list_accessible_source_ids(
+        str(user_id),
+        str(organization_id),
+        permission=DATA_SOURCE_PERMISSION_QUERY,
+        session=_Session(
+            [_ExecuteResult(scalars=["ds-owned"]), _ExecuteResult(rows=[])]
+        ),
+    ) == ["ds-owned"]
+
+
+@pytest.mark.asyncio
 async def test_ee_list_accessible_source_ids_filters_by_permission(monkeypatch):
     organization_id = uuid4()
     user_id = uuid4()
@@ -194,6 +375,7 @@ async def test_ee_list_accessible_source_ids_filters_by_permission(monkeypatch):
 
     session = _Session(
         [
+            _ExecuteResult(scalars=[]),
             _ExecuteResult(
                 rows=[
                     ("ds-view", [DATA_SOURCE_PERMISSION_VIEW]),

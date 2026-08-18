@@ -124,6 +124,23 @@ async def test_create_policy_requires_fixed_value():
 
 
 @pytest.mark.asyncio
+async def test_create_policy_requires_attribute_name_for_attribute_rules():
+    with pytest.raises(ValueError, match="RLS attribute rules require an attribute name"):
+        await DataSourceRLSService.create_policy(
+            data_source_id="ds-1",
+            organization_id=None,
+            name="Bad policy",
+            description=None,
+            enabled=True,
+            default_deny=True,
+            settings={},
+            rules=[_rule(value_type="project_attribute", value="")],
+            created_by=None,
+            session=_Session([]),
+        )
+
+
+@pytest.mark.asyncio
 async def test_delete_policy_soft_deletes_policy_and_rules(monkeypatch):
     policy = SimpleNamespace(
         is_active=True,

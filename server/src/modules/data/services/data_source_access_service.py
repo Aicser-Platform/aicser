@@ -59,6 +59,11 @@ def _grant_allows(raw_permissions: object, permission: str) -> bool:
     return _MANAGE_PERMISSION in permissions or permission in permissions
 
 
+def _is_source_owner(data_source: DataSource, user_id: str) -> bool:
+    owner_id = getattr(data_source, "user_id", None)
+    return bool(owner_id and user_id and str(owner_id) == str(user_id))
+
+
 def _normalize_permissions(permissions: Sequence[str]) -> list[str]:
     normalized = sorted({str(permission).strip() for permission in permissions if permission})
     invalid = [permission for permission in normalized if permission not in VALID_DATA_SOURCE_PERMISSIONS]
@@ -97,10 +102,14 @@ class DataSourceAccessService:
         project_roles = set()
         if organization_id:
             roles = await RBACService.get_user_roles(user_id, organization_id, None)
-            org_roles.update(str(role.name) for role in roles)
+            for role in roles:
+                org_roles.add(str(role.name))
+                org_roles.add(str(role.id))
         if project_id:
             roles = await RBACService.get_user_roles(user_id, organization_id, project_id)
-            project_roles.update(str(role.name) for role in roles)
+            for role in roles:
+                project_roles.add(str(role.name))
+                project_roles.add(str(role.id))
         return org_roles, project_roles
 
     @staticmethod
@@ -130,11 +139,14 @@ class DataSourceAccessService:
             from src.modules.authentication.rbac.rbac_service import RBACService
         except ImportError:
             return False
-        return await RBACService.check_permission(
-            user_id=user_id,
-            permission_code="data:*",
-            organization_id=organization_id,
-        )
+        for permission_code in ("data:*", "data:delete", "data:edit", "data:connect"):
+            if await RBACService.check_permission(
+                user_id=user_id,
+                permission_code=permission_code,
+                organization_id=organization_id,
+            ):
+                return True
+        return False
 
     @staticmethod
     async def resolve_user_group_ids(
@@ -200,7 +212,14 @@ class DataSourceAccessService:
             return owner_id is not None and str(owner_id) == str(user_id)
 
         organization_id = str(data_source.organization_id) if data_source.organization_id else None
-        if await DataSourceAccessService._is_org_data_admin(user_id, organization_id):
+        if _is_source_owner(data_source, user_id):
+            return True
+
+        if permission in {
+            DATA_SOURCE_PERMISSION_EDIT,
+            DATA_SOURCE_PERMISSION_MANAGE,
+            DATA_SOURCE_PERMISSION_SHARE,
+        } and await DataSourceAccessService._is_org_data_admin(user_id, organization_id):
             return True
 
         groups = {str(group_id) for group_id in (group_ids or []) if group_id}
@@ -388,12 +407,30 @@ class DataSourceAccessService:
             )
             return [str(source_id) for source_id in result.scalars().all()]
 
-        if await DataSourceAccessService._is_org_data_admin(user_id, organization_id):
+        if permission in {
+            DATA_SOURCE_PERMISSION_EDIT,
+            DATA_SOURCE_PERMISSION_MANAGE,
+            DATA_SOURCE_PERMISSION_SHARE,
+        } and await DataSourceAccessService._is_org_data_admin(user_id, organization_id):
             query = select(DataSource.id)
             if organization_id:
                 query = query.where(DataSource.organization_id == _uuid_or_none(organization_id))
             result = await session.execute(query)
             return [str(source_id) for source_id in result.scalars().all()]
+
+        owned_query = select(DataSource.id).where(
+            DataSource.user_id == _uuid_or_none(user_id)
+        )
+        if organization_id:
+            owned_query = owned_query.where(
+                DataSource.organization_id == _uuid_or_none(organization_id)
+            )
+        if project_id:
+            owned_query = owned_query.where(
+                DataSource.project_id == _uuid_or_none(project_id)
+            )
+        owned_result = await session.execute(owned_query)
+        accessible_ids = {str(source_id) for source_id in owned_result.scalars().all()}
 
         groups = {str(group_id) for group_id in (group_ids or []) if group_id}
         org_roles, project_roles = await DataSourceAccessService._effective_role_names(
@@ -454,13 +491,12 @@ class DataSourceAccessService:
             )
 
         result = await session.execute(query)
-        return sorted(
-            {
-                str(data_source_id)
-                for data_source_id, permissions in result.all()
-                if _grant_allows(permissions, permission)
-            }
+        accessible_ids.update(
+            str(data_source_id)
+            for data_source_id, permissions in result.all()
+            if _grant_allows(permissions, permission)
         )
+        return sorted(accessible_ids)
 
     @staticmethod
     async def grant_project_access(

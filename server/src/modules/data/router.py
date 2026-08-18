@@ -37,6 +37,7 @@ from src.modules.data.services.multi_engine_query_service import (
     QueryEngine,
     get_multi_engine_query_service,
     invalidate_api_response_cache,
+    invalidate_query_result_cache,
 )
 from src.modules.data.cube_feature import is_external_cube_enabled
 from src.modules.data.services.upload_datasource_storage_service import (
@@ -102,6 +103,8 @@ from src.modules.data.schemas import (
     DataSourceRLSPolicyListResponse,
     DataSourceRLSPolicyMutationResponse,
     DataSourceRLSPolicyRequest,
+    DataSourceRLSAttributesResponse,
+    DataSourceRLSProjectAttributeUpdateRequest,
     DataSourceRLSPreviewRequest,
     DataSourceRLSPreviewResponse,
     DataSourceUpdate,
@@ -126,6 +129,7 @@ from src.modules.pricing.feature_gate import (
     require_plan_feature,
 )
 from src.modules.pricing.rate_limiter import RateLimiter
+from src.modules.data.services.query_identity import QueryIdentity, SystemQuery
 from src.shared.query_limits import (
     DEFAULT_PAGE_LIMIT,
     DEFAULT_LIST_PAGE_LIMIT,
@@ -285,14 +289,11 @@ async def _require_data_source_permission(
 ):
     """Load an active data source and require an explicit source grant in EE."""
     row = await _get_active_data_source_or_404(db, data_source_id)
-    context_project_id = project_id or (
-        str(row.project_id) if getattr(row, "project_id", None) else None
-    )
     allowed = await DataSourceAccessService.can_access(
         user_id,
         data_source_id,
         permission,
-        project_id=context_project_id,
+        project_id=project_id,
         session=db,
     )
     if not allowed:
@@ -334,6 +335,21 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _serialize_project_rls_attributes(settings_data: dict[str, Any]) -> List[Dict[str, Any]]:
+    attributes = []
+    for key, value in sorted(settings_data.items()):
+        if value is not None and not isinstance(value, (str, int, float, bool)):
+            continue
+        attributes.append(
+            {
+                "key": key,
+                "value": value,
+                "value_preview": "" if value is None else str(value),
+            }
+        )
+    return attributes
 
 
 def _require_external_cube() -> None:
@@ -1037,6 +1053,7 @@ async def get_data_sources(
     offset: int = 0,
     limit: int = DEFAULT_LIST_PAGE_LIMIT,
     project_id: Optional[str] = None,
+    access_mode: str = "use",
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """Get data sources for user's projects with authentication"""
@@ -1138,6 +1155,11 @@ async def get_data_sources(
                 user_id,
                 len(projects_by_id),
             )
+            list_permission = (
+                DATA_SOURCE_PERMISSION_MANAGE
+                if str(access_mode or "").strip().lower() == "manage"
+                else DATA_SOURCE_PERMISSION_VIEW
+            )
 
             accessible_source_ids: set[str] = set()
             token_org_id = None
@@ -1163,7 +1185,7 @@ async def get_data_sources(
                         user_id,
                         org_id,
                         project_id=project_id,
-                        permission=DATA_SOURCE_PERMISSION_VIEW,
+                        permission=list_permission,
                         session=db,
                     )
                 )
@@ -1173,7 +1195,7 @@ async def get_data_sources(
                         await DataSourceAccessService.list_accessible_source_ids(
                             user_id,
                             str(token_org_id),
-                            permission=DATA_SOURCE_PERMISSION_VIEW,
+                            permission=list_permission,
                             session=db,
                         )
                     )
@@ -1189,7 +1211,7 @@ async def get_data_sources(
                             user_id,
                             org_id,
                             project_id=pid,
-                            permission=DATA_SOURCE_PERMISSION_VIEW,
+                            permission=list_permission,
                             session=db,
                         )
                     )
@@ -1683,7 +1705,7 @@ async def list_data_source_access_grants(
         )
 
     user_id = _authenticated_user_id(current_token)
-    await _require_data_source_permission(
+    data_source = await _require_data_source_permission(
         db,
         user_id,
         data_source_id,
@@ -1740,6 +1762,7 @@ async def upsert_data_source_access_grant(
         ) from exc
 
     await db.commit()
+    invalidate_query_result_cache()
     return {
         "success": True,
         "grant": _data_source_grant_payload(grant),
@@ -1765,7 +1788,7 @@ async def revoke_data_source_access_grant(
         )
 
     user_id = _authenticated_user_id(current_token)
-    await _require_data_source_permission(
+    data_source = await _require_data_source_permission(
         db,
         user_id,
         data_source_id,
@@ -1782,6 +1805,7 @@ async def revoke_data_source_access_grant(
             detail="Data source access grant not found",
         )
     await db.commit()
+    invalidate_query_result_cache()
     return {
         "success": True,
         "message": "Data source access grant revoked",
@@ -1806,7 +1830,7 @@ async def list_data_source_rls_policies(
     from ee.modules.data.services.data_source_rls_service import DataSourceRLSService
 
     user_id = _authenticated_user_id(current_token)
-    await _require_data_source_permission(
+    data_source = await _require_data_source_permission(
         db,
         user_id,
         data_source_id,
@@ -1870,6 +1894,7 @@ async def create_data_source_rls_policy(
         ) from exc
 
     await db.commit()
+    invalidate_query_result_cache()
     return {
         "success": True,
         "policy": DataSourceRLSService.serialize_policy(policy, rules),
@@ -1931,6 +1956,7 @@ async def update_data_source_rls_policy(
         )
     policy, rules = updated
     await db.commit()
+    invalidate_query_result_cache()
     return {
         "success": True,
         "policy": DataSourceRLSService.serialize_policy(policy, rules),
@@ -1974,9 +2000,143 @@ async def delete_data_source_rls_policy(
             detail="Data source RLS policy not found",
         )
     await db.commit()
+    invalidate_query_result_cache()
     return {
         "success": True,
         "message": "Data source RLS policy deleted",
+    }
+
+
+@router.get(
+    "/sources/{data_source_id}/rls-attributes/project/{project_id}",
+    response_model=DataSourceRLSAttributesResponse,
+)
+async def get_project_rls_attributes(
+    data_source_id: str,
+    project_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Return selectable project attributes for RLS policy authoring."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source RLS policies require enterprise edition",
+    )
+    from src.modules.project.models import Project
+    import uuid
+
+    user_id = _authenticated_user_id(current_token)
+    try:
+        project_uuid = uuid.UUID(str(project_id))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project id",
+        )
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    project = (
+        await db.execute(
+            sa.select(Project).where(
+                Project.id == project_uuid,
+                Project.organization_id == data_source.organization_id,
+                Project.is_active == True,
+                Project.is_deleted == False,
+            )
+        )
+    ).scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    settings_data = project.settings if isinstance(project.settings, dict) else {}
+    return {
+        "success": True,
+        "project_id": str(project.id),
+        "attributes": _serialize_project_rls_attributes(settings_data),
+    }
+
+
+@router.patch(
+    "/sources/{data_source_id}/rls-attributes/project/{project_id}",
+    response_model=DataSourceRLSAttributesResponse,
+)
+async def update_project_rls_attribute(
+    data_source_id: str,
+    project_id: str,
+    request: DataSourceRLSProjectAttributeUpdateRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Update one simple project attribute used by RLS policies."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source RLS policies require enterprise edition",
+        )
+    from src.modules.project.models import Project
+    import uuid
+
+    key = str(request.key or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attribute key is required",
+        )
+    if request.value is not None and not isinstance(
+        request.value, (str, int, float, bool)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attribute value must be a string, number, boolean, or null",
+        )
+
+    user_id = _authenticated_user_id(current_token)
+    try:
+        project_uuid = uuid.UUID(str(project_id))
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid project id",
+        )
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    project = (
+        await db.execute(
+            sa.select(Project).where(
+                Project.id == project_uuid,
+                Project.organization_id == data_source.organization_id,
+                Project.is_active == True,
+                Project.is_deleted == False,
+            )
+        )
+    ).scalars().first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    settings_data = dict(project.settings or {}) if isinstance(project.settings, dict) else {}
+    settings_data[key] = request.value
+    project.settings = settings_data
+    await db.commit()
+    invalidate_query_result_cache()
+    return {
+        "success": True,
+        "project_id": str(project.id),
+        "attributes": _serialize_project_rls_attributes(settings_data),
     }
 
 
@@ -2013,7 +2173,12 @@ async def preview_data_source_rls_policy(
         requesting_user_id=user_id,
         simulate_user_id=request.simulate_user_id,
         organization_id=str((user_payload or {}).get("organization_id") or "") or None,
-        project_id=str(getattr(data_source, "project_id", "") or "") or None,
+        project_id=(
+            str(request.simulate_project_id).strip()
+            if request.simulate_project_id
+            else str((user_payload or {}).get("project_id") or "").strip()
+        )
+        or None,
         token_payload=user_payload,
         session=db,
     )
@@ -4937,8 +5102,18 @@ async def execute_multi_engine_query(
             logger.error(f"❌ Data source not found: {data_source_id}")
             raise HTTPException(status_code=404, detail="Data source not found")
 
-        ds_project_id = str(
-            data_source.get("project_id") or request_project_id or ""
+        effective_project_id = str(
+            request_project_id
+            or (user_payload or {}).get("project_id")
+            or ""
+        ).strip()
+        # Token first, then the membership lookup done above. Used for both the
+        # cache scope and the identity the row filter resolves against.
+        effective_organization_id = str(
+            (user_payload or {}).get("organization_id")
+            or (user_payload or {}).get("org_id")
+            or org_id
+            or ""
         ).strip()
         is_demo_source = (
             str(data_source.get("id") or "").startswith("demo_")
@@ -4950,7 +5125,7 @@ async def execute_multi_engine_query(
                 user_id,
                 data_source_id,
                 DATA_SOURCE_PERMISSION_QUERY,
-                project_id=str(request_project_id) if request_project_id else None,
+                project_id=effective_project_id or None,
             )
 
         await require_permission(
@@ -4963,9 +5138,7 @@ async def execute_multi_engine_query(
                 or ""
             )
             or None,
-            project_id=ds_project_id
-            or str((user_payload or {}).get("project_id") or "")
-            or None,
+            project_id=effective_project_id or None,
         )
 
         # SECURITY: Log only non-sensitive identifiers; never log connection_info/connection_config or database name.
@@ -5001,32 +5174,16 @@ async def execute_multi_engine_query(
             except Exception:
                 pass
 
-        rls_applied = False
-        # RLS enforcement is an EE capability; CE has no grants or policies to
-        # apply, so the query is executed as-is.
-        if not is_demo_source and is_ee_enabled():
-            from ee.modules.data.services.data_source_rls_enforcement_service import (
-                DataSourceRLSEnforcementService,
-            )
-            from ee.modules.data.services.rls_predicate_builder import resolve_dialect
-
-            query, rls_applied = await DataSourceRLSEnforcementService.apply_sql_rls(
-                query,
-                user_id=user_id,
-                data_source_id=data_source_id,
-                organization_id=str(
-                    (user_payload or {}).get("organization_id")
-                    or (user_payload or {}).get("org_id")
-                    or org_id
-                    or ""
-                )
-                or None,
-                project_id=ds_project_id
-                or str((user_payload or {}).get("project_id") or "")
-                or None,
-                token_payload=user_payload if isinstance(user_payload, dict) else None,
-                session=db,
-                dialect=resolve_dialect(data_source),
+        # Row security is enforced inside MultiEngineQueryService.execute_query
+        # so that every caller — chat, dashboards, charts — passes the same gate.
+        # This handler only states who is asking.
+        query_identity = None
+        if not is_demo_source:
+            query_identity = QueryIdentity(
+                user_id=str(user_id),
+                organization_id=effective_organization_id or None,
+                project_id=effective_project_id or None,
+                token_payload=user_payload or {},
             )
 
         # Execute query
@@ -5036,9 +5193,13 @@ async def execute_multi_engine_query(
             engine=selected_engine,
             optimization=optimization,
             allow_spark=spark_ok,
+            cache_context={
+                "organization_id": effective_organization_id,
+                "project_id": effective_project_id or None,
+                "user_id": user_id,
+            },
+            identity=query_identity,
         )
-        if rls_applied:
-            result["rls_applied"] = True
 
         # Ensure result has proper structure with all required fields
         logger.info(

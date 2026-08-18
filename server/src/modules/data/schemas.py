@@ -342,6 +342,10 @@ class DataSourceRLSPreviewRequest(BaseModel):
         default=None,
         description="Preview as this user. Resolved literals are masked unless it is the caller.",
     )
+    simulate_project_id: Optional[str] = Field(
+        default=None,
+        description="Preview project attributes using this project context.",
+    )
 
 
 class DataSourceRLSPreviewResponse(BaseModel):
@@ -352,6 +356,23 @@ class DataSourceRLSPreviewResponse(BaseModel):
     effect: str = Field(..., description="One of: filtered, deny_all, no_filter")
     masked: bool = False
     error: Optional[str] = None
+
+
+class DataSourceRLSAttributeResponse(BaseModel):
+    key: str
+    value: Any
+    value_preview: str
+
+
+class DataSourceRLSAttributesResponse(BaseModel):
+    success: bool
+    project_id: str
+    attributes: List[DataSourceRLSAttributeResponse] = Field(default_factory=list)
+
+
+class DataSourceRLSProjectAttributeUpdateRequest(BaseModel):
+    key: str
+    value: Any
 
 
 class DeleteResponse(BaseModel):
