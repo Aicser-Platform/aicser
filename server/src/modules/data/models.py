@@ -5,15 +5,20 @@ connector runtime jobs, and query history.
 """
 from sqlalchemy import (
     Column, String, Integer, DateTime, Text, JSON, Boolean, ForeignKey,
+    Enum, UniqueConstraint, Index,
 )
 from sqlalchemy.dialects.postgresql import BYTEA, JSONB, UUID
 from sqlalchemy.sql import func, text
 
 from src.core.edition import is_ee_enabled
-from src.db.base import Base
+from src.db.base import Base, BaseModel
 
 def _project_fk():
     return [ForeignKey("projects.id")] if is_ee_enabled() else []
+
+
+def _organization_fk():
+    return [ForeignKey("organizations.id")] if is_ee_enabled() else []
 
 
 class DataSource(Base):
@@ -56,6 +61,7 @@ class DataSource(Base):
     # User ownership — tracks who uploaded/created this data source (nullable for backward compat)
     user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
     project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
 
     # Tenant isolation (nullable; DB default 'default' so INSERTs without it succeed)
     tenant_id = Column(String, nullable=True, server_default=text("'default'"))
@@ -63,6 +69,326 @@ class DataSource(Base):
     # Status (nullable in DB)
     is_active = Column(Boolean, nullable=True, server_default=text("true"))
     last_accessed = Column(DateTime(timezone=True), nullable=True)
+
+
+class DataSourceRLSPolicy(BaseModel):
+    """
+    First-class row-level security policy for an organization-owned data source.
+
+    Policies are separate from connection_config so access rules can be audited,
+    granted, and resolved consistently across SQL editor, dashboards, AI, and ETL.
+    """
+    __tablename__ = "data_source_rls_policies"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default=text("true"))
+    default_deny = Column(Boolean, nullable=False, server_default=text("true"))
+    settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", name="uq_data_source_rls_policy_name"),
+        Index("ix_data_source_rls_policies_source_enabled", "data_source_id", "enabled"),
+    )
+
+
+class DataSourceRLSRule(BaseModel):
+    """A single table/column predicate belonging to a data-source RLS policy."""
+    __tablename__ = "data_source_rls_rules"
+
+    policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_rls_policies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    table_name = Column(String(255), nullable=False)
+    column_name = Column(String(255), nullable=False)
+    operator = Column(
+        Enum(
+            "eq",
+            "in",
+            "not_in",
+            "between",
+            "is_null",
+            "is_not_null",
+            name="data_source_rls_operator_enum",
+        ),
+        nullable=False,
+    )
+    value_type = Column(
+        Enum(
+            "fixed",
+            "user_attribute",
+            "group_attribute",
+            "org_attribute",
+            "project_attribute",
+            name="data_source_rls_value_type_enum",
+        ),
+        nullable=False,
+    )
+    value = Column(JSONB, nullable=True)
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+    __table_args__ = (
+        Index("ix_data_source_rls_rules_policy_table", "policy_id", "table_name"),
+    )
+
+
+class DataSourceCLSPolicy(BaseModel):
+    """Column-level policy: which columns a grantee may read, and how.
+
+    Separate from DataSourceRLSPolicy so one column policy ("mask PII") can be
+    paired with many different row policies instead of being duplicated into
+    each one.
+    """
+    __tablename__ = "data_source_cls_policies"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default=text("true"))
+    settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", name="uq_data_source_cls_policy_name"),
+        Index("ix_data_source_cls_policies_source_enabled", "data_source_id", "enabled"),
+    )
+
+
+class DataSourceCLSRule(BaseModel):
+    """One column's treatment under a column policy."""
+    __tablename__ = "data_source_cls_rules"
+
+    policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_cls_policies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    table_name = Column(String(255), nullable=False)
+    column_name = Column(String(255), nullable=False)
+    action = Column(
+        Enum("deny", "mask", name="data_source_cls_action_enum"),
+        nullable=False,
+    )
+    mask_strategy = Column(
+        Enum("fixed", "partial", "hash", "null", name="data_source_cls_mask_enum"),
+        nullable=True,
+    )
+    mask_config = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
+class DataSourceAccessGrant(BaseModel):
+    """Explicit grant allowing a user, group, role, or project to use a data source."""
+    __tablename__ = "data_source_access_grants"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    grantee_type = Column(
+        Enum(
+            "project",
+            "user",
+            "group",
+            "org_role",
+            "project_role",
+            name="data_source_grantee_type_enum",
+        ),
+        nullable=False,
+    )
+    grantee_id = Column(String(255), nullable=False, index=True)
+    permissions = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    rls_policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_rls_policies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    cls_policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_cls_policies.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "data_source_id",
+            "grantee_type",
+            "grantee_id",
+            name="uq_data_source_access_grant_grantee",
+        ),
+        Index(
+            "ix_data_source_access_grants_org_grantee",
+            "organization_id",
+            "grantee_type",
+            "grantee_id",
+        ),
+    )
+
+
+class DataLakeObject(BaseModel):
+    """Versioned S3/object-storage artifact for Bronze/Silver/Gold data."""
+    __tablename__ = "data_lake_objects"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    layer = Column(
+        Enum("bronze", "silver", "gold", name="data_lake_layer_enum"),
+        nullable=False,
+        index=True,
+    )
+    object_key = Column(Text, nullable=False)
+    storage_uri = Column(Text, nullable=True)
+    format = Column(String(50), nullable=False, server_default=text("'parquet'"))
+    version = Column(String(100), nullable=False)
+    schema_snapshot = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    partition_values = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    checksum = Column(String(128), nullable=True)
+    row_count = Column(Integer, nullable=True)
+    byte_size = Column(Integer, nullable=True)
+    status = Column(
+        Enum("active", "superseded", "quarantined", "deleted", name="data_lake_object_status_enum"),
+        nullable=False,
+        server_default=text("'active'"),
+        index=True,
+    )
+    created_by_job_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("object_key", "version", name="uq_data_lake_object_version"),
+        Index("ix_data_lake_objects_source_layer", "data_source_id", "layer"),
+    )
+
+
+class DataIngestionJob(BaseModel):
+    """Scheduled or on-demand load into a lakehouse layer."""
+    __tablename__ = "data_ingestion_jobs"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    source_kind = Column(
+        Enum("file", "database", "api", "cdc", name="data_ingestion_source_kind_enum"),
+        nullable=False,
+    )
+    mode = Column(
+        Enum("snapshot", "incremental", "cdc", name="data_ingestion_mode_enum"),
+        nullable=False,
+    )
+    target_layer = Column(
+        Enum("bronze", "silver", "gold", name="data_ingestion_target_layer_enum"),
+        nullable=False,
+        server_default=text("'bronze'"),
+    )
+    status = Column(
+        Enum("queued", "running", "succeeded", "failed", "cancelled", name="data_ingestion_status_enum"),
+        nullable=False,
+        server_default=text("'queued'"),
+        index=True,
+    )
+    schedule_cron = Column(String(120), nullable=True)
+    source_snapshot = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    options = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    checkpoint = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    output_object_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    rows_read = Column(Integer, nullable=True)
+    rows_written = Column(Integer, nullable=True)
+    bytes_written = Column(Integer, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    error_code = Column(String(100), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_data_ingestion_jobs_source_status", "data_source_id", "status"),
+    )
+
+
+class DataCDCState(BaseModel):
+    """Persistent checkpoint/watermark for CDC-capable sources."""
+    __tablename__ = "data_cdc_states"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    connector = Column(String(100), nullable=False)
+    stream_name = Column(String(255), nullable=False)
+    checkpoint = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    high_watermark = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    lag_seconds = Column(Integer, nullable=True)
+    last_event_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "connector", "stream_name", name="uq_data_cdc_state_stream"),
+    )
+
+
+class SemanticLayerArtifact(BaseModel):
+    """Versioned semantic model artifact stored in object storage."""
+    __tablename__ = "semantic_layer_artifacts"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    name = Column(String(200), nullable=False)
+    version = Column(String(100), nullable=False)
+    object_key = Column(Text, nullable=False)
+    storage_uri = Column(Text, nullable=True)
+    format = Column(String(50), nullable=False, server_default=text("'yaml'"))
+    model_snapshot = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    status = Column(
+        Enum("draft", "published", "archived", name="semantic_layer_artifact_status_enum"),
+        nullable=False,
+        server_default=text("'draft'"),
+    )
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", "version", name="uq_semantic_layer_artifact_version"),
+        Index("ix_semantic_layer_artifacts_source_status", "data_source_id", "status"),
+    )
 
 
 class DataModelRelationship(Base):

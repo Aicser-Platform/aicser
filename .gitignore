@@ -38,7 +38,8 @@ Thumbs.db
 *.swo
 
 # Misc
-/docs/
+/docs/*
+!/docs/org-data-platform-rls-etl-plan.md
 .cursor/
 /server/docs/
 .claude/

@@ -23,6 +23,7 @@ from src.modules.charts.services.v2.dashboard_service import DashboardService
 from src.modules.charts.services.v2.chart_service import ChartService
 from src.modules.dashboards.chart_data_validation import validate_chart_data
 from src.modules.dashboards.models import Dashboard, DashboardShare, PLAN_LIMITS, DashboardChart
+from src.modules.data.services.query_identity import QueryAccess
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +317,7 @@ async def build_embed_payload(
     dashboard_id: UUID,
     page_id: Optional[str] = None,
     runtime_filters: Optional[List[dict]] = None,
+    identity: QueryAccess = None,
 ) -> Dict[str, Any]:
     """Build embed/share payload from dashboard_charts + saved layout."""
     import copy
@@ -344,7 +346,9 @@ async def build_embed_payload(
                 exec_chart.chart_query = merge_runtime_filters(
                     copy.deepcopy(chart.chart_query or {}), runtime_filters
                 )
-            chart_data = await chart_svc.chart_service.execute(exec_chart)
+            chart_data = await chart_svc.chart_service.execute(
+                exec_chart, identity=identity
+            )
         except Exception as exec_err:
             exec_error = str(exec_err)[:300]
             logger.warning("Embed chart execute failed for %s: %s", chart.id, exec_err)
@@ -409,6 +413,7 @@ async def refresh_dashboard_charts(
     db: AsyncSession,
     dashboard_id: UUID,
     chart_requests: List[Dict[str, Any]],
+    identity: QueryAccess = None,
 ) -> Dict[str, Any]:
     """Execute multiple dashboard charts in one request (pooled connections, server-side concurrency cap)."""
     if not chart_requests:
@@ -458,7 +463,9 @@ async def refresh_dashboard_charts(
                         if drill_context:
                             base_query = apply_drill_context(base_query, drill_context)
                         exec_chart.chart_query = base_query
-                    data = await chart_svc.chart_service.execute(exec_chart)
+                    data = await chart_svc.chart_service.execute(
+                        exec_chart, identity=identity
+                    )
                     validation = validate_chart_data(
                         chart.chart_type,
                         data,
@@ -505,6 +512,7 @@ async def get_filter_options(
     table_name: Optional[str] = None,
     runtime_filters: Optional[List[dict]] = None,
     exclude_field: Optional[str] = None,
+    identity: QueryAccess = None,
 ) -> List[Any]:
     """Distinct values for slicer / global filter dropdowns, with optional cascade."""
     if not field or not data_source_id:
@@ -550,7 +558,7 @@ async def get_filter_options(
         from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()
-        result = await engine.execute_query(query, ds_dict, {})
+        result = await engine.execute_query(query, ds_dict, {}, identity=identity)
         rows = result.get("data") or result.get("rows") or []
         if isinstance(rows, list):
             return [r.get("v") if isinstance(r, dict) else r for r in rows]
@@ -566,6 +574,7 @@ async def get_filter_field_stats(
     data_source_id: str,
     table_name: Optional[str] = None,
     runtime_filters: Optional[List[dict]] = None,
+    identity: QueryAccess = None,
 ) -> dict:
     """Min/max numeric bounds for slider filters and numeric slicers."""
     if not field or not data_source_id:
@@ -624,7 +633,7 @@ async def get_filter_field_stats(
         from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
 
         engine = get_multi_engine_query_service()
-        result = await engine.execute_query(query, ds_dict, {})
+        result = await engine.execute_query(query, ds_dict, {}, identity=identity)
         rows = result.get("data") or result.get("rows") or []
         if isinstance(rows, list) and rows:
             row = rows[0] if isinstance(rows[0], dict) else {}

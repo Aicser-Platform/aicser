@@ -1,6 +1,187 @@
 import { fetchApi } from '@/utils/api';
 import type { DataSource, SchemaInfo } from '@/stores/useDataSourceStore';
 
+export type DataSourceGrantPermission = 'view' | 'query' | 'edit' | 'manage' | 'share';
+export type DataSourceGrantGranteeType = 'project' | 'user' | 'group' | 'org_role' | 'project_role';
+
+export interface DataSourceAccessGrant {
+  id: string;
+  organization_id?: string | null;
+  data_source_id: string;
+  grantee_type: DataSourceGrantGranteeType;
+  grantee_id: string;
+  permissions: DataSourceGrantPermission[];
+  rls_policy_id?: string | null;
+  cls_policy_id?: string | null;
+  created_by?: string | null;
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DataSourceAccessGrantRequest {
+  grantee_type: DataSourceGrantGranteeType;
+  grantee_id: string;
+  permissions: DataSourceGrantPermission[];
+  rls_policy_id?: string | null;
+  cls_policy_id?: string | null;
+}
+
+export type DataSourceRLSOperator = 'eq' | 'in' | 'not_in' | 'between' | 'is_null' | 'is_not_null';
+export type DataSourceRLSValueType =
+  | 'fixed'
+  | 'user_attribute'
+  | 'group_attribute'
+  | 'org_attribute'
+  | 'project_attribute';
+
+export interface DataSourceRLSRuleRequest {
+  table_name: string;
+  column_name: string;
+  operator: DataSourceRLSOperator;
+  value_type: DataSourceRLSValueType;
+  value?: unknown;
+  sort_order?: number;
+}
+
+export interface DataSourceRLSPolicyRequest {
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  default_deny: boolean;
+  settings: Record<string, unknown>;
+  rules: DataSourceRLSRuleRequest[];
+}
+
+export interface DataSourceRLSRule extends DataSourceRLSRuleRequest {
+  id: string;
+  policy_id: string;
+  sort_order: number;
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DataSourceRLSPolicy {
+  id: string;
+  organization_id?: string | null;
+  data_source_id: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  default_deny: boolean;
+  settings: Record<string, unknown>;
+  created_by?: string | null;
+  rules: DataSourceRLSRule[];
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export type DataSourceCLSAction = 'deny' | 'mask';
+export type DataSourceCLSMaskStrategy = 'fixed' | 'partial' | 'hash' | 'null';
+
+export interface DataSourceCLSRuleRequest {
+  table_name: string;
+  column_name: string;
+  action: DataSourceCLSAction;
+  mask_strategy?: DataSourceCLSMaskStrategy | null;
+  mask_config: Record<string, unknown>;
+  sort_order?: number;
+}
+
+export interface DataSourceCLSPolicyRequest {
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  rules: DataSourceCLSRuleRequest[];
+}
+
+export interface DataSourceCLSRule extends DataSourceCLSRuleRequest {
+  id: string;
+  policy_id: string;
+  sort_order: number;
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DataSourceCLSPolicy {
+  id: string;
+  organization_id?: string | null;
+  data_source_id: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  created_by?: string | null;
+  rules: DataSourceCLSRule[];
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DataSourceRLSPreviewRequest {
+  rules: DataSourceRLSRuleRequest[];
+  default_deny: boolean;
+  simulate_user_id?: string | null;
+  simulate_project_id?: string | null;
+}
+
+export interface DataSourceRLSPreviewResponse {
+  success: boolean;
+  predicate?: string | null;
+  dialect: string;
+  unresolved: string[];
+  effect: 'filtered' | 'deny_all' | 'no_filter';
+  masked: boolean;
+  error?: string | null;
+}
+
+export interface DataSourceRLSAttribute {
+  key: string;
+  value: unknown;
+  value_preview: string;
+}
+
+export interface DataSourceRLSAttributesResponse {
+  success: boolean;
+  project_id: string;
+  attributes: DataSourceRLSAttribute[];
+}
+
+export interface DataSourceMyRowAccessPredicate {
+  table: string;
+  sql: string;
+}
+
+export interface DataSourceMyRowAccessPolicy {
+  id: string;
+  name: string;
+  default_deny: boolean;
+  predicates: DataSourceMyRowAccessPredicate[];
+}
+
+/**
+ * Caller-scoped row access: the AUTHENTICATED caller's own effective RLS
+ * policies for a data source, derived only from their own active grants.
+ * Unlike the admin rls-policies/access-grants/preview endpoints (which
+ * require MANAGE/SHARE and can't be reached by a query-only user), this
+ * requires only QUERY permission and never accepts a parameter that could
+ * select whose access to report.
+ */
+export interface DataSourceMyRowAccessResponse {
+  success: boolean;
+  unrestricted: boolean;
+  policies: DataSourceMyRowAccessPolicy[];
+  denies_ungoverned_tables: boolean;
+  columns?: {
+    denied: string[];
+    masked: Array<{ column: string; strategy: DataSourceCLSMaskStrategy | string | null }>;
+  };
+}
+
 const normalizeSchema = (schema: any): SchemaInfo => {
   if (!schema || typeof schema !== 'object') {
     return { tables: [], schemas: [] };
@@ -85,11 +266,130 @@ export const createDataSource = (data: Partial<DataSource> | FormData): Promise<
 export const updateDataSource = (id: string, data: Partial<DataSource>): Promise<{ data_source: DataSource }> =>
   fetchApi(`/data/sources/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
 
-export const deleteDataSource = (id: string): Promise<void> =>
-  fetchApi(`/data/sources/${id}`, { method: 'DELETE' });
+export const deleteDataSource = (id: string): Promise<void> => fetchApi(`/data/sources/${id}`, { method: 'DELETE' });
 
 export const getDataSourceSchema = (id: string): Promise<{ schema: SchemaInfo }> =>
   fetchApi(`/data/sources/${id}/schema`).then((res) => ({
     ...res,
     schema: normalizeSchema(res?.schema ?? res?.data_source?.schema),
+  }));
+
+export const listDataSourceAccessGrants = (id: string): Promise<{ grants: DataSourceAccessGrant[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/access-grants`).then((res) => ({
+    ...res,
+    grants: Array.isArray(res?.grants) ? res.grants : [],
+    count: Number(res?.count ?? res?.grants?.length ?? 0),
+  }));
+
+export const upsertDataSourceAccessGrant = (
+  id: string,
+  data: DataSourceAccessGrantRequest
+): Promise<{ grant: DataSourceAccessGrant }> =>
+  fetchApi(`/data/sources/${id}/access-grants`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const revokeDataSourceAccessGrant = (id: string, grantId: string): Promise<void> =>
+  fetchApi(`/data/sources/${id}/access-grants/${grantId}`, { method: 'DELETE' });
+
+export const listDataSourceRLSPolicies = (id: string): Promise<{ policies: DataSourceRLSPolicy[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/rls-policies`).then((res) => ({
+    ...res,
+    policies: Array.isArray(res?.policies) ? res.policies : [],
+    count: Number(res?.count ?? res?.policies?.length ?? 0),
+  }));
+
+export const createDataSourceRLSPolicy = (
+  id: string,
+  data: DataSourceRLSPolicyRequest
+): Promise<{ policy: DataSourceRLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/rls-policies`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateDataSourceRLSPolicy = (
+  id: string,
+  policyId: string,
+  data: DataSourceRLSPolicyRequest
+): Promise<{ policy: DataSourceRLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/rls-policies/${policyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const deleteDataSourceRLSPolicy = (id: string, policyId: string): Promise<void> =>
+  fetchApi(`/data/sources/${id}/rls-policies/${policyId}`, { method: 'DELETE' });
+
+export const listDataSourceCLSPolicies = (id: string): Promise<{ policies: DataSourceCLSPolicy[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/cls-policies`).then((res) => ({
+    ...res,
+    policies: Array.isArray(res?.policies) ? res.policies : [],
+    count: Number(res?.count ?? res?.policies?.length ?? 0),
+  }));
+
+export const createDataSourceCLSPolicy = (
+  id: string,
+  data: DataSourceCLSPolicyRequest
+): Promise<{ policy: DataSourceCLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/cls-policies`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateDataSourceCLSPolicy = (
+  id: string,
+  policyId: string,
+  data: DataSourceCLSPolicyRequest
+): Promise<{ policy: DataSourceCLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/cls-policies/${policyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const deleteDataSourceCLSPolicy = (id: string, policyId: string): Promise<void> =>
+  fetchApi(`/data/sources/${id}/cls-policies/${policyId}`, { method: 'DELETE' });
+
+export const suggestDataSourceCLSPolicy = (
+  id: string
+): Promise<{ rules: DataSourceCLSRuleRequest[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/cls-policies/suggest`, { method: 'POST' }).then((res) => ({
+    ...res,
+    rules: Array.isArray(res?.rules) ? res.rules : [],
+    count: Number(res?.count ?? res?.rules?.length ?? 0),
+  }));
+
+export const previewDataSourceRLSPolicy = (
+  id: string,
+  data: DataSourceRLSPreviewRequest
+): Promise<DataSourceRLSPreviewResponse> =>
+  fetchApi(`/data/sources/${id}/rls-policies/preview`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const getDataSourceMyRowAccess = (id: string): Promise<DataSourceMyRowAccessResponse> =>
+  fetchApi(`/data/sources/${id}/my-row-access`);
+
+export const getDataSourceRLSProjectAttributes = (
+  id: string,
+  projectId: string
+): Promise<DataSourceRLSAttributesResponse> =>
+  fetchApi(`/data/sources/${id}/rls-attributes/project/${projectId}`).then((res) => ({
+    ...res,
+    attributes: Array.isArray(res?.attributes) ? res.attributes : [],
+  }));
+
+export const updateDataSourceRLSProjectAttribute = (
+  id: string,
+  projectId: string,
+  data: { key: string; value: unknown }
+): Promise<DataSourceRLSAttributesResponse> =>
+  fetchApi(`/data/sources/${id}/rls-attributes/project/${projectId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }).then((res) => ({
+    ...res,
+    attributes: Array.isArray(res?.attributes) ? res.attributes : [],
   }));

@@ -71,26 +71,21 @@ const SubscriptionTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
-const LicenseTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.LicenseSettingsTab }))) as any,
-  { ssr: false },
-) as React.ComponentType<TabComponentProps>;
-const RolesTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.RolesTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
-const AgentSkillsTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.AgentSkillsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
-const AgentWorkflowsTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.AgentWorkflowsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
-const BriefingsTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
+const LicenseTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.LicenseSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const RolesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.RolesTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentSkillsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentSkillsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentWorkflowsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentWorkflowsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const BriefingsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
@@ -369,12 +364,12 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     loadApiKeys();
     loadTeamMembers(currentOrganization?.id);
-    loadDataSources(currentProject?.id as string | undefined);
+    loadDataSources();
     if (showHostedBilling) {
       void initSubscription();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, currentProject?.id, showHostedBilling]);
+  }, [loadApiKeys, loadTeamMembers, loadDataSources, currentOrganization?.id, showHostedBilling]);
 
   useEffect(() => {
     loadSettingsByTab(activeTab, currentOrganization?.id, { projectId: currentProject?.id as string | undefined });

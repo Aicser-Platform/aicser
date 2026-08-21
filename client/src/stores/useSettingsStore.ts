@@ -168,7 +168,9 @@ export const useSettingsStore = create<SettingsState>()(
 
       // Data Actions
       loadSettingsByTab: async (tab: string, orgId?: string, options?: { projectId?: string }) => {
-        set((state) => { state.fetching = true; });
+        set((state) => {
+          state.fetching = true;
+        });
         try {
           switch (tab) {
             case 'general':
@@ -195,7 +197,7 @@ export const useSettingsStore = create<SettingsState>()(
               if (orgId) await get().loadTeamMembers(orgId);
               break;
             case 'data-sources':
-              await get().loadDataSources(options?.projectId);
+              await get().loadDataSources();
               break;
           }
         } catch (error) {
@@ -260,7 +262,9 @@ export const useSettingsStore = create<SettingsState>()(
             method: 'PATCH',
             body: JSON.stringify(data),
           });
-          set((state) => { state.securitySettings = (updated?.settings ?? updated) as SecuritySettings; });
+          set((state) => {
+            state.securitySettings = (updated?.settings ?? updated) as SecuritySettings;
+          });
         } catch (error) {
           console.error('Failed to update security settings:', error);
           throw error;
@@ -291,7 +295,9 @@ export const useSettingsStore = create<SettingsState>()(
             method: 'PUT',
             body: JSON.stringify(data),
           });
-          set((state) => { state.notificationSettings = updated; });
+          set((state) => {
+            state.notificationSettings = updated;
+          });
         } catch (error) {
           console.error('Failed to update notification settings:', error);
           throw error;
@@ -322,7 +328,9 @@ export const useSettingsStore = create<SettingsState>()(
             method: 'PATCH',
             body: JSON.stringify(data),
           });
-          set((state) => { state.appearanceSettings = (updated?.settings ?? updated) as AppearanceSettings; });
+          set((state) => {
+            state.appearanceSettings = (updated?.settings ?? updated) as AppearanceSettings;
+          });
         } catch (error) {
           console.error('Failed to update appearance settings:', error);
           throw error;
@@ -458,11 +466,7 @@ export const useSettingsStore = create<SettingsState>()(
       loadAvailableModels: async () => {
         try {
           const data = await fetchApi('ai/models', { method: 'GET' });
-          const list = Array.isArray(data?.models)
-            ? data.models
-            : Array.isArray(data)
-              ? data
-              : [];
+          const list = Array.isArray(data?.models) ? data.models : Array.isArray(data) ? data : [];
           set((state) => {
             state.availableModels = list;
           });
@@ -473,26 +477,31 @@ export const useSettingsStore = create<SettingsState>()(
 
       loadTeamMembers: async (orgId?: string) => {
         if (!orgId) return;
-        set((state) => { state.loading = true; });
+        set((state) => {
+          state.loading = true;
+        });
         try {
           const [membersData, invitesData] = await Promise.allSettled([
             fetchApi(`/organizations/${orgId}/members`),
             fetchApi(`/api/invitations/organizations/${orgId}`),
           ]);
 
-          const rawMembers = membersData.status === 'fulfilled' ? (membersData.value as Array<{
-            user_id: string;
-            email: string | null;
-            username: string | null;
-            first_name?: string | null;
-            last_name?: string | null;
-            avatar_url?: string | null;
-            role_id: string;
-            role_name: string;
-            role_display_name: string;
-            assigned_at?: string;
-            is_active?: boolean;
-          }>) : [];
+          const rawMembers =
+            membersData.status === 'fulfilled'
+              ? (membersData.value as Array<{
+                  user_id: string;
+                  email: string | null;
+                  username: string | null;
+                  first_name?: string | null;
+                  last_name?: string | null;
+                  avatar_url?: string | null;
+                  role_id: string;
+                  role_name: string;
+                  role_display_name: string;
+                  assigned_at?: string;
+                  is_active?: boolean;
+                }>)
+              : [];
 
           const members: TeamMember[] = (rawMembers || []).map((m) => ({
             user_id: m.user_id,
@@ -508,14 +517,17 @@ export const useSettingsStore = create<SettingsState>()(
             status: 'active' as const,
           }));
 
-          const rawInvites = invitesData.status === 'fulfilled' ? (invitesData.value as Array<{
-            id: string;
-            email: string;
-            role_id: string;
-            role_display_name: string;
-            invited_at?: string;
-            expires_at?: string;
-          }>) : [];
+          const rawInvites =
+            invitesData.status === 'fulfilled'
+              ? (invitesData.value as Array<{
+                  id: string;
+                  email: string;
+                  role_id: string;
+                  role_display_name: string;
+                  invited_at?: string;
+                  expires_at?: string;
+                }>)
+              : [];
 
           const pendingMembers: TeamMember[] = (rawInvites || []).map((inv) => ({
             user_id: inv.id,
@@ -534,9 +546,13 @@ export const useSettingsStore = create<SettingsState>()(
           });
         } catch (error) {
           console.error('Failed to load team members:', error);
-          set((state) => { state.teamMembers = []; });
+          set((state) => {
+            state.teamMembers = [];
+          });
         } finally {
-          set((state) => { state.loading = false; });
+          set((state) => {
+            state.loading = false;
+          });
         }
       },
 
@@ -555,7 +571,9 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       updateTeamMemberRole: async (orgId, userId, roleId) => {
-        set((state) => { state.loading = true; });
+        set((state) => {
+          state.loading = true;
+        });
         try {
           await fetchApi(`/api/organizations/${orgId}/members/${userId}`, {
             method: 'PATCH',
@@ -566,12 +584,16 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to update member role:', error);
           throw error;
         } finally {
-          set((state) => { state.loading = false; });
+          set((state) => {
+            state.loading = false;
+          });
         }
       },
 
       removeTeamMember: async (orgId, userId) => {
-        set((state) => { state.loading = true; });
+        set((state) => {
+          state.loading = true;
+        });
         try {
           await fetchApi(`/api/organizations/${orgId}/members/${userId}`, {
             method: 'DELETE',
@@ -581,12 +603,16 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to remove member:', error);
           throw error;
         } finally {
-          set((state) => { state.loading = false; });
+          set((state) => {
+            state.loading = false;
+          });
         }
       },
 
       inviteTeamMember: async (orgId, payload) => {
-        set((state) => { state.loading = true; });
+        set((state) => {
+          state.loading = true;
+        });
         try {
           await fetchApi(`/api/invitations/organizations/${orgId}`, {
             method: 'POST',
@@ -596,12 +622,16 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to invite member:', error);
           throw error;
         } finally {
-          set((state) => { state.loading = false; });
+          set((state) => {
+            state.loading = false;
+          });
         }
       },
 
       cancelInvitation: async (orgId, invitationId) => {
-        set((state) => { state.loading = true; });
+        set((state) => {
+          state.loading = true;
+        });
         try {
           await fetchApi(`/api/invitations/organizations/${orgId}/${invitationId}`, {
             method: 'DELETE',
@@ -611,14 +641,18 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to cancel invitation:', error);
           throw error;
         } finally {
-          set((state) => { state.loading = false; });
+          set((state) => {
+            state.loading = false;
+          });
         }
       },
 
       loadDataSources: async (projectId?: string) => {
         try {
-          // Use same API as /data page; pass project_id for consistent counts with current project
-          const url = projectId ? `/api/data/sources?project_id=${encodeURIComponent(projectId)}` : '/api/data/sources';
+          // Settings is the organization-level control plane. Keep project_id only for legacy callers.
+          const url = projectId
+            ? `/api/data/sources?project_id=${encodeURIComponent(projectId)}&access_mode=manage`
+            : '/api/data/sources?access_mode=manage';
           const data = await fetchApi(url, { method: 'GET' });
           const raw = data?.data_sources ?? data?.sources ?? (Array.isArray(data) ? data : []);
           const list = Array.isArray(raw) ? raw : [];

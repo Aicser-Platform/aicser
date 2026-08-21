@@ -146,15 +146,23 @@ class ChatToChartResponse(BaseModel):
 
 class BusinessMetadataMeasure(BaseModel):
     """Single measure: numeric column or expression used in aggregations."""
+
     name: str = Field(..., description="Column name or expression identifier")
-    expression: Optional[str] = Field(None, description="SQL expression if different from name (e.g. SUM(amount))")
-    description: Optional[str] = Field(None, description="Business-friendly description")
+    expression: Optional[str] = Field(
+        None, description="SQL expression if different from name (e.g. SUM(amount))"
+    )
+    description: Optional[str] = Field(
+        None, description="Business-friendly description"
+    )
 
 
 class BusinessMetadataDimension(BaseModel):
     """Single dimension: categorical column used for grouping."""
+
     name: str = Field(..., description="Column name")
-    description: Optional[str] = Field(None, description="Business-friendly description")
+    description: Optional[str] = Field(
+        None, description="Business-friendly description"
+    )
 
 
 class BusinessMetadataSchema(BaseModel):
@@ -162,6 +170,7 @@ class BusinessMetadataSchema(BaseModel):
     Optional business_metadata stored inside DataSource.schema.
     Keys: measures, dimensions, column_descriptions, ontology_mapping.
     """
+
     measures: Optional[List[Dict[str, Any]]] = Field(
         None,
         description="List of { name, expression?, description? } for numeric/aggregate columns",
@@ -182,6 +191,7 @@ class BusinessMetadataSchema(BaseModel):
 
 class BusinessMetadataUpdate(BaseModel):
     """Request body for PATCH /data/sources/{id}/business-metadata."""
+
     measures: Optional[List[Dict[str, Any]]] = None
     dimensions: Optional[List[Dict[str, Any]]] = None
     column_descriptions: Optional[Dict[str, str]] = None
@@ -215,6 +225,219 @@ class DataSourceResponse(BaseModel):
     success: bool
     data_source: Optional[DataSource] = None
     error: Optional[str] = None
+
+
+class DataSourceAccessGrantRequest(BaseModel):
+    grantee_type: str = Field(
+        ...,
+        description="One of: project, user, group, org_role, project_role",
+    )
+    grantee_id: str
+    permissions: List[str] = Field(
+        ...,
+        description="Any of: view, query, edit, manage, share",
+    )
+    rls_policy_id: Optional[str] = None
+    cls_policy_id: Optional[str] = None
+
+
+class DataSourceAccessGrantResponse(BaseModel):
+    id: str
+    organization_id: Optional[str] = None
+    data_source_id: str
+    grantee_type: str
+    grantee_id: str
+    permissions: List[str]
+    rls_policy_id: Optional[str] = None
+    cls_policy_id: Optional[str] = None
+    created_by: Optional[str] = None
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceAccessGrantListResponse(BaseModel):
+    success: bool
+    grants: List[DataSourceAccessGrantResponse]
+    count: int
+    error: Optional[str] = None
+
+
+class DataSourceAccessGrantMutationResponse(BaseModel):
+    success: bool
+    grant: Optional[DataSourceAccessGrantResponse] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DataSourceRLSRuleRequest(BaseModel):
+    table_name: str
+    column_name: str
+    operator: str = Field(
+        ..., description="One of: eq, in, not_in, between, is_null, is_not_null"
+    )
+    value_type: str = Field(
+        ...,
+        description="One of: fixed, user_attribute, group_attribute, org_attribute, project_attribute",
+    )
+    value: Optional[Any] = None
+    sort_order: int = 0
+
+
+class DataSourceRLSPolicyRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    enabled: bool = True
+    default_deny: bool = True
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    rules: List[DataSourceRLSRuleRequest] = Field(default_factory=list)
+
+
+class DataSourceRLSRuleResponse(BaseModel):
+    id: str
+    policy_id: str
+    table_name: str
+    column_name: str
+    operator: str
+    value_type: str
+    value: Optional[Any] = None
+    sort_order: int
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceRLSPolicyResponse(BaseModel):
+    id: str
+    organization_id: Optional[str] = None
+    data_source_id: str
+    name: str
+    description: Optional[str] = None
+    enabled: bool
+    default_deny: bool
+    settings: Dict[str, Any]
+    created_by: Optional[str] = None
+    rules: List[DataSourceRLSRuleResponse] = Field(default_factory=list)
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceRLSPolicyListResponse(BaseModel):
+    success: bool
+    policies: List[DataSourceRLSPolicyResponse]
+    count: int
+    error: Optional[str] = None
+
+
+class DataSourceRLSPolicyMutationResponse(BaseModel):
+    success: bool
+    policy: Optional[DataSourceRLSPolicyResponse] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DataSourceCLSRuleRequest(BaseModel):
+    table_name: str
+    column_name: str
+    action: str = Field(..., description="One of: deny, mask")
+    mask_strategy: Optional[str] = Field(
+        default=None,
+        description="Required when action=mask. One of: fixed, partial, hash, null",
+    )
+    mask_config: Dict[str, Any] = Field(default_factory=dict)
+    sort_order: int = 0
+
+
+class DataSourceCLSPolicyRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    enabled: bool = True
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    rules: List[DataSourceCLSRuleRequest] = Field(default_factory=list)
+
+
+class DataSourceCLSRuleResponse(BaseModel):
+    id: str
+    policy_id: str
+    table_name: str
+    column_name: str
+    action: str
+    mask_strategy: Optional[str] = None
+    mask_config: Dict[str, Any] = Field(default_factory=dict)
+    sort_order: int
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceCLSPolicyResponse(BaseModel):
+    id: str
+    organization_id: Optional[str] = None
+    data_source_id: str
+    name: str
+    description: Optional[str] = None
+    enabled: bool
+    settings: Dict[str, Any]
+    created_by: Optional[str] = None
+    rules: List[DataSourceCLSRuleResponse] = Field(default_factory=list)
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceCLSPolicyListResponse(BaseModel):
+    success: bool
+    policies: List[DataSourceCLSPolicyResponse]
+    count: int
+    error: Optional[str] = None
+
+
+class DataSourceCLSPolicyMutationResponse(BaseModel):
+    success: bool
+    policy: Optional[DataSourceCLSPolicyResponse] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DataSourceRLSPreviewRequest(BaseModel):
+    rules: List[DataSourceRLSRuleRequest] = Field(default_factory=list)
+    default_deny: bool = True
+    simulate_user_id: Optional[str] = Field(
+        default=None,
+        description="Preview as this user. Resolved literals are masked unless it is the caller.",
+    )
+    simulate_project_id: Optional[str] = Field(
+        default=None,
+        description="Preview project attributes using this project context.",
+    )
+
+
+class DataSourceRLSPreviewResponse(BaseModel):
+    success: bool
+    predicate: Optional[str] = None
+    dialect: str
+    unresolved: List[str] = Field(default_factory=list)
+    effect: str = Field(..., description="One of: filtered, deny_all, no_filter")
+    masked: bool = False
+    error: Optional[str] = None
+
+
+class DataSourceRLSAttributeResponse(BaseModel):
+    key: str
+    value: Any
+    value_preview: str
+
+
+class DataSourceRLSAttributesResponse(BaseModel):
+    success: bool
+    project_id: str
+    attributes: List[DataSourceRLSAttributeResponse] = Field(default_factory=list)
+
+
+class DataSourceRLSProjectAttributeUpdateRequest(BaseModel):
+    key: str
+    value: Any
 
 
 class DeleteResponse(BaseModel):

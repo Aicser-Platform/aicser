@@ -34,6 +34,7 @@ class DataSourceCreate:
     description: Optional[str] = None
     connection_config: Dict[str, Any] = None
     project_id: Optional[str] = None
+    organization_id: Optional[str] = None
     is_active: bool = True
     # Optional stored schema (e.g. BI catalog / Power BI dataset mirror — no live DB)
     schema: Optional[Dict[str, Any]] = None
@@ -130,6 +131,25 @@ class DataSourcesCRUD:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="project_id is required. Select a project or create one first.",
                 )
+            organization_id_val = None
+            if getattr(data_source_data, "organization_id", None):
+                try:
+                    organization_id_val = uuid.UUID(str(data_source_data.organization_id))
+                except (ValueError, TypeError):
+                    pass
+            if organization_id_val is None and project_id_val is not None and is_ee_enabled():
+                try:
+                    from src.modules.project.models import Project
+
+                    project_org = (
+                        await session.execute(
+                            select(Project.organization_id).where(Project.id == project_id_val)
+                        )
+                    ).scalar_one_or_none()
+                    if project_org:
+                        organization_id_val = project_org
+                except Exception:
+                    pass
 
             data_source = DataSource(
                 id=data_source_id,
@@ -140,6 +160,7 @@ class DataSourcesCRUD:
                 connection_config=conn_cfg,
                 user_id=user_id_val,
                 project_id=project_id_val,
+                organization_id=organization_id_val,
                 is_active=data_source_data.is_active,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
@@ -148,6 +169,26 @@ class DataSourcesCRUD:
             
             session.add(data_source)
             await session.flush()
+
+            if is_ee_enabled() and project_id_val is not None:
+                try:
+                    from src.modules.data.services.data_source_access_service import (
+                        DataSourceAccessService,
+                    )
+
+                    await DataSourceAccessService.grant_project_access(
+                        data_source_id=data_source.id,
+                        organization_id=str(organization_id_val) if organization_id_val else None,
+                        project_id=str(project_id_val),
+                        created_by=str(user_id_val),
+                        session=session,
+                    )
+                except Exception as grant_error:
+                    logger.warning(
+                        "Project grant creation skipped for data source %s: %s",
+                        data_source.id,
+                        grant_error,
+                    )
             
             # Test connection if provided
             connection_status = "unknown"

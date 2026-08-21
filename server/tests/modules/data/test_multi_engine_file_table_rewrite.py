@@ -59,3 +59,22 @@ def test_strips_data_prefix_from_schema_qualified_physical_sheet_table():
     assert error is None
     assert refs == ['"data"."sheet_6_fact_marketing_campaign"']
     assert rewritten == 'SELECT COUNT(*) FROM "sheet_6_fact_marketing_campaign" AS f'
+
+
+def test_logical_names_inside_an_injected_subquery_are_rewritten():
+    """RLS injection runs before file-source table rewriting."""
+    data_source = {
+        "type": "file",
+        "format": "xlsx",
+        "schema": {"duckdb_tables": {"fact_orders": "sheet_1_fact_orders"}},
+    }
+    injected = (
+        "SELECT amount FROM "
+        "(SELECT * FROM fact_orders WHERE customer_id = 'C001') AS fact_orders"
+    )
+
+    rewritten, error, _refs = rewrite_file_duckdb_table_refs(injected, data_source)
+
+    assert error is None
+    assert "sheet_1_fact_orders" in rewritten
+    assert "AS fact_orders" in rewritten

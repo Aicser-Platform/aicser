@@ -25,6 +25,7 @@ from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.dashboards.pages_router import router as pages_router
 from src.modules.dashboards.versions_router import router as versions_router
 from src.modules.dashboards import operations as dash_ops
+from src.modules.data.services.query_identity import QueryIdentity
 
 router = APIRouter()
 
@@ -60,6 +61,47 @@ def _user_uuid(uid: Optional[str]) -> Optional[UUID]:
         return UUID(str(uid))
     except (TypeError, ValueError):
         return None
+
+
+def _query_identity_from_current_user(
+    current_user: Optional[dict],
+    *,
+    project_id: Optional[str] = None,
+) -> Optional[QueryIdentity]:
+    payload = extract_user_payload(current_user) if current_user else {}
+    user_id = user_id_from_payload(payload) if payload else None
+    if not user_id and current_user:
+        user_id = current_user.get("id") or current_user.get("user_id") or current_user.get("sub")
+    if not user_id:
+        return None
+    organization_id = (
+        payload.get("organization_id")
+        or payload.get("org_id")
+        or payload.get("tenant_id")
+    )
+    return QueryIdentity(
+        user_id=str(user_id),
+        organization_id=str(organization_id) if organization_id else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=payload,
+    )
+
+
+def _dashboard_query_identity(
+    current_user: Optional[dict],
+    dashboard: Any,
+) -> Optional[QueryIdentity]:
+    """The viewer's identity, scoped to the project the dashboard lives in.
+
+    Data-source row filters are granted per project, so a read that cannot name
+    a project matches no grant and comes back unfiltered. The token carries no
+    project; the dashboard is where that context lives.
+    """
+    project_id = getattr(dashboard, "project_id", None)
+    return _query_identity_from_current_user(
+        current_user,
+        project_id=str(project_id) if project_id else None,
+    )
 
 
 def _serialize_dashboard(dashboard: Any, *, lib: Optional[DashboardLibraryService] = None) -> dict[str, Any]:
@@ -374,7 +416,7 @@ async def dashboard_filter_options(
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     """Distinct values for global filters and slicers (supports cascading)."""
-    await dash_ops.verify_dashboard_read_access(
+    dashboard = await dash_ops.verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
 
@@ -395,6 +437,7 @@ async def dashboard_filter_options(
         table_name=table_name,
         runtime_filters=parsed_filters,
         exclude_field=field,
+        identity=_dashboard_query_identity(current_user, dashboard),
     )
     return {"values": values if isinstance(values, list) else []}
 
@@ -411,7 +454,7 @@ async def dashboard_filter_field_stats(
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     """Min/max numeric bounds for slider filters and numeric slicers."""
-    await dash_ops.verify_dashboard_read_access(
+    dashboard = await dash_ops.verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
 
@@ -431,6 +474,7 @@ async def dashboard_filter_field_stats(
         data_source_id,
         table_name=table_name,
         runtime_filters=parsed_filters,
+        identity=_dashboard_query_identity(current_user, dashboard),
     )
     return stats
 
@@ -487,7 +531,7 @@ async def refresh_dashboard(
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     """Batch-execute chart queries for a dashboard (one HTTP round-trip, pooled DB connections)."""
-    await dash_ops.verify_dashboard_read_access(
+    dashboard = await dash_ops.verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
 
@@ -497,7 +541,12 @@ async def refresh_dashboard(
     if not isinstance(charts, list):
         raise HTTPException(status_code=400, detail="charts must be a list")
 
-    return await dash_ops.refresh_dashboard_charts(db, dashboard_id, charts)
+    return await dash_ops.refresh_dashboard_charts(
+        db,
+        dashboard_id,
+        charts,
+        identity=_dashboard_query_identity(current_user, dashboard),
+    )
 
 
 @router.get("/{dashboard_id}/embed")
@@ -510,7 +559,7 @@ async def get_dashboard_embed(
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     """Embed/share payload with saved layout, optional page and runtime filters."""
-    await dash_ops.verify_dashboard_read_access(
+    dashboard = await dash_ops.verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
 
@@ -535,6 +584,7 @@ async def get_dashboard_embed(
         dashboard_id,
         page_id=page_id,
         runtime_filters=parsed_filters or None,
+        identity=_dashboard_query_identity(current_user, dashboard),
     )
 
 

@@ -30,6 +30,7 @@ import {
     PlusOutlined,
     DatabaseOutlined,
     EditOutlined,
+    SafetyCertificateOutlined,
     DeleteOutlined,
     ReloadOutlined,
     SearchOutlined,
@@ -64,6 +65,7 @@ import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/Das
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useSubscriptionStore as useSubscription } from '@/stores/useSubscriptionStore';
+import { useCanManageDataAccess } from '@/hooks/access/useCanManageDataAccess';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -84,6 +86,7 @@ const isSampleDataSource = (ds: { type?: string | null }) =>
     (ds.type || '').toLowerCase() === 'sample_duckdb';
 
 const DataSourcesPage: React.FC = () => {
+    const canManageAccess = useCanManageDataAccess();
     const t = useTranslations('data_page');
     const formatError = useFormatUserError();
     const { usage } = useSubscription();
@@ -222,7 +225,12 @@ const DataSourcesPage: React.FC = () => {
             render: (text: string, record: DataSource) => (
                 <Space>
                     <DataSourceIcon type={record.type} dbType={record.db_type} size={18} style={{ opacity: 0.9, flexShrink: 0 }} />
-                    <Text strong ellipsis>{text}</Text>
+                    <a
+                        onClick={() => router.push(`/data/sources/${record.id}`)}
+                        style={{ color: 'inherit', cursor: 'pointer' }}
+                    >
+                        <Text strong ellipsis>{text}</Text>
+                    </a>
                 </Space>
             ),
         },
@@ -272,10 +280,19 @@ const DataSourcesPage: React.FC = () => {
                 {
                     title: t('col_actions'),
                     key: 'actions',
-                    width: 160,
+                    width: canManageAccess ? 200 : 160,
                     align: 'right' as const,
                     render: (_: any, record: DataSource) => (
                         <Space>
+                            {canManageAccess ? (
+                                <Tooltip title={t('manage_access')}>
+                                    <Button
+                                        size="small"
+                                        icon={<SafetyCertificateOutlined />}
+                                        onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
+                                    />
+                                </Tooltip>
+                            ) : null}
                             <Tooltip title={t('edit_connection')}>
                                 <Button
                                     size="small"

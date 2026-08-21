@@ -13,6 +13,7 @@ from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.charts.permissions import enforce_publish_owner_chart_edit
 from src.modules.dashboards.chart_data_validation import validate_chart_data
 from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, verify_dashboard_read_access
+from src.modules.data.services.query_identity import QueryIdentity
 
 router = APIRouter()
 
@@ -75,6 +76,47 @@ def serialize_chart(chart) -> dict:
         "chartQuery": chart.chart_query,
         "chartOptions": chart.chart_options,
     }
+
+
+def _query_identity_from_current_user(
+    current_user: Optional[dict],
+    *,
+    project_id: Optional[str] = None,
+) -> Optional[QueryIdentity]:
+    payload = extract_user_payload(current_user) if current_user else {}
+    user_id = user_id_from_payload(payload) if payload else None
+    if not user_id and current_user:
+        user_id = current_user.get("id") or current_user.get("user_id") or current_user.get("sub")
+    if not user_id:
+        return None
+    organization_id = (
+        payload.get("organization_id")
+        or payload.get("org_id")
+        or payload.get("tenant_id")
+    )
+    return QueryIdentity(
+        user_id=str(user_id),
+        organization_id=str(organization_id) if organization_id else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=payload,
+    )
+
+
+def _dashboard_query_identity(
+    current_user: Optional[dict],
+    dashboard: Any,
+) -> Optional[QueryIdentity]:
+    """The viewer's identity, scoped to the project the dashboard lives in.
+
+    Row filters are granted per project, so a widget read that cannot name one
+    matches no grant and comes back unfiltered. Taken from the dashboard rather
+    than the chart row, whose project_id is nullable.
+    """
+    project_id = getattr(dashboard, "project_id", None)
+    return _query_identity_from_current_user(
+        current_user,
+        project_id=str(project_id) if project_id else None,
+    )
 
 
 # -------------------------
@@ -279,11 +321,19 @@ async def _execute_chart_data(
     db: AsyncSession,
     runtime_filters: Optional[List[dict]] = None,
     drill_context: Optional[dict] = None,
+    identity: Optional[QueryIdentity] = None,
 ) -> dict:
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
+    if identity and not identity.project_id and getattr(chart, "project_id", None):
+        identity = QueryIdentity(
+            user_id=identity.user_id,
+            organization_id=identity.organization_id,
+            project_id=str(chart.project_id),
+            token_payload=identity.token_payload,
+        )
 
     exec_chart = chart
     if runtime_filters or drill_context:
@@ -296,7 +346,7 @@ async def _execute_chart_data(
         exec_chart.chart_query = base_query
 
     try:
-        data = await service.chart_service.execute(exec_chart)
+        data = await service.chart_service.execute(exec_chart, identity=identity)
     except ValueError as exc:
         message = str(exc).strip() or "Chart execution failed"
         if "data source not found" in message.lower():
@@ -327,10 +377,15 @@ async def execute_chart(
     db: AsyncSession = Depends(get_async_session),
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
-    await verify_dashboard_read_access(
+    dashboard = await verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
-    return await _execute_chart_data(dashboard_id, chart_id, db)
+    return await _execute_chart_data(
+        dashboard_id,
+        chart_id,
+        db,
+        identity=_dashboard_query_identity(current_user, dashboard),
+    )
 
 
 @router.post("/{chart_id}/data")
@@ -343,7 +398,7 @@ async def execute_chart_with_filters(
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
     """Execute chart with dashboard runtime filters merged into chart_query.filters."""
-    await verify_dashboard_read_access(
+    dashboard = await verify_dashboard_read_access(
         db, dashboard_id, current_user=current_user, embed_token=token
     )
     runtime_filters = payload.get("runtime_filters") if isinstance(payload, dict) else None
@@ -356,6 +411,7 @@ async def execute_chart_with_filters(
         dashboard_id, chart_id, db,
         runtime_filters=runtime_filters or None,
         drill_context=drill_context,
+        identity=_dashboard_query_identity(current_user, dashboard),
     )
 
 

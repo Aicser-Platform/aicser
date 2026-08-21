@@ -17,6 +17,7 @@ from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.pricing.rate_limiter import RateLimiter
 from src.modules.pricing.plans import is_feature_available
+from src.modules.data.services.query_identity import QueryIdentity
 from fastapi import status
 import inspect
 import types
@@ -983,8 +984,11 @@ async def create_snapshot(
     if body_proj is not None and project_id is None:
         project_id = body_proj
 
-    # Use string user_id/org to match query_snapshots table (TEXT columns)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
+    # Use string user_id/org to match query_snapshots table (TEXT columns).
+    # Do not mint a fake "guest" principal for row-security identity.
+    user_id = str(
+        user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or ""
+    ).strip()
     org_id_str = str(user_payload.get("organization_id") or "")
 
     # Enforce organization/project scope if provided
@@ -1053,10 +1057,22 @@ async def create_snapshot(
                 # can be used (tests often patch the multi-engine executor).
                 logger.warning(f"Data source {data_source_id} not found; falling back to synthetic database source")
                 ds = {"id": data_source_id, "type": "database"}
+            identity = (
+                QueryIdentity(
+                    user_id=str(user_id),
+                    organization_id=str(organization_id) if organization_id else None,
+                    project_id=str(project_id) if project_id else None,
+                    token_payload=user_payload,
+                )
+                if user_id
+                else None
+            )
             # If demo/file source without physical file, use connectivity_service parser
             if ds.get('source') == 'demo_data' or ds.get('id','').startswith('demo_') or (ds.get('type') == 'file' and not ds.get('file_path')):
                 try:
-                    exec_result = await data_service.execute_query_on_source(data_source_id, sql or '')
+                    exec_result = await data_service.execute_query_on_source(
+                        data_source_id, sql or '', identity=identity
+                    )
                 except Exception as qe:
                     raise HTTPException(status_code=400, detail=f"Query execution failed: {qe}")
                 if not exec_result or not exec_result.get('success'):
@@ -1070,7 +1086,13 @@ async def create_snapshot(
                 # Use multi-engine execution path
                 from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
                 multi = get_multi_engine_query_service()
-                exec_maybe = multi.execute_query(sql, ds, engine=None, optimization=True)
+                exec_maybe = multi.execute_query(
+                    sql,
+                    ds,
+                    engine=None,
+                    optimization=True,
+                    identity=identity,
+                )
                 exec_result = await exec_maybe if inspect.isawaitable(exec_maybe) else exec_maybe
 
                 if not exec_result.get('success'):
@@ -1563,5 +1585,4 @@ async def perform_snapshot_cleanup(db: AsyncSession, retention_days: int = 30, o
         except Exception:
             pass
         raise
-
 
