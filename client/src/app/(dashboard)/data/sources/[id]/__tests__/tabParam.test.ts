@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTabParam } from '../page';
+import { parseTabParam } from '../_components/tabParam';
 
 describe('parseTabParam', () => {
   it('accepts every known tab', () => {
@@ -7,6 +7,7 @@ describe('parseTabParam', () => {
     expect(parseTabParam('schema')).toBe('schema');
     expect(parseTabParam('permissions')).toBe('permissions');
     expect(parseTabParam('row-filters')).toBe('row-filters');
+    expect(parseTabParam('column-rules')).toBe('column-rules');
   });
 
   it('falls back to overview for anything else', () => {

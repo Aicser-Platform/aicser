@@ -13,6 +13,7 @@ import {
   Tabs,
   Input,
   Tooltip,
+  Popover,
   Progress,
   Dropdown,
   Menu,
@@ -83,6 +84,7 @@ import {
 } from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
 import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
 import { QueryVisualizeModal, type QueryVisualizeModalValues } from '@/components/data/SQLEditor/QueryVisualizeModal';
+import { RlsAppliedPopoverContent } from '@/components/data/SQLEditor/RlsAppliedPopoverContent';
 
 const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -380,6 +382,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   // Row-level security silently drops rows; the results toolbar has to say so.
   const [rlsApplied, setRlsApplied] = useState(false);
+  const [columnsOmitted, setColumnsOmitted] = useState<string[]>([]);
+  const [rlsPopoverOpen, setRlsPopoverOpen] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [resultLimitApplied, setResultLimitApplied] = useState(false);
   const [executionStatus, setExecutionStatus] = useState<string>('');
@@ -2413,6 +2417,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     setLoading(true);
     setError(null);
     setExecutionTime(null);
+    setRlsApplied(false);
+    setColumnsOmitted([]);
     setResolvedEngine(null); // Clear resolved engine when starting new execution
     setExecutionStatus('Executing Python script...');
 
@@ -2516,6 +2522,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     setLoading(true);
     setError(null);
     setExecutionTime(null);
+    setRlsApplied(false);
+    setColumnsOmitted([]);
     setResolvedEngine(null);
     setExecutionStatus('Analyzing query...');
     // Clear previous error markers when starting a new run
@@ -2633,6 +2641,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         setResults(resultData);
         setResultLimitApplied(appendedLimit);
         setRlsApplied(Boolean(result.rls_applied));
+        setColumnsOmitted(Array.isArray(result.columns_omitted) ? result.columns_omitted.map(String) : []);
         setExecutionTime(result.execution_time || executionTime);
         // Update resolved engine state for display
         const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
@@ -3387,12 +3396,43 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                           </Tooltip>
                         ) : null}
                       </span>
-                      {rlsApplied ? (
-                        <Tooltip title={t('rls_applied_tip')}>
-                          <Tag color="warning" icon={<SafetyCertificateOutlined />} style={{ marginInlineEnd: 0 }}>
-                            {t('rls_applied_label')}
-                          </Tag>
-                        </Tooltip>
+                      {rlsApplied || columnsOmitted.length > 0 ? (
+                        <Popover
+                          trigger="click"
+                          placement="bottomRight"
+                          open={rlsPopoverOpen}
+                          onOpenChange={setRlsPopoverOpen}
+                          content={
+                            <RlsAppliedPopoverContent
+                              dataSourceId={selectedDataSourceId}
+                              open={rlsPopoverOpen}
+                              columnsOmitted={columnsOmitted}
+                            />
+                          }
+                        >
+                          <Tooltip title={rlsPopoverOpen ? undefined : t('row_column_filters_tip')}>
+                            <Tag
+                              color="warning"
+                              icon={<SafetyCertificateOutlined />}
+                              style={{ marginInlineEnd: 0, cursor: 'pointer' }}
+                              tabIndex={0}
+                              role="button"
+                              aria-haspopup="dialog"
+                              aria-expanded={rlsPopoverOpen}
+                              aria-label={
+                                columnsOmitted.length > 0 ? t('row_column_filters_label') : t('rls_applied_label')
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  setRlsPopoverOpen((prev) => !prev);
+                                }
+                              }}
+                            >
+                              {columnsOmitted.length > 0 ? t('row_column_filters_label') : t('rls_applied_label')}
+                            </Tag>
+                          </Tooltip>
+                        </Popover>
                       ) : null}
                       <Space size={4}>
                         {results.length > 0 && (

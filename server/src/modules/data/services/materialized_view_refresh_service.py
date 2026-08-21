@@ -13,6 +13,7 @@ from src.modules.data.services.multi_engine_query_service import (
     QueryEngine,
     get_multi_engine_query_service,
 )
+from src.modules.data.services.query_identity import SystemQuery
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def refresh_all_materialized_views(data_source_id: str) -> MaterializedVie
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=SystemQuery(reason="materialized view refresh"),
         )
         views = [
             (row.get("schemaname") or "public", row.get("matviewname"))
@@ -64,6 +66,7 @@ async def refresh_all_materialized_views(data_source_id: str) -> MaterializedVie
                 data_source=data_source,
                 engine=QueryEngine.DIRECT_SQL,
                 optimization=False,
+                identity=SystemQuery(reason="materialized view refresh"),
             )
             refreshed += 1
         except Exception as exc:

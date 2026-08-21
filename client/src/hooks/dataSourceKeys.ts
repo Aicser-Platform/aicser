@@ -7,6 +7,8 @@ export const dataSourceKeys = {
   schema: (id: string) => ['data-sources', id, 'schema'] as const,
   accessGrants: (id: string) => ['data-sources', id, 'access-grants'] as const,
   rlsPolicies: (id: string) => ['data-sources', id, 'rls-policies'] as const,
+  clsPolicies: (id: string) => ['data-sources', id, 'cls-policies'] as const,
+  myRowAccess: (id: string) => ['data-sources', id, 'my-row-access'] as const,
   rlsProjectAttributes: (id: string, projectId?: string | null) =>
     ['data-sources', id, 'rls-project-attributes', projectId ?? null] as const,
 };

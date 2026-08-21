@@ -5,7 +5,7 @@ import { Empty } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { DataSourceAccessGrant } from '@/api/dataSources';
 import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
-import { useDataSourceAccessGrants, useDataSourceRLSPolicies } from '@/hooks/useDataSources';
+import { useDataSourceAccessGrants, useDataSourceCLSPolicies, useDataSourceRLSPolicies } from '@/hooks/useDataSources';
 import { useGranteeDirectory } from '@/hooks/access/useGranteeOptions';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import BypassBanner from './BypassBanner';
@@ -22,6 +22,7 @@ export const DataSourcePermissionsTab: React.FC<{ dataSourceId: string; active: 
 
   const { grants, isLoading, isFetching } = useDataSourceAccessGrants(dataSourceId, active);
   const { policies } = useDataSourceRLSPolicies(dataSourceId, active);
+  const { policies: columnPolicies } = useDataSourceCLSPolicies(dataSourceId, active);
   const { optionsByType } = useGranteeDirectory({ organizationId, enabled: active });
 
   const labelByKey = useMemo(() => {
@@ -42,11 +43,17 @@ export const DataSourcePermissionsTab: React.FC<{ dataSourceId: string; active: 
   return (
     <>
       <BypassBanner grants={grants} />
-      <GrantShareBar dataSourceId={dataSourceId} organizationId={organizationId} policies={policies} />
+      <GrantShareBar
+        dataSourceId={dataSourceId}
+        organizationId={organizationId}
+        policies={policies}
+        columnPolicies={columnPolicies}
+      />
       <GrantsTable
         dataSourceId={dataSourceId}
         grants={grants}
         policies={policies}
+        columnPolicies={columnPolicies}
         loading={isLoading || isFetching}
         granteeLabel={granteeLabel}
       />

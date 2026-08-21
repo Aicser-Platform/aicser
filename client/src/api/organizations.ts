@@ -3,12 +3,19 @@ import type { Organization, CreateOrganizationPayload, UpdateOrganizationPayload
 
 export type { Organization, CreateOrganizationPayload, UpdateOrganizationPayload };
 
+export interface OrganizationMemberRole {
+  id: string;
+  name: string;
+  display_name?: string | null;
+}
+
 export interface OrganizationMember {
   user_id: string;
   email: string | null;
   username: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  roles?: OrganizationMemberRole[];
 }
 
 export const listOrganizations = (): Promise<{ organizations: Organization[] }> => fetchApi('/organizations');

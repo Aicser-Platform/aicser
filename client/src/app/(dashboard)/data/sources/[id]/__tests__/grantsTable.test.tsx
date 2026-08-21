@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { DataSourceAccessGrant } from '@/api/dataSources';
-import { accessLevelForPermissions } from '../_components/GrantsTable';
+import { accessLevelFor } from '../_components/GrantShareBar';
 import BypassBanner from '../_components/BypassBanner';
 
 vi.mock('next-intl', () => ({
@@ -21,16 +21,16 @@ const grant = (over: Partial<DataSourceAccessGrant>): DataSourceAccessGrant =>
     ...over,
   }) as DataSourceAccessGrant;
 
-describe('accessLevelForPermissions', () => {
+describe('accessLevelFor', () => {
   it('recognises each preset regardless of ordering', () => {
-    expect(accessLevelForPermissions(['view'])).toBe('view');
-    expect(accessLevelForPermissions(['query', 'view'])).toBe('explore');
-    expect(accessLevelForPermissions(['share', 'manage', 'edit', 'query', 'view'])).toBe('manage');
+    expect(accessLevelFor(['view'])).toBe('view');
+    expect(accessLevelFor(['query', 'view'])).toBe('explore');
+    expect(accessLevelFor(['share', 'manage', 'edit', 'query', 'view'])).toBe('manage');
   });
 
   it('falls back to custom for anything else', () => {
-    expect(accessLevelForPermissions(['view', 'edit'])).toBe('custom');
-    expect(accessLevelForPermissions([])).toBe('custom');
+    expect(accessLevelFor(['view', 'edit'])).toBe('custom');
+    expect(accessLevelFor([])).toBe('custom');
   });
 });
 

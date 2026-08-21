@@ -143,6 +143,58 @@ class DataSourceRLSRule(BaseModel):
     )
 
 
+class DataSourceCLSPolicy(BaseModel):
+    """Column-level policy: which columns a grantee may read, and how.
+
+    Separate from DataSourceRLSPolicy so one column policy ("mask PII") can be
+    paired with many different row policies instead of being duplicated into
+    each one.
+    """
+    __tablename__ = "data_source_cls_policies"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default=text("true"))
+    settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("data_source_id", "name", name="uq_data_source_cls_policy_name"),
+        Index("ix_data_source_cls_policies_source_enabled", "data_source_id", "enabled"),
+    )
+
+
+class DataSourceCLSRule(BaseModel):
+    """One column's treatment under a column policy."""
+    __tablename__ = "data_source_cls_rules"
+
+    policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_cls_policies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    table_name = Column(String(255), nullable=False)
+    column_name = Column(String(255), nullable=False)
+    action = Column(
+        Enum("deny", "mask", name="data_source_cls_action_enum"),
+        nullable=False,
+    )
+    mask_strategy = Column(
+        Enum("fixed", "partial", "hash", "null", name="data_source_cls_mask_enum"),
+        nullable=True,
+    )
+    mask_config = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+
 class DataSourceAccessGrant(BaseModel):
     """Explicit grant allowing a user, group, role, or project to use a data source."""
     __tablename__ = "data_source_access_grants"
@@ -171,6 +223,12 @@ class DataSourceAccessGrant(BaseModel):
         UUID(as_uuid=True),
         ForeignKey("data_source_rls_policies.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    cls_policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_source_cls_policies.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     created_by = Column(UUID(as_uuid=True), nullable=True)
 

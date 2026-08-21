@@ -59,6 +59,58 @@ class _Session:
     def __init__(self, results):
         self._results = list(results)
         self.added = []
+        self.queries = []
+
+    async def execute(self, query):
+        self.queries.append(query)
+        if not self._results:
+            raise AssertionError("Unexpected execute call")
+        return self._results.pop(0)
+
+    def add(self, row):
+        self.added.append(row)
+
+
+def _mapped_project(monkeypatch):
+    pytest.importorskip("ee.modules.project.models", reason="EE submodule not present")
+    from ee.modules.project.models import Project as EEProject
+
+    monkeypatch.setattr("src.modules.project.models.Project", EEProject)
+    return EEProject
+
+
+def _query_sql(query) -> str:
+    compiled = query.compile(compile_kwargs={"literal_binds": True})
+    return f"{compiled} {compiled.params}"
+
+
+def _query_contains_uuid(sql: str, value) -> bool:
+    compact = sql.replace("-", "").lower()
+    return str(value).replace("-", "").lower() in compact
+
+
+_UNSET = object()
+
+
+class _SessionReturning:
+    """Return a configured policy, then grantee, then the existing-grant row."""
+
+    def __init__(
+        self,
+        *,
+        policy=None,
+        cls_policy=_UNSET,
+        grantee=_UNSET,
+        existing=None,
+    ):
+        self.added = []
+        policy_value = policy if cls_policy is _UNSET else cls_policy
+        grantee_value = object() if grantee is _UNSET else grantee
+        self._results = [
+            _ExecuteResult(scalar_one=policy_value),
+            _ExecuteResult(scalar_one=grantee_value),
+            _ExecuteResult(scalar_one=existing),
+        ]
 
     async def execute(self, _query):
         if not self._results:
@@ -396,10 +448,37 @@ async def test_ee_list_accessible_source_ids_filters_by_permission(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_auto_project_grant_does_not_convey_unfiltered_reads(monkeypatch):
+    """An auto-created grant must not silently bypass row filters.
+
+    A grant with no rls_policy_id means "all rows". Combined with `query`, that
+    is a bypass nobody chose. Reading rows becomes something an admin grants
+    deliberately through the Permissions tab.
+    """
+    monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
+    session = _Session([_ExecuteResult(scalar_one=None)])
+    await DataSourceAccessService.grant_project_access(
+        data_source_id="ds-1",
+        organization_id="org-1",
+        project_id="project-1",
+        created_by=None,
+        session=session,
+    )
+    granted = session.added[0]
+    assert "query" not in granted.permissions
+    assert set(granted.permissions) == {"view", "edit", "manage"}
+
+
+@pytest.mark.asyncio
 async def test_upsert_grant_creates_normalized_active_grant():
     organization_id = uuid4()
     user_id = uuid4()
-    session = _Session([_ExecuteResult(scalar_one=None)])
+    session = _Session(
+        [
+            _ExecuteResult(scalar_one=user_id),
+            _ExecuteResult(scalar_one=None),
+        ]
+    )
 
     grant = await DataSourceAccessService.upsert_grant(
         data_source_id="ds-1",
@@ -430,7 +509,8 @@ async def test_upsert_grant_creates_normalized_active_grant():
 
 
 @pytest.mark.asyncio
-async def test_upsert_grant_reactivates_existing_grant():
+async def test_upsert_grant_reactivates_existing_grant(monkeypatch):
+    _mapped_project(monkeypatch)
     existing = SimpleNamespace(
         organization_id=None,
         permissions=[],
@@ -442,7 +522,12 @@ async def test_upsert_grant_reactivates_existing_grant():
     )
     organization_id = uuid4()
     user_id = uuid4()
-    session = _Session([_ExecuteResult(scalar_one=existing)])
+    session = _Session(
+        [
+            _ExecuteResult(scalar_one=uuid4()),
+            _ExecuteResult(scalar_one=existing),
+        ]
+    )
 
     grant = await DataSourceAccessService.upsert_grant(
         data_source_id="ds-1",
@@ -496,3 +581,140 @@ async def test_upsert_grant_rejects_invalid_permission():
             created_by=None,
             session=_Session([]),
         )
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_rejects_a_policy_from_another_data_source():
+    with pytest.raises(ValueError, match="policy"):
+        await DataSourceAccessService.upsert_grant(
+            data_source_id="ds-1",
+            organization_id="org-1",
+            grantee_type="user",
+            grantee_id=str(uuid4()),
+            permissions=["view", "query"],
+            created_by=None,
+            rls_policy_id=str(uuid4()),  # belongs to ds-2
+            session=_SessionReturning(policy=None),
+        )
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_accepts_a_policy_on_this_data_source():
+    policy_id = uuid4()
+    grant = await DataSourceAccessService.upsert_grant(
+        data_source_id="ds-1",
+        organization_id="org-1",
+        grantee_type="user",
+        grantee_id=str(uuid4()),
+        permissions=["view", "query"],
+        created_by=None,
+        rls_policy_id=str(policy_id),
+        session=_SessionReturning(policy=SimpleNamespace(id=policy_id)),
+    )
+    assert grant.rls_policy_id == policy_id
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_accepts_a_column_policy_on_this_source():
+    policy_id = uuid4()
+    grant = await DataSourceAccessService.upsert_grant(
+        data_source_id="ds-1",
+        organization_id="org-1",
+        grantee_type="user",
+        grantee_id=str(uuid4()),
+        permissions=["view", "query"],
+        created_by=None,
+        cls_policy_id=str(policy_id),
+        session=_SessionReturning(cls_policy=SimpleNamespace(id=policy_id)),
+    )
+    assert grant.cls_policy_id == policy_id
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_rejects_a_column_policy_from_another_source():
+    with pytest.raises(ValueError, match="column"):
+        await DataSourceAccessService.upsert_grant(
+            data_source_id="ds-1",
+            organization_id="org-1",
+            grantee_type="user",
+            grantee_id=str(uuid4()),
+            permissions=["view", "query"],
+            created_by=None,
+            cls_policy_id=str(uuid4()),
+            session=_SessionReturning(cls_policy=None),
+        )
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_rejects_a_grantee_that_does_not_exist():
+    with pytest.raises(ValueError, match="exists"):
+        await DataSourceAccessService.upsert_grant(
+            data_source_id="ds-1",
+            organization_id="org-1",
+            grantee_type="user",
+            grantee_id=str(uuid4()),
+            permissions=["view"],
+            created_by=None,
+            session=_SessionReturning(policy=None, grantee=None),
+        )
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_still_accepts_group_grantees():
+    """Groups have no membership model yet, so they cannot be checked."""
+    grant = await DataSourceAccessService.upsert_grant(
+        data_source_id="ds-1",
+        organization_id="org-1",
+        grantee_type="group",
+        grantee_id="group-1",
+        permissions=["view"],
+        created_by=None,
+        session=_SessionReturning(policy=None, grantee=None),
+    )
+    assert grant.grantee_type == "group"
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_rejects_project_when_model_has_no_id(monkeypatch):
+    class _Placeholder:
+        pass
+
+    monkeypatch.setattr("src.modules.project.models.Project", _Placeholder)
+    session = _Session([])
+
+    with pytest.raises(ValueError, match="exists"):
+        await DataSourceAccessService.upsert_grant(
+            data_source_id="ds-1",
+            organization_id=str(uuid4()),
+            grantee_type="project",
+            grantee_id=str(uuid4()),
+            permissions=["view"],
+            created_by=None,
+            session=session,
+        )
+    assert session.queries == []
+
+
+@pytest.mark.asyncio
+async def test_upsert_grant_rejects_a_project_from_another_organization(monkeypatch):
+    _mapped_project(monkeypatch)
+    organization_id = uuid4()
+    project_id = uuid4()
+    session = _Session([_ExecuteResult(scalar_one=None)])
+
+    with pytest.raises(ValueError, match="exists"):
+        await DataSourceAccessService.upsert_grant(
+            data_source_id="ds-1",
+            organization_id=str(organization_id),
+            grantee_type="project",
+            grantee_id=str(project_id),
+            permissions=["view"],
+            created_by=None,
+            session=session,
+        )
+
+    assert len(session.queries) == 1
+    sql = _query_sql(session.queries[0])
+    assert "organization_id" in sql
+    assert _query_contains_uuid(sql, organization_id)
+    assert _query_contains_uuid(sql, project_id)

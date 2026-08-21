@@ -531,7 +531,10 @@ class DataSourceAccessService:
             permissions
             or [
                 DATA_SOURCE_PERMISSION_VIEW,
-                DATA_SOURCE_PERMISSION_QUERY,
+                # Deliberately no `query`. A grant with no rls_policy_id means
+                # "all rows", so auto-granting query here would hand every
+                # project member a standing bypass of any policy added later.
+                # Row access is granted explicitly on the Permissions tab.
                 DATA_SOURCE_PERMISSION_EDIT,
                 DATA_SOURCE_PERMISSION_MANAGE,
             ]
@@ -592,6 +595,68 @@ class DataSourceAccessService:
         return list(result.scalars().all())
 
     @staticmethod
+    async def _grantee_exists(
+        grantee_type: str,
+        grantee_id: str,
+        organization_id: Optional[str],
+        *,
+        session: AsyncSession,
+    ) -> bool:
+        """Whether a grantee names something real in this organization.
+
+        Groups are exempt: resolve_user_group_ids is still a stub, so there is no
+        membership model to check against and rejecting them would block a
+        grantee type the API already accepts.
+        """
+        if grantee_type == "group":
+            return True
+
+        if grantee_type == "project":
+            from src.modules.project.models import Project
+
+            if not hasattr(Project, "id"):
+                return False
+
+            result = await session.execute(
+                select(Project.id)
+                .where(
+                    Project.id == _uuid_or_none(grantee_id),
+                    Project.organization_id == _uuid_or_none(organization_id),
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
+        if grantee_type == "user":
+            from src.modules.user.models import User
+
+            user_uuid = _uuid_or_none(grantee_id)
+            result = await session.execute(
+                select(User.id)
+                .where(or_(User.id == user_uuid, User.user_id == user_uuid))
+                .limit(1)
+            )
+            return result.scalar_one_or_none() is not None
+
+        # org_role / project_role are matched by name or id at check time, so
+        # either form is a valid reference.
+        if not is_ee_enabled():
+            return True
+        try:
+            from src.modules.authentication.rbac.models import Role
+        except ImportError:
+            return True
+
+        conditions = [Role.name == grantee_id]
+        role_uuid = _uuid_or_none(grantee_id)
+        if role_uuid:
+            conditions.append(Role.id == role_uuid)
+
+        query = select(Role.id).where(or_(*conditions))
+        result = await session.execute(query.limit(1))
+        return result.scalar_one_or_none() is not None
+
+    @staticmethod
     async def upsert_grant(
         *,
         data_source_id: str,
@@ -601,6 +666,7 @@ class DataSourceAccessService:
         permissions: Sequence[str],
         created_by: Optional[str],
         rls_policy_id: Optional[str] = None,
+        cls_policy_id: Optional[str] = None,
         session: Optional[AsyncSession] = None,
     ) -> DataSourceAccessGrant:
         """Create or reactivate a data-source grant."""
@@ -622,10 +688,54 @@ class DataSourceAccessService:
                     permissions=normalized_permissions,
                     created_by=created_by,
                     rls_policy_id=rls_policy_id,
+                    cls_policy_id=cls_policy_id,
                     session=scoped,
                 )
                 await scoped.commit()
                 return grant
+
+        if rls_policy_id:
+            from src.modules.data.models import DataSourceRLSPolicy
+
+            policy_result = await session.execute(
+                select(DataSourceRLSPolicy).where(
+                    DataSourceRLSPolicy.id == _uuid_or_none(rls_policy_id),
+                    DataSourceRLSPolicy.data_source_id == data_source_id,
+                    DataSourceRLSPolicy.is_active == True,
+                    DataSourceRLSPolicy.is_deleted == False,
+                )
+            )
+            if policy_result.scalar_one_or_none() is None:
+                raise ValueError(
+                    "The row filter policy does not exist on this data source"
+                )
+
+        if cls_policy_id:
+            from src.modules.data.models import DataSourceCLSPolicy
+
+            policy_result = await session.execute(
+                select(DataSourceCLSPolicy).where(
+                    DataSourceCLSPolicy.id == _uuid_or_none(cls_policy_id),
+                    DataSourceCLSPolicy.data_source_id == data_source_id,
+                    DataSourceCLSPolicy.is_active == True,
+                    DataSourceCLSPolicy.is_deleted == False,
+                )
+            )
+            if policy_result.scalar_one_or_none() is None:
+                raise ValueError(
+                    "The column policy does not exist on this data source"
+                )
+
+        if not await DataSourceAccessService._grantee_exists(
+            normalized_grantee_type,
+            normalized_grantee_id,
+            organization_id,
+            session=session,
+        ):
+            raise ValueError(
+                f"No {normalized_grantee_type.replace('_', ' ')} with that id exists "
+                "in this organization"
+            )
 
         result = await session.execute(
             select(DataSourceAccessGrant).where(
@@ -639,6 +749,7 @@ class DataSourceAccessService:
             existing.organization_id = _uuid_or_none(organization_id)
             existing.permissions = normalized_permissions
             existing.rls_policy_id = _uuid_or_none(rls_policy_id)
+            existing.cls_policy_id = _uuid_or_none(cls_policy_id)
             existing.created_by = _uuid_or_none(created_by)
             existing.is_active = True
             existing.is_deleted = False
@@ -653,6 +764,7 @@ class DataSourceAccessService:
             grantee_id=normalized_grantee_id,
             permissions=normalized_permissions,
             rls_policy_id=_uuid_or_none(rls_policy_id),
+            cls_policy_id=_uuid_or_none(cls_policy_id),
             created_by=_uuid_or_none(created_by),
             is_active=True,
             is_deleted=False,

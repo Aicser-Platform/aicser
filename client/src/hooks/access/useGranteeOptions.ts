@@ -14,6 +14,8 @@ export type GranteeOption = {
   value: string;
   label: string;
   description?: string;
+  /** Rendered under the label — disambiguates people who share a display name. */
+  secondary?: string;
   type: SupportedGranteeType;
 };
 
@@ -32,10 +34,8 @@ export const GRANTEE_TYPES: SupportedGranteeType[] = ['project', 'user', 'org_ro
 
 const roleLabel = (role: Role) => role.display_name || role.name || role.id;
 
-const memberLabel = (member: OrganizationMember) => {
-  const displayName = [member.first_name, member.last_name].filter(Boolean).join(' ').trim();
-  return member.email || member.username || displayName || member.user_id;
-};
+const memberDisplayName = (member: OrganizationMember): string =>
+  [member.first_name, member.last_name].filter(Boolean).join(' ').trim();
 
 export const toGranteeOptions = (
   granteeType: SupportedGranteeType,
@@ -56,12 +56,22 @@ export const toGranteeOptions = (
   }
 
   if (granteeType === 'user') {
-    return data.members.map((member) => ({
-      value: String(member.user_id),
-      label: memberLabel(member),
-      description: member.email && member.username ? member.username : undefined,
-      type: granteeType,
-    }));
+    const seen = new Set<string>();
+    return data.members.reduce<GranteeOption[]>((options, member) => {
+      const id = String(member.user_id);
+      if (seen.has(id)) return options;
+      seen.add(id);
+
+      const name = memberDisplayName(member);
+      const label = name || member.email || member.username || id;
+      options.push({
+        value: id,
+        label,
+        secondary: name && member.email ? member.email : undefined,
+        type: granteeType,
+      });
+      return options;
+    }, []);
   }
 
   if (granteeType === 'org_role') {

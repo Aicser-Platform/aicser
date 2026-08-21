@@ -10,6 +10,7 @@ vi.mock('@/hooks/dataSourceKeys', async (importOriginal) => ({
 vi.mock('@/hooks/useDataSources', () => ({
   useDataSourceAccessGrants: () => ({ grants: [], isLoading: false, isFetching: false }),
   useDataSourceRLSPolicies: () => ({ policies: [], isLoading: false, isFetching: false }),
+  useDataSourceCLSPolicies: () => ({ policies: [], isLoading: false, isFetching: false }),
   useUpsertDataSourceAccessGrant: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRevokeDataSourceAccessGrant: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

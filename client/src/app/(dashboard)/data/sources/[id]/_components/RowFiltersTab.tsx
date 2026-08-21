@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Button, Empty, Popconfirm, Space, Table, Tag, Typography, message } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { DataSourceAccessGrant, DataSourceRLSPolicy, DataSourceRLSRule } from '@/api/dataSources';
+import type { DataSourceAccessGrant, DataSourceRLSPolicy } from '@/api/dataSources';
 import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import {
   useDataSourceAccessGrants,
   useDataSourceRLSPolicies,
   useDeleteDataSourceRLSPolicy,
 } from '@/hooks/useDataSources';
-import RLSPolicyModal from './RLSPolicyModal';
 import AccessSentence from './AccessSentence';
 
 const { Text } = Typography;
@@ -21,8 +21,7 @@ export const countGrantsUsingPolicy = (grants: DataSourceAccessGrant[], policyId
 
 export const RowFiltersTab: React.FC<{ dataSourceId: string; active: boolean }> = ({ dataSourceId, active }) => {
   const t = useTranslations('data_source_detail');
-  const [editing, setEditing] = useState<DataSourceRLSPolicy | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const router = useRouter();
   const { policies, isLoading } = useDataSourceRLSPolicies(dataSourceId, active);
   const { grants } = useDataSourceAccessGrants(dataSourceId, active);
   const deletePolicy = useDeleteDataSourceRLSPolicy();
@@ -37,10 +36,7 @@ export const RowFiltersTab: React.FC<{ dataSourceId: string; active: boolean }> 
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => {
-            setEditing(null);
-            setModalOpen(true);
-          }}
+          onClick={() => router.push(`/data/sources/${dataSourceId}/row-filters/new`)}
         >
           {t('policy_new')}
         </Button>
@@ -84,10 +80,7 @@ export const RowFiltersTab: React.FC<{ dataSourceId: string; active: boolean }> 
                   type="text"
                   size="small"
                   icon={<EditOutlined />}
-                  onClick={() => {
-                    setEditing(policy);
-                    setModalOpen(true);
-                  }}
+                  onClick={() => router.push(`/data/sources/${dataSourceId}/row-filters/${policy.id}`)}
                 />
                 <Popconfirm
                   title={t('policy_delete_confirm', { count: countGrantsUsingPolicy(grants, policy.id) })}
@@ -109,16 +102,6 @@ export const RowFiltersTab: React.FC<{ dataSourceId: string; active: boolean }> 
             ),
           },
         ]}
-      />
-
-      <RLSPolicyModal
-        open={modalOpen}
-        dataSourceId={dataSourceId}
-        policy={editing}
-        onClose={() => {
-          setModalOpen(false);
-          setEditing(null);
-        }}
       />
     </>
   );

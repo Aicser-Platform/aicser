@@ -11,6 +11,10 @@ A read is one of three things, and the service can tell them apart:
 * ``SystemQuery``    — no person is asking, and the caller says why. Recorded.
 * ``None``           — nobody said. Denied on any source that configured row
                        security, because silence must not read as permission.
+
+A fourth outcome is not about who is asking but what the answer is:
+``RowSecurityDenied`` is raised when identity is known and the query is
+understood, and the decision is still no.
 """
 
 from __future__ import annotations
@@ -26,6 +30,21 @@ class RowSecurityIdentityRequired(Exception):
     This is deliberately an error and not an empty result: an empty result
     reads as "no matching data" and hides the misconfiguration.
     """
+
+
+class RowSecurityDenied(Exception):
+    """Raised when row security is understood and the answer is no.
+
+    Distinct from RowSecurityIdentityRequired, which means the system does not
+    know who is asking. This one means it knows exactly who is asking and the
+    query is not permitted — an ungoverned table under a default-deny policy, or
+    SQL that cannot be rewritten safely. The message is shown to the user, so it
+    names the reason in plain language.
+    """
+
+    def __init__(self, reason: str, table: Optional[str] = None) -> None:
+        super().__init__(reason)
+        self.table = table
 
 
 @dataclass(frozen=True)

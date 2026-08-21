@@ -25,6 +25,7 @@ except ImportError:
 from src.db.session import async_operation_lock
 from src.modules.data.utils.credentials import encrypt_credentials, decrypt_credentials
 from src.core.edition import is_ee_enabled
+from src.modules.data.services.query_identity import QueryAccess, SystemQuery
 from src.shared.query_limits import (
     DEFAULT_PAGE_LIMIT,
     DEFAULT_FILE_QUERY_LIMIT,
@@ -785,7 +786,12 @@ class DataConnectivityService:
             logger.error(f"❌ Failed to read file {file_path}: {str(e)}")
             return []
     
-    async def execute_query_on_source(self, source_id: str, query: str) -> Dict[str, Any]:
+    async def execute_query_on_source(
+        self,
+        source_id: str,
+        query: str,
+        identity: QueryAccess = None,
+    ) -> Dict[str, Any]:
         """Execute a custom query on a data source"""
         try:
             logger.info(f"🔍 Executing query on source: {source_id}")
@@ -857,7 +863,11 @@ class DataConnectivityService:
                     multi = get_multi_engine_query_service()
                     
                     # MultiEngineQueryService handles connection resolution, engine selection, and execution
-                    result = await multi.execute_query(query, source)
+                    result = await multi.execute_query(
+                        query,
+                        source,
+                        identity=identity,
+                    )
                     
                     if result.get('success'):
                         return {
@@ -1020,7 +1030,11 @@ class DataConnectivityService:
                     
                     from src.modules.data.services.multi_engine_query_service import MultiEngineQueryService, get_multi_engine_query_service
                     multi = get_multi_engine_query_service()
-                    result = await multi.execute_query(sql, source)
+                    result = await multi.execute_query(
+                        sql,
+                        source,
+                        identity=SystemQuery(reason="schema introspection"),
+                    )
                     
                     if result.get('success'):
                         return {
@@ -2476,7 +2490,8 @@ class DataConnectivityService:
     async def query_data_source(
         self,
         data_source_id: str,
-        query: Optional[Dict[str, Any]] = None
+        query: Optional[Dict[str, Any]] = None,
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
         """Query data from data source"""
         try:
@@ -2490,7 +2505,9 @@ class DataConnectivityService:
             if data_source['type'] == 'file':
                 return await self._query_file_data_source(data_source, query)
             elif data_source['type'] == 'database':
-                return await self._query_database_data_source(data_source, query)
+                return await self._query_database_data_source(
+                    data_source, query, identity=identity
+                )
             else:
                 raise ValueError(f"Unsupported data source type: {data_source['type']}")
                 
@@ -2602,7 +2619,8 @@ class DataConnectivityService:
     async def _query_database_data_source(
         self,
         data_source: Dict[str, Any],
-        query: Dict[str, Any]
+        query: Dict[str, Any],
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
         """Query database data source (NoSQL connectors or Cube.js)."""
         db_type = (data_source.get('db_type') or data_source.get('format') or '').lower()
@@ -2693,7 +2711,11 @@ class DataConnectivityService:
                         'error': 'Database query requires SQL string or table name'
                     }
                 
-                result = await multi.execute_query(sql_query, data_source)
+                result = await multi.execute_query(
+                    sql_query,
+                    data_source,
+                    identity=identity,
+                )
                 return result
             
             cube_data_source = data_source.get('cube_data_source')
@@ -4667,7 +4689,8 @@ class DataConnectivityService:
         organization_id: str, 
         project_id: str, 
         data_source_id: str, 
-        query: str
+        query: str,
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
         """Execute a query on a project data source"""
         try:
@@ -4679,7 +4702,7 @@ class DataConnectivityService:
                 return data_source_result
             
             # Execute the query using the existing method
-            return await self.execute_query_on_source(data_source_id, query)
+            return await self.execute_query_on_source(data_source_id, query, identity=identity)
         except Exception as e:
             logger.error(f"❌ Failed to execute project data source query: {str(e)}")
             return {

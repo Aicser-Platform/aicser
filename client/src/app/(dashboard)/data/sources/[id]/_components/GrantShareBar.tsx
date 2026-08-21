@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Button, Card, Select, Space, message } from 'antd';
+import { Button, Card, Select, Space, Typography, message } from 'antd';
 import { UserAddOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type {
   DataSourceAccessGrantRequest,
+  DataSourceCLSPolicy,
   DataSourceGrantPermission,
   DataSourceRLSPolicy,
 } from '@/api/dataSources';
@@ -22,6 +23,12 @@ import RowAccessSelect, {
   toRlsPolicyId,
   type RowAccessValue,
 } from './RowAccessSelect';
+import ColumnAccessSelect, {
+  COLUMN_ACCESS_UNSET,
+  requiresColumnAccess,
+  toClsPolicyId,
+  type ColumnAccessValue,
+} from './ColumnAccessSelect';
 
 export type AccessLevelKey = 'view' | 'explore' | 'manage' | 'custom';
 
@@ -32,16 +39,46 @@ export const ACCESS_LEVELS: Array<{ key: AccessLevelKey; permissions: DataSource
   { key: 'custom', permissions: [] },
 ];
 
+const sortedPermissionKey = (permissions: DataSourceGrantPermission[]): string =>
+  [...permissions].sort().join('|');
+
+/**
+ * The inverse of ACCESS_LEVELS: given a grant's raw permissions, name the
+ * level they add up to. Defined beside ACCESS_LEVELS so both directions stay
+ * in sync — order-insensitive, since a grant's permissions array carries no
+ * guaranteed order.
+ */
+export const accessLevelFor = (permissions: DataSourceGrantPermission[]): AccessLevelKey => {
+  const target = sortedPermissionKey(permissions);
+  return (
+    ACCESS_LEVELS.find((level) => level.key !== 'custom' && sortedPermissionKey(level.permissions) === target)
+      ?.key ?? 'custom'
+  );
+};
+
 export const buildGrantRequests = (
   selected: string[],
   permissions: DataSourceGrantPermission[],
-  rowAccess: RowAccessValue
+  rowAccess: RowAccessValue,
+  columnAccess?: ColumnAccessValue
 ): DataSourceAccessGrantRequest[] => {
   // Row access is meaningless without query; persist null rather than block.
   const policyId = requiresRowAccess(permissions) ? toRlsPolicyId(rowAccess) : null;
+  const clsPolicyId =
+    columnAccess === undefined
+      ? undefined
+      : requiresColumnAccess(permissions)
+        ? toClsPolicyId(columnAccess)
+        : null;
   return selected.map((value) => {
     const { type, id } = decodeGranteeValue(value);
-    return { grantee_type: type, grantee_id: id, permissions, rls_policy_id: policyId };
+    return {
+      grantee_type: type,
+      grantee_id: id,
+      permissions,
+      rls_policy_id: policyId,
+      ...(columnAccess === undefined ? {} : { cls_policy_id: clsPolicyId }),
+    };
   });
 };
 
@@ -57,31 +94,45 @@ export const summarizeGrantResults = (
   return { succeeded, failed };
 };
 
+const { Text } = Typography;
+
 const GROUP_ORDER: SupportedGranteeType[] = ['project', 'user', 'org_role', 'project_role'];
+
+type GranteeSelectOption = {
+  value: string;
+  label: string;
+  secondary?: string;
+};
 
 export const GrantShareBar: React.FC<{
   dataSourceId: string;
   organizationId: string | null;
   policies: DataSourceRLSPolicy[];
-}> = ({ dataSourceId, organizationId, policies }) => {
+  columnPolicies?: DataSourceCLSPolicy[];
+}> = ({ dataSourceId, organizationId, policies, columnPolicies = [] }) => {
   const t = useTranslations('data_source_detail');
   const [selected, setSelected] = useState<string[]>([]);
   const [level, setLevel] = useState<AccessLevelKey>('explore');
   const [rowAccess, setRowAccess] = useState<RowAccessValue>(ROW_ACCESS_UNSET);
+  const [columnAccess, setColumnAccess] = useState<ColumnAccessValue>(COLUMN_ACCESS_UNSET);
   const { optionsByType, flatOptions } = useGranteeDirectory({ organizationId, enabled: true });
   const upsertGrant = useUpsertDataSourceAccessGrant();
 
   const permissions = ACCESS_LEVELS.find((item) => item.key === level)?.permissions ?? ['view'];
   const needsRowAccess = requiresRowAccess(permissions);
-  const blocked = needsRowAccess && rowAccess === ROW_ACCESS_UNSET;
+  const needsColumnAccess = requiresColumnAccess(permissions);
+  const blocked =
+    (needsRowAccess && rowAccess === ROW_ACCESS_UNSET) ||
+    (needsColumnAccess && columnAccess === COLUMN_ACCESS_UNSET);
 
-  const groupedOptions = useMemo(
+  const groupedOptions: Array<{ label: string; options: GranteeSelectOption[] }> = useMemo(
     () =>
       GROUP_ORDER.map((type) => ({
         label: t(`share_group_${type}`),
         options: optionsByType[type].map((option) => ({
           value: encodeGranteeValue(option.type, option.value),
           label: option.label,
+          secondary: option.secondary,
         })),
       })).filter((group) => group.options.length > 0),
     [optionsByType, t]
@@ -92,7 +143,7 @@ export const GrantShareBar: React.FC<{
 
   const handleGrant = async () => {
     if (!selected.length || blocked) return;
-    const requests = buildGrantRequests(selected, permissions, rowAccess);
+    const requests = buildGrantRequests(selected, permissions, rowAccess, columnAccess);
     const results = await Promise.allSettled(
       requests.map((data) => upsertGrant.mutateAsync({ id: dataSourceId, data }))
     );
@@ -104,6 +155,7 @@ export const GrantShareBar: React.FC<{
     // Keep the failures selected so they can be retried; clear what succeeded.
     setSelected(failed.length ? selected.filter((value) => failed.includes(labelFor(value))) : []);
     setRowAccess(ROW_ACCESS_UNSET);
+    setColumnAccess(COLUMN_ACCESS_UNSET);
   };
 
   return (
@@ -112,18 +164,38 @@ export const GrantShareBar: React.FC<{
         <Select
           mode="multiple"
           allowClear
+          virtual
+          listHeight={288}
+          maxTagCount="responsive"
           value={selected}
           onChange={setSelected}
           placeholder={t('share_placeholder')}
           style={{ minWidth: 360 }}
           optionFilterProp="label"
           options={groupedOptions}
+          optionRender={(option) => {
+            // antd types `option.data` as the group for grouped options (it has no
+            // overlap with the leaf shape, hence the `unknown` hop), but it passes
+            // the leaf at runtime. Narrow to the leaf we actually build.
+            const data = option.data as unknown as GranteeSelectOption;
+            return data.secondary ? (
+              <Space direction="vertical" size={0}>
+                <span>{data.label}</span>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {data.secondary}
+                </Text>
+              </Space>
+            ) : (
+              data.label
+            );
+          }}
         />
         <Select<AccessLevelKey>
           value={level}
           onChange={(next) => {
             setLevel(next);
             setRowAccess(ROW_ACCESS_UNSET);
+            setColumnAccess(COLUMN_ACCESS_UNSET);
           }}
           style={{ minWidth: 180 }}
           options={ACCESS_LEVELS.filter((item) => item.key !== 'custom').map((item) => ({
@@ -133,6 +205,13 @@ export const GrantShareBar: React.FC<{
         />
         {needsRowAccess ? (
           <RowAccessSelect value={rowAccess} onChange={setRowAccess} policies={policies} />
+        ) : null}
+        {needsColumnAccess ? (
+          <ColumnAccessSelect
+            value={columnAccess}
+            onChange={setColumnAccess}
+            policies={columnPolicies}
+          />
         ) : null}
         <Button
           type="primary"

@@ -51,6 +51,7 @@ from src.core.edition import is_ee_enabled
 from src.modules.data.services.query_identity import (
     QueryAccess,
     QueryIdentity,
+    RowSecurityDenied,
     RowSecurityIdentityRequired,
     SystemQuery,
 )
@@ -481,6 +482,131 @@ class MultiEngineQueryService:
                 query, session=session, **kwargs
             )
 
+    async def _apply_sql_cls(self, query: str, **kwargs: Any) -> Tuple[str, List[str]]:
+        """Thin seam over the EE enforcement service, opening its own session."""
+        from ee.modules.data.services.data_source_cls_enforcement_service import (
+            DataSourceCLSEnforcementService,
+        )
+        from src.db.session import async_session
+
+        async with async_session() as session:
+            return await DataSourceCLSEnforcementService.apply_sql_cls(
+                query, session=session, **kwargs
+            )
+
+    async def _source_has_column_security(self, data_source_id: str) -> bool:
+        """Whether this source has any active grant or column policy.
+
+        Sources that never opted into column security keep working without an
+        identity; sources that did are never readable without one.
+        """
+        if not data_source_id:
+            return False
+        try:
+            from sqlalchemy import select
+
+            from src.db.session import async_session
+            from src.modules.data.models import (
+                DataSourceAccessGrant,
+                DataSourceCLSPolicy,
+            )
+
+            async with async_session() as session:
+                for model in (DataSourceCLSPolicy, DataSourceAccessGrant):
+                    found = await session.execute(
+                        select(model.id)
+                        .where(
+                            model.data_source_id == data_source_id,
+                            model.is_active == True,  # noqa: E712
+                            model.is_deleted == False,  # noqa: E712
+                        )
+                        .limit(1)
+                    )
+                    if found.scalar_one_or_none() is not None:
+                        return True
+            return False
+        except Exception:
+            # Unable to prove the source is unsecured, so treat it as secured.
+            logger.exception(
+                "Column-security probe failed for source %s; assuming secured",
+                data_source_id,
+            )
+            return True
+
+    async def _enforce_column_security(
+        self,
+        query: str,
+        data_source: Dict[str, Any],
+        access: QueryAccess,
+        dialect: Optional[str] = None,
+    ) -> Tuple[str, List[str]]:
+        """Return the query to run, with restricted columns masked or dropped.
+
+        Raises RowSecurityIdentityRequired rather than returning ungoverned
+        columns. CLS must run before RLS: it expands `SELECT *` against the
+        base tables' schema, and RLS wraps those base tables in filtered
+        subqueries that the qualifier can no longer see into.
+        """
+        if not is_ee_enabled() or not query:
+            return query, []
+
+        data_source_id = str(
+            data_source.get("id") or data_source.get("data_source_id") or ""
+        )
+
+        if isinstance(access, SystemQuery):
+            if await self._source_has_column_security(data_source_id):
+                logger.warning(
+                    "Unattributed read of column-secured source %s — reason: %s",
+                    data_source_id,
+                    access.reason,
+                )
+            return query, []
+
+        if access is None:
+            if await self._source_has_column_security(data_source_id):
+                logger.error(
+                    "Refusing to read column-secured source %s without an identity. "
+                    "Pass QueryIdentity, or SystemQuery(reason=...) for a job.",
+                    data_source_id,
+                )
+                raise RowSecurityIdentityRequired(
+                    "This data source has column security configured, so the "
+                    "query cannot run without knowing who is asking."
+                )
+            return query, []
+
+        try:
+            from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+
+            resolved = dialect or resolve_dialect(data_source)
+        except Exception:
+            resolved = dialect
+
+        try:
+            return await self._apply_sql_cls(
+                query,
+                user_id=access.user_id,
+                data_source_id=data_source_id,
+                organization_id=access.organization_id,
+                project_id=access.project_id,
+                dialect=resolved,
+            )
+        except RowSecurityIdentityRequired:
+            raise
+        except RowSecurityDenied:
+            # A deliberate deny, not a failure to compute one. Reporting it as an
+            # internal error would hide a correct decision behind a bug report.
+            raise
+        except Exception as exc:
+            # A filter we could not compute must not degrade into "no filter".
+            logger.exception(
+                "Column-security enforcement failed for source %s", data_source_id
+            )
+            raise RowSecurityIdentityRequired(
+                "Column security could not be applied to this query."
+            ) from exc
+
     async def _enforce_row_security(
         self,
         query: str,
@@ -540,6 +666,10 @@ class MultiEngineQueryService:
             )
         except RowSecurityIdentityRequired:
             raise
+        except RowSecurityDenied:
+            # A deliberate deny, not a failure to compute one. Reporting it as an
+            # internal error would hide a correct decision behind a bug report.
+            raise
         except Exception as exc:
             # A filter we could not compute must not degrade into "no filter".
             logger.exception(
@@ -566,10 +696,13 @@ class MultiEngineQueryService:
         cannot reach data by a route that skips it.
         """
         try:
+            query, columns_omitted = await self._enforce_column_security(
+                query, data_source, identity
+            )
             query, rls_applied = await self._enforce_row_security(
                 query, data_source, identity
             )
-        except RowSecurityIdentityRequired as exc:
+        except (RowSecurityIdentityRequired, RowSecurityDenied) as exc:
             return {
                 "success": False,
                 "error": str(exc),
@@ -589,6 +722,8 @@ class MultiEngineQueryService:
         )
         if rls_applied and isinstance(result, dict):
             result["rls_applied"] = True
+        if columns_omitted and isinstance(result, dict):
+            result["columns_omitted"] = columns_omitted
         return result
 
     async def _execute_query_unfiltered(

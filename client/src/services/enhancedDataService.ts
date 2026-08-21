@@ -51,6 +51,7 @@ export interface QueryResult {
     query_id?: string;
     cached?: boolean;
     rls_applied?: boolean;
+    columns_omitted?: string[];
     error?: string;
     metadata?: Record<string, any>;
 }

@@ -58,6 +58,7 @@ from src.modules.authentication.rbac.guard import (
     user_id_from_payload,
     legacy_charts_rbac_guard,
 )
+from src.modules.data.services.query_identity import QueryIdentity
 from src.modules.pricing.feature_gate import check_feature_for_org
 from src.modules.pricing.rate_limiter import RateLimiter
 
@@ -78,6 +79,30 @@ async def _optional_token(request: Request) -> Optional[str]:
         else:
             token = auth
     return token
+
+
+def _query_identity_from_payload(
+    current_user: Optional[dict],
+    *,
+    project_id: Optional[str] = None,
+) -> Optional[QueryIdentity]:
+    payload = extract_user_payload(current_user) if current_user else {}
+    user_id = user_id_from_payload(payload) if payload else None
+    if not user_id and current_user:
+        user_id = current_user.get("id") or current_user.get("user_id") or current_user.get("sub")
+    if not user_id:
+        return None
+    organization_id = (
+        payload.get("organization_id")
+        or payload.get("org_id")
+        or payload.get("tenant_id")
+    )
+    return QueryIdentity(
+        user_id=str(user_id),
+        organization_id=str(organization_id) if organization_id else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=payload,
+    )
 from pydantic import BaseModel
 import logging
 
@@ -3250,7 +3275,10 @@ async def standalone_execute_adhoc_chart(
     chart = Chart(**chart_payload)
 
     service = ChartService(db)
-    data = await service.execute(chart)
+    data = await service.execute(
+        chart,
+        identity=_query_identity_from_payload(current_user, project_id=project_id),
+    )
     return {"data": data}
 
 
@@ -3258,15 +3286,33 @@ async def standalone_execute_adhoc_chart(
 async def standalone_execute_chart(
     chart_id: UUID,
     db: AsyncSession = Depends(get_async_session),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
 ):
     from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.charts.services.v2.chart_library_service import ChartLibraryService
+
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    uid = user_id_from_payload(extract_user_payload(current_user))
+    await require_ee_permission(uid, "chart:view")
+
     service = ChartService(db)
     chart = await service.get(chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
+    _enforce_standalone_chart_access(chart, user_id)
+    lib = ChartLibraryService(db)
+    usage, dashboards = await lib.usage_for_chart(chart.id)
 
     try:
-        data = await service.execute(chart)
+        data = await service.execute(
+            chart,
+            identity=_query_identity_from_payload(
+                current_user,
+                project_id=str(chart.project_id) if getattr(chart, "project_id", None) else None,
+            ),
+        )
     except ValueError as exc:
         message = str(exc).strip() or "Chart execution failed"
         if "data source not found" in message.lower():
@@ -3275,7 +3321,9 @@ async def standalone_execute_chart(
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Chart execution failed") from exc
     return {
-        "chart": _serialize_standalone_chart(chart, detail="full"),
+        "chart": _serialize_standalone_chart(
+            chart, usage_count=usage, dashboards=dashboards, detail="full"
+        ),
         "data": data,
     }
 

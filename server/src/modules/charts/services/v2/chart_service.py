@@ -33,11 +33,13 @@ EXAMPLES:
 """
 
 import uuid
+import contextvars
 import json
 import hashlib
 import os
 import logging
 import re
+from contextlib import contextmanager
 from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -48,11 +50,116 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.charts.models import Chart
 from src.modules.data.models import DataModelRelationship, DataSource
 from src.modules.data.services.multi_engine_query_service import get_multi_engine_query_service
+from src.modules.data.services.query_identity import (
+    QueryAccess,
+    RowSecurityDenied,
+    RowSecurityIdentityRequired,
+)
+
+
+# The (open, close) pair each engine wraps an identifier in. A literal closing
+# quote inside the name is escaped by doubling it, which holds for all three
+# styles. ANSI double quotes are the default: PostgreSQL, DuckDB, Snowflake and
+# the file engines all accept them. MySQL does not — it reads "user" as a string
+# literal — and T-SQL only accepts them with QUOTED_IDENTIFIER ON.
+_IDENTIFIER_QUOTES = {
+    "mysql": ("`", "`"),
+    "mariadb": ("`", "`"),
+    "sqlserver": ("[", "]"),
+    "mssql": ("[", "]"),
+    "tsql": ("[", "]"),
+}
+_DEFAULT_IDENTIFIER_QUOTE = ('"', '"')
+
+# The schema to qualify a table with when neither the chart nor the source
+# names one. MySQL's namespace is the database the connection already points
+# at, so qualifying with anything invents a database that does not exist.
+_DEFAULT_SCHEMA_BY_DIALECT: Dict[str, Optional[str]] = {
+    "mysql": None,
+    "mariadb": None,
+}
+_DEFAULT_SCHEMA = "public"
+
+# The dialect SQL is currently being built for. Ambient rather than threaded
+# through every builder: quoting is a property of the whole statement, and
+# every path that builds SQL already resolves the data source first. A
+# ContextVar (not an attribute) so that dashboards rendering widgets
+# concurrently on one ChartService cannot read each other's dialect.
+_SQL_DIALECT: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "chart_sql_dialect", default="postgres"
+)
+
+
+def _resolve_chart_dialect(data_source: Any) -> str:
+    """Normalize a data source's engine to a dialect key used for quoting."""
+    if data_source is None:
+        return "postgres"
+    source_type = str(getattr(data_source, "type", "") or "").strip().lower()
+    if source_type in ("file", "sample_duckdb"):
+        return "duckdb"
+    db_type = str(getattr(data_source, "db_type", "") or "").strip().lower()
+    if db_type in _IDENTIFIER_QUOTES or db_type in _DEFAULT_SCHEMA_BY_DIALECT:
+        return db_type
+    config = getattr(data_source, "connection_config", None)
+    if isinstance(config, dict):
+        for key in ("db_type", "type", "dialect", "driver", "database_type"):
+            candidate = str(config.get(key) or "").strip().lower()
+            if candidate in _IDENTIFIER_QUOTES or candidate in _DEFAULT_SCHEMA_BY_DIALECT:
+                return candidate
+    return db_type or source_type or "postgres"
 
 
 class ChartService:
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    # =========================================================
+    # SQL DIALECT
+    # =========================================================
+    @staticmethod
+    @contextmanager
+    def _sql_dialect(dialect: str):
+        """Build SQL for ``dialect`` for the duration of the block."""
+        token = _SQL_DIALECT.set(str(dialect or "postgres").strip().lower())
+        try:
+            yield
+        finally:
+            _SQL_DIALECT.reset(token)
+
+    @staticmethod
+    def _current_dialect() -> str:
+        return _SQL_DIALECT.get()
+
+    @staticmethod
+    def _bind_sql_dialect(data_source: Any) -> str:
+        """Build SQL for ``data_source``'s engine from here on.
+
+        Deliberately not scoped to a block: the builders are long and every one
+        of them binds on entry, so there is no window in which a stale dialect
+        can be read. A ContextVar set is confined to the running task — asyncio
+        copies the context per task — so one request cannot change another's.
+        """
+        dialect = _resolve_chart_dialect(data_source)
+        _SQL_DIALECT.set(dialect)
+        return dialect
+
+    @classmethod
+    def _default_schema(cls) -> Optional[str]:
+        """The fallback schema for the current dialect, or None if it has none."""
+        return _DEFAULT_SCHEMA_BY_DIALECT.get(cls._current_dialect(), _DEFAULT_SCHEMA)
+
+    @classmethod
+    def _quote_raw_identifier(cls, part: str) -> str:
+        """Quote one identifier part for the current dialect, escaping the quote.
+
+        Takes the part as given: callers that need validation run it through
+        `_is_valid_field_name` first. Escaping still happens here so this
+        primitive is never the weak link if a caller forgets.
+        """
+        open_q, close_q = _IDENTIFIER_QUOTES.get(
+            cls._current_dialect(), _DEFAULT_IDENTIFIER_QUOTE
+        )
+        return f"{open_q}{str(part).replace(close_q, close_q * 2)}{close_q}"
 
     @staticmethod
     def _sample_duckdb_file_available() -> bool:
@@ -164,19 +271,26 @@ class ChartService:
         res = await self.db.execute(stmt)
         return res.scalars().all()
 
-    def _resolve_table_and_schema(self, schema_info: Any) -> tuple[Optional[str], str]:
-        """Resolves (table, schema) from schema_info, supporting various formats."""
+    def _resolve_table_and_schema(
+        self, schema_info: Any
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Resolves (table, schema) from schema_info, supporting various formats.
+
+        The schema is None when the source names none and the dialect has no
+        default one to fall back on.
+        """
+        default_schema = self._default_schema()
         if not schema_info:
-            return None, "public"
+            return None, default_schema
 
         schema_info = self._schema_dict(schema_info)
         
         if not isinstance(schema_info, dict):
-            return None, "public"
+            return None, default_schema
         
         # 1. Direct 'table' and 'schema' keys
         table = schema_info.get("table")
-        schema = schema_info.get("schema", "public")
+        schema = schema_info.get("schema") or default_schema
         if table:
             return table, schema
             
@@ -188,9 +302,9 @@ class ChartService:
                 if t.get("active") or t.get("is_active"):
                     target = t
                     break
-            return target.get("name"), target.get("schema") or schema_info.get("schema") or "public"
+            return target.get("name"), target.get("schema") or schema_info.get("schema") or default_schema
             
-        return None, "public"
+        return None, default_schema
 
     def _schema_dict(self, schema_info: Any) -> Dict[str, Any]:
         if isinstance(schema_info, dict):
@@ -203,7 +317,9 @@ class ChartService:
                 return {}
         return {}
 
-    def _resolve_table_from_chart(self, chart_query: Optional[Dict], schema_info: Any) -> tuple[Optional[str], str]:
+    def _resolve_table_from_chart(
+        self, chart_query: Optional[Dict], schema_info: Any
+    ) -> tuple[Optional[str], Optional[str]]:
         """Prefer explicit chart_query.tableName over schema default table."""
         cq = chart_query or {}
         explicit = cq.get("tableName")
@@ -211,8 +327,11 @@ class ChartService:
             raw = explicit.strip().strip('"')
             if "." in raw:
                 schema_part, table_part = raw.split(".", 1)
-                return self._canonical_schema_table_name(table_part.strip(), schema_info), schema_part.strip() or "public"
-            return self._canonical_schema_table_name(raw, schema_info), "public"
+                return (
+                    self._canonical_schema_table_name(table_part.strip(), schema_info),
+                    schema_part.strip() or self._default_schema(),
+                )
+            return self._canonical_schema_table_name(raw, schema_info), self._default_schema()
         return self._resolve_table_and_schema(schema_info)
 
     def _is_valid_table_reference(self, ref: str) -> bool:
@@ -222,6 +341,17 @@ class ChartService:
 
     def _table_alias_from_ref(self, ref: str) -> str:
         return ref.strip().split(".")[-1]
+
+    @staticmethod
+    def _qualified_table_ref(schema: Optional[str], table: str) -> str:
+        """``schema.table``, or just ``table`` when there is no schema.
+
+        MySQL resolves an unqualified name against the connected database, so
+        an absent schema must stay absent rather than become a made-up prefix.
+        """
+        clean_schema = str(schema or "").strip()
+        clean_table = str(table or "").strip()
+        return f"{clean_schema}.{clean_table}" if clean_schema else clean_table
 
     def _quote_table_reference(self, ref: str) -> str:
         """Quote schema/table references for SQL engines such as PostgreSQL.
@@ -304,7 +434,9 @@ class ChartService:
             if not isinstance(table, dict):
                 continue
             name = str(table.get("name") or "").strip()
-            schema = str(table.get("schema") or schema_info.get("schema") or "public").strip()
+            schema = str(
+                table.get("schema") or schema_info.get("schema") or self._default_schema() or ""
+            ).strip()
             if not name:
                 continue
             if self._is_valid_table_reference(name):
@@ -323,15 +455,15 @@ class ChartService:
         parts = [part.strip().strip('"').strip("`") for part in str(ref or "").split(".")]
         return ".".join(part for part in parts if part)
 
-    def _base_table_schema_name(self, schema_info: Any, table_name: str) -> str:
+    def _base_table_schema_name(self, schema_info: Any, table_name: str) -> Optional[str]:
         schema_info = self._schema_dict(schema_info)
         wanted = self._bare_table_name(table_name).lower()
         for table in schema_info.get("tables") or []:
             if not isinstance(table, dict) or not table.get("name"):
                 continue
             if self._bare_table_name(table.get("name")).lower() == wanted:
-                return str(table.get("schema") or schema_info.get("schema") or "public")
-        return str(schema_info.get("schema") or "public")
+                return table.get("schema") or schema_info.get("schema") or self._default_schema()
+        return schema_info.get("schema") or self._default_schema()
 
     def _rewrite_sql_fk_display_labels(self, sql: str, schema_info: Any) -> str:
         """Rewrite simple saved/compiled SQL FK groupings to friendly labels.
@@ -367,7 +499,9 @@ class ChartService:
             return sql
 
         base_schema = self._base_table_schema_name(schema_info, base_table)
-        from_sql = self._format_table_reference(f"{base_schema}.{base_table}", base_table)
+        from_sql = self._format_table_reference(
+            self._qualified_table_ref(base_schema, base_table), base_table
+        )
         join_sql = self._format_table_reference(str(join["table"]), str(join.get("alias") or join["table"]))
         on_sql = f"{self._quote_identifier(on['left'])} = {self._quote_identifier(on['right'])}"
         rewritten = sql[:from_match.start()] + f"FROM {from_sql} LEFT JOIN {join_sql} ON {on_sql}" + sql[from_match.end():]
@@ -601,8 +735,8 @@ class ChartService:
         }
         join: Optional[Dict[str, Any]] = None
         if target_name.lower() not in joined:
-            schema_name = str(target_table.get("schema") or schema_info.get("schema") or "public").strip()
-            table_ref = f"{schema_name}.{target_name}" if schema_name else target_name
+            schema_name = target_table.get("schema") or schema_info.get("schema") or self._default_schema()
+            table_ref = self._qualified_table_ref(schema_name, target_name)
             join = {
                 "table": table_ref,
                 "alias": target_name,
@@ -1052,7 +1186,7 @@ class ChartService:
     # =========================================================
     # EXECUTE CHART (DB OR FILE)
     # =========================================================
-    async def execute(self, chart: Chart) -> Dict[str, Any]:
+    async def execute(self, chart: Chart, *, identity: QueryAccess = None) -> Dict[str, Any]:
         if chart.chart_type == 'text':
             return {"x": [], "y": [], "series": []}
 
@@ -1064,8 +1198,10 @@ class ChartService:
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")
         if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip():
-            result = await self._execute_with_sample_sql(chart, compiled_sql)
-            return await self._finalize_stat_result(chart, result)
+            result = await self._execute_with_sample_sql(
+                chart, compiled_sql, identity=identity
+            )
+            return await self._finalize_stat_result(chart, result, identity=identity)
 
         chart_query = chart.chart_query or {}
         # Frozen query-editor snapshot (Power BI "pin visual" / Metabase static card style)
@@ -1075,7 +1211,7 @@ class ChartService:
             if snap is not None:
                 rows, _cols = snap
                 result = self._map_sql_rows_to_chart_data(rows, chart.chart_type, chart_query)
-                return await self._finalize_stat_result(chart, result)
+                return await self._finalize_stat_result(chart, result, identity=identity)
 
         # Prefer durable saved_query_id over chart_options.sample_sql so edits in
         # Query Editor refresh the widget (chat pin used to stamp both).
@@ -1083,8 +1219,10 @@ class ChartService:
         if saved_query_id:
             saved_sql = await self._load_saved_query_sql(str(saved_query_id))
             if saved_sql:
-                result = await self._execute_saved_query_chart(chart, saved_sql)
-                return await self._finalize_stat_result(chart, result)
+                result = await self._execute_saved_query_chart(
+                    chart, saved_sql, identity=identity
+                )
+                return await self._finalize_stat_result(chart, result, identity=identity)
             raise ValueError(
                 f"Saved query '{saved_query_id}' was not found or has no SQL — "
                 "re-bind the chart from Query Editor or pick another saved query."
@@ -1100,8 +1238,10 @@ class ChartService:
                 chart_options = {}
         sample_sql = chart_options.get("sample_sql") if isinstance(chart_options, dict) else None
         if sample_sql and isinstance(sample_sql, str) and sample_sql.strip():
-            result = await self._execute_with_sample_sql(chart, sample_sql)
-            return await self._finalize_stat_result(chart, result)
+            result = await self._execute_with_sample_sql(
+                chart, sample_sql, identity=identity
+            )
+            return await self._finalize_stat_result(chart, result, identity=identity)
 
         chart_query = chart.chart_query or {}
         filters = chart_query.get("filters", [])
@@ -1197,14 +1337,16 @@ class ChartService:
             if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
                 return self._sample_template_fallback_result(chart)
 
+            self._bind_sql_dialect(data_source)
+
             # Lazily fetch schema for databases/sample_duckdb if missing
             await self._ensure_data_source_schema(data_source)
 
             if data_source.type == "file":
-                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
             else:
                 try:
-                    return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit)
+                    return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
                 except Exception:
                     if data_source.type == "sample_duckdb":
                         return self._sample_template_fallback_result(chart)
@@ -1222,6 +1364,8 @@ class ChartService:
 
         if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
             return self._sample_template_fallback_result(chart)
+
+        self._bind_sql_dialect(data_source)
 
         # Lazily fetch schema for databases/sample_duckdb if missing
         await self._ensure_data_source_schema(data_source)
@@ -1258,7 +1402,10 @@ class ChartService:
                     filters=filters, metric_filters=metric_filters,
                     limit=limit, series_limit=series_limit,
                     chart_query=chart_query,
+                    identity=identity,
                 )
+            except (RowSecurityDenied, RowSecurityIdentityRequired):
+                raise
             except Exception as file_err:
                 logger.warning("File MultiEngine chart path failed, falling back: %s", file_err)
                 has_joined_query = bool(chart_query.get("joins"))
@@ -1289,6 +1436,7 @@ class ChartService:
                     limit=limit,
                     series_limit=series_limit,
                     chart_query=chart_query,
+                    identity=identity,
                 )
             except Exception:
                 if data_source.type == "sample_duckdb":
@@ -1308,6 +1456,7 @@ class ChartService:
             result,
             filters=filters,
             chart_options=chart_options if isinstance(chart_options, dict) else {},
+            identity=identity,
         )
 
     async def _finalize_stat_result(
@@ -1316,6 +1465,7 @@ class ChartService:
         result: Dict[str, Any],
         filters: Optional[List[Dict[str, Any]]] = None,
         chart_options: Optional[Dict[str, Any]] = None,
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
         """Normalize stat payloads and apply calendar PoP when configured."""
         if chart.chart_type != "stat" or not isinstance(result, dict):
@@ -1339,7 +1489,9 @@ class ChartService:
             return result
 
         filt = filters if filters is not None else (cq.get("filters") or [])
-        return await self._apply_stat_period_comparison(chart, result, filt, opts)
+        return await self._apply_stat_period_comparison(
+            chart, result, filt, opts, identity=identity
+        )
 
     async def _apply_stat_period_comparison(
         self,
@@ -1347,6 +1499,7 @@ class ChartService:
         result: Dict[str, Any],
         filters: List[Dict[str, Any]],
         chart_options: Dict[str, Any],
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
         """Re-query with shifted date filters for WoW/MoM/QoQ/YoY when possible."""
         from src.core.time_intelligence import (
@@ -1378,7 +1531,7 @@ class ChartService:
             pop_query = {**(dict(orig_query) if isinstance(orig_query, dict) else {}), "filters": shifted, "_skip_pop": True}
             chart.chart_query = pop_query
             try:
-                comp = await self.execute(chart)
+                comp = await self.execute(chart, identity=identity)
             finally:
                 chart.chart_query = orig_query
             if isinstance(comp, dict) and comp.get("value") is not None:
@@ -1394,9 +1547,10 @@ class ChartService:
     # =========================================================
     # SCATTER EXECUTION
     # =========================================================
-    async def _execute_scatter_db(self, data_source: DataSource, x_metrics: List[Dict], y_metrics: List[Dict], legend_field: Optional[str] = None, filters: List[Dict] = [], metric_filters: List[Dict] = [], limit: int = 5000, series_limit: Optional[int] = None) -> Dict[str, Any]:
+    async def _execute_scatter_db(self, data_source: DataSource, x_metrics: List[Dict], y_metrics: List[Dict], legend_field: Optional[str] = None, filters: List[Dict] = [], metric_filters: List[Dict] = [], limit: int = 5000, series_limit: Optional[int] = None, identity: QueryAccess = None) -> Dict[str, Any]:
         if not x_metrics or not y_metrics: return {"series": []}
-        
+
+        self._bind_sql_dialect(data_source)
         xm, ym = x_metrics[0], y_metrics[0]
         x_field, y_field = xm.get("field"), ym.get("field")
         x_agg, y_agg = xm.get("aggregation", "none"), ym.get("aggregation", "none")
@@ -1437,7 +1591,9 @@ class ChartService:
         if not table:
             raise ValueError("Table name missing in data source schema")
 
-        table_full_name = self._quote_table_reference(f"{schema}.{table}")
+        table_full_name = self._quote_table_reference(
+            self._qualified_table_ref(schema, table)
+        )
         where_clause = self._apply_filters_db(filters)
         having_clause = self._apply_metric_filters_db(metric_filters)
         group_by_clause = f"GROUP BY {', '.join(set(group_by))}" if group_by else ""
@@ -1458,7 +1614,7 @@ class ChartService:
 
         sql = self._quote_known_table_refs_in_sql(sql, data_source.schema or {})
         multi = get_multi_engine_query_service()
-        exec_res = await multi.execute_query(sql, ds_dict)
+        exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
 
         if not exec_res.get("success"):
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
@@ -1580,7 +1736,7 @@ class ChartService:
     # =========================================================
     # SAMPLE SQL EXECUTION (template charts with JOINs)
     # =========================================================
-    async def _execute_with_sample_sql(self, chart: Chart, sample_sql: str) -> Dict[str, Any]:
+    async def _execute_with_sample_sql(self, chart: Chart, sample_sql: str, *, identity: QueryAccess = None) -> Dict[str, Any]:
         chart_query = chart.chart_query or {}
         filters = chart_query.get("filters") or []
         metric_filters = chart_query.get("metricFilters") or []
@@ -1619,7 +1775,7 @@ class ChartService:
         }
 
         multi = get_multi_engine_query_service()
-        exec_res = await multi.execute_query(sql, ds_dict)
+        exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
         if not exec_res.get("success"):
             if data_source.type == "sample_duckdb":
                 return self._sample_template_fallback_result(chart)
@@ -1629,7 +1785,7 @@ class ChartService:
         rows = self._sort_and_limit_sql_rows(rows, chart.chart_query or {}, chart.chart_type)
         return self._map_sql_rows_to_chart_data(rows, chart.chart_type, chart.chart_query or {})
 
-    async def _execute_saved_query_chart(self, chart: Chart, saved_sql: str) -> Dict[str, Any]:
+    async def _execute_saved_query_chart(self, chart: Chart, saved_sql: str, *, identity: QueryAccess = None) -> Dict[str, Any]:
         """
         Bind a saved SQL query as a virtual table (industry custom-SQL pattern).
 
@@ -1644,7 +1800,9 @@ class ChartService:
         has_mapping = bool(x_field) or bool(y_metrics) or chart.chart_type in ("stat", "gauge")
 
         if not has_mapping:
-            return await self._execute_with_sample_sql(chart, saved_sql)
+            return await self._execute_with_sample_sql(
+                chart, saved_sql, identity=identity
+            )
 
         # Prefer re-aggregation on the subquery when measures request real aggs.
         needs_agg = False
@@ -1658,7 +1816,9 @@ class ChartService:
 
         if not needs_agg and chart.chart_type not in ("stat", "gauge"):
             # Raw projected columns from the saved result — map by field names.
-            raw = await self._execute_with_sample_sql(chart, saved_sql)
+            raw = await self._execute_with_sample_sql(
+                chart, saved_sql, identity=identity
+            )
             # _execute_with_sample_sql already mapped; if fields exist, remap.
             return raw
 
@@ -1718,7 +1878,7 @@ class ChartService:
                 "file_path": data_source.file_path,
             }
             multi = get_multi_engine_query_service()
-            exec_res = await multi.execute_query(sql_exec, ds_dict)
+            exec_res = await multi.execute_query(sql_exec, ds_dict, identity=identity)
             if not exec_res.get("success"):
                 raise Exception(f"Query execution failed: {exec_res.get('error')}")
             rows = exec_res.get("data", []) or []
@@ -1745,6 +1905,7 @@ class ChartService:
             series_limit=chart_query.get("seriesLimit"),
             chart_query={**chart_query, "tableName": "_aicser_saved", "joins": []},
             from_clause_override=from_clause,
+            identity=identity,
         )
 
     def _map_sql_rows_to_chart_data(
@@ -2004,7 +2165,9 @@ class ChartService:
         series_limit: Optional[int] = None,
         chart_query: Optional[Dict] = None,
         from_clause_override: Optional[str] = None,
+        identity: QueryAccess = None,
     ) -> Dict[str, Any]:
+        self._bind_sql_dialect(data_source)
         chart_query = chart_query or {}
         schema_info = data_source.schema or {}
         joins = chart_query.get("joins") if isinstance(chart_query.get("joins"), list) else []
@@ -2022,7 +2185,9 @@ class ChartService:
             display_dimension = self._infer_fk_display_dimension(schema_info, self._bare_table_name(table), x_field, joins)
             if display_dimension and display_dimension.get("join"):
                 joins = [*joins, display_dimension["join"]]
-            from_clause = self._build_from_clause(f"{schema}.{table}", joins)
+            from_clause = self._build_from_clause(
+                self._qualified_table_ref(schema, table), joins
+            )
         
         # USE MultiEngineQueryService for external databases
         ds_dict = {
@@ -2050,7 +2215,7 @@ class ChartService:
             where_clause = self._apply_filters_db(filters)
             having_clause = self._apply_metric_filters_db(metric_filters)
             sql = f"SELECT {', '.join(select_fields)} FROM {from_clause} {where_clause} {having_clause}"
-            exec_res = await multi.execute_query(sql, ds_dict)
+            exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
             if not exec_res.get("success"):
                 raise Exception(f"Query execution failed: {exec_res.get('error')}")
             
@@ -2143,7 +2308,7 @@ class ChartService:
         sql = f"SELECT {select_clause} FROM {from_clause} {where_clause} {group_by_clause} {having_clause} {order_clause} LIMIT {limit}"
 
 
-        exec_res = await multi.execute_query(sql, ds_dict)
+        exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
         if not exec_res.get("success"):
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
             
@@ -2495,11 +2660,16 @@ class ChartService:
         return bool(re.match(r"^[A-Za-z0-9_][A-Za-z0-9_ .-]*$", field_name.strip()))
 
     def _quote_identifier(self, identifier: str) -> str:
-        """Quote a validated table/column identifier, preserving dotted paths."""
+        """Quote a validated table/column identifier, preserving dotted paths.
+
+        Quoting follows the dialect the current statement is being built for
+        (see `_sql_dialect`), so the same builder serves PostgreSQL, MySQL and
+        T-SQL.
+        """
         if not self._is_valid_field_name(identifier):
             raise ValueError(f"Invalid field name: {identifier}")
         parts = [part.strip() for part in str(identifier).split(".") if part.strip()]
-        return ".".join(f'"{part.replace(chr(34), chr(34) + chr(34))}"' for part in parts)
+        return ".".join(self._quote_raw_identifier(part) for part in parts)
 
     def _projected_sql_columns(self, sql: str) -> set[str]:
         """Best-effort output-column extraction for saved SQL filter safety."""

@@ -10,7 +10,7 @@ import json
 import re
 import os
 import tempfile
-from typing import List, Dict, Any, Optional, Union
+from typing import Callable, List, Dict, Any, Optional, Union
 from datetime import datetime, timezone
 import time
 from fastapi import (
@@ -103,6 +103,9 @@ from src.modules.data.schemas import (
     DataSourceRLSPolicyListResponse,
     DataSourceRLSPolicyMutationResponse,
     DataSourceRLSPolicyRequest,
+    DataSourceCLSPolicyListResponse,
+    DataSourceCLSPolicyMutationResponse,
+    DataSourceCLSPolicyRequest,
     DataSourceRLSAttributesResponse,
     DataSourceRLSProjectAttributeUpdateRequest,
     DataSourceRLSPreviewRequest,
@@ -118,7 +121,7 @@ from src.modules.data.services.data_source_access_service import (
     DATA_SOURCE_PERMISSION_VIEW,
     DataSourceAccessService,
 )
-from src.modules.data.utils.masking import mask_connection_info, mask_query_result_rows
+from src.modules.data.utils.masking import mask_connection_info
 from src.modules.project.service import ProjectService
 
 # OrganizationService removed - organization context removed
@@ -147,6 +150,81 @@ def _schema_columns(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if isinstance(tables, list) and tables and isinstance(tables[0], dict):
         return tables[0].get("columns") or []
     return schema.get("columns") or []
+
+
+def _schema_column_name(column: Any) -> str:
+    if isinstance(column, dict):
+        for key in ("name", "column_name", "field", "field_name", "id"):
+            value = column.get(key)
+            if value:
+                return str(value).strip()
+        return ""
+    return str(column or "").strip()
+
+
+def _schema_tables(schema: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not schema or not isinstance(schema, dict):
+        return []
+
+    tables = schema.get("tables")
+    if isinstance(tables, list):
+        return [table for table in tables if isinstance(table, dict)]
+
+    nested_tables: List[Dict[str, Any]] = []
+    schemas = schema.get("schemas")
+    if isinstance(schemas, list):
+        for schema_entry in schemas:
+            if not isinstance(schema_entry, dict):
+                continue
+            for table in schema_entry.get("tables") or []:
+                if isinstance(table, dict):
+                    nested_tables.append(table)
+    if nested_tables:
+        return nested_tables
+
+    columns = schema.get("columns")
+    if isinstance(columns, list):
+        return [
+            {
+                "name": schema.get("table") or schema.get("name") or "data",
+                "columns": columns,
+            }
+        ]
+
+    return []
+
+
+_CLS_SENSITIVE_COLUMN_KEYWORDS = frozenset(
+    {
+        "password",
+        "passwd",
+        "passcode",
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "apikey",
+        "private_key",
+        "salary",
+        "wage",
+        "payroll",
+        "compensation",
+        "income",
+    }
+)
+
+
+def _is_sensitive_cls_column_name(name: str, pii_matcher: Callable[[str], bool]) -> bool:
+    raw = str(name or "")
+    normalized = raw.replace("_", "").replace(" ", "").replace("-", "").lower()
+    if pii_matcher(raw):
+        return True
+    for keyword in _CLS_SENSITIVE_COLUMN_KEYWORDS:
+        key = keyword.replace("_", "").replace(" ", "").replace("-", "").lower()
+        if key and key in normalized:
+            return True
+    return False
 
 
 def _safe_connection_config(raw: Any) -> Optional[Dict[str, Any]]:
@@ -213,6 +291,9 @@ def _data_source_grant_payload(grant: Any) -> Dict[str, Any]:
         "permissions": list(grant.permissions or []),
         "rls_policy_id": str(grant.rls_policy_id)
         if getattr(grant, "rls_policy_id", None)
+        else None,
+        "cls_policy_id": str(grant.cls_policy_id)
+        if getattr(grant, "cls_policy_id", None)
         else None,
         "created_by": str(grant.created_by)
         if getattr(grant, "created_by", None)
@@ -1753,6 +1834,7 @@ async def upsert_data_source_access_grant(
             grantee_id=request.grantee_id,
             permissions=request.permissions,
             rls_policy_id=request.rls_policy_id,
+            cls_policy_id=request.cls_policy_id,
             created_by=user_id,
             session=db,
         )
@@ -2008,6 +2090,254 @@ async def delete_data_source_rls_policy(
 
 
 @router.get(
+    "/sources/{data_source_id}/cls-policies",
+    response_model=DataSourceCLSPolicyListResponse,
+)
+async def list_data_source_cls_policies(
+    data_source_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """List active column-level security (CLS) policies for a data source."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source CLS policies require enterprise edition",
+        )
+    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+
+    user_id = _authenticated_user_id(current_token)
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    policy_rows = await DataSourceCLSService.list_policies(data_source_id, session=db)
+    policies = [
+        DataSourceCLSService.serialize_policy(policy, rules)
+        for policy, rules in policy_rows
+    ]
+    return {
+        "success": True,
+        "policies": policies,
+        "count": len(policies),
+    }
+
+
+@router.post(
+    "/sources/{data_source_id}/cls-policies",
+    response_model=DataSourceCLSPolicyMutationResponse,
+)
+async def create_data_source_cls_policy(
+    data_source_id: str,
+    request: DataSourceCLSPolicyRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Create a first-class CLS policy for a data source."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source CLS policies require enterprise edition",
+        )
+    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+
+    user_id = _authenticated_user_id(current_token)
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    try:
+        policy, rules = await DataSourceCLSService.create_policy(
+            data_source_id=data_source_id,
+            organization_id=str(data_source.organization_id)
+            if getattr(data_source, "organization_id", None)
+            else None,
+            name=request.name,
+            description=request.description,
+            enabled=request.enabled,
+            settings=request.settings,
+            rules=request.rules,
+            created_by=user_id,
+            session=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    await db.commit()
+    invalidate_query_result_cache()
+    return {
+        "success": True,
+        "policy": DataSourceCLSService.serialize_policy(policy, rules),
+        "message": "Data source CLS policy created",
+    }
+
+
+@router.post("/sources/{data_source_id}/cls-policies/suggest")
+async def suggest_data_source_cls_policy(
+    data_source_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Draft CLS rules from sensitive-looking column names without saving them."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source CLS policies require enterprise edition",
+        )
+    from src.modules.data.services.pii_scrubber import _is_pii_column_name
+
+    user_id = _authenticated_user_id(current_token)
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+
+    schema = getattr(data_source, "schema", None)
+    if isinstance(schema, str):
+        try:
+            schema = json.loads(schema)
+        except (json.JSONDecodeError, TypeError):
+            schema = {}
+    if not isinstance(schema, dict):
+        schema = {}
+
+    rules = []
+    for table in _schema_tables(schema):
+        table_name = str(table.get("name") or "data").strip()
+        if not table_name:
+            continue
+        for column in table.get("columns") or []:
+            column_name = _schema_column_name(column)
+            if column_name and _is_sensitive_cls_column_name(
+                column_name, _is_pii_column_name
+            ):
+                rules.append(
+                    {
+                        "table_name": table_name,
+                        "column_name": column_name,
+                        "action": "mask",
+                        "mask_strategy": "fixed",
+                        "mask_config": {},
+                        "sort_order": len(rules),
+                    }
+                )
+
+    return {"success": True, "rules": rules, "count": len(rules)}
+
+
+@router.put(
+    "/sources/{data_source_id}/cls-policies/{policy_id}",
+    response_model=DataSourceCLSPolicyMutationResponse,
+)
+@router.patch(
+    "/sources/{data_source_id}/cls-policies/{policy_id}",
+    response_model=DataSourceCLSPolicyMutationResponse,
+)
+async def update_data_source_cls_policy(
+    data_source_id: str,
+    policy_id: str,
+    request: DataSourceCLSPolicyRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Replace an existing data-source CLS policy and its rules."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source CLS policies require enterprise edition",
+        )
+    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+
+    user_id = _authenticated_user_id(current_token)
+    await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    try:
+        updated = await DataSourceCLSService.update_policy(
+            data_source_id=data_source_id,
+            policy_id=policy_id,
+            name=request.name,
+            description=request.description,
+            enabled=request.enabled,
+            settings=request.settings,
+            rules=request.rules,
+            session=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data source CLS policy not found",
+        )
+    policy, rules = updated
+    await db.commit()
+    invalidate_query_result_cache()
+    return {
+        "success": True,
+        "policy": DataSourceCLSService.serialize_policy(policy, rules),
+        "message": "Data source CLS policy updated",
+    }
+
+
+@router.delete(
+    "/sources/{data_source_id}/cls-policies/{policy_id}",
+    response_model=DataSourceCLSPolicyMutationResponse,
+)
+async def delete_data_source_cls_policy(
+    data_source_id: str,
+    policy_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Soft-delete a data-source CLS policy."""
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source CLS policies require enterprise edition",
+        )
+    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+
+    user_id = _authenticated_user_id(current_token)
+    await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_MANAGE,
+    )
+    deleted = await DataSourceCLSService.delete_policy(
+        data_source_id=data_source_id,
+        policy_id=policy_id,
+        session=db,
+    )
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data source CLS policy not found",
+        )
+    await db.commit()
+    invalidate_query_result_cache()
+    return {
+        "success": True,
+        "message": "Data source CLS policy deleted",
+    }
+
+
+@router.get(
     "/sources/{data_source_id}/rls-attributes/project/{project_id}",
     response_model=DataSourceRLSAttributesResponse,
 )
@@ -2202,6 +2532,217 @@ async def preview_data_source_rls_policy(
     }
 
 
+@router.get("/sources/{data_source_id}/my-row-access")
+async def get_my_data_source_row_access(
+    data_source_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Explain the AUTHENTICATED CALLER'S OWN row-level access for a data source.
+
+    This deliberately mirrors ``DataSourceRLSEnforcementService.apply_sql_rls``
+    rather than the admin RLS endpoints: it only requires QUERY permission (the
+    permission every querying user already holds), and it only ever resolves
+    grants, policies, and rules that are reachable from the CALLER'S OWN active
+    grants. It never accepts a user id, project id, or "simulate as" parameter —
+    doing so would silently recreate the admin endpoint behind a weaker check.
+    """
+    if not is_ee_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Data source RLS policies require enterprise edition",
+        )
+    from ee.modules.data.services.data_source_rls_enforcement_service import (
+        DataSourceRLSEnforcementService,
+    )
+    from ee.modules.data.services.cls_rule_resolver import resolve_decisions
+    from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+    from src.modules.data.models import (
+        DataSourceCLSPolicy,
+        DataSourceCLSRule,
+        DataSourceRLSPolicy,
+        DataSourceRLSRule,
+    )
+
+    user_id = _authenticated_user_id(current_token)
+    data_source = await _require_data_source_permission(
+        db,
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_QUERY,
+    )
+
+    user_payload = current_token if isinstance(current_token, dict) else None
+    organization_id = str((user_payload or {}).get("organization_id") or "") or None
+    project_id = str((user_payload or {}).get("project_id") or "").strip() or None
+
+    grants = await DataSourceAccessService.get_applicable_grants(
+        user_id,
+        data_source_id,
+        DATA_SOURCE_PERMISSION_QUERY,
+        project_id=project_id,
+        session=db,
+    )
+
+    empty_response = {
+        "success": True,
+        "unrestricted": True,
+        "policies": [],
+        "denies_ungoverned_tables": False,
+        "columns": {"denied": [], "masked": []},
+    }
+
+    if not grants:
+        return empty_response
+
+    column_payload = {"denied": [], "masked": []}
+    cls_policy_ids = sorted(
+        {grant.cls_policy_id for grant in grants if getattr(grant, "cls_policy_id", None)}
+    )
+    if cls_policy_ids:
+        cls_policies_result = await db.execute(
+            sa.select(DataSourceCLSPolicy).where(
+                DataSourceCLSPolicy.id.in_(cls_policy_ids),
+                DataSourceCLSPolicy.data_source_id == data_source_id,
+                DataSourceCLSPolicy.is_active == True,
+                DataSourceCLSPolicy.is_deleted == False,
+            )
+        )
+        cls_policies = list(cls_policies_result.scalars().all())
+        found_cls_policy_ids = {policy.id for policy in cls_policies}
+        if found_cls_policy_ids != set(cls_policy_ids):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Your access to this data source refers to a column policy that no longer exists.",
+            )
+
+        cls_rules_result = await db.execute(
+            sa.select(DataSourceCLSRule)
+            .where(
+                DataSourceCLSRule.policy_id.in_([policy.id for policy in cls_policies]),
+                DataSourceCLSRule.is_active == True,
+                DataSourceCLSRule.is_deleted == False,
+            )
+            .order_by(
+                DataSourceCLSRule.sort_order.asc(), DataSourceCLSRule.created_at.asc()
+            )
+        )
+        cls_rules_by_policy: dict[Any, list[Any]] = {
+            policy.id: [] for policy in cls_policies
+        }
+        for rule in cls_rules_result.scalars().all():
+            cls_rules_by_policy.setdefault(rule.policy_id, []).append(rule)
+
+        decisions = resolve_decisions(cls_policies, cls_rules_by_policy)
+        denied = []
+        masked = []
+        for (table, column), decision in sorted(decisions.items()):
+            qualified = f"{table}.{column}"
+            if decision.action == "deny":
+                denied.append(qualified)
+            elif decision.action == "mask":
+                masked.append({"column": qualified, "strategy": decision.strategy})
+        column_payload = {"denied": denied, "masked": masked}
+
+    # Mirror apply_sql_rls exactly for the row half: any grant of the caller's
+    # own that carries no rls_policy_id means the caller's row access is
+    # unrestricted. Column policies are independent and still reported above.
+    if any(not getattr(grant, "rls_policy_id", None) for grant in grants):
+        return {
+            **empty_response,
+            "columns": column_payload,
+        }
+
+    policy_ids = sorted(
+        {grant.rls_policy_id for grant in grants if grant.rls_policy_id}
+    )
+    if not policy_ids:
+        return {
+            **empty_response,
+            "columns": column_payload,
+        }
+
+    policies_result = await db.execute(
+        sa.select(DataSourceRLSPolicy).where(
+            DataSourceRLSPolicy.id.in_(policy_ids),
+            DataSourceRLSPolicy.data_source_id == data_source_id,
+            DataSourceRLSPolicy.is_active == True,
+            DataSourceRLSPolicy.is_deleted == False,
+        )
+    )
+    policies = list(policies_result.scalars().all())
+    found_policy_ids = {policy.id for policy in policies}
+    if found_policy_ids != set(policy_ids):
+        # A grant names a policy that no longer exists. Reporting "unrestricted"
+        # here would turn a deleted policy into open access in the explanation
+        # UI, even though the query path itself denies the query outright.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Your access to this data source refers to a row filter policy that no longer exists.",
+        )
+
+    rules_result = await db.execute(
+        sa.select(DataSourceRLSRule)
+        .where(
+            DataSourceRLSRule.policy_id.in_([policy.id for policy in policies]),
+            DataSourceRLSRule.is_active == True,
+            DataSourceRLSRule.is_deleted == False,
+        )
+        .order_by(
+            DataSourceRLSRule.sort_order.asc(), DataSourceRLSRule.created_at.asc()
+        )
+    )
+    rules_by_policy: dict[Any, list[Any]] = {policy.id: [] for policy in policies}
+    for rule in rules_result.scalars().all():
+        rules_by_policy.setdefault(rule.policy_id, []).append(rule)
+
+    attrs = await DataSourceRLSEnforcementService._load_user_attributes(
+        user_id,
+        organization_id=organization_id,
+        project_id=project_id,
+        token_payload=user_payload,
+        session=db,
+    )
+    dialect = resolve_dialect(data_source)
+
+    # The combined default-deny flag must be computed exactly the way
+    # apply_sql_rls computes it: across all of the caller's own policies at
+    # once, since default-deny is a property of the whole enforcement pass.
+    _, denies_ungoverned_tables = DataSourceRLSEnforcementService._predicates_by_table(
+        policies, rules_by_policy, attrs, dialect
+    )
+
+    policy_payloads = []
+    for policy in policies:
+        if not policy.enabled:
+            # A disabled policy contributes nothing to enforcement; apply_sql_rls
+            # skips it too, so listing it here would describe a filter that is
+            # not actually applied to this caller's queries.
+            continue
+        policy_predicates, _ = DataSourceRLSEnforcementService._predicates_by_table(
+            [policy], {policy.id: rules_by_policy.get(policy.id, [])}, attrs, dialect
+        )
+        policy_payloads.append(
+            {
+                "id": str(policy.id),
+                "name": policy.name,
+                "default_deny": bool(policy.default_deny),
+                "predicates": [
+                    {"table": table, "sql": sql}
+                    for table, sql in policy_predicates.items()
+                ],
+            }
+        )
+
+    return {
+        "success": True,
+        "unrestricted": False,
+        "policies": policy_payloads,
+        "denies_ungoverned_tables": denies_ungoverned_tables,
+        "columns": column_payload,
+    }
+
+
 # Query data source endpoint (deprecated — use POST /data/query/execute)
 @router.post("/sources/{data_source_id}/query", deprecated=True)
 async def query_data_source(
@@ -2249,7 +2790,19 @@ async def query_data_source(
             "limit": request.limit,
         }
 
-        result = await data_service.query_data_source(data_source_id, query)
+        organization_id = user_payload.get("organization_id") or user_payload.get(
+            "org_id"
+        )
+        project_id = user_payload.get("project_id")
+        identity = QueryIdentity(
+            user_id=str(user_id),
+            organization_id=str(organization_id) if organization_id else None,
+            project_id=str(project_id) if project_id else None,
+            token_payload=user_payload,
+        )
+        result = await data_service.query_data_source(
+            data_source_id, query, identity=identity
+        )
 
         if result["success"]:
             return {
@@ -4489,6 +5042,7 @@ async def list_views(
         data_source = await data_service.get_data_source_by_id(data_source_id)
         if not data_source:
             raise HTTPException(status_code=404, detail="Data source not found")
+        identity = SystemQuery(reason="schema introspection")
 
         # File sources (DuckDB) don't have information_schema.views
         if data_source.get("type") == "file":
@@ -4503,6 +5057,7 @@ async def list_views(
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=identity,
         )
         views = []
         for row in result.get("data", []):
@@ -4520,6 +5075,7 @@ async def list_views(
                     data_source=data_source,
                     engine=QueryEngine.DIRECT_SQL,
                     optimization=False,
+                    identity=identity,
                 )
                 columns = [
                     {
@@ -4566,6 +5122,7 @@ async def list_materialized_views(
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=SystemQuery(reason="schema introspection"),
         )
         mvs = [
             {"schema": r.get("schemaname") or "public", "name": r.get("matviewname")}
@@ -4612,11 +5169,26 @@ async def create_materialized_view(
             f"{request.schema}.{request.name}" if request.schema else request.name
         )
         create_sql = f"CREATE MATERIALIZED VIEW {qualified} AS {request.sql}"
+        user_payload = (
+            current_token
+            if isinstance(current_token, dict)
+            else extract_user_payload(current_token)
+        )
+        organization_id = (user_payload or {}).get("organization_id") or (
+            user_payload or {}
+        ).get("org_id")
+        project_id = (user_payload or {}).get("project_id")
         await multi_engine_service.execute_query(
             query=create_sql,
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=QueryIdentity(
+                user_id=str(user_id),
+                organization_id=str(organization_id) if organization_id else None,
+                project_id=str(project_id) if project_id else None,
+                token_payload=user_payload or {},
+            ),
         )
         return {"success": True, "message": "Materialized view created"}
     except HTTPException:
@@ -4655,6 +5227,7 @@ async def refresh_materialized_view(
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=SystemQuery(reason="materialized view refresh"),
         )
         return {"success": True, "message": "Materialized view refreshed"}
     except HTTPException:
@@ -4693,6 +5266,7 @@ async def drop_materialized_view(
             data_source=data_source,
             engine=QueryEngine.DIRECT_SQL,
             optimization=False,
+            identity=SystemQuery(reason="materialized view refresh"),
         )
         return {"success": True, "message": "Materialized view dropped"}
     except HTTPException:
@@ -4754,6 +5328,7 @@ async def analyze_query(
                 data_source=data_source,
                 engine=QueryEngine.DIRECT_SQL,
                 optimization=False,
+                identity=QueryIdentity(user_id=str(user_id)),
             )
 
             # Many drivers return a single-row JSON plan under a key
@@ -5214,17 +5789,6 @@ async def execute_multi_engine_query(
                     f"⚠️ Result data is not a list, converting: {type(result_data)}"
                 )
                 result["data"] = [result_data] if result_data else []
-
-            masked_data, masked_columns = mask_query_result_rows(
-                result.get("data", []),
-                result.get("columns", []),
-            )
-            if masked_columns:
-                result["data"] = masked_data
-                result["masked_columns"] = masked_columns
-                logger.info(
-                    "🔒 Masked sensitive query result columns: %s", masked_columns
-                )
 
             if not result["data"]:
                 logger.warning(

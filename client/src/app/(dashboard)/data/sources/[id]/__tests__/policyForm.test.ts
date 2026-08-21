@@ -6,7 +6,7 @@ import {
   buildRulePayload,
   columnOptionsFor,
   tableOptionsFor,
-} from '../_components/RLSPolicyModal';
+} from '../_components/policy/policyForm';
 
 const schema = {
   tables: [

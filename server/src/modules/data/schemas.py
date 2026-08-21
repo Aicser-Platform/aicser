@@ -238,6 +238,7 @@ class DataSourceAccessGrantRequest(BaseModel):
         description="Any of: view, query, edit, manage, share",
     )
     rls_policy_id: Optional[str] = None
+    cls_policy_id: Optional[str] = None
 
 
 class DataSourceAccessGrantResponse(BaseModel):
@@ -248,6 +249,7 @@ class DataSourceAccessGrantResponse(BaseModel):
     grantee_id: str
     permissions: List[str]
     rls_policy_id: Optional[str] = None
+    cls_policy_id: Optional[str] = None
     created_by: Optional[str] = None
     is_active: Optional[bool] = True
     created_at: Optional[datetime] = None
@@ -331,6 +333,69 @@ class DataSourceRLSPolicyListResponse(BaseModel):
 class DataSourceRLSPolicyMutationResponse(BaseModel):
     success: bool
     policy: Optional[DataSourceRLSPolicyResponse] = None
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DataSourceCLSRuleRequest(BaseModel):
+    table_name: str
+    column_name: str
+    action: str = Field(..., description="One of: deny, mask")
+    mask_strategy: Optional[str] = Field(
+        default=None,
+        description="Required when action=mask. One of: fixed, partial, hash, null",
+    )
+    mask_config: Dict[str, Any] = Field(default_factory=dict)
+    sort_order: int = 0
+
+
+class DataSourceCLSPolicyRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    enabled: bool = True
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    rules: List[DataSourceCLSRuleRequest] = Field(default_factory=list)
+
+
+class DataSourceCLSRuleResponse(BaseModel):
+    id: str
+    policy_id: str
+    table_name: str
+    column_name: str
+    action: str
+    mask_strategy: Optional[str] = None
+    mask_config: Dict[str, Any] = Field(default_factory=dict)
+    sort_order: int
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceCLSPolicyResponse(BaseModel):
+    id: str
+    organization_id: Optional[str] = None
+    data_source_id: str
+    name: str
+    description: Optional[str] = None
+    enabled: bool
+    settings: Dict[str, Any]
+    created_by: Optional[str] = None
+    rules: List[DataSourceCLSRuleResponse] = Field(default_factory=list)
+    is_active: Optional[bool] = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class DataSourceCLSPolicyListResponse(BaseModel):
+    success: bool
+    policies: List[DataSourceCLSPolicyResponse]
+    count: int
+    error: Optional[str] = None
+
+
+class DataSourceCLSPolicyMutationResponse(BaseModel):
+    success: bool
+    policy: Optional[DataSourceCLSPolicyResponse] = None
     message: Optional[str] = None
     error: Optional[str] = None
 

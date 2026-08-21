@@ -86,6 +86,42 @@ export const useDataSourceRLSPolicies = (id: string | null, enabled = true) => {
   return { policies: data ?? [], error, isLoading, isFetching };
 };
 
+export const useDataSourceCLSPolicies = (id: string | null, enabled = true) => {
+  const { data, error, isLoading, isFetching } = useQuery({
+    queryKey: id ? dataSourceKeys.clsPolicies(id) : dataSourceKeys.clsPolicies(''),
+    queryFn: () => api.listDataSourceCLSPolicies(id!),
+    enabled: Boolean(id && enabled && isEnterpriseEdition),
+    retry: (failureCount, err) => {
+      if (err instanceof ApiError && [400, 401, 403, 404].includes(err.status)) {
+        return false;
+      }
+      return failureCount < 1;
+    },
+    select: (res) => res.policies ?? [],
+  });
+  return { policies: data ?? [], error, isLoading, isFetching };
+};
+
+/**
+ * Caller-scoped row access: the AUTHENTICATED caller's own effective RLS
+ * policies, gated on QUERY permission (not MANAGE/SHARE), so a query-only
+ * user can learn why their own results were filtered.
+ */
+export const useDataSourceMyRowAccess = (id: string | null, enabled = true) => {
+  const { data, error, isLoading, isFetching } = useQuery({
+    queryKey: id ? dataSourceKeys.myRowAccess(id) : dataSourceKeys.myRowAccess(''),
+    queryFn: () => api.getDataSourceMyRowAccess(id!),
+    enabled: Boolean(id && enabled && isEnterpriseEdition),
+    retry: (failureCount, err) => {
+      if (err instanceof ApiError && [400, 401, 403, 404].includes(err.status)) {
+        return false;
+      }
+      return failureCount < 1;
+    },
+  });
+  return { myRowAccess: data ?? null, error, isLoading, isFetching };
+};
+
 export const useCreateDataSource = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -121,6 +157,7 @@ export const useUpsertDataSourceAccessGrant = () => {
     onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: dataSourceKeys.accessGrants(id) });
       qc.invalidateQueries({ queryKey: dataSourceKeys.list(null) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.myRowAccess(id) });
     },
   });
 };
@@ -132,6 +169,7 @@ export const useRevokeDataSourceAccessGrant = () => {
     onSuccess: (_res, { id }) => {
       qc.invalidateQueries({ queryKey: dataSourceKeys.accessGrants(id) });
       qc.invalidateQueries({ queryKey: dataSourceKeys.list(null) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.myRowAccess(id) });
     },
   });
 };
@@ -169,6 +207,48 @@ export const useDeleteDataSourceRLSPolicy = () => {
     },
   });
 };
+
+export const useCreateDataSourceCLSPolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: api.DataSourceCLSPolicyRequest }) =>
+      api.createDataSourceCLSPolicy(id, data),
+    onSuccess: (_res, { id }) => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.clsPolicies(id) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.myRowAccess(id) });
+    },
+  });
+};
+
+export const useUpdateDataSourceCLSPolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, policyId, data }: { id: string; policyId: string; data: api.DataSourceCLSPolicyRequest }) =>
+      api.updateDataSourceCLSPolicy(id, policyId, data),
+    onSuccess: (_res, { id }) => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.clsPolicies(id) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.accessGrants(id) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.myRowAccess(id) });
+    },
+  });
+};
+
+export const useDeleteDataSourceCLSPolicy = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, policyId }: { id: string; policyId: string }) => api.deleteDataSourceCLSPolicy(id, policyId),
+    onSuccess: (_res, { id }) => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.clsPolicies(id) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.accessGrants(id) });
+      qc.invalidateQueries({ queryKey: dataSourceKeys.myRowAccess(id) });
+    },
+  });
+};
+
+export const useSuggestDataSourceCLSPolicy = () =>
+  useMutation({
+    mutationFn: ({ id }: { id: string }) => api.suggestDataSourceCLSPolicy(id),
+  });
 
 export const usePreviewDataSourceRLSPolicy = () =>
   useMutation({

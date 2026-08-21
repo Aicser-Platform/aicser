@@ -23,6 +23,18 @@ export type GrantEffect = {
   rules: DataSourceRLSRule[];
 };
 
+/**
+ * Tag color + copy key for each effect kind, shared by every surface that
+ * renders a grant's effect (the grants table's expanded row, the effective
+ * access drawer) so they read the same way everywhere.
+ */
+export const EFFECT_TONE: Record<GrantEffectKind, { color: string; key: string }> = {
+  metadata_only: { color: 'default', key: 'effect_metadata_only' },
+  all_rows: { color: 'warning', key: 'effect_all_rows' },
+  filtered: { color: 'green', key: 'effect_filtered' },
+  denies_all: { color: 'red', key: 'effect_deny_all' },
+};
+
 export const grantEffect = (
   grant: DataSourceAccessGrant,
   policies: DataSourceRLSPolicy[]

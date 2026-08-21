@@ -12,6 +12,7 @@ export interface DataSourceAccessGrant {
   grantee_id: string;
   permissions: DataSourceGrantPermission[];
   rls_policy_id?: string | null;
+  cls_policy_id?: string | null;
   created_by?: string | null;
   is_active?: boolean;
   created_at?: string | null;
@@ -23,6 +24,7 @@ export interface DataSourceAccessGrantRequest {
   grantee_id: string;
   permissions: DataSourceGrantPermission[];
   rls_policy_id?: string | null;
+  cls_policy_id?: string | null;
 }
 
 export type DataSourceRLSOperator = 'eq' | 'in' | 'not_in' | 'between' | 'is_null' | 'is_not_null';
@@ -76,6 +78,50 @@ export interface DataSourceRLSPolicy {
   updated_at?: string | null;
 }
 
+export type DataSourceCLSAction = 'deny' | 'mask';
+export type DataSourceCLSMaskStrategy = 'fixed' | 'partial' | 'hash' | 'null';
+
+export interface DataSourceCLSRuleRequest {
+  table_name: string;
+  column_name: string;
+  action: DataSourceCLSAction;
+  mask_strategy?: DataSourceCLSMaskStrategy | null;
+  mask_config: Record<string, unknown>;
+  sort_order?: number;
+}
+
+export interface DataSourceCLSPolicyRequest {
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  rules: DataSourceCLSRuleRequest[];
+}
+
+export interface DataSourceCLSRule extends DataSourceCLSRuleRequest {
+  id: string;
+  policy_id: string;
+  sort_order: number;
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DataSourceCLSPolicy {
+  id: string;
+  organization_id?: string | null;
+  data_source_id: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  created_by?: string | null;
+  rules: DataSourceCLSRule[];
+  is_active?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface DataSourceRLSPreviewRequest {
   rules: DataSourceRLSRuleRequest[];
   default_deny: boolean;
@@ -103,6 +149,37 @@ export interface DataSourceRLSAttributesResponse {
   success: boolean;
   project_id: string;
   attributes: DataSourceRLSAttribute[];
+}
+
+export interface DataSourceMyRowAccessPredicate {
+  table: string;
+  sql: string;
+}
+
+export interface DataSourceMyRowAccessPolicy {
+  id: string;
+  name: string;
+  default_deny: boolean;
+  predicates: DataSourceMyRowAccessPredicate[];
+}
+
+/**
+ * Caller-scoped row access: the AUTHENTICATED caller's own effective RLS
+ * policies for a data source, derived only from their own active grants.
+ * Unlike the admin rls-policies/access-grants/preview endpoints (which
+ * require MANAGE/SHARE and can't be reached by a query-only user), this
+ * requires only QUERY permission and never accepts a parameter that could
+ * select whose access to report.
+ */
+export interface DataSourceMyRowAccessResponse {
+  success: boolean;
+  unrestricted: boolean;
+  policies: DataSourceMyRowAccessPolicy[];
+  denies_ungoverned_tables: boolean;
+  columns?: {
+    denied: string[];
+    masked: Array<{ column: string; strategy: DataSourceCLSMaskStrategy | string | null }>;
+  };
 }
 
 const normalizeSchema = (schema: any): SchemaInfo => {
@@ -245,6 +322,44 @@ export const updateDataSourceRLSPolicy = (
 export const deleteDataSourceRLSPolicy = (id: string, policyId: string): Promise<void> =>
   fetchApi(`/data/sources/${id}/rls-policies/${policyId}`, { method: 'DELETE' });
 
+export const listDataSourceCLSPolicies = (id: string): Promise<{ policies: DataSourceCLSPolicy[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/cls-policies`).then((res) => ({
+    ...res,
+    policies: Array.isArray(res?.policies) ? res.policies : [],
+    count: Number(res?.count ?? res?.policies?.length ?? 0),
+  }));
+
+export const createDataSourceCLSPolicy = (
+  id: string,
+  data: DataSourceCLSPolicyRequest
+): Promise<{ policy: DataSourceCLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/cls-policies`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateDataSourceCLSPolicy = (
+  id: string,
+  policyId: string,
+  data: DataSourceCLSPolicyRequest
+): Promise<{ policy: DataSourceCLSPolicy }> =>
+  fetchApi(`/data/sources/${id}/cls-policies/${policyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const deleteDataSourceCLSPolicy = (id: string, policyId: string): Promise<void> =>
+  fetchApi(`/data/sources/${id}/cls-policies/${policyId}`, { method: 'DELETE' });
+
+export const suggestDataSourceCLSPolicy = (
+  id: string
+): Promise<{ rules: DataSourceCLSRuleRequest[]; count: number }> =>
+  fetchApi(`/data/sources/${id}/cls-policies/suggest`, { method: 'POST' }).then((res) => ({
+    ...res,
+    rules: Array.isArray(res?.rules) ? res.rules : [],
+    count: Number(res?.count ?? res?.rules?.length ?? 0),
+  }));
+
 export const previewDataSourceRLSPolicy = (
   id: string,
   data: DataSourceRLSPreviewRequest
@@ -253,6 +368,9 @@ export const previewDataSourceRLSPolicy = (
     method: 'POST',
     body: JSON.stringify(data),
   });
+
+export const getDataSourceMyRowAccess = (id: string): Promise<DataSourceMyRowAccessResponse> =>
+  fetchApi(`/data/sources/${id}/my-row-access`);
 
 export const getDataSourceRLSProjectAttributes = (
   id: string,

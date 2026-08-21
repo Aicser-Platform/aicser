@@ -56,8 +56,8 @@ describe('data source grantee options', () => {
     expect(toGranteeOptions('user', directory)[0]).toMatchObject({
       value: 'user-1',
       label: 'analyst@example.com',
-      description: 'analyst',
     });
+    expect(toGranteeOptions('user', directory)[0].secondary).toBeUndefined();
     expect(toGranteeOptions('org_role', directory)[0]).toMatchObject({
       value: 'role-org-admin',
       label: 'Org Admin',
@@ -85,5 +85,41 @@ describe('data source grantee options', () => {
 
   it('keeps ids containing colons intact when decoding', () => {
     expect(decodeGranteeValue('user:a:b:c')).toEqual({ type: 'user', id: 'a:b:c' });
+  });
+});
+
+describe('toGranteeOptions user dedupe', () => {
+  it('emits one option per user even when the API repeats them', () => {
+    // The members endpoint joined roles onto members, so a user with several
+    // roles arrived several times. Guard the client side too.
+    const members = [
+      { user_id: 'u1', email: 'a@example.com', first_name: 'A', last_name: 'B' },
+      { user_id: 'u1', email: 'a@example.com', first_name: 'A', last_name: 'B' },
+      { user_id: 'u2', email: 'c@example.com', first_name: 'C', last_name: 'D' },
+    ] as OrganizationMember[];
+
+    const options = toGranteeOptions('user', { projects: [], members, orgRoles: [], projectRoles: [] });
+
+    expect(options).toHaveLength(2);
+    expect(options.map((option) => option.value)).toEqual(['u1', 'u2']);
+  });
+
+  it('puts the display name on the label and the email underneath', () => {
+    const members = [
+      { user_id: 'u1', email: 'a@example.com', first_name: 'Ada', last_name: 'Lovelace' },
+    ] as OrganizationMember[];
+
+    const [option] = toGranteeOptions('user', { projects: [], members, orgRoles: [], projectRoles: [] });
+
+    expect(option.label).toBe('Ada Lovelace');
+    expect(option.secondary).toBe('a@example.com');
+  });
+
+  it('falls back to the email as the label when there is no name', () => {
+    const members = [{ user_id: 'u1', email: 'a@example.com' }] as OrganizationMember[];
+    const [option] = toGranteeOptions('user', { projects: [], members, orgRoles: [], projectRoles: [] });
+
+    expect(option.label).toBe('a@example.com');
+    expect(option.secondary).toBeUndefined();
   });
 });
