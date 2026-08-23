@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { Alert, Spin, Typography } from 'antd';
 import { getBackendUrl } from '@/utils/backendUrl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
+import { useEmbedTheme } from '@/hooks/useEmbedTheme';
 
 const ChartRenderer = nextDynamic(
   () => import('@/app/embedded/chart/[slug]/components/ChartRenderer'),
@@ -24,6 +25,7 @@ type EmbedChart = {
 function EmbedChartContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
   const token = searchParams?.get('token') || '';
+  const { themeStyle, dataTheme } = useEmbedTheme(token);
 
   const [chart, setChart] = useState<EmbedChart | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,25 +70,35 @@ function EmbedChartContent({ slug }: { slug: string }) {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 360 }}>
-        <Spin size="large" tip="Loading chart..." />
+      <div style={themeStyle} data-theme={dataTheme}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 360 }}>
+          <Spin size="large" tip="Loading chart..." />
+        </div>
       </div>
     );
   }
 
   if (error) {
-    return <Alert type="error" message="Unable to load chart" description={error} showIcon style={{ margin: 24 }} />;
+    return (
+      <div style={themeStyle} data-theme={dataTheme}>
+        <Alert type="error" message="Unable to load chart" description={error} showIcon style={{ margin: 24 }} />
+      </div>
+    );
   }
 
   const option = chart?.echarts_option || chart?.chart_option;
   const optionJson = option ? JSON.stringify(option) : '';
 
   if (!optionJson) {
-    return <Alert type="warning" message="Chart has no renderable options" showIcon style={{ margin: 24 }} />;
+    return (
+      <div style={themeStyle} data-theme={dataTheme}>
+        <Alert type="warning" message="Chart has no renderable options" showIcon style={{ margin: 24 }} />
+      </div>
+    );
   }
 
   return (
-    <div style={{ width: '100%', minHeight: 480 }}>
+    <div style={{ ...themeStyle, width: '100%', minHeight: 480 }} data-theme={dataTheme}>
       {chart?.title ? (
         <Title level={4} style={{ padding: '12px 16px', margin: 0 }}>
           {chart.title}

@@ -1,0 +1,97 @@
+# Default values for the aicser chart. Override via `-f my-values.yaml` or
+# `--set key=value`; secrets should come from `--set-string` on the CLI, a
+# sealed-secrets/external-secrets pipeline, or a pre-created Secret referenced
+# via server.existingSecret — never commit real values into this file.
+
+server:
+  image: ""            # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/aicser-server:latest
+  replicaCount: 2       # starting point — the HPA below takes over from here
+  port: 8000
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 65
+    targetMemoryUtilizationPercentage: 75
+
+  # Non-secret config, mirrors docker-compose.ee.prod.yml's server env block.
+  # Point DATABASE_URL/REDIS_URL at managed services (RDS/ElastiCache), not
+  # in-cluster StatefulSets — this chart intentionally doesn't provide those.
+  env:
+    AISER_EDITION: enterprise
+    JWT_ALGORITHM: HS256
+    JWT_EXPIRY_SECONDS: "604800"
+    AUTH_PROVIDER: local
+    ENVIRONMENT: production
+    COOKIE_SECURE: "true"
+    PYTHONPATH: /app
+    PYTHONUNBUFFERED: "1"
+
+  # Name of a Secret (created outside this chart) holding DATABASE_URL,
+  # POSTGRES_PASSWORD, SECRET_KEY, ENCRYPTION_KEY, KEYCLOAK_CLIENT_SECRET, and
+  # any provider API keys in use. Every key in it is mounted as an env var.
+  existingSecret: aicser-server-secrets
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+client:
+  image: ""            # e.g. 123456789.dkr.ecr.us-east-1.amazonaws.com/aicser-client:latest
+  replicaCount: 2
+  port: 3000
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+  env:
+    NODE_ENV: production
+    NEXT_PUBLIC_AUTH_PROVIDER: local
+
+  existingSecret: aicser-client-secrets
+
+  livenessProbe:
+    httpGet:
+      path: /login
+      port: 3000
+    initialDelaySeconds: 20
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+ingress:
+  enabled: false
+  className: alb
+  host: ""              # e.g. app.example.com
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+
+nodeSelector:
+  workload: aicser-app

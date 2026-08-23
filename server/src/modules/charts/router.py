@@ -3015,14 +3015,33 @@ def _serialize_standalone_chart(chart, *, usage_count: int = 0, dashboards=None,
 standalone_chart_router = APIRouter()
 
 
-def _enforce_standalone_chart_access(chart, user_id) -> None:
-    """CE: standalone charts are user-owned. EE: they are project resources
-    (access already gated by require_ee_permission), so any project member may
-    access them — skip the strict per-user ownership check."""
-    if is_ee_enabled():
+async def _enforce_standalone_chart_access(chart, user_id, db: AsyncSession, permission_code: str) -> None:
+    """CE: standalone charts are user-owned. EE: they are project resources -
+    the top-of-handler require_ee_permission() call only checks a global role
+    (chart_id, and thus project_id, isn't known until after the fetch below),
+    so re-check the SAME permission scoped to this chart's actual project now
+    that we know it. Previously this no-op'd entirely in EE (`if
+    is_ee_enabled(): return`), so any user holding a chart permission in ANY
+    single project anywhere could GET/PUT/DELETE any chart_id system-wide.
+    """
+    if chart.user_id and str(chart.user_id) == str(user_id):
         return
-    if str(chart.user_id) != str(user_id):
+    if not is_ee_enabled():
         raise HTTPException(status_code=403, detail="Not authorized to access this chart")
+    if not chart.project_id:
+        # Personal (non-project) chart owned by someone else - never shared.
+        raise HTTPException(status_code=403, detail="Not authorized to access this chart")
+
+    from src.modules.project.models import Project
+
+    org_result = await db.execute(select(Project.organization_id).where(Project.id == chart.project_id))
+    org_id = org_result.scalar_one_or_none()
+    await require_ee_permission(
+        user_id,
+        permission_code,
+        organization_id=str(org_id) if org_id else None,
+        project_id=str(chart.project_id),
+    )
 
 
 def _serialize_collection(row) -> dict:
@@ -3301,7 +3320,7 @@ async def standalone_execute_chart(
     chart = await service.get(chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:view")
     lib = ChartLibraryService(db)
     usage, dashboards = await lib.usage_for_chart(chart.id)
 
@@ -3346,7 +3365,7 @@ async def standalone_touch_chart(
     chart = await service.get(chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:view")
     lib = ChartLibraryService(db)
     chart = await lib.touch_opened(chart)
     usage, dashboards = await lib.usage_for_chart(chart.id)
@@ -3372,7 +3391,7 @@ async def standalone_favorite_chart(
     chart = await service.get(chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:edit")
     lib = ChartLibraryService(db)
     chart = await lib.set_favorite(chart, bool(payload.get("isFavorite", payload.get("is_favorite", True))))
     usage, dashboards = await lib.usage_for_chart(chart.id)
@@ -3400,7 +3419,7 @@ async def standalone_get_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:view")
     lib = ChartLibraryService(db)
     usage, dashboards = await lib.usage_for_chart(chart.id)
     return _serialize_standalone_chart(chart, usage_count=usage, dashboards=dashboards, detail="full")
@@ -3429,7 +3448,7 @@ async def standalone_update_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:edit")
 
     chart_payload, _ = _normalize_chart_payload(payload)
     update_data = {k: v for k, v in chart_payload.items() if v is not None}
@@ -3467,7 +3486,7 @@ async def standalone_delete_chart(
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
 
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:delete")
 
     if purge:
         await service.purge(chart)
@@ -3494,7 +3513,7 @@ async def standalone_restore_chart(
     chart = await service.get(chart_id)
     if not chart:
         raise HTTPException(status_code=404, detail="Chart not found")
-    _enforce_standalone_chart_access(chart, user_id)
+    await _enforce_standalone_chart_access(chart, user_id, db, "chart:edit")
     restored = await service.restore(chart)
     lib = ChartLibraryService(db)
     usage, dashboards = await lib.usage_for_chart(restored.id)

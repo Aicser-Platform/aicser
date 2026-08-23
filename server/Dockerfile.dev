@@ -52,7 +52,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Fail the image build if Telegram deps are missing (avoids uvicorn crash at import time)
 RUN python -c "import telegram.ext; print('python-telegram-bot OK')"
-RUN python -c "import fastapi_mail; print('fastapi-mail OK')"
 
 # Verify key dependencies
 RUN python -c "import duckdb; print('DuckDB OK')" || (echo 'ERROR: DuckDB import failed' && exit 1)

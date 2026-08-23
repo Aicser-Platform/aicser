@@ -302,6 +302,9 @@ export function FeedPublishComposer({
 
           {publishError ? <p className="feed-publish-inline-error">{publishError}</p> : null}
 
+          {/* eslint-disable-next-line jsx-a11y/label-has-for -- antd's Input renders a
+              native input nested inside; the linter can't see through the component
+              boundary, but wrapping it in <label> does correctly associate the text. */}
           <label className="feed-publish-field">
             <span className="feed-publish-field-label">{t('title_label')}</span>
             <Input
@@ -314,6 +317,7 @@ export function FeedPublishComposer({
           </label>
 
           {showDescription ? (
+            // eslint-disable-next-line jsx-a11y/label-has-for -- see title field above.
             <label className="feed-publish-field">
               <span className="feed-publish-field-label">{t('description_label')}</span>
               <Input.TextArea

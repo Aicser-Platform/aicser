@@ -1837,12 +1837,17 @@ class ChartService:
         group_field = chart_query.get("groupField")
         sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
         sort_order = self._normalize_sort_order(chart_query.get("sortOrder"))
-        limit = 5000
+        # Default cap for the re-aggregated result. When the chart wasn't given an
+        # explicit limit, prefer whatever LIMIT the saved SQL itself specified over
+        # the hardcoded fallback — otherwise a chart pinned from a "top 20" chat
+        # query silently re-aggregates over a 5000-row cap instead of the 20 rows
+        # the user actually saw, and the two surfaces disagree on scope.
+        limit = self._extract_sql_limit(sql) or 5000
         try:
             if chart_query.get("limit") is not None:
                 limit = max(1, int(chart_query.get("limit")))
         except Exception:
-            limit = 5000
+            pass
 
         y_metrics_list = list(y_metrics) + list(y_metrics_secondary)
         n_primary = len(y_metrics) if y_metrics is not None else 1
@@ -2865,7 +2870,28 @@ class ChartService:
     def _normalize_sort_order(self, sort_order: Optional[str]) -> str:
         if not sort_order: return "desc"
         return "asc" if sort_order.lower() in ("asc", "ascending") else "desc"
-    
+
+    _TRAILING_LIMIT_RE = re.compile(r"\bLIMIT\s+(\d+)\s*(?:OFFSET\s+\d+\s*)?;?\s*$", re.IGNORECASE)
+
+    def _extract_sql_limit(self, sql: str) -> Optional[int]:
+        """Best-effort read of a trailing LIMIT literal from a single-statement SQL string.
+
+        Used only to align a wrapping re-aggregation's default row cap with whatever
+        cap the original SQL already specified — not a security boundary, so a query
+        with no trailing LIMIT (or a dialect that expresses it differently) simply
+        falls through to the caller's own default.
+        """
+        if not sql:
+            return None
+        match = self._TRAILING_LIMIT_RE.search(sql.strip())
+        if not match:
+            return None
+        try:
+            value = int(match.group(1))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     def _apply_filters_db(self, filters: List[Dict]) -> str:
         if not filters:
             return ""

@@ -74,6 +74,11 @@ export function partitionSeriesData(
   widget: Pick<WidgetInstance, 'chartType' | 'chartQuery'>,
 ): ChartData {
   const cartesianTypes = ['line', 'bar', 'area'];
+  // Table has no secondary-axis concept, but it does render `data.series` as one
+  // column per series name — so a Columns/legend breakdown pivots into it exactly
+  // the same way it does for bar/line/area (one column per group value) rather
+  // than being left as unpivoted long rows the table can't represent.
+  const groupPivotTypes = ['line', 'bar', 'area', 'table'];
   const next = data;
 
   const hasGroupField =
@@ -81,7 +86,7 @@ export function partitionSeriesData(
 
   // Legend / break-by dimension: pivot long rows into series for cartesian charts.
   // After a legend pivot, series are category breaks — do NOT re-split as secondary axis.
-  if (cartesianTypes.includes(widget.chartType) && hasGroupField) {
+  if (groupPivotTypes.includes(widget.chartType) && hasGroupField) {
     return pivotGroupedChartData(data);
   }
 

@@ -518,6 +518,16 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   showSearch={false}
                 />
               )}
+
+              <PpLabel>{t('conditional_formatting')}</PpLabel>
+              <ConditionalFormattingEditor
+                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                  label: c.label,
+                  value: c.value,
+                })) ?? []}
+              />
             </>
           )}
 

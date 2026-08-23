@@ -5,6 +5,8 @@ import { TextInputField, SelectField, CheckboxField } from './FormFields';
 import { PpLabel } from './PpLabel';
 import { useTranslations } from 'next-intl';
 import { IconPicker } from '../icons';
+import { ConditionalFormattingEditor } from './ConditionalFormattingEditor';
+import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 
 type Props = {
   chartOptions: Record<string, unknown>;
@@ -82,6 +84,25 @@ export function StatKpiFields({ chartOptions, onUpdate }: Props) {
         options={[
           { label: t('threshold_above'), value: 'above' },
           { label: t('threshold_below'), value: 'below' },
+        ]}
+      />
+      <PpLabel>{t('conditional_formatting')}</PpLabel>
+      <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', marginTop: -4, marginBottom: 4 }}>
+        {t('stat_conditional_formatting_hint')}
+      </div>
+      <ConditionalFormattingEditor
+        rules={(chartOptions.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+        onChange={(rules) => onUpdate('conditionalFormatting', rules)}
+        columnOptions={[{ label: t('stat_value_column'), value: 'value' }]}
+      />
+      <SelectField
+        label={t('trend_good_direction')}
+        hint={t('trend_good_direction_hint')}
+        value={String(chartOptions.trendGoodDirection ?? 'up')}
+        onChange={(v) => onUpdate('trendGoodDirection', v)}
+        options={[
+          { label: t('trend_good_up'), value: 'up' },
+          { label: t('trend_good_down'), value: 'down' },
         ]}
       />
       <SelectField

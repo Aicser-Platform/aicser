@@ -375,18 +375,66 @@ class FeedServiceActionMixin:
         asset_type: AssetType,
         asset_id: UUID,
         user_id: UUID,
-    ) -> None:
+        user_payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[UUID]:
+        """Verify the row exists AND the publishing user actually has view
+        access to it - returns the asset's real project_id.
+
+        This used to only check the row existed, globally, with no ownership
+        or view-access check at all: any authenticated user could publish
+        any dashboard/chart from any other org onto the feed just by
+        supplying its UUID. The returned project_id is authoritative (read
+        from the asset itself) so publish_asset() doesn't have to trust the
+        client-supplied organization_id/project_id for the role/approval
+        checks that follow - trusting those was the second half of the same
+        bug (omitting them there skipped the role check entirely and
+        auto-approved public/organization visibility).
+        """
         asset_value = asset_type.value
         if asset_value == AssetType.dashboard.value:
-            row = await self.db.scalar(select(Dashboard.id).where(Dashboard.id == asset_id))
-            if not row:
+            row = await self.db.execute(
+                select(Dashboard.project_id, Dashboard.created_by).where(Dashboard.id == asset_id)
+            )
+            record = row.first()
+            if not record:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-            return
+            project_id, created_by = record
+            if created_by and str(created_by) == str(user_id):
+                return project_id
+            from src.modules.authentication.rbac_service import has_dashboard_access
+
+            if not await has_dashboard_access(user_payload or {"id": str(user_id)}, str(asset_id)):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to publish this dashboard",
+                )
+            return project_id
         if asset_value == AssetType.chart.value:
-            row = await self.db.scalar(select(Chart.id).where(Chart.id == asset_id))
-            if not row:
+            row = await self.db.execute(
+                select(Chart.project_id, Chart.user_id).where(Chart.id == asset_id)
+            )
+            record = row.first()
+            if not record:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chart not found")
-            return
+            project_id, chart_owner_id = record
+            if chart_owner_id and str(chart_owner_id) == str(user_id):
+                return project_id
+            if not is_ee_enabled() or not project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to publish this chart",
+                )
+            from types import SimpleNamespace
+
+            from src.modules.charts.router import _enforce_standalone_chart_access
+
+            await _enforce_standalone_chart_access(
+                SimpleNamespace(user_id=chart_owner_id, project_id=project_id),
+                user_id,
+                self.db,
+                "chart:view",
+            )
+            return project_id
         if asset_value == AssetType.query.value:
             result = await self.db.execute(
                 select(DataQuery.id).where(DataQuery.user_id == str(user_id))
@@ -395,8 +443,9 @@ class FeedServiceActionMixin:
             matching = any(uuid5(NAMESPACE_DNS, f"query:{qid}") == asset_id for qid in query_ids)
             if not matching:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Query not found")
-            return
+            return None
         # insight assets are snapshots — no backing row required
+        return None
 
     async def _apply_publication_snapshot(
         self,
@@ -457,7 +506,9 @@ class FeedServiceActionMixin:
         if not asset_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_id is required")
 
-        await self._validate_publish_asset(request.asset_type, asset_id, user_id)
+        asset_project_id = await self._validate_publish_asset(
+            request.asset_type, asset_id, user_id, user_payload
+        )
 
         preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
         if request.asset_type == AssetType.query and request.source_query_id:
@@ -465,8 +516,15 @@ class FeedServiceActionMixin:
         if request.thumbnail_url:
             preview_metadata["thumbnailUrl"] = request.thumbnail_url
 
-        organization_id = request.organization_id
-        project_id = request.project_id
+        # Use the asset's own project_id, not the client-supplied one, for
+        # dashboard/chart assets - trusting the request body here is what let
+        # a caller omit/mismatch organization_id/project_id to skip the role
+        # check below entirely and get auto-approved public visibility.
+        if asset_project_id is not None:
+            project_id = asset_project_id
+        else:
+            project_id = request.project_id
+        organization_id = request.organization_id if asset_project_id is None else None
 
         if project_id and not organization_id:
             from src.modules.project.models import Project

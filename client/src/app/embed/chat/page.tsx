@@ -18,6 +18,7 @@ import remarkGfm from 'remark-gfm';
 import { useTranslations } from 'next-intl';
 import { getBackendUrl } from '@/utils/backendUrl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
+import { useEmbedTheme } from '@/hooks/useEmbedTheme';
 import { resolveChatChartDisplay, withChartAnimationDefaults } from '@/components/charts/resolveChatChart';
 import {
   applyEvent,
@@ -131,6 +132,7 @@ function EmbedChatContent() {
   const token = searchParams?.get('token') || '';
   const assistantId = searchParams?.get('assistant_id') || '';
   const libraryIdsParam = searchParams?.get('library_ids') || '';
+  const { themeStyle, dataTheme } = useEmbedTheme(token);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -371,13 +373,15 @@ function EmbedChatContent() {
 
   if (!isEE) {
     return (
-      <Alert
-        type="info"
-        showIcon
-        message={tEmbed('ee_required_title')}
-        description={tEmbed('ee_required_desc')}
-        style={{ margin: 24 }}
-      />
+      <div style={themeStyle} data-theme={dataTheme}>
+        <Alert
+          type="info"
+          showIcon
+          message={tEmbed('ee_required_title')}
+          description={tEmbed('ee_required_desc')}
+          style={{ margin: 24 }}
+        />
+      </div>
     );
   }
 
@@ -387,6 +391,7 @@ function EmbedChatContent() {
   return (
     <div
       style={{
+        ...themeStyle,
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
@@ -394,6 +399,7 @@ function EmbedChatContent() {
         maxHeight: 720,
         background: 'var(--ant-color-bg-layout, #f5f5f5)',
       }}
+      data-theme={dataTheme}
     >
       <div
         style={{

@@ -6,6 +6,7 @@
 import * as echarts from 'echarts';
 import { ChartConfig, ChartData, ChartValueFormat, CHART_COLORS, formatByValueFormat, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
 import { getPieLayout, getChartSliceBorderColor } from './chartLayoutUtils';
+import { getSeriesPointColors } from './utils/conditionalFormatting';
 
 function resolveLabelFormat(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
   const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
@@ -68,6 +69,27 @@ const getLineStyleConfig = (config: ChartConfig) => {
   }
 };
 
+/**
+ * Same conditional-formatting rule engine as Table/Stat, applied per bar — a bar that
+ * breaches a rule's threshold renders in that rule's color (the industry-standard
+ * "highlight abnormal values" pattern for bar/column charts), overriding the series'
+ * normal palette color for just that point. Colors are resolved against the series'
+ * real values, not a display transform (e.g. 100%-stacked percentages), since rules
+ * are authored against the metric's real scale.
+ */
+function applySeriesConditionalColors(
+  displayValues: unknown[],
+  rawValues: unknown[],
+  seriesName: string,
+  config: ChartConfig,
+): unknown[] {
+  const colors = getSeriesPointColors(config.conditionalFormatting, seriesName, rawValues);
+  if (!colors.some(Boolean)) return displayValues;
+  return displayValues.map((value, i) =>
+    colors[i] ? { value, itemStyle: { color: colors[i] } } : value,
+  );
+}
+
 export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
   // If primary series is empty but secondary has data, treat secondary as primary.
   // This handles stale yMetricsSecondary DB state after General-tab Apply Changes.
@@ -123,7 +145,12 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
       },
       emphasis: getCartesianEmphasis('bar'),
       blur: getCartesianBlur(),
-      data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+      data: applySeriesConditionalColors(
+        isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+        s.data,
+        s.name,
+        config,
+      ),
       yAxisIndex: 0,
     }));
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { partitionSeriesData, pivotGroupedChartData } from './chartDataProcessing';
+import { partitionSeriesData, pivotGroupedChartData } from '../chartDataProcessing';
 
 describe('pivotGroupedChartData', () => {
   it('pivots long-format group_field rows into wide series', () => {
@@ -51,6 +51,27 @@ describe('partitionSeriesData', () => {
     expect(result.series?.map((s) => s.name)).toEqual(['G1', 'G2']);
     expect(result.secondarySeries).toBeUndefined();
     expect(result.x).toEqual(['A']);
+  });
+
+  it('pivots legend groups for table widgets too, so the Columns dimension is not silently dropped', () => {
+    const result = partitionSeriesData(
+      {
+        x: ['A', 'A', 'B', 'B'],
+        group_field: ['East', 'West', 'East', 'West'],
+        series: [{ name: 'Sum of amount', data: [10, 20, 30, 40] }],
+      },
+      {
+        chartType: 'table',
+        chartQuery: { yMetrics: [{ field: 'amount', aggregation: 'sum' }] },
+      },
+    );
+
+    expect(result.x).toEqual(['A', 'B']);
+    expect(result.group_field).toBeUndefined();
+    expect(result.series).toEqual([
+      { name: 'East', data: [10, 30] },
+      { name: 'West', data: [20, 40] },
+    ]);
   });
 
   it('splits primary/secondary series without group pivot', () => {

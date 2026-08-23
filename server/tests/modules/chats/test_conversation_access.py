@@ -1,5 +1,9 @@
 """Conversation access and user-scoped listing helpers."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
+
 import pytest
 
 from src.modules.chats.conversations.service import ConversationService
@@ -61,6 +65,100 @@ def test_required_steps_subset_uses_set():
 
     done = normalize_completed_steps(list(REQUIRED_STEP_IDS))
     assert set(REQUIRED_STEP_IDS).issubset(done)
+
+
+def _async_session_returning(project):
+    """Mimics `async with async_session() as session: await session.get(...)`."""
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=project)
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=session)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return lambda: cm
+
+
+@pytest.mark.asyncio
+async def test_project_access_denied_without_chat_view_permission():
+    """The exact gap this closes: previously ANY role at all (viewer
+    included) granted access - now it must be an actual chat:view holder."""
+    project_id = uuid4()
+    org_id = uuid4()
+    project = SimpleNamespace(organization_id=org_id)
+
+    with patch(
+        "src.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=False),
+    ) as mock_check:
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(project_id))
+
+    assert result is False
+    mock_check.assert_awaited_once()
+    args = mock_check.await_args.args
+    assert args[1] == "chat:view"
+
+
+@pytest.mark.asyncio
+async def test_project_access_allowed_with_chat_view_permission():
+    project_id = uuid4()
+    project = SimpleNamespace(organization_id=uuid4())
+
+    with patch(
+        "src.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=True),
+    ):
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(project_id))
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_project_access_false_when_project_missing():
+    with patch(
+        "src.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(None),
+    ):
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(uuid4()))
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_check_project_access_router_rejects_without_permission():
+    from fastapi import HTTPException
+
+    from src.modules.chats.conversations.router import _check_project_access
+
+    project = SimpleNamespace(organization_id=uuid4())
+    with patch(
+        "src.db.session.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=False),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await _check_project_access(str(uuid4()), str(uuid4()))
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_check_project_access_router_allows_with_permission():
+    from src.modules.chats.conversations.router import _check_project_access
+
+    project = SimpleNamespace(organization_id=uuid4())
+    with patch(
+        "src.db.session.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=True),
+    ):
+        await _check_project_access(str(uuid4()), str(uuid4()))  # must not raise
 
 
 def test_conversation_response_schema_coerces_jsonb_metadata():

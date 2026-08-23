@@ -56,6 +56,13 @@ export default function ChatPageClient() {
           closable={false}
           title={t('ai_provider_key_required_title')}
           footer={[
+            // A non-technical user landing here may not be the person who can (or
+            // should) set up a provider key — leaving them with only that one
+            // unclosable path was a dead end. This lets them leave and use the rest
+            // of the app while they sort it out with a teammate.
+            <Button key="dismiss" onClick={() => router.push('/dashboards')}>
+              {t('ai_provider_key_required_dismiss')}
+            </Button>,
             <Button
               key="configure"
               type="primary"

@@ -36,26 +36,55 @@ class AuthenticationError(Exception):
         self.status_code = 401
 
 
+_FAKE_MODELS = {
+    "fake_azure": {
+        "name": "Azure Mini",
+        "model": "azure/gpt-4.1-mini",
+        "provider": "azure",
+        "api_key": "azure-key",
+        "api_base": "https://example.openai.azure.com/",
+        "max_tokens": 16384,
+    },
+    "fake_openai": {
+        "name": "OpenAI Mini",
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "api_key": "sk-svcac-bad-key",
+        "max_tokens": 16384,
+    },
+}
+
+
+@pytest.fixture(autouse=True)
+def _clean_model_availability_cache():
+    """_is_model_known_unavailable() falls through to the shared Redis-backed
+    cache (src.core.cache.cache) when a model's local availability cache
+    misses, keyed by a hash of id+provider+model+api_base+api_key. These
+    tests deliberately make fake_openai "fail", which persists a real
+    "unavailable" marker under that key with a TTL - so re-running this file
+    (or anything else touching the same fake ids/keys) within the TTL window
+    silently excludes fake_openai from fallback selection independently of
+    whatever the test itself does. Clear both fake models' keys before and
+    after every test so each run starts from a real clean slate.
+    """
+    from src.core.cache import cache
+
+    probe = LiteLLMService()
+    for model_id, config in _FAKE_MODELS.items():
+        key = probe._model_availability_cache_key(model_id, config)
+        if key:
+            cache.delete(key)
+    yield
+    for model_id, config in _FAKE_MODELS.items():
+        key = probe._model_availability_cache_key(model_id, config)
+        if key:
+            cache.delete(key)
+
+
 def _make_service() -> LiteLLMService:
     service = LiteLLMService()
     # Two providers: a 500'ing Azure deployment and an OpenAI key that fails auth.
-    service.available_models = {
-        "fake_azure": {
-            "name": "Azure Mini",
-            "model": "azure/gpt-4.1-mini",
-            "provider": "azure",
-            "api_key": "azure-key",
-            "api_base": "https://example.openai.azure.com/",
-            "max_tokens": 16384,
-        },
-        "fake_openai": {
-            "name": "OpenAI Mini",
-            "model": "gpt-4o-mini",
-            "provider": "openai",
-            "api_key": "sk-svcac-bad-key",
-            "max_tokens": 16384,
-        },
-    }
+    service.available_models = dict(_FAKE_MODELS)
     service.default_model = "fake_azure"
     service.active_model = "fake_azure"
     # Start with a clean availability cache so resolution doesn't pre-swap models.

@@ -52,7 +52,7 @@ services:
       JWT_EXPIRY_SECONDS: "604800"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       ENVIRONMENT: production
       # Set COOKIE_SECURE=true only when running behind HTTPS. Keep false for plain HTTP.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

@@ -4,6 +4,7 @@
  */
 
 import { formatAxisLabel, formatNumber } from '../utils/numberFormatter';
+import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
 
 /** Format a value for axis labels/tooltips based on the widget's valueFormat setting. */
 export function formatByValueFormat(value: unknown, valueFormat?: string): string {
@@ -12,7 +13,10 @@ export function formatByValueFormat(value: unknown, valueFormat?: string): strin
   switch (valueFormat) {
     case 'compact': return formatNumber(num, { compact: true, decimals: 1 });
     case 'currency': return formatNumber(num, { currency: true, compact: true, decimals: 0 });
-    case 'percent': return `${num.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+    // Delegate to the shared formatter (same as Stat/tooltip formatting) so a percent
+    // metric stored as a unit-interval ratio (e.g. 0.15) is scaled to 15% consistently
+    // everywhere, instead of this axis/label path alone rendering it as "0.15%".
+    case 'percent': return formatNumber(num, { percent: true, decimals: 1, compact: false });
     case 'full': return num.toLocaleString();
     default: return formatAxisLabel(num); // auto-compact
   }
@@ -344,6 +348,9 @@ export interface ChartConfig {
   valueFormat?: ChartValueFormat;
   /** Optional per-series display formats, keyed by metric field/label/series name. */
   metricFormats?: Record<string, ChartValueFormat>;
+  /** Same rule engine as Table/Stat conditional formatting, applied per bar — a bar that
+   * breaches a rule's threshold renders in that rule's color. Matched by series name. */
+  conditionalFormatting?: ConditionalFormattingRule[];
   /** Widget-level border width in pixels (0 = none) */
   borderWidth?: number;
   /** Widget-level border color */

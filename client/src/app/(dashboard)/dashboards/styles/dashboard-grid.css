@@ -826,6 +826,14 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   font-variant-numeric: proportional-nums;
   letter-spacing: -0.02em;
   font-weight: 600;
+  /* A widget narrower than its formatted value (e.g. a large negative currency in a
+   * small grid tile) truncates gracefully with a hover tooltip (see the `title` prop
+   * on the value span) instead of clipping raggedly or overflowing the tile bounds. */
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Table Number Formatting */
@@ -849,6 +857,9 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 .number-compact {
   font-variant-numeric: proportional-nums;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Large number displays */

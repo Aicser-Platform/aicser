@@ -69,6 +69,8 @@ export interface ChartData {
   y: (string | number)[];
   series?: { name: string; data: any[] }[];
   secondarySeries?: { name: string; data: any[] }[];
+  /** Long-format legend/break-by column, pre-pivot — see chartDataProcessing.ts. */
+  group_field?: (string | number)[];
 }
 
 export interface ChartExecutionResponse {

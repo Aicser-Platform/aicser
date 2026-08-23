@@ -116,9 +116,11 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           <Avatar
             size={64}
             src={profile?.avatar_url || undefined}
-            icon={!profile?.avatar_url ? <UserOutlined /> : undefined}
+            icon={!displayName ? <UserOutlined /> : undefined}
             className="border-2 border-[var(--ant-color-border)]"
-          />
+          >
+            {displayName?.trim()?.charAt(0)?.toUpperCase()}
+          </Avatar>
           {isEditingProfile && (
             <Upload
               showUploadList={false}

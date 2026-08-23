@@ -4,6 +4,7 @@ import React, { Suspense } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
+import { useEmbedTheme } from '@/hooks/useEmbedTheme';
 import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useDashboardViewerState';
 import {
   DashboardViewerShell,
@@ -16,6 +17,7 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
   const t = useTranslations('dashboard_viewer');
   const searchParams = useSearchParams();
   const token = searchParams?.get('token') || '';
+  const { themeStyle, dataTheme } = useEmbedTheme(token);
 
   const viewer = useDashboardViewerState(dashboardId, {
     mode: 'embed',
@@ -27,12 +29,16 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
   });
 
   if (viewer.isLoading && !viewer.meta) {
-    return <ViewerLoading title={t('loading_title')} message={t('loading_message')} />;
+    return (
+      <div style={themeStyle} data-theme={dataTheme}>
+        <ViewerLoading title={t('loading_title')} message={t('loading_message')} />
+      </div>
+    );
   }
 
   if (viewer.error || !viewer.meta) {
     return (
-      <div className="shared-dashboard-error">
+      <div style={themeStyle} data-theme={dataTheme} className="shared-dashboard-error">
         <div className="shared-dashboard-error-title">{t('not_found_title')}</div>
         <div className="shared-dashboard-error-message">{viewer.error || t('not_found_message')}</div>
       </div>
@@ -40,29 +46,31 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
   }
 
   return (
-    <DashboardViewerShell
-      meta={viewer.meta}
-      pages={viewer.pages}
-      activePageId={viewer.activePageId}
-      onPageSelect={viewer.handlePageSelect}
-      combinedFiltersConfig={viewer.combinedFiltersConfig}
-      pageFilterFields={viewer.pageFilterFields}
-      runtimeFilters={viewer.runtimeFilters}
-      onRuntimeFiltersChange={viewer.handleRuntimeChange}
-      onCrossFilter={viewer.handleCrossFilter}
-      widgets={viewer.visibleWidgets}
-      layout={viewer.visibleLayout}
-      dashboardId={dashboardId}
-      onRetryWidget={viewer.handleRetryWidget}
-      onManualRefresh={viewer.handleManualRefresh}
-      refreshing={viewer.refreshing}
-      fetchFilterOptions={viewer.fetchFilterOptions}
-      fetchFilterFieldStats={viewer.fetchFilterFieldStats}
-      variant="embed"
-      autoRefreshMinutes={viewer.autoRefreshMinutes}
-      onAutoRefreshIntervalChange={viewer.setAutoRefreshMinutes}
-      lastRefreshedLabel={viewer.lastRefreshedLabel}
-    />
+    <div style={themeStyle} data-theme={dataTheme}>
+      <DashboardViewerShell
+        meta={viewer.meta}
+        pages={viewer.pages}
+        activePageId={viewer.activePageId}
+        onPageSelect={viewer.handlePageSelect}
+        combinedFiltersConfig={viewer.combinedFiltersConfig}
+        pageFilterFields={viewer.pageFilterFields}
+        runtimeFilters={viewer.runtimeFilters}
+        onRuntimeFiltersChange={viewer.handleRuntimeChange}
+        onCrossFilter={viewer.handleCrossFilter}
+        widgets={viewer.visibleWidgets}
+        layout={viewer.visibleLayout}
+        dashboardId={dashboardId}
+        onRetryWidget={viewer.handleRetryWidget}
+        onManualRefresh={viewer.handleManualRefresh}
+        refreshing={viewer.refreshing}
+        fetchFilterOptions={viewer.fetchFilterOptions}
+        fetchFilterFieldStats={viewer.fetchFilterFieldStats}
+        variant="embed"
+        autoRefreshMinutes={viewer.autoRefreshMinutes}
+        onAutoRefreshIntervalChange={viewer.setAutoRefreshMinutes}
+        lastRefreshedLabel={viewer.lastRefreshedLabel}
+      />
+    </div>
   );
 }
 

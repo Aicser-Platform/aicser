@@ -102,6 +102,7 @@ async def create_embed_token(
     resource_id: Optional[str] = None,
     allowed_domains: Optional[List[str]] = None,
     expires_in_hours: int = DEFAULT_EXPIRY_HOURS,
+    theme: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     token_id = str(uuid.uuid4())
     created_at = _now()
@@ -129,6 +130,7 @@ async def create_embed_token(
         "expires_at": _iso(expires_at),
         "status": "active",
         "org_id": org_id,
+        "theme": theme,
     }
 
     records = await _load_records(user_id)
@@ -152,6 +154,25 @@ async def list_embed_tokens(user_id: str) -> List[Dict[str, Any]]:
         }
         for record in records
     ]
+
+
+async def update_embed_token_theme(
+    user_id: str, token_id: str, theme: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """Theme-only edit — reuses the existing signed token/URLs. Returns the
+    updated record, or None if no matching token exists for this user."""
+    records = await _load_records(user_id)
+    updated: List[Dict[str, Any]] = []
+    found: Optional[Dict[str, Any]] = None
+    for record in records:
+        if record.get("id") == token_id:
+            record = {**record, "theme": theme}
+            found = record
+        updated.append(record)
+    if found is None:
+        return None
+    await _save_records(user_id, updated)
+    return {**found, "token_preview": found.get("token_preview") or "••••"}
 
 
 async def revoke_embed_token(user_id: str, token_id: str) -> bool:
@@ -197,4 +218,5 @@ async def verify_embed_token(token: str, *, required_scope: Optional[str] = None
         "allowed_domains": payload.get("allowed_domains") or [],
         "expires_at": expires_at,
         "jti": token_id,
+        "theme": record.get("theme"),
     }

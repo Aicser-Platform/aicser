@@ -3180,6 +3180,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       {editingTabKey === tab.key ? (
                         <input
                           className="qe-query-tab-rename-input"
+                          aria-label="Rename query tab"
                           value={titleDraft}
                           autoFocus
                           onClick={(e) => e.stopPropagation()}

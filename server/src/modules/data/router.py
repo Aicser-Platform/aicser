@@ -416,7 +416,7 @@ logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(data_rbac_guard)])
 
 
 def _serialize_project_rls_attributes(settings_data: dict[str, Any]) -> List[Dict[str, Any]]:

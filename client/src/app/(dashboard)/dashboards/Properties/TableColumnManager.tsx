@@ -36,6 +36,9 @@ export function TableColumnManager({ columns, visibleKeys, onChange }: Props) {
       </Typography.Text>
       <div className="table-column-manager-list">
         {columns.map((col) => (
+          // eslint-disable-next-line jsx-a11y/label-has-for -- antd's Checkbox renders a
+          // native input nested inside; the linter can't see through the component
+          // boundary, but wrapping it in <label> does correctly associate col.label.
           <label key={col.value} className="table-column-manager-row">
             <Checkbox
               checked={selected.has(col.value)}

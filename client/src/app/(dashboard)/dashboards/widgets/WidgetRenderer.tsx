@@ -2,11 +2,12 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Empty } from 'antd';
+import { Empty, Tooltip } from 'antd';
+import { WarningOutlined } from '@ant-design/icons';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
 import { RawRowsTableWidget } from './RawRowsTableWidget';
-import { StatWidget } from './StatWidget';
+import { StatWidget, type StatWidgetProps } from './StatWidget';
 import { TextWidget } from './TextWidget';
 import { SlicerWidget } from './SlicerWidget';
 import { EmbedWidget } from './EmbedWidget';
@@ -41,6 +42,32 @@ const EChartWidget = dynamic(
 const RawEChartWidget = dynamic(
   () => import('./RawEChartWidget').then((m) => m.RawEChartWidget),
   { ssr: false, loading: widgetChunkLoading }
+);
+
+const StaleDataBadge: React.FC<{ tooltip: string }> = ({ tooltip }) => (
+  <Tooltip title={tooltip}>
+    <div
+      className="widget-stale-badge"
+      style={{
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        zIndex: 11,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 20,
+        height: 20,
+        borderRadius: '50%',
+        background: 'var(--ant-color-warning-bg, #fffbe6)',
+        color: 'var(--ant-color-warning, #d48806)',
+        border: '1px solid var(--ant-color-warning-border, #ffe58f)',
+        cursor: 'help',
+      }}
+    >
+      <WarningOutlined style={{ fontSize: 11 }} />
+    </div>
+  </Tooltip>
 );
 
 interface QueryMetric {
@@ -150,6 +177,10 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   const effectiveData = hasRenderableChartData(data)
     ? data
     : (prefetchedData ?? data);
+  // A live refresh just failed but we still have a durable snapshot to fall back to
+  // (see the error-suppression branch below) — surface that quietly instead of
+  // silently presenting stale data as if it were current.
+  const isShowingStaleFallbackAfterError = Boolean(error) && !hasRenderableChartData(data) && hasRenderableChartData(prefetchedData);
   const metricFormats = React.useMemo(
     () => buildMetricFormats(query as Record<string, unknown>),
     [query]
@@ -179,6 +210,9 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     return (
       <div className="widget-content-root">
         <RawEChartWidget option={snapshotOption} onChartReady={onChartReady} minHeight={minHeight} />
+        {error && (
+          <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last saved chart.`} />
+        )}
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
             <AppLoadingIndicator variant="minimal" tip="Updating..." />
@@ -394,7 +428,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       return (
         <TableWidget
           data={effectiveData}
-          config={config}
+          config={chartConfig}
           query={query}
           crossFilterField={query?.x}
           activeCrossFilterValues={
@@ -412,6 +446,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
         <StatWidget
           data={effectiveData}
           config={config}
+          query={query as StatWidgetProps['query']}
           filterValue={
             crossField && effectiveData && Array.isArray((effectiveData as { x?: unknown[] }).x)
               ? (effectiveData as { x: unknown[] }).x[(effectiveData as { x: unknown[] }).x.length - 1]
@@ -453,6 +488,9 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   return (
     <div className="widget-content-root">
       {renderContent()}
+      {isShowingStaleFallbackAfterError && (
+        <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last successful data.`} />
+      )}
       {isLoading && (
         <div className={activeOverlayClass} style={activeOverlayStyle}>
           <AppLoadingIndicator variant="minimal" tip="Updating..." />

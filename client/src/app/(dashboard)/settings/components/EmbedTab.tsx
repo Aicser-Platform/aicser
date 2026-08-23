@@ -4,6 +4,8 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
+  ColorPicker,
   Form,
   Input,
   Modal,
@@ -46,6 +48,14 @@ export interface EmbedAssistantRecord {
 
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
 
+export interface EmbedTheme {
+  primary_color?: string | null;
+  logo_url?: string | null;
+  font_family?: string | null;
+  mode?: 'light' | 'dark' | 'auto' | null;
+  hide_aicser_branding?: boolean;
+}
+
 export interface EmbedTokenRecord {
   id: string;
   name: string;
@@ -56,6 +66,7 @@ export interface EmbedTokenRecord {
   expires_at: string;
   status: string;
   token_preview?: string;
+  theme?: EmbedTheme | null;
 }
 
 interface EmbedTokenCreated extends EmbedTokenRecord {
@@ -168,6 +179,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     resource_id?: string;
     allowed_domains?: string;
     expires_in_hours?: number;
+    theme_primary_color?: { toHexString: () => string } | string;
+    theme_logo_url?: string;
+    theme_font_family?: string;
+    theme_mode?: 'light' | 'dark' | 'auto';
+    theme_hide_branding?: boolean;
   }) => {
     setCreating(true);
     try {
@@ -175,6 +191,20 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         .split(',')
         .map((d) => d.trim())
         .filter(Boolean);
+      const primaryColor =
+        typeof values.theme_primary_color === 'object' && values.theme_primary_color
+          ? values.theme_primary_color.toHexString()
+          : values.theme_primary_color;
+      const theme: EmbedTheme | undefined =
+        primaryColor || values.theme_logo_url || values.theme_font_family || values.theme_mode || values.theme_hide_branding
+          ? {
+              primary_color: primaryColor || undefined,
+              logo_url: values.theme_logo_url || undefined,
+              font_family: values.theme_font_family || undefined,
+              mode: values.theme_mode || undefined,
+              hide_aicser_branding: values.theme_hide_branding || false,
+            }
+          : undefined;
       const created = await fetchApi('/api/embed/tokens', {
         method: 'POST',
         body: JSON.stringify({
@@ -183,6 +213,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           resource_id: values.resource_id || undefined,
           allowed_domains: domains,
           expires_in_hours: values.expires_in_hours || 720,
+          theme,
         }),
       });
       setShowCreateModal(false);
@@ -496,6 +527,47 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               ]}
             />
           </Form.Item>
+          <Collapse
+            ghost
+            style={{ marginBottom: 16 }}
+            items={[
+              {
+                key: 'branding',
+                label: t('embed_branding_section'),
+                children: (
+                  <>
+                    <Form.Item
+                      name="theme_primary_color"
+                      label={t('embed_theme_primary_color')}
+                      extra={t('embed_theme_primary_color_help')}
+                    >
+                      <ColorPicker format="hex" />
+                    </Form.Item>
+                    <Form.Item name="theme_logo_url" label={t('embed_theme_logo_url')}>
+                      <Input placeholder="https://yourcompany.com/logo.png" />
+                    </Form.Item>
+                    <Form.Item name="theme_font_family" label={t('embed_theme_font_family')}>
+                      <Input placeholder="'Inter', sans-serif" />
+                    </Form.Item>
+                    <Form.Item name="theme_mode" label={t('embed_theme_mode')}>
+                      <Select
+                        allowClear
+                        placeholder={t('embed_theme_mode_auto_placeholder')}
+                        options={[
+                          { value: 'light', label: t('embed_theme_mode_light') },
+                          { value: 'dark', label: t('embed_theme_mode_dark') },
+                          { value: 'auto', label: t('embed_theme_mode_auto') },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name="theme_hide_branding" valuePropName="checked">
+                      <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
           <Form.Item>
             <Space>
               <Button onClick={() => setShowCreateModal(false)}>{t('cancel')}</Button>

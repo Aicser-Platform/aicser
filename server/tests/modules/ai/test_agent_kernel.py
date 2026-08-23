@@ -7,6 +7,7 @@ import pytest
 from ee.modules.ai.kernel.continuation import (
     budget_exhausted,
     build_continuation_message,
+    get_budget_limits,
     load_plan_from_state,
     persist_continuation,
 )
@@ -109,14 +110,30 @@ def test_continuation_persist_and_load():
 
 
 def test_budget_exhausted():
+    max_steps, _ = get_budget_limits()
     goal = AgentGoal(objective="x", deliverable_type=DeliverableType.chart_analysis)
     plan = AgentPlan(
         goal=goal,
         steps=[
             AgentPlanStep(id=f"s{i}", capability="run_sql", label=f"S{i}", status="complete")
-            for i in range(10)
+            for i in range(max_steps + 2)
         ],
-        cursor=10,
+        cursor=max_steps + 2,
     )
     state = {"replan_count": 0}
     assert budget_exhausted(state, plan) is True
+
+
+def test_budget_not_exhausted_below_the_step_cap():
+    max_steps, _ = get_budget_limits()
+    goal = AgentGoal(objective="x", deliverable_type=DeliverableType.chart_analysis)
+    plan = AgentPlan(
+        goal=goal,
+        steps=[
+            AgentPlanStep(id=f"s{i}", capability="run_sql", label=f"S{i}", status="complete")
+            for i in range(max_steps - 1)
+        ],
+        cursor=max_steps - 1,
+    )
+    state = {"replan_count": 0}
+    assert budget_exhausted(state, plan) is False

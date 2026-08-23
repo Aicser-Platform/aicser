@@ -22,13 +22,10 @@ email-validator = "^2.2.0"
 pydantic = "^2.10.4"
 pydantic-settings = "^2.7.0"
 openai = "^2.44.0"
-litellm = "^1.93.0"
+litellm = "^1.97.0"
 supabase = "^2.10.0"
 langchain = "^0.3.30"
 langgraph = "^0.6.11"
-langchain-azure-ai = "^0.1.0"
-langchain-google-genai = "^0.0.1"
-google-generativeai = "^0.3.1"
 boto3 = "^1.26.137"
 colorama = "^0.4.6"
 pandas = "^2.2.3"
@@ -98,6 +95,23 @@ stripe = "^11.6.0"
 playwright = ">=1.40.0"
 # Optional: persistent checkpointer for production (set LANGGRAPH_CHECKPOINT_POSTGRES_URI)
 langgraph-checkpoint-postgres = {version = "^3.0.0", optional = true}
+# Observability: src/shared/observability/{setup,tracer}.py already calls all of
+# these behind try/except ImportError guards and wires them into app startup
+# (OTEL_ENABLED/OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN) - without the packages
+# themselves, every span/instrumentation call silently no-ops regardless of config.
+# Exact pins, not caret ranges: opentelemetry-api/sdk/exporter-* (1.38.0 series)
+# and opentelemetry-instrumentation-* (0.59b0 series) version in lockstep as two
+# separate but coupled families - mixing series (e.g. sdk 1.44.0 with
+# instrumentation-* 0.59b0) breaks on opentelemetry-semantic-conventions.
+opentelemetry-api = "1.38.0"
+opentelemetry-sdk = "1.38.0"
+opentelemetry-semantic-conventions = "0.59b0"
+opentelemetry-exporter-otlp-proto-http = "1.38.0"
+opentelemetry-instrumentation-fastapi = "0.59b0"
+opentelemetry-instrumentation-redis = "0.59b0"
+opentelemetry-instrumentation-httpx = "0.59b0"
+opentelemetry-instrumentation-sqlalchemy = "0.59b0"
+sentry-sdk = "^2.68.0"
 
 [tool.poetry.extras]
 checkpoint-postgres = ["langgraph-checkpoint-postgres"]

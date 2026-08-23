@@ -117,8 +117,17 @@ class DataSourcesCRUD:
                     project_id_val = uuid.UUID(str(data_source_data.project_id))
                 except (ValueError, TypeError):
                     pass
-            if not project_id_val and session:
-                # Fallback: first project for user (e.g. when creating via POST /sources with no project_id)
+            organization_id_val = None
+            if getattr(data_source_data, "organization_id", None):
+                try:
+                    organization_id_val = uuid.UUID(str(data_source_data.organization_id))
+                except (ValueError, TypeError):
+                    pass
+            if not project_id_val and not organization_id_val and session:
+                # Fallback: first project for user (e.g. when creating via POST /sources with no
+                # project_id/organization_id at all). Skipped when the caller explicitly scoped the
+                # source to a project or organization, so intentionally org-only sources (no project)
+                # aren't silently reassigned to an arbitrary project.
                 from src.modules.project.service import ProjectService
                 try:
                     projects, _ = await ProjectService.get_user_projects(user_id_val)
@@ -126,17 +135,11 @@ class DataSourcesCRUD:
                         project_id_val = projects[0].id
                 except Exception:
                     pass
-            if project_id_val is None and is_ee_enabled():
+            if project_id_val is None and organization_id_val is None and is_ee_enabled():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="project_id is required. Select a project or create one first.",
                 )
-            organization_id_val = None
-            if getattr(data_source_data, "organization_id", None):
-                try:
-                    organization_id_val = uuid.UUID(str(data_source_data.organization_id))
-                except (ValueError, TypeError):
-                    pass
             if organization_id_val is None and project_id_val is not None and is_ee_enabled():
                 try:
                     from src.modules.project.models import Project
@@ -228,7 +231,7 @@ class DataSourcesCRUD:
                 db_type=data_source.db_type,
                 description=data_source.description,
                 connection_config=data_source.connection_config,
-                project_id=data_source_data.project_id,
+                project_id=str(data_source.project_id) if data_source.project_id else None,
                 is_active=data_source.is_active,
                 created_at=data_source.created_at,
                 updated_at=data_source.updated_at,

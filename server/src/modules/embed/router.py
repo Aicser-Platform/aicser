@@ -16,6 +16,7 @@ from src.modules.embed.schemas import (
     EmbedTokenListResponse,
     EmbedTokenResponse,
     EmbedTokenRevokeResponse,
+    EmbedTokenUpdateRequest,
     EmbedTokenVerifyResponse,
 )
 from src.modules.embed import service as embed_service
@@ -54,6 +55,7 @@ async def create_embed_token(
             resource_id=body.resource_id,
             allowed_domains=body.allowed_domains,
             expires_in_hours=body.expires_in_hours,
+            theme=body.theme.model_dump() if body.theme else None,
         )
         return EmbedTokenCreatedResponse(**created)
     except Exception as exc:
@@ -69,6 +71,23 @@ async def list_embed_tokens(
     user_id = _require_user_id(current_token)
     tokens = await embed_service.list_embed_tokens(user_id)
     return EmbedTokenListResponse(tokens=[EmbedTokenResponse(**t) for t in tokens])
+
+
+@router.patch("/tokens/{token_id}", response_model=EmbedTokenResponse)
+async def update_embed_token_theme(
+    token_id: str,
+    body: EmbedTokenUpdateRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Theme-only edit — the embed token/URLs stay valid; only the branding changes."""
+    user_id = _require_user_id(current_token)
+    await enforce_permission(user_id, "embed:create")
+    updated = await embed_service.update_embed_token_theme(
+        user_id, token_id, body.theme.model_dump() if body.theme else None
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Embed token not found")
+    return EmbedTokenResponse(**updated)
 
 
 @router.delete("/tokens/{token_id}", response_model=EmbedTokenRevokeResponse)

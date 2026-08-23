@@ -70,6 +70,7 @@ import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { DataModelRelationships } from '@/components/data/DataModelRelationships';
+import { BypassIndicator } from './_components/BypassIndicator';
 
 const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -275,6 +276,16 @@ const DataSourcesPage: React.FC = () => {
             width: 120,
             render: (date: string) => date ? new Date(date).toLocaleDateString() : '-',
         },
+        ...(isEEEdition && canManageAccess
+            ? [
+                {
+                    title: t('col_row_access'),
+                    key: 'row_access',
+                    width: 140,
+                    render: (_: any, record: DataSource) => <BypassIndicator dataSourceId={record.id} />,
+                },
+            ]
+            : []),
         ...(canManageDataSettings
             ? [
                 {

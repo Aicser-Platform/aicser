@@ -457,9 +457,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
             <Avatar
               size={showText ? 'default' : 24}
               src={profile?.avatar_url || undefined}
-              icon={!profile?.avatar_url ? <UserOutlined /> : undefined}
+              icon={!displayName ? <UserOutlined /> : undefined}
               style={!profile?.avatar_url ? { backgroundColor: 'var(--ant-color-primary)' } : undefined}
-            />
+            >
+              {displayName?.trim()?.charAt(0)?.toUpperCase()}
+            </Avatar>
           </div>
           {/* always show username on desktop and tablet, collapse only on very small screens */}
           {showText && (

@@ -11,6 +11,8 @@ import { formatStatValue } from '../utils/numberFormatter';
 import { useTranslations } from 'next-intl';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { getColorsFromPalette } from './WidgetRendererConfig';
+import { getStatValueStyle } from './utils/conditionalFormatting';
+import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
 
 const { Text, Title } = Typography;
 
@@ -179,9 +181,40 @@ export interface StatWidgetProps {
     goalTarget?: number;
     statUnit?: string;
     currencySymbol?: string;
+    /** Which trend direction counts as "good" for coloring — e.g. cost/error-rate/churn
+     * KPIs improve by going down, so a decrease should show green, not red. Defaults to
+     * 'up' (the historical behavior: any increase is green) for widgets that don't set it. */
+    trendGoodDirection?: 'up' | 'down';
+    /** Same rule engine as Table/Chart conditional formatting — takes priority over
+     * thresholdWarn/thresholdCritical when rules matching column 'value'/'*' are set. */
+    conditionalFormatting?: ConditionalFormattingRule[];
   };
   onFilter?: (value: unknown) => void;
   filterValue?: unknown;
+  /** Actual query aggregation — authoritative over guessing from the free-text title. */
+  query?: {
+    yMetric?: string;
+    yMetrics?: { field: string; aggregation: string }[];
+  };
+}
+
+/** Resolve sum/average/latest from the query's real aggregation instead of pattern-matching
+ * the widget's free-text title — a KPI titled "Average Order Value" whose query aggregation
+ * is actually `sum` was silently re-averaged client-side, disagreeing with the same metric
+ * shown in a table or chart. Falls back to the title heuristic only when no aggregation
+ * metadata is available at all (older chat-pinned stat widgets). */
+export function resolveSeriesAggregation(
+  query: StatWidgetProps['query'],
+  titleHint: string,
+): 'sum' | 'avg' | 'latest' {
+  const agg = String(query?.yMetrics?.[0]?.aggregation || query?.yMetric || '').toLowerCase();
+  if (agg === 'sum' || agg === 'count' || agg === 'distinct_count') return 'sum';
+  if (agg === 'avg' || agg === 'average' || agg === 'mean') return 'avg';
+  if (agg === 'none' || agg === 'max' || agg === 'min') return 'latest';
+  // No usable aggregation metadata — fall back to the title-text guess.
+  if (titleHint.startsWith('total ') || titleHint.includes(' count') || titleHint === 'record count') return 'sum';
+  if (titleHint.startsWith('average ') || titleHint.startsWith('avg ')) return 'avg';
+  return 'latest';
 }
 
 function resolveKpiIcon(icon: unknown, iconName?: string, title?: string, format?: string) {
@@ -207,21 +240,29 @@ function GoalProgress({
   goal,
   color,
   light,
+  goodDirection = 'up',
 }: {
   value: number;
   goal: number;
   color?: string;
   light?: boolean;
+  /** For a "lower is better" target (e.g. error rate ≤ 1%), being under goal is full
+   * achievement — a naive value/goal ratio would show a great result (0.3 vs a 1 target)
+   * as a nearly-empty bar, reading as under-performance instead of success. */
+  goodDirection?: 'up' | 'down';
 }) {
   const t = useTranslations('stat_widget');
   if (!Number.isFinite(value) || !Number.isFinite(goal) || goal === 0) return null;
-  const pct = Math.max(0, Math.min(100, (value / goal) * 100));
+  const pct = goodDirection === 'down'
+    ? (value <= goal ? 100 : Math.max(0, 100 - ((value - goal) / Math.abs(goal)) * 100))
+    : Math.max(0, Math.min(100, (value / goal) * 100));
   const track = light ? 'rgba(255,255,255,0.22)' : 'var(--ant-color-fill-secondary, rgba(0,0,0,0.06))';
   const fill = color || (light ? '#fff' : 'var(--ant-color-primary, #00c2cb)');
   return (
     <div style={{ width: '100%', maxWidth: 160, marginTop: 8 }} aria-hidden>
       <div style={{ height: 6, borderRadius: 999, background: track, overflow: 'hidden' }}>
         <div
+          className="goal-progress-fill"
           style={{
             width: `${pct}%`,
             height: '100%',
@@ -246,23 +287,27 @@ function GoalProgress({
 
 function TrendBadge({
   value,
-  positive,
+  isUp,
+  isGood,
   solid,
 }: {
   value: string;
-  positive: boolean;
+  /** Actual numeric direction — drives the arrow, independent of whether it's good. */
+  isUp: boolean;
+  /** Whether this direction is favorable for the metric — drives color only. */
+  isGood: boolean;
   solid?: boolean;
 }) {
-  const color = positive ? '#52c41a' : '#ff4d4f';
+  const color = isGood ? '#52c41a' : '#ff4d4f';
   return (
     <div
-      className={`number-compact ${positive ? 'number-positive' : 'number-negative'}`}
+      className={`number-compact ${isGood ? 'number-positive' : 'number-negative'}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 3,
         color: solid ? '#fff' : color,
-        background: solid ? (positive ? '#52c41a' : '#ff4d4f') : positive ? 'rgba(82,196,26,0.1)' : 'rgba(255,77,79,0.1)',
+        background: solid ? (isGood ? '#52c41a' : '#ff4d4f') : isGood ? 'rgba(82,196,26,0.1)' : 'rgba(255,77,79,0.1)',
         padding: '2px 8px',
         borderRadius: 12,
         fontSize: 12,
@@ -270,13 +315,13 @@ function TrendBadge({
         lineHeight: 1.2,
       }}
     >
-      {positive ? <CaretUpOutlined style={{ fontSize: 10 }} aria-hidden /> : <CaretDownOutlined style={{ fontSize: 10 }} aria-hidden />}
+      {isUp ? <CaretUpOutlined style={{ fontSize: 10 }} aria-hidden /> : <CaretDownOutlined style={{ fontSize: 10 }} aria-hidden />}
       <span aria-live="polite">{value}</span>
     </div>
   );
 }
 
-export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, filterValue }) => {
+export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, filterValue, query }) => {
   const t = useTranslations('stat_widget');
 
   let displayValue = config.value;
@@ -292,9 +337,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       const seriesNums = data.series[0].data.map(Number).filter((n: number) => !isNaN(n));
       const titleHint = String(config.title || data.series[0].name || '').toLowerCase();
       // Prefer full-window aggregate for Total/Count KPIs; latest point only for period KPIs
-      if (titleHint.startsWith('total ') || titleHint.includes(' count') || titleHint === 'record count') {
+      const seriesAgg = resolveSeriesAggregation(query, titleHint);
+      if (seriesAgg === 'sum') {
         displayValue = seriesNums.reduce((a: number, b: number) => a + b, 0);
-      } else if (titleHint.startsWith('average ') || titleHint.startsWith('avg ')) {
+      } else if (seriesAgg === 'avg') {
         displayValue = seriesNums.length ? seriesNums.reduce((a: number, b: number) => a + b, 0) / seriesNums.length : 0;
       } else {
         displayValue = data.series[0].data[data.series[0].data.length - 1];
@@ -311,9 +357,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     } else if (data.y && data.y.length > 0) {
       const yNums = data.y.map(Number).filter((n: number) => !isNaN(n));
       const titleHint = String(config.title || '').toLowerCase();
-      if (titleHint.startsWith('total ') || titleHint.includes(' count') || titleHint === 'record count') {
+      const yAgg = resolveSeriesAggregation(query, titleHint);
+      if (yAgg === 'sum') {
         displayValue = yNums.reduce((a: number, b: number) => a + b, 0);
-      } else if (titleHint.startsWith('average ') || titleHint.startsWith('avg ')) {
+      } else if (yAgg === 'avg') {
         displayValue = yNums.length ? yNums.reduce((a: number, b: number) => a + b, 0) / yNums.length : 0;
       } else {
         displayValue = data.y[data.y.length - 1];
@@ -350,19 +397,32 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   const unitSuffix =
     format === 'number' && statUnit && !/^[$€£¥₹]/.test(String(statUnit)) ? String(statUnit) : undefined;
 
+  // A query that legitimately returns no rows / all-NULL values must not render as a
+  // real "0" — that collapses "we don't know" into "we know it's zero," which is a
+  // different (and potentially misleading) claim, especially once threshold coloring
+  // or a trend delta gets computed against it.
+  const hasValue = displayValue !== null && displayValue !== undefined && displayValue !== '';
   const valueToDisplay = displayValue ?? '0';
   const numericValue = Number(valueToDisplay);
-  const valueColor = Number.isFinite(numericValue)
-    ? resolveThresholdColor(numericValue, config, accent)
-    : accent;
+  // Conditional formatting rules (same engine as Table/Chart) take priority over the
+  // legacy warn/critical thresholds when configured — they're a strict superset (any
+  // operator, multiple rules, custom colors) rather than two fixed severities.
+  const cfValueStyle = hasValue ? getStatValueStyle(config.conditionalFormatting, numericValue) : {};
+  const valueColor = cfValueStyle.color
+    ? cfValueStyle.color
+    : hasValue && Number.isFinite(numericValue)
+      ? resolveThresholdColor(numericValue, config, accent)
+      : accent;
 
-  const formattedValue = formatStatValue(valueToDisplay, format, currencySym, unitSuffix);
+  const formattedValue = hasValue
+    ? formatStatValue(valueToDisplay, format, currencySym, unitSuffix)
+    : t('no_data_value');
 
   let computedTrendValue = trendValue;
   let trendIsPositive = trendValue.startsWith('+');
   let trendIsNeutral = !trendValue;
 
-  if (!trendValue && comparisonValue !== undefined && comparisonValue !== null) {
+  if (!trendValue && hasValue && comparisonValue !== undefined && comparisonValue !== null) {
     const curr = Number(displayValue);
     const prev = Number(comparisonValue);
     if (!isNaN(curr) && !isNaN(prev) && prev !== 0) {
@@ -388,6 +448,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     trendIsNeutral = false;
   }
 
+  const trendIsGood = config.trendGoodDirection === 'down' ? !trendIsPositive : trendIsPositive;
   const showTrendUi = trendVisible && !!computedTrendValue && !trendIsNeutral;
   const comparisonCaption =
     trendLabel || formatComparisonCaption(comparisonLabel || config.comparisonPeriodLabel);
@@ -431,8 +492,8 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
   // ── Executive: filled card from palette ──────────────────────────────────
   if (layout === 'executive') {
     const cardColor = config.color ? darkenColor(config.color, 0.55) : darkenColor(accent, 0.45);
-    const executiveTrendColor = trendIsPositive ? '#9be7b1' : '#ff9a8a';
-    const execSpark = sparklineColor || (trendIsPositive ? '#a7f3c2' : '#ff9a8a');
+    const executiveTrendColor = trendIsGood ? '#9be7b1' : '#ff9a8a';
+    const execSpark = sparklineColor || (trendIsGood ? '#a7f3c2' : '#ff9a8a');
 
     return (
       <div
@@ -485,7 +546,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
                 lineHeight: 1.1,
               }}
             >
-              <span aria-live="polite">{formattedValue}</span>
+              <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
             </Title>
             <div
               className="studio-stat-label"
@@ -540,7 +601,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
               </div>
             ) : null}
             {goalTarget != null && Number.isFinite(Number(goalTarget)) && Number.isFinite(numericValue) ? (
-              <GoalProgress value={numericValue} goal={Number(goalTarget)} color="#fff" light />
+              <GoalProgress value={numericValue} goal={Number(goalTarget)} color="#fff" light goodDirection={config.trendGoodDirection} />
             ) : null}
           </div>
           {hasSpark ? (
@@ -590,9 +651,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         </Text>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <Title level={2} className={valueClass} style={{ margin: 0, fontSize: `${fontSize}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}>
-            <span aria-live="polite">{formattedValue}</span>
+            <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
-          {showTrendUi ? <TrendBadge value={computedTrendValue} positive={trendIsPositive} /> : null}
+          {showTrendUi ? <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} /> : null}
         </div>
         {trendVisible && comparisonCaption ? (
           <Text type="secondary" style={{ fontSize: 11 }}>
@@ -600,7 +661,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           </Text>
         ) : null}
         {goalTarget != null && Number.isFinite(Number(goalTarget)) && Number.isFinite(numericValue) ? (
-          <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor} />
+          <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor} goodDirection={config.trendGoodDirection} />
         ) : null}
         {hasSpark ? (
           <div style={{ marginTop: 6, maxWidth: 140 }}>
@@ -634,10 +695,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             className={valueClass}
             style={{ margin: 0, fontSize: `${Math.min(fontSize, 30)}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}
           >
-            <span aria-live="polite">{formattedValue}</span>
+            <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-            {showTrendUi ? <TrendBadge value={computedTrendValue} positive={trendIsPositive} /> : null}
+            {showTrendUi ? <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} /> : null}
             {trendVisible && comparisonCaption ? (
               <Text type="secondary" style={{ fontSize: 11 }}>
                 {comparisonCaption}
@@ -645,14 +706,14 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             ) : null}
           </div>
           {goalTarget != null && Number.isFinite(Number(goalTarget)) && Number.isFinite(numericValue) ? (
-            <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor} />
+            <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor} goodDirection={config.trendGoodDirection} />
           ) : null}
         </div>
         <div style={{ flex: '0 0 auto', width: hasSpark ? 120 : 'auto', textAlign: 'right' }}>
           {hasSpark ? (
             <Sparkline values={sparklineValues} color={sparkColor} type={sparklineType} height={40} width={118} />
           ) : showTrendUi ? (
-            <TrendBadge value={computedTrendValue} positive={trendIsPositive} solid />
+            <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} solid />
           ) : null}
         </div>
       </div>
@@ -681,9 +742,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             className={valueClass}
             style={{ margin: 0, fontSize: `${Math.min(fontSize, 26)}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}
           >
-            <span aria-live="polite">{formattedValue}</span>
+            <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
           </Title>
-          {showTrendUi ? <TrendBadge value={computedTrendValue} positive={trendIsPositive} /> : null}
+          {showTrendUi ? <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} /> : null}
         </div>
         {hasSpark ? (
           <div style={{ flex: '0 0 72px' }}>
@@ -752,9 +813,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           className={valueClass}
           style={{ margin: 0, fontSize: `${fontSize}px`, fontWeight: 700, color: valueColor || undefined, lineHeight: 1.1 }}
         >
-          <span aria-live="polite">{formattedValue}</span>
+          <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
         </Title>
-        {showTrendUi ? <TrendBadge value={computedTrendValue} positive={trendIsPositive} /> : null}
+        {showTrendUi ? <TrendBadge value={computedTrendValue} isUp={trendIsPositive} isGood={trendIsGood} /> : null}
       </div>
 
       {trendVisible && comparisonCaption && (
@@ -769,7 +830,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       )}
 
       {goalTarget != null && Number.isFinite(Number(goalTarget)) && Number.isFinite(numericValue) ? (
-        <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor || accent} />
+        <GoalProgress value={numericValue} goal={Number(goalTarget)} color={valueColor || accent} goodDirection={config.trendGoodDirection} />
       ) : null}
 
       {hasSpark && (

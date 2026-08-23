@@ -47,3 +47,11 @@ CLAUDE.md
 
 # Superpowers brainstorm mockups
 .superpowers/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
