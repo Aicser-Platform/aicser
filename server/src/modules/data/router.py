@@ -29,6 +29,7 @@ from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.db.session import get_async_session
 from src.core.edition import is_ee_enabled
+from src.core.deployment_mode import is_self_host_deployment
 from .services.data_connectivity_service import DataConnectivityService
 from .services.database_connector_service import DatabaseConnectorService
 from .services.data_retention_service import DataRetentionService
@@ -680,8 +681,8 @@ async def enforce_data_source_limit(
             detail="Authentication required",
         )
 
-    # CE has no subscription limits — skip plan checks entirely
-    if not is_ee_enabled():
+    # CE and self-host have no subscription data-source quotas.
+    if not is_ee_enabled() or is_self_host_deployment():
         return organization_id
 
     org_id = organization_id
