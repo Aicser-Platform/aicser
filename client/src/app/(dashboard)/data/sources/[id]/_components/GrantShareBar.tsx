@@ -96,7 +96,7 @@ export const summarizeGrantResults = (
 
 const { Text } = Typography;
 
-const GROUP_ORDER: SupportedGranteeType[] = ['project', 'user', 'org_role', 'project_role'];
+const GROUP_ORDER: SupportedGranteeType[] = ['project', 'user'];
 
 type GranteeSelectOption = {
   value: string;

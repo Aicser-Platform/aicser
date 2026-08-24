@@ -20,6 +20,15 @@ def _mock_response(status_code: int, json_body: dict) -> httpx.Response:
     )
 
 
+def _mock_text_response(status_code: int, text: str, *, headers: dict | None = None) -> httpx.Response:
+    return httpx.Response(
+        status_code=status_code,
+        text=text,
+        headers=headers or {},
+        request=httpx.Request("POST", "https://license.test/api/v1/public/activate"),
+    )
+
+
 class _CommitOnlyDb:
     async def commit(self) -> None:
         pass
@@ -52,6 +61,32 @@ async def test_activate_rejected_key_raises():
     body = {"detail": "License key not found"}
     with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=_mock_response(403, body))):
         with pytest.raises(LicenseServerError, match="License key not found"):
+            await client.activate(
+                license_key="bad-key",
+                instance_id="inst-1",
+                fingerprint="fp-1",
+                product_version="0.0.1",
+            )
+
+
+@pytest.mark.asyncio
+async def test_activate_redirect_raises_license_server_error():
+    response = _mock_text_response(307, "", headers={"location": "/login"})
+    with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)):
+        with pytest.raises(LicenseServerError, match="HTTP 307.*redirected to /login"):
+            await client.activate(
+                license_key="bad-key",
+                instance_id="inst-1",
+                fingerprint="fp-1",
+                product_version="0.0.1",
+            )
+
+
+@pytest.mark.asyncio
+async def test_activate_invalid_json_raises_license_server_error():
+    response = _mock_text_response(200, "<html>not json</html>")
+    with patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)):
+        with pytest.raises(LicenseServerError, match="invalid JSON"):
             await client.activate(
                 license_key="bad-key",
                 instance_id="inst-1",

@@ -108,6 +108,8 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
     volumes:
       - server_ee_uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${SERVER_PORT_HOST:-8000}:8000"
     depends_on:

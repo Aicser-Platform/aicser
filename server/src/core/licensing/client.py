@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import httpx
 
@@ -45,6 +46,48 @@ def _parse_optional_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
+def _response_detail(resp: httpx.Response) -> str:
+    try:
+        body = resp.json()
+    except ValueError:
+        body_text = resp.text.strip()
+        detail = body_text or resp.reason_phrase
+    else:
+        if isinstance(body, dict):
+            detail = str(body.get("detail") or body.get("error") or body.get("message") or body)
+        else:
+            detail = str(body)
+
+    location = resp.headers.get("location")
+    if 300 <= resp.status_code < 400 and location:
+        return f"{detail} (redirected to {location})"
+    return detail
+
+
+def _json_response(resp: httpx.Response, *, endpoint: str) -> dict[str, Any]:
+    if resp.status_code >= 300:
+        raise LicenseServerError(
+            f"License server returned HTTP {resp.status_code} for {endpoint}: {_response_detail(resp)}",
+            status_code=resp.status_code,
+        )
+
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        detail = resp.text.strip() or resp.reason_phrase
+        raise LicenseServerError(
+            f"License server returned invalid JSON for {endpoint}: {detail}",
+            status_code=resp.status_code,
+        ) from exc
+
+    if not isinstance(body, dict):
+        raise LicenseServerError(
+            f"License server returned unexpected JSON for {endpoint}: {type(body).__name__}",
+            status_code=resp.status_code,
+        )
+    return body
+
+
 async def _post(path: str, payload: dict) -> dict:
     url = f"{_base_url()}{path}"
     try:
@@ -53,14 +96,7 @@ async def _post(path: str, payload: dict) -> dict:
     except httpx.HTTPError as exc:
         raise LicenseServerError(str(exc)) from exc
 
-    if resp.status_code >= 400:
-        try:
-            detail = resp.json().get("detail", resp.text)
-        except Exception:
-            detail = resp.text
-        raise LicenseServerError(str(detail), status_code=resp.status_code)
-
-    return resp.json()
+    return _json_response(resp, endpoint=path)
 
 
 async def activate(
@@ -111,14 +147,18 @@ async def fetch_public_key(*, force_refresh: bool = False) -> str:
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as http:
             resp = await http.get(url)
-            resp.raise_for_status()
-            body = resp.json()
+            body = _json_response(resp, endpoint="/api/v1/public/keys")
     except httpx.HTTPError as exc:
         if _PUBLIC_KEY_CACHE is not None:
             logger.warning("Failed to refresh license server public key, using cached: %s", exc)
             return _PUBLIC_KEY_CACHE
         status_code = exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
         raise LicenseServerError(str(exc), status_code=status_code) from exc
+    except LicenseServerError as exc:
+        if _PUBLIC_KEY_CACHE is not None:
+            logger.warning("Failed to refresh license server public key, using cached: %s", exc)
+            return _PUBLIC_KEY_CACHE
+        raise
 
     _PUBLIC_KEY_CACHE = body["public_key_pem"]
     return _PUBLIC_KEY_CACHE

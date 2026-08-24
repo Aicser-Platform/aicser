@@ -3,6 +3,10 @@ name: aiser-ee-self-host-local
 services:
   postgres:
     container_name: aiser-postgres-ee-self-host-local
+    environment:
+      POSTGRES_DB: ${SELF_HOST_POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${SELF_HOST_POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${SELF_HOST_POSTGRES_PASSWORD:-local-postgres-password}
     ports: !override
       - "${SELF_HOST_POSTGRES_PORT_HOST:-5435}:5432"
 
@@ -13,8 +17,14 @@ services:
     image: ${AISER_SERVER_IMAGE:-aiser-ee-server:self-host}
     container_name: aiser-server-ee-self-host-local
     environment:
+      DATABASE_URL: postgresql+asyncpg://${SELF_HOST_POSTGRES_USER:-aiser}:${SELF_HOST_POSTGRES_PASSWORD:-local-postgres-password}@postgres:5432/${SELF_HOST_POSTGRES_DB:-aiser}
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${SELF_HOST_POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${SELF_HOST_POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${SELF_HOST_POSTGRES_PASSWORD:-local-postgres-password}
+      POSTGRES_PORT: "5432"
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3100}
+      FRONTEND_URL: ${SELF_HOST_FRONTEND_URL:-http://localhost:3100}
     ports: !override
       - "${SELF_HOST_SERVER_PORT_HOST:-8100}:8000"
 
