@@ -729,8 +729,8 @@ class OnboardingService:
         else:
             result = await self.db.execute(
                 text("""
-                    INSERT INTO projects (organization_id, name)
-                    VALUES (:organization_id, :project_name)
+                    INSERT INTO projects (organization_id, name, is_default)
+                    VALUES (:organization_id, :project_name, true)
                     RETURNING id
                 """),
                 {"organization_id": organization_id, "project_name": project_name},

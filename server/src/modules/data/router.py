@@ -570,8 +570,8 @@ async def _resolve_upload_project_id(
         project_result = await db.execute(
             sa.text(
                 """
-                INSERT INTO projects (organization_id, name, is_private, is_active, is_deleted)
-                VALUES (:organization_id, :name, true, true, false)
+                INSERT INTO projects (organization_id, name, is_private, is_active, is_deleted, is_default)
+                VALUES (:organization_id, :name, true, true, false, true)
                 RETURNING id
                 """
             ),
