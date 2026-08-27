@@ -45,7 +45,8 @@
         "optional": "ตัวเลือกเสริม",
         "powered_by": "สนับสนุนโดย Aicser",
         "brand_name": "Aicser",
-        "brand_logo_alt": "Aicser Logo"
+        "brand_logo_alt": "Aicser Logo",
+        "desktop_recommended": "This workspace works best on a larger screen."
     },
     "auth": {
         "sign_in": "เข้าสู่ระบบ",
@@ -171,7 +172,9 @@
         "password_strength_good": "ดี",
         "password_strength_strong": "แข็งแกร่ง",
         "explore_discover": "Explore public insights →",
-        "invite_wrong_account": "This invitation is for a different email address. Please sign out and use the invited account."
+        "invite_wrong_account": "This invitation is for a different email address. Please sign out and use the invited account.",
+        "continue_with_org": "Continue with your organization account",
+        "continue_with_provider": "Continue with {provider}"
     },
     "app": {
         "loading": "กำลังโหลด...",
@@ -289,7 +292,8 @@
         },
         "data_sources_failing": "{count, plural, one {# data source is} other {# data sources are}} failing to connect — click to review",
         "org_settings": "Organization Settings",
-        "org_join_existing_hint": "Already have teammates on Aicser? Ask them to invite you instead of creating a new organization here — check your email for an invite link first, otherwise you'll end up in a separate workspace from your team."
+        "org_join_existing_hint": "Already have teammates on Aicser? Ask them to invite you instead of creating a new organization here — check your email for an invite link first, otherwise you'll end up in a separate workspace from your team.",
+        "failed_create_organization": "Failed to create organization"
     },
     "upgrade": {
         "checkout_error": "ไม่สามารถเริ่มต้นการชำระเงินได้ กรุณาตรวจสอบ Price ID แล้วลองใหม่",
@@ -2132,7 +2136,12 @@
         "type": "Type",
         "profile_update_success": "Profile updated successfully!",
         "notifications_update_success": "Notification settings updated successfully!",
-        "security_update_success": "Security settings updated successfully!"
+        "security_update_success": "Security settings updated successfully!",
+        "tab_project": "Project",
+        "tab_license": "License",
+        "tab_agent_workflows": "Workflows",
+        "tab_agent_capabilities": "Capabilities",
+        "tab_kpi_definitions": "KPI Definitions"
     },
     "data": {
         "title": "แหล่งข้อมูล",
@@ -3128,7 +3137,11 @@
         "tab_filters_tip": "Page and chart filters",
         "tab_interact_tip": "Sort, row limit, and click interactions",
         "image_url_placeholder": "https://example.com/image.png",
-        "refresh": "Refresh"
+        "refresh": "Refresh",
+        "multi_select_align_left": "Align left",
+        "multi_select_align_top": "Align top",
+        "multi_select_distribute_horizontal": "Distribute horizontally",
+        "multi_select_distribute_vertical": "Distribute vertically"
     },
     "knowledge": {
         "title": "Knowledge libraries",
@@ -3664,7 +3677,16 @@
         "row_column_filters_tip": "Row or column security changed these results.",
         "column_filters_applied": "Column filters applied",
         "column_filters_omitted": "Omitted columns",
-        "column_filters_masked": "Masked columns"
+        "column_filters_masked": "Masked columns",
+        "plan_error_prefix": "Execution plan unavailable",
+        "plan_query_label": "Query Plan",
+        "plan_planning_time": "planning {ms} ms",
+        "plan_execution_time": "execution {ms} ms",
+        "plan_rows_estimate": "~{rows} rows",
+        "plan_rows_estimate_actual": "~{estRows} est / {actualRows} actual rows",
+        "plan_cost": "cost {cost}",
+        "plan_time_ms": "{ms} ms",
+        "plan_time_ms_loops": "{ms} ms × {loops} loops"
     },
     "billing": {
         "title": "การเรียกเก็บเงินและสมาชิก",
@@ -6469,7 +6491,9 @@
         "executive_banner_aria": "Executive summary",
         "executive_show_details": "View KPI insights ({count})",
         "executive_hide_details": "Hide details",
-        "data_as_of": "Data as of {when}"
+        "data_as_of": "Data as of {when}",
+        "error_show_details": "Show details",
+        "error_details_title": "Error details"
     },
     "dashboard_tabs": {
         "chart_title_by_type": "แผนภูมิ {type}",
@@ -8484,7 +8508,20 @@
         "effective_access_level_explore_desc": "Can run queries and see row data, subject to any row filter below.",
         "effective_access_level_manage_desc": "Full control — query, edit, manage settings, and share this data source.",
         "effective_access_level_custom_desc": "A custom combination of permissions.",
-        "effective_access_role_grantee_warning": "This policy cannot be previewed for a role grantee — row values depend on the individual member."
+        "effective_access_role_grantee_warning": "This policy cannot be previewed for a role grantee — row values depend on the individual member.",
+        "schema_search_placeholder": "Search tables…",
+        "schema_no_match": "No tables match your search",
+        "schema_tables_count": "{count} tables",
+        "preview_data_action": "Preview data",
+        "preview_data_hide_action": "Hide preview",
+        "preview_data_loading": "Loading preview…",
+        "preview_data_error": "Couldn't load a preview for this table.",
+        "preview_data_empty": "This table has no rows yet.",
+        "preview_data_rows_shown": "Showing first {rows} rows",
+        "schema_column_name": "Column",
+        "schema_column_type": "Type",
+        "schema_column_role": "Role",
+        "schema_column_nullable": "Nullable"
     },
     "discover": {
         "brand": "Aicser Discover",
@@ -8536,6 +8573,19 @@
         "notif_share": "{name} shared a post",
         "notif_default": "Update from {name}",
         "someone": "Someone"
+    },
+    "command_palette": {
+        "placeholder": "Search pages, settings, projects…",
+        "no_results": "No matches",
+        "group_navigate": "Go to",
+        "group_settings": "Settings",
+        "group_projects": "Projects",
+        "hint_navigate": "Navigate",
+        "hint_select": "Select",
+        "hint_close": "Close",
+        "current_project": "Current",
+        "switching_project": "Switching project...",
+        "switched_project": "Switched to {name}"
     }
 <<<<<<< HEAD
   },

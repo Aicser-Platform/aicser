@@ -14,7 +14,7 @@ const { Text } = Typography;
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useTranslations } from 'next-intl';
-import { handlePlanLimitError } from '@/utils/api';
+import { handlePlanLimitError, ApiError } from '@/utils/api';
 import dynamic from 'next/dynamic';
 
 const ProjectSelectorModal = dynamic(
@@ -234,7 +234,15 @@ export const LayoutHeader: React.FC<Props> = ({
         // Handled — upgrade modal shown
       } else {
         console.error('Failed to create project:', error);
-        messageApi.error(t('failed_create_project'));
+        // Surface the backend's actual reason (e.g. a permission error) when
+        // available, rather than always showing the same generic string --
+        // a bare "Failed to create project" gives the user (and anyone
+        // debugging their report afterward) nothing to go on for anything
+        // other than the quota case handled above.
+        const detail = error instanceof ApiError && error.message ? error.message : null;
+        messageApi.error(
+          detail ? `${t('failed_create_project')}: ${detail}` : t('failed_create_project')
+        );
       }
     } finally {
       setCreateLoading(false);
@@ -254,6 +262,12 @@ export const LayoutHeader: React.FC<Props> = ({
       }
     } catch (error) {
       console.error('Failed to create organization:', error);
+      // Previously silent on failure -- the modal just sat there with the
+      // loading spinner stopped and no explanation, e.g. on the real 409
+      // "you already belong to an organization" case self-serve multi-org
+      // creation returns.
+      const detail = error instanceof ApiError && error.message ? error.message : null;
+      messageApi.error(detail || t('failed_create_organization'));
     } finally {
       setCreateOrgLoading(false);
     }

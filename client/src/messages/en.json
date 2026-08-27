@@ -266,6 +266,7 @@
     "project_created": "Project created successfully",
     "organization_created": "Organization created successfully",
     "failed_create_project": "Failed to create project",
+    "failed_create_organization": "Failed to create organization",
     "project_name_required": "Please enter project name",
     "project_name_blank": "Project name cannot be blank",
     "project_name_max": "Project name cannot exceed 60 characters",
