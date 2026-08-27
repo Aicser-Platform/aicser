@@ -16,7 +16,15 @@ const FeaturebaseMessenger = dynamic(
   { ssr: false, loading: () => null }
 );
 
-const queryClient = new QueryClient({
+// Exported (not just module-local) so resetWorkspaceScope.ts can clear it on
+// logout -- see the comment there for why: query keys like organizations'
+// (['organizations', 'list']) aren't scoped by user identity, so without an
+// explicit clear, a second account logging in on the same tab would see the
+// *previous* account's cached organizations/projects/etc. until the
+// 5-minute staleTime happened to lapse, at which point Header.tsx's "pick a
+// valid org" reconciliation effect would run against that stale list and
+// silently re-select an org the new user has no access to.
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
