@@ -4,6 +4,7 @@ import React from 'react';
 import { Button, Empty } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { ErrorDetailsButton } from '@/components/ui/ErrorDetailsButton';
 import { WidgetPreview } from '../widgets/WidgetPreview';
 import { WidgetInteractionHint } from './WidgetInteractionHint';
 import { DrillBreadcrumb } from './DrillBreadcrumb';
@@ -96,7 +97,7 @@ export function DashboardWidgetCell({
         />
       ) : null}
       {widget.error && onRetryWidget ? (
-        <div className="widget-center widget-error-retry" title={friendlyError.technicalDetail}>
+        <div className="widget-center widget-error-retry">
           <Empty
             description={
               <span>
@@ -107,13 +108,22 @@ export function DashboardWidgetCell({
             }
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           >
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={() => onRetryWidget(widget.id)}
-            >
-              {t('retry')}
-            </Button>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => onRetryWidget(widget.id)}
+              >
+                {t('retry')}
+              </Button>
+              {friendlyError.technicalDetail ? (
+                <ErrorDetailsButton
+                  technicalDetail={friendlyError.technicalDetail}
+                  label={t('error_show_details')}
+                  title={t('error_details_title')}
+                />
+              ) : null}
+            </div>
           </Empty>
         </div>
       ) : (

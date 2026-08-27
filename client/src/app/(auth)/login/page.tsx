@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getDefaultAppPath } from '@/utils/appPaths';
 import { MARKETING_HOME_URL, PRIVACY_URL, TERMS_URL } from '@/constants/legalUrls';
+import { PasswordStrengthMeter } from '@/components/auth/PasswordStrengthMeter';
 import type { SupabaseOAuthProvider } from '@/ee';
 import './login.css';
 
@@ -64,6 +65,7 @@ export default function LoginPage() {
     searchParams?.get('mode') === 'signup' ||
     searchParams?.get('mode') === 'register';
   const [isSignUp, setIsSignUp] = useState(initialSignUp);
+  const [signupPassword, setSignupPassword] = useState('');
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
@@ -151,6 +153,7 @@ export default function LoginPage() {
       setIsSignUp(signUp);
       clearLoginError();
       setSignupMessage(null);
+      setSignupPassword('');
       const params = new URLSearchParams(window.location.search);
       if (signUp) {
         params.set('mode', 'signup');
@@ -329,8 +332,11 @@ export default function LoginPage() {
                   prefix={<LockOutlined />}
                   placeholder={t('password')}
                   autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  onChange={(e) => isSignUp && setSignupPassword(e.target.value)}
                 />
               </Form.Item>
+
+              {isSignUp ? <PasswordStrengthMeter password={signupPassword} /> : null}
 
               {!isSignUp ? (
                 <div className="login-forgot-row">
@@ -371,7 +377,7 @@ export default function LoginPage() {
               </Form.Item>
             </Form>
 
-            {IS_EE && !isSignUp ? (
+            {IS_EE ? (
               <>
                 <Divider plain className="login-divider">
                   {t('or_continue_with')}
@@ -390,7 +396,7 @@ export default function LoginPage() {
                         disabled={Boolean(oauthLoadingProvider)}
                         onClick={() => onSupabaseOAuth(provider)}
                       >
-                        {t('sign_in_with_provider', { provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider] })}
+                        {t('continue_with_provider', { provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider] })}
                       </Button>
                     ))}
                   </div>
@@ -412,7 +418,7 @@ export default function LoginPage() {
                       }
                     }}
                   >
-                    {t('sign_in_with_org')}
+                    {t('continue_with_org')}
                   </Button>
                 )}
               </>

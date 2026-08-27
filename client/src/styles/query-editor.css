@@ -1363,11 +1363,17 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.qe-performance-pane__plan-pre {
-  font-size: 11px;
-  white-space: pre-wrap;
-  margin: 0;
+.qe-performance-pane__plan-tree.ant-tree {
   background: transparent;
-  font-family: monospace;
-  line-height: 1.5;
+  font-size: 12px;
+}
+
+.qe-performance-pane__plan-tree .ant-tree-node-content-wrapper {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.qe-performance-pane__plan-tree .ant-tree-treenode {
+  padding: 1px 0;
 }

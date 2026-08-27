@@ -43,7 +43,7 @@ export const WidgetPreview: React.FC<{
     return {
       ...options,
       title: options.title || widget.title,
-      colorPalette: resolveChartPaletteId(options.colorPalette, dashboardDefaultPalette),
+      colorPalette: resolveChartPaletteId(options.colorPalette as string | undefined | null, dashboardDefaultPalette),
       dashboardDefaultPalette,
       __widgetDataSourceId: widget.dataSourceId,
       ...(compactPreview

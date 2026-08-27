@@ -213,7 +213,7 @@ export function DataSection() {
                   },
                   ...(sqlBound
                     ? {
-                        chartData: null,
+                        chartData: undefined,
                         error: null,
                         lastFetchedQueryHash: undefined,
                       }

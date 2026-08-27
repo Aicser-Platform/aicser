@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { DashboardWidgetCell } from '../DashboardWidgetCell';
+import { LazyWidgetMount } from '../LazyWidgetMount';
 import { shouldShowWidgetHeader } from '../../utils/widgetCardHelpers';
 import { DashboardIcon } from '../../icons';
 import '../../icons/IconPicker.css';
@@ -158,15 +159,17 @@ export function DashboardViewerGrid({
                   </div>
                 )}
                 <div className="widget-card-body no-drag">
-                  <DashboardWidgetCell
-                    widget={widget}
-                    dashboardId={dashboardId}
-                    runtimeFilters={runtimeFilters}
-                    readOnly
-                    onCrossFilter={onCrossFilter}
-                    onWidgetChartClick={onWidgetChartClick}
-                    onRetryWidget={onRetryWidget}
-                  />
+                  <LazyWidgetMount>
+                    <DashboardWidgetCell
+                      widget={widget}
+                      dashboardId={dashboardId}
+                      runtimeFilters={runtimeFilters}
+                      readOnly
+                      onCrossFilter={onCrossFilter}
+                      onWidgetChartClick={onWidgetChartClick}
+                      onRetryWidget={onRetryWidget}
+                    />
+                  </LazyWidgetMount>
                 </div>
               </div>
             </div>

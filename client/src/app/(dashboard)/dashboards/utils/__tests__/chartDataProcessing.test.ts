@@ -33,6 +33,7 @@ describe('partitionSeriesData', () => {
     const result = partitionSeriesData(
       {
         x: ['A', 'A'],
+        y: [],
         group_field: ['G1', 'G2'],
         series: [
           { name: 'Primary', data: [1, 2] },
@@ -57,6 +58,7 @@ describe('partitionSeriesData', () => {
     const result = partitionSeriesData(
       {
         x: ['A', 'A', 'B', 'B'],
+        y: [],
         group_field: ['East', 'West', 'East', 'West'],
         series: [{ name: 'Sum of amount', data: [10, 20, 30, 40] }],
       },
@@ -78,6 +80,7 @@ describe('partitionSeriesData', () => {
     const result = partitionSeriesData(
       {
         x: ['A', 'B'],
+        y: [],
         series: [
           { name: 'Sum of a', data: [1, 2] },
           { name: 'Sum of b', data: [3, 4] },

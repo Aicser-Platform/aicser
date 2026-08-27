@@ -280,7 +280,18 @@ export interface ChartConfig {
   showLegend?: boolean;
   showDataLabel?: boolean;
   showGridline?: boolean;
+  /** @deprecated Legacy X/Y axis toggle, read as a fallback by resolveAxisVisibility(). Write `axis` instead. */
   showAxis?: boolean;
+  /**
+   * Canonical per-axis visibility — replaces the fragile showAxis /
+   * showHAxisLabels / showHAxisLine precedence chain. New writes should only
+   * set this; resolveAxisVisibility() migrates older saved widgets that only
+   * have the legacy flags below.
+   */
+  axis?: {
+    x?: { visible?: boolean };
+    y?: { visible?: boolean };
+  };
   showTrendLine?: boolean;
   showAverageLine?: boolean;
   showAnomalies?: boolean;
@@ -357,6 +368,31 @@ export interface ChartConfig {
   borderColor?: string;
   /** Widget-level box shadow preset */
   boxShadow?: 'sm' | 'md' | 'lg';
+}
+
+/**
+ * Single source of truth for whether the X/Y axis (line + labels) renders.
+ *
+ * Historically three flags fought over this per axis — `showHAxisLabels`,
+ * `showHAxisLine`, and a legacy `showAxis` covering both axes — each
+ * consumer re-deriving its own fallback chain. Reads now go through here:
+ * the new canonical `axis.x.visible` / `axis.y.visible` wins when set,
+ * otherwise the legacy flags are migrated on the fly so widgets saved
+ * before this change keep rendering exactly as before. `showVAxisLine` is
+ * intentionally left out — it was never part of this precedence chain (no
+ * UI ever wrote it) and defaults to hidden independent of this toggle.
+ */
+export function resolveAxisVisibility(config: ChartConfig): { x: boolean; y: boolean } {
+  if (config.axis?.x?.visible !== undefined || config.axis?.y?.visible !== undefined) {
+    return {
+      x: config.axis?.x?.visible ?? true,
+      y: config.axis?.y?.visible ?? true,
+    };
+  }
+  return {
+    x: (config.showHAxisLabels ?? config.showHAxisLine ?? config.showAxis) !== false,
+    y: (config.showVAxisLabels ?? config.showAxis) !== false,
+  };
 }
 
 export interface ChartData {
@@ -531,8 +567,9 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
   const feedPreview = config.isFeedPreview === true;
   const legendPos = config.legendPosition || (config.showLegend !== false ? 'top' : 'hide');
-  const showXAxisLabels = (config.showHAxisLabels ?? config.showAxis) !== false;
-  const showYAxisLabels = (config.showVAxisLabels ?? config.showAxis) !== false;
+  const axisVisibility = resolveAxisVisibility(config);
+  const showXAxisLabels = axisVisibility.x;
+  const showYAxisLabels = axisVisibility.y;
   const yAxisFontSize = config.vAxisFontSize ?? config.axisLabelFontSize ?? 11;
   const hasSecondary = data?.secondarySeries && data.secondarySeries.length > 0;
   const secondaryName = config.yAxisSecondaryLabel !== undefined ? config.yAxisSecondaryLabel : (hasSecondary ? data.secondarySeries?.[0]?.name : '');
@@ -583,6 +620,7 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
   const isPercentStacked = config.barStackMode === 'stacked-100' || config.lineStackMode === 'stacked-100';
   const isScatter = chartType === 'scatter';
   const hasXAxisTextDecoration = !!(config.hAxisUnderline || config.hAxisStrikethrough);
+  const xAxisVisible = resolveAxisVisibility(config).x;
 
   return {
     type: isHorizontalBar || isScatter ? 'value' : 'category',
@@ -600,11 +638,11 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
     min: isHorizontalBar && isPercentStacked ? 0 : undefined,
     max: isHorizontalBar && isPercentStacked ? 100 : undefined,
     axisLine: {
-      show: config.showHAxisLine ?? config.showAxis,
+      show: xAxisVisible,
       lineStyle: { color: CHART_COLORS.border.light },
     },
     axisLabel: {
-      show: config.showHAxisLabels ?? config.showAxis,
+      show: xAxisVisible,
       color:
         config.hAxisColor ??
         (config.axisLabelColor === 'default'

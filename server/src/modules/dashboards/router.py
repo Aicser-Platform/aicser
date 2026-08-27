@@ -506,7 +506,7 @@ async def get_dashboard_build_progress(
     )
     from src.modules.dashboards.build_session import get_build_session
 
-    session = get_build_session(str(dashboard_id))
+    session = await get_build_session(str(dashboard_id))
     if not session:
         return {"active": False, "dashboard_id": str(dashboard_id)}
     return {"active": session.get("status") == "building", **session}

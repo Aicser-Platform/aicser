@@ -45,7 +45,8 @@
     "optional": "Optional",
     "powered_by": "Powered by Aicser",
     "brand_name": "Aicser",
-    "brand_logo_alt": "Aicser Logo"
+    "brand_logo_alt": "Aicser Logo",
+    "desktop_recommended": "This workspace works best on a larger screen."
   },
   "auth": {
     "sign_in": "Sign In",
@@ -80,6 +81,8 @@
     "login_failed": "Login failed",
     "sign_in_with_org": "Sign in with your organization account",
     "sign_in_with_provider": "Sign in with {provider}",
+    "continue_with_org": "Continue with your organization account",
+    "continue_with_provider": "Continue with {provider}",
     "or_continue_with": "or continue with",
     "already_have_account": "Already have an account?",
     "sign_in_link": "Sign in",
@@ -388,6 +391,19 @@
     "no_query_results": "No matching saved queries",
     "open_in_editor": "Open in editor",
     "ask_in_chat": "Ask in chat"
+  },
+  "command_palette": {
+    "placeholder": "Search pages, settings, projects…",
+    "no_results": "No matches",
+    "group_navigate": "Go to",
+    "group_settings": "Settings",
+    "group_projects": "Projects",
+    "hint_navigate": "Navigate",
+    "hint_select": "Select",
+    "hint_close": "Close",
+    "current_project": "Current",
+    "switching_project": "Switching project...",
+    "switched_project": "Switched to {name}"
   },
   "layout": {
     "toast_refresh_datasources_failed": "Failed to refresh data sources after creation.",
@@ -3092,6 +3108,10 @@
     "view_table_empty": "No data available for this widget yet.",
     "delete_widget_confirm_title": "Delete widget?",
     "delete_widget_confirm_body": "This widget will be permanently removed from the dashboard.",
+    "multi_select_align_left": "Align left",
+    "multi_select_align_top": "Align top",
+    "multi_select_distribute_horizontal": "Distribute horizontally",
+    "multi_select_distribute_vertical": "Distribute vertically",
     "slicer_filter_mode": "Slicer mode",
     "slicer_mode_tile": "Tile / Chip",
     "slicer_mode_toggle": "Toggle (on/off)",
@@ -3542,6 +3562,15 @@
     "copy": "Copy",
     "generating_execution_plan": "Generating execution plan...",
     "no_execution_plan_yet": "No execution plan yet. Click \"Analyze Query Performance\" to generate one.",
+    "plan_error_prefix": "Execution plan unavailable",
+    "plan_query_label": "Query Plan",
+    "plan_planning_time": "planning {ms} ms",
+    "plan_execution_time": "execution {ms} ms",
+    "plan_rows_estimate": "~{rows} rows",
+    "plan_rows_estimate_actual": "~{estRows} est / {actualRows} actual rows",
+    "plan_cost": "cost {cost}",
+    "plan_time_ms": "{ms} ms",
+    "plan_time_ms_loops": "{ms} ms × {loops} loops",
     "search_sql_or_error": "Search SQL or error...",
     "filter_all": "All",
     "filter_success": "Success",
@@ -6476,7 +6505,9 @@
     "executive_banner_aria": "Executive summary",
     "executive_show_details": "View KPI insights ({count})",
     "executive_hide_details": "Hide details",
-    "data_as_of": "Data as of {when}"
+    "data_as_of": "Data as of {when}",
+    "error_show_details": "Show details",
+    "error_details_title": "Error details"
   },
   "dashboard_tabs": {
     "chart_title_by_type": "{type} Chart",
@@ -8542,6 +8573,19 @@
     "effective_access_level_explore_desc": "Can run queries and see row data, subject to any row filter below.",
     "effective_access_level_manage_desc": "Full control — query, edit, manage settings, and share this data source.",
     "effective_access_level_custom_desc": "A custom combination of permissions.",
-    "effective_access_role_grantee_warning": "This policy cannot be previewed for a role grantee — row values depend on the individual member."
+    "effective_access_role_grantee_warning": "This policy cannot be previewed for a role grantee — row values depend on the individual member.",
+    "schema_search_placeholder": "Search tables…",
+    "schema_no_match": "No tables match your search",
+    "schema_tables_count": "{count} tables",
+    "preview_data_action": "Preview data",
+    "preview_data_hide_action": "Hide preview",
+    "preview_data_loading": "Loading preview…",
+    "preview_data_error": "Couldn't load a preview for this table.",
+    "preview_data_empty": "This table has no rows yet.",
+    "preview_data_rows_shown": "Showing first {rows} rows",
+    "schema_column_name": "Column",
+    "schema_column_type": "Type",
+    "schema_column_role": "Role",
+    "schema_column_nullable": "Nullable"
   }
 }

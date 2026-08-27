@@ -307,7 +307,11 @@ engine = create_async_engine(
 
 ## Removed Components
 
-The following Cube.js-related components were removed:
+The following Cube.js-related components were removed. An earlier version of
+this document claimed this removal was already complete; it wasn't — a full
+parallel Cube.js query-execution pipeline was still live end-to-end. That
+pipeline (not just the services/directories below) has now actually been
+deleted:
 
 ### Deleted Services (~3500 lines)
 - `cube_connector_service.py` (662 lines)
@@ -320,10 +324,47 @@ The following Cube.js-related components were removed:
 - `cube_helpers/` - Placeholder Cube.js directory
 - `cube_schemas/` - YAML schema files
 
-### Deprecated Endpoints
-All Cube.js endpoints now return 501 Not Implemented:
-- `/api/data/cube/*`
-- `/api/data/cube-modeling/*`
+### Deleted query-execution pipeline (this pass)
+- `CubeEngine` class, the `QueryEngine.CUBE` enum member, and
+  `MultiEngineQueryService.execute_cube_query()` in
+  `src/modules/data/services/multi_engine_query_service.py` — this made live
+  HTTP calls to `CUBE_API_URL`, a service with no entry in any Docker Compose
+  file in this repo.
+- The LangGraph `cube_query` → `execute_cube_query` node pair and the
+  supervisor routing branch into it (`ee/modules/ai/nodes/cube_node.py`,
+  `ee/modules/ai/nodes/cube_execution_node.py` — both deleted — plus the
+  wiring in `ee/modules/ai/orchestrator/graph_builder.py`,
+  `supervisor_routing.py`, `supervisor_node.py`, and
+  `nodes/supervisor/plan_templates.py`).
+- `AIOrchestrator._execute_cube_query()` and the Cube.js branch of
+  `_execute_cube_analysis()` in `ee/modules/ai/services/ai_orchestrator.py`
+  (this branch was already unreachable in practice — the strategy selector
+  never actually returned the literal string it was gated on — and now fails
+  fast instead of calling the removed HTTP client).
+- The `/api/data/cube/*` execution endpoints in `src/modules/data/router.py`:
+  `status`, `connect`, `metadata`, `query`, `suggestions`, `{cube_name}/preview`,
+  `initialize`, `connections`, `connections/{id}/query`,
+  `connections/{id}/schema` — all made live `CUBE_API_URL` HTTP calls with no
+  backing service. `_require_external_cube()` and the `CubeQueryRequest`
+  model (only used by these endpoints) were removed alongside them.
+
+### Endpoints that still exist as routes but are non-functional
+- `/api/data/cube-modeling/*` (`analyze`, `deploy`, `connect-warehouse`,
+  `types`) depend on `cube_modeling_service`, a module that does not exist
+  anywhere in this codebase — the import is wrapped in a try/except that
+  falls back to `None`, so these return 503 "Cube.js modeling service is not
+  available" rather than doing anything.
+- `/api/data/cube-deploy` and `/api/data/cube-cubes` already explicitly
+  return 501 in code ("Cube.js deployment/integration has been removed").
+
+### Optional feature intentionally out of scope for this removal
+- `ee/modules/ai/semantic_router.py`'s `/cube/export` and `/cube/import`
+  endpoints let a user export this platform's semantic layer to Cube.js YAML
+  format, or import metadata from their own externally-hosted Cube.js
+  instance. This is gated behind `AICSER_EXTERNAL_CUBE_ENABLED`
+  (`src/modules/data/cube_feature.py`) and is a distinct, opt-in
+  interchange feature — not the query-execution pipeline described above —
+  so it was left in place.
 
 ### Removed Models
 - `DataConnection` - Duplicate of DataSource
@@ -360,9 +401,13 @@ schema = await database_connector.get_schema(config)
 | POST | `/api/data/upload` | Upload file |
 | DELETE | `/api/data/sources/{id}` | Delete data source |
 
-### Deprecated Endpoints (501 Not Implemented)
+### Deprecated Endpoints
 
-All `/api/data/cube/*` and `/api/data/cube-modeling/*` endpoints
+`/api/data/cube/*` no longer exists (see "Removed Components" above — those
+routes were deleted, not stubbed). `/api/data/cube-modeling/*` still exists
+as a route but returns 503, since the service it depends on isn't present in
+this codebase. `/api/data/cube-deploy` and `/api/data/cube-cubes` remain as
+routes that explicitly return 501.
 
 ## Environment Variables
 
