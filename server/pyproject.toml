@@ -18,6 +18,9 @@ sqlalchemy = "^2.0.23"
 cryptography = "^46.0.5"
 passlib = "^1.7.4"
 python-jose = "^3.3.0"
+# TOTP (RFC 6238) codes + otpauth:// provisioning URIs for two-factor auth
+# (src/modules/authentication/totp_service.py) -- well-audited, standard choice.
+pyotp = "^2.10.0"
 email-validator = "^2.2.0"
 pydantic = "^2.10.4"
 pydantic-settings = "^2.7.0"

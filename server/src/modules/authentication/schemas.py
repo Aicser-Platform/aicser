@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from uuid import UUID
-from typing import Optional, Literal
+from typing import List, Optional, Literal
 
 
 class LoginRequest(BaseModel):
@@ -47,3 +47,47 @@ class UserResponse(BaseModel):
 class TokenExchangeRequest(BaseModel):
     provider: Literal["supabase", "keycloak"]
     token: str
+
+
+# ── Two-factor authentication (TOTP) ──────────────────────────────────────────
+
+class LoginResponse(UserResponse):
+    """/auth/login response. For accounts without 2FA this is identical to
+    UserResponse (two_factor_required defaults to False, login_token to None) --
+    unchanged from before 2FA existed. When the account has TOTP enabled, no
+    access_token/cookie is issued yet; login_token must be redeemed via
+    /auth/2fa/verify-login instead."""
+    two_factor_required: bool = False
+    login_token: Optional[str] = None
+
+
+class TwoFactorStatusResponse(BaseModel):
+    enabled: bool
+
+
+class TwoFactorEnrollStartResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    account: str
+    issuer: str
+
+
+class TwoFactorEnrollConfirmRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+class TwoFactorEnrollConfirmResponse(BaseModel):
+    enabled: bool
+    backup_codes: List[str]
+
+
+class TwoFactorDisableRequest(BaseModel):
+    # Required whenever the account has a password (verified in disable_totp);
+    # optional only for the rare password-less/OAuth-only account.
+    password: Optional[str] = None
+
+
+class TwoFactorVerifyLoginRequest(BaseModel):
+    login_token: str
+    code: Optional[str] = Field(default=None, min_length=6, max_length=6)
+    backup_code: Optional[str] = None

@@ -1,4 +1,4 @@
-import { buildChatMessagePinSource, type ChatMessagePinSource } from '@/components/charts/buildChatChartPinPayload';
+import { buildChatMessagePinSource, inferChartTypeFromConfig, type ChatMessagePinSource } from '@/components/charts/buildChatChartPinPayload';
 import { hydrateChartConfigFromQueryResult } from '@/components/charts/hydrateChartConfig';
 import { resolveSharedChartProps } from '@/components/charts/echartsToSharedWidget';
 import { extractEchartsSnapshotOption } from '@/components/charts/resolveChatChart';

@@ -31,7 +31,7 @@ async def run_data_retention_cleanup(ctx: Dict[str, Any]) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Retention cleanup failed: {e}")
-        return {"success": False, "error": str(e)}
+        raise
 
 
 async def run_data_quality_check(ctx: Dict[str, Any], data_source_id: str) -> Dict[str, Any]:
@@ -70,7 +70,7 @@ async def run_data_quality_check(ctx: Dict[str, Any], data_source_id: str) -> Di
         }
     except Exception as e:
         logger.error(f"Data quality check failed for {data_source_id}: {e}")
-        return {"success": False, "error": str(e)}
+        raise
 
 
 async def refresh_schema_cache(ctx: Dict[str, Any], data_source_id: str) -> Dict[str, Any]:
@@ -89,7 +89,7 @@ async def refresh_schema_cache(ctx: Dict[str, Any], data_source_id: str) -> Dict
         }
     except Exception as e:
         logger.error(f"Schema cache refresh failed for {data_source_id}: {e}")
-        return {"success": False, "error": str(e)}
+        raise
 
 
 async def run_scheduled_report(ctx: Dict[str, Any], report_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,7 +162,7 @@ async def evaluate_alert_rules(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {"success": True, "completed_at": datetime.utcnow().isoformat()}
     except Exception as e:
         logger.error(f"❌ Alert evaluation cycle failed: {e}")
-        return {"success": False, "error": str(e)}
+        raise
 
 
 async def refresh_artifact_data(
@@ -205,7 +205,7 @@ async def refresh_artifact_data(
         }
     except Exception as exc:
         logger.exception("refresh_artifact_data failed: %s", exc)
-        return {"success": False, "error": str(exc)}
+        raise
 
 
 async def sync_artifacts_after_schema_change(

@@ -39,6 +39,7 @@ import { AccessDenied } from '@/components/layout/AccessDenied';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { KnowledgeCitationDrawer } from '@/components/knowledge/KnowledgeCitationDrawer';
 import { KnowledgeSearchPanel } from '@/components/knowledge/KnowledgeSearchPanel';
+import { TableRowsSkeleton } from '@/components/ui/TableRowsSkeleton';
 import {
   useKnowledgeDocuments,
   useDeleteKnowledgeDocument,
@@ -397,7 +398,11 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     {
       key: 'libraries',
       label: t('tab_libraries'),
-      children: (
+      children: libsLoading && libraries.length === 0 ? (
+        <div style={{ padding: '8px 0' }}>
+          <TableRowsSkeleton columns={libraryColumns.length} rows={5} />
+        </div>
+      ) : (
         <Table
           className="page-data-table"
           rowKey="id"
@@ -435,6 +440,10 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={t('documents_need_library')}
         />
+      ) : docsLoading && documents.length === 0 ? (
+        <div style={{ padding: '8px 0' }}>
+          <TableRowsSkeleton columns={docColumns.length} rows={6} />
+        </div>
       ) : (
         <Table
           className="page-data-table"
