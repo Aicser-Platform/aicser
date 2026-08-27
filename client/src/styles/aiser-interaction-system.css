@@ -130,6 +130,26 @@
   transition: var(--interaction-hover-transition) !important;
 }
 
+/* Dark sidebar: a SubMenu's own title (e.g. a collapsible nav section
+   header like "Data & Model") should read as clearly as its sibling
+   items and children. ThemeProvider.tsx sets darkItemColor for regular
+   items, but antd's dark Menu theme resolves an unselected SubMenu
+   title's text through its own internal default rather than that
+   token, which lands noticeably dimmer against this app's custom
+   sidebar background -- same class of "antd's own dark-menu default
+   silently wins over our token override" issue already documented and
+   fixed here once before for hover text. Match darkItemColor directly
+   rather than depending on antd's token resolution for this element. */
+.ant-menu-dark .ant-menu-submenu-title {
+  color: #e6edf3 !important;
+}
+.ant-menu-dark .ant-menu-submenu-title .ant-menu-submenu-arrow {
+  color: #e6edf3 !important;
+}
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: var(--ant-menu-item-selected-color, #ffffff) !important;
+}
+
 .ant-menu-item:hover,
 .ant-menu-submenu-title:hover {
   transform: none !important;
