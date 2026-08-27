@@ -17,6 +17,7 @@ from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.pricing.rate_limiter import RateLimiter
 from src.modules.pricing.plans import is_feature_available
+from src.modules.pricing.usage_tracker import resolve_organization_id
 from src.modules.data.services.query_identity import QueryIdentity
 from fastapi import status
 import inspect
@@ -989,7 +990,14 @@ async def create_snapshot(
     user_id = str(
         user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or ""
     ).strip()
-    org_id_str = str(user_payload.get("organization_id") or "")
+    # organization_id is not a JWT claim in this auth system - membership is
+    # looked up from the DB (the same resolve_organization_id() every other
+    # org-scoped endpoint in this codebase uses). Trusting a nonexistent
+    # user_payload["organization_id"] claim meant org_id_str was always "",
+    # so any request that legitimately passed its caller's real
+    # organization_id 403'd unless the JWT happened to carry admin/org_admin
+    # roles - i.e. this rejected the normal, authorized case.
+    org_id_str = str(await resolve_organization_id(user_id, db) or "")
 
     # Enforce organization/project scope if provided
     user_roles = user_payload.get('roles', []) or []

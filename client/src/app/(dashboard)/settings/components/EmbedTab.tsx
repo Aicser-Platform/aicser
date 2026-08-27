@@ -18,6 +18,7 @@ import {
   message,
 } from 'antd';
 import {
+  BgColorsOutlined,
   CodeOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -86,6 +87,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const [form] = Form.useForm();
   const [assistantForm] = Form.useForm();
+  const [editThemeForm] = Form.useForm();
   const [assistants, setAssistants] = useState<EmbedAssistantRecord[]>([]);
   const [tokens, setTokens] = useState<EmbedTokenRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,6 +96,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssistantModal, setShowAssistantModal] = useState(false);
   const [createdToken, setCreatedToken] = useState<EmbedTokenCreated | null>(null);
+  const [editingThemeToken, setEditingThemeToken] = useState<EmbedTokenRecord | null>(null);
+  const [savingTheme, setSavingTheme] = useState(false);
   const [assistantEmbed, setAssistantEmbed] = useState<{
     name: string;
     embedUrl: string;
@@ -237,6 +241,42 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     }
   };
 
+  const handleUpdateTheme = async (values: {
+    theme_primary_color?: { toHexString: () => string } | string;
+    theme_logo_url?: string;
+    theme_font_family?: string;
+    theme_mode?: 'light' | 'dark' | 'auto';
+    theme_hide_branding?: boolean;
+  }) => {
+    if (!editingThemeToken) return;
+    setSavingTheme(true);
+    try {
+      const primaryColor =
+        typeof values.theme_primary_color === 'object' && values.theme_primary_color
+          ? values.theme_primary_color.toHexString()
+          : values.theme_primary_color;
+      const theme: EmbedTheme = {
+        primary_color: primaryColor || undefined,
+        logo_url: values.theme_logo_url || undefined,
+        font_family: values.theme_font_family || undefined,
+        mode: values.theme_mode || undefined,
+        hide_aicser_branding: values.theme_hide_branding || false,
+      };
+      await fetchApi(`/api/embed/tokens/${editingThemeToken.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ theme }),
+      });
+      message.success(t('embed_theme_updated'));
+      setEditingThemeToken(null);
+      editThemeForm.resetFields();
+      void loadTokens();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('embed_theme_update_failed'));
+    } finally {
+      setSavingTheme(false);
+    }
+  };
+
   const createdEmbedUrl = useMemo(() => {
     if (!createdToken?.embed_urls) return '';
     return (
@@ -320,14 +360,32 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       title: t('col_actions'),
       key: 'actions',
       render: (_: unknown, record: EmbedTokenRecord) => (
-        <Popconfirm
-          title={t('embed_revoke_confirm')}
-          onConfirm={() => void handleRevoke(record.id)}
-          okText={t('yes')}
-          cancelText={t('no')}
-        >
-          <Button type="text" danger icon={<DeleteOutlined />} disabled={record.status !== 'active'} />
-        </Popconfirm>
+        <Space>
+          <Button
+            type="text"
+            icon={<BgColorsOutlined />}
+            title={t('embed_edit_theme')}
+            disabled={record.status !== 'active'}
+            onClick={() => {
+              setEditingThemeToken(record);
+              editThemeForm.setFieldsValue({
+                theme_primary_color: record.theme?.primary_color || undefined,
+                theme_logo_url: record.theme?.logo_url || undefined,
+                theme_font_family: record.theme?.font_family || undefined,
+                theme_mode: record.theme?.mode || undefined,
+                theme_hide_branding: record.theme?.hide_aicser_branding || false,
+              });
+            }}
+          />
+          <Popconfirm
+            title={t('embed_revoke_confirm')}
+            onConfirm={() => void handleRevoke(record.id)}
+            okText={t('yes')}
+            cancelText={t('no')}
+          >
+            <Button type="text" danger icon={<DeleteOutlined />} disabled={record.status !== 'active'} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -351,7 +409,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       <Card
         size="small"
         title={t('embed_tokens_title')}
-        bordered={false}
+        variant="borderless"
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
         extra={
           <PermissionGuard permission={Permission.EMBED_CREATE}>
@@ -573,6 +631,62 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               <Button onClick={() => setShowCreateModal(false)}>{t('cancel')}</Button>
               <Button type="primary" htmlType="submit" loading={creating}>
                 {t('create_key')}
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`${t('embed_edit_theme')}: ${editingThemeToken?.name || ''}`}
+        open={!!editingThemeToken}
+        onCancel={() => {
+          setEditingThemeToken(null);
+          editThemeForm.resetFields();
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form form={editThemeForm} layout="vertical" onFinish={(values) => void handleUpdateTheme(values)}>
+          <Form.Item
+            name="theme_primary_color"
+            label={t('embed_theme_primary_color')}
+            extra={t('embed_theme_primary_color_help')}
+          >
+            <ColorPicker format="hex" />
+          </Form.Item>
+          <Form.Item name="theme_logo_url" label={t('embed_theme_logo_url')}>
+            <Input placeholder="https://yourcompany.com/logo.png" />
+          </Form.Item>
+          <Form.Item name="theme_font_family" label={t('embed_theme_font_family')}>
+            <Input placeholder="'Inter', sans-serif" />
+          </Form.Item>
+          <Form.Item name="theme_mode" label={t('embed_theme_mode')}>
+            <Select
+              allowClear
+              placeholder={t('embed_theme_mode_auto_placeholder')}
+              options={[
+                { value: 'light', label: t('embed_theme_mode_light') },
+                { value: 'dark', label: t('embed_theme_mode_dark') },
+                { value: 'auto', label: t('embed_theme_mode_auto') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="theme_hide_branding" valuePropName="checked">
+            <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button
+                onClick={() => {
+                  setEditingThemeToken(null);
+                  editThemeForm.resetFields();
+                }}
+              >
+                {t('cancel')}
+              </Button>
+              <Button type="primary" htmlType="submit" loading={savingTheme}>
+                {t('save')}
               </Button>
             </Space>
           </Form.Item>

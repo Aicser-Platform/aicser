@@ -31,7 +31,7 @@ export function AccessDenied({
         icon={<LockOutlined />}
         message={title ?? t('title')}
         description={
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <span>{description ?? t('description')}</span>
             {permissionHint ? (
               <span style={{ fontSize: 13, opacity: 0.85 }}>{permissionHint}</span>

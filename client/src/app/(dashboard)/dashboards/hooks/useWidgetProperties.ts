@@ -281,9 +281,17 @@ export const useWidgetProperties = ({
           selectedWidget.chartOptions.sample_sql.trim()),
     );
 
-    // Compute a hash of the current query only (not chartOptions)
+    // Compute a hash of the current query + chart type (not chartOptions).
+    // chartType MUST be included: switching e.g. stat -> bar can leave
+    // chartQuery's own content unchanged (yMetrics carries over, x was never
+    // set for stat since it has no x field), so a chartQuery-only hash saw
+    // no change, hasValidData stayed true, and the debounced fetch below
+    // never ran - the widget kept rendering the old scalar stat payload
+    // against a renderer now expecting bar-shaped array data, with no
+    // refetch ever triggered to reconcile it.
     const currentQueryHash = stableStringify({
       chartQuery: selectedWidget?.chartQuery,
+      chartType: selectedWidget?.chartType,
     });
 
     // Only fetch if chartData is missing, widget is loading/error, or query changed
@@ -801,7 +809,7 @@ export const useWidgetProperties = ({
       chartOptions = { ...chartOptions, barChartType: 'combo-line', showLegend: true };
     }
 
-    const queryHash = stableStringify({ chartQuery });
+    const queryHash = stableStringify({ chartQuery, chartType: selectedWidget.chartType });
 
     // Explicit nulls so store merge deletes freeze keys
     const chartOptionsPatch = {

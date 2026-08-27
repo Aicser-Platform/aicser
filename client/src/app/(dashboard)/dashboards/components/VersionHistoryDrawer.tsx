@@ -110,7 +110,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
         </Space>
       }
       placement="right"
-      width={360}
+      size={360}
       open={open}
       onClose={onClose}
       styles={{ body: { padding: 0 } }}

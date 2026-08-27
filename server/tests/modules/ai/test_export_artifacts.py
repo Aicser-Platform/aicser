@@ -28,7 +28,7 @@ async def test_generate_docx_from_context(tmp_path, monkeypatch):
     )
     assert result.get("success") is True
     assert result.get("filename", "").endswith(".docx")
-    rec = resolve_artifact(result["artifact_id"], "org-1")
+    rec = await resolve_artifact(result["artifact_id"], "org-1")
     assert rec is not None
 
 

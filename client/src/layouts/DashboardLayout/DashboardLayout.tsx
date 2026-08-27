@@ -55,6 +55,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
   const [collapsed, setCollapsed] = useState(() => getStoredLayoutSidebarCollapsed());
   const [isBreakpoint, setIsBreakpoint] = useState(false);
   const [showDataSourceModal, setShowDataSourceModal] = useState(false);
+  const [dataSourceModalInitialType, setDataSourceModalInitialType] = useState<'sample_duckdb' | undefined>(undefined);
   const { dataSources, isLoading: dataSourcesLoading } = useDataSources();
   const failedDataSourcesCount = React.useMemo(
     () => dataSources.filter((ds) => ds.connection_status === 'failed').length,
@@ -215,9 +216,14 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
 
       <UniversalDataSourceModal
         isOpen={showDataSourceModal}
-        onClose={() => setShowDataSourceModal(false)}
+        initialDataSourceType={dataSourceModalInitialType}
+        onClose={() => {
+          setShowDataSourceModal(false);
+          setDataSourceModalInitialType(undefined);
+        }}
         onDataSourceCreated={async (dataSource: any) => {
           setShowDataSourceModal(false);
+          setDataSourceModalInitialType(undefined);
           try {
             await refreshDataSources();
             if (dataSource?.id) {
@@ -239,7 +245,12 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
         }}
         isChatIntegration={false}
       />
-      <OnboardingBootstrap onConnectData={() => setShowDataSourceModal(true)} />
+      <OnboardingBootstrap
+        onConnectData={(initialType) => {
+          setDataSourceModalInitialType(initialType);
+          setShowDataSourceModal(true);
+        }}
+      />
     </Layout>
   );
 });

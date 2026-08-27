@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  App,
   Modal,
   Steps,
   Form,
@@ -20,7 +21,6 @@ import {
   Collapse,
   Typography,
   Divider,
-  message,
   Table,
 } from 'antd';
 import { useTranslations } from 'next-intl';
@@ -45,8 +45,6 @@ import {
 import { fetchApi, handlePlanLimitError, ApiError } from '@/utils/api';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useProjectStore } from '@/stores/useProjectStore';
-
-const { Step } = Steps;
 const { Option } = Select;
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
@@ -166,6 +164,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   existingDataSource = null,
 }) => {
   const t = useTranslations('data_source_modal');
+  const { message } = App.useApp();
   const screens = useBreakpoint();
   const isCompactViewport = !screens.md;
   const authenticatedFetch = useAuthenticatedFetch();
@@ -1559,7 +1558,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                   type: 'google_sheets',
                   description: dataSourceConfig.description || undefined,
                   connection_config: connectionConfigSheets,
-                  project_id: String(currentProject.id),
+                  project_id: currentProject?.id ? String(currentProject.id) : undefined,
                 }),
               });
               if (result?.success && result?.data_source) {
@@ -1818,7 +1817,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 type: 'sample_duckdb',
                 description: dataSourceConfig.description || undefined,
                 connection_config: connectionConfigSample,
-                project_id: String(currentProject.id),
+                project_id: currentProject?.id ? String(currentProject.id) : undefined,
               }),
             });
             if (result?.success && result?.data_source) {
@@ -2433,7 +2432,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           style={{ marginBottom: 16 }}
           message={t('header_row_warning')}
           description={
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
               <Text style={{ fontSize: 13 }}>
                 {t('header_row_warning_desc')}
               </Text>
@@ -3739,6 +3738,12 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       const formData = new FormData();
       formData.append('name', dataSourceConfig.name);
       formData.append('description', dataSourceConfig.description || '');
+      // Unlike every other data source type here, this was never sending project_id -
+      // the backend then fell back to the user's *first* project (see
+      // DataSourcesCRUD.create_data_source), landing the KB in a different project
+      // than whichever one the user is actually working in, which looked like the
+      // upload had spun up a separate project space.
+      if (currentProject?.id) formData.append('project_id', currentProject.id.toString());
       for (const file of kbFiles) {
         formData.append('files', file.originFileObj || file);
       }
@@ -4228,14 +4233,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     >
       <Steps
         current={currentStep}
-        direction={isCompactViewport ? 'vertical' : 'horizontal'}
-        size={isCompactViewport ? 'small' : 'default'}
+        orientation={isCompactViewport ? 'vertical' : 'horizontal'}
+        size={isCompactViewport ? 'small' : 'medium'}
         style={{ marginBottom: '24px' }}
-      >
-        {steps.map((step, index) => (
-          <Step key={index} title={step.title} description={step.description} />
-        ))}
-      </Steps>
+        items={steps.map((step, index) => ({
+          key: index,
+          title: step.title,
+          content: step.description,
+        }))}
+      />
 
       {renderStepContent()}
     </Modal>

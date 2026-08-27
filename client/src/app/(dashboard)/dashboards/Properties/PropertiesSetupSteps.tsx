@@ -50,7 +50,7 @@ export function PropertiesSetupSteps({ widget, onFocusSection }: Props) {
             ? 4
             : 3;
 
-  const items = isSlicer
+  const items: { title: string; status: 'wait' | 'process' | 'finish' }[] = isSlicer
     ? [
         { title: t('setup_step_source'), status: hasSource ? 'finish' : current === 0 ? 'process' : 'wait' },
         { title: t('slicer_filter_field'), status: hasFields ? 'finish' : current === 1 ? 'process' : 'wait' },

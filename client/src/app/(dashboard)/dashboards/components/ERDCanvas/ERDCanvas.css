@@ -99,7 +99,7 @@
   height: 40px;
   background: var(--ant-color-primary);
   border-radius: 6px 6px 0 0;
-  color: #fff;
+  color: var(--color-primary-text, #fff);
 }
 
 .erd-table.selected .erd-table-header {
@@ -115,7 +115,7 @@
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #fff;
+  color: var(--color-primary-text, #fff);
 }
 
 .erd-table-menu {
@@ -414,7 +414,7 @@
     var(--ant-color-primary),
     color-mix(in srgb, var(--ant-color-primary) 82%, #001529 18%)
   );
-  color: #fff;
+  color: var(--color-primary-text, #fff);
 }
 
 .table-node-title-row {

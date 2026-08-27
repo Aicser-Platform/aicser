@@ -92,7 +92,7 @@
   z-index: 40;
 }
 
-.auto-send-modal .ant-modal-content {
+.auto-send-modal {
   border-radius: 14px;
   border: 1px solid var(--ant-color-border);
   overflow: hidden;
@@ -224,7 +224,7 @@
   width: 100%;
 }
 
-.auto-send-recipient-select .ant-select-selector {
+.auto-send-recipient-select .ant-select-content {
   min-height: var(--automation-control-height);
   align-items: center;
 }
@@ -232,7 +232,7 @@
 .auto-send-link-row .ant-input,
 .auto-send-external-add-row .ant-input,
 .auto-send-schedule-field .ant-picker,
-.auto-send-schedule-field .ant-select-selector {
+.auto-send-schedule-field .ant-select-content {
   min-height: var(--automation-control-height);
 }
 
@@ -297,7 +297,7 @@
   color: var(--ant-color-text-tertiary);
 }
 
-.edit-automation-modal .ant-modal-content {
+.edit-automation-modal {
   border-radius: 14px;
   border: 1px solid var(--ant-color-border);
   overflow: hidden;
@@ -398,8 +398,8 @@
   border-radius: 8px;
 }
 
-.edit-automation-modal .ant-select .ant-select-selector,
-.auto-send-modal .ant-select .ant-select-selector {
+.edit-automation-modal .ant-select .ant-select-content,
+.auto-send-modal .ant-select .ant-select-content {
   min-height: var(--automation-control-height) !important;
   border-radius: 8px !important;
   align-items: center;
@@ -426,8 +426,8 @@
   margin-top: 4px;
 }
 
-.edit-automation-recipient-select .ant-select-selector,
-.auto-send-recipient-select .ant-select-selector {
+.edit-automation-recipient-select .ant-select-content,
+.auto-send-recipient-select .ant-select-content {
   min-height: var(--automation-control-height) !important;
   height: auto !important;
   padding-top: 4px !important;

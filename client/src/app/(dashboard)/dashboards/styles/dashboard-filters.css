@@ -159,7 +159,7 @@
 }
 
 .report-filter-toolbar .ant-picker,
-.report-filter-toolbar .ant-select-selector,
+.report-filter-toolbar .ant-select-content,
 .report-filter-toolbar .ant-input {
   min-height: 28px;
   border-radius: 0;

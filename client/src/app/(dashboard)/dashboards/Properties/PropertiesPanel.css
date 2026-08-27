@@ -67,7 +67,7 @@
   min-height: 0;
 }
 
-.properties-panel-tabs .ant-tabs-content-holder {
+.properties-panel-tabs .ant-tabs-body-holder {
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;

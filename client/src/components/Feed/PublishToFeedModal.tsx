@@ -107,7 +107,7 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
       <Drawer
         title={heading}
         placement="bottom"
-        height="92vh"
+        size="92vh"
         open={open}
         onClose={onCancel}
         destroyOnHidden

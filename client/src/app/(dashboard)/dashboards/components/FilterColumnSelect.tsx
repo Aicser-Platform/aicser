@@ -4,7 +4,12 @@ import React, { useMemo } from 'react';
 import { Select, Spin, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useDataSourceSchema } from '@/hooks/useDataSources';
-import { getAllColumnsForDataSource, getColumnsForDataSource } from '../utils/filterSchemaColumns';
+import {
+  getAllColumnsForDataSource,
+  getColumnsForDataSource,
+  type DataSourceWithSchema,
+  type SchemaTable,
+} from '../utils/filterSchemaColumns';
 
 type Props = {
   dataSourceId?: string;
@@ -22,7 +27,9 @@ export function FilterColumnSelect({ dataSourceId, tableName, value, onChange, s
     if (!dataSourceId) {
       return { options: [], tableByField: new Map<string, string>(), typeByField: new Map<string, string>() };
     }
-    const dsList = schema ? [{ id: dataSourceId, schema: schema as { tables?: unknown[] } }] : [];
+    const dsList: DataSourceWithSchema[] = schema
+      ? [{ id: dataSourceId, schema: schema as { tables?: SchemaTable[] } }]
+      : [];
     const tableByField = new Map<string, string>();
     const typeByField = new Map<string, string>();
 
@@ -46,10 +53,17 @@ export function FilterColumnSelect({ dataSourceId, tableName, value, onChange, s
   const selectOptions = useMemo(() => {
     const base = options.map((o) => ({ value: o.value, label: o.label }));
     if (value && !base.some((c) => c.value === value)) {
-      return [{ label: value, value }, ...base];
+      // The saved field no longer exists in the resolved schema (e.g. a
+      // column was dropped/renamed) - re-inject it so the picker doesn't
+      // silently blank out the user's selection, but mark and disable it so
+      // it reads as broken rather than a normal, still-valid choice. Once
+      // the schema finishes loading, this always means genuinely stale;
+      // while still loading, the real option just hasn't arrived yet.
+      const label = isLoading ? value : `${value} — ${t('filter_field_stale')}`;
+      return [{ label, value, disabled: !isLoading }, ...base];
     }
     return base;
-  }, [options, value]);
+  }, [options, value, isLoading, t]);
 
   const disabled = !dataSourceId;
   const emptyHint = !dataSourceId

@@ -32,9 +32,19 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL", "")
 
     # Security Settings
-    SECRET_KEY: str = os.getenv(
-        "SECRET_KEY", "9e25a2588fcee7d21ea15fb1a63d5135"
-    )  # openssl rand -hex 16
+    # SECRET_KEY signs the actual CE session JWT (create_access_token/decode_access_token)
+    # and HMACs password-reset tokens — unlike JWT_SECRET_KEY (which only backs embed
+    # tokens and already fails closed below), this had a hardcoded, source-visible
+    # fallback with no production guard at all: anyone with source access could forge
+    # a session JWT or a password-reset token for any account on any deployment that
+    # forgot to set SECRET_KEY. Same guard pattern as JWT_SECRET_KEY, applied here too.
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or (
+        "9e25a2588fcee7d21ea15fb1a63d5135"
+        if os.getenv("ENVIRONMENT", "development") in ("development", "dev", "local", "test")
+        else ""
+    )
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY must be set in production environment")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "your-jwt-secret-here")
     JWT_ALGORITHM: str = "HS256"
     JWT_EXP_TIME_MINUTES: int = 60
@@ -222,6 +232,15 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_WEBHOOK_URL: str = os.getenv("TELEGRAM_WEBHOOK_URL", "")
     TELEGRAM_BOT_USERNAME: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
+    # Verifies the X-Telegram-Bot-Api-Secret-Token header on inbound webhook
+    # POSTs so /telegram/webhook can't be forged by anyone who learns the
+    # (fairly guessable: {base_url}/api/v1/telegram/webhook) URL. If unset,
+    # bot.py generates one in-process at startup -- fine for a single
+    # instance, but every replica in a multi-replica deployment would mint
+    # its own value and only the last one to call set_webhook would match
+    # what Telegram actually sends, so set this explicitly for anything
+    # beyond a single instance.
+    TELEGRAM_WEBHOOK_SECRET: str = os.getenv("TELEGRAM_WEBHOOK_SECRET", "")
 
     class Config:
         env_file = ".env"

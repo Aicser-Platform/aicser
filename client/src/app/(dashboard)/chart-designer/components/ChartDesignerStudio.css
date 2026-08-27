@@ -96,7 +96,7 @@
   gap: 8px !important;
   background: var(--studio-primary) !important;
   border: none !important;
-  color: #fff !important;
+  color: var(--color-primary-text, #fff) !important;
   box-shadow: 0 4px 12px rgba(0, 194, 203, 0.25) !important;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
@@ -168,7 +168,9 @@
 
 /* Canvas Area Refinements */
 .designer-canvas {
-  background-color: #ffffff !important;
+  /* Was hardcoded white with no dark override - the entire chart-designer
+     canvas rendered as a hard white panel in dark mode. */
+  background-color: var(--studio-card-bg) !important;
   position: relative;
   z-index: 1;
 }
@@ -477,7 +479,7 @@
 
 .empty-state-card:hover .card-icon-wrapper {
   background: var(--studio-primary);
-  color: #fff;
+  color: var(--color-primary-text, #fff);
   transform: rotate(-5deg);
 }
 

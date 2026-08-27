@@ -187,7 +187,7 @@ export const RawRowsTableWidget: React.FC<RawRowsTableWidgetProps> = ({
                 pageSize,
                 size: 'small',
                 showSizeChanger: false,
-                position: ['bottomRight'],
+                placement: ['bottomEnd'],
                 hideOnSinglePage: false,
                 showTotal: (total, range) => (
                   <span style={{ fontSize: '12px', color: 'var(--ant-color-text-description)', marginRight: 'auto', fontWeight: 500 }}>

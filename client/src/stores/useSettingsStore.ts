@@ -90,7 +90,10 @@ interface SettingsState {
   loadAvailableRoles: (scope?: string) => Promise<void>;
   updateTeamMemberRole: (orgId: string, userId: string, roleId: string) => Promise<void>;
   removeTeamMember: (orgId: string, userId: string) => Promise<void>;
-  inviteTeamMember: (orgId: string, payload: { email: string; role_id: string }) => Promise<void>;
+  inviteTeamMember: (
+    orgId: string,
+    payload: { email: string; role_id: string; project_id?: string | null; project_role_id?: string | null }
+  ) => Promise<void>;
   cancelInvitation: (orgId: string, invitationId: string) => Promise<void>;
   loadDataSources: (projectId?: string) => Promise<void>;
 

@@ -55,7 +55,7 @@ export function KnowledgeCitationDrawer({
       }
       open={open}
       onClose={onClose}
-      width={440}
+      size={440}
       destroyOnHidden
     >
       {isLoading ? (

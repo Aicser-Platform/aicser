@@ -344,14 +344,14 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
           pageSize,
           size: 'small',
           showSizeChanger: false,
-          position: ['bottomRight'],
+          placement: ['bottomEnd'],
           hideOnSinglePage: false,
           showTotal: (total, range) => (
             <span style={{ fontSize: '12px', color: 'var(--ant-color-text-description)', marginRight: 'auto', fontWeight: 500 }}>
               {total > 0 ? t('showing_range', { start: range[0], end: range[1], total }) : t('no_records')}
             </span>
           ),
-        } : (dataSource.length > pageSize ? { pageSize, position: ['none' as any] } : false)}
+        } : (dataSource.length > pageSize ? { pageSize, placement: ['none'] } : false)}
         size={size}
         bordered={bordered}
         sticky

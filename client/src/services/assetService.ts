@@ -3,7 +3,7 @@
  */
 
 import { fetchApi } from '@/utils/api';
-import { message } from 'antd';
+import { appMessage } from '@/utils/antdMessageBridge';
 
 export interface SavedAsset {
   id: string;
@@ -54,11 +54,11 @@ class AssetService {
       }
 
       const data = await response.json();
-      message.success('Asset saved to library');
+      appMessage.success('Asset saved to library');
       return data;
     } catch (error: any) {
       console.error('Failed to save asset:', error);
-      message.error(error.message || 'Failed to save asset');
+      appMessage.error(error.message || 'Failed to save asset');
       throw error;
     }
   }
@@ -135,10 +135,10 @@ class AssetService {
         throw new Error(errorData.error || 'Failed to delete asset');
       }
 
-      message.success('Asset deleted');
+      appMessage.success('Asset deleted');
     } catch (error: any) {
       console.error('Failed to delete asset:', error);
-      message.error(error.message || 'Failed to delete asset');
+      appMessage.error(error.message || 'Failed to delete asset');
       throw error;
     }
   }

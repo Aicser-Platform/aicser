@@ -140,7 +140,7 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
       <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
         Ratio only: (numerator ÷ denominator), optionally ×100 for a percent. Not free-form math.
       </div>
-      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+      <Space orientation="vertical" style={{ width: '100%' }} size={12}>
         <div>
           <Text style={{ fontSize: 11, fontWeight: 600 }}>Metric Name</Text>
           <Input
@@ -154,8 +154,8 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
 
         <Divider
           style={{ margin: '4px 0', fontSize: 11 }}
-          orientation="left"
-          orientationMargin={0}
+          titlePlacement="left"
+          styles={{ content: { margin: 0 } }}
         >
           Formula: Numerator ÷ Denominator
         </Divider>

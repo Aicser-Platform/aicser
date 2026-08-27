@@ -780,7 +780,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
 
           {chartType === 'bullet' && onUpdateChartOption && (
             <>
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 12, margin: '8px 0 4px' }}>
+              <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 12, margin: '8px 0 4px' }}>
                 {t('bullet_thresholds')}
               </Divider>
               <InputField
@@ -815,7 +815,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
 
           {chartType === 'geo' && onUpdateChartOption && (
             <>
-              <Divider orientation="left" orientationMargin={0} style={{ fontSize: 12, margin: '8px 0 4px' }}>
+              <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 12, margin: '8px 0 4px' }}>
                 {t('geo_map_options')}
               </Divider>
               <InputField

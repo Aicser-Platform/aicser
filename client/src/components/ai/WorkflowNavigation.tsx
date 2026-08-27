@@ -61,7 +61,7 @@ export const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
         items={steps.map((s) => ({
           key: s.key,
           title: s.title,
-          description: s.description,
+          content: s.description,
           status: s.isCompleted
             ? 'finish'
             : steps.indexOf(s) === currentStep

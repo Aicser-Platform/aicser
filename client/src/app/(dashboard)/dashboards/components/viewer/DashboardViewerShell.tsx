@@ -17,7 +17,7 @@ import AicserLogo from '@/components/ui/Logo';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { DashboardFilterPanel } from '../DashboardFilterPanel';
-import type { RuntimeFilter } from '../utils/filterOperators';
+import type { RuntimeFilter } from '../../utils/filterOperators';
 import { DashboardPageTabs, type DashboardPageItem } from '../DashboardPageTabs';
 import { DashboardViewerGrid } from './DashboardViewerGrid';
 import { DashboardExecutiveBanner } from './DashboardExecutiveBanner';

@@ -2676,6 +2676,28 @@ class ChartService:
         parts = [part.strip() for part in str(identifier).split(".") if part.strip()]
         return ".".join(self._quote_raw_identifier(part) for part in parts)
 
+    @classmethod
+    def _sql_literal(cls, value: Any) -> str:
+        """Render `value` as a dialect-correct SQL string literal.
+
+        SECURITY: runtime filter values used to be escaped via
+        str(value).replace("'", "''") -- correct on PostgreSQL but not on
+        MySQL/MariaDB, where a trailing backslash escapes the closing quote
+        and hands the rest of the filter predicate to the caller (the same
+        class of bug rls_predicate_builder.py's docstring documents, and
+        _apply_filters_to_query in data/router.py was already fixed the same
+        way for the query-editor path). Filters reach this builder from
+        dashboard-level runtime filters at view time, not just chart-editor
+        input, so this is reachable by any dashboard viewer driving a filter
+        widget.
+        """
+        from sqlglot import exp
+
+        from src.modules.data.services.multi_engine_query_service import DB_TYPE_TO_SQLGLOT_DIALECT
+
+        dialect = DB_TYPE_TO_SQLGLOT_DIALECT.get(cls._current_dialect())
+        return exp.Literal.string(str(value)).sql(dialect=dialect) if dialect else exp.Literal.string(str(value)).sql()
+
     def _projected_sql_columns(self, sql: str) -> set[str]:
         """Best-effort output-column extraction for saved SQL filter safety."""
         text_sql = (sql or "").strip().rstrip(";")
@@ -2908,7 +2930,21 @@ class ChartService:
             field_sql = self._quote_identifier(field)
             
             if f_type == 'sql' and f.get('sql'):
-                clauses.append(f"({f.get('sql')})")
+                # SECURITY: this used to splice the client-supplied filter.sql
+                # string verbatim into the chart's generated WHERE clause.
+                # The resulting SQL still passes through
+                # multi_engine_service.execute_query()'s dangerous-keyword
+                # blocklist, but UNION is deliberately not on that list (it's
+                # a legitimate operator for the NL2SQL/query-editor surface),
+                # so a caller with only chart:edit permission -- not the
+                # elevated trust tier normally required for raw-SQL/data-
+                # source-manage access -- could UNION-SELECT arbitrary other
+                # tables the data source's DB credential can see, bypassing
+                # the table/column scoping the chart builder is meant to
+                # enforce. Saved-SQL charts already strip this filter type
+                # (see _filters_projected_by_saved_sql above); doing the same
+                # here so every chart execution path is consistent.
+                logger.info("Skipping raw SQL runtime filter for chart query (not a saved-SQL trust boundary)")
                 continue
 
             # Basic SQL injection protection for operator
@@ -2935,20 +2971,21 @@ class ChartService:
                     if isinstance(v, (int, float)):
                         formatted_vals.append(str(v))
                     else:
-                        safe_v = str(v).replace("'", "''")
-                        formatted_vals.append(f"'{safe_v}'")
-                
+                        formatted_vals.append(self._sql_literal(v))
+
                 op_sql = "IN" if operator == "in" else "NOT IN"
                 clauses.append(f"{field_sql} {op_sql} ({', '.join(formatted_vals)})")
             elif operator in ("like", "like_case"):
-                val_str = str(value).replace("'", "''")
-                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
+                # %/_ are LIKE wildcards, not part of the literal's own quoting,
+                # so wrap them onto the already-escaped literal rather than
+                # folding them into the pre-escaped string.
+                escaped_literal = self._sql_literal(f"%{value}%")
+                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} {escaped_literal}")
             else:
                 if isinstance(value, (int, float)):
                     clauses.append(f"{field_sql} {operator} {value}")
                 else:
-                    val_str = str(value).replace("'", "''")
-                    clauses.append(f"{field_sql} {operator} '{val_str}'")
+                    clauses.append(f"{field_sql} {operator} {self._sql_literal(value)}")
         
         if not clauses:
             return ""

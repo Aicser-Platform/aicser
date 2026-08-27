@@ -312,7 +312,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
 
           <Dropdown
             trigger={['click']}
-            overlayClassName="min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1"
+            classNames={{ root: "min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1" }}
             menu={{
               items: menuItems,
               onClick: ({ key, domEvent }) => {

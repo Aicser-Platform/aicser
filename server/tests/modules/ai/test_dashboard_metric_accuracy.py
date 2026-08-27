@@ -281,6 +281,129 @@ def test_retail_conversion_rate_computed():
     assert internal["chart_query"]["yMetrics"][0]["computed"]["type"] == "ratio"
 
 
+def test_scatter_widget_emits_x_metrics():
+    """CHART_TYPE_CONFIGS.scatter (client) requires BOTH xMetrics and yMetrics -
+    without x_metric on the plan, every AI-generated scatter widget landed
+    permanently flagged "needs configuration" since only yMetrics ever got
+    populated (the generic y_metric/aggregation path)."""
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="Spend vs Revenue",
+        chart_type="scatter",
+        layout={"x": 0, "y": 0, "w": 6, "h": 5},
+        table_name="loans",
+        y_metric="outstanding_balance_usd",
+        aggregation="sum",
+        x_metric="loan_amount_usd",
+        x_metric_aggregation="avg",
+    )
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    cq = internal["chart_query"]
+    assert cq["xMetrics"] == [{"field": "loan_amount_usd", "aggregation": "avg"}]
+    assert cq["yMetrics"][0]["field"] == "outstanding_balance_usd"
+
+
+def test_heatmap_widget_emits_group_field():
+    """CHART_TYPE_CONFIGS.heatmap (client) requires x + groupField + yMetrics -
+    without group_field on the plan, every AI-generated heatmap widget landed
+    permanently flagged "needs configuration" (x and yMetrics alone aren't enough)."""
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="Repayments by Branch and Status",
+        chart_type="heatmap",
+        layout={"x": 0, "y": 0, "w": 6, "h": 5},
+        table_name="loans",
+        x="branch_id",
+        group_field="loan_status",
+        y_metric="total_repaid_usd",
+        aggregation="sum",
+    )
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    cq = internal["chart_query"]
+    assert cq["x"] == "branch_id"
+    assert cq["groupField"] == "loan_status"
+    assert cq["yMetrics"][0]["field"] == "total_repaid_usd"
+
+
+def test_scatter_without_x_metric_omits_x_metrics_rather_than_guessing():
+    """No hallucinated axis when the LLM omits x_metric - left for
+    widgetSetupStatus.ts to correctly flag as needing configuration."""
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="Portfolio Correlation",
+        chart_type="scatter",
+        layout={"x": 0, "y": 0, "w": 6, "h": 5},
+        table_name="loans",
+        y_metric="outstanding_balance_usd",
+        aggregation="sum",
+    )
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    assert "xMetrics" not in internal["chart_query"]
+
+
+def test_stat_widget_infers_currency_format_from_field_name():
+    """Only ComputedMetric.format ever carried a display hint - a plain sum
+    KPI (the common case) reached the renderer with zero formatting hint
+    anywhere in the pipeline. StatWidget.tsx already reads chart_options.format
+    directly; WidgetRenderer.tsx reads yMetrics[].valueFormat generically."""
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="Total Active Portfolio",
+        chart_type="stat",
+        layout={"x": 0, "y": 0, "w": 3, "h": 4},
+        table_name="loans",
+        y_metric="loan_amount_usd",
+        aggregation="sum",
+    )
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    assert internal["chart_query"]["yMetrics"][0]["valueFormat"] == "currency"
+    assert internal["chart_options"]["format"] == "currency"
+
+
+def test_bar_widget_infers_percent_format_without_stat_specific_options():
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="Late Rate by Branch",
+        chart_type="bar",
+        layout={"x": 0, "y": 0, "w": 6, "h": 5},
+        table_name="loans",
+        x="branch_id",
+        y_metric="max_days_late",
+        aggregation="avg",
+    )
+    # max_days_late has no currency/percent token - no hint should be invented.
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    assert "valueFormat" not in internal["chart_query"]["yMetrics"][0]
+    assert "format" not in internal["chart_options"]
+
+
+def test_computed_metric_format_is_not_overridden_by_field_inference():
+    from ee.modules.ai.services.dashboard_llm_planner import _widget_plan_to_internal
+
+    w = DashboardWidgetPlan(
+        title="PAR-30",
+        chart_type="stat",
+        layout={"x": 0, "y": 0, "w": 3, "h": 4},
+        table_name="loans",
+        computed={
+            "type": "ratio",
+            "numerator": {"aggregation": "sum", "field": "outstanding_balance_usd",
+                          "filter": [{"field": "max_days_late", "operator": ">=", "value": 30}]},
+            "denominator": {"aggregation": "sum", "field": "outstanding_balance_usd"},
+            "multiplier": 100,
+            "format": "percent",
+        },
+    )
+    internal = _widget_plan_to_internal(w, page_role="overview", detail_page_id=None, schema=FINANCE_SCHEMA)
+    assert internal["chart_query"]["yMetrics"][0]["computed"]["format"] == "percent"
+    assert internal["chart_options"]["format"] == "percent"
+
+
 def test_materialize_runs_validator_and_labels():
     """End-to-end materialize: surrogate-key widget dropped, raw label humanized."""
     from src.modules.ai.schemas.dashboard_plan import DashboardLLMPlan, DashboardPagePlan

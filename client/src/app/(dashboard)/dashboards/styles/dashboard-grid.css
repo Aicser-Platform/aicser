@@ -929,15 +929,15 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   font-size: 11px !important;
 }
 
-.filter-select.ant-select .ant-select-selector {
+.filter-select.ant-select .ant-select-content {
   border-radius: 6px !important;
   border-color: var(--ant-color-border) !important;
   padding: 2px 8px !important;
   min-height: 32px !important;
 }
 
-.filter-select.ant-select:hover .ant-select-selector,
-.filter-select.ant-select-focused .ant-select-selector {
+.filter-select.ant-select:hover .ant-select-content,
+.filter-select.ant-select-focused .ant-select-content {
   border-color: var(--ant-color-primary) !important;
   box-shadow: 0 0 0 2px var(--color-brand-primary-light) !important;
 }
@@ -1076,7 +1076,7 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 }
 
 /* View Full / View Table — sized to widget type; above sidebar chrome (z-index 1200) */
-.studio-widget-inspect-modal .ant-modal-content {
+.studio-widget-inspect-modal {
   overflow: hidden;
   display: flex;
   flex-direction: column;

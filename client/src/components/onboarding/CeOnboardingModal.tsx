@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Modal, Steps, Typography } from 'antd';
-import { DatabaseOutlined, LineChartOutlined, RocketOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, ExperimentOutlined, LineChartOutlined, RocketOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useDataSources } from '@/hooks/useDataSources';
@@ -30,7 +30,7 @@ function markCeOnboardingComplete(): void {
 }
 
 interface CeOnboardingModalProps {
-  onConnectData: () => void;
+  onConnectData: (initialType?: 'sample_duckdb') => void;
 }
 
 /** CE first-run: welcome → connect data → try query editor. */
@@ -74,13 +74,13 @@ export function CeOnboardingModal({ onConnectData }: CeOnboardingModalProps) {
     setOpen(false);
   }, []);
 
-  const handleConnect = () => {
+  const handleConnect = (initialType?: 'sample_duckdb') => {
     try {
       sessionStorage.setItem(CE_ONBOARDING_AWAITING_DATA, '1');
     } catch {
       /* ignore */
     }
-    onConnectData();
+    onConnectData(initialType);
     setStep(1);
   };
 
@@ -126,7 +126,10 @@ export function CeOnboardingModal({ onConnectData }: CeOnboardingModalProps) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
             <Button onClick={() => setStep(0)}>{t('back')}</Button>
             <Button onClick={finish}>{t('skip')}</Button>
-            <Button type="primary" icon={<DatabaseOutlined />} onClick={handleConnect}>
+            <Button icon={<ExperimentOutlined />} onClick={() => handleConnect('sample_duckdb')}>
+              {t('try_sample_data')}
+            </Button>
+            <Button type="primary" icon={<DatabaseOutlined />} onClick={() => handleConnect()}>
               {t('connect_data')}
             </Button>
           </div>

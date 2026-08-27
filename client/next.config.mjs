@@ -65,12 +65,22 @@ const pricingModalNoop = path.resolve(__dirname, 'src/components/PricingModal.no
 const edition = (process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase();
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const eeEntry = isEnterprise ? path.dirname(eeIndex) : eeFallback;
+// API route handlers (route.ts) only need the proxy functions, never UI components.
+// Importing from '@/ee' pulls in the full barrel (including components like
+// ThoughtProcessDisplay -> @ant-design/icons), which breaks with "createContext
+// is not a function" when bundled into a route handler's server module graph.
+const eePricingProxy = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/api/pricingProxy.ts')
+  : path.resolve(__dirname, 'src/ee-api-fallback.ts');
 const eeSubscriptionStore = isEnterprise
   ? path.resolve(__dirname, 'ee/src/ee/stores/useSubscriptionStore.ts')
   : eeFallback;
 const eeSubscriptionStoreTurbo = isEnterprise
   ? './ee/src/ee/stores/useSubscriptionStore.ts'
   : './src/ee-fallback.ts';
+const eePricingProxyTurbo = isEnterprise
+  ? './ee/src/ee/api/pricingProxy.ts'
+  : './src/ee-api-fallback.ts';
 const sentryEnabled = Boolean(
   process.env.NEXT_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN,
 );
@@ -101,10 +111,13 @@ const nextConfig = {
       : {}),
     // Rewrites barrel imports (`import { x } from 'pkg'`) to direct submodule
     // imports so only the used code is pulled into the graph.
+    // echarts is excluded: every consumer does `import * as echarts from 'echarts'`
+    // and relies on that side-effectful import self-registering renderers/chart
+    // types. Rewriting it into per-symbol submodule imports drops that
+    // registration, causing "Renderer 'undefined' is not imported" at runtime.
     optimizePackageImports: [
       'antd',
       '@ant-design/icons',
-      'echarts',
       'recharts',
       'lodash-es',
       'react-syntax-highlighter',
@@ -119,6 +132,7 @@ const nextConfig = {
         ? { '@/ee/components/PricingModal': './src/components/PricingModal.noop.tsx' }
         : {}),
       '@/ee/stores/useSubscriptionStore': eeSubscriptionStoreTurbo,
+      '@/ee/api/pricingProxy': eePricingProxyTurbo,
       ...antdEllipsisAlias,
     },
   },
@@ -131,6 +145,7 @@ const nextConfig = {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       '@/ee/stores/useSubscriptionStore': eeSubscriptionStore,
+      '@/ee/api/pricingProxy': eePricingProxy,
       '@/ee': eeEntry,
       ...(!isEnterprise
         ? { '@/ee/components/PricingModal': pricingModalNoop }

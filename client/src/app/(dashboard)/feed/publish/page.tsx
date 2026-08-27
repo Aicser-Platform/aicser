@@ -15,8 +15,8 @@ export default function FeedPublishPage() {
   const t = useTranslations('feed_publish_page');
   const router = useRouter();
   const searchParams = useSearchParams();
-  const conversationId = searchParams.get('conversation') || searchParams.get('conversationId') || '';
-  const messageId = searchParams.get('message') || searchParams.get('messageId') || '';
+  const conversationId = searchParams?.get('conversation') || searchParams?.get('conversationId') || '';
+  const messageId = searchParams?.get('message') || searchParams?.get('messageId') || '';
 
   const [draft, setDraft] = useState<ChatFeedDraft | null>(null);
   const [ready, setReady] = useState(false);

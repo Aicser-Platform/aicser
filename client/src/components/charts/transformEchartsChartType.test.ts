@@ -11,7 +11,7 @@ describe('transformEchartsChartType', () => {
   it('switches bar to line', () => {
     const { viewType, config } = transformEchartsChartType(barConfig, 'line');
     expect(viewType).toBe('line');
-    expect((config.series as Array<{ type: string }>)[0].type).toBe('line');
+    expect((config!.series as Array<{ type: string }>)[0].type).toBe('line');
   });
 
   it('switches to table view marker', () => {
@@ -23,7 +23,7 @@ describe('transformEchartsChartType', () => {
   it('builds pie from category series', () => {
     const { viewType, config } = transformEchartsChartType(barConfig, 'pie');
     expect(viewType).toBe('pie');
-    const series = (config.series as Array<{ type: string; data: unknown[] }>)[0];
+    const series = (config!.series as Array<{ type: string; data: unknown[] }>)[0];
     expect(series.type).toBe('pie');
     expect(series.data).toHaveLength(2);
   });

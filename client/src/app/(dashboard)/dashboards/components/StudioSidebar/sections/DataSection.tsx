@@ -16,153 +16,24 @@ import { useDataSources, useDataSourceSchema, dataSourceKeys } from '@/hooks/use
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDashboardStore } from '../../../stores/useDashboardStore';
 import { setDashboardFieldDragData } from '../../../utils/dashboardFieldDrag';
+import {
+  normalizeType,
+  friendlyName,
+  fieldKey,
+  getBusinessMetadata,
+  inferSemanticRole,
+  defaultAggregation,
+  roleColor,
+  roleLabelKey,
+  normalizeSchemaTables,
+  type SchemaFieldColumn as DisplayColumn,
+  type SchemaFieldTable as DisplayTable,
+} from '@/utils/schemaFieldHelpers';
 
 const { Text } = Typography;
 
-type SemanticRole = 'dimension' | 'measure' | 'date' | 'id';
-
-type DisplayColumn = {
-  name: string;
-  type: string;
-  nullable?: boolean;
-  primary_key?: boolean;
-  foreign_key?: string;
-};
-
-type DisplayTable = {
-  id: string;
-  name: string;
-  schema?: string;
-  rowCount?: number | null;
-  columns: DisplayColumn[];
-};
-
-type BusinessMetadata = {
-  measures?: Array<{ name?: string; expression?: string; description?: string }>;
-  dimensions?: Array<{ name?: string; description?: string }>;
-  column_descriptions?: Record<string, string>;
-};
-
-function normalizeType(type: string): string {
-  const upper = type.toUpperCase();
-  if (upper.includes('INT')) return 'Number';
-  if (upper.includes('DECIMAL') || upper.includes('NUMERIC') || upper.includes('DOUBLE') || upper.includes('FLOAT')) return 'Decimal';
-  if (upper.includes('DATE') || upper.includes('TIME')) return 'Date';
-  if (upper.includes('BOOL')) return 'Boolean';
-  return 'Text';
-}
-
-function friendlyName(name: string): string {
-  return name
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function fieldKey(table: DisplayTable | null, column: DisplayColumn | null): string {
-  if (!table || !column) return '';
-  return `${table.id}.${column.name}`;
-}
-
 function hiddenPrefsKey(sourceId: string | null): string {
   return `dashboard_data_hidden_fields_${sourceId || 'none'}`;
-}
-
-function getBusinessMetadata(schema: unknown): BusinessMetadata {
-  const raw = ((schema as { business_metadata?: BusinessMetadata } | null)?.business_metadata ?? {}) as BusinessMetadata;
-  return {
-    measures: Array.isArray(raw.measures) ? raw.measures : [],
-    dimensions: Array.isArray(raw.dimensions) ? raw.dimensions : [],
-    column_descriptions: raw.column_descriptions && typeof raw.column_descriptions === 'object' ? raw.column_descriptions : {},
-  };
-}
-
-function inferSemanticRole(column: DisplayColumn, metadata: BusinessMetadata): SemanticRole {
-  const name = column.name.toLowerCase();
-  const normalizedType = normalizeType(column.type);
-  const isMeasure = metadata.measures?.some((m) => m.name === column.name || m.expression === column.name);
-  const isDimension = metadata.dimensions?.some((d) => d.name === column.name);
-  if (isMeasure) return 'measure';
-  if (isDimension) return 'dimension';
-  if (column.primary_key || /(^id$|_id$|id$|key$|uuid$)/.test(name)) return 'id';
-  if (normalizedType === 'Date' || /(date|time|month|year|quarter|week|day)/.test(name)) return 'date';
-  if (normalizedType === 'Number' || normalizedType === 'Decimal') return 'measure';
-  return 'dimension';
-}
-
-function defaultAggregation(column: DisplayColumn, role: SemanticRole): string {
-  const name = column.name.toLowerCase();
-  if (role === 'measure') {
-    if (/(rate|ratio|percent|pct|margin|score|price|unit_price|avg|average)/.test(name)) return 'avg';
-    if (/(min|max)/.test(name)) return name.includes('min') ? 'min' : 'max';
-    return 'sum';
-  }
-  if (role === 'id') return 'count distinct';
-  return 'count';
-}
-
-function roleColor(role: SemanticRole): string {
-  if (role === 'measure') return 'green';
-  if (role === 'date') return 'blue';
-  if (role === 'id') return 'purple';
-  return 'cyan';
-}
-
-function roleLabelKey(role: SemanticRole): 'data_role_dimension' | 'data_role_measure' | 'data_role_date' | 'data_role_id' {
-  if (role === 'measure') return 'data_role_measure';
-  if (role === 'date') return 'data_role_date';
-  if (role === 'id') return 'data_role_id';
-  return 'data_role_dimension';
-}
-
-function tableId(table: { name?: string; schema?: string }): string {
-  const name = String(table.name || '').trim();
-  const schema = String(table.schema || '').trim();
-  if (!schema || schema === 'public' || schema === 'file') return name;
-  return `${schema}.${name}`;
-}
-
-function normalizeTables(schema: unknown): DisplayTable[] {
-  const rawTables = ((schema as { tables?: unknown[] } | null)?.tables ?? []) as Array<{
-    name?: string;
-    schema?: string;
-    rowCount?: number | null;
-    row_count?: number | null;
-    columns?: Array<DisplayColumn | string>;
-  }>;
-
-  return rawTables
-    .map((table): DisplayTable | null => {
-      const name = String(table.name || '').trim();
-      if (!name) return null;
-      const id = tableId(table);
-      const normalizedTable: DisplayTable = {
-        id,
-        name,
-        rowCount: table.rowCount ?? table.row_count ?? null,
-        columns: (table.columns ?? [])
-          .map((column): DisplayColumn | null => {
-            if (typeof column === 'string') {
-              return { name: column, type: 'string', nullable: true };
-            }
-            const columnName = String(column?.name || '').trim();
-            if (!columnName) return null;
-            const normalizedColumn: DisplayColumn = {
-              name: columnName,
-              type: String(column?.type || 'string'),
-              nullable: column?.nullable ?? true,
-            };
-            if (column?.primary_key !== undefined) normalizedColumn.primary_key = column.primary_key;
-            if (column?.foreign_key !== undefined) normalizedColumn.foreign_key = column.foreign_key;
-            return normalizedColumn;
-          })
-          .filter((column): column is DisplayColumn => Boolean(column)),
-      };
-      if (table.schema !== undefined) normalizedTable.schema = table.schema;
-      return normalizedTable;
-    })
-    .filter((table): table is DisplayTable => Boolean(table));
 }
 
 export function DataSection() {
@@ -223,7 +94,7 @@ export function DataSection() {
   ]);
 
   const { schema, isLoading: schemaLoading, error } = useDataSourceSchema(activeSourceId);
-  const tables = useMemo(() => normalizeTables(schema), [schema]);
+  const tables = useMemo(() => normalizeSchemaTables(schema), [schema]);
   const businessMetadata = useMemo(() => getBusinessMetadata(schema), [schema]);
   const activeTable = tables.find((table) => table.id === activeTableId) ?? tables[0] ?? null;
   const selectedColumn =

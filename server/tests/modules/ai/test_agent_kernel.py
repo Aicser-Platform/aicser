@@ -19,20 +19,89 @@ from ee.modules.ai.kernel.verifier import verify_goal, verify_step
 
 
 @pytest.mark.parametrize(
-    "query,mode,expected",
+    "query,mode",
     [
-        ("show revenue by month as a bar chart", "standard", False),
-        ("build a dashboard for sales KPIs", "dashboard", True),
-        ("analyze end to end and create executive report", "auto", True),
+        ("show revenue by month as a bar chart", "standard"),
+        ("build a dashboard for sales KPIs", "dashboard"),
+        ("analyze end to end and create executive report", "auto"),
     ],
 )
-def test_should_use_agent_kernel(query, mode, expected):
+def test_should_use_agent_kernel(query, mode):
+    """should_use_agent_kernel is universal for modes with no dedicated pipeline of
+    their own - the previous per-mode allowlist was replaced once analytics_pipeline
+    stopped bypassing the real diagnostic/predictive/prescriptive engines. True for
+    these modes regardless of the AISER_AGENT_KERNEL_ENABLED kill-switch being off."""
     state = {
         "query": query,
         "data_source_id": "ds-1",
         "agent_context": {"analysis_mode": mode},
     }
-    assert should_use_agent_kernel(state) is expected
+    assert should_use_agent_kernel(state) is True
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["decision_intelligence", "diagnostic", "predictive", "prescriptive", "animate"],
+)
+def test_should_use_agent_kernel_declines_modes_with_dedicated_pipelines(mode):
+    """Live-reproduced bugs, one per mode: each of these has its own dedicated,
+    better-tested handling elsewhere in supervisor_node.py that a generic kernel
+    goal/plan/execute/verify pass doesn't replicate - Decide got the kernel's own
+    "planning autonomous execution" text with no Decision Brief, Animate got a bare
+    partial SQL result with no animated chart. should_use_agent_kernel() used to
+    return True unconditionally, claiming all five before their own dedicated
+    checks (further down supervisor_node.py) ever got a turn."""
+    state = {
+        "query": "some request",
+        "data_source_id": "ds-1",
+        "agent_context": {"analysis_mode": mode},
+    }
+    assert should_use_agent_kernel(state) is False
+
+    # Also declines when the mode arrives via analytics_type instead of
+    # analysis_mode - frontend_analytics_type's own multi-source fallback in
+    # supervisor_node.py means either can carry the resolved value.
+    state2 = {
+        "query": "some request",
+        "data_source_id": "ds-1",
+        "agent_context": {"analytics_type": mode},
+    }
+    assert should_use_agent_kernel(state2) is False
+
+
+def test_should_use_agent_kernel_declines_cube_backed_sources():
+    """The kernel has no Cube.js-aware capability at all - only the classic
+    graph's cube_query_node knows how to query a Cube-backed source, and it can
+    only ever be selected by the LLM orchestrator, which never runs once the
+    kernel claims the request first."""
+    state = {
+        "query": "what's total revenue this quarter",
+        "data_source_id": "ds-1",
+        "agent_context": {"analysis_mode": "auto"},
+        "cube_schema": {"cubes": [{"name": "Revenue"}]},
+    }
+    assert should_use_agent_kernel(state) is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "give me a deep dive on this file",
+        "do a deep analysis of this dataset",
+        "profile this data for me",
+        "I need an in-depth analysis of the uploaded spreadsheet",
+    ],
+)
+def test_should_use_agent_kernel_declines_deep_file_analysis_intent(query):
+    """deep_file_analysis_node does independent data profiling and LLM-generated
+    Python analysis with no kernel-capability equivalent - same unreachability
+    bug as Cube's, via the same never-runs LLM-orchestrator path."""
+    state = {
+        "query": query,
+        "data_source_id": "ds-1",
+        "agent_context": {"analysis_mode": "auto"},
+    }
+    assert should_use_agent_kernel(state) is False
 
 
 def test_resolve_goal_dashboard():
@@ -46,12 +115,13 @@ def test_resolve_goal_dashboard():
     assert goal.min_widget_count >= 3
 
 
-def test_build_plan_dashboard():
+@pytest.mark.asyncio
+async def test_build_plan_dashboard():
     goal = AgentGoal(
         objective="Sales dashboard",
         deliverable_type=DeliverableType.dashboard,
     )
-    plan = build_plan(goal, {"dashboard_tier": "executive"})
+    plan = await build_plan(goal, {"dashboard_tier": "executive"}, litellm_service=None)
     assert len(plan.steps) == 1
     assert plan.steps[0].capability == "create_dashboard"
 

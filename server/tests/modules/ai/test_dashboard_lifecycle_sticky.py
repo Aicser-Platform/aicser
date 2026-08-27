@@ -85,3 +85,29 @@ def test_explicit_undo_wins():
         {"target_dashboard_id": "dash-1", "dashboard_lifecycle_action": "undo"},
     )
     assert action == "undo"
+
+
+def test_standalone_question_with_sticky_dashboard_does_not_run_dashboard_analyzer():
+    """Live-reproduced bug: a plain new question ("how many customers monthly over
+    brand") while a dashboard was still sticky used to return "analyze", which
+    supervisor_node.py dispatches straight to dashboard_analyzer_node - a node that
+    summarizes the EXISTING dashboard's own widgets, ignoring the actual question
+    entirely. The dashboard itself was never at risk (nothing here writes to it),
+    but the response was simply wrong - a summary of unrelated widgets instead of
+    an answer. Must return the falsy "not a dashboard action" sentinel so the
+    caller falls through to normal analysis routing."""
+    for query in (
+        "how many customers monthly over brand",
+        "how many customers signed up last month",
+        "show me revenue by region",
+        "what is the average order value",
+    ):
+        action = detect_dashboard_lifecycle_action(query, {"target_dashboard_id": "dash-1"})
+        assert action == "", query
+
+
+def test_standalone_question_without_sticky_dashboard_still_creates():
+    """No sticky dashboard at all (target_dashboard_id unset) must be unaffected -
+    the standalone_viz carve-out only applies once a dashboard is already sticky."""
+    action = detect_dashboard_lifecycle_action("how many customers monthly over brand", {})
+    assert action == "create"

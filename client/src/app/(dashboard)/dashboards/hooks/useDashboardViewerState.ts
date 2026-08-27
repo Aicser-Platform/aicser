@@ -240,18 +240,19 @@ export function useDashboardViewerState(
         if (!dashInfo) throw new Error(t('load_failed'));
         const cfg = dashInfo.config || {};
         const filterSourceChart = charts.find(
-          (chart: Record<string, unknown>) => chart.dataSourceId,
+          (chart) => chart.dataSourceId,
         ) as Record<string, unknown> | undefined;
         const filterSourceQuery =
           (filterSourceChart?.chartQuery as Record<string, unknown> | undefined) || {};
         const filterDataContext = {
           dataSourceId: filterSourceChart?.dataSourceId as string | undefined,
           tableName: filterSourceQuery.tableName as string | undefined,
+          widgets: charts as Array<{ dataSourceId?: string; chartQuery?: Record<string, unknown> }>,
         };
         const execMeta = executiveMetaFromConfig(cfg);
         setMeta({
           id: dashboardId,
-          title: dashInfo.title || dashInfo.name || t('default_title'),
+          title: dashInfo.title || t('default_title'),
           description: dashInfo.description || '',
           keyInsight: execMeta.keyInsight,
           storyArc: execMeta.storyArc,
@@ -274,7 +275,7 @@ export function useDashboardViewerState(
         setMeta({ id: dashboardId, title: t('default_title'), description: '' });
       }
 
-      const initialWidgets: WidgetInstance[] = charts.map((chart: Record<string, unknown>) => ({
+      const initialWidgets: WidgetInstance[] = charts.map((chart) => ({
         id: `widget-${chart.id}`,
         chartId: chart.id as string,
         dataSourceId: chart.dataSourceId as string | undefined,
@@ -291,7 +292,7 @@ export function useDashboardViewerState(
         error: null,
       }));
 
-      const initialLayout: LayoutItem[] = charts.map((chart: Record<string, unknown>) => {
+      const initialLayout: LayoutItem[] = charts.map((chart) => {
         const chartLayout = (chart.layout || {}) as Record<string, unknown>;
         return {
           i: `widget-${chart.id}`,

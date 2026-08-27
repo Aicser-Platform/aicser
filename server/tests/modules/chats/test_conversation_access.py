@@ -161,6 +161,77 @@ async def test_check_project_access_router_allows_with_permission():
         await _check_project_access(str(uuid4()), str(uuid4()))  # must not raise
 
 
+@pytest.mark.asyncio
+async def test_require_conversation_access_missing_raises_404_not_403():
+    """The bug this closes: rerun-sql/add-message/feedback/goal all called
+    _verify_conversation_access directly, which returns False identically
+    whether the conversation doesn't exist or exists-but-denied - so a
+    stale/deleted conversation link (routine after e.g. a DB reset, or any
+    deleted conversation) surfaced as "Access denied" (403) instead of the
+    correct, less misleading 404. One router endpoint (get_conversation_goal)
+    even had its own 404 check as dead code, since the 403 from
+    _verify_conversation_access always fired first."""
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with patch.object(service, "get", new=AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc:
+            await service._require_conversation_access(str(uuid4()), "user-a")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_require_conversation_access_denied_raises_403():
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    conversation = SimpleNamespace(json_metadata=None, project_id=None)
+    with patch.object(service, "get", new=AsyncMock(return_value=conversation)), patch.object(
+        service, "_verify_conversation_access", new=AsyncMock(return_value=False)
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await service._require_conversation_access(str(uuid4()), "user-a")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_require_conversation_access_allowed_returns_conversation():
+    service = ConversationService()
+    conversation = SimpleNamespace(json_metadata=None, project_id=None)
+    with patch.object(service, "get", new=AsyncMock(return_value=conversation)), patch.object(
+        service, "_verify_conversation_access", new=AsyncMock(return_value=True)
+    ):
+        result = await service._require_conversation_access(str(uuid4()), "user-a")
+    assert result is conversation
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_missing_raises_404_not_500():
+    """A stale/deleted conversation link is a routine, expected condition -
+    get_conversation used to raise a bare Exception for this, which the
+    router's `except Exception -> HTTPException(500)` catch-all flattened
+    into a 500 "Internal Server Error", surfacing to the user as a real
+    backend fault instead of the clean 404 every other not-found path in
+    this router already returns."""
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with patch.object(service, "get", new=AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc:
+            await service.get_conversation(str(uuid4()), offset=0, limit=100)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_invalid_uuid_raises_400_not_500():
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with pytest.raises(HTTPException) as exc:
+        await service.get_conversation("not-a-uuid", offset=0, limit=100)
+    assert exc.value.status_code == 400
+
+
 def test_conversation_response_schema_coerces_jsonb_metadata():
     from uuid import uuid4
     from datetime import datetime, timezone

@@ -5,6 +5,7 @@ import { Modal, Input, Select, Button, Space, Tabs, InputNumber, Typography, Ale
 import { PlusOutlined, ThunderboltOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { DashboardFilter } from '@/types/dashboard';
+import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 import shortid from 'shortid';
 import { FilterDefaultValueEditor } from './FilterDefaultValueEditor';
 import { FilterFieldConflictsAlert } from './FilterFieldConflictsAlert';
@@ -20,7 +21,7 @@ import {
 import { chartService } from '../services/chartService';
 import './AddDashboardDrawer.css';
 
-type DataSourceSchema = {
+export type DataSourceSchema = {
   id: string | number;
   schema?: { tables?: Array<{ name?: string; columns?: Array<{ name?: string; type?: string } | string> }> };
 };
@@ -155,7 +156,7 @@ function FilterEditorForm({
   ];
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={12}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={12}>
       <Alert type="info" showIcon message={t('filter_manage_help_title')} description={t('filter_manage_help_body')} />
       {filters.map((f, idx) => {
         const needsDataSource = ['dropdown', 'checkbox', 'slider'].includes(f.type);

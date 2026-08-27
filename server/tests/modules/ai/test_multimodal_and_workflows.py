@@ -79,7 +79,8 @@ async def test_image_attachment_is_summarized_for_text_planners():
     assert "Image layout summarized" in ctx.attachment_summaries
 
 
-def test_match_org_workflow_and_build_plan():
+@pytest.mark.asyncio
+async def test_match_org_workflow_and_build_plan():
     org_id = "org-test-1"
     _WORKFLOW_CACHE[org_id] = [
         {
@@ -96,7 +97,7 @@ def test_match_org_workflow_and_build_plan():
     wf = match_org_workflow(org_id, "Run our monthly review for sales")
     assert wf is not None
     goal = AgentGoal(objective="Monthly review", deliverable_type=DeliverableType.multi_step)
-    plan = build_plan(goal, {"organization_id": org_id, "query": "monthly review for sales"})
+    plan = await build_plan(goal, {"organization_id": org_id, "query": "monthly review for sales"}, litellm_service=None)
     assert len(plan.steps) == 2
     assert plan.steps[0].capability == "analytics_pipeline"
     assert plan.steps[1].capability == "create_dashboard"

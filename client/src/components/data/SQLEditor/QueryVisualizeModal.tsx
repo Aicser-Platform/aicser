@@ -242,7 +242,7 @@ export function QueryVisualizeModal({
           alignItems: 'start',
         }}
       >
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={14} style={{ width: '100%' }}>
           <div>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
               Destination
@@ -413,7 +413,7 @@ export function QueryVisualizeModal({
               Data mode
             </Text>
             <Radio.Group value={dataMode} onChange={(e) => setDataMode(e.target.value)}>
-              <Space direction="vertical" size={4}>
+              <Space orientation="vertical" size={4}>
                 <Radio value="live">
                   <ThunderboltOutlined /> Live — refresh re-runs SQL
                 </Radio>

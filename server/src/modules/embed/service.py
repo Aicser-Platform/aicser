@@ -90,6 +90,8 @@ def _build_embed_urls(token: str, scopes: List[str], resource_id: Optional[str])
         urls["chart"] = f"{base}/embed/chart/{resource_id}?token={token}"
     if "chat" in scopes:
         urls["chat"] = f"{base}/embed/chat?token={token}"
+    if "report" in scopes and resource_id:
+        urls["report"] = f"{base}/embed/report/{resource_id}?token={token}"
     return urls
 
 

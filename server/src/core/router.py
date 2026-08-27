@@ -118,6 +118,22 @@ if is_ee_enabled():
         logger.warning("AI router not loaded: %s", _err)
 
     try:
+        from ee.modules.ai.reports.router import router as reports_router
+        # require_valid_license checks this server instance's own license
+        # state (src/core/licensing/state.py), not the caller's session - it
+        # applies just as well to the unauthenticated /embed endpoint (used
+        # by the chrome-free /embed/report/[id] route and the Playwright
+        # export service) as to the authenticated /export endpoint. Access
+        # *to a specific report* is separately gated by the embed token
+        # itself (verify_report_read_access).
+        api_router.include_router(
+            reports_router, prefix="/reports", tags=["reports"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Reports router not loaded: %s", _err)
+
+    try:
         from ee.modules.alerts.router import router as alerts_router
         api_router.include_router(
             alerts_router, prefix="/api/alerts", tags=["alerts"],

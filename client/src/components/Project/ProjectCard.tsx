@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Card, Skeleton, Tag, Tooltip } from 'antd';
-import { TeamOutlined, DatabaseOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Card, Skeleton, Tag, Tooltip } from 'antd';
+import { TeamOutlined, DatabaseOutlined, UserOutlined, SwapOutlined } from '@ant-design/icons';
 import type { Project } from '@/types/project';
 
 export interface ProjectCardStats {
@@ -63,6 +63,22 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
     </div>
   );
 
+  // A dedicated action, not a whole-card click target: browsing/reading cards in this
+  // list (member counts, description) must never itself change the user's active
+  // project. Only the active card omits this — it's already selected.
+  const switchAction = !isActive ? (
+    <Button
+      size="small"
+      icon={<SwapOutlined />}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(project);
+      }}
+    >
+      Switch to this project
+    </Button>
+  ) : null;
+
   const nameAndDescription = (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
@@ -95,10 +111,8 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
 
   return (
     <Card
-      hoverable
-      bordered
-      onClick={() => onSelect(project)}
-      className={`rounded-xl cursor-pointer border-[var(--ant-color-border)] transition-colors hover:border-[var(--ant-color-primary)] ${
+      variant="outlined"
+      className={`rounded-xl border-[var(--ant-color-border)] transition-colors ${
         isActive ? 'border-l-[3px] border-l-[var(--ant-color-primary)]' : ''
       }`}
       styles={{ body: { padding: 16 } }}
@@ -106,12 +120,16 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       {isGrid ? (
         <div className="flex flex-col gap-3">
           {nameAndDescription}
-          {statChips}
+          <div className="flex items-center justify-between gap-2">
+            {statChips}
+            {switchAction}
+          </div>
         </div>
       ) : (
         <div className="flex flex-row items-center justify-between gap-4">
           {nameAndDescription}
           {statChips}
+          {switchAction}
         </div>
       )}
     </Card>

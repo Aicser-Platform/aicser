@@ -40,7 +40,6 @@ from src.modules.data.services.multi_engine_query_service import (
     invalidate_api_response_cache,
     invalidate_query_result_cache,
 )
-from src.modules.data.cube_feature import is_external_cube_enabled
 from src.modules.data.services.upload_datasource_storage_service import (
     UploadDatasourceStorageService,
 )
@@ -434,14 +433,6 @@ def _serialize_project_rls_attributes(settings_data: dict[str, Any]) -> List[Dic
     return attributes
 
 
-def _require_external_cube() -> None:
-    if not is_external_cube_enabled():
-        raise HTTPException(
-            status_code=503,
-            detail="External Cube.js is disabled. Set AICSER_EXTERNAL_CUBE_ENABLED=true to enable.",
-        )
-
-
 # Service Instantiations
 data_service = DataConnectivityService()
 data_crud_service = DataSourcesCRUD()
@@ -776,14 +767,21 @@ async def enforce_data_source_limit(
                 logger.warning(
                     f"⛔ Data source limit reached for org {org_id}: {current_count}/{max_ds}"
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail={
-                        "error": "data_source_limit_reached",
-                        "message": f"Data source limit reached ({current_count}/{max_ds}). Please upgrade your plan to add more data sources.",
-                        "current": current_count,
-                        "limit": max_ds,
-                    },
+                # raise_http, not a raw HTTPException(detail={...sibling keys...}) -
+                # the global exception handler (src/main.py -> src/shared/api_errors.py)
+                # flattens every HTTPException into {error, message, details?} and only
+                # preserves extra fields nested under "details", silently dropping bare
+                # sibling keys like current/limit - which broke the frontend's
+                # data_source_limit_reached modal (it read a nested error.detail that
+                # never existed on the actual wire response).
+                from src.shared.api_errors import raise_http
+
+                raise_http(
+                    status.HTTP_403_FORBIDDEN,
+                    "data_source_limit_reached",
+                    f"Data source limit reached ({current_count}/{max_ds}). Please upgrade your plan to add more data sources.",
+                    current=current_count,
+                    limit=max_ds,
                 )
 
             logger.info(
@@ -939,11 +937,6 @@ class DataModelingRequest(BaseModel):
 class ModelingFeedbackRequest(BaseModel):
     modeling_id: str
     feedback: Dict[str, Any]
-
-
-class CubeQueryRequest(BaseModel):
-    query: Dict[str, Any]
-    cube_name: Optional[str] = None
 
 
 # Database connection endpoints
@@ -1429,9 +1422,22 @@ async def create_data_source(
             organization_id = current_token.get("organization_id") or current_token.get(
                 "org_id"
             )
-        await _require_data_settings_owner(
-            user_id, project_id=str(project_id or "") or None
-        )
+        if ds_type == "sample_duckdb":
+            # Bundled, pre-seeded sample dataset: no external credentials or real system
+            # access, so it doesn't need the owner-tier (org:delete) gate a real connection
+            # goes through below. Anyone with data:edit (org_owner, org_admin, project_owner,
+            # project_editor per the RBAC seed) can try it — same bar data_rbac_guard already
+            # applies to every other POST under /data.
+            await require_permission(
+                user_id,
+                "data:edit",
+                organization_id=str(organization_id) if organization_id else None,
+                project_id=str(project_id or "") or None,
+            )
+        else:
+            await _require_data_settings_owner(
+                user_id, project_id=str(project_id or "") or None
+            )
         format_val = body.get("format") or (
             ds_type if ds_type != "file" else "api" if ds_type == "api" else "file"
         )
@@ -3473,224 +3479,19 @@ async def get_learned_patterns():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Cube.js Integration endpoints (via MultiEngineQueryService.CubeEngine HTTP client)
-@router.get("/cube/status")
-async def get_cube_status():
-    """Get Cube.js connection status via CubeEngine HTTP client"""
-    if not is_external_cube_enabled():
-        return {
-            "success": False,
-            "cube_status": "disabled",
-            "message": "Set AICSER_EXTERNAL_CUBE_ENABLED=true to use external Cube.js",
-        }
-    try:
-        cube_url = os.getenv("CUBE_API_URL", "")
-        if not cube_url:
-            return {
-                "success": False,
-                "cube_status": "not_configured",
-                "message": "CUBE_API_URL not set",
-            }
-        import httpx
-
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{cube_url}/cubejs-api/v1/meta")
-            return {
-                "success": resp.status_code == 200,
-                "cube_status": "connected"
-                if resp.status_code == 200
-                else "unreachable",
-                "cube_url": cube_url,
-                "http_status": resp.status_code,
-            }
-    except Exception as e:
-        logger.error(f"Cube status check failed: {e}")
-        return {"success": False, "cube_status": "error", "message": str(e)}
-
-
-@router.post("/cube/connect")
-async def connect_to_cube():
-    """Verify Cube.js connectivity (idempotent health check)"""
-    return await get_cube_status()
-
-
-@router.get("/cube/metadata")
-async def get_cube_metadata():
-    """Get Cube.js cubes/views metadata via REST API"""
-    _require_external_cube()
-    try:
-        cube_url = os.getenv("CUBE_API_URL", "")
-        cube_secret = os.getenv("CUBE_API_SECRET", "")
-        if not cube_url:
-            raise HTTPException(
-                status_code=503, detail="Cube.js not configured (CUBE_API_URL not set)"
-            )
-        import httpx
-
-        headers = {"Authorization": f"Bearer {cube_secret}"} if cube_secret else {}
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{cube_url}/cubejs-api/v1/meta", headers=headers)
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=resp.status_code,
-                    detail=f"Cube meta returned {resp.status_code}",
-                )
-            return {"success": True, "meta": resp.json()}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Cube metadata failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/cube/query")
-async def execute_cube_query(
-    request: CubeQueryRequest,
-    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
-):
-    """Execute query against Cube.js (Enterprise plan only)"""
-    _require_external_cube()
-    try:
-        # Extract organization_id from token
-        user_id = None
-        organization_id = None
-        if isinstance(current_token, dict):
-            user_id = (
-                current_token.get("id")
-                or current_token.get("user_id")
-                or current_token.get("sub")
-            )
-            organization_id = current_token.get("organization_id")
-        elif isinstance(current_token, str):
-            user_payload = extract_user_payload(current_token)
-            user_id = (
-                user_payload.get("id")
-                or user_payload.get("user_id")
-                or user_payload.get("sub")
-            )
-            organization_id = user_payload.get("organization_id")
-
-        # Check if organization has Enterprise plan (Cube.js access)
-        if organization_id:
-            from src.db.session import async_session
-
-            async with async_session() as db:
-                from src.modules.organizations.models import Organization
-
-                result = await db.execute(
-                    sa.text("SELECT plan_type FROM organizations WHERE id = :org_id"),
-                    {
-                        "org_id": int(organization_id)
-                        if isinstance(organization_id, (int, str))
-                        and str(organization_id).isdigit()
-                        else organization_id
-                    },
-                )
-                org_row = result.fetchone()
-                if org_row and org_row.plan_type != "enterprise":
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Cube.js Analytics is available on Enterprise plan only. Please upgrade to access this feature.",
-                    )
-
-        logger.info("Cube.js query request")
-
-        cube_url = os.getenv("CUBE_API_URL", "")
-        cube_secret = os.getenv("CUBE_API_SECRET", "")
-        if not cube_url:
-            raise HTTPException(
-                status_code=503, detail="Cube.js not configured (CUBE_API_URL not set)"
-            )
-        import httpx
-
-        headers = {"Authorization": f"Bearer {cube_secret}"} if cube_secret else {}
-        payload = (
-            {"query": request.query}
-            if isinstance(request.query, dict)
-            else {"query": request.query}
-        )
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{cube_url}/cubejs-api/v1/load", json=payload, headers=headers
-            )
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cube query returned {resp.status_code}: {resp.text[:200]}",
-            )
-        result = resp.json()
-        return {"success": True, "data": result.get("data", []), "query": request.query}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Cube query failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/cube/suggestions")
-async def get_cube_suggestions(query: str):
-    """Get cube name suggestions matching a query string from Cube metadata"""
-    try:
-        meta_resp = await get_cube_metadata()
-        cubes = meta_resp.get("meta", {}).get("cubes", [])
-        q = query.lower()
-        suggestions = [
-            {"name": c["name"], "title": c.get("title", c["name"])}
-            for c in cubes
-            if q in c["name"].lower() or q in c.get("title", "").lower()
-        ][:10]
-        return {"success": True, "suggestions": suggestions, "query": query}
-    except Exception as e:
-        logger.error(f"Cube suggestions failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/cube/{cube_name}/preview")
-async def get_cube_preview(cube_name: str, limit: int = PREVIEW_ROWS):
-    """Get preview data from a Cube by executing a simple select query"""
-    try:
-        cube_url = os.getenv("CUBE_API_URL", "")
-        cube_secret = os.getenv("CUBE_API_SECRET", "")
-        if not cube_url:
-            raise HTTPException(status_code=503, detail="Cube.js not configured")
-        import httpx
-
-        headers = {"Authorization": f"Bearer {cube_secret}"} if cube_secret else {}
-        payload = {
-            "query": {"dimensions": [f"{cube_name}.id"], "limit": min(limit, 100)}
-        }
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{cube_url}/cubejs-api/v1/load", json=payload, headers=headers
-            )
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=resp.status_code,
-                detail=f"Cube preview failed: {resp.text[:200]}",
-            )
-        data = resp.json().get("data", [])
-        return {
-            "success": True,
-            "cube_name": cube_name,
-            "data": data,
-            "row_count": len(data),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Cube preview failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # Health check endpoint
 @router.get("/health")
 async def health_check():
-    """Health check for data connectivity service"""
+    """Health check for data connectivity service — delegates to the shared
+    health-check logic used by the main /health and /ready endpoints so
+    status (database, redis, worker, etc.) is consistent app-wide."""
+    from src.shared.health import collect_health_payload
+
+    payload, _ = await collect_health_payload()
     return {
-        "success": True,
+        **payload,
+        "success": payload.get("status") == "healthy",
         "service": "data_connectivity",
-        "status": "healthy",
         "supported_formats": [
             "csv",
             "xlsx",
@@ -5472,10 +5273,14 @@ async def test_enterprise_connection(request: Dict[str, Any]):
 
 
 @router.post("/enterprise/connections")
-async def create_enterprise_connection(request: Dict[str, Any]):
+async def create_enterprise_connection(
+    request: Dict[str, Any],
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
     """Create enterprise data source connection"""
     try:
         logger.info(f"🔌 Creating enterprise connection: {request.get('type')}")
+        uid = user_id_from_payload(extract_user_payload(current_token))
 
         # Create connection config
         config = ConnectionConfig(
@@ -5495,7 +5300,7 @@ async def create_enterprise_connection(request: Dict[str, Any]):
         )
 
         # Create connection
-        result = await enterprise_connectors_service.create_connection(config)
+        result = await enterprise_connectors_service.create_connection(config, created_by=uid)
 
         return result
 
@@ -5505,10 +5310,13 @@ async def create_enterprise_connection(request: Dict[str, Any]):
 
 
 @router.get("/enterprise/connections")
-async def list_enterprise_connections():
-    """List all enterprise connections"""
+async def list_enterprise_connections(
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """List the caller's own enterprise connections"""
     try:
-        connections = await enterprise_connectors_service.list_connections()
+        uid = user_id_from_payload(extract_user_payload(current_token))
+        connections = await enterprise_connectors_service.list_connections(requester_id=uid)
         return {"success": True, "connections": connections, "count": len(connections)}
     except Exception as e:
         logger.error(f"❌ Failed to list enterprise connections: {str(e)}")
@@ -5516,7 +5324,11 @@ async def list_enterprise_connections():
 
 
 @router.post("/enterprise/connections/{connection_id}/query")
-async def execute_enterprise_query(connection_id: str, request: Dict[str, Any]):
+async def execute_enterprise_query(
+    connection_id: str,
+    request: Dict[str, Any],
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
     """Execute query on enterprise connection"""
     try:
         query = request.get("query", "")
@@ -5525,8 +5337,9 @@ async def execute_enterprise_query(connection_id: str, request: Dict[str, Any]):
         if not query:
             raise HTTPException(status_code=400, detail="Query is required")
 
+        uid = user_id_from_payload(extract_user_payload(current_token))
         result = await enterprise_connectors_service.execute_query(
-            connection_id, query, params
+            connection_id, query, params, requester_id=uid
         )
 
         return {
@@ -5545,11 +5358,16 @@ async def execute_enterprise_query(connection_id: str, request: Dict[str, Any]):
 
 
 @router.get("/enterprise/connections/{connection_id}/schema")
-async def get_enterprise_schema(connection_id: str, table_name: Optional[str] = None):
+async def get_enterprise_schema(
+    connection_id: str,
+    table_name: Optional[str] = None,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
     """Get schema from enterprise connection"""
     try:
+        uid = user_id_from_payload(extract_user_payload(current_token))
         result = await enterprise_connectors_service.get_schema(
-            connection_id, table_name
+            connection_id, table_name, requester_id=uid
         )
         return result
     except Exception as e:
@@ -5746,7 +5564,7 @@ async def execute_multi_engine_query(
         # Apply filters server-side by safely wrapping the original SQL
         if filters and isinstance(filters, list):
             try:
-                query = _apply_filters_to_query(query, filters)
+                query = _apply_filters_to_query(query, filters, data_source.get("db_type"))
             except Exception:
                 pass
 
@@ -5805,12 +5623,25 @@ async def execute_multi_engine_query(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _apply_filters_to_query(original_query: str, filters: list) -> str:
+# Same dialect-name mapping used by ee/modules/data/services/rls_predicate_builder.py,
+# duplicated here (not imported) so this CE-reachable helper doesn't take a
+# hard EE dependency for what's ultimately just a sqlglot dialect string.
+_FILTER_QUERY_DIALECT_BY_DB_TYPE = {
+    "postgresql": "postgres", "postgres": "postgres", "pg": "postgres",
+    "redshift": "redshift", "mysql": "mysql", "mariadb": "mysql",
+    "bigquery": "bigquery", "snowflake": "snowflake", "duckdb": "duckdb",
+    "sqlite": "sqlite", "clickhouse": "clickhouse", "mssql": "tsql", "sqlserver": "tsql",
+}
+
+
+def _apply_filters_to_query(original_query: str, filters: list, db_type: Optional[str] = None) -> str:
     """Safely wrap query with filters as WHERE clauses.
     SELECT * FROM (original_query) AS q WHERE ...
     """
     if not original_query or not isinstance(filters, list) or len(filters) == 0:
         return original_query
+
+    dialect = _FILTER_QUERY_DIALECT_BY_DB_TYPE.get(str(db_type or "").strip().lower(), "postgres")
 
     def safe_field(name: str) -> str:
         import re
@@ -5820,12 +5651,20 @@ def _apply_filters_to_query(original_query: str, filters: list) -> str:
     def sql_value(v):
         if v is None:
             return "NULL"
-        if isinstance(v, (int, float)):
-            return str(v)
         if isinstance(v, bool):
             return "TRUE" if v else "FALSE"
-        s = str(v).replace("'", "''")
-        return f"'{s}'"
+        if isinstance(v, (int, float)):
+            return str(v)
+        # SECURITY: doubling single quotes alone is correct on PostgreSQL but
+        # not on MySQL/MariaDB, where a trailing backslash escapes the
+        # closing quote and hands the rest of the filter predicate to the
+        # caller -- the same class of bug rls_predicate_builder.py's
+        # docstring calls out and works around via sqlglot. Rendering the
+        # literal through sqlglot for the data source's actual dialect
+        # instead of hand-rolled escaping.
+        from sqlglot import exp
+
+        return exp.Literal.string(str(v)).sql(dialect=dialect)
 
     clauses = []
     for f in filters:

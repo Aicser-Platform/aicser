@@ -190,7 +190,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
       <SectionLabel label={label} required={required} hint={hint} />
       <Select
         style={{ width: '100%' }}
-        popupClassName="properties-panel-dropdown"
+        classNames={{ popup: { root: 'properties-panel-dropdown' } }}
         value={value}
         onChange={onChange}
         options={options}
@@ -588,7 +588,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
               <Dropdown menu={{ items: menuItems }} trigger={['click']}>
                 <div className="metric-item-ui">
                   <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden', gap: 8 }}>
-                    {maxItems !== 1 && <HolderOutlined style={{ color: '#bfbfbf', cursor: 'grab' }} />}
+                    {maxItems !== 1 && <HolderOutlined style={{ color: 'var(--ant-color-text-quaternary)', cursor: 'grab' }} />}
                     <Text
                       style={{ fontSize: '11px' }}
                       className="metric-item-label"
@@ -643,7 +643,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
           <div style={{ display: 'flex', gap: 4, marginTop: metrics.length > 0 ? 4 : 0, alignItems: 'center' }}>
             <Select
               style={{ flex: 1 }}
-              popupClassName="properties-panel-dropdown"
+              classNames={{ popup: { root: 'properties-panel-dropdown' } }}
               placeholder={isFieldDragOver ? dropHint || 'Drop a number here' : placeholder}
               loading={isLoading}
               onChange={handleAddField}
@@ -652,7 +652,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
               showSearch
               optionFilterProp="label"
               size="small"
-              dropdownStyle={{ zIndex: 10000 }}
+              styles={{ popup: { root: { zIndex: 10000 } } }}
               getPopupContainer={() => document.body}
             />
             <button
@@ -845,7 +845,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Column</div>
           <Select
             style={{ width: '100%' }}
-            popupClassName="properties-panel-dropdown"
+            classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
             options={columnOptions.map(opt => {
               const isNumeric = (opt.type || '').toLowerCase().includes('int') || 
@@ -874,7 +874,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
-            popupClassName="properties-panel-dropdown"
+            classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
             options={FILTER_OPERATORS}
             value={tempFilter.operator}
@@ -919,7 +919,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
             <Select
               size="small"
               style={{ width: '100%' }}
-              popupClassName="properties-panel-dropdown"
+              classNames={{ popup: { root: 'properties-panel-dropdown' } }}
               placeholder={distinctLoading ? 'Loading…' : 'Select value'}
               loading={distinctLoading}
               showSearch
@@ -1116,7 +1116,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Metric</div>
           <Select
             style={{ width: '100%' }}
-            popupClassName="properties-panel-dropdown"
+            classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
             options={metricOptions.map(opt => ({
               label: opt.label,
@@ -1134,7 +1134,7 @@ export const MetricFilterListField: React.FC<MetricFilterListFieldProps> = ({
           <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
           <Select
             style={{ width: '100%' }}
-            popupClassName="properties-panel-dropdown"
+            classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
             options={[
               { label: 'Equal (=)', value: '=' },
@@ -1466,7 +1466,7 @@ export const ColorPaletteField: React.FC<ColorPaletteFieldProps> = ({
       <SectionLabel label={label} />
       <Select
         style={{ width: '100%' }}
-        popupClassName="properties-panel-dropdown"
+        classNames={{ popup: { root: 'properties-panel-dropdown' } }}
         value={selectValue}
         onChange={(val) => {
           if (onUpdateChartOptions) {

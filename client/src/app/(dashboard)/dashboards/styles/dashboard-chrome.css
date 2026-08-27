@@ -874,7 +874,12 @@ body.dashboard-print-mode .sidebar-toggle-btn {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--collab-color, var(--ant-color-primary));
+  /* --collab-color is an arbitrary per-user color (server-assigned) - can't
+     be paired with a single WCAG-verified text color the way a fixed brand
+     color can. A dark text-shadow keeps the label legible against whatever
+     color lands here, including light/bright assigned colors. */
   color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.65), 0 1px 1px rgba(0, 0, 0, 0.5);
   font-size: 10px;
   font-weight: 600;
   vertical-align: top;

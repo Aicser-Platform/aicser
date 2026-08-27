@@ -94,7 +94,7 @@ export function AddDashboardDrawer({
     <Drawer
       title={t('add_drawer_title')}
       placement="left"
-      width={360}
+      size={360}
       open={open}
       onClose={onClose}
       destroyOnHidden

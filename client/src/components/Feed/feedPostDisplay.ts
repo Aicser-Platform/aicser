@@ -87,7 +87,7 @@ export function buildPreviewFeedItem(params: {
       id: 'preview',
       name: 'You',
       username: 'you',
-      avatarUrl: null,
+      avatarUrl: undefined,
     },
     metrics: { views: 0, comments: 0, reactions: 0, bookmarks: 0, shares: 0 },
     userInteraction: { isBookmarked: false },

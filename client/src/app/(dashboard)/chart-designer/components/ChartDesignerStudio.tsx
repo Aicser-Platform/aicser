@@ -157,11 +157,10 @@ export default function ChartDesignerStudio() {
   const handleAddTemplate = useCallback(
     (template: WidgetTemplate) => {
       const dsState = useDataSourceStore.getState();
-      const dataSourceId =
-        (dsState.selectedId != null ? String(dsState.selectedId) : undefined) ||
-        (Array.isArray(dsState.dataSources) && dsState.dataSources[0]?.id
-          ? String(dsState.dataSources[0].id)
-          : undefined);
+      // The store only tracks `selectedId` - the data source list itself lives in the
+      // useDataSources() React Query cache, not in this Zustand store, so there's no
+      // "first available data source" to imperatively fall back to here.
+      const dataSourceId = dsState.selectedId != null ? String(dsState.selectedId) : undefined;
 
       const newWidget: ChartDesignerWidget = {
         id: generateWidgetId(),
@@ -223,7 +222,7 @@ export default function ChartDesignerStudio() {
   if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100%' }}>
-        <Spin size="large" tip={t('loading_designer')} />
+        <Spin size="large" description={t('loading_designer')} />
       </div>
     );
   }

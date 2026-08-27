@@ -392,7 +392,7 @@ div.page-container,
   min-height: 0 !important;
 }
 
-.page-tabs .ant-tabs-content-holder,
+.page-tabs .ant-tabs-body-holder,
 .page-tabs .ant-tabs-content {
   flex: 1 !important;
   display: flex !important;
@@ -436,7 +436,7 @@ div.page-container,
   border-bottom-color: var(--ant-color-border-secondary) !important;
 }
 
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content-holder,
+.page-wrapper.integrations-page .integrations-tabs .ant-tabs-body-holder,
 .page-wrapper.integrations-page .integrations-tabs .ant-tabs-content,
 .page-wrapper.integrations-page .integrations-tabs .ant-tabs-tabpane {
   padding: 0 !important;
@@ -603,8 +603,8 @@ div.page-container,
 }
 
 /* Settings tab content: prevent overflow — legacy settings-tabs only */
-.settings-page .settings-tabs .ant-tabs-content-holder,
-.settings-page .ant-tabs.settings-tabs .ant-tabs-content-holder {
+.settings-page .settings-tabs .ant-tabs-body-holder,
+.settings-page .ant-tabs.settings-tabs .ant-tabs-body-holder {
   overflow-x: hidden;
 }
 .settings-page .settings-tabs .ant-tabs-content,

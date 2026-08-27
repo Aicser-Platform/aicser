@@ -179,10 +179,11 @@ async def refresh_artifact_data(
     """
     logger.info("refresh_artifact_data: data_source_id=%s", data_source_id)
     try:
-        from ee.modules.ai.services.artifact_automation_service import (
-            refresh_all_dashboards_for_data_source,
-            export_dashboard_artifacts,
-        )
+        import importlib
+
+        _artifact_svc = importlib.import_module("ee.modules.ai.services.artifact_automation_service")
+        refresh_all_dashboards_for_data_source = _artifact_svc.refresh_all_dashboards_for_data_source
+        export_dashboard_artifacts = _artifact_svc.export_dashboard_artifacts
         result = await refresh_all_dashboards_for_data_source(data_source_id)
 
         exports = {}
@@ -220,11 +221,79 @@ async def sync_artifacts_after_schema_change(
     """
     logger.info("sync_artifacts_after_schema_change: data_source_id=%s", data_source_id)
     try:
-        from ee.modules.ai.services.artifact_automation_service import (
-            sync_artifacts_after_schema_change as _sync,
-        )
+        import importlib
+
+        _artifact_svc = importlib.import_module("ee.modules.ai.services.artifact_automation_service")
+        _sync = _artifact_svc.sync_artifacts_after_schema_change
         result = await _sync(data_source_id, old_schema=old_schema, new_schema=new_schema)
         return {"success": True, **result, "completed_at": datetime.utcnow().isoformat()}
     except Exception as exc:
         logger.exception("sync_artifacts_after_schema_change failed: %s", exc)
-        return {"success": False, "error": str(exc)}
+        raise
+
+
+async def refresh_all_active_schemas(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    RELIABILITY: refresh_schema_cache and sync_artifacts_after_schema_change
+    both existed and worked but were never scheduled anywhere -- a source's
+    cached schema was only ever refreshed by an explicit user action, so
+    NL2SQL could keep generating SQL against columns dropped or renamed on
+    the underlying warehouse indefinitely, only surfacing as a confusing
+    DB-level error at query time. Triggered by ARQ cron (see worker.py);
+    fans out `refresh_schema_cache`'s per-source logic to every active
+    source, and dispatches the existing drift-sync job when the refreshed
+    schema actually differs from what was cached.
+    """
+    logger.info("refresh_all_active_schemas: starting cycle")
+    try:
+        from sqlalchemy import select
+
+        from src.db.session import async_session
+        from src.modules.data.models import DataSource
+        from src.modules.data.services.data_connectivity_service import DataConnectivityService
+
+        svc = DataConnectivityService()
+        async with async_session() as db:
+            result = await db.execute(select(DataSource.id).where(DataSource.is_active == True))  # noqa: E712
+            source_ids = [row[0] for row in result.all()]
+
+        refreshed = 0
+        drifted = 0
+        failed = 0
+        for source_id in source_ids:
+            try:
+                before = await svc.get_source_schema(source_id)
+                old_schema = before.get("schema") if before.get("success") else None
+
+                after = await svc.get_source_schema(source_id, force_refresh=True)
+                if not after.get("success"):
+                    failed += 1
+                    continue
+                new_schema = after.get("schema")
+                refreshed += 1
+
+                if old_schema is not None and old_schema != new_schema:
+                    drifted += 1
+                    logger.info("refresh_all_active_schemas: drift detected for %s", source_id)
+                    await sync_artifacts_after_schema_change(
+                        ctx, source_id, old_schema=old_schema, new_schema=new_schema
+                    )
+            except Exception as exc:
+                failed += 1
+                logger.warning("refresh_all_active_schemas: failed for %s: %s", source_id, exc)
+
+        logger.info(
+            "refresh_all_active_schemas: complete (refreshed=%d drifted=%d failed=%d total=%d)",
+            refreshed, drifted, failed, len(source_ids),
+        )
+        return {
+            "success": True,
+            "total": len(source_ids),
+            "refreshed": refreshed,
+            "drifted": drifted,
+            "failed": failed,
+            "completed_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("refresh_all_active_schemas failed: %s", exc)
+        raise

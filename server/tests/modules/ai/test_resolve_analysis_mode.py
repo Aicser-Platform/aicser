@@ -20,10 +20,27 @@ from src.modules.ai.utils.routing_utils import (
             "decision_intelligence",
         ),
         ("How is my business performing?", "business_journey"),
+        ("Give me the state of my business this month", "business_journey"),
+        ("Can you set up my alerts for revenue drops?", "business_journey"),
+        ("I want an OKR review across the org", "business_journey"),
+        ("Give me the full picture across all my data sources", "business_journey"),
     ],
 )
 def test_infer_analysis_mode_from_query(query: str, expected: str) -> None:
     assert infer_analysis_mode_from_query(query) == expected
+
+
+def test_business_journey_phrases_previously_only_in_supervisors_own_keyword_list():
+    """These used to live only in supervisor_node.py's now-removed _BJ_STRONG_KEYWORDS
+    - a private duplicate of this function's job. Merged here so there's one source
+    of truth (per this function's own docstring) and so removing the duplicate list
+    didn't quietly drop coverage."""
+    for query in (
+        "quarterly business review time",
+        "let's do a 30 60 90 day plan",
+        "need a business health check",
+    ):
+        assert infer_analysis_mode_from_query(query) == "business_journey"
 
 
 def test_resolve_auto_to_standard_for_simple_query() -> None:

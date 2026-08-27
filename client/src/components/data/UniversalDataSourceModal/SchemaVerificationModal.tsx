@@ -35,7 +35,6 @@ import {
 } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
-const { Step } = Steps;
 const { Option } = Select;
 const { Panel } = Collapse;
 const { TextArea } = Input;
@@ -513,15 +512,16 @@ const SchemaVerificationModal: React.FC<SchemaVerificationModalProps> = ({
             ]}
         >
             <div style={{ marginBottom: 24 }}>
-                <Steps current={currentStep} onChange={setCurrentStep}>
-                    {steps.map((step, index) => (
-                        <Step
-                            key={index}
-                            title={step.title}
-                            status={getStepStatus(index)}
-                        />
-                    ))}
-                </Steps>
+                <Steps
+                    current={currentStep}
+                    onChange={setCurrentStep}
+                    size="medium"
+                    items={steps.map((step, index) => ({
+                        key: index,
+                        title: step.title,
+                        status: getStepStatus(index),
+                    }))}
+                />
             </div>
 
             <div style={{ minHeight: 400 }}>

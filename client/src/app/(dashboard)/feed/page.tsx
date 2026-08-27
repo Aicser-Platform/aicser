@@ -60,7 +60,7 @@ const SocialFeedPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const queryPostId = searchParams.get('post') || '';
+  const queryPostId = searchParams?.get('post') || '';
   const highlightPostId = useMemo(() => resolveFeedHighlightPostId(queryPostId), [queryPostId]);
   const { user } = useAuth();
 

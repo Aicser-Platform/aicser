@@ -154,7 +154,7 @@ class ErrorBoundary extends Component<Props, State> {
               icon={<BugOutlined style={{ color: '#ff4d4f' }} />}
               title="Something went wrong"
               subTitle={
-                <Space direction="vertical" size="small">
+                <Space orientation="vertical" size="small">
                   <Text type="secondary">
                     We're sorry, but something unexpected happened. Our team has been notified.
                   </Text>

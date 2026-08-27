@@ -242,10 +242,16 @@ class DashboardTemplate(BaseModel):
     __tablename__ = "dashboard_templates"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Which org a saved template belongs to - None for the CE-only path where
+    # organizations aren't a concept the ORM models here (see _org_fk() above,
+    # same conditional-FK convention already used for other tables in this
+    # file); the organizations TABLE always exists (shared migration
+    # history), only the declared Python relationship is conditional.
+    organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=True)  # sales, marketing, finance, etc.
-    
+
     # Template configuration
     template_config = Column(JSON, nullable=False)  # Complete dashboard configuration
     preview_image_url = Column(String(500), nullable=True)

@@ -37,6 +37,8 @@ import {
   ProjectOutlined,
   ApartmentOutlined,
   SafetyCertificateOutlined,
+  SafetyOutlined,
+  FundOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -81,6 +83,12 @@ const AgentSkillsTab = nextDynamic((() => import('@/ee').then((m) => ({ default:
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const AgentWorkflowsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentWorkflowsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentCapabilitiesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentCapabilitiesTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const KpiDefinitionsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.KpiDefinitionsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const BriefingsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any, {
@@ -279,6 +287,24 @@ const NAV_GROUPS: NavGroup[] = [
         eeOnly: true,
         component: AgentWorkflowsTab,
         description: 'Multi-step agent plans',
+        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+      },
+      {
+        key: 'agent-capabilities',
+        label: 'Capabilities',
+        icon: <SafetyOutlined />,
+        eeOnly: true,
+        component: AgentCapabilitiesTab,
+        description: 'Enable or disable AI agent capabilities',
+        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+      },
+      {
+        key: 'kpi-definitions',
+        label: 'KPI Definitions',
+        icon: <FundOutlined />,
+        eeOnly: true,
+        component: KpiDefinitionsTab,
+        description: 'Teach the AI how your org calculates key metrics',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
       },
       {

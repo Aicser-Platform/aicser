@@ -20,6 +20,7 @@ import {
   Select,
   Alert,
 } from 'antd';
+import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import {
   DeleteOutlined,
   ReloadOutlined,
@@ -52,6 +53,7 @@ import {
   useCreateKnowledgeLibrary,
   useDeleteKnowledgeLibrary,
   useUpdateKnowledgeLibrary,
+  useBackfillKnowledgeLibraries,
 } from '@/hooks/useKnowledgeLibraries';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -60,6 +62,87 @@ import { Permission, usePermissions } from '@/hooks/usePermissions';
 import type { KnowledgeDocument, KnowledgeLibrary } from '@/api/knowledge';
 
 const { Text } = Typography;
+
+// External connector sync (SharePoint/Confluence) — lives here, not in the chat
+// data-source panel, since it's a per-library management action like upload/
+// reindex, not something you'd reach for mid-conversation.
+const ConnectorSyncPanel: React.FC<{ dataSourceId: string | null; canManage: boolean }> = ({
+  dataSourceId,
+  canManage,
+}) => {
+  const t = useTranslations('knowledge');
+  const authenticatedFetch = useAuthenticatedFetch();
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [connectorType, setConnectorType] = useState<'sharepoint' | 'confluence'>('sharepoint');
+  const [siteId, setSiteId] = useState('');
+  const [spaceKey, setSpaceKey] = useState('');
+
+  if (!dataSourceId) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('documents_need_library')} />;
+  }
+
+  const syncExternal = async () => {
+    setSyncLoading(true);
+    try {
+      const res = await authenticatedFetch('/knowledge/connectors/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connector_type: connectorType,
+          data_source_id: dataSourceId,
+          site_id: connectorType === 'sharepoint' ? siteId : undefined,
+          space_key: connectorType === 'confluence' ? spaceKey : undefined,
+          limit: 10,
+        }),
+      });
+      if (!res.ok) throw new Error(`Sync failed (${res.status})`);
+      message.success(t('connector_sync_started'));
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : t('connector_sync_failed'));
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <Text strong style={{ display: 'block', marginBottom: 12 }}>
+        {t('connector_sync_title')}
+      </Text>
+      {!canManage ? (
+        <Alert type="info" showIcon message={t('access_denied_desc')} />
+      ) : (
+        <Space orientation="vertical" style={{ width: '100%' }} size={8}>
+          <Select
+            value={connectorType}
+            onChange={setConnectorType}
+            style={{ width: '100%' }}
+            options={[
+              { value: 'sharepoint', label: 'SharePoint' },
+              { value: 'confluence', label: 'Confluence' },
+            ]}
+          />
+          {connectorType === 'sharepoint' ? (
+            <Input
+              placeholder="SharePoint site ID"
+              value={siteId}
+              onChange={(e) => setSiteId(e.target.value)}
+            />
+          ) : (
+            <Input
+              placeholder="Confluence space key"
+              value={spaceKey}
+              onChange={(e) => setSpaceKey(e.target.value)}
+            />
+          )}
+          <Button type="primary" loading={syncLoading} onClick={() => void syncExternal()}>
+            Sync now
+          </Button>
+        </Space>
+      )}
+    </div>
+  );
+};
 
 const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const t = useTranslations('knowledge');
@@ -76,6 +159,25 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   );
   const createLibrary = useCreateKnowledgeLibrary();
   const deleteLibrary = useDeleteKnowledgeLibrary();
+  const backfillLibraries = useBackfillKnowledgeLibraries();
+
+  // One-time migration: knowledge_base data sources created before the Library
+  // concept existed (e.g. via direct upload elsewhere) have no KnowledgeLibrary
+  // row, so they never appear here even though their documents are real and
+  // queryable — this page would look empty/broken despite working data existing.
+  // Runs once per org per page load; idempotent server-side (skips sources that
+  // already have a library), so a stale-closure re-run just no-ops.
+  const backfillAttempted = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!orgIdStr || libsLoading || libraries.length > 0) return;
+    if (backfillAttempted.current === orgIdStr) return;
+    backfillAttempted.current = orgIdStr;
+    backfillLibraries.mutate(orgIdStr, {
+      onSuccess: (result) => {
+        if (result.created > 0) void refetchLibs();
+      },
+    });
+  }, [orgIdStr, libsLoading, libraries.length, backfillLibraries, refetchLibs]);
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -113,7 +215,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       setActiveTab('retrieval');
       return;
     }
-    if (['libraries', 'documents'].includes(urlTab)) {
+    if (['libraries', 'documents', 'connectors'].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -415,7 +517,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     <Text strong>{t('empty_libraries_title')}</Text>
                     <Text type="secondary">{t('empty_libraries_desc')}</Text>
                   </Space>
@@ -464,6 +566,11 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
           })}
         />
       ),
+    },
+    {
+      key: 'connectors',
+      label: t('tab_connectors'),
+      children: <ConnectorSyncPanel dataSourceId={activeDataSourceId} canManage={canManage} />,
     },
     {
       key: 'retrieval',

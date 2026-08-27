@@ -192,7 +192,7 @@
 }
 
 .table-widget-container .ant-pagination-item-active a {
-  color: #fff !important;
+  color: var(--color-primary-text, #fff) !important;
 }
 
 .table-widget-container .ant-pagination-prev,

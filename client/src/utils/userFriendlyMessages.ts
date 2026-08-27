@@ -591,6 +591,36 @@ export function getExecutionMetadata(msg: any): Record<string, any> | null {
   return meta && typeof meta === 'object' ? meta : null;
 }
 
+/**
+ * Resolve the sandboxed analysis code the agent kernel generated and ran for an
+ * execute_analysis step (see server/ee/modules/ai/kernel/code_analysis_capability.py),
+ * so a user can see exactly what ran instead of just a generic step label. Checks the
+ * same set of casing/nesting variants as getResolvedSql, since raw API response
+ * objects are sometimes rendered before being mapped onto the strict IChatMessage shape.
+ */
+export function getAnalysisCode(msg: any): string {
+  if (!msg) return '';
+  const code =
+    msg.analysisCode ??
+    msg.analysis_code ??
+    msg.metadata?.analysis_code ??
+    msg.ai_metadata?.analysis_code ??
+    '';
+  return typeof code === 'string' ? code.trim() : '';
+}
+
+/** Resolve the sandboxed execute_analysis result (see getAnalysisCode). May be any JSON-serializable value. */
+export function getAnalysisOutput(msg: any): unknown {
+  if (!msg) return undefined;
+  return (
+    msg.analysisOutput ??
+    msg.analysis_output ??
+    msg.metadata?.analysis_output ??
+    msg.ai_metadata?.analysis_output ??
+    undefined
+  );
+}
+
 const INSIGHT_TITLE_GENERIC = /^Insight\s+\d+$/i;
 const REC_TITLE_GENERIC = /^Recommendation\s+\d+$/i;
 /** Hardcoded non-answer titles to replace with a neutral summary label */

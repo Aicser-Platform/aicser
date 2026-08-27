@@ -43,6 +43,11 @@ class EmbeddingService(ABC):
         results = await self.embed_texts([text], instruction_prefix=instruction_prefix)
         return results[0] if results else None
 
+    def current_model_id(self) -> str:
+        """Identifier for whichever model is currently live. See rationale on
+        the EE implementation this delegates to (current_embedding_model_id)."""
+        return "unknown"
+
 
 class _EEEmbeddingService(EmbeddingService):
     """Embedding service backed by the EE src.modules.ai shim."""
@@ -56,6 +61,14 @@ class _EEEmbeddingService(EmbeddingService):
 
         return await get_embedding_batch(texts, instruction_prefix=instruction_prefix)
 
+    def current_model_id(self) -> str:
+        try:
+            from src.modules.ai.utils.embedding_service import current_embedding_model_id
+
+            return current_embedding_model_id()
+        except Exception:
+            return "unknown"
+
 
 class _NoOpEmbeddingService(EmbeddingService):
     """Fallback when embeddings are unavailable (CE without EE shim)."""
@@ -66,6 +79,9 @@ class _NoOpEmbeddingService(EmbeddingService):
         instruction_prefix: Optional[str] = None,
     ) -> List[Optional[List[float]]]:
         return [None] * len(texts)
+
+    def current_model_id(self) -> str:
+        return "none"
 
 
 _embedding_service: Optional[EmbeddingService] = None

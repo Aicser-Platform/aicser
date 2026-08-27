@@ -77,6 +77,7 @@ export const LayoutHeader: React.FC<Props> = ({
 }) => {
   const router = useRouter();
   const t = useTranslations('header');
+  const [messageApi, contextHolder] = message.useMessage();
 
   const ThemeCustomizer = React.useMemo(
     () => dynamic(() => import('@/ee').then((m) => ({ default: m.ThemeCustomizer })), { ssr: false }),
@@ -173,31 +174,31 @@ export const LayoutHeader: React.FC<Props> = ({
   const handleProjectChange = (projectId: number | string) => {
     const project = projects.find((p) => p.id == projectId);
     if (project) {
-      message.loading({ content: t('switching_project'), key: 'project-switch' });
+      messageApi.loading({ content: t('switching_project'), key: 'project-switch' });
       selectProject(project);
       resetProjectScopedData();
       void useConversationStore.getState().loadConversations(String(project.id));
-      message.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
+      messageApi.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
     } else {
-      message.error({ content: t('switch_failed'), key: 'project-switch', duration: 2 });
+      messageApi.error({ content: t('switch_failed'), key: 'project-switch', duration: 2 });
     }
   };
 
   const handleOrganizationChange = (organizationId: string) => {
     const org = organizations.find((item) => String(item.id) === String(organizationId));
     if (!org) {
-      message.error({ content: t('organization_switch_failed'), key: 'organization-switch', duration: 2 });
+      messageApi.error({ content: t('organization_switch_failed'), key: 'organization-switch', duration: 2 });
       return;
     }
     if (String(currentOrganization?.id) === String(org.id)) return;
 
-    message.loading({ content: t('switching_organization'), key: 'organization-switch' });
+    messageApi.loading({ content: t('switching_organization'), key: 'organization-switch' });
     setCurrentOrganization(org);
     clearProject();
     resetProjectScopedData();
     void queryClient.invalidateQueries({ queryKey: ['projects'] });
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    message.success({
+    messageApi.success({
       content: t('switched_organization', { name: org.name }),
       key: 'organization-switch',
       duration: 2,
@@ -217,7 +218,7 @@ export const LayoutHeader: React.FC<Props> = ({
         resetProjectScopedData();
         setCreateProjectModalOpen(false);
         createForm.resetFields();
-        message.success({ content: t('project_created'), key: 'project-create', duration: 2 });
+        messageApi.success({ content: t('project_created'), key: 'project-create', duration: 2 });
 
         const conversation = await createConversation({
           project_id: newProject.id,
@@ -233,7 +234,7 @@ export const LayoutHeader: React.FC<Props> = ({
         // Handled — upgrade modal shown
       } else {
         console.error('Failed to create project:', error);
-        message.error(t('failed_create_project'));
+        messageApi.error(t('failed_create_project'));
       }
     } finally {
       setCreateLoading(false);
@@ -249,7 +250,7 @@ export const LayoutHeader: React.FC<Props> = ({
         void queryClient.invalidateQueries({ queryKey: ['workspace-config'] });
         setCreateOrgModalOpen(false);
         orgForm.resetFields();
-        message.success(t('organization_created'));
+        messageApi.success(t('organization_created'));
       }
     } catch (error) {
       console.error('Failed to create organization:', error);
@@ -262,7 +263,9 @@ export const LayoutHeader: React.FC<Props> = ({
     'linear-gradient(135deg, var(--color-bg-navigation-header, var(--color-bg-navigation)) 0%, var(--color-bg-navigation-header-glow, rgba(255,255,255,0.25)) 100%)';
 
   return (
-    <Layout.Header
+    <>
+      {contextHolder}
+      <Layout.Header
       className="layout-app-header"
       style={{
         lineHeight: '64px',
@@ -400,6 +403,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 icon={<WarningOutlined />}
                 onClick={() => router.push('/settings?tab=data-sources')}
                 className="header-shell-icon-btn icon-only-btn"
+                aria-label={t('data_sources_failing', { count: failedDataSourcesCount })}
               />
             </Tooltip>
           )}
@@ -414,6 +418,7 @@ export const LayoutHeader: React.FC<Props> = ({
                   icon={<PlusOutlined />}
                   onClick={onOpenDataSourceModal}
                   className="header-shell-icon-btn icon-only-btn header-shell-icon-btn--primary icon-only-btn--primary"
+                  aria-label={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
                 />
               </Badge>
             </Tooltip>
@@ -425,6 +430,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 icon={<BgColorsOutlined />}
                 onClick={() => setCustomizerOpen(true)}
                 className="header-shell-icon-btn icon-only-btn"
+                aria-label={t('customize_theme')}
               />
             </Tooltip>
           )}
@@ -546,5 +552,6 @@ export const LayoutHeader: React.FC<Props> = ({
         </Modal>
       )}
     </Layout.Header>
+    </>
   );
 };

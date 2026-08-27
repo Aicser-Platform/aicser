@@ -109,7 +109,7 @@ export const ProfileTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const displayName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || user?.email || '';
 
   return (
-    <Card size="small" bordered={false} className="w-full !rounded-lg !bg-[var(--color-fill-quaternary)]">
+    <Card size="small" variant="borderless" className="w-full !rounded-lg !bg-[var(--color-fill-quaternary)]">
       {/* Avatar header — same pattern as OrganizationTab logo section */}
       <div className="mb-6 flex items-center gap-4 border-b border-[var(--ant-color-border-secondary)] pb-5">
         <div className="relative shrink-0">

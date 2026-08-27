@@ -160,7 +160,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
       className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 ${
         compact ? '' : 'mb-4'
       } ${highlighted ? 'ring-2 ring-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
-      bodyStyle={{ padding: 0 }}
+      styles={{ body: { padding: 0 } }}
     >
       <FeedCardHeader
         item={item}

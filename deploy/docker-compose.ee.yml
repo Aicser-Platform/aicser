@@ -2,7 +2,12 @@ name: aiser-ee
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 is the standard Postgres 16 image with the
+    # pgvector extension pre-built and available (not auto-enabled -- the
+    # app's own Alembic migrations run `CREATE EXTENSION IF NOT EXISTS
+    # vector` conditionally). Same data format as postgres:16-alpine; this
+    # only adds extension capability, existing data is unaffected.
+    image: pgvector/pgvector:pg16
     container_name: aiser-postgres-ee
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aiser}
@@ -50,13 +55,13 @@ services:
       - "8080:8080"
 
   server:
-    build:
+    build: &server-build
       context: ../server
       dockerfile: Dockerfile.prod
       args:
         AISER_VERSION: ${AISER_VERSION:-1.1.1}
     container_name: aiser-server-ee
-    environment:
+    environment: &server-env
       APP_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_EDITION: enterprise
@@ -133,6 +138,14 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      # Observability: tracing/error reporting are fully-built (see
+      # src/shared/observability/) but off unless set here — previously not
+      # even present in this file, so operators had no visible knob to turn
+      # them on. Defaults keep current (off) behavior.
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-aiser-server}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_uploads:/app/uploads
@@ -160,6 +173,28 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    restart: unless-stopped
+
+  # ARQ background worker — evaluates alert rules (cron, every minute), runs
+  # scheduled reports/BI sync/retention cleanup (see src/shared/jobs/worker.py).
+  # Reuses the exact server image/env (same code must run both sides) instead of
+  # a second build definition — server's /health worker heartbeat check depends
+  # on this actually running, which it never was in this compose file before.
+  worker:
+    build: *server-build
+    image: aiser-ee-server
+    container_name: aiser-worker-ee
+    environment: *server-env
+    volumes:
+      - server_ee_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    entrypoint: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
     restart: unless-stopped
 
   client:

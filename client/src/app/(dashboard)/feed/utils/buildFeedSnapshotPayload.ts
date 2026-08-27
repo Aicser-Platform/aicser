@@ -181,7 +181,7 @@ export function buildInsightSnapshotPayload(params: {
           title: params.title,
           chartType: params.chartPreview.chartType,
           chartOptions: params.chartPreview.chartOptions,
-          chartData: params.chartPreview.chartData,
+          chartData: params.chartPreview.chartData as Record<string, unknown> | undefined,
           chartQuery: params.chartPreview.chartQuery,
         },
       ]
@@ -228,7 +228,7 @@ export function snapshotWidgetsFromPayload(
           }
         : {}),
     },
-    chartData: w.chartData,
+    chartData: w.chartData as WidgetInstance['chartData'],
     chartQuery: w.chartQuery,
     isLoading: false,
     error: null,

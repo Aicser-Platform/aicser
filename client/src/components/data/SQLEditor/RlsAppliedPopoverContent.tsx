@@ -133,7 +133,7 @@ export const RlsAppliedPopoverContent: React.FC<{
             {t('rls_applied_my_unrestricted')}
           </Text>
         ) : (
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={8} style={{ width: '100%' }}>
             <Text style={{ fontSize: 12 }}>
               {myPolicies.length === 1
                 ? t('rls_applied_single_policy', { name: myPolicies[0].name })
@@ -177,7 +177,7 @@ export const RlsAppliedPopoverContent: React.FC<{
           {t('rls_applied_unavailable')}
         </Text>
       ) : (
-        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={8} style={{ width: '100%' }}>
           <Text style={{ fontSize: 12 }}>
             {candidates.length === 1
               ? t('rls_applied_single_policy', { name: candidates[0].name })
@@ -209,7 +209,7 @@ export const RlsAppliedPopoverContent: React.FC<{
         </Space>
       )}
       {uniqueDeniedColumns.length > 0 || maskedColumns.length > 0 ? (
-        <Space direction="vertical" size={6} style={{ width: '100%', marginTop: 10 }}>
+        <Space orientation="vertical" size={6} style={{ width: '100%', marginTop: 10 }}>
           <Text strong style={{ fontSize: 12 }}>
             {t('column_filters_applied')}
           </Text>

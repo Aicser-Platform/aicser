@@ -105,6 +105,16 @@ const DataSourcesPage: React.FC = () => {
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
     const [profileLoading, setProfileLoading] = useState(false);
+    // NOTE: no backend data-profiling/PII-scan endpoint exists yet - this drawer's UI
+    // (quality score, per-column PII table below) was built ahead of that endpoint and
+    // nothing currently opens it. Wiring a real scan here is a separate feature, not a
+    // bug fix, so this reports the honest current state instead of fabricating results.
+    const handleProfileDataSource = async (ds: DataSource) => {
+        setProfileLoading(true);
+        setProfileResult(null);
+        message.info(t('profile_not_yet_available', { name: ds.name }));
+        setProfileLoading(false);
+    };
     const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 });
     const { dataSources, isLoading } = useDataSources();
     const { mutateAsync: deleteDataSource } = useDeleteDataSource();
@@ -435,25 +445,25 @@ const DataSourcesPage: React.FC = () => {
             <Row gutter={[16, 16]} className="page-stat-grid">
 
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_total_sources')} value={stats.total} prefix={<DatabaseOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_in_project')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_connected')} value={stats.connected} prefix={<CheckCircleOutlined />} valueStyle={{ color: 'var(--ant-color-success)' }} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_healthy_connections')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_databases')} value={stats.databases} prefix={<CloudServerOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_sql_transactional')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} prefix={<FileTextOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_flat_files_services')}</Text>
                     </Card>
@@ -605,7 +615,7 @@ const DataSourcesPage: React.FC = () => {
                 title={modelDataSource ? t('data_model_title', { name: modelDataSource.name }) : t('data_model')}
                 open={!!modelDataSource}
                 onClose={() => setModelDataSource(null)}
-                width={720}
+                size={720}
                 destroyOnHidden
             >
                 {modelDataSource && (
@@ -623,7 +633,7 @@ const DataSourcesPage: React.FC = () => {
                 }
                 open={!!profileDataSource}
                 onClose={() => { setProfileDataSource(null); setProfileResult(null); }}
-                width={700}
+                size={700}
                 destroyOnHidden
                 extra={
                     profileDataSource && (

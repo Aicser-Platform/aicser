@@ -260,8 +260,8 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
         {/* Add button is in the page header via onSetAction */}
       </div>
 
-      <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
           {dataSources.length === 0 ? (
             <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
               {canManageDataSettings ? (

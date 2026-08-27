@@ -11,7 +11,7 @@ export function useDiscoverReferral(): string | null {
   const [stored, setStored] = useState<string | null>(null);
 
   useEffect(() => {
-    const ref = searchParams.get('ref')?.trim();
+    const ref = searchParams?.get('ref')?.trim();
     if (ref) {
       const clean = ref.replace(/^@/, '');
       try {

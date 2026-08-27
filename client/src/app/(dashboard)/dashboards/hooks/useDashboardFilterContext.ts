@@ -12,7 +12,11 @@ import { mergeFilterDefaults } from '../utils/filterConfigMerge';
 import { detectFilterFieldConflicts } from '../utils/filterConflicts';
 import { filterVisibleLayout, filterVisibleWidgets } from '../utils/dashboardViewerScope';
 import { useDashboardChartRefresh } from './useDashboardChartRefresh';
-import { enrichFiltersWithTableNames } from '../utils/filterSchemaColumns';
+import {
+  enrichFiltersWithTableNames,
+  type DataSourceWithSchema,
+  type SchemaTable,
+} from '../utils/filterSchemaColumns';
 import { useDataSources } from '@/hooks/useDataSources';
 import { useDashboardRefresh } from './useDashboardRefresh';
 import { isDataWidget } from '../utils/dashboardRefresh';
@@ -140,12 +144,12 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           }));
         }
 
-        const filterSourceWidget = useDashboardStore
-          .getState()
-          .widgets.find((widget) => widget.dataSourceId);
+        const allWidgets = useDashboardStore.getState().widgets;
+        const filterSourceWidget = allWidgets.find((widget) => widget.dataSourceId);
         const filterDataContext = {
           dataSourceId: filterSourceWidget?.dataSourceId,
           tableName: filterSourceWidget?.chartQuery?.tableName,
+          widgets: allWidgets,
         };
         let cfgFilters = normalizeDashboardFilters(
           dash?.config?.global_filters,
@@ -514,9 +518,9 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
 
   useEffect(() => {
     if (!dataSources.length) return;
-    const dsPayload = dataSources.map((ds) => ({
+    const dsPayload: DataSourceWithSchema[] = dataSources.map((ds) => ({
       id: ds.id,
-      schema: (ds as { schema?: { tables?: unknown[] } }).schema,
+      schema: (ds as { schema?: { tables?: SchemaTable[] } }).schema,
     }));
     const enrichedGlobal = enrichFiltersWithTableNames(globalFiltersConfig, dsPayload);
     if (JSON.stringify(enrichedGlobal) !== JSON.stringify(globalFiltersConfig)) {

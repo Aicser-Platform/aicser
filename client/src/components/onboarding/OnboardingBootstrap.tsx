@@ -13,7 +13,7 @@ const EEOnboardingBootstrap = dynamic(
 );
 
 interface OnboardingBootstrapProps {
-  onConnectData?: () => void;
+  onConnectData?: (initialType?: 'sample_duckdb') => void;
 }
 
 /** Mount edition-appropriate onboarding (EE wizard or CE first-run). */

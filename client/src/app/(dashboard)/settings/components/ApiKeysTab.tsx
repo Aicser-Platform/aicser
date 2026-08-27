@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
+  App,
   Card,
   Form,
   Button,
-  message,
   Space,
   Table,
   Tag,
@@ -118,6 +118,7 @@ import type { TabComponentProps } from '../page';
 
 export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
+  const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
   // 'ai-model' is a legacy subtab key from before "Default AI Model" was folded into
@@ -378,12 +379,12 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   return (
     <div>
-      <Card bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+      <Card variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <Tabs
-          className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-content-holder]:block [&_.ant-tabs-content-holder]:h-auto [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content-holder]:flex-none [&_.ant-tabs-content-holder]:overflow-visible [&_.ant-tabs-content-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
+          className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-body-holder]:block [&_.ant-tabs-body-holder]:h-auto [&_.ant-tabs-body-holder]:min-h-0 [&_.ant-tabs-body-holder]:flex-none [&_.ant-tabs-body-holder]:overflow-visible [&_.ant-tabs-body-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
           activeKey={activeApiTab}
           onChange={handleApiTabChange}
-          destroyInactiveTabPane
+          destroyOnHidden
           items={[
             {
               key: 'providers',

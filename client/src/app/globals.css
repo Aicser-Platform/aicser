@@ -321,16 +321,30 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
 /* AntD manages its own focus rings via box-shadow — suppress the browser outline on its inputs/selects.
    Needs !important: the global `*:focus-visible` rule below also carries !important, and without it here
    that rule wins regardless of specificity, stacking a second outline ring on top of AntD's box-shadow ring.
-   `.ant-select-selector` itself is never the focused element (its inner search input is), so it's targeted
+   `.ant-select-content` itself is never the focused element (its inner search input is), so it's targeted
    directly rather than relying on a selector that never matches. */
 .ant-input:focus-visible,
 .ant-input-affix-wrapper:focus-visible,
 .ant-select:focus-visible,
-.ant-select-selector:focus-visible,
+.ant-select-content:focus-visible,
 .ant-select-selection-search-input:focus-visible,
 .ant-input-number-input:focus-visible,
 .ant-picker-input>input:focus-visible {
   outline: none !important;
+}
+
+/* mode="tags"/mode="multiple" Select: the inner search <input> is a real,
+   independently-focusable element whose rendered width auto-sizes to its
+   typed content (via antd's hidden-mirror sizing) rather than filling the
+   field. Any box/background on it — even just from browser UA form-control
+   styling — reads as a small boxed "wrapper" hugging the caret, separate
+   from and redundant with the outer .ant-select-focused ring that already
+   highlights the whole field. Force it fully transparent so typing here
+   looks like a plain text caret, the same as a regular Input/TextArea. */
+.ant-select-selection-search-input {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 /* ========================================
@@ -338,7 +352,7 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    ======================================== */
 
 /* Composer toolbar pill uses content width; keep min width for settings/other compact rows only. */
-.model-selector-compact:not(.model-selector-composer-embed):not(.model-selector-narrow) .ant-select-selector {
+.model-selector-compact:not(.model-selector-composer-embed):not(.model-selector-narrow) .ant-select-content {
   min-width: 220px !important;
 }
 
@@ -348,7 +362,7 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
    outer `.ant-select`, forcing this pill wider than its row had budgeted and
    wrapping it onto its own line — which then starves the editor/results
    split of the height it measured on mount, leaving stale empty space. */
-.model-selector-narrow .ant-select-selector {
+.model-selector-narrow .ant-select-content {
   min-width: 0 !important;
 }
 

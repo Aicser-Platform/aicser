@@ -317,7 +317,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
       if (!widget?.chartId) throw new Error('Chart not loaded');
       const result = await linkWidgetToDashboard(
         widget as any,
-        { i: widget.id, w: 6, h: 5 },
+        { i: widget.id, x: 0, y: 0, w: 6, h: 5 },
         targetDashboardId,
         pinMode,
       );
@@ -482,7 +482,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
               newCollection: t('new_collection'),
               renameCollection: t('rename_collection'),
               deleteCollection: t('delete_collection'),
-              deleteConfirmTitle: t('delete_collection_title'),
+              deleteConfirmTitle: t.raw('delete_collection_title'),
               deleteConfirmBody: t('delete_collection_body'),
               create: t('create'),
               save: t('save'),

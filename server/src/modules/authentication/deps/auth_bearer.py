@@ -172,6 +172,29 @@ async def get_token(
     return token
 
 
+def _unverified_jwt_fallback_allowed() -> bool:
+    """Gate for every unverified-claims fallback in this module.
+
+    SECURITY: previously each fallback below only checked
+    `settings.ENVIRONMENT in ('development', 'dev', 'local', 'test')` — meaning
+    a deployment that forgot to explicitly set ENVIRONMENT=production (it
+    defaults to "development" in src/core/config.py) silently ran with fully
+    forgeable auth: any hand-crafted JWT claiming an arbitrary `sub` would be
+    trusted. JWTBearer.__call__ already required both the env check AND the
+    dedicated ALLOW_UNVERIFIED_JWT_IN_DEV flag (which defaults to False) for
+    its own fallback; this applies that same, safer, opt-in requirement here
+    too instead of relying on ENVIRONMENT alone.
+    """
+    try:
+        from src.core.config import settings
+        env = str(getattr(settings, "ENVIRONMENT", "production")).strip().lower()
+        allow_flag = bool(getattr(settings, "ALLOW_UNVERIFIED_JWT_IN_DEV", False))
+    except Exception:
+        env = os.getenv("ENVIRONMENT", "production").strip().lower()
+        allow_flag = os.getenv("ALLOW_UNVERIFIED_JWT_IN_DEV", "").strip().lower() == "true"
+    return env in ("development", "dev", "local", "test") and allow_flag
+
+
 def verify_supabase_token(token: str) -> dict:
     """
     Verify JWT token. Tries in order:
@@ -280,7 +303,7 @@ def verify_supabase_token(token: str) -> dict:
                     logger.warning("Supabase JWKS verification failed: %s", e)
 
         # 4. Final fallback: unverified claims in development
-        if getattr(settings, "ENVIRONMENT", "development") in ("development", "dev", "local", "test"):
+        if _unverified_jwt_fallback_allowed():
             if time.time() - _auth_fallback_log_time[0] > AUTH_FALLBACK_LOG_INTERVAL:
                 _auth_fallback_log_time[0] = time.time()
                 logger.warning(
@@ -320,8 +343,7 @@ def extract_user_id_from_token(token: str) -> dict:
     
     # Fallback to unverified claims in development
     try:
-        from src.core.config import settings
-        if settings.ENVIRONMENT in ('development', 'dev', 'local', 'test'):
+        if _unverified_jwt_fallback_allowed():
             claims = jose_jwt.get_unverified_claims(token)
             if isinstance(claims, dict):
                 user_id = claims.get('sub') or claims.get('id') or claims.get('user_id')
@@ -566,15 +588,18 @@ class JWTCookieBearer(HTTPBearer):
         if payload:
             return payload
         
-        # Handle demo tokens
-        if isinstance(token, str) and token.startswith('demo_token_'):
-            try:
-                parts = token.split("_")
-                if len(parts) >= 3 and parts[0] == 'demo' and parts[1] == 'token':
-                    user_id = parts[2]
-                    return {'id': user_id, 'user_id': user_id, 'sub': user_id}
-            except Exception:
-                pass
+        # SECURITY: a `demo_token_<anything>` branch used to live here, granting
+        # the caller-chosen identity embedded in the token string with zero
+        # signature/credential verification — and unlike every other fallback in
+        # this file, it wasn't gated by ENVIRONMENT or ALLOW_UNVERIFIED_JWT_IN_DEV
+        # at all, so it worked in production too. `Authorization: Bearer
+        # demo_token_<victim-user-id>` was a complete, unauthenticated account
+        # takeover for any user whose UUID an attacker could obtain (visible in
+        # ordinary places: member lists, comment authorship, invite emails).
+        # No legitimate caller (client or server) ever generates this format —
+        # confirmed via repo-wide grep — it was orphaned prototype code. Removed
+        # outright rather than re-gated, since there's no real feature depending
+        # on it.
         
         # Development fallback
         try:
@@ -599,37 +624,21 @@ CookieDep = Depends(JWTCookieBearer())
 
 
 async def current_user_payload(request: Request) -> dict:
-    """Resolve the current user payload from Authorization header.
-    
-    Returns an empty dict if no valid token is present.
-    Uses Supabase RS256 token verification.
+    """Resolve the current user payload — Authorization header first, falling back
+    to the session cookie (CE `auth_token` / EE Supabase / Keycloak), via the same
+    resolution JWTCookieBearer uses everywhere else in the app.
+
+    Returns an empty dict if no valid session is present, rather than raising —
+    for endpoints that want to treat "no user" as a valid, degraded state instead
+    of a hard 401. Endpoints that must require a real user should still check the
+    returned dict for an id/sub and raise 401 themselves (as several already do).
     """
-    token = None
-    auth_header = request.headers.get('Authorization') or request.headers.get('authorization')
-    if auth_header:
-        if auth_header.lower().startswith('bearer '):
-            token = auth_header.split(None, 1)[1].strip()
-        else:
-            token = auth_header
-
-    payload = {}
-    if token:
-        if token == 'test-token':
-            try:
-                from src.core.config import settings
-                _env = str(getattr(settings, 'ENVIRONMENT', 'production')).strip().lower()
-                if _env in ('development', 'dev', 'local', 'test'):
-                    return {'id': '1', 'user_id': '1', 'sub': '1'}
-            except Exception:
-                pass
-        
-        try:
-            payload = extract_user_id_from_token(token)
-        except Exception:
-            payload = {}
-
-
-    return payload
+    try:
+        return await JWTCookieBearer()(request)
+    except HTTPException:
+        return {}
+    except Exception:
+        return {}
 
 
 CurrentUserPayloadDep = Depends(current_user_payload)

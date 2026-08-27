@@ -19,6 +19,34 @@ _engines: Dict[str, sa.engine.Engine] = {}
 DEFAULT_POOL_SIZE = int(os.getenv("DIRECT_SQL_POOL_SIZE", "5"))
 DEFAULT_MAX_OVERFLOW = int(os.getenv("DIRECT_SQL_POOL_MAX_OVERFLOW", "10"))
 DEFAULT_POOL_RECYCLE = int(os.getenv("DIRECT_SQL_POOL_RECYCLE", "3600"))
+# AI-generated SQL is arbitrary, unparameterized text run against a customer's own
+# database with no query-level LIMIT enforcement — a single crafted question (e.g.
+# one that produces `pg_sleep(999999)` or a runaway cross join) previously ran with
+# NO server-side statement timeout at all, tying up a DB connection and an app
+# thread-pool slot indefinitely. This is a real, no-privilege-needed DoS vector on
+# the platform's core feature, not a theoretical one.
+DEFAULT_STATEMENT_TIMEOUT_SECONDS = int(os.getenv("DIRECT_SQL_STATEMENT_TIMEOUT_SECONDS", "30"))
+
+
+def _timeout_connect_args(conn_uri: str, timeout_seconds: int) -> Dict[str, Any]:
+    """Best-effort, dialect-specific server-side statement timeout.
+
+    Not every dialect SQLAlchemy supports here has a clean connect-time knob for
+    this (SQL Server/pyodbc notably doesn't) — those fall back to the
+    asyncio.wait_for() wrapper in DirectSQLEngine.execute as their only guard,
+    which stops the *request* from hanging forever but can't force-kill an
+    already-dispatched query on the DB side. Postgres/MySQL get the real,
+    server-enforced timeout.
+    """
+    try:
+        dialect = sa.engine.url.make_url(conn_uri).get_backend_name()
+    except Exception:
+        return {}
+    if dialect.startswith("postgresql"):
+        return {"options": f"-c statement_timeout={timeout_seconds * 1000}"}
+    if dialect.startswith("mysql"):
+        return {"read_timeout": timeout_seconds, "write_timeout": timeout_seconds}
+    return {}
 
 
 def _pool_key(data_source: Dict[str, Any], conn_uri: str) -> str:
@@ -43,6 +71,7 @@ def get_sync_engine(data_source: Dict[str, Any], conn_uri: str) -> sa.engine.Eng
             max_overflow=DEFAULT_MAX_OVERFLOW,
             pool_pre_ping=True,
             pool_recycle=DEFAULT_POOL_RECYCLE,
+            connect_args=_timeout_connect_args(conn_uri, DEFAULT_STATEMENT_TIMEOUT_SECONDS),
         )
         _engines[key] = engine
         logger.info("Created Direct SQL connection pool (key=%s, pool_size=%s)", key, DEFAULT_POOL_SIZE)

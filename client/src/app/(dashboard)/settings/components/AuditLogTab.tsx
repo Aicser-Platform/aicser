@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Card, Table, Tag, Typography, Empty, Spin, Alert } from 'antd';
-import { AuditOutlined } from '@ant-design/icons';
+import { Button, Card, Table, Tag, Typography, Empty, Spin, Alert } from 'antd';
+import { AuditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
-import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { fetchApi } from '@/utils/api';
 import type { TabComponentProps } from '../page';
 
 const { Title, Text } = Typography;
@@ -28,11 +28,10 @@ export interface AuditLogEntry {
   metadata?: Record<string, unknown>;
 }
 
-export const AuditLogTab: React.FC<TabComponentProps> = () => {
+export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings.audit');
   const { currentProject } = useProjectStore();
   const { currentOrganization } = useOrganizationStore();
-  const { session } = useAuth();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,21 +52,10 @@ export const AuditLogTab: React.FC<TabComponentProps> = () => {
         params.set('organization_id', String(currentOrganization.id));
       }
 
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch(`/api/platform/audit?${params.toString()}`, {
-        credentials: 'include',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
+      // fetchApi centralizes CE/EE auth-token resolution and org-header
+      // injection — hand-rolling `Authorization: Bearer session.access_token`
+      // here duplicated (and fell behind) that logic.
+      const data = await fetchApi(`platform/audit?${params.toString()}`);
       const rows: AuditLogEntry[] = (data.entries || data.events || []).map((row: Record<string, unknown>) => ({
         id: String(row.id),
         eventType: (row.event_type ?? row.eventType) as string | undefined,
@@ -90,11 +78,19 @@ export const AuditLogTab: React.FC<TabComponentProps> = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentProject?.id, currentOrganization?.id, session?.access_token, t]);
+  }, [currentProject?.id, currentOrganization?.id, t]);
 
   useEffect(() => {
     void fetchAuditLogs();
   }, [fetchAuditLogs]);
+
+  useEffect(() => {
+    onSetAction?.(
+      <Button icon={<ReloadOutlined />} onClick={() => void fetchAuditLogs()} loading={loading}>
+        {t('refresh')}
+      </Button>
+    );
+  }, [loading, onSetAction, fetchAuditLogs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const categoryColor = (category?: string) => {
     switch ((category || '').toLowerCase()) {
@@ -117,7 +113,7 @@ export const AuditLogTab: React.FC<TabComponentProps> = () => {
     <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
       <Card
         size="small"
-        bordered={false}
+        variant="borderless"
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
         title={
           <span>

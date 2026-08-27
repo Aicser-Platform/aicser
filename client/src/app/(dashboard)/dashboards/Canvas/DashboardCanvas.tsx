@@ -967,7 +967,7 @@ export default function DashboardCanvas({
                     <Dropdown
                       trigger={['click']}
                       placement="bottomRight"
-                      overlayClassName="widget-overflow-dropdown"
+                      classNames={{ root: "widget-overflow-dropdown" }}
                       getPopupContainer={() => document.body}
                       menu={{
                         items: isEditing
@@ -1004,7 +1004,7 @@ export default function DashboardCanvas({
                     <Dropdown
                       trigger={['click']}
                       placement="bottomRight"
-                      overlayClassName="widget-overflow-dropdown"
+                      classNames={{ root: "widget-overflow-dropdown" }}
                       getPopupContainer={() => document.body}
                       menu={{
                         items: isEditing

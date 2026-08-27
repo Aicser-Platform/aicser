@@ -9,7 +9,7 @@ import type { DashboardFilter } from '@/types/dashboard';
 import { DashboardPageTabs, type DashboardPageItem } from './DashboardPageTabs';
 import type { RuntimeFilter } from '../utils/filterOperators';
 import { countActiveFilterFields } from '../utils/filterOperators';
-import { DashboardFiltersManageModal } from './DashboardFiltersManageModal';
+import { DashboardFiltersManageModal, type DataSourceSchema } from './DashboardFiltersManageModal';
 import type { FilterFieldConflict } from '../utils/filterConflicts';
 import type { LayoutPreset } from './LayoutPresetsMenu';
 import { DashboardStyleMenu } from './DashboardStyleMenu';
@@ -42,7 +42,7 @@ type Props = {
   tableOptionsBySource?: Record<string, { value: string; label: string }[]>;
   widgetScopeOptions?: { value: string; label: string }[];
   filterFieldConflicts?: FilterFieldConflict[];
-  dataSourcesForFilters?: Array<{ id: string | number; schema?: { tables?: unknown[] } }>;
+  dataSourcesForFilters?: DataSourceSchema[];
   dashboardId?: string;
   studioWidgets?: import('../stores/useDashboardStore').WidgetInstance[];
   onSaveGlobalFilters: (filters: DashboardFilter[]) => Promise<void>;

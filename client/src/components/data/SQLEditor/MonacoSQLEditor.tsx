@@ -3041,7 +3041,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                               : t('run_sql')}
                       </Button>
                     )}
-                    <Divider type="vertical" style={{ margin: '0 4px' }} />
+                    <Divider orientation="vertical" style={{ margin: '0 4px' }} />
                     <Tooltip title={t('tooltip_save_query_script')}>
                       <Button
                         type="text"
@@ -3093,7 +3093,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     )}
                     {IS_EE && aiAvailable && editorLanguage === 'sql' && (
                       <>
-                        <Divider type="vertical" style={{ margin: '0 2px' }} />
+                        <Divider orientation="vertical" style={{ margin: '0 2px' }} />
                         <Tooltip title={t('explain_sql_tooltip')}>
                           <Button
                             type="text"
@@ -3381,7 +3381,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 activeKey={activeTab}
                 onChange={handleResultsTabChange}
                 size="small"
-                destroyInactiveTabPane={false}
+                destroyOnHidden={false}
                 className="workspace-inline-tabs query-editor-results-tabs"
                 items={resultsTabItems}
                 tabBarExtraContent={
@@ -3449,7 +3449,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                                 window.open(
                                   getChatHref({
                                     prompt: promptText,
-                                    dataSourceId: selectedDataSourceId || undefined,
+                                    // Chat's deep-link reader only checks the snake_case key — see chat/page.tsx.
+                                    data_source_id: selectedDataSourceId || undefined,
                                   }),
                                   '_blank',
                                 );
@@ -3544,7 +3545,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         setResolvedEngine(null);
                       }}
                       size="small"
-                      bordered={false}
+                      variant="borderless"
                       style={{ fontWeight: 600, color: 'var(--ant-color-primary)' }}
                       options={[
                         { value: 'auto', label: 'Auto' },
@@ -3561,7 +3562,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       value={rowLimit}
                       onChange={handleRowLimitChange}
                       size="small"
-                      bordered={false}
+                      variant="borderless"
                       disabled={limitSource === 'query'}
                       options={rowLimitOptions}
                     />

@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Iterable
 from sqlalchemy import select, text
 # User model removed - user management will be handled by Supabase
@@ -117,10 +118,18 @@ async def has_dashboard_access(user_payload, dashboard_id: str) -> bool:
     """Checks if a user can access a dashboard: public, creator, or org owner/admin."""
     env = str(getattr(settings, 'ENVIRONMENT', 'development')).strip().lower()
     logger.info(f"has_dashboard_access called: ENV={env} dashboard_id={dashboard_id} user_payload_type={type(user_payload)}")
-    # Development convenience: allow access during local dev/CI
+    # SECURITY: this used to grant access to ANY dashboard for ANY user with a
+    # truthy (not even verified-real) payload whenever ENVIRONMENT was dev-like
+    # — which is the *default* when the env var is simply unset. That made this
+    # the out-of-the-box behavior for any deployment that forgot to set
+    # ENVIRONMENT=production, i.e. an unconditional cross-tenant dashboard read
+    # bypass. Now also requires PYTEST_CURRENT_TEST, a signal pytest itself
+    # sets at test-run time and that no external request can ever set — so the
+    # convenience only fires for an actual test run, never a misconfigured
+    # deployment.
     try:
-        if env in ('development', 'dev', 'local', 'test') and user_payload:
-            logger.info("has_dashboard_access: development bypass enabled - granting access")
+        if env in ('development', 'dev', 'local', 'test') and user_payload and os.getenv('PYTEST_CURRENT_TEST'):
+            logger.info("has_dashboard_access: pytest-only development bypass enabled - granting access")
             return True
     except Exception:
         pass

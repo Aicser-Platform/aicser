@@ -128,6 +128,17 @@ class DataSourcesCRUD:
                 # project_id/organization_id at all). Skipped when the caller explicitly scoped the
                 # source to a project or organization, so intentionally org-only sources (no project)
                 # aren't silently reassigned to an arbitrary project.
+                #
+                # This fallback previously masked a real bug (the knowledge-base upload endpoint
+                # never sent project_id, so every KB upload silently landed in the user's first
+                # project rather than the one they were actually working in — looked like the
+                # upload had "created a new project space"). Logging here so a future caller that
+                # forgets to scope its request is visible instead of silently misfiled again.
+                logger.warning(
+                    "create_data_source: no project_id/organization_id given for source %r "
+                    "(user=%s, type=%s) — falling back to the user's first project",
+                    data_source_data.name, user_id_val, data_source_data.type,
+                )
                 from src.modules.project.service import ProjectService
                 try:
                     projects, _ = await ProjectService.get_user_projects(user_id_val)

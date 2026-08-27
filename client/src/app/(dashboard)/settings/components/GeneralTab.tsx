@@ -125,7 +125,7 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   if (loadingSettings) {
     return (
-      <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+      <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <div style={{ textAlign: 'center', padding: 32 }}>
           <Spin />
           <div style={{ marginTop: 8, color: 'var(--color-text-secondary)' }}>{t('loading')}</div>

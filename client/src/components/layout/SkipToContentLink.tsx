@@ -18,7 +18,7 @@ export function SkipToContentLink() {
         zIndex: 10000,
         padding: '8px 16px',
         background: 'var(--ant-color-primary)',
-        color: '#fff',
+        color: 'var(--color-primary-text, #fff)',
         borderRadius: 6,
         textDecoration: 'none',
         transform: 'translateY(-120%)',

@@ -311,7 +311,10 @@
 .shared-dashboard-back-btn {
   padding: 10px 24px;
   background: var(--studio-primary, #00c2cb);
-  color: #fff;
+  /* White fails ~2.2:1 against the default teal (WCAG AA needs 4.5:1) -
+     --color-primary-text is computed per the actual resolved brand color
+     (ThemeProvider.tsx), falling back to the old white when unset. */
+  color: var(--color-primary-text, #fff);
   border: none;
   border-radius: 8px;
   font-weight: 500;

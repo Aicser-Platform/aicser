@@ -108,7 +108,9 @@ export function createChartInteractionReady(opts: {
     };
 
     if (onCrossFilter || onDrill) {
-      instance.on('click', handleClick);
+      // echarts' .on('click', ...) overload wants the full ECElementEvent + `this`
+      // binding; handleClick only reads a small, stable subset of those fields.
+      (instance.on as (event: 'click', handler: typeof handleClick) => void)('click', handleClick);
     }
 
     if (xField) {

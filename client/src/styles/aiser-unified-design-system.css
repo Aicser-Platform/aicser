@@ -458,8 +458,8 @@
   font-weight: var(--font-weight-semibold) !important;
 }
 
-.page-tabs.ant-tabs .ant-tabs-content-holder,
-.settings-tabs.ant-tabs .ant-tabs-content-holder {
+.page-tabs.ant-tabs .ant-tabs-body-holder,
+.settings-tabs.ant-tabs .ant-tabs-body-holder {
   padding: var(--spacing-md) 0 !important;
   flex: 1 !important;
   min-height: 0 !important;
@@ -515,13 +515,13 @@
   color: var(--ant-color-primary) !important;
 }
 
-.analysis-data-tabs.ant-tabs .ant-tabs-content-holder,
+.analysis-data-tabs.ant-tabs .ant-tabs-body-holder,
 .analysis-data-tabs.ant-tabs .ant-tabs-tabpane {
   min-width: 0;
   max-width: 100%;
 }
 
-.analysis-data-tabs.ant-tabs .ant-tabs-content-holder {
+.analysis-data-tabs.ant-tabs .ant-tabs-body-holder {
   overflow-x: hidden;
 }
 

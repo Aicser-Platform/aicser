@@ -32,6 +32,7 @@ from typing import Union
 import asyncio
 import os
 import json
+import secrets
 from src.db.session import async_session
 from contextlib import asynccontextmanager
 from sqlalchemy import text
@@ -168,6 +169,18 @@ class DashboardFromTemplateRequest(BaseModel):
     template_id: str
     project_id: Optional[str] = None
     dashboard_name: Optional[str] = None
+
+
+class SaveDashboardAsTemplateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+
+
+class UpdateDashboardTemplateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
 
 
 SAMPLE_DASHBOARD_TEMPLATES: Dict[str, Dict[str, Any]] = {
@@ -640,6 +653,7 @@ def _template_catalog_response() -> List[Dict[str, Any]]:
         templates.append(
             {
                 "id": template["id"],
+                "source": "builtin",
                 "name": template["name"],
                 "description": template["description"],
                 "category": template["category"],
@@ -665,6 +679,74 @@ def _normalize_user_payload(current_token: Union[str, dict]) -> Dict[str, Any]:
         return current_token
     payload = extract_user_payload(current_token)
     return payload if isinstance(payload, dict) else {}
+
+
+async def _try_create_dashboard_from_saved_template(
+    db: AsyncSession,
+    template_id: str,
+    organization_id: str,
+    user_id: str,
+    dashboard_name: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """Create a dashboard from an org-saved template (dashboard_templates row),
+    via the current dashboard_widgets model. Returns None (not raises) when
+    template_id isn't a real saved-template UUID, so the caller can fall
+    through to its own 404 for a genuinely unknown id."""
+    from src.modules.dashboards.template_service import (
+        DashboardTemplateAccessError,
+        get_saved_dashboard_template,
+        increment_template_usage,
+    )
+    from src.modules.charts.schemas import DashboardCreateSchema, DashboardWidgetCreateSchema
+
+    try:
+        template = await get_saved_dashboard_template(organization_id, template_id)
+    except DashboardTemplateAccessError:
+        return None
+
+    dashboard_service = DashboardService(db)
+    title = (dashboard_name or "").strip() or template.name
+    dashboard = await dashboard_service.create_dashboard(
+        DashboardCreateSchema(name=title, description=template.description),
+        user_id,
+    )
+    dashboard_id = dashboard["id"] if isinstance(dashboard, dict) else str(dashboard.id)
+
+    created_widgets: List[Dict[str, Any]] = []
+    widgets = (template.template_config or {}).get("widgets") or []
+    for widget in widgets:
+        try:
+            created = await dashboard_service.create_widget(
+                dashboard_id,
+                DashboardWidgetCreateSchema(
+                    dashboard_id=dashboard_id,
+                    name=widget.get("name") or "Widget",
+                    widget_type=widget.get("widget_type") or "chart",
+                    chart_type=widget.get("chart_type"),
+                    config=widget.get("config"),
+                    data_config=widget.get("data_config"),
+                    style_config=widget.get("style_config"),
+                    x=widget.get("x", 0),
+                    y=widget.get("y", 0),
+                    width=widget.get("width", 4),
+                    height=widget.get("height", 3),
+                    z_index=widget.get("z_index", 0),
+                ),
+                user_id,
+            )
+            created_widgets.append(created)
+        except Exception as widget_err:
+            logger.warning("Skipping one widget from saved template %s: %s", template_id, widget_err)
+
+    await increment_template_usage(organization_id, template_id)
+
+    return {
+        "success": True,
+        "message": "Dashboard created from template successfully",
+        "dashboard": dashboard,
+        "template": {"id": str(template.id), "name": template.name, "source": "saved"},
+        "widgets": created_widgets,
+    }
 
 
 async def _resolve_project_for_template(user_id: str, requested_project_id: Optional[str]) -> Optional[str]:
@@ -1436,53 +1518,45 @@ async def delete_project_dashboard(
     organization_id: str,
     project_id: str,
     dashboard_id: str,
+    request: Request,
     current_token: str = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session)
 ):
     """Delete a dashboard for a specific project - DB backed with permission checks."""
     try:
         logger.info(f"🗑️ Deleting dashboard {dashboard_id} for project {project_id} in organization {organization_id}")
-        # Dev emergency bypass: if running in development and an auth token is
-        # present, allow direct deletion to avoid flaky provisioning races.
+        # Pytest fast-path: avoid flaky provisioning-visibility races in tests.
+        # SECURITY: previously also fired on ENVIRONMENT=='development' (the
+        # default when unset) or bare CI=true, requiring only that SOME
+        # token be present -- no ownership/permission check on the target
+        # dashboard at all, and notably this DELETE isn't even scoped to
+        # `project_id` from the path, so it could remove a dashboard
+        # belonging to a different project/org than the one the caller was
+        # authorized for. Narrowed to an explicit pytest-run signal.
         try:
-            from src.core.config import settings as _settings
             token_present = bool(request.headers.get('Authorization') or request.cookies.get('c2c_access_token') or request.cookies.get('access_token'))
-            # Allow bypass during development, CI, or pytest runs to avoid flaky
-            # provisioning visibility races. This keeps integration tests stable.
-            if token_present and (getattr(_settings, 'ENVIRONMENT', 'development') == 'development' or os.getenv('PYTEST_CURRENT_TEST') or os.getenv('CI')):
+            if token_present and os.getenv('PYTEST_CURRENT_TEST'):
                 from src.db.session import async_session as _async_session
                 from sqlalchemy import text as _text
                 async with _async_session() as sdb:
                     await sdb.execute(_text("DELETE FROM dashboards WHERE id = :did").bindparams(did=str(dashboard_id)))
                     await sdb.commit()
-                    return {"success": True, "message": "Dashboard deleted via dev direct-bypass", "dashboard_id": dashboard_id}
+                    return {"success": True, "message": "Dashboard deleted via pytest fast-path", "dashboard_id": dashboard_id}
         except Exception:
             pass
 
         user_payload = Auth().decodeJWT(current_token) or {}
         # Pass full JWT payload so the service can robustly resolve UUID or legacy id
         dashboard_service = DashboardService(db)
-        try:
-            success = await dashboard_service.delete_dashboard(dashboard_id, user_payload)
-            if not success:
-                raise HTTPException(status_code=404, detail='Dashboard not found')
-            return {"success": True, "message": "Dashboard deleted successfully", "dashboard_id": dashboard_id}
-        except HTTPException as he:
-            # Dev-only emergency fallback: if RBAC denies the delete due to
-            # provisioning visibility races, allow an independent raw-delete
-            # when running in development to keep integration tests stable.
-            try:
-                from src.core.config import settings
-                if getattr(settings, 'ENVIRONMENT', 'development') == 'development' and he.status_code == 403:
-                    from src.db.session import async_session as _async_session
-                    from sqlalchemy import text as _text
-                    async with _async_session() as sdb:
-                        await sdb.execute(_text("DELETE FROM dashboards WHERE id = :did").bindparams(did=str(dashboard_id)))
-                        await sdb.commit()
-                        return {"success": True, "message": "Dashboard deleted via dev fallback", "dashboard_id": dashboard_id}
-            except Exception:
-                pass
-            raise
+        # SECURITY: a "dev-only emergency fallback" used to live here,
+        # silently converting a real 403 from delete_dashboard's own
+        # permission check into an unconditional, unscoped raw DELETE
+        # whenever ENVIRONMENT was dev-like (the default when unset).
+        # Removed -- a denied delete stays denied.
+        success = await dashboard_service.delete_dashboard(dashboard_id, user_payload)
+        if not success:
+            raise HTTPException(status_code=404, detail='Dashboard not found')
+        return {"success": True, "message": "Dashboard deleted successfully", "dashboard_id": dashboard_id}
     except HTTPException:
         raise
     except Exception as e:
@@ -1741,6 +1815,20 @@ async def get_dashboard(
                 row = res2.first()
 
         if row:
+            # SECURITY: this fast path used to return the full dashboard row —
+            # layout/theme/filters config, project_id, creator — to anyone who
+            # could reach this endpoint at all, authenticated or not, for any
+            # dashboard UUID: `caller_payload` was resolved above but never
+            # actually checked before returning. The real access check
+            # (has_dashboard_access) only lived in the fallback path below,
+            # which this fast path essentially never reaches (it only runs on
+            # an exception, and a successful lookup isn't one). Reusing that
+            # same function here instead of duplicating its is_public/creator/
+            # org-permission logic.
+            from src.modules.authentication.rbac_service import has_dashboard_access
+
+            if not await has_dashboard_access(caller_payload, str(dashboard_id)):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
             return {
                 'id': str(row[0]),
                 'name': row[1],
@@ -1821,8 +1909,11 @@ async def get_dashboard(
                     'updated_at': wrow[13].isoformat() if wrow[13] else None,
                 })
 
-            _env = str(getattr(settings, 'ENVIRONMENT', 'development')).strip().lower()
-            if _env in ('development', 'dev', 'local', 'test') or os.getenv('PYTEST_CURRENT_TEST'):
+            # SECURITY: this used to return the full dashboard (including
+            # non-public ones) with zero access check whenever ENVIRONMENT
+            # was dev-like -- the default when unset. Narrowed to an actual
+            # pytest run, matching the fast-path fix above.
+            if os.getenv('PYTEST_CURRENT_TEST'):
                 return dashboard_data
 
             allowed = await has_dashboard_access(caller_payload, dashboard_data['id'])
@@ -1857,43 +1948,19 @@ async def update_dashboard(
         else:
             user_payload = extract_user_payload(current_token)
 
-        # Dev/CI safe inline update via sync engine in a background thread to
-        # avoid asyncpg "another operation is in progress" issues during tests.
-        try:
-            _env = str(getattr(settings, 'ENVIRONMENT', 'development')).strip().lower()
-            if _env in ('development', 'dev', 'local', 'test') or os.getenv('PYTEST_CURRENT_TEST') or os.getenv('CI'):
-                try:
-                    from src.db.session import get_sync_engine
-                    import asyncio
-                    try:
-                        upd_map = dashboard.model_dump(exclude_unset=True)
-                    except Exception:
-                        upd_map = dashboard.dict(exclude_unset=True)
-
-                    def _sync_update(did: str, updates: dict):
-                        engine = get_sync_engine()
-                        if not updates:
-                            return None
-                        set_clause = []
-                        params = {}
-                        for k, v in updates.items():
-                            params[k] = v
-                            set_clause.append(f"{k} = :{k}")
-                        params['did'] = did
-                        sql = f"UPDATE dashboards SET {', '.join(set_clause)}, updated_at = now() WHERE id = (:did)::uuid RETURNING id, name, description, project_id, created_by, layout_config, theme_config, global_filters, refresh_interval, is_public, is_template, max_widgets, max_pages, created_at, updated_at"
-                        with engine.begin() as conn:
-                            res = conn.execute(__import__('sqlalchemy').text(sql), params)
-                            return res.fetchone()
-
-                    row = asyncio.get_event_loop().run_in_executor(None, _sync_update, str(dashboard_id), upd_map)
-                    # run and wait
-                    import time as _time
-                    row = asyncio.get_event_loop().run_until_complete(row) if hasattr(asyncio.get_event_loop(), 'run_until_complete') else _time.sleep(0)
-                except Exception:
-                    # fallback to normal paths on any sync-update failure
-                    pass
-        except Exception:
-            pass
+        # SECURITY: a dev/CI "inline update via sync engine" block used to
+        # live here, gated on ENVIRONMENT alone (dev-like by default when the
+        # var is unset) OR'd with PYTEST_CURRENT_TEST/CI. It ran an
+        # unauthenticated, unauthorized raw UPDATE against the dashboard as a
+        # side effect and never returned or used its result -- meaning even
+        # if the real permission check below correctly rejected the request,
+        # this block had already mutated the row first. It also called
+        # asyncio.get_event_loop().run_until_complete() from inside a
+        # already-running event loop, which raises under real ASGI serving,
+        # so in practice it only ever fired under specific synchronous test
+        # harnesses -- dead weight with a live bypass hazard and no real
+        # purpose beyond what the properly-gated pytest fast-path below
+        # already provides. Removed outright.
 
         # Fast-path test/dev updater: when running under pytest, perform a
         # simple request-scoped update using the provided `db` session. This
@@ -1941,12 +2008,15 @@ async def update_dashboard(
             # Outer fast-path guard: non-fatal, continue to next logic
             pass
 
-        # Simplified dev/test fast-path: when running in development/test mode
-        # perform the update via the request-scoped `db` session to avoid
+        # Simplified dev/test fast-path: when running under pytest, perform
+        # the update via the request-scoped `db` session to avoid
         # cross-session concurrent DB operations that asyncpg rejects.
+        # SECURITY: previously gated on ENVIRONMENT alone (dev-like by
+        # default), which let any authenticated caller update any dashboard
+        # in production with zero ownership/permission check. Narrowed to an
+        # explicit pytest-run signal that no external request can set.
         try:
-            from src.core.config import settings as _settings
-            if str(getattr(_settings, 'ENVIRONMENT', 'development')).strip().lower() in ('development', 'dev', 'local', 'test'):
+            if os.getenv('PYTEST_CURRENT_TEST'):
                 try:
                     try:
                         upd = dashboard.model_dump(exclude_unset=True)
@@ -1989,9 +2059,12 @@ async def update_dashboard(
         # Super-simple dev/test shortcut: avoid any DB work when running in
         # CI/tests to eliminate asyncpg concurrent-operation flakes. Return a
         # minimal updated response constructed from the incoming payload.
+        # SECURITY: previously also fired on ENVIRONMENT alone (dev-like by
+        # default) -- since this path never persists anything, it wasn't a
+        # data-mutation bypass, but it silently faked a "success" response in
+        # any misconfigured deployment. Narrowed to actual pytest runs.
         try:
-            _env = str(getattr(settings, 'ENVIRONMENT', 'development')).strip().lower()
-            if _env in ('development', 'dev', 'local', 'test') or os.getenv('PYTEST_CURRENT_TEST'):
+            if os.getenv('PYTEST_CURRENT_TEST'):
                 try:
                     try:
                         upd = dashboard.model_dump(exclude_unset=True)
@@ -2024,52 +2097,14 @@ async def update_dashboard(
             pass
 
         dashboard_service = DashboardService(db)
-        try:
-            updated_dashboard = await dashboard_service.update_dashboard(dashboard_id, dashboard, user_payload)
-        except HTTPException as he:
-            # Development emergency bypass: allow update when authenticated in dev
-            try:
-                from src.core.config import settings as _settings
-                if getattr(_settings, 'ENVIRONMENT', 'development') == 'development' and he.status_code == 403:
-                    # Re-run with elevated bypass inside service by simulating permissive mode
-                    # Convert to dict and set a flag to signal dev bypass
-                    try:
-                        upd = dashboard.model_dump(exclude_unset=True)
-                    except Exception:
-                        upd = dashboard.dict(exclude_unset=True)
-                    from sqlalchemy import select
-                    from src.modules.dashboards.models import Dashboard as _Dash
-                    res = await db.execute(select(_Dash).where(_Dash.id == dashboard_id))
-                    drow = res.scalar_one_or_none()
-                    if drow is None:
-                        raise HTTPException(status_code=404, detail="Dashboard not found")
-                    for k, v in upd.items():
-                        setattr(drow, k, v)
-                    await db.commit()
-                    await db.refresh(drow)
-                    updated_dashboard = {
-                        "id": str(drow.id),
-                        "name": drow.name,
-                        "description": drow.description,
-                        "project_id": drow.project_id,
-                        "layout_config": drow.layout_config,
-                        "theme_config": drow.theme_config,
-                        "global_filters": drow.global_filters,
-                        "refresh_interval": drow.refresh_interval,
-                        "is_public": drow.is_public,
-                        "is_template": drow.is_template,
-                        "created_by": drow.created_by,
-                        "max_widgets": drow.max_widgets,
-                        "max_pages": drow.max_pages,
-                        "created_at": drow.created_at,
-                        "updated_at": drow.updated_at,
-                        "last_viewed_at": drow.last_viewed_at
-                    }
-                else:
-                    raise
-            except Exception:
-                raise
-        
+        # SECURITY: a "development emergency bypass" used to live here,
+        # silently converting a real 403 from update_dashboard's own
+        # permission check into a bypassed, unauthorized update whenever
+        # ENVIRONMENT was dev-like (the default when unset). Removed --
+        # a denied update stays denied; the pytest-only fast-paths above
+        # already cover legitimate test flows.
+        updated_dashboard = await dashboard_service.update_dashboard(dashboard_id, dashboard, user_payload)
+
         if not updated_dashboard:
             raise HTTPException(status_code=404, detail="Dashboard not found")
         
@@ -2137,9 +2172,12 @@ async def delete_dashboard(
             token = token.split(None, 1)[1].strip()
         user_payload = token if token else {}
 
-        # CI/pytest fallback for environments where service-layer checks are flaky.
-        if (os.getenv('PYTEST_CURRENT_TEST') or os.getenv('CI')) and _has_auth_token(request):
-            return await _delete_dashboard_with_dependencies("Dashboard deleted via pytest/CI bypass")
+        # Pytest fallback for environments where service-layer checks are flaky.
+        # SECURITY: previously also fired on bare CI=true, which real
+        # deployment automation can set outside of an actual test run;
+        # narrowed to the pytest-specific signal used elsewhere in this file.
+        if os.getenv('PYTEST_CURRENT_TEST') and _has_auth_token(request):
+            return await _delete_dashboard_with_dependencies("Dashboard deleted via pytest bypass")
 
         dashboard_service = DashboardService(db)
         success = await dashboard_service.delete_dashboard(dashboard_id, user_payload)
@@ -2309,76 +2347,69 @@ async def delete_widget(dashboard_id: str, widget_id: str, current_token: str = 
 
 
 # 📤 Export and Sharing Endpoints
-@router.post("/dashboards/{dashboard_id}/export", response_model=DashboardExportResponse)
+@router.post("/dashboards/{dashboard_id}/export")
 async def export_dashboard(
     dashboard_id: str,
     export_request: DashboardExportRequest,
-    request: Request,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """Export dashboard as PNG, PDF, or HTML using Playwright."""
+    """Export dashboard as PNG, PDF, or HTML using Playwright.
+
+    Streams the rendered file directly in the response - see
+    playwright_export_service.py for why this replaced the old
+    write-to-`./exports/`-and-return-a-path approach (that path was never
+    actually servable by any route in this codebase).
+    """
+    from fastapi import Response
+    from src.modules.exports.playwright_export_service import render_page_export
+    from src.modules.embed import service as embed_service
+
+    export_format = export_request.format.lower()
+    if export_format not in ("png", "pdf", "html"):
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {export_format}. Supported: png, pdf, html")
+
+    user_payload = current_token if isinstance(current_token, dict) else extract_user_payload(current_token)
+    user_id = str(user_payload.get('id') or user_payload.get('user_id') or user_payload.get('sub') or '')
+    org_id = user_payload.get('organization_id')
+
+    # Short-lived, single-use embed token scoped to just this dashboard -
+    # minted and revoked around the capture rather than left listed in the
+    # user's persisted embed-token settings (this is an internal render
+    # credential, not a link the user asked to create and keep).
+    token_record = await embed_service.create_embed_token(
+        user_id=user_id,
+        org_id=str(org_id) if org_id else None,
+        name=f"[export] dashboard {dashboard_id}",
+        scopes=["dashboard"],
+        resource_id=dashboard_id,
+        expires_in_hours=1,
+    )
+    export_token = token_record["token"]
+
     try:
-        logger.info(f"Exporting dashboard {dashboard_id} as {export_request.format}")
-
-        export_format = export_request.format.lower()
-        if export_format not in ("png", "pdf", "html"):
-            raise HTTPException(status_code=400, detail=f"Unsupported format: {export_format}. Supported: png, pdf, html")
-
-        base_url = str(request.base_url).rstrip("/")
-        dashboard_url = f"{base_url}/embed/dashboards/{dashboard_id}"
-
-        import tempfile
-        import os as _os
-
-        os_mod = _os
-        exports_dir = os_mod.path.join(os_mod.getcwd(), "exports")
-        os_mod.makedirs(exports_dir, exist_ok=True)
-        export_filename = f"dashboard_{dashboard_id}_{int(__import__('time').time())}.{export_format}"
-        export_path = os_mod.path.join(exports_dir, export_filename)
-
+        file_bytes, mime_type = await render_page_export(
+            embed_path=f"/embed/dashboard/{dashboard_id}",
+            token=export_token,
+            export_format=export_format,  # type: ignore[arg-type]
+        )
+    except ImportError:
+        logger.warning("Playwright not installed; export unavailable")
+        raise HTTPException(status_code=501, detail="Export is not available on this server (Playwright not installed)")
+    except Exception as pw_err:
+        logger.error(f"Dashboard export failed: {pw_err}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {pw_err}")
+    finally:
         try:
-            from playwright.async_api import async_playwright  # type: ignore
+            await embed_service.revoke_embed_token(user_id, token_record["id"])
+        except Exception:
+            logger.warning("Failed to revoke short-lived export token %s", token_record.get("id"))
 
-            async with async_playwright() as pw:
-                browser = await pw.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
-                page = await browser.new_page(viewport={"width": 1400, "height": 900})
-                await page.goto(dashboard_url, wait_until="networkidle", timeout=30000)
-                await page.wait_for_timeout(2000)
-
-                if export_format == "png":
-                    await page.screenshot(path=export_path, full_page=True)
-                elif export_format == "pdf":
-                    await page.pdf(path=export_path, format="A4", print_background=True)
-                elif export_format == "html":
-                    content = await page.content()
-                    with open(export_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-
-                await browser.close()
-
-            file_size = os_mod.path.getsize(export_path)
-            export_url = f"/exports/{export_filename}"
-
-        except ImportError:
-            logger.warning("Playwright not installed; returning dashboard URL for client-side export")
-            export_url = f"/embed/dashboards/{dashboard_id}"
-            file_size = 0
-        except Exception as pw_err:
-            logger.error(f"Playwright export failed: {pw_err}")
-            raise HTTPException(status_code=500, detail=f"Export failed: {pw_err}")
-
-        return {
-            "success": True,
-            "export_url": export_url,
-            "file_size": file_size,
-            "format": export_format,
-            "message": f"Dashboard exported as {export_format.upper()}"
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to export dashboard {dashboard_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to export dashboard: {str(e)}")
+    filename = f"dashboard_{dashboard_id}.{export_format}"
+    return Response(
+        content=file_bytes,
+        media_type=mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/dashboards/{dashboard_id}/share", response_model=DashboardShareResponseSchema)
@@ -2394,21 +2425,6 @@ async def share_dashboard(dashboard_id: str, share_request: DashboardShareCreate
             user_id = int(user_payload.get('id') or user_payload.get('sub') or 0)
         except Exception:
             user_id = 0
-
-        share_data = {
-            "id": f"share_{hash(dashboard_id)}",
-            "dashboard_id": dashboard_id,
-            "shared_by": user_id,
-            "shared_with": share_request.shared_with,
-            "permission": share_request.permission,
-            "expires_at": share_request.expires_at,
-            "is_active": share_request.is_active,
-            "share_token": f"token_{hash(dashboard_id)}",
-            "access_count": 0,
-            "last_accessed_at": None,
-            "created_at": "2025-01-10T00:00:00Z",
-            "updated_at": None
-        }
 
         from src.modules.dashboards.models import DashboardShare, Dashboard
         from src.db.session import async_session
@@ -2443,7 +2459,16 @@ async def share_dashboard(dashboard_id: str, share_request: DashboardShareCreate
                 permission=share_request.permission,
                 expires_at=share_request.expires_at,
                 is_active=share_request.is_active,
-                share_token=f"share_{hash((dashboard_id, share_request.shared_with, share_request.permission))}"
+                # SECURITY: this used to derive the share token from
+                # Python's built-in hash() of (dashboard_id, shared_with,
+                # permission) -- not a cryptographic function, only ~64 bits
+                # wide, deterministic within a process (and fully
+                # deterministic across processes if PYTHONHASHSEED is ever
+                # fixed), and predictable from data an attacker could
+                # plausibly already know or guess. Matching the random-token
+                # pattern already used correctly elsewhere in this codebase
+                # (dashboards/operations.py's create_share).
+                share_token=f"share_{secrets.token_urlsafe(24)}"
             )
             db.add(share)
             await db.flush()
@@ -2539,7 +2564,11 @@ async def create_dashboard_embed(dashboard_id: str, options: Dict[str, Any] = Bo
             if not allowed:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-            embed_token = f"embed_{hash((dashboard_id, str(options)))}"
+            # SECURITY: hash()-based token, same weakness as the share_token
+            # fix above. This legacy path is disabled by default
+            # (EMBED_JWT_ONLY=true returns 410 before reaching here) but
+            # fixed for defense-in-depth in case that flag is ever flipped.
+            embed_token = f"embed_{secrets.token_urlsafe(24)}"
             creator = getattr(db_dash, 'created_by', None)
             embed = DashboardEmbed(dashboard_id=dashboard_id, created_by=creator, embed_token=embed_token, options=options)
             sdb.add(embed)
@@ -2639,19 +2668,33 @@ async def get_plan_limits(plan: str = "free"):
 
 
 @router.get("/dashboards/templates")
-async def get_dashboard_templates():
+async def get_dashboard_templates(request: Request):
     """
-    Get available dashboard templates
+    Get available dashboard templates - the 5 built-in samples plus this
+    org's saved templates (source: "builtin" | "saved"), merged into one
+    gallery list. No auth is required (built-ins alone still work
+    unauthenticated, unchanged from before); saved templates are included
+    only when a resolvable session/org is present.
     """
     try:
         logger.info("📋 Getting dashboard templates")
         templates = _template_catalog_response()
 
+        token = await _optional_token(request)
+        if token:
+            caller_payload = extract_user_payload(token) or {}
+            org_id = caller_payload.get("organization_id")
+            if org_id:
+                from src.modules.dashboards.template_service import list_saved_dashboard_templates
+
+                saved = await list_saved_dashboard_templates(str(org_id))
+                templates = templates + saved
+
         return {
             "success": True,
             "templates": templates
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Failed to get dashboard templates: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get dashboard templates: {str(e)}")
@@ -2674,6 +2717,20 @@ async def create_dashboard_from_template(
 
         template = SAMPLE_DASHBOARD_TEMPLATES.get(request_payload.template_id)
         if template is None:
+            # Not one of the 5 built-ins - check whether it's an org-saved
+            # template (a real UUID row) before giving up with a 404. Saved
+            # templates use the current dashboard_widgets model directly
+            # (the widgets already reference real, already-connected data
+            # sources - no sample_duckdb provisioning needed), so this is a
+            # genuinely separate, simpler creation path from the legacy
+            # Chart/DashboardChart one below.
+            org_id = user_payload.get("organization_id")
+            if org_id:
+                saved = await _try_create_dashboard_from_saved_template(
+                    db, request_payload.template_id, str(org_id), user_id, request_payload.dashboard_name
+                )
+                if saved is not None:
+                    return saved
             raise HTTPException(status_code=404, detail="Dashboard template not found")
 
         project_id = await _resolve_project_for_template(user_id, request_payload.project_id)
@@ -2835,6 +2892,87 @@ async def create_dashboard_from_template(
         raise HTTPException(status_code=500, detail=f"Failed to create dashboard from template: {str(e)}")
 
 
+@router.post("/dashboards/{dashboard_id}/save-as-template")
+async def save_dashboard_as_template_endpoint(
+    dashboard_id: str,
+    body: SaveDashboardAsTemplateRequest,
+    db: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Capture this dashboard's current widgets into a reusable, org-shared
+    template - the "save as template" half of dashboard_templates, a table
+    that has existed since the initial migration but was never wired up."""
+    user_payload = _normalize_user_payload(current_token)
+    user_id = str(user_payload.get("id") or user_payload.get("user_id") or user_payload.get("sub") or "")
+    org_id = user_payload.get("organization_id")
+    if not user_id:
+        raise HTTPException(status_code=403, detail="Authentication required")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="No organization on this session")
+
+    dashboard_service = DashboardService(db)
+    widgets = await dashboard_service.list_widgets(dashboard_id, user_id)
+    if not widgets:
+        raise HTTPException(status_code=400, detail="This dashboard has no widgets to save as a template")
+
+    from src.modules.dashboards.template_service import save_dashboard_as_template
+
+    return await save_dashboard_as_template(
+        str(org_id),
+        user_id,
+        name=body.name,
+        template_config={"widgets": widgets},
+        description=body.description,
+        category=body.category,
+    )
+
+
+@router.put("/dashboards/templates/{template_id}")
+async def update_dashboard_template_endpoint(
+    template_id: str,
+    body: UpdateDashboardTemplateRequest,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    user_payload = _normalize_user_payload(current_token)
+    org_id = user_payload.get("organization_id")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="No organization on this session")
+
+    from src.modules.dashboards.template_service import (
+        DashboardTemplateAccessError,
+        update_saved_dashboard_template,
+    )
+
+    try:
+        return await update_saved_dashboard_template(
+            str(org_id), template_id, name=body.name, description=body.description, category=body.category
+        )
+    except DashboardTemplateAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+@router.delete("/dashboards/templates/{template_id}")
+async def delete_dashboard_template_endpoint(
+    template_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    user_payload = _normalize_user_payload(current_token)
+    org_id = user_payload.get("organization_id")
+    if not org_id:
+        raise HTTPException(status_code=400, detail="No organization on this session")
+
+    from src.modules.dashboards.template_service import (
+        DashboardTemplateAccessError,
+        delete_saved_dashboard_template,
+    )
+
+    try:
+        await delete_saved_dashboard_template(str(org_id), template_id)
+    except DashboardTemplateAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return {"success": True}
+
+
 # 🔗 Embed endpoints (public, token-authenticated)
 
 @router.get("/dashboards/{dashboard_id}/embed")
@@ -2911,7 +3049,15 @@ async def get_chart_for_embed(slug: str, token: Optional[str] = None):
             settings_data = row.settings if isinstance(row.settings, dict) else {}
             is_public = settings_data.get("is_public", False)
             if not is_public:
-                if not token or token != settings_data.get("embed_token"):
+                expected_token = settings_data.get("embed_token")
+                # SECURITY: was a plain `!=` comparison -- non-constant-time,
+                # vulnerable in principle to a timing side-channel on the
+                # token value. Also bypasses EmbedTokenMiddleware entirely
+                # (this route isn't matched by that middleware's protected-
+                # path check), so this comparison is the only gate here.
+                import hmac as _hmac
+
+                if not token or not expected_token or not _hmac.compare_digest(str(token), str(expected_token)):
                     raise HTTPException(status_code=403, detail="Chart not public or invalid token")
 
             return {
@@ -3232,12 +3378,20 @@ async def update_chart_collection(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid = user_id_from_payload(extract_user_payload(current_user))
-    await require_ee_permission(uid, "chart:edit", project_id=project_id)
     lib = ChartLibraryService(db)
     row = await lib.get_collection(collection_id)
     if not row:
         raise HTTPException(status_code=404, detail="Collection not found")
-    if not is_ee_enabled() and str(row.user_id) != str(user_id):
+    # SECURITY: the permission check used to run against the client-supplied
+    # `project_id` query param instead of the collection's own project, and
+    # the ownership fallback below only applied outside EE mode -- meaning
+    # in EE (the actual multi-tenant deployment mode) any authenticated
+    # caller who could satisfy `chart:edit` for SOME project of their own
+    # (or omit project_id entirely) could edit any other org's collection.
+    # Now checked against the collection's real scope.
+    if row.project_id is not None:
+        await require_ee_permission(uid, "chart:edit", project_id=str(row.project_id))
+    elif str(row.user_id) != str(user_id):
         raise HTTPException(status_code=403, detail="Not authorized")
     parent = payload.get("parentId") if "parentId" in payload else payload.get("parent_id")
     clear_parent = "parentId" in payload and payload.get("parentId") is None
@@ -3264,12 +3418,15 @@ async def delete_chart_collection(
     if not user_id:
         raise HTTPException(status_code=401, detail="Authentication required")
     uid = user_id_from_payload(extract_user_payload(current_user))
-    await require_ee_permission(uid, "chart:edit", project_id=project_id)
     lib = ChartLibraryService(db)
     row = await lib.get_collection(collection_id)
     if not row:
         raise HTTPException(status_code=404, detail="Collection not found")
-    if not is_ee_enabled() and str(row.user_id) != str(user_id):
+    # SECURITY: see update_chart_collection above -- check against the
+    # collection's real scope, not the client-supplied project_id param.
+    if row.project_id is not None:
+        await require_ee_permission(uid, "chart:edit", project_id=str(row.project_id))
+    elif str(row.user_id) != str(user_id):
         raise HTTPException(status_code=403, detail="Not authorized")
     await lib.delete_collection(row)
 

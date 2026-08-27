@@ -109,6 +109,7 @@ export function getSeriesPointColors(
   seriesName: string,
   values: unknown[],
 ): (string | undefined)[] {
+  if (!Array.isArray(values)) return [];
   if (!rules?.length) return values.map(() => undefined);
   const applicable = rules.filter((r) => r.column === seriesName || r.column === '*');
   if (!applicable.length) return values.map(() => undefined);

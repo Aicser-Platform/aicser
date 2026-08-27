@@ -8,7 +8,7 @@
 
 import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
 import { chartService } from '@/app/(dashboard)/dashboards/services/chartService';
-import type { ChartQuery } from '@/app/(dashboard)/dashboards/services/chartService';
+import type { Chart, ChartQuery } from '@/app/(dashboard)/dashboards/services/chartService';
 import { prepareChartOptionsForPersist } from '@/components/charts/chartDesignerBridge';
 import { placePinnedLayoutItem } from '@/app/(dashboard)/dashboards/utils/layoutSanitize';
 import type { LayoutItem } from '@/app/(dashboard)/dashboards/stores/dashboardStoreTypes';
@@ -40,8 +40,8 @@ async function loadTargetDashboardLayout(dashboardId: string): Promise<LayoutIte
   try {
     const charts = await chartService.listCharts(dashboardId);
     return (charts || []).map(
-      (c: { layout?: { x?: number; y?: number; w?: number; h?: number; page_id?: string } }) => ({
-        i: String((c as { id?: string }).id || Math.random()),
+      (c: Chart) => ({
+        i: String(c.id || Math.random()),
         x: Number(c.layout?.x) || 0,
         y: Number(c.layout?.y) || 0,
         w: Number(c.layout?.w) || 6,

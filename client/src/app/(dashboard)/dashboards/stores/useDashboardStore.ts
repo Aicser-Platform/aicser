@@ -54,12 +54,8 @@ export type {
 };
 export { scopedFiltersForWidget, isNonDataWidget };
 
-type ChartWithLayout = Chart & {
-  layout?: { x?: number; y?: number; w?: number; h?: number; page_id?: string | null };
-};
-
 /** Map backend chart records to studio widgets + grid layout (page assignment included). */
-function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
+function chartsToWidgetsAndLayout(charts: Chart[]): {
   widgets: WidgetInstance[];
   layout: LayoutItem[];
 } {
@@ -90,10 +86,10 @@ function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
     const chartLayout = chart.layout || {};
     layout.push({
       i: widgetId,
-      x: chartLayout.x ?? 0,
-      y: chartLayout.y ?? 0,
-      w: chartLayout.w ?? 4,
-      h: chartLayout.h ?? 5,
+      x: Number(chartLayout.x) || 0,
+      y: Number(chartLayout.y) || 0,
+      w: Number(chartLayout.w) || 4,
+      h: Number(chartLayout.h) || 5,
       ...(chartLayout.page_id ? { pageId: String(chartLayout.page_id) } : {}),
     });
   });
@@ -204,7 +200,10 @@ interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
     id?: string;
     changes?: Record<string, unknown>;
     widget?: WidgetInstance;
-    layout?: LayoutItem[];
+    // 'layout:update' carries the full array; 'widget:add' carries just the
+    // one new tile's layout item -- see the two branches in the
+    // implementation below.
+    layout?: LayoutItem[] | LayoutItem;
     layoutTs?: number;
   }) => void;
   bulkDeleteWidgets: () => Promise<void>;

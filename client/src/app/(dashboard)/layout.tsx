@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
+import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
+import { CommandPalette } from '@/components/search/CommandPalette';
 import '@/app/globals.css';
 
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
@@ -92,8 +94,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ children }) => {
   return (
     <ProtectedRoute>
+      <SkipToContentLink />
       <SubscriptionInitializer />
       <TrialExpiryBanner />
+      <CommandPalette />
       <CustomLayout>
         {children}
       </CustomLayout>

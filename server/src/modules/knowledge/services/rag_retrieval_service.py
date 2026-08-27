@@ -88,18 +88,27 @@ def _keyword_score(query: str, content: str) -> float:
     return len(overlap) / len(q_words)
 
 
+RERANK_KEYWORD_WEIGHT = 0.4  # blended with the existing hybrid score, not a replacement for it
+
+
 def _rerank_chunks(chunks: List[RetrievedChunk], query: str) -> List[RetrievedChunk]:
     """
     Optional rerank: re-score top candidates by keyword relevance to improve order.
-    When USE_RAG_RERANK is true, applies a secondary sort so chunks with higher
-    keyword overlap to the query rank higher. Can be replaced by a cross-encoder later.
+
+    QUALITY: this used to fully replace the ranking with keyword overlap alone,
+    discarding the embedding-similarity signal the hybrid score (ch.score) had
+    already computed -- a chunk that's genuinely relevant but phrased with
+    different vocabulary than the query could get pushed below a lexically-
+    matching but less relevant one. Blends the two instead of replacing.
+    Can still be swapped for a real cross-encoder later.
     """
     if not chunks or not query or not query.strip():
         return chunks
     scored: List[tuple] = []
     for ch in chunks:
         kw = _keyword_score(query, ch.content)
-        scored.append((kw, ch))
+        blended = (1 - RERANK_KEYWORD_WEIGHT) * ch.score + RERANK_KEYWORD_WEIGHT * kw
+        scored.append((blended, ch))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [c for _, c in scored]
 
@@ -385,10 +394,15 @@ class RAGRetrievalService:
         except Exception:
             embedding_vector_column = False
 
+        # NOTE: SQLAlchemy's JSONB type serializes a Python `None` embedding
+        # (an embedding call that failed) as a JSON *null* literal, not SQL
+        # NULL -- `embedding IS NOT NULL` is true for those rows too, so it
+        # was overcounting "with embedding" by including chunks that have no
+        # usable vector at all. jsonb_typeof(...) = 'array' is the real check.
         stats_row = await self._session.execute(
             text(
                 "SELECT COUNT(*) AS total, "
-                "COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS with_json_embedding "
+                "COUNT(*) FILTER (WHERE jsonb_typeof(embedding) = 'array') AS with_json_embedding "
                 "FROM document_chunks"
             )
         )
@@ -396,7 +410,47 @@ class RAGRetrievalService:
         total_chunks = int(stats.get("total") or 0)
         with_json = int(stats.get("with_json_embedding") or 0)
 
-        backend = "pgvector" if pgvector_ext and embedding_vector_column else "jsonb_hybrid"
+        # RELIABILITY: this used to report "backend": "pgvector" purely from
+        # the extension/column *existing*, not from any row actually having
+        # embedding_vector populated -- the pgvector fast path was silently
+        # dead (nothing wrote to that column) for months while this endpoint
+        # kept reporting it as active. Count real coverage instead.
+        with_pgvector = 0
+        if embedding_vector_column:
+            try:
+                pv_row = await self._session.execute(
+                    text("SELECT COUNT(*) FILTER (WHERE embedding_vector IS NOT NULL) FROM document_chunks")
+                )
+                with_pgvector = int(pv_row.scalar() or 0)
+            except Exception:
+                with_pgvector = 0
+
+        pgvector_populated = pgvector_ext and embedding_vector_column and (total_chunks == 0 or with_pgvector > 0)
+        backend = "pgvector" if pgvector_populated else "jsonb_hybrid"
+
+        # RELIABILITY: surfaces a config-vs-stored embedding model mismatch
+        # (EMBEDDING_MODEL/EMBEDDING_PROVIDER changed after chunks were
+        # embedded) instead of leaving it to silently degrade retrieval --
+        # see current_embedding_model_id()'s docstring.
+        live_model = "unknown"
+        stored_models: List[str] = []
+        try:
+            from src.shared.embedding import get_embedding_service
+
+            live_model = get_embedding_service().current_model_id()
+            models_row = await self._session.execute(
+                text(
+                    "SELECT DISTINCT embedding_model FROM document_chunks "
+                    "WHERE embedding_model IS NOT NULL"
+                )
+            )
+            stored_models = [r[0] for r in models_row.all() if r[0]]
+        except Exception:
+            pass
+        stale_embedding_model = bool(
+            stored_models and live_model != "unknown" and live_model not in stored_models
+        )
+
         probe_ms: Optional[float] = None
         if total_chunks > 0:
             ds_row = await self._session.execute(
@@ -420,6 +474,10 @@ class RAGRetrievalService:
             "embedding_vector_column": embedding_vector_column,
             "total_chunks": total_chunks,
             "chunks_with_json_embedding": with_json,
+            "chunks_with_pgvector_embedding": with_pgvector,
+            "live_embedding_model": live_model,
+            "stored_embedding_models": stored_models,
+            "stale_embedding_model": stale_embedding_model,
             "probe_latency_ms": probe_ms,
-            "healthy": total_chunks == 0 or with_json > 0 or (pgvector_ext and embedding_vector_column),
+            "healthy": (total_chunks == 0 or with_json > 0 or with_pgvector > 0) and not stale_embedding_model,
         }

@@ -2,7 +2,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Button, Input, Modal, message, Dropdown } from 'antd';
-import type { MenuProps } from 'antd';
+import type { MenuProps, GetRef } from 'antd';
+
+type InputRef = GetRef<typeof Input>;
 import {
   PlusOutlined,
   MoreOutlined,
@@ -58,7 +60,7 @@ export function DashboardPageTabs({
   const [inlineEditValue, setInlineEditValue] = useState('');
   const [deletingPage, setDeletingPage] = useState<DashboardPageItem | null>(null);
   const [moveWidgetsTo, setMoveWidgetsTo] = useState<string | undefined>();
-  const addInputRef = useRef<HTMLInputElement>(null);
+  const addInputRef = useRef<InputRef>(null);
 
   const displayPages =
     pages.length > 0

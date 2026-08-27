@@ -258,7 +258,7 @@ export default function LoginPage() {
               <Alert
                 type="success"
                 showIcon
-                message={signupMessage}
+                title={signupMessage}
                 description="Once confirmed, you'll be signed in automatically."
                 className="login-error-alert"
                 closable
@@ -268,7 +268,7 @@ export default function LoginPage() {
               <Alert
                 type="error"
                 showIcon
-                message={loginError}
+                title={loginError}
                 className="login-error-alert"
                 closable
                 onClose={clearLoginError}
@@ -458,12 +458,11 @@ export default function LoginPage() {
         footer={null}
         destroyOnHidden
         centered
-        width={400}
-        styles={{ content: { maxWidth: 'calc(100vw - 2rem)' } }}
+        width="min(400px, calc(100vw - 2rem))"
       >
         <p className="login-modal-text">{t('reset_instructions')}</p>
-        {forgotMessage ? <Alert type="success" showIcon message={forgotMessage} className="login-error-alert" /> : null}
-        {forgotError ? <Alert type="error" showIcon message={forgotError} className="login-error-alert" /> : null}
+        {forgotMessage ? <Alert type="success" showIcon title={forgotMessage} className="login-error-alert" /> : null}
+        {forgotError ? <Alert type="error" showIcon title={forgotError} className="login-error-alert" /> : null}
         {forgotMessage && !IS_SUPABASE_AUTH ? (
           <Button
             type="link"

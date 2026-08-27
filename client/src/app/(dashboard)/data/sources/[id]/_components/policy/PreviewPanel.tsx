@@ -184,7 +184,7 @@ export const PreviewPanel: React.FC<{
       ) : (
         <>
           {preview.unresolved.length ? (
-            <Space direction="vertical" style={{ width: '100%', marginBottom: 12 }} size={4}>
+            <Space orientation="vertical" style={{ width: '100%', marginBottom: 12 }} size={4}>
               {preview.unresolved.map((path) => (
                 <Alert
                   key={path}
@@ -198,7 +198,7 @@ export const PreviewPanel: React.FC<{
 
           {simulateProjectId && projectAttributes.length > 0 ? (
             <Card size="small" style={{ marginTop: 4 }} title={t('project_attribute_values')}>
-              <Space direction="vertical" style={{ width: '100%' }} size={8}>
+              <Space orientation="vertical" style={{ width: '100%' }} size={8}>
                 {projectAttributes.map((attribute) => (
                   <Space.Compact key={attribute.key} style={{ width: '100%' }}>
                     <Input

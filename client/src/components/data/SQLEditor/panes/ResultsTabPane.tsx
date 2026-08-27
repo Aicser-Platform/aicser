@@ -90,7 +90,7 @@ export function ResultsTabPane({
             size="small"
             scroll={{ x: 'max-content', y: tableScrollY }}
             pagination={false}
-            rowKey={(_record, index) => `row-${index}`}
+            rowKey={(record) => `row-${paginatedResults.indexOf(record)}`}
             style={{ background: 'transparent' }}
           />
         ) : (

@@ -340,7 +340,7 @@
   background: var(--ant-color-primary) !important;
 }
 
-.page-wrapper .page-tabs .ant-tabs-content-holder,
+.page-wrapper .page-tabs .ant-tabs-body-holder,
 .page-wrapper .page-tabs .ant-tabs-tabpane {
   padding: 0 !important;
 }

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import { Spin, Empty, Alert } from 'antd';
 import { GlobalOutlined } from '@ant-design/icons';
-import { CHART_COLORS } from './WidgetRendererConfig';
+import { CHART_COLORS, isDark } from './WidgetRendererConfig';
 
 // Module-level GeoJSON cache — fetched once per page session
 const _geoJsonCache: Record<string, object> = {};
@@ -57,11 +57,23 @@ export function GeoMapWidget({ data, config = {}, onChartReady, minHeight }: Geo
   const instanceRef = useRef<echarts.ECharts | null>(null);
   const [geoReady, setGeoReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const onChartReadyRef = useRef(onChartReady);
   onChartReadyRef.current = onChartReady;
 
   const mapName = config.mapName || 'world';
   const geoJsonUrl = config.geoJsonUrl || DEFAULT_GEOJSON_URL;
+
+  // CHART_COLORS.text is a live getter re-checked on each access, but the
+  // rebuild effect below never re-ran on a theme toggle (no dark-mode
+  // dependency) - map labels kept whichever theme's color was active when
+  // the widget last received new data, until it remounted or data changed.
+  useEffect(() => {
+    const observer = new MutationObserver(() => setIsDarkMode(isDark()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+    setIsDarkMode(isDark());
+    return () => observer.disconnect();
+  }, []);
 
   // Load and register GeoJSON once
   useEffect(() => {
@@ -153,7 +165,7 @@ export function GeoMapWidget({ data, config = {}, onChartReady, minHeight }: Geo
       window.removeEventListener('resize', scheduleResize);
       ro.disconnect();
     };
-  }, [geoReady, data, config]);
+  }, [geoReady, data, config, isDarkMode]);
 
   useEffect(() => () => {
     instanceRef.current?.dispose();

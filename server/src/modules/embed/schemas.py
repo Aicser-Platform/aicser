@@ -5,7 +5,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-EmbedScope = Literal["dashboard", "chart", "chat"]
+EmbedScope = Literal["dashboard", "chart", "chat", "report"]
 EmbedThemeMode = Literal["light", "dark", "auto"]
 
 

@@ -45,6 +45,8 @@ export const LicenseSettingsTab      = (): null => null;
 export const RolesTab                = (): null => null;
 export const AgentSkillsTab          = (): null => null;
 export const AgentWorkflowsTab       = (): null => null;
+export const AgentCapabilitiesTab    = (): null => null;
+export const KpiDefinitionsTab       = (): null => null;
 export const BriefingsTab            = (): null => null;
 export const SemanticStudio          = (_props: AnyComponentProps): null => null;
 export const ConnectModelVisualizeWizard = (_props: AnyComponentProps): null => null;

@@ -179,7 +179,7 @@ export const GrantShareBar: React.FC<{
             // the leaf at runtime. Narrow to the leaf we actually build.
             const data = option.data as unknown as GranteeSelectOption;
             return data.secondary ? (
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <span>{data.label}</span>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {data.secondary}

@@ -42,7 +42,12 @@ export function FeedPostPreview({
       excerpt: description?.trim() ? undefined : draft.excerpt,
       tags: draft.defaultTags,
       previewMetadata: draft.previewMetadata,
-      chartPreview: draft.chartPreview,
+      chartPreview: draft.chartPreview as {
+        chartType: string;
+        chartData?: Record<string, unknown>;
+        chartOptions?: Record<string, unknown>;
+        chartQuery?: Record<string, unknown>;
+      } | undefined,
       renderMode: draft.renderMode,
       snapshotPayload: draft.snapshotPayload,
     });

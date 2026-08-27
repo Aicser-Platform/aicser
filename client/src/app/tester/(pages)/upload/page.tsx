@@ -50,7 +50,7 @@ export default function TestUpload() {
         <div style={{ padding: '24px' }}>
             <Title level={2}>File Upload Test</Title>
             
-            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Space orientation="vertical" size="large" style={{ width: '100%' }}>
                 <Card title="Upload Files">
                     <Dragger {...uploadProps}>
                         <p className="ant-upload-drag-icon">
@@ -66,7 +66,7 @@ export default function TestUpload() {
 
                 {uploadedFiles.length > 0 && (
                     <Card title="Uploaded Files">
-                        <Space direction="vertical" style={{ width: '100%' }}>
+                        <Space orientation="vertical" style={{ width: '100%' }}>
                             {uploadedFiles.map((file, index) => (
                                 <Card 
                                     key={index} 

@@ -1,5 +1,4 @@
 # AISER EE-ONLY — requires AISER_EDITION=enterprise
-# Canonical EE boundary file: audit_logger.ee.py
 """
 Global Audit Logging Middleware.
 
@@ -38,6 +37,12 @@ _AUDIT_PATTERNS = [
     ("POST", "/data/sources"),
     ("GET", "/charts/dashboards"),
     ("POST", "/charts/dashboards"),
+    ("GET", "/api/dashboards"),
+    ("POST", "/api/dashboards"),
+    ("GET", "/knowledge"),
+    ("POST", "/knowledge"),
+    ("GET", "/api/embed"),
+    ("POST", "/api/embed"),
     ("POST", "/echarts"),
     ("POST", "/api/users"),
     ("POST", "/auth"),
@@ -108,6 +113,24 @@ async def log_audit_event(
     """Log an audit event. Non-blocking and non-fatal."""
     if not AUDIT_ENABLED:
         return
+
+    # The auth token that reaches the middleware rarely carries an explicit
+    # organization_id claim — org membership is resolved from the DB
+    # (UserRole) everywhere else in the app, e.g. get_user_organization_id()
+    # used by the actual data/chart/chat endpoints. Without the same fallback
+    # here, every audit row reads org=None even for a user who very much has
+    # an org, defeating the point of an org-scoped audit trail. This function
+    # already only runs inside a background asyncio task (see dispatch()
+    # below), so the extra DB lookup never adds latency to the real response.
+    if user_id and not org_id:
+        try:
+            from src.db.session import async_session
+            from src.modules.pricing.feature_gate import get_user_organization_id
+
+            async with async_session() as audit_db:
+                org_id = await get_user_organization_id(user_id, audit_db)
+        except Exception:
+            pass
 
     event = {
         "event_type": event_type,
@@ -208,7 +231,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             category = "admin"
         elif "/billing" in path or "/subscriptions" in path:
             category = "billing"
-        elif "/semantic" in path or "/governance" in path:
+        elif "/semantic" in path or "/governance" in path or "/knowledge" in path:
+            category = "governance"
+        elif "/embed" in path:
             category = "governance"
 
         try:

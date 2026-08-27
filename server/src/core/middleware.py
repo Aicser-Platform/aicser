@@ -1,5 +1,7 @@
 """HTTP middleware: rate limiting and embed token validation."""
+import contextvars
 import time
+import uuid
 import logging
 from datetime import datetime
 from typing import Optional
@@ -14,6 +16,42 @@ from src.core.cache import cache
 logger = logging.getLogger(__name__)
 
 _ai_rl_fallback_store: dict = {}
+
+# OBSERVABILITY: there was no request-ID/correlation-ID mechanism anywhere in
+# the backend -- tracing a single request across app logs, the ARQ worker,
+# and Redis/Postgres had no supporting infrastructure at all. A ContextVar
+# (not a plain global) so concurrent requests handled on the same event loop
+# never see each other's ID.
+_REQUEST_ID: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+
+
+class RequestIDLogFilter(logging.Filter):
+    """Injects the current request's ID into every log record as %(request_id)s.
+
+    Records emitted outside a request (startup, background jobs) get "-".
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = _REQUEST_ID.get()
+        return True
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Generate (or propagate) a request ID, expose it on request.state and
+    the response header, and make it available to every log line emitted
+    while handling this request via RequestIDLogFilter."""
+
+    async def dispatch(self, request: Request, call_next):
+        incoming = request.headers.get("X-Request-ID")
+        request_id = incoming.strip() if incoming and incoming.strip() else str(uuid.uuid4())
+        request.state.request_id = request_id
+        token = _REQUEST_ID.set(request_id)
+        try:
+            response = await call_next(request)
+        finally:
+            _REQUEST_ID.reset(token)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +91,17 @@ class ApiRouteRateLimitMiddleware(BaseHTTPMiddleware):
     RULES: tuple[tuple[str, int, int], ...] = (
         ("/auth/login", 15, 60),
         ("/auth/register", 10, 60),
+        # SECURITY: forgot-password/reset-password/change-password had no
+        # rate limiting at all -- unlike /auth/login and /auth/register,
+        # which are the more obviously brute-forceable endpoints, these were
+        # left uncovered even though forgot-password enumerates account
+        # existence via response timing/shape and reset-password brute-forces
+        # a 6-digit code (PASSWORD_RESET_CODE_ATTEMPT_LIMIT caps attempts per
+        # token server-side, but with no per-IP limit an attacker can just
+        # request fresh tokens/codes for other targets indefinitely).
+        ("/auth/forgot-password", 5, 60),
+        ("/auth/reset-password", 10, 60),
+        ("/auth/change-password", 10, 60),
         ("/data/query/execute", 40, 60),
         ("/data/upload", 25, 60),
         ("/knowledge/upload", 25, 60),

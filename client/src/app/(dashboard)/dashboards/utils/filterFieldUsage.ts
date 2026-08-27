@@ -6,7 +6,13 @@ function normalizeField(field?: string): string {
 
 /** Collect SQL/query field names referenced by a widget. */
 export function collectWidgetFieldRefs(widget: WidgetInstance): string[] {
-  const q = widget.chartQuery || {};
+  // `dimensions` isn't part of the formal ChartQuery/WidgetInstance shape - it's a
+  // speculative/legacy field some backend responses still send for multi-dimension
+  // grouping, checked defensively here (Array.isArray guard below) without being
+  // promoted into the shared type.
+  const q = (widget.chartQuery || {}) as WidgetInstance['chartQuery'] & {
+    dimensions?: { field?: string }[];
+  };
   const refs = new Set<string>();
   const add = (f?: string) => {
     const n = normalizeField(f);
@@ -16,7 +22,7 @@ export function collectWidgetFieldRefs(widget: WidgetInstance): string[] {
   add(q.field as string | undefined);
   add(q.x as string | undefined);
   add(q.y as string | undefined);
-  add(q.groupBy as string | undefined);
+  add(q.groupField as string | undefined);
   add(q.tableName as string | undefined);
 
   if (Array.isArray(q.yMetrics)) {

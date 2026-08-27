@@ -481,12 +481,14 @@ export default function QueryEditorPage() {
                     background: 'var(--ant-color-bg-container)',
                     border: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
                   }}
-                  bodyStyle={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '16px',
-                    overflow: 'hidden'
+                  styles={{
+                    body: {
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '16px',
+                      overflow: 'hidden',
+                    },
                   }}
                 >
                   <Alert

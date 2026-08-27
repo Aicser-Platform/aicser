@@ -360,18 +360,74 @@ _REGEX_PATTERNS: List[Tuple[str, re.Pattern]] = [
     ("CA_POSTAL", re.compile(r"\b[A-Z]\d[A-Z][-\s]?\d[A-Z]\d\b")),
     ("CA_PHONE",  re.compile(r"\b(?:\+1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}\b")),
 
-    # Generic date of birth patterns (multiple regional formats)
-    ("DATE_OF_BIRTH", re.compile(
-        r"\b(?:"
-        r"(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}"  # DD/MM/YYYY
-        r"|(?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])[/\-.](?:19|20)\d{2}"  # MM/DD/YYYY
-        r"|(?:19|20)\d{2}[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])"  # YYYY/MM/DD (Asia)
-        r")\b"
-    )),
+    # NOTE: date-of-birth is intentionally NOT in this list - unlike every
+    # other entry here, a bare date has zero distinguishing structure (a
+    # report date, a transaction date, a "show me Feb 2024 data" filter all
+    # match the exact same shape as a birthdate). Scrubbing every date-shaped
+    # string in free text corrupted SQL date literals embedded in prompts
+    # (e.g. conversation history containing a prior turn's generated SQL),
+    # which then got echoed verbatim into new queries and broke them. See
+    # _DATE_OF_BIRTH_PATTERN + _scrub_dates_of_birth below - it requires an
+    # actual birth-context keyword nearby, in the same multilingual set used
+    # for column-name detection, not just a date-shaped string in isolation.
 
     # Generic passport (conservative — requires prefix letters to avoid false positives)
     ("PASSPORT", re.compile(r"\b[A-Z]{1,2}\d{6,9}\b")),
 ]
+
+
+# Same date shapes as the old blanket entry, matched separately so each hit
+# can be checked for a nearby birth-context keyword before being scrubbed.
+_DATE_OF_BIRTH_PATTERN = re.compile(
+    r"\b(?:"
+    r"(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}"  # DD/MM/YYYY
+    r"|(?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])[/\-.](?:19|20)\d{2}"  # MM/DD/YYYY
+    r"|(?:19|20)\d{2}[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])"  # YYYY/MM/DD (Asia)
+    r")\b"
+)
+
+# Natural-language birth-date phrasing, not the underscore-joined column-name
+# style below - covers the same regional breadth this file uses elsewhere
+# (Vietnam/Indonesia/Korea/Japan/China/Thailand/India/Middle East/LatAm/
+# Europe/Russia) so non-English contexts get the same protection.
+_BIRTH_CONTEXT_KEYWORDS: List[str] = [
+    "date of birth", "birth date", "birthdate", "birthday", "born on", "dob",
+    "fecha de nacimiento", "nacio el", "nació el", "cumpleanos", "cumpleaños",  # Spanish
+    "date de naissance", "ne le", "né le", "anniversaire",  # French
+    "geburtsdatum", "geboren am", "geburtstag",  # German
+    "data de nascimento", "nascido em",  # Portuguese
+    "data di nascita", "nato il",  # Italian
+    "data urodzenia",  # Polish
+    "data rozhdeniya", "дата рождения",  # Russian
+    "ngay sinh", "ngày sinh", "sinh ngay", "sinh ngày",  # Vietnamese
+    "tanggal lahir", "lahir pada",  # Indonesian/Malay
+    "vanh koet", "wan koet", "วันเกิด",  # Thai
+    "shengri", "chusheng riqi", "出生日期", "生日",  # Chinese
+    "seinengappi", "tanjoubi", "生年月日", "誕生日",  # Japanese
+    "saengnyeonwolil", "saengil", "생년월일", "생일",  # Korean
+    "janam tithi", "janmatithi", "जन्म तिथि",  # Hindi
+    "tarikh lahir",  # Malay
+    "tarikh al-milad", "تاريخ الميلاد",  # Arabic
+]
+_BIRTH_CONTEXT_WINDOW_CHARS = 40
+
+
+def _scrub_dates_of_birth(text: str) -> str:
+    """
+    Replace date-shaped substrings with <DATE_OF_BIRTH> only when a birth-
+    context keyword appears within _BIRTH_CONTEXT_WINDOW_CHARS on either
+    side - see the note above _DATE_OF_BIRTH_PATTERN for why a bare date
+    match alone isn't enough.
+    """
+    def _replace(match: "re.Match[str]") -> str:
+        start = max(0, match.start() - _BIRTH_CONTEXT_WINDOW_CHARS)
+        end = min(len(text), match.end() + _BIRTH_CONTEXT_WINDOW_CHARS)
+        window = text[start:end].lower()
+        if any(keyword in window for keyword in _BIRTH_CONTEXT_KEYWORDS):
+            return "<DATE_OF_BIRTH>"
+        return match.group(0)
+
+    return _DATE_OF_BIRTH_PATTERN.sub(_replace, text)
 
 
 # ── Column-name PII keywords (multilingual) ───────────────────────────────────
@@ -495,8 +551,8 @@ class PiiScrubber:
         if not text or not isinstance(text, str):
             return text
         if _presidio_analyzer and _presidio_anonymizer:
-            return self._scrub_with_presidio(text)
-        return self._scrub_with_regex(text)
+            return _scrub_dates_of_birth(self._scrub_with_presidio(text))
+        return _scrub_dates_of_birth(self._scrub_with_regex(text))
 
     def scrub_value(self, value: Any, column_name: str = "") -> Any:
         """Scrub a single cell. Fast-paths PII column names; otherwise runs text scan."""

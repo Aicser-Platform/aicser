@@ -35,6 +35,29 @@ CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 100
 EMBEDDING_BATCH_SIZE = 20
 APPROX_CHARS_PER_TOKEN = 4  # rough heuristic for tiktoken-less estimation
+# Must match the fixed pgvector column width in migration 2026_05_23_pgvector_embeddings
+# (vector(1536), OpenAI text-embedding-3-small's native dimension). An embedding of any
+# other width (e.g. a local/BYOK model) is stored in the JSONB column only.
+PGVECTOR_EMBEDDING_DIMENSIONS = 1536
+
+_TIKTOKEN_ENCODING = None
+_TIKTOKEN_LOAD_ATTEMPTED = False
+
+
+def _get_tiktoken_encoding():
+    global _TIKTOKEN_ENCODING, _TIKTOKEN_LOAD_ATTEMPTED
+    if _TIKTOKEN_LOAD_ATTEMPTED:
+        return _TIKTOKEN_ENCODING
+    _TIKTOKEN_LOAD_ATTEMPTED = True
+    try:
+        import tiktoken
+
+        _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        logger.warning("tiktoken unavailable; falling back to chars/4 token estimation")
+        _TIKTOKEN_ENCODING = None
+    return _TIKTOKEN_ENCODING
+
 
 # Max pages to process per document (0 = no limit). Prevents OOM on huge PDFs.
 def _max_pages_per_document() -> int:
@@ -71,6 +94,30 @@ class DocumentIngestionService:
 
     def __init__(self, session: AsyncSession):
         self._session = session
+        self._pgvector_available: Optional[bool] = None
+
+    async def _pgvector_available_check(self) -> bool:
+        """Mirrors RAGRetrievalService's probe (same table/extension check) --
+        cached per-service-instance since ingestion of one document issues
+        this once, not once per chunk."""
+        if self._pgvector_available is not None:
+            return self._pgvector_available
+        try:
+            from sqlalchemy import text as _sa_text
+
+            ext = await self._session.execute(
+                _sa_text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
+            )
+            col = await self._session.execute(
+                _sa_text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'document_chunks' AND column_name = 'embedding_vector' LIMIT 1"
+                )
+            )
+            self._pgvector_available = ext.first() is not None and col.first() is not None
+        except Exception:
+            self._pgvector_available = False
+        return self._pgvector_available
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -115,6 +162,7 @@ class DocumentIngestionService:
                 return doc
 
             stored = await self._embed_and_store(doc_id, data_source_id, chunks)
+            chunks_with_embedding = stored - getattr(self, "_last_failed_embeddings", 0)
 
             word_count = sum(len(s.text.split()) for s in sections)
             # For PDF: total_pages = file page count; pages_with_text = count of pages with extractable text
@@ -130,6 +178,17 @@ class DocumentIngestionService:
                 "page_count": int(total_pages),
                 "pages_with_text": int(pages_with_text),
                 "section_count": len(sections),
+                # RELIABILITY: a document used to be marked "ready" with a
+                # normal chunk_count even when every embedding call failed
+                # (commonly: no embedding API key configured, previously only
+                # logged at debug level) -- nothing in the document's own
+                # metadata distinguished it from a fully-searchable one,
+                # visible only via a separate, easy-to-miss deployment-wide
+                # health endpoint. Surfaced here so a document list/detail UI
+                # can show it.
+                "chunks_with_embedding": chunks_with_embedding,
+                "chunks_total": stored,
+                "has_embeddings": chunks_with_embedding > 0,
             }
 
             await self._session.execute(
@@ -540,6 +599,19 @@ class DocumentIngestionService:
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
+        # QUALITY: a chars/4 heuristic is weakest exactly where this module
+        # explicitly supports multilingual content (Khmer/Thai/CJK have a
+        # very different char-to-token ratio than English), risking mis-sized
+        # chunks and prompt-budget overruns for those languages specifically.
+        # tiktoken is already a hard dependency (used elsewhere for LLM
+        # calls); cl100k_base is a reasonable universal approximation for
+        # chunk-sizing purposes even against non-OpenAI models.
+        encoding = _get_tiktoken_encoding()
+        if encoding is not None:
+            try:
+                return max(1, len(encoding.encode(text)))
+            except Exception:
+                pass
         return max(1, len(text) // APPROX_CHARS_PER_TOKEN)
 
     # ── Embedding & Storage ──────────────────────────────────────────────
@@ -549,6 +621,8 @@ class DocumentIngestionService:
     ) -> int:
         """Generate embeddings in batches and persist chunks to DB."""
         stored = 0
+        failed_embeddings = 0
+        pgvector_ok = await self._pgvector_available_check()
 
         for batch_start in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
             batch = chunks[batch_start : batch_start + EMBEDDING_BATCH_SIZE]
@@ -558,28 +632,82 @@ class DocumentIngestionService:
                 return_exceptions=True,
             )
 
+            # (chunk_id, embedding) pairs needing the pgvector column set via
+            # raw SQL below -- the ORM model has no typed column for it (see
+            # the comment on the UPDATE below for why).
+            pgvector_writes: List[Tuple[uuid.UUID, List[float]]] = []
+
             for chunk, emb_result in zip(batch, embeddings):
                 embedding = None
                 if isinstance(emb_result, list):
                     embedding = emb_result
                 elif isinstance(emb_result, Exception):
                     logger.warning("Embedding failed for chunk %d: %s", chunk.chunk_index, emb_result)
-                # get_embedding returns None on failure; chunk stored without embedding (keyword-only retrieval)
+                    failed_embeddings += 1
+                else:
+                    # get_embedding returns None on failure; chunk stored without embedding (keyword-only retrieval)
+                    failed_embeddings += 1
 
+                chunk_id = uuid.uuid4()
                 row = DocumentChunk(
-                    id=uuid.uuid4(),
+                    id=chunk_id,
                     document_id=doc_id,
                     data_source_id=data_source_id,
                     chunk_index=chunk.chunk_index,
                     content=chunk.content,
                     token_count=chunk.token_count,
                     embedding=embedding,
+                    embedding_model=embedding_service.current_model_id() if embedding is not None else None,
+                    embedding_dims=len(embedding) if embedding is not None else None,
                     chunk_metadata=chunk.metadata or None,
                 )
                 self._session.add(row)
                 stored += 1
+                # embedding_vector is a fixed-dimension pgvector column (see
+                # migration 2026_05_23_pgvector_embeddings); only write when
+                # the embedding actually matches that dimension, matching the
+                # same guard the migration's own backfill UPDATE uses.
+                if pgvector_ok and embedding and len(embedding) == PGVECTOR_EMBEDDING_DIMENSIONS:
+                    pgvector_writes.append((chunk_id, embedding))
 
             await self._session.commit()
+
+            if pgvector_writes:
+                # RELIABILITY: this column used to only ever be populated by a
+                # one-time migration-time backfill -- every chunk ingested
+                # since then had embedding_vector permanently NULL, silently
+                # collapsing retrieval to a full linear Python scan over
+                # every chunk's JSONB embedding (see
+                # RAGRetrievalService._retrieve_pgvector's NULL filter and
+                # its JSONB fallback). No ORM column type is declared for
+                # this on purpose: `pgvector` isn't an installed Python
+                # dependency in this image, and the column itself is optional
+                # (the migration skips it entirely when the Postgres `vector`
+                # extension isn't available) -- raw SQL with the same
+                # `::vector` cast the migration's own backfill uses avoids
+                # both problems.
+                from sqlalchemy import text as _sa_text
+
+                try:
+                    for chunk_id, embedding in pgvector_writes:
+                        vec_literal = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+                        await self._session.execute(
+                            _sa_text(
+                                "UPDATE document_chunks SET embedding_vector = :vec::vector WHERE id = :id"
+                            ),
+                            {"vec": vec_literal, "id": chunk_id},
+                        )
+                    await self._session.commit()
+                except Exception as exc:
+                    logger.warning("Failed to write embedding_vector for a batch, JSONB embedding still stored: %s", exc)
+                    await self._session.rollback()
+
+        if failed_embeddings:
+            logger.warning(
+                "%d/%d chunks stored without an embedding for document %s (keyword-only retrieval for those)",
+                failed_embeddings, stored, doc_id,
+            )
+        self._last_failed_embeddings = failed_embeddings
 
         return stored
 

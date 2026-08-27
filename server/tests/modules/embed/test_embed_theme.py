@@ -66,6 +66,29 @@ async def test_verify_embed_token_returns_the_stored_theme():
 
 
 @pytest.mark.asyncio
+async def test_report_scope_builds_a_singular_embed_report_url():
+    """Reports reuse this same JWT embed-token system rather than a
+    report-specific auth mechanism - the URL it builds must match the real
+    frontend route (client/src/app/embed/report/[id]/page.tsx), not a typo'd
+    plural the way the old dashboard export endpoint's hand-built URL did."""
+    created = await embed_service.create_embed_token(
+        user_id="u1", org_id="org1", name="[export] report", scopes=["report"],
+        resource_id="conv-1:msg-1",
+    )
+    assert created["embed_urls"]["report"].endswith("/embed/report/conv-1:msg-1?token=" + created["token"])
+
+
+@pytest.mark.asyncio
+async def test_verify_embed_token_accepts_report_scope():
+    created = await embed_service.create_embed_token(
+        user_id="u1", org_id="org1", name="[export] report", scopes=["report"],
+        resource_id="conv-1:msg-1",
+    )
+    verified = await embed_service.verify_embed_token(created["token"], required_scope="report")
+    assert verified["resource_id"] == "conv-1:msg-1"
+
+
+@pytest.mark.asyncio
 async def test_update_embed_token_theme_changes_branding_without_new_token():
     created = await embed_service.create_embed_token(
         user_id="u1", org_id="org1", name="Dash", scopes=["dashboard"], resource_id="d1",

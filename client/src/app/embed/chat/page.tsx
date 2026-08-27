@@ -28,6 +28,7 @@ import {
   displayText,
   drainSSEBuffer,
   extractAnalyzeRunView,
+  isNarrationToken,
   isSubstantiveCompleteEvent,
   type CitationItem,
   type StreamingAccumulator,
@@ -74,7 +75,7 @@ interface ChatMessage {
     index: number;
     title: string;
     chart_type: string;
-    status?: string;
+    status?: 'pending' | 'ready' | 'failed';
   }>;
   dashboardCreated?: Record<string, unknown> | null;
   followUpQuestions?: string[];
@@ -84,16 +85,6 @@ function resolveAnalysisMode(config: { allowed_modes?: string[]; capabilities?: 
   if (!config) return 'standard';
   if (config.allowed_modes?.length) return config.allowed_modes[0];
   return config.capabilities === 'full_engine' ? 'standard' : 'ai_search';
-}
-
-function isNarrationToken(evt: Record<string, unknown>): boolean {
-  if (evt.type !== 'token' || !evt.chunk) return false;
-  return (
-    evt.kind === 'narration' ||
-    evt.node === 'rag_synthesis' ||
-    evt.node === 'conversational' ||
-    evt.kind === undefined
-  );
 }
 
 function buildAssistantPatch(
@@ -452,11 +443,12 @@ function EmbedChatContent() {
               ? resolveChatChartDisplay(msg.chartConfig, msg.queryResult, msg)
               : { mode: 'none' as const };
           const hasHybridData = !!(msg.chartConfig || (msg.queryResult && msg.queryResult.length > 0));
-          const showDashboardPlan =
+          const showDashboardPlan = Boolean(
             msg.role === 'assistant' &&
-            (msg.dashboardKpiPlan ||
-              msg.dashboardWidgetsReady?.length ||
-              msg.dashboardCreated?.dashboard_id);
+              (msg.dashboardKpiPlan ||
+                msg.dashboardWidgetsReady?.length ||
+                msg.dashboardCreated?.dashboard_id),
+          );
 
           return (
             <div

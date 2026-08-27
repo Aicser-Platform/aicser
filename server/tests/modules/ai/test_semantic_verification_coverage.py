@@ -2,8 +2,10 @@
 question" check for chart_analysis — dashboard/executive_report/kb_answer/multi_step
 had no semantic check at all, only the structural verify_goal (widget count, etc.),
 which can't catch a structurally-fine-but-off-topic answer. This now covers every
-deliverable type except export (a file, not a text answer) and custom (no fixed
-notion of "correct" to check).
+deliverable type except export (a file, not a text answer). custom IS now covered
+too — judged against the goal's own success_criteria rather than skipped, since a
+dynamically-composed plan should still be held to some bar (see planner.py's custom
+branch and kernel/verifier.py's is_custom handling).
 """
 
 from unittest.mock import AsyncMock
@@ -30,6 +32,7 @@ def _fake_litellm(passed: bool = True, reason: str = ""):
         DeliverableType.executive_report,
         DeliverableType.kb_answer,
         DeliverableType.multi_step,
+        DeliverableType.custom,
     ],
 )
 @pytest.mark.asyncio
@@ -44,10 +47,9 @@ async def test_semantic_verification_now_covers_this_deliverable_type(deliverabl
     assert result.heal_action == "replanner"
 
 
-@pytest.mark.parametrize("deliverable_type", [DeliverableType.export, DeliverableType.custom])
 @pytest.mark.asyncio
-async def test_semantic_verification_still_skips_export_and_custom(deliverable_type):
-    goal = AgentGoal(objective="export as pdf", deliverable_type=deliverable_type)
+async def test_semantic_verification_still_skips_export():
+    goal = AgentGoal(objective="export as pdf", deliverable_type=DeliverableType.export)
     state = {"query": "export this as pdf", "message": "Here is your export."}
 
     result = await verify_goal_semantic(goal, state, _fake_litellm(passed=False))

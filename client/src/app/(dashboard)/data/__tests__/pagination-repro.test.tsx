@@ -58,9 +58,9 @@ function ControlledPaginationTable() {
 }
 
 async function pickPageSize20() {
-  const sizeChangerTrigger = document.querySelector('.ant-pagination-options-size-changer');
+  const sizeChangerTrigger = document.querySelector('.ant-pagination-options-size-changer-select');
   expect(sizeChangerTrigger).toBeTruthy();
-  fireEvent.mouseDown(sizeChangerTrigger!.querySelector('.ant-select-selector')!);
+  fireEvent.mouseDown(sizeChangerTrigger!.querySelector('.ant-select-content')!);
   const option = await screen.findByTitle('20 / page');
   fireEvent.click(option);
 }

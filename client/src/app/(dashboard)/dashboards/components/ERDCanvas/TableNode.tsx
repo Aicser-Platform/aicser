@@ -88,7 +88,12 @@ export function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
     <div className={`erd-table${selected ? ' selected' : ''}`}>
       {/* Header */}
       <div className="erd-table-header">
-        <span className="text-black dark:text-white font-semibold" title={tableName}>
+        {/* Header bg is always the brand primary color regardless of app
+            theme, so the label needs primary-contrast text, not light/dark
+            app-theme text - dark:text-white put white on the same ~2.2:1
+            teal that fails WCAG AA, only in dark mode (light mode's default
+            text-black happened to pass by coincidence). */}
+        <span className="text-[var(--color-primary-text,#000)] font-semibold" title={tableName}>
           {tableName}
         </span>
         <button className="erd-table-menu nodrag" aria-label={t('modeling_table_options')}>

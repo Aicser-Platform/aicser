@@ -213,7 +213,8 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
     router.push(
       getChatHref({
         prompt: buildExplainQuery(title, summary),
-        dataSourceId: widget?.dataSourceId,
+        // Chat's deep-link reader only checks the snake_case key — see chat/page.tsx.
+        data_source_id: widget?.dataSourceId,
       }),
     );
     onClose();
@@ -294,7 +295,7 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
         </div>
       }
       placement="right"
-      width={420}
+      size={420}
       open={open}
       onClose={handleClose}
       closeIcon={<CloseOutlined />}

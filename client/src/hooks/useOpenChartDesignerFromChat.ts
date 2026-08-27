@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { message as antMessage } from 'antd';
+import { App } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useChartDesignerStore } from '@/app/(dashboard)/chart-designer/stores/useChartDesignerStore';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -27,6 +27,7 @@ const isEnterpriseEdition = ['enterprise', 'ee'].includes(
 
 export function useOpenChartDesignerFromChat() {
   const t = useTranslations('chat_page');
+  const { message: antMessage } = App.useApp();
   const router = useRouter();
   const [opening, setOpening] = useState(false);
   const saveChart = useChartDesignerStore((s) => s.saveChart);

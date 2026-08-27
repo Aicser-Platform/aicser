@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { ShareAltOutlined, CodeOutlined } from '@ant-design/icons';
+import { ShareAltOutlined, CodeOutlined, UndoOutlined, RedoOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
@@ -14,6 +14,7 @@ import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
+import { useCanUndo, useCanRedo, useUndo, useRedo } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
 
 interface ChartDesignerToolbarProps {
   selectedWidget: ChartDesignerWidget | null;
@@ -23,6 +24,12 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const t = useTranslations('chart_designer');
   const tf = useTranslations('feed_publish');
   const te = useTranslations('embed_modal');
+  const th = useTranslations('dashboard_tabs');
+
+  const canUndo = useCanUndo();
+  const canRedo = useCanRedo();
+  const undo = useUndo();
+  const redo = useRedo();
   const { user } = useAuth();
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
@@ -189,6 +196,30 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
             {t('toolbar_no_selection')}
           </span>
         )}
+        <div className="chart-designer-toolbar-history inline-flex items-center rounded-md border border-border-light overflow-hidden shrink-0">
+          <Tooltip title={th('undo_shortcut')}>
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 text-text-secondary hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+              disabled={!canUndo}
+              onClick={() => undo?.()}
+              aria-label={th('undo')}
+            >
+              <UndoOutlined />
+            </button>
+          </Tooltip>
+          <Tooltip title={th('redo_shortcut')}>
+            <button
+              type="button"
+              className="flex items-center justify-center w-8 h-8 text-text-secondary border-l border-border-light hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+              disabled={!canRedo}
+              onClick={() => redo?.()}
+              aria-label={th('redo')}
+            >
+              <RedoOutlined />
+            </button>
+          </Tooltip>
+        </div>
         <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
           <Tooltip title={selectedWidget ? t('share_menu_tooltip') : t('share_select_chart')}>
             <Button

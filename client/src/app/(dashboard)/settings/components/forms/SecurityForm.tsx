@@ -30,7 +30,7 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
     >
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('security_two_factor_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('security_two_factor_desc')}
@@ -45,7 +45,7 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('security_session_timeout_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('security_session_timeout_desc')}
@@ -67,7 +67,7 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('security_login_notifications_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('security_login_notifications_desc')}
@@ -82,7 +82,7 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('security_suspicious_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('security_suspicious_desc')}

@@ -105,14 +105,17 @@ export function buildChatInsightDraft(params: {
     previewData = extractPreviewData(shared.chartData);
     previewType = resolvePreviewType(shared.chartType);
   } else if (hasChart) {
-    const snapshot = extractEchartsSnapshotOption(hydrated);
+    const hydratedConfig =
+      hydrated && typeof hydrated === 'object' ? (hydrated as Record<string, unknown>) : undefined;
+    const snapshot = extractEchartsSnapshotOption(hydratedConfig);
     if (snapshot) {
+      const inferredChartType = hydratedConfig ? inferChartTypeFromConfig(hydratedConfig) : 'bar';
       chartPreview = {
-        chartType: pinSource.chartType || 'bar',
+        chartType: inferredChartType,
         chartOptions: { __echartsSnapshot: snapshot, __source: 'ai_chat' },
-        chartQuery: pinSource.chartQuery as Record<string, unknown> | undefined,
+        chartQuery: pinSource.executionMetadata?.chart_query || pinSource.ai_metadata?.chart_query,
       };
-      previewType = resolvePreviewType(pinSource.chartType || 'bar');
+      previewType = resolvePreviewType(inferredChartType);
     }
   }
 

@@ -16,6 +16,10 @@ class RegisterRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     password: str = Field(min_length=8)
+    # Required only when the account already has a password (verified in
+    # change_user_password) -- optional here so first-time password setup
+    # (invite acceptance, OAuth-only accounts) keeps working with no value.
+    current_password: Optional[str] = None
 
 
 class ForgotPasswordRequest(BaseModel):

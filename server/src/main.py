@@ -17,10 +17,17 @@ if project_root not in sys.path:
 _LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, _LOG_LEVEL, logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    format="%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s",
     stream=sys.stdout,
     force=True,
 )
+# Every log record needs a request_id attribute for the format string above,
+# including ones emitted before any request has started (startup) or outside
+# a request entirely (background jobs) -- the filter supplies "-" for those.
+from src.core.middleware import RequestIDLogFilter  # noqa: E402
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(RequestIDLogFilter())
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -29,16 +36,16 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.core.router import api_router
-from src.core.cache import cache
 from src.core.config import settings
 from src.core.edition import is_ee_enabled
 from src.core.production import is_production
-from src.core.lifespan import lifespan, _check_predictive_deps, _check_ai_capabilities
+from src.core.lifespan import lifespan
 from src.core.middleware import (
     ApiRouteRateLimitMiddleware,
     EmbedTokenMiddleware,
     PrometheusMiddleware,
     RateLimitMiddleware,
+    RequestIDMiddleware,
 )
 from src.shared.api_errors import error_body, http_exception_to_response
 from src.shared.observability.setup import instrument_fastapi
@@ -61,12 +68,19 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+# SECURITY: /docs, /docs/json, and /redoc used to be exposed unconditionally
+# -- unlike whoami-raw/auth_echo, which ARE correctly gated on is_production()
+# -- handing anyone the full route/schema map (every endpoint path, request/
+# response shape, auth requirements) for this deployment. Passing None
+# disables FastAPI's route registration for these entirely in production.
+_expose_api_docs = not is_production()
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION or os.getenv("AISER_VERSION") or "0.0.1",
-    openapi_url="/docs/json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url="/docs/json" if _expose_api_docs else None,
+    docs_url="/docs" if _expose_api_docs else None,
+    redoc_url="/redoc" if _expose_api_docs else None,
     contact=settings.APP_CONTACT,
     lifespan=lifespan,
 )
@@ -100,6 +114,9 @@ if is_ee_enabled():
         logger.warning("Audit logging middleware not loaded: %s", _audit_err)
 
 app.add_middleware(PrometheusMiddleware)
+# Outermost (registered last -> Starlette runs it first) so every other
+# middleware and every log line for this request has the ID available.
+app.add_middleware(RequestIDMiddleware)
 instrument_fastapi(app)
 
 # ── Static media (feed card thumbnails) ───────────────────────────────────────
@@ -199,68 +216,24 @@ async def exception_handler(request: Request, exc: Exception):
     )
 
 # ── System endpoints ──────────────────────────────────────────────────────────
-
-def _collect_health_payload() -> tuple[dict, int]:
-    """Build health JSON and suggested HTTP status (200 vs 503)."""
-    out: dict = {"status": "healthy"}
-    critical_down = False
-
-    # Redis
-    try:
-        if cache and getattr(cache, "redis_client", None):
-            cache.redis_client.ping()
-            out["redis"] = "up"
-        elif cache:
-            out["redis"] = "fallback"
-        else:
-            out["redis"] = "unavailable"
-            if is_production():
-                critical_down = True
-    except Exception:
-        out["redis"] = "down"
-        if is_production():
-            critical_down = True
-
-    # ARQ worker — check if Redis queue is reachable and worker appears active.
-    worker_status = "unknown"
-    try:
-        import redis as _redis
-
-        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        _r = _redis.from_url(_redis_url, socket_connect_timeout=1, socket_timeout=1)
-        hb = _r.get("aiser:worker:heartbeat")
-        if hb:
-            worker_status = "up"
-        else:
-            result_keys = _r.keys("arq:result:*")
-            worker_status = "degraded" if result_keys else "down"
-        _r.close()
-    except Exception:
-        worker_status = "unavailable"
-    out["worker"] = worker_status
-    if is_production() and worker_status in ("down", "unavailable"):
-        critical_down = True
-
-    out["predictive"] = _check_predictive_deps()
-    out["capabilities"] = _check_ai_capabilities()
-
-    if critical_down:
-        out["status"] = "degraded"
-    status_code = 503 if critical_down else 200
-    return out, status_code
+# Shared by the secondary /health endpoints in ee/modules/ai/router.py and
+# src/modules/data/router.py -- see src/shared/health.py for the single
+# source of truth for what "healthy" means (Postgres, Redis, ARQ worker,
+# predictive deps, AI capabilities).
+from src.shared.health import collect_health_payload  # noqa: E402
 
 
 @app.get("/health")
 async def health_check():
     """Liveness check — always returns 200 unless process is dead (use /ready for deps)."""
-    payload, _ = _collect_health_payload()
+    payload, _ = await collect_health_payload()
     return JSONResponse(content=payload, status_code=200)
 
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness — 503 when critical dependencies are unavailable in production."""
-    payload, status_code = _collect_health_payload()
+    """Readiness — 503 when critical dependencies (Postgres, Redis in prod) are unavailable."""
+    payload, status_code = await collect_health_payload()
     return JSONResponse(content=payload, status_code=status_code)
 
 

@@ -47,6 +47,11 @@ class DocumentChunk(Base):
     content = Column(Text, nullable=False)
     token_count = Column(Integer, nullable=True)
     embedding = Column(JSONB, nullable=True)  # JSONB list of floats (pgvector migration optional)
+    # Which model produced `embedding`/`embedding_vector`, and its width -- lets a
+    # config-vs-stored-data mismatch (e.g. EMBEDDING_MODEL changed) be detected
+    # instead of silently degrading retrieval. See current_embedding_model_id().
+    embedding_model = Column(String, nullable=True)
+    embedding_dims = Column(Integer, nullable=True)
     chunk_metadata = Column("metadata", JSONB, nullable=True)  # page_number, section_title, heading, etc.
 
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())

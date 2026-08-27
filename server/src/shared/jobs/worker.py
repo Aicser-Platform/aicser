@@ -20,6 +20,7 @@ from src.shared.jobs.tasks import (
     evaluate_alert_rules,
     refresh_artifact_data,
     sync_artifacts_after_schema_change,
+    refresh_all_active_schemas,
 )
 
 try:
@@ -50,6 +51,7 @@ _JOB_FUNCTIONS = [
     evaluate_alert_rules,
     refresh_artifact_data,           # on-demand + cron: re-execute widget queries
     sync_artifacts_after_schema_change,  # triggered when data source schema drifts
+    refresh_all_active_schemas,      # cron: fans out schema refresh + drift detection to every active source
 ]
 if _AI_JOB_FN is not None:
     _JOB_FUNCTIONS.append(_AI_JOB_FN)
@@ -95,6 +97,11 @@ class WorkerSettings:
     max_jobs = 10
     job_timeout = 300  # 5 minutes max per job
     keep_result = 3600  # Keep results for 1 hour
+    # Task functions now re-raise on failure (instead of swallowing exceptions
+    # into a {"success": False} dict) so ARQ's retry mechanism and
+    # job_tracing's error capture actually engage. Bound the retries so a
+    # persistently-failing job doesn't retry forever.
+    max_tries = 3
 
     cron_jobs = [
         cron(
@@ -107,5 +114,11 @@ class WorkerSettings:
             _FUNCTIONS_BY_NAME["evaluate_alert_rules"],
             minute=set(range(60)),
             name="alert_rule_evaluation",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["refresh_all_active_schemas"],
+            hour=set(range(0, 24, 6)),
+            minute=15,
+            name="schema_refresh_and_drift_check",
         ),
     ]

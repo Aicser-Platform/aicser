@@ -29,6 +29,8 @@ interface SchedulePublishModalsProps {
     recipients: string[];
     subject: string;
     body: string;
+    dataSourceId: string | null;
+    refreshDataBeforeSend: boolean;
   };
   setAutoSendForm: (form: any | ((prev: any) => any)) => void;
   handleSaveAutoSend: () => void;

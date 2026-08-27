@@ -82,7 +82,9 @@ async def _save_uploaded_file(file: UploadFile) -> str:
     return file_path
 
 
-async def _create_kb_data_source(name: str, user_id: str, description: str = "") -> str:
+async def _create_kb_data_source(
+    name: str, user_id: str, description: str = "", project_id: Optional[str] = None
+) -> str:
     """Create a knowledge_base data source record and return its ID."""
     from src.modules.data.services.data_sources_crud import DataSourcesCRUD, DataSourceCreate
     from src.db.session import async_session
@@ -94,6 +96,7 @@ async def _create_kb_data_source(name: str, user_id: str, description: str = "")
         format="knowledge_base",
         description=description or "Knowledge base for document retrieval",
         connection_config={},
+        project_id=project_id,
         is_active=True,
     )
     async with async_session() as db:
@@ -118,6 +121,7 @@ class KnowledgeCreateResponse(BaseModel):
 async def create_knowledge_base(
     name: str = Form(...),
     description: str = Form(""),
+    project_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...),
     session: AsyncSession = Depends(get_async_session),
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
@@ -134,10 +138,25 @@ async def create_knowledge_base(
 
     # Create KB data source
     try:
-        ds_id = await _create_kb_data_source(name, user_id, description)
+        ds_id = await _create_kb_data_source(name, user_id, description, project_id=project_id)
     except Exception as exc:
         logger.exception("Failed to create KB data source")
         raise HTTPException(status_code=500, detail=f"Failed to create knowledge base: {str(exc)[:200]}")
+
+    # This CE flow predates /knowledge's Library wrapper and (being CE) can't
+    # import the EE module that owns it directly — without this, the data source
+    # works fine everywhere else (chat, /data) but silently never appears on
+    # /knowledge, since that page lists Libraries, not raw data sources.
+    from src.core.edition import is_ee_enabled
+
+    if is_ee_enabled():
+        try:
+            import importlib
+
+            _lib_service = importlib.import_module("ee.modules.knowledge.library_service")
+            await _lib_service.KnowledgeLibraryService.ensure_library_for_data_source(ds_id, user_id)
+        except Exception:
+            logger.warning("Knowledge library wrapper creation skipped for %s", ds_id, exc_info=True)
 
     # Ingest each file
     from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
@@ -387,6 +406,22 @@ async def search_knowledge_base(
     """
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:search")
+
+    # SECURITY: the permission check above is global ("can this user search
+    # *some* knowledge base"), not scoped to request.data_source_id -- any
+    # authenticated user who obtained another org's KB data_source_id
+    # (visible in URLs, other API responses, etc.) could retrieve its private
+    # document search results. Require an explicit grant on that specific
+    # data source, same primitive src/modules/data/router.py uses to gate
+    # per-source access elsewhere.
+    if request.data_source_id:
+        from src.modules.data.services.data_source_access_service import DataSourceAccessService
+
+        allowed = await DataSourceAccessService.can_access(
+            user_id, request.data_source_id, "data:view", session=session
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Not authorized to access this data source")
 
     from src.modules.knowledge.services.rag_retrieval_service import RAGRetrievalService
 

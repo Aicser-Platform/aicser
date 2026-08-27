@@ -108,7 +108,7 @@ export function MobileBottomNav() {
         placement="bottom"
         open={moreOpen}
         onClose={() => setMoreOpen(false)}
-        height="auto"
+        size="auto"
         className="mobile-more-drawer"
         styles={{
           body: { padding: '8px 0 16px', maxHeight: 'min(70vh, 520px)', overflowY: 'auto' },

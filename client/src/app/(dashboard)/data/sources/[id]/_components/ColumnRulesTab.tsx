@@ -97,7 +97,7 @@ export const ColumnRulesTab: React.FC<{ dataSourceId: string; active: boolean }>
             title: t('data_source_rls_policy_name'),
             key: 'name',
             render: (_, policy) => (
-              <Space direction="vertical" size={4}>
+              <Space orientation="vertical" size={4}>
                 <Space size={4}>
                   <Text strong>{policy.name}</Text>
                   <Tag color={policy.enabled ? 'green' : 'default'}>{t('policy_active')}</Tag>

@@ -10,7 +10,12 @@ const PROJECT = 'a1b2c3d4-1111-4222-8333-444455556666';
 
 async function loadService(edition: 'ce' | 'enterprise') {
   vi.resetModules();
+  // The service's IS_ENTERPRISE_EDITION check is `NEXT_PUBLIC_EDITION === 'enterprise'
+  // || EDITION === 'enterprise'` - both must be stubbed, since a dev-ee container (where
+  // these tests actually run, CI being disabled) has a real EDITION=enterprise env var
+  // that would otherwise leak through and defeat the CE-mode stub below.
   vi.stubEnv('NEXT_PUBLIC_EDITION', edition === 'enterprise' ? 'enterprise' : '');
+  vi.stubEnv('EDITION', edition === 'enterprise' ? 'enterprise' : '');
   return await import('../chartBuilderService');
 }
 

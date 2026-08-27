@@ -155,7 +155,7 @@ export const pricingPlans: PricingPlan[] = [
       'Team collaboration & comments',
       'Role-based permissions',
       'Scheduled reports',
-      'Webhooks & integrations',
+      'Integrations',
       'API access',
       'Dedicated support',
       '$25/seat for additional users',

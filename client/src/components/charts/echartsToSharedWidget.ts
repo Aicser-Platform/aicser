@@ -69,12 +69,20 @@ function buildStatFromConfig(cfg: Record<string, unknown>): SharedChartProps | n
   const meta = (cfg._chart_query as Record<string, unknown>) || {};
   return {
     chartType: 'stat',
-    chartData: { value },
+    chartData: { x: [], y: [], value },
     chartOptions: {
       title: title || 'KPI',
       format: 'number',
-      showTrend: false,
-      layout: 'default',
+      // 'tile' gives the card its own bordered, palette-tinted background — the
+      // same layout StatWidget offers on a dashboard, but self-contained rather
+      // than relying on outer grid-cell chrome the chat message bubble doesn't
+      // provide (that's what made the plain 'default' layout read as bare text
+      // floating in space instead of a KPI card).
+      layout: 'tile',
+      // No explicit showTrend here — StatWidget only renders a trend badge when
+      // it can actually compute one (comparisonValue/sparklineValues), neither
+      // of which chartData above provides, so this doesn't fabricate a trend;
+      // it just stops pre-emptively hiding one if a future response adds them.
       ...CHART_ANIMATION_DEFAULTS,
     },
     chartQuery: meta,
@@ -647,8 +655,10 @@ export function resolveSharedChartProps(
       if (yKey && row[yKey] != null) {
         return tagChatSource({
           chartType: 'stat',
-          chartData: { value: Number(row[yKey]) },
-          chartOptions: { title: yKey, format: 'number', showTrend: false, layout: 'default' },
+          chartData: { x: [], y: [], value: Number(row[yKey]) },
+          // Same layout choice as buildStatFromConfig above — keep both stat-building
+          // paths in this file rendering identically rather than drifting apart.
+          chartOptions: { title: yKey, format: 'number', layout: 'tile' },
           chartQuery: { yMetric: yKey },
         });
       }
@@ -683,6 +693,9 @@ export function buildSharedChartPropsForType(
     ...props.chartOptions,
     ...CHART_ANIMATION_DEFAULTS,
     showLegend: chartType === 'pie' || chartType === 'donut' ? true : props.chartOptions?.showLegend,
+    // Same tile treatment as the AI's own stat responses — manually switching an
+    // existing chart to "Stat" via the chart-type menu shouldn't look different.
+    ...(chartType === 'stat' ? { layout: props.chartOptions?.layout || 'tile' } : {}),
   };
   if (chartType === 'donut') {
     chartOptions.innerRadius = 40;

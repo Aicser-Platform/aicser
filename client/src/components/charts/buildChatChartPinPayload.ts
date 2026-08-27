@@ -39,7 +39,7 @@ export interface ChatMessagePinSource {
   libraryChartId?: string | null;
 }
 
-function inferChartTypeFromConfig(config: Record<string, unknown>): string {
+export function inferChartTypeFromConfig(config: Record<string, unknown>): string {
   if (config.aiserWidgetType === 'stat') return 'stat';
   const series = config.series as Array<{ type?: string; areaStyle?: unknown; stack?: string }> | undefined;
   const first = series?.[0];

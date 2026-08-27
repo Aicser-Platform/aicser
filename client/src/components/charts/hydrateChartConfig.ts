@@ -1,11 +1,13 @@
+import type { ChatEchartsConfig } from './echartsChatConfig';
+
 /** Unwrap primary_chart wrapper used by backend chart builder. */
-export function rawChartConfig(config: unknown): Record<string, unknown> {
+export function rawChartConfig(config: unknown): ChatEchartsConfig {
   if (!config || typeof config !== 'object') return {};
   const c = config as Record<string, unknown>;
   if (c.primary_chart && typeof c.primary_chart === 'object') {
-    return c.primary_chart as Record<string, unknown>;
+    return c.primary_chart as ChatEchartsConfig;
   }
-  return c;
+  return c as ChatEchartsConfig;
 }
 
 /**

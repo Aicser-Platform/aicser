@@ -29,7 +29,6 @@ import {
 } from '@ant-design/icons';
 import { WorkflowNavigation, WorkflowStep } from '../WorkflowNavigation';
 
-const { Step } = Steps;
 const { Title, Text, Paragraph } = Typography;
 // const { TabPane } = Tabs; // Deprecated - using items prop instead
 const { TextArea } = Input;
@@ -364,7 +363,7 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                 {t('feedback_desc')}
             </Paragraph>
 
-            <Space direction="vertical" style={{ width: '100%' }} size="large">
+            <Space orientation="vertical" style={{ width: '100%' }} size="large">
                 <div>
                     <Text strong>{t('accuracy_question')}</Text>
                     <br />
@@ -452,28 +451,33 @@ const DataModelingWorkflow: React.FC<DataModelingWorkflowProps> = ({
                     </Space>
                 }
             >
-                <Steps current={currentStep} style={{ marginBottom: 24 }}>
-                    <Step
-                        title={t('step_review_title')}
-                        description={t('step_review_desc')}
-                        icon={<EyeOutlined />}
-                    />
-                    <Step
-                        title={t('step_customize_title')}
-                        description={t('step_customize_desc')}
-                        icon={<EditOutlined />}
-                    />
-                    <Step
-                        title={t('step_feedback_title')}
-                        description={t('step_feedback_desc')}
-                        icon={<StarOutlined />}
-                    />
-                    <Step
-                        title={t('step_deploy_title')}
-                        description={t('step_deploy_desc')}
-                        icon={<DeploymentUnitOutlined />}
-                    />
-                </Steps>
+                <Steps
+                    current={currentStep}
+                    size="medium"
+                    style={{ marginBottom: 24 }}
+                    items={[
+                        {
+                            title: t('step_review_title'),
+                            content: t('step_review_desc'),
+                            icon: <EyeOutlined />,
+                        },
+                        {
+                            title: t('step_customize_title'),
+                            content: t('step_customize_desc'),
+                            icon: <EditOutlined />,
+                        },
+                        {
+                            title: t('step_feedback_title'),
+                            content: t('step_feedback_desc'),
+                            icon: <StarOutlined />,
+                        },
+                        {
+                            title: t('step_deploy_title'),
+                            content: t('step_deploy_desc'),
+                            icon: <DeploymentUnitOutlined />,
+                        },
+                    ]}
+                />
 
                 <Card style={{ minHeight: '500px' }}>
                     {currentStep === 0 && renderVisualModel()}

@@ -66,7 +66,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
       const count = def.countKey ? counts[def.countKey] : allCount;
       const isUnavailable = def.value !== 'all' && count === 0;
       return {
-        label: t('filter_asset_with_count', { label: t(def.labelKey), count }),
+        label: t('filter_asset_with_count', { label: t(def.labelKey), count: count ?? 0 }),
         value: def.value,
         disabled: isUnavailable && value.assetType !== def.value,
       };
@@ -99,7 +99,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
           <Select
             value={value.sort}
             onChange={(next) => update({ sort: next as FeedSort })}
-            className="min-w-[140px] [&>.ant-select-selector]:!rounded-lg"
+            className="min-w-[140px] [&>.ant-select-content]:!rounded-lg"
             options={[
               { label: t('sort_recommended'), value: 'recommended' },
               { label: t('sort_trending'), value: 'trending' },
@@ -110,7 +110,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
             value={value.assetType}
             onChange={(next) => update({ assetType: next as 'all' | AssetType })}
             options={assetSelectOptions}
-            className="min-w-[160px] [&>.ant-select-selector]:!rounded-lg"
+            className="min-w-[160px] [&>.ant-select-content]:!rounded-lg"
           />
           <Select
             mode="multiple"
@@ -118,7 +118,7 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
             value={value.tags}
             onChange={(next) => update({ tags: next })}
             options={(options.tags ?? []).map((tag) => ({ label: tag, value: tag }))}
-            className="min-w-[180px] sm:min-w-[200px] lg:w-[260px] [&>.ant-select-selector]:!rounded-lg"
+            className="min-w-[180px] sm:min-w-[200px] lg:w-[260px] [&>.ant-select-content]:!rounded-lg"
             maxTagCount={2}
           />
         </div>
