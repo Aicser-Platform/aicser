@@ -43,6 +43,13 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """PyIceberg's SqlCatalog owns the iceberg_catalog schema; Alembic must not manage it."""
+    if getattr(object, "schema", None) == "iceberg_catalog":
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -62,6 +69,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
+        include_object=include_object,
         version_table="alembic_version",
     )
 
@@ -87,6 +95,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
+            include_object=include_object,
             version_table="alembic_version",
         )
 

@@ -228,3 +228,85 @@ async def sync_artifacts_after_schema_change(
     except Exception as exc:
         logger.exception("sync_artifacts_after_schema_change failed: %s", exc)
         return {"success": False, "error": str(exc)}
+
+
+async def run_pipeline(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
+    """Execute one medallion pipeline run. EE-only; no-ops cleanly in CE."""
+    logger.info("Running data pipeline run %s", run_id)
+    try:
+        import uuid as _uuid
+
+        from src.db.session import async_session
+        from src.modules.pipeline.runner import run_pipeline_job
+
+        async with async_session() as db:
+            status = await run_pipeline_job(db, _uuid.UUID(run_id))
+        return {"success": status == "succeeded", "status": status, "run_id": run_id}
+    except ImportError:
+        logger.debug("pipeline module unavailable (CE build); skipping run %s", run_id)
+        return {"success": False, "error": "pipeline_unavailable"}
+    except Exception as e:
+        logger.error("Pipeline run %s failed: %s", run_id, e)
+        return {"success": False, "error": str(e)}
+
+
+async def dispatch_due_pipelines_job(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """One-minute tick: enqueue every pipeline whose schedule has come due."""
+    try:
+        from datetime import timezone
+
+        from src.db.session import async_session
+        from src.modules.pipeline.scheduler import dispatch_due_pipelines
+
+        async with async_session() as db:
+            run_ids = await dispatch_due_pipelines(db, datetime.now(timezone.utc))
+        return {"success": True, "dispatched": len(run_ids)}
+    except ImportError:
+        return {"success": True, "dispatched": 0}
+    except Exception as e:
+        logger.error("Pipeline dispatch failed: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+async def profile_staged_asset(ctx: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+    """Profile a staged upload and advance its onboarding session. EE-only."""
+    logger.info("Profiling staged asset for onboarding session %s", session_id)
+    try:
+        import uuid as _uuid
+
+        from src.db.session import async_session
+        from src.modules.pipeline.onboarding.service import run_profile
+
+        async with async_session() as db:
+            status = await run_profile(db, _uuid.UUID(session_id))
+        return {"success": status == "review", "status": status, "session_id": session_id}
+    except ImportError:
+        logger.debug("pipeline module unavailable (CE build); skipping %s", session_id)
+        return {"success": False, "error": "pipeline_unavailable"}
+    except Exception as e:
+        logger.error("Profiling session %s failed: %s", session_id, e)
+        return {"success": False, "error": str(e)}
+
+
+async def ingest_staged_asset(ctx: Dict[str, Any], session_id: str) -> Dict[str, Any]:
+    """Apply onboarding decisions and write the staged asset to Bronze. EE-only."""
+    logger.info("Ingesting staged asset for onboarding session %s", session_id)
+    try:
+        import uuid as _uuid
+
+        from src.db.session import async_session
+        from src.modules.pipeline.onboarding.service import run_ingest
+
+        async with async_session() as db:
+            status = await run_ingest(db, _uuid.UUID(session_id))
+        return {
+            "success": status == "ingested",
+            "status": status,
+            "session_id": session_id,
+        }
+    except ImportError:
+        logger.debug("pipeline module unavailable (CE build); skipping %s", session_id)
+        return {"success": False, "error": "pipeline_unavailable"}
+    except Exception as e:
+        logger.error("Ingest for session %s failed: %s", session_id, e)
+        return {"success": False, "error": str(e)}
