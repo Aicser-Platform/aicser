@@ -229,13 +229,31 @@ if is_ee_enabled():
         logger.warning("Platform intelligence router not loaded: %s", _err)
 
     try:
-        from ee.modules.data.router import router as oauth_connectors_router
+        from src.modules.pipeline.router import router as pipeline_router
         api_router.include_router(
-            oauth_connectors_router, prefix="/api", tags=["oauth-connectors"],
+            pipeline_router, prefix="/api", tags=["data-pipelines"],
             dependencies=[Depends(require_valid_license)],
         )
     except Exception as _err:
-        logger.warning("OAuth connectors router not loaded: %s", _err)
+        logger.warning("Pipeline router not loaded: %s", _err)
+
+    try:
+        from src.modules.pipeline.onboarding.router import router as onboarding_router
+        api_router.include_router(
+            onboarding_router, prefix="/api", tags=["data-onboarding"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Onboarding router not loaded: %s", _err)
+
+    try:
+        from src.modules.pipeline.catalog.router import router as catalog_router
+        api_router.include_router(
+            catalog_router, prefix="/api", tags=["data-catalog"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Catalog router not loaded: %s", _err)
 
     try:
         from ee.modules.schedule_email.router import router as schedule_email_router
