@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_router_is_mounted_under_catalog():
     from src.modules.pipeline.catalog.router import router
@@ -87,3 +89,90 @@ async def test_list_lake_objects_returns_an_empty_list_for_an_org_with_nothing(
     result = await module.list_lake_objects(db=FakeDB(), payload={})
 
     assert result == []
+
+
+def test_the_profiles_route_exists():
+    from src.modules.pipeline.catalog.router import router
+
+    routes = {(r.path, tuple(sorted(r.methods))) for r in router.routes}
+    assert ("/catalog/lake-objects/{lake_object_id}/profiles", ("GET",)) in routes
+
+
+async def test_profiles_maps_a_foreign_org_lake_object_to_404(monkeypatch):
+    from fastapi import HTTPException
+
+    from src.modules.pipeline.catalog import router as module
+
+    class FakeResult:
+        def scalar_one_or_none(self):
+            return None
+
+    class FakeDB:
+        async def execute(self, _statement):
+            return FakeResult()
+
+    monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.list_lake_object_profiles(
+            str(uuid.uuid4()), limit=20, db=FakeDB(), payload={}
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_profiles_maps_a_malformed_id_to_404(monkeypatch):
+    from fastapi import HTTPException
+
+    from src.modules.pipeline.catalog import router as module
+
+    with pytest.raises(HTTPException) as exc_info:
+        await module.list_lake_object_profiles(
+            "not-a-uuid", db=object(), payload={}
+        )
+
+    assert exc_info.value.status_code == 404
+
+
+async def test_profiles_returns_the_latest_rows_first(monkeypatch):
+    from src.modules.pipeline.catalog import router as module
+
+    owner = SimpleNamespace(id=uuid.uuid4())
+    newest = SimpleNamespace(
+        id=uuid.uuid4(),
+        health_score=91,
+        row_count=500,
+        sampled=False,
+        findings=[{"code": "null_ratio_high"}],
+        created_at=datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+
+    class FakeOwnerResult:
+        def scalar_one_or_none(self):
+            return owner
+
+    class FakeProfileScalars:
+        def all(self):
+            return [newest]
+
+    class FakeProfileResult:
+        def scalars(self):
+            return FakeProfileScalars()
+
+    class FakeDB:
+        def __init__(self):
+            self._responses = [FakeOwnerResult(), FakeProfileResult()]
+
+        async def execute(self, _statement):
+            return self._responses.pop(0)
+
+    monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
+
+    result = await module.list_lake_object_profiles(
+        str(owner.id), limit=20, db=FakeDB(), payload={}
+    )
+
+    assert len(result) == 1
+    assert result[0].id == str(newest.id)
+    assert result[0].health_score == 91
+    assert result[0].findings == [{"code": "null_ratio_high"}]
