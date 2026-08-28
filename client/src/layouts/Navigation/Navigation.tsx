@@ -11,6 +11,7 @@ import {
   AreaChartOutlined,
   BookOutlined,
   BellOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -53,9 +54,9 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
-  knowledge: <BookOutlined />,
-  'grp-operate': <BellOutlined />,
-  alerts: <BellOutlined />,
+  'grp-operate': <AppstoreOutlined />,
+  'platform-services': <AppstoreOutlined />,
+  pipelines: <NodeIndexOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -124,7 +125,37 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   );
 
   const enterpriseItems = React.useMemo<NavItemDef[]>(
-    () => buildEnterpriseSidebarItems(showAiNav),
+    () => [
+      ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
+      { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
+      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
+      {
+        kind: 'group',
+        key: 'dashboard-studio',
+        labelKey: NAV_LABEL_KEYS['dashboard-studio'],
+        children: [
+          { key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
+          { key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
+        ],
+      },
+      { kind: 'divider' },
+      {
+        kind: 'group',
+        key: 'grp-data',
+        labelKey: NAV_LABEL_KEYS['grp-data'],
+        children: [
+          { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+        ],
+      },
+      {
+        kind: 'group',
+        key: 'grp-operate',
+        labelKey: NAV_LABEL_KEYS['grp-operate'],
+        children: [
+          { key: 'pipelines', labelKey: NAV_LABEL_KEYS.pipelines, href: NAV_ROUTES.pipelines },
+        ],
+      },
+    ],
     [showAiNav]
   );
 

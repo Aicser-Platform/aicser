@@ -5,6 +5,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/data': ['grp-data'],
   '/knowledge': ['grp-data'],
   '/alerts': ['grp-operate'],
+  '/data-platform': ['grp-operate'],
+  '/pipelines': ['grp-operate'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -16,6 +18,8 @@ export const NAV_ROUTES: Record<string, string> = {
   data: '/data',
   knowledge: '/knowledge',
   alerts: '/alerts',
+  'platform-services': '/data-platform',
+  pipelines: '/pipelines',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
 };
@@ -36,6 +40,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   knowledge: 'knowledge_libraries',
   'grp-operate': 'cat_monitor',
   alerts: 'alerts',
+  'platform-services': 'integrations',
+  pipelines: 'pipelines',
   settings: 'settings',
   billing: 'billing',
 };
@@ -48,6 +54,8 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   data: 'grp-data',
   knowledge: 'grp-data',
   alerts: 'grp-operate',
+  'platform-services': 'grp-operate',
+  pipelines: 'grp-operate',
 };
 
 export interface NavLinkDef {
@@ -149,6 +157,8 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
+  if (pathname.startsWith('/data-platform')) return 'platform-services';
+  if (pathname.startsWith('/pipelines')) return 'pipelines';
   if (pathname === '/alerts') return 'alerts';
   return '';
 }

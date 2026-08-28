@@ -73,6 +73,8 @@ export function BrandThemeProvider({ children }: ProviderProps) {
 export const AlertsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
+export const DataPlatformPage        = (): null => null;
+export const OnboardingPage          = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;
 export const InviteSetPasswordPageEE = (): null => null;
 

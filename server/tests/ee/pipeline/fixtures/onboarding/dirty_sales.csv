@@ -1,0 +1,9 @@
+order_id,region,amount,order_date
+1,North,1240.00,2026-01-05
+2,north,,2026-01-06
+3,SOUTH,880.50,06/01/2026
+4,North,N/A,2026-01-07
+5,East,412.25,not a date
+6,East,  ,2026-01-08
+7,West,999.99,2026-01-09
+8,West,150.00,-
