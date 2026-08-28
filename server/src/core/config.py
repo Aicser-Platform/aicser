@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     # File Upload Settings
     UPLOAD_TYPE: str = os.getenv("UPLOAD_TYPE", "local")
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
+    LAKE_ROOT: str = os.getenv("LAKE_ROOT", "lake")
     MAX_UPLOAD_SIZE: int = int(
         os.getenv("MAX_UPLOAD_SIZE", str(10485760))  # 10 * 1024 * 1024
     )  # 10MB

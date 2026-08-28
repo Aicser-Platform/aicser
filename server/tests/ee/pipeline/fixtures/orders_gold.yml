@@ -1,0 +1,20 @@
+version: 1
+source:
+  asset: bronze.orders
+transform:
+  - filter:    { where: "status <> 'test'" }
+  - cast:      { order_date: date, amount: "decimal(18,2)" }
+  - clean:     { columns: [region], nulls: ["N/A", "-"], trim: true }
+  - validate:  { not_null: [id], unique: [id], on_fail: quarantine }
+  - derive:    { month: "date_trunc('month', order_date)" }
+  - aggregate: { by: [region, month], sum: [amount] }
+output:
+  layer: gold
+  table: sales_by_region
+  write_mode: merge
+  primary_key: [region, month]
+semantic:
+  metrics:
+    - name: revenue
+      agg: sum
+      expr: amount

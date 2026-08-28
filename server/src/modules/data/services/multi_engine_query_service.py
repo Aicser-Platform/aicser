@@ -1683,6 +1683,23 @@ class DuckDBEngine(BaseQueryEngine):
         )
         blob_file_format = (storage_format or file_format or "csv").lower()
 
+        # Fast path: a Bronze-backed source is read in place; no blob download.
+        storage_uri = (data_source or {}).get("storage_uri") or ""
+        if storage_uri.startswith("s3://"):
+            try:
+                from src.modules.pipeline.ingest.duckdb_s3 import (
+                    bronze_scan_sql,
+                    configure_duckdb_s3,
+                )
+
+                if configure_duckdb_s3(conn):
+                    conn.execute(f"CREATE OR REPLACE TABLE data AS {bronze_scan_sql(storage_uri)}")
+                    logger.info("Loaded Bronze asset in place from %s", storage_uri)
+                    data_source["analysis_based_on_sample_only"] = False
+                    return
+            except Exception as exc:  # noqa: BLE001 - any failure falls through to the blob path
+                logger.warning("Bronze in-place load failed, using blob path: %s", exc)
+
         # Local file path (e.g. temp file from Google Sheet CSV): load directly. No blob or user_id needed.
         if file_path and isinstance(file_path, str) and os.path.isfile(file_path):
             try:

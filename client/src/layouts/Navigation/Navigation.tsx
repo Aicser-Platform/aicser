@@ -9,6 +9,7 @@ import {
   CodeOutlined,
   AppstoreOutlined,
   AreaChartOutlined,
+  NodeIndexOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -49,6 +50,9 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
+  'grp-operate': <AppstoreOutlined />,
+  'platform-services': <AppstoreOutlined />,
+  pipelines: <NodeIndexOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -136,6 +140,14 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
         labelKey: NAV_LABEL_KEYS['grp-data'],
         children: [
           { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+        ],
+      },
+      {
+        kind: 'group',
+        key: 'grp-operate',
+        labelKey: NAV_LABEL_KEYS['grp-operate'],
+        children: [
+          { key: 'pipelines', labelKey: NAV_LABEL_KEYS.pipelines, href: NAV_ROUTES.pipelines },
         ],
       },
     ],

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Modal,
   Steps,
@@ -166,6 +167,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   existingDataSource = null,
 }) => {
   const t = useTranslations('data_source_modal');
+  const router = useRouter();
   const screens = useBreakpoint();
   const isCompactViewport = !screens.md;
   const authenticatedFetch = useAuthenticatedFetch();
@@ -1665,6 +1667,10 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             onClose();
             message.success(t('file_uploaded_saved'));
             setLoading(false);
+            const onboardingSessionId = dataSource?.schema?.storage?.onboarding?.onboarding_session_id;
+            if (onboardingSessionId) {
+              router.push(`/data/onboarding/${onboardingSessionId}`);
+            }
             return;
           } else {
             const errorMessage = result.error || result.detail || 'Failed to upload file';

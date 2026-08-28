@@ -30,6 +30,24 @@ services:
         hard: 262144
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    profiles: [minio]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_dev_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   worker:
     image: aiser-chat2chart-server:dev
     build:
@@ -129,5 +147,6 @@ services:
 
 volumes:
   clickhouse_dev_data:
+  minio_dev_data:
   prometheus_dev_data:
   grafana_dev_data:

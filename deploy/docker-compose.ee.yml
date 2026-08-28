@@ -162,6 +162,41 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  worker:
+    build:
+      context: ../server
+      dockerfile: Dockerfile.prod
+      args:
+        AISER_VERSION: ${AISER_VERSION:-1.1.1}
+    container_name: aiser-worker-ee
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      AISER_EDITION: enterprise
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser_world_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123}
+      POSTGRES_PORT: "5432"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      REDIS_URL: redis://redis:6379
+      OTEL_SERVICE_NAME: aiser-worker
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-}
+      S3_PROVIDER: ${S3_PROVIDER:-aws}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+
   client:
     build:
       context: ../client

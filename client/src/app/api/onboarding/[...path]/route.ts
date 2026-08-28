@@ -28,6 +28,8 @@ async function handleOnboardingRequest(
     const contentType = request.headers.get('content-type');
     if (contentType) headers['Content-Type'] = contentType;
     Object.assign(headers, buildProxyAuthHeaders(request));
+    const organizationId = request.headers.get('x-organization-id');
+    if (organizationId) headers['X-Organization-Id'] = organizationId;
 
     const requestOptions: RequestInit = { method, headers, credentials: 'include' };
 

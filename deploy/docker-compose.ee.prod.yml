@@ -151,6 +151,32 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  worker:
+    build:
+      context: ../server
+      dockerfile: Dockerfile.prod
+    container_name: aiser-worker-ee-prod
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      AISER_EDITION: enterprise
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
+      POSTGRES_SERVER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-aiser}
+      POSTGRES_USER: ${POSTGRES_USER:-aiser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PORT: "5432"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      REDIS_URL: redis://redis:6379
+      OTEL_SERVICE_NAME: aiser-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+
   client:
     build:
       context: ../client
