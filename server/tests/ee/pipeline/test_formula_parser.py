@@ -109,3 +109,27 @@ def test_syntax_error_carries_a_position():
     with pytest.raises(FormulaSyntaxError) as exc_info:
         parse_formula("=[price] $ 1")
     assert exc_info.value.position >= 0
+
+
+def test_parses_a_comparison():
+    from src.modules.pipeline.formula.parser import BinaryOp, ColumnRef, Literal, parse_formula
+
+    node = parse_formula("=[qty] > 0")
+    assert node == BinaryOp(op=">", left=ColumnRef(name="qty"), right=Literal(value=0))
+
+
+def test_parses_a_comparison_as_a_function_argument():
+    from src.modules.pipeline.formula.parser import FunctionCall, parse_formula
+
+    node = parse_formula('=IF([qty] > 0, "in stock", "out")')
+    assert node.name == "IF"
+    assert len(node.args) == 3
+
+
+def test_position_for_an_unclosed_paren_is_within_the_formula_length():
+    from src.modules.pipeline.formula.parser import FormulaSyntaxError, parse_formula
+
+    expr = "=ROUND([price], 2"
+    with pytest.raises(FormulaSyntaxError) as exc_info:
+        parse_formula(expr)
+    assert 0 <= exc_info.value.position <= len(expr)
