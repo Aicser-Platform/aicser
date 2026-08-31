@@ -1363,6 +1363,8 @@
     "api_keys_provider_name_azure": "Azure OpenAI",
     "api_keys_provider_name_google": "Google",
     "api_keys_provider_name_ollama": "ក្នុងមូលដ្ឋាន (Ollama)",
+    "anthropic_workspace_id": "Workspace ID",
+    "anthropic_workspace_id_help": "Required for Anthropic multi-workspace or identity-linked API keys.",
     "api_keys_coming_soon": "មកដល់ឆាប់ៗ",
     "team_title": "សមាជិកក្រុម",
     "team_invite_member": "អញ្ជើញសមាជិក",

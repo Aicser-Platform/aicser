@@ -1366,6 +1366,8 @@
     "api_keys_provider_name_azure": "Azure OpenAI",
     "api_keys_provider_name_google": "Google",
     "api_keys_provider_name_ollama": "Local (Ollama)",
+    "anthropic_workspace_id": "Workspace ID",
+    "anthropic_workspace_id_help": "Required for Anthropic multi-workspace or identity-linked API keys.",
     "api_keys_coming_soon": "Bientôt",
     "team_title": "Membres Équipe",
     "team_invite_member": "Inviter",

@@ -10,6 +10,7 @@ const PUBLIC_PATHS = [
   '/discover',
   '/embed/',
   '/embedded/',
+  '/health',
   '/offline',
   '/invite/accept',
   '/invite/set-password',

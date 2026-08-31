@@ -59,6 +59,7 @@ export interface ProviderApiKey {
   api_key: string;
   model?: string;
   endpoint?: string;
+  workspace_id?: string;
 }
 
 export interface ProviderApiKeys {
@@ -149,6 +150,7 @@ export interface ProviderKeyFormValues {
   api_key?: string;
   model?: string;
   endpoint?: string;
+  workspace_id?: string;
 }
 
 // Store types

@@ -229,6 +229,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         model: isPredefined ? existingKey.model : existingKey.model ? '__custom__' : '',
         model_custom: isPredefined ? undefined : (existingKey.model ?? ''),
         endpoint: existingKey.endpoint ?? '',
+        workspace_id: existingKey.workspace_id ?? '',
       });
     } else {
       providerKeyForm.resetFields();
@@ -247,6 +248,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     model?: string;
     model_custom?: string;
     endpoint?: string;
+    workspace_id?: string;
   }) => {
     if (!editingProvider) return;
     const modelToSave = (values.model === '__custom__' ? values.model_custom : values.model) ?? '';
@@ -256,6 +258,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         api_key: values.api_key ?? '',
         model: modelToSave,
         endpoint: values.endpoint,
+        workspace_id: values.workspace_id,
       });
       setAiModelsReloadNonce((n) => n + 1);
       setShowProviderKeyModal(false);
@@ -588,6 +591,15 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                 type="url"
                 autoComplete="off"
               />
+            </Form.Item>
+          )}
+          {editingProvider === 'anthropic' && (
+            <Form.Item
+              name="workspace_id"
+              label={t('anthropic_workspace_id')}
+              extra={t('anthropic_workspace_id_help')}
+            >
+              <Input placeholder="wrkspc_..." autoComplete="off" />
             </Form.Item>
           )}
           <Form.Item name="model" label={t('default_model')} extra={t('default_model_help')}>
