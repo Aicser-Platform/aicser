@@ -2633,6 +2633,7 @@
     "catalog_overview_version": "版本",
     "catalog_overview_status": "状态",
     "catalog_overview_created_at": "创建时间",
+    "catalog_overview_storage_uri": "存储位置",
     "catalog_schema_col_name": "列",
     "catalog_schema_col_type": "类型",
     "catalog_profile_no_history": "暂无画像历史记录。",

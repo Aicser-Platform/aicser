@@ -2633,6 +2633,7 @@
     "catalog_overview_version": "Version",
     "catalog_overview_status": "Status",
     "catalog_overview_created_at": "Erstellt",
+    "catalog_overview_storage_uri": "Speicherort",
     "catalog_schema_col_name": "Spalte",
     "catalog_schema_col_type": "Typ",
     "catalog_profile_no_history": "Noch keine Profilierungshistorie vorhanden.",

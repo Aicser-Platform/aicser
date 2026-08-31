@@ -2633,6 +2633,7 @@
     "catalog_overview_version": "Versi",
     "catalog_overview_status": "Status",
     "catalog_overview_created_at": "Dibuat",
+    "catalog_overview_storage_uri": "Lokasi penyimpanan",
     "catalog_schema_col_name": "Kolom",
     "catalog_schema_col_type": "Tipe",
     "catalog_profile_no_history": "Belum ada riwayat pembuatan profil.",

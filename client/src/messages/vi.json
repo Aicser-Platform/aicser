@@ -2633,6 +2633,7 @@
     "catalog_overview_version": "Phiên bản",
     "catalog_overview_status": "Trạng thái",
     "catalog_overview_created_at": "Ngày tạo",
+    "catalog_overview_storage_uri": "Vị trí lưu trữ",
     "catalog_schema_col_name": "Cột",
     "catalog_schema_col_type": "Kiểu dữ liệu",
     "catalog_profile_no_history": "Chưa có lịch sử phân tích dữ liệu.",

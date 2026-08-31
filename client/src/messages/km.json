@@ -2639,6 +2639,7 @@
     "catalog_overview_version": "កំណែ",
     "catalog_overview_status": "ស្ថានភាព",
     "catalog_overview_created_at": "បង្កើតនៅ",
+    "catalog_overview_storage_uri": "ទីតាំងផ្ទុក",
     "catalog_schema_col_name": "ជួរឈរ",
     "catalog_schema_col_type": "ប្រភេទ",
     "catalog_profile_no_history": "មិនទាន់មានប្រវត្តិការវិភាគទិន្នន័យនៅឡើយទេ។",

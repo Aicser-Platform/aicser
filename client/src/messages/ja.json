@@ -2633,6 +2633,7 @@
     "catalog_overview_version": "バージョン",
     "catalog_overview_status": "ステータス",
     "catalog_overview_created_at": "作成日",
+    "catalog_overview_storage_uri": "保存場所",
     "catalog_schema_col_name": "カラム",
     "catalog_schema_col_type": "型",
     "catalog_profile_no_history": "プロファイリング履歴はまだありません。",

@@ -2738,6 +2738,7 @@
     "catalog_overview_version": "Version",
     "catalog_overview_status": "Status",
     "catalog_overview_created_at": "Created",
+    "catalog_overview_storage_uri": "Storage location",
     "catalog_schema_col_name": "Column",
     "catalog_schema_col_type": "Type",
     "catalog_profile_no_history": "No profiling history yet.",

@@ -2632,6 +2632,7 @@
     "catalog_overview_version": "เวอร์ชัน",
     "catalog_overview_status": "สถานะ",
     "catalog_overview_created_at": "สร้างเมื่อ",
+    "catalog_overview_storage_uri": "ตำแหน่งจัดเก็บ",
     "catalog_schema_col_name": "คอลัมน์",
     "catalog_schema_col_type": "ประเภท",
     "catalog_profile_no_history": "ยังไม่มีประวัติการทำโปรไฟล์",
