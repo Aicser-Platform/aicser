@@ -40,6 +40,7 @@ export default defineConfig({
       'ee/src/ee/app/\\(dashboard\\)/report/**/*.test.tsx',
       'ee/src/ee/components/onboarding/**/*.test.tsx',
       'ee/src/ee/components/onboarding/**/*.test.ts',
+      'ee/src/ee/components/catalog/**/*.test.tsx',
       'ee/src/ee/app/(dashboard)/chat/utils/**/*.test.ts',
       'ee/src/ee/services/**/*.test.ts',
       'ee/src/ee/app/\\(dashboard\\)/settings/components/**/*.test.tsx',
