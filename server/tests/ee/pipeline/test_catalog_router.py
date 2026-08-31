@@ -91,6 +91,39 @@ async def test_list_lake_objects_returns_an_empty_list_for_an_org_with_nothing(
     assert result == []
 
 
+async def test_list_lake_objects_orders_by_created_at_desc(monkeypatch):
+    """If a source has 2+ active lake objects at the same layer (e.g. after a
+    re-ingest), the client's buildCatalogTree picks whichever one .find()
+    hits first; the query must be deterministic (newest first) or the UI can
+    show stale data non-deterministically."""
+    from src.modules.pipeline.catalog import router as module
+
+    captured = {}
+
+    class FakeScalars:
+        def all(self):
+            return []
+
+    class FakeResult:
+        def scalars(self):
+            return FakeScalars()
+
+    class FakeDB:
+        async def execute(self, statement):
+            captured["statement"] = statement
+            return FakeResult()
+
+    monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
+
+    await module.list_lake_objects(db=FakeDB(), payload={})
+
+    compiled = str(
+        captured["statement"].compile(compile_kwargs={"literal_binds": True})
+    )
+    assert "ORDER BY" in compiled
+    assert "created_at DESC" in compiled
+
+
 def test_the_profiles_route_exists():
     from src.modules.pipeline.catalog.router import router
 
