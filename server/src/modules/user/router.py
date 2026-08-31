@@ -382,6 +382,7 @@ class ProviderKeyPayload(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     endpoint: Optional[str] = None
+    workspace_id: Optional[str] = None
 
 
 class AiModelPreferenceRequest(BaseModel):
@@ -634,6 +635,7 @@ async def save_ai_provider_key(
 
     api_key_val = (payload.api_key or "").strip()
     endpoint_val = (payload.endpoint or "").strip()
+    workspace_id_val = (payload.workspace_id or "").strip()
     # If client sends masked value (••••...), keep existing key and only update model/endpoint
     existing_raw_value = None
     if use_org_scope and organization_id:
@@ -665,6 +667,7 @@ async def save_ai_provider_key(
     store = {
         "model": (payload.model or "").strip() or existing.get("model"),
         "endpoint": endpoint_val or existing.get("endpoint"),
+        "workspace_id": workspace_id_val or existing.get("workspace_id"),
     }
     if api_key_val:
         store["api_key"] = api_key_val
