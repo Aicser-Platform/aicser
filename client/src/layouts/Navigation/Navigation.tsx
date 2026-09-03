@@ -13,6 +13,7 @@ import {
   BellOutlined,
   NodeIndexOutlined,
   ApartmentOutlined,
+  FundProjectionScreenOutlined
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -55,7 +56,7 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
-  'grp-operate': <AppstoreOutlined />,
+  'grp-operate': <FundProjectionScreenOutlined />,
   'platform-services': <AppstoreOutlined />,
   pipelines: <NodeIndexOutlined />,
   catalog: <ApartmentOutlined />,

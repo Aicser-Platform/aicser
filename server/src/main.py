@@ -59,6 +59,7 @@ from src.core.middleware import SensitiveQueryParamLogFilter  # noqa: E402
 logging.getLogger("uvicorn.access").addFilter(SensitiveQueryParamLogFilter())
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -276,18 +277,71 @@ async def exception_handler(request: Request, exc: Exception):
 # predictive deps, AI capabilities).
 from src.shared.health import collect_health_payload  # noqa: E402
 
+def _collect_health_payload() -> tuple[dict, int]:
+    """Build health JSON and suggested HTTP status (200 vs 503)."""
+    out: dict = {"status": "healthy"}
+    critical_down = False
+
+    # Redis
+    try:
+        if cache and getattr(cache, "redis_client", None):
+            cache.redis_client.ping()
+            out["redis"] = "up"
+        elif cache:
+            out["redis"] = "fallback"
+        else:
+            out["redis"] = "unavailable"
+            if is_production():
+                critical_down = True
+    except Exception:
+        out["redis"] = "down"
+        if is_production():
+            critical_down = True
+
+    # ARQ worker — check if Redis queue is reachable and worker appears active.
+    worker_status = "unknown"
+    try:
+        import redis as _redis
+
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        _r = _redis.from_url(_redis_url, socket_connect_timeout=1, socket_timeout=1)
+        try:
+            hb = _r.get("aiser:worker:heartbeat")
+            if hb:
+                worker_status = "up"
+            else:
+                result_keys = _r.keys("arq:result:*")
+                worker_status = "degraded" if result_keys else "down"
+        finally:
+            _r.close()
+    except Exception:
+        worker_status = "unavailable"
+    out["worker"] = worker_status
+    if is_production() and worker_status in ("down", "unavailable"):
+        critical_down = True
+
+    out["predictive"] = _check_predictive_deps()
+    out["capabilities"] = _check_ai_capabilities()
+
+    if critical_down:
+        out["status"] = "degraded"
+    status_code = 503 if critical_down else 200
+    return out, status_code
+
 
 @app.get("/health")
 async def health_check():
     """Liveness check — always returns 200 unless process is dead (use /ready for deps)."""
-    payload, _ = await collect_health_payload()
+    # _collect_health_payload does blocking Redis I/O; run it off the event loop so a
+    # slow/hanging Redis call can't stall every other request being served concurrently.
+    payload, _ = await run_in_threadpool(_collect_health_payload)
     return JSONResponse(content=payload, status_code=200)
 
 
 @app.get("/ready")
 async def readiness_check():
-    """Readiness — 503 when critical dependencies (Postgres, Redis in prod) are unavailable."""
-    payload, status_code = await collect_health_payload()
+    """Readiness — 503 when critical dependencies are unavailable in production."""
+    payload, status_code = await run_in_threadpool(_collect_health_payload)
     return JSONResponse(content=payload, status_code=status_code)
 
 
