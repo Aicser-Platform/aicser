@@ -13,7 +13,11 @@ def test_router_is_plan_gated_and_prefixed():
 def test_expected_routes_exist():
     from src.modules.pipeline.router import router
 
-    paths = {(r.path, tuple(sorted(r.methods))) for r in router.routes}
+    paths = {
+        (r.path, tuple(sorted(r.methods)))
+        for r in router.routes
+        if hasattr(r, "path") and hasattr(r, "methods")
+    }
     assert ("/pipelines", ("GET",)) in paths
     assert ("/pipelines", ("POST",)) in paths
     assert ("/pipelines/{pipeline_id}", ("PATCH",)) in paths
@@ -83,3 +87,30 @@ def test_attach_yaml_artifact_links_pipeline_to_published_snapshot():
     assert artifact.data_source_id == "ds-1"
     assert artifact.status == "published"
     assert artifact.model_snapshot == {"yaml": "version: 1"}
+
+
+def test_run_validation_rejects_pipeline_without_saved_yaml():
+    import uuid
+
+    import pytest
+    from fastapi import HTTPException
+
+    from src.modules.data.models import DataPipeline
+    from src.modules.pipeline.router import _ensure_pipeline_runnable
+
+    pipeline = DataPipeline(
+        id=uuid.uuid4(),
+        organization_id=uuid.uuid4(),
+        name="Prepared records",
+        slug="prepared-records",
+        source_asset_type="data_source",
+        source_asset_id="ds-1",
+        target_layer="silver",
+        ingest_mode="snapshot",
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        _ensure_pipeline_runnable(pipeline)
+
+    assert exc.value.status_code == 400
+    assert "save the pipeline before running it" in exc.value.detail

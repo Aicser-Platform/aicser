@@ -32,6 +32,7 @@
     "@ant-design/icons": "^5.6.1",
     "@ant-design/nextjs-registry": "^1.0.2",
     "@duckdb/duckdb-wasm": "^1.29.1-dev132.0",
+    "@fortune-sheet/react": "^1.0.4",
     "@marp-team/marp-cli": "^4.2.3",
     "@monaco-editor/react": "^4.7.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.2",

@@ -23,6 +23,7 @@ logging.basicConfig(
 )
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -228,13 +229,15 @@ def _collect_health_payload() -> tuple[dict, int]:
 
         _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         _r = _redis.from_url(_redis_url, socket_connect_timeout=1, socket_timeout=1)
-        hb = _r.get("aiser:worker:heartbeat")
-        if hb:
-            worker_status = "up"
-        else:
-            result_keys = _r.keys("arq:result:*")
-            worker_status = "degraded" if result_keys else "down"
-        _r.close()
+        try:
+            hb = _r.get("aiser:worker:heartbeat")
+            if hb:
+                worker_status = "up"
+            else:
+                result_keys = _r.keys("arq:result:*")
+                worker_status = "degraded" if result_keys else "down"
+        finally:
+            _r.close()
     except Exception:
         worker_status = "unavailable"
     out["worker"] = worker_status
@@ -253,14 +256,16 @@ def _collect_health_payload() -> tuple[dict, int]:
 @app.get("/health")
 async def health_check():
     """Liveness check — always returns 200 unless process is dead (use /ready for deps)."""
-    payload, _ = _collect_health_payload()
+    # _collect_health_payload does blocking Redis I/O; run it off the event loop so a
+    # slow/hanging Redis call can't stall every other request being served concurrently.
+    payload, _ = await run_in_threadpool(_collect_health_payload)
     return JSONResponse(content=payload, status_code=200)
 
 
 @app.get("/ready")
 async def readiness_check():
     """Readiness — 503 when critical dependencies are unavailable in production."""
-    payload, status_code = _collect_health_payload()
+    payload, status_code = await run_in_threadpool(_collect_health_payload)
     return JSONResponse(content=payload, status_code=status_code)
 
 

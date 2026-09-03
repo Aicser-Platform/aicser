@@ -90,7 +90,7 @@ async def test_ingest_stage_writes_bronze_and_records_the_lake_object(
         "src.modules.pipeline.ingest.stage.resolve_source",
         new=AsyncMock(return_value=("orders", str(path))),
     ), patch(
-        "src.modules.pipeline.ingest.stage.S3StorageService",
+        "src.modules.pipeline.ingest.stage.get_object_store",
         return_value=FakeS3(),
     ):
         result = await IngestStage().execute(ctx)
