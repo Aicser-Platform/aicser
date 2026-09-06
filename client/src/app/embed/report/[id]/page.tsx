@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
 import { useEmbedTheme } from '@/hooks/useEmbedTheme';
+import { EmbedBrandingFooter } from '@/components/embed/EmbedBrandingFooter';
 import { useReportEmbedState } from '@/ee/app/(dashboard)/report/hooks/useReportEmbedState';
 import { ReportDocument, NarrativeContent, type ReportData } from '@/ee/app/(dashboard)/report/components/ReportDocument';
 import { ReportBrandLogo } from '@/ee/app/(dashboard)/report/components/ReportBrandLogo';
@@ -28,7 +29,7 @@ function useNotifyEmbedHost(report: ReportData | null, error: string | null) {
 function EmbedReportContent({ conversationId, messageId }: { conversationId: string; messageId: string }) {
   const searchParams = useSearchParams();
   const token = searchParams?.get('token') || '';
-  const { themeStyle, dataTheme } = useEmbedTheme(token);
+  const { theme, themeStyle, dataTheme } = useEmbedTheme(token);
   const isDark = dataTheme === 'dark';
   const { report, isLoading, error } = useReportEmbedState(conversationId, messageId, token);
   useNotifyEmbedHost(report, error);
@@ -118,7 +119,7 @@ function EmbedReportContent({ conversationId, messageId }: { conversationId: str
         template={templateConfig}
       />
 
-      <footer className="report-footer">
+      <footer className="report-footer" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span>Generated report</span>
         {genDate && (
           <>
@@ -126,6 +127,8 @@ function EmbedReportContent({ conversationId, messageId }: { conversationId: str
             <span>{genDate}</span>
           </>
         )}
+        <span style={{ flex: 1 }} />
+        <EmbedBrandingFooter hidden={theme?.hide_aicser_branding} variant="inline" />
       </footer>
     </div>
   );

@@ -1,8 +1,10 @@
 import React from 'react';
+import { Skeleton } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { FeedItem } from '@/services/socialFeedService';
 import { assetTypeLabelKey } from '@/components/Feed/feedPostDisplay';
 import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
+import { useLazyVisible } from '@/hooks/useLazyVisible';
 import FeedPreviewVisual from './FeedPreviewVisual';
 
 interface FeedCardMediaProps {
@@ -16,6 +18,10 @@ interface FeedCardMediaProps {
   /** Wrapper padding around the tag row. */
   tagsWrapperClassName?: string;
   maxTags?: number;
+  /** Extra badge rendered in the thumbnail's bottom-left corner, opposite the
+   * asset-type pill — e.g. FeedGridCard's "+N more attachments" count when
+   * this thumbnail is standing in for a text post's first attachment. */
+  cornerBadge?: React.ReactNode;
 }
 
 /** Thumbnail + tag row shared by FeedCardBody (inline-comment cards) and FeedGridCard (grid cards). */
@@ -28,10 +34,23 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
   thumbnailWrapperClassName = 'px-3 pb-2.5',
   tagsWrapperClassName = 'px-3 py-1.5',
   maxTags = 4,
+  cornerBadge,
 }) => {
   const t = useTranslations('feed');
   const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
   const thumbnailUrl = resolveBackendMediaUrl(item.asset.thumbnailUrl);
+  // A plain text post has nothing to preview (no chart/dashboard data) -
+  // without this, it fell through FeedPreviewVisual's default branch and
+  // rendered a "No preview data yet" placeholder box plus a misleading
+  // type badge under an empty preview area, for content that was never
+  // meant to have one.
+  const skipThumbnail = hideThumbnail || item.assetType === 'post';
+  // No captured thumbnail means this falls through to a live, DB-backed
+  // fetch (FeedPreviewVisual) - deferring that until the tile is actually
+  // about to scroll into view keeps a feed of several such cards from firing
+  // every one of their fetches simultaneously on page load (this was
+  // exhausting the DB connection pool platform-wide - see server logs).
+  const { ref: lazyRef, visible: lazyVisible } = useLazyVisible<HTMLDivElement>();
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!previewClickable) return;
@@ -43,7 +62,7 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
 
   return (
     <>
-      {!hideThumbnail && (
+      {!skipThumbnail && (
         <div className={thumbnailWrapperClassName}>
           <div
             className={`relative aspect-video w-full overflow-hidden rounded-lg bg-[var(--ant-color-bg-layout)] ${
@@ -67,8 +86,12 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
               // element to point a captureSelector at), so thumbnailUrl is
               // always empty for them — render the real chart/dashboard from
               // its structured data instead of a bare "not available" card.
-              <div className="absolute inset-0 h-full w-full">
-                <FeedPreviewVisual item={item} maxPreviews={maxPreviews} />
+              <div ref={lazyRef} className="absolute inset-0 h-full w-full">
+                {lazyVisible ? (
+                  <FeedPreviewVisual item={item} maxPreviews={maxPreviews} />
+                ) : (
+                  <Skeleton.Node active style={{ width: '100%', height: '100%' }} />
+                )}
               </div>
             )}
             <div className="absolute right-2 top-2 z-10">
@@ -76,6 +99,7 @@ const FeedCardMedia: React.FC<FeedCardMediaProps> = ({
                 {assetTypeLabel}
               </span>
             </div>
+            {cornerBadge && <div className="absolute bottom-2 left-2 z-10">{cornerBadge}</div>}
           </div>
         </div>
       )}

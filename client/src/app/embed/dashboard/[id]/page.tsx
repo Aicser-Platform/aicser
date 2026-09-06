@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
 import { useEmbedTheme } from '@/hooks/useEmbedTheme';
+import { EmbedBrandingFooter } from '@/components/embed/EmbedBrandingFooter';
 import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useDashboardViewerState';
 import {
   DashboardViewerShell,
@@ -17,7 +18,7 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
   const t = useTranslations('dashboard_viewer');
   const searchParams = useSearchParams();
   const token = searchParams?.get('token') || '';
-  const { themeStyle, dataTheme } = useEmbedTheme(token);
+  const { theme, themeStyle, dataTheme } = useEmbedTheme(token);
 
   const viewer = useDashboardViewerState(dashboardId, {
     mode: 'embed',
@@ -70,6 +71,7 @@ function EmbedDashboardContent({ dashboardId }: { dashboardId: string }) {
         onAutoRefreshIntervalChange={viewer.setAutoRefreshMinutes}
         lastRefreshedLabel={viewer.lastRefreshedLabel}
       />
+      <EmbedBrandingFooter hidden={theme?.hide_aicser_branding} />
     </div>
   );
 }

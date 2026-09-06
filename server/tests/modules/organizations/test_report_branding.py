@@ -26,7 +26,7 @@ from ee.modules.organizations.branding import resolve_report_branding  # noqa: E
 # string, since string-based patch() resolution walks getattr() on the dynamically
 # aliased `src.modules.organizations` package and doesn't reliably trigger the
 # real import of its `service` submodule.
-import src.modules.organizations.service as org_service_module  # noqa: E402
+import ee.modules.organizations.service as org_service_module  # noqa: E402
 
 
 @pytest.mark.asyncio

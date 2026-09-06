@@ -54,6 +54,18 @@ RUN pip install --upgrade pip setuptools wheel \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \
  && python -m playwright install chromium \
+ # en_core_web_md, not the ~590MB _lg -- see pii_scrubber.py's NlpEngineProvider
+ # config, which now explicitly requests this exact model name.
+ && python -m spacy download en_core_web_md \
+ # presidio-anonymizer pins cryptography<49, conflicting with this image's
+ # cryptography==50.0.0 (requirements.txt). --no-deps sidesteps the resolver
+ # conflict entirely: the only place in presidio-anonymizer that actually
+ # imports cryptography is its optional AES-encryption operator, which
+ # src/modules/data/services/pii_scrubber.py never uses (entity detection +
+ # replace-style anonymization only). Its other real dependencies are already
+ # satisfied by presidio-analyzer's own requirements, installed above.
+ && pip install --no-cache-dir --no-deps presidio-anonymizer==2.2.360 \
+ && python -c "import presidio_analyzer, presidio_anonymizer; print('presidio OK')" \
  && find /app/.venv -name "*.pyc" -delete \
  && find /app/.venv -name "__pycache__" -type d -exec rm -rf {} +
 
@@ -84,6 +96,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_VERSION=$AISER_VERSION
 
 # Install runtime dependencies + Microsoft ODBC + Chromium system libs.
+#
+# The libX*/libatk/libgbm packages below only get Chromium to LAUNCH -- they
+# say nothing about whether it can actually paint text. Root-caused live: this
+# stage previously installed zero font packages and no `fontconfig`, so
+# `fc-list` didn't even exist in the image. Chromium on Linux routes glyph
+# rasterization through Fontconfig/FreeType regardless of font source (system
+# font or a downloaded @font-face webfont) -- with no fontconfig and nothing
+# in /usr/share/fonts, every computed style still reports normally
+# (visibility: visible, a real dark color, document.fonts.status: "loaded")
+# because that's the DOM/CSSOM layer, which has no idea the paint step
+# silently produced zero glyphs. Result: Playwright-rendered PDF/PNG exports
+# came back with visible borders/backgrounds/icons/chart lines (all vector
+# graphics, unaffected) but completely blank text everywhere a font would
+# have to be rasterized -- while the same content in a real browser (which
+# ships its own fonts) looked fine, making this invisible in every check
+# short of actually rendering an export and looking at it.
 RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     apt-get -o Acquire::Retries=5 update; \
@@ -104,7 +132,11 @@ RUN set -eux; \
       libxfixes3 \
       libxrandr2 \
       libgbm1 \
-      libasound2; \
+      libasound2 \
+      fontconfig \
+      fonts-liberation \
+      fonts-noto-color-emoji \
+      fonts-freefont-ttf; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
       amd64) url="${ODBC18_DEB_AMD64}" ;; \

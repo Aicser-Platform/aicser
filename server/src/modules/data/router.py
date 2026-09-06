@@ -800,21 +800,49 @@ async def enforce_data_source_limit(
 @router.post("/retention/cleanup")
 async def cleanup_file_data_retention(
     request: Dict[str, Any],
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
     db: sa.ext.asyncio.AsyncSession = Depends(get_async_session),
 ):
     """
-    Cleanup file-based data sources based on plan data_history_days.
+    Cleanup file-based data sources based on plan data_history_days, for the
+    caller's own organization.
 
     Body:
-      { "organization_id": Optional[int] }
+      { "organization_id": Optional[int] }  # advisory only, see below
 
-    Intended for admin/cron use.
+    SECURITY: this endpoint had no auth dependency at all (CE: fully
+    unauthenticated; EE: data_rbac_guard authorized against the caller's own
+    org from their JWT, but the endpoint then acted on an attacker-supplied
+    organization_id from the request body — a classic IDOR letting any
+    authenticated user delete/deactivate ANY other org's data sources).
+    Fixed: requires a valid session and always scopes the cleanup to the
+    authenticated caller's own organization_id, regardless of what the body
+    contains. The scheduled cron path (shared/jobs/tasks.py's
+    run_data_retention_cleanup) already handles the legitimate all-orgs bulk
+    case by calling DataRetentionService directly — this HTTP endpoint never
+    needs to support an arbitrary/cross-org target.
     """
     try:
-        org_id = request.get("organization_id")
-        if org_id is not None:
+        try:
+            user_payload = current_token if isinstance(current_token, dict) else extract_user_payload(current_token)
+        except Exception:
+            user_payload = {}
+        caller_org_id = user_payload.get("organization_id") or user_payload.get("org_id")
+        if not caller_org_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No organization associated with this session")
+        try:
+            org_id = int(caller_org_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid organization context")
+
+        requested_org_id = request.get("organization_id")
+        if requested_org_id is not None:
             try:
-                org_id = int(org_id)
+                if int(requested_org_id) != org_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot request cleanup for a different organization",
+                    )
             except (TypeError, ValueError):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -825,9 +853,13 @@ async def cleanup_file_data_retention(
         affected = await retention_service.cleanup_expired_file_sources(
             organization_id=org_id
         )
+        affected_conversations = await retention_service.cleanup_expired_conversations(
+            organization_id=org_id
+        )
         return {
             "success": True,
             "affected": affected,
+            "affected_conversations": affected_conversations,
             "organization_id": org_id,
         }
     except HTTPException:
@@ -4386,7 +4418,8 @@ async def generate_data_insights(
             raise HTTPException(status_code=404, detail="Data source not found")
 
         # Generate insights using AI
-        insights = await data_service.generate_data_insights(data_source_id)
+        org_id = await get_user_organization_id(user_id, db)
+        insights = await data_service.generate_data_insights(data_source_id, user_id=user_id, organization_id=org_id)
 
         return {"success": True, "insights": insights, "data_source_id": data_source_id}
 

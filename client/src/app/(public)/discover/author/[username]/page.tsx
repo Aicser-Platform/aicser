@@ -103,6 +103,9 @@ export default function DiscoverAuthorPage() {
           {profile.author.title ? (
             <p className="discover-author-title">{profile.author.title}</p>
           ) : null}
+          {profile.author.bio ? (
+            <p className="discover-author-bio">{profile.author.bio}</p>
+          ) : null}
           <div className="discover-author-stats">
             <span>{t('author_posts', { count: profile.stats.post_count })}</span>
             <span>{t('author_views', { count: profile.stats.total_views })}</span>

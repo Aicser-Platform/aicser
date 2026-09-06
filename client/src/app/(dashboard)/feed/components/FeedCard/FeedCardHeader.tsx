@@ -1,8 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
-import { Avatar, Button, Dropdown, Modal, Tag, Typography } from 'antd';
+import { Avatar, Button, Dropdown, Modal, Tag, Tooltip, Typography } from 'antd';
 import type { MenuProps } from 'antd';
-import { MoreOutlined } from '@ant-design/icons';
+import { CheckOutlined, MoreOutlined, UserAddOutlined } from '@ant-design/icons';
 import type { FeedItem } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
 import { approvalColors, visibilityColors } from './constants';
@@ -22,6 +22,7 @@ interface FeedCardHeaderProps {
   onOpenPost?: () => void;
   onCopyLink?: () => void;
   onDeletePost?: () => void;
+  onEditPost?: () => void;
   /** Link author name to public profile, e.g. `/discover/author`. */
   authorProfileBasePath?: string;
   /** Grid-card header: smaller avatar, author title in place of the visibility tag. */
@@ -39,6 +40,7 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
   onOpenPost,
   onCopyLink,
   onDeletePost,
+  onEditPost,
   authorProfileBasePath,
   compact = false,
 }) => {
@@ -68,6 +70,7 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
           },
         ]
       : []),
+    ...(onEditPost ? [{ key: 'edit', label: t('edit_post') }] : []),
     ...(onDeletePost ? [{ type: 'divider' as const }, { key: 'delete', danger: true, label: t('delete_post') }] : []),
   ];
 
@@ -80,13 +83,25 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
     >
       {/* Left: avatar + author info */}
       <div className="flex items-center gap-2.5">
-        <Avatar
-          className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
-          size={compact ? 32 : 36}
-          src={item.author.avatarUrl}
-        >
-          {item.author.name.charAt(0).toUpperCase()}
-        </Avatar>
+        {authorProfileHref ? (
+          <Link href={authorProfileHref} onClick={handleStopPropagation} className="shrink-0">
+            <Avatar
+              className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] font-medium cursor-pointer"
+              size={compact ? 32 : 36}
+              src={item.author.avatarUrl}
+            >
+              {item.author.name.charAt(0).toUpperCase()}
+            </Avatar>
+          </Link>
+        ) : (
+          <Avatar
+            className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
+            size={compact ? 32 : 36}
+            src={item.author.avatarUrl}
+          >
+            {item.author.name.charAt(0).toUpperCase()}
+          </Avatar>
+        )}
         <div className="flex flex-col min-w-0">
           {authorProfileHref ? (
             <Link href={authorProfileHref} onClick={handleStopPropagation} className="truncate">
@@ -104,7 +119,10 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
               <span className="truncate">{authorTitle}</span>
             ) : null}
             {showAuthorTitle ? <span className="opacity-40">&bull;</span> : null}
-            <span>{activityTime}</span>
+            <span title={new Date(hasUpdates ? item.lastActivityAt : item.publishedAt).toLocaleString()}>
+              {activityTime}
+            </span>
+            {item.isEdited && <span className="italic opacity-70">{t('edited_label')}</span>}
             {!showAuthorTitle && (
               <>
                 <span className="opacity-40">&bull;</span>
@@ -133,8 +151,36 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: follow + more — grid cards keep Follow in the "..." menu only, for a clean header */}
+      {/* Right: follow + more — grid cards get a small icon-only follow
+          affordance instead of the full pill (no room for it next to the
+          title/stats a compact card already shows), rather than requiring a
+          "..." menu open just to follow someone. Non-compact keeps the
+          original labeled pill. */}
       <div className="flex items-center gap-2">
+        {canFollow && compact && (
+          <Tooltip title={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}>
+            <Button
+              size="small"
+              type="text"
+              shape="circle"
+              aria-label={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}
+              icon={
+                isFollowingAuthor ? (
+                  <CheckOutlined className="text-[var(--ant-color-primary)]" />
+                ) : (
+                  <UserAddOutlined />
+                )
+              }
+              className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)]"
+              loading={followPending}
+              disabled={followPending || deletePending}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleFollow?.();
+              }}
+            />
+          </Tooltip>
+        )}
         {canFollow && !compact && (
           <Button
             size="small"
@@ -167,6 +213,10 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
               }
               if (key === 'follow') {
                 onToggleFollow?.();
+                return;
+              }
+              if (key === 'edit') {
+                onEditPost?.();
                 return;
               }
               if (key === 'delete' && onDeletePost) {

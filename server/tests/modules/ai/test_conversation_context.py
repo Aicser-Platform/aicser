@@ -1,6 +1,6 @@
 """Tests for cross-turn conversation context helpers."""
 
-from src.modules.ai.utils.conversation_context import (
+from ee.modules.ai.utils.conversation_context import (
     build_conversation_analytics_context,
     extract_last_sql_from_conversation_history,
     time_grain_refinement_likely,

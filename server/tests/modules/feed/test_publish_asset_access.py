@@ -35,6 +35,20 @@ def _db_returning(record):
     return db
 
 
+def _db_chart_with_dashboards(chart_record, dashboard_rows):
+    """A chart with no project_id of its own triggers a SECOND query (the
+    DashboardChart-joined-to-Dashboard fallback, read via .all()) beyond the
+    initial chart-row lookup - _db_returning's single fixed-return mock has
+    no .all() at all and can't distinguish the two calls. This returns the
+    chart-row result on the first db.execute() and the dashboard-join result
+    on the second, in call order."""
+    chart_result = SimpleNamespace(first=lambda: chart_record)
+    dash_result = SimpleNamespace(all=lambda: dashboard_rows)
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[chart_result, dash_result])
+    return db
+
+
 @pytest.mark.asyncio
 async def test_dashboard_not_found():
     svc = _mixin(_db_returning(None))
@@ -91,12 +105,36 @@ async def test_chart_non_owner_ce_rejected():
 
 @pytest.mark.asyncio
 async def test_chart_non_owner_personal_chart_rejected():
-    """No project_id means nothing to scope an RBAC check against."""
-    svc = _mixin(_db_returning((None, "someone-else")))
+    """No project_id AND no parent-dashboard association at all (the
+    DashboardChart join comes back empty) means genuinely nothing to scope
+    an RBAC check against - stays rejected."""
+    svc = _mixin(_db_chart_with_dashboards((None, "someone-else"), []))
     with patch("src.modules.feed.service_actions.is_ee_enabled", return_value=True):
         with pytest.raises(HTTPException) as exc:
             await svc._validate_publish_asset(AssetType.chart, uuid4(), uuid4())
     assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_chart_no_project_id_reachable_via_parent_dashboard_allowed():
+    """Dashboard-created charts frequently carry neither user_id nor
+    project_id on their own row - real ownership/placement lives on the
+    DashboardChart join to their parent dashboard. A chart like that must
+    still be publishable by someone who has view access to that dashboard,
+    rather than being unconditionally denied just because the chart row
+    itself never recorded an owner/project (the exact bug behind a real
+    live 403 on attaching a dashboard-created chart to a feed post)."""
+    dash_id = uuid4()
+    dash_project_id = uuid4()
+    svc = _mixin(
+        _db_chart_with_dashboards((None, "someone-else"), [(dash_id, dash_project_id, "someone-else")])
+    )
+    with patch("src.modules.feed.service_actions.is_ee_enabled", return_value=True), patch(
+        "src.modules.authentication.rbac_service.has_dashboard_access",
+        new=AsyncMock(return_value=True),
+    ):
+        result = await svc._validate_publish_asset(AssetType.chart, uuid4(), uuid4())
+    assert result == dash_project_id
 
 
 @pytest.mark.asyncio

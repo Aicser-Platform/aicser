@@ -203,6 +203,15 @@ if is_ee_enabled():
         logger.warning("Platform intelligence router not loaded: %s", _err)
 
     try:
+        from ee.modules.data.router import router as oauth_connectors_router
+        api_router.include_router(
+            oauth_connectors_router, prefix="/api", tags=["oauth-connectors"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("OAuth connectors router not loaded: %s", _err)
+
+    try:
         from ee.modules.schedule_email.router import router as schedule_email_router
         api_router.include_router(
             schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"],
@@ -237,6 +246,19 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Embed assistants router not loaded: %s", _err)
+
+    try:
+        # Anonymous/embed_jwt embed-chat surface — token-gated (chat_auth.py),
+        # NOT session-gated. require_valid_license here checks this server
+        # instance's own license state, same as the analogous unauthenticated
+        # report-embed endpoint above; it applies fine to anonymous visitors.
+        from ee.modules.embed.chat_router import router as embed_chat_router
+        api_router.include_router(
+            embed_chat_router, prefix="/ai/embed", tags=["embed-chat"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Embed chat router not loaded: %s", _err)
 
     try:
         from ee.modules.knowledge.library_router import router as knowledge_library_router

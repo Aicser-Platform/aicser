@@ -7,7 +7,7 @@ if os.getenv("AISER_EDITION", "community").lower() in ("enterprise", "ee") or os
 
 from fastapi import HTTPException
 from src.modules.ai import router as ai_router
-from src.modules.ai.services.text_to_sql_service import NoProviderKeyError
+from ee.modules.ai.services.text_to_sql_service import NoProviderKeyError
 
 
 async def test_route_returns_service_result():

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getChatHref } from '@/utils/appPaths';
 import { useTranslations } from 'next-intl';
 import { useDashboardStore, type RuntimeFilter, useCanUndo, useCanRedo, useUndo, useRedo } from '../stores/useDashboardStore';
@@ -40,6 +41,7 @@ import { TagOutlined } from '@ant-design/icons';
 import { useFolderStore } from '../stores/useFolderStore';
 import './DashboardTabs.css';
 import { AddBlockPopover } from './AddBlockPopover';
+import { writePendingFeedAttachment } from '@/components/Feed/pendingFeedAttachment';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutPreset } from './LayoutPresetsMenu';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
@@ -138,6 +140,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const t = useTranslations('dashboard_tabs');
   const td = useTranslations('dashboards');
   const tp = useTranslations('dashboards_page');
+  const router = useRouter();
   const {
     dashboards,
     activeDashboardId,
@@ -555,7 +558,35 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
       message.warning(t('select_dashboard_first'));
       return;
     }
+    if (widgets.length === 0) {
+      message.warning(t('dashboard_needs_widgets'));
+      return;
+    }
     setIsPublishOpen(true);
+  };
+
+  // "Attach to a new post": reuses the exact same snapshot already computed
+  // for the Publish modal (publishSnapshotPayload, from this dashboard's own
+  // in-memory widgets/layout/filters - no extra fetch) instead of publishing
+  // it as its own standalone post. Same access requirements as Publish; the
+  // server re-validates regardless (_can_view_dashboard_or_chart), so there's
+  // no separate permission path to get wrong here.
+  const handleAttachToPost = () => {
+    if (!activeDashboardId || !activeDashboard) {
+      message.warning(t('select_dashboard_first'));
+      return;
+    }
+    if (widgets.length === 0) {
+      message.warning(t('dashboard_needs_widgets'));
+      return;
+    }
+    writePendingFeedAttachment({
+      asset_type: 'dashboard',
+      asset_id: activeDashboardId,
+      title: activeDashboard.name,
+      snapshot_payload: publishSnapshotPayload as Record<string, unknown> | null,
+    });
+    router.push('/feed');
   };
 
   const handleDashboardExport = async (format: string) => {
@@ -680,13 +711,13 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               type="text" size="small"
               icon={starredDashboardIds.has(dash.id) ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
               onClick={(e) => { e.stopPropagation(); toggleStarDashboard(dash.id); }}
-              className="text-text-tertiary hover:text-brand" title={t('star_toggle')}
+              className="icon-only-btn" title={t('star_toggle')}
               aria-label={t('star_toggle')}
             />
             <Button
               type="text" size="small" icon={<EditOutlined />}
               onClick={(e) => handleOpenRename(e, { id: dash.id, name: dash.name })}
-              className="text-text-tertiary hover:text-brand" title={t('rename')}
+              className="icon-only-btn" title={t('rename')}
               aria-label={t('rename')}
             />
             <OverflowMenuButton ariaLabel={t('more_dashboard_actions')} title={t('more_actions')}>
@@ -897,13 +928,13 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                     )}
                     <div className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
                       <Tooltip title={t('rename_folder')}>
-                        <Button type="text" size="small" icon={<EditOutlined />} className="text-text-tertiary"
+                        <Button type="text" size="small" icon={<EditOutlined />} className="icon-only-btn"
                           onClick={(e) => { e.stopPropagation(); setEditingFolderId(folder.id); setNewFolderName(folder.name); }}
                           aria-label={t('rename_folder')}
                         />
                       </Tooltip>
                       <Tooltip title={t('delete_folder_hint')}>
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                        <Button type="text" size="small" danger icon={<DeleteOutlined />} className="icon-only-btn icon-only-btn--danger"
                           aria-label={t('delete_folder')}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -996,7 +1027,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
         <Dropdown popupRender={() => dashboardNavigator} trigger={[]} open={false}>
           <Button
             type="text"
-            className="!w-8 !h-8 !rounded-md !bg-brand-subtle !text-brand hover:!bg-brand-subtle"
+            className="icon-only-btn icon-only-btn--primary"
             icon={<DashboardOutlined />}
             aria-label={t('dashboard')}
           />
@@ -1157,7 +1188,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   <div className="flex items-center h-8 rounded-md border border-border-light bg-bg-container overflow-hidden">
                     <button
                       type="button"
-                      className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                      className="flex items-center justify-center w-7 h-full text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
                       onClick={zoomOut}
                       disabled={canvasZoom <= 25}
                       title={t('zoom_out')}
@@ -1167,7 +1198,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                     </button>
                     <button
                       type="button"
-                      className="flex items-center justify-center min-w-[42px] h-full border-x border-border-light text-text text-xs font-medium px-1 whitespace-nowrap transition-colors hover:bg-bg-elevated"
+                      className="flex items-center justify-center min-w-[42px] h-full border-x border-border-light text-text-secondary text-xs font-medium px-1 whitespace-nowrap transition-colors hover:bg-bg-elevated hover:text-text"
                       onClick={() => setCanvasZoom(100)}
                       title={t('reset_zoom')}
                       aria-label={t('reset_zoom')}
@@ -1176,7 +1207,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                     </button>
                     <button
                       type="button"
-                      className="flex items-center justify-center w-7 h-full text-text text-sm transition-colors hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
+                      className="flex items-center justify-center w-7 h-full text-text-secondary text-sm transition-colors hover:bg-bg-elevated hover:text-text disabled:opacity-35 disabled:pointer-events-none"
                       onClick={zoomIn}
                       disabled={canvasZoom >= 200}
                       title={t('zoom_in')}
@@ -1250,16 +1281,16 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
                   loading={updatingSnapshot}
                   onClick={onUpdateSnapshot}
                   aria-label={t('update_feed_snapshot')}
-                  className="!w-8 !h-8 !p-0"
+                  className="icon-only-btn"
                 />
               ) : (
                 <Link href={feedPostUrl(feedPostId)}>
                   <Button
                     size="small"
                     type="text"
-                    icon={<CompassOutlined className="text-text-tertiary" />}
+                    icon={<CompassOutlined />}
                     aria-label={t('view_in_feed')}
-                    className="!w-8 !h-8 !p-0"
+                    className="icon-only-btn"
                   />
                 </Link>
               )}
@@ -1274,6 +1305,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
               filtersPanelOpen={filtersPanelOpen}
               onOpenFilterPanel={onOpenFilterPanel}
               onOpenFilterManager={onOpenFilterManager}
+              widgets={widgets}
             >
               <Button type="primary" icon={<PlusOutlined />}>
                 {t('add')}
@@ -1305,6 +1337,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             isEditMode={isEditMode}
             isEnterprise={isEnterpriseEdition}
             onPublish={openPublishModal}
+            onAttachToPost={handleAttachToPost}
             onScheduleDelivery={openAutoSendModal}
             onManageSchedules={openAutomationListModal}
             isPublic={Boolean((activeDashboard as { config?: { is_public?: boolean } })?.config?.is_public)}
@@ -1321,6 +1354,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
 
           <Button
             type="text"
+            className="icon-only-btn"
             icon={<ExpandOutlined />}
             onClick={toggleFullscreen}
             title={isFullscreen ? t('exit_full_screen') : t('full_screen')}

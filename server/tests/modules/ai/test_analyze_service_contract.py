@@ -4,7 +4,7 @@ import pytest
 
 os.environ["DEBUG"] = "false"
 
-from src.modules.ai.services import analyze_service
+from ee.modules.ai.services import analyze_service
 
 
 @pytest.mark.asyncio
@@ -33,7 +33,13 @@ async def test_run_langgraph_sync_propagates_failure_success_flag(monkeypatch):
     class _FakeMultiEngineQueryService:
         pass
 
-    from src.modules.ai.services import langgraph_orchestrator
+    # analyze_service._run_langgraph_sync imports LangGraphMultiAgentOrchestrator
+    # via the ee.modules.ai path, not src.modules.ai - src.modules.ai is a
+    # separately-loaded module object (src/modules/ai/__init__.py __path__-redirects
+    # into the ee tree, but that's a second load, not an alias), so patching it
+    # here left production's ee-path import pointing at the real orchestrator,
+    # which then hit a real DB with the fake non-UUID user_id/conversation_id.
+    from ee.modules.ai.services import langgraph_orchestrator
     from src.modules.data.services import data_connectivity_service
     from src.modules.data.services import multi_engine_query_service
 

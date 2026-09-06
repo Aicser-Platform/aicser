@@ -22,6 +22,20 @@ def is_ee_enabled() -> bool:
     return False
 
 
+
+# Every one of the ~17 src/modules/<name>/ CE shims that redirect to ee/modules/<name>/
+# starts with `from src.core.edition import is_ee_enabled`, making this about the
+# earliest point every process-wide import touches - installing the src./ee. import
+# aliasing here (see ee_import_alias.py's own docstring for what it fixes and why)
+# means it's active before any of those shims' own submodules get touched, in the
+# FastAPI app, the ARQ worker, and any standalone/test entry point alike. Idempotent,
+# so main.py and worker.py also calling it explicitly (belt-and-suspenders for the
+# two entry points where import order matters most) is safe.
+from src.core.ee_import_alias import install as _install_ee_import_alias
+
+_install_ee_import_alias()
+
+
 def get_auth_provider() -> str:
     """Return the configured form-auth provider: 'local' (default) or 'supabase'.
 

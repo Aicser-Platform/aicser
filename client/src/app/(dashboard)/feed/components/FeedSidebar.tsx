@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Button, Card, Empty, Input, List, Modal, Select, Space, Typography, Avatar, message, Tooltip, Dropdown } from 'antd';
 import {
   ArrowDownOutlined,
@@ -337,20 +338,30 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
           locale={{
             emptyText: <div className="p-4 text-[var(--ant-color-text-description)]">{t('no_contributor_data')}</div>,
           }}
-          renderItem={(entry, index) => (
-            <div className="flex items-center gap-3 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors">
+          renderItem={(entry, index) => {
+            const authorProfileHref = entry.author.username
+              ? `/discover/author/${encodeURIComponent(entry.author.username.replace(/^@/, ''))}`
+              : null;
+            const avatar = (
               <Avatar
                 size={32}
                 src={entry.author.avatarUrl}
-                className="bg-blue-100 text-[var(--ant-color-primary)] shrink-0"
+                className={`bg-blue-100 text-[var(--ant-color-primary)] shrink-0 ${authorProfileHref ? 'cursor-pointer' : ''}`}
               >
                 {entry.author.name.charAt(0)}
               </Avatar>
+            );
+            const name = (
+              <span className={`text-sm font-semibold text-[var(--ant-color-text)] truncate ${authorProfileHref ? 'hover:text-[var(--ant-color-primary)]' : ''}`}>
+                {entry.author.name}
+              </span>
+            );
+            return (
+            <div className="flex items-center gap-3 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors">
+              {authorProfileHref ? <Link href={authorProfileHref}>{avatar}</Link> : avatar}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-sm font-semibold text-[var(--ant-color-text)] truncate">
-                    {entry.author.name}
-                  </span>
+                  {authorProfileHref ? <Link href={authorProfileHref}>{name}</Link> : name}
                   {index < 3 && (
                     <TrophyOutlined
                       className={`text-xs ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-[var(--ant-color-text-description)]' : 'text-orange-400'}`}
@@ -362,7 +373,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 </div>
               </div>
             </div>
-          )}
+            );
+          }}
         />
       </Card>
 
@@ -487,7 +499,20 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       >
         <List
           dataSource={(data.activity ?? []).slice(0, 6)}
-          renderItem={(activity) => (
+          renderItem={(activity) => {
+            const actorProfileHref = activity.actor.username
+              ? `/discover/author/${encodeURIComponent(activity.actor.username.replace(/^@/, ''))}`
+              : null;
+            const actorAvatar = (
+              <Avatar
+                size={28}
+                src={activity.actor.avatarUrl}
+                className={`bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)] shrink-0 mt-0.5 ${actorProfileHref ? 'cursor-pointer' : ''}`}
+              >
+                {activity.actor.name.charAt(0)}
+              </Avatar>
+            );
+            return (
             <div
               className="p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors flex gap-3 items-start cursor-pointer"
               role="button"
@@ -500,13 +525,16 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 }
               }}
             >
-              <Avatar
-                size={28}
-                src={activity.actor.avatarUrl}
-                className="bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)] shrink-0 mt-0.5"
-              >
-                {activity.actor.name.charAt(0)}
-              </Avatar>
+              {/* Avatar links to the actor's profile independently of the row's
+                  own click-to-open-post behavior — stopPropagation keeps the two
+                  targets from fighting over the same click. */}
+              {actorProfileHref ? (
+                <Link href={actorProfileHref} onClick={(e) => e.stopPropagation()}>
+                  {actorAvatar}
+                </Link>
+              ) : (
+                actorAvatar
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-[var(--ant-color-text-secondary)] leading-snug line-clamp-2 m-0">
                   <span className="font-medium text-[var(--ant-color-text)]">{activity.actor.name}</span>{' '}
@@ -519,7 +547,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 </div>
               </div>
             </div>
-          )}
+            );
+          }}
         />
       </Card>
 

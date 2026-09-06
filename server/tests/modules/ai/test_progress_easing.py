@@ -1,6 +1,6 @@
 """Tests for streaming progress easing."""
 
-from src.modules.ai.utils.progress_easing import (
+from ee.modules.ai.utils.progress_easing import (
     ease_progress_display,
     raw_progress_for_plan_step,
     apply_eased_progress_to_event,

@@ -41,6 +41,12 @@ export interface FeedRequestFilters {
   sort: FeedSort;
   tags: string[];
   search: string;
+  /** Active org/project context — required for 'organization'/'project'
+   * scope to mean "the one selected in the header" rather than "any of
+   * mine" (the server-side fallback when these are omitted). */
+  organizationId?: string;
+  projectId?: string;
+  privateProjectOnly?: boolean;
 }
 
 export interface SidebarControls {
@@ -49,10 +55,17 @@ export interface SidebarControls {
   sortBy: LeaderboardSortBy;
 }
 
+export interface FeedScopeContext {
+  organizationId?: string;
+  projectId?: string;
+  privateProjectOnly?: boolean;
+}
+
 export const feedKeys = {
   list: (filters: FeedRequestFilters) => ['feed', 'list', filters] as const,
   filterOptions: (scope: string) => ['feed', 'filter-options', scope] as const,
-  sidebar: (scope: string, controls: SidebarControls) => ['feed', 'sidebar', scope, controls] as const,
+  sidebar: (scope: string, controls: SidebarControls, scopeContext: FeedScopeContext = {}) =>
+    ['feed', 'sidebar', scope, controls, scopeContext] as const,
   approvalQueue: ['feed', 'approval-queue'] as const,
   item: (itemId: string) => ['feed', 'item', itemId] as const,
 };
@@ -76,6 +89,8 @@ export function useFeedListQuery(filters: FeedRequestFilters) {
         tags: filters.tags,
         search: filters.search.trim() || undefined,
         assetType: filters.assetType === 'all' ? undefined : filters.assetType,
+        organizationId: filters.organizationId,
+        projectId: filters.projectId,
         limit: PAGE_SIZE,
         offset: pageParam,
       });
@@ -133,11 +148,22 @@ export function usePrependFeedItem(filters: FeedRequestFilters) {
   );
 }
 
-export function useFeedFilterOptionsQuery(scope: FeedScope) {
+export function useFeedFilterOptionsQuery(
+  scope: FeedScope,
+  scopeContext: FeedScopeContext = {},
+) {
   return useQuery({
-    queryKey: feedKeys.filterOptions(scope),
+    // organizationId/projectId folded into the key (not just scope) — same
+    // reasoning as feedKeys.list: switching the active project must
+    // invalidate cached tag/author counts scoped to the previous one.
+    queryKey: [
+      ...feedKeys.filterOptions(scope),
+      scopeContext.organizationId,
+      scopeContext.projectId,
+      scopeContext.privateProjectOnly,
+    ] as const,
     queryFn: async (): Promise<FeedFilterOptions> => {
-      const response = await socialFeedService.getFilterOptions(scope);
+      const response = await socialFeedService.getFilterOptions(scope, scopeContext);
       return {
         tags: response.tags ?? [],
         authors: response.authors ?? [],
@@ -148,15 +174,22 @@ export function useFeedFilterOptionsQuery(scope: FeedScope) {
   });
 }
 
-export function useFeedSidebarQuery(scope: FeedScope, controls: SidebarControls) {
+export function useFeedSidebarQuery(
+  scope: FeedScope,
+  controls: SidebarControls,
+  scopeContext: FeedScopeContext = {},
+) {
   return useQuery({
-    queryKey: feedKeys.sidebar(scope, controls),
+    queryKey: feedKeys.sidebar(scope, controls, scopeContext),
     queryFn: async (): Promise<FeedSidebarData> => {
       const response = await socialFeedService.getSidebarData(scope, {
         timeRange: controls.timeRange,
         contentType: controls.contentType,
         sortBy: controls.sortBy,
         leaderboardLimit: 8,
+        organizationId: scopeContext.organizationId,
+        projectId: scopeContext.projectId,
+        privateProjectOnly: scopeContext.privateProjectOnly,
       });
       return {
         leaderboard: response.leaderboard ?? [],

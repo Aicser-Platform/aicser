@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Select,
-    Card,
     Space,
     Tag,
     Button,
@@ -526,18 +525,29 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
 
     // ── Full (settings) mode ──────────────────────────────────────────────────
+    // Deliberately no self-titled Card here: every real caller (Settings → API
+    // Keys → Providers, EmbedAssistantModal's "Preferred Model" Form.Item)
+    // already sits inside its own Card/Form.Item framing, so this used to
+    // render as a bordered, titled card nested inside another one - visibly
+    // inconsistent with the flat provider-list rows right above it in
+    // ApiKeysTab, and a redundant second "title" stacked under the Form.Item
+    // label in EmbedAssistantModal. The refresh affordance moves to a small
+    // inline link next to the select instead of a Card corner slot.
     return (
-        <Card
-            title={<Space><ExperimentOutlined /> {t('ai_model_selection')}</Space>}
-            size="small"
-            className={className}
-            extra={
-                <Button size="small" onClick={loadModels} loading={loading} icon={<ThunderboltOutlined />}>
-                    {t('refresh')}
-                </Button>
-            }
-        >
+        <div className={className}>
             <Space orientation="vertical" style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={loadModels}
+                        loading={loading}
+                        icon={<ThunderboltOutlined />}
+                        style={{ paddingInline: 0, height: 'auto' }}
+                    >
+                        {t('refresh')}
+                    </Button>
+                </div>
                 <Select
                     value={selectedModel}
                     onChange={onSelect}
@@ -691,7 +701,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     </Text>
                 )}
             </Space>
-        </Card>
+        </div>
     );
 };
 

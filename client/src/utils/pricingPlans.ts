@@ -17,6 +17,10 @@ export interface PricingPlan {
   popular?: boolean;
   min_seats?: number;
   price_per_seat?: number;
+  /** Read-only (org_viewer / project_viewer) seat add-on price — deliberately
+   * far below price_per_seat: industry practice (Tableau Viewer $15 vs
+   * Creator $75/mo) prices read-only access well below build/edit access. */
+  price_per_viewer_seat?: number;
 }
 
 export type UsageLimit = number | -1;
@@ -150,6 +154,7 @@ export const pricingPlans: PricingPlan[] = [
     ],
     min_seats: 5,
     price_per_seat: 25,
+    price_per_viewer_seat: 6,
     features: [
       'Everything in Pro',
       'Team collaboration & comments',
@@ -179,7 +184,7 @@ export const pricingPlans: PricingPlan[] = [
       'Own branding',
       'On-premise deployment',
       'SSO & SAML',
-      'Compliance certifications',
+      'Sovereignty & Compliance',
       '99.9% SLA',
       'Dedicated success manager',
       'Custom AI model',

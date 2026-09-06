@@ -106,9 +106,28 @@ class UserService:
         if not allowed:
             return await self.get_profile(user_id)
 
+        # Resolve the ONE real row first (same "user_id OR id" + LIMIT 1 match
+        # get_profile already uses), then update strictly by its own primary
+        # key. Doing the OR-match directly in the UPDATE's WHERE (as this used
+        # to) touches every row satisfying it - normally just one, but a
+        # single bad `user_id` value that happens to equal another row's `id`
+        # (confirmed to exist in this DB: a dangling duplicate account whose
+        # user_id pointed at a real account's id) makes it silently update
+        # BOTH, overwriting one user's real profile data with another's every
+        # time. Scoping to the resolved id closes that off entirely regardless
+        # of what any row's user_id column happens to contain.
+        resolved = await self.db.execute(
+            text("SELECT id FROM users WHERE user_id = :uid OR id = :uid LIMIT 1"),
+            {"uid": u_id},
+        )
+        resolved_row = resolved.fetchone()
+        if not resolved_row:
+            return None
+        resolved_id = resolved_row.id
+
         # Build SET clause dynamically
         set_parts = []
-        params: Dict[str, Any] = {"user_id": u_id}
+        params: Dict[str, Any] = {"resolved_id": resolved_id}
         for col, val in allowed.items():
             set_parts.append(f"{col} = :{col}")
             # JSONB columns (goals) need json-serialised strings cast in SQL
@@ -124,7 +143,7 @@ class UserService:
                 UPDATE users
                 SET {set_clause},
                     updated_at = NOW()
-                WHERE user_id = :user_id OR id = :user_id
+                WHERE id = :resolved_id
             """),
             params,
         )

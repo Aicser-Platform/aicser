@@ -1,13 +1,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { ShareAltOutlined, CodeOutlined, UndoOutlined, RedoOutlined } from '@ant-design/icons';
+import { ShareAltOutlined, CodeOutlined, UndoOutlined, RedoOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
 import { formatFeedPublishError } from '@/components/Feed/feedPublishUtils';
+import { writePendingFeedAttachment } from '@/components/Feed/pendingFeedAttachment';
+import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
@@ -31,6 +34,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const undo = useUndo();
   const redo = useRedo();
   const { user } = useAuth();
+  const router = useRouter();
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
   const organizationId =
@@ -82,6 +86,16 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     return savedId;
   }, [saveChart, selectedWidget, t, user?.id]);
 
+  // Publishing/attaching a chart that's never been pointed at any data at
+  // all just spreads its own empty "No data available. Configure the widget
+  // in properties." placeholder into the feed - not meaningful content for
+  // anyone else, regardless of what title it has. A chart mid-setup (some
+  // query fields filled in, still refining) is left alone; this only catches
+  // the "brand new widget, nothing touched yet" case.
+  const hasConfiguredData = useCallback((widget: ChartDesignerWidget | null) => {
+    return Boolean(widget?.chartQuery && Object.keys(widget.chartQuery).length > 0);
+  }, []);
+
   const handleShareToFeed = useCallback(async () => {
     if (!selectedWidget) {
       message.warning(t('share_select_chart'));
@@ -89,6 +103,10 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     }
     if (!user?.id) {
       message.warning(t('share_login_required'));
+      return;
+    }
+    if (!hasConfiguredData(selectedWidget)) {
+      message.warning(t('share_needs_data'));
       return;
     }
 
@@ -129,7 +147,52 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     } finally {
       setPreparing(false);
     }
-  }, [ensureChartId, selectedWidget, t, user?.id]);
+  }, [ensureChartId, hasConfiguredData, selectedWidget, t, user?.id]);
+
+  // "Attach to a new post": same snapshot-build + saved-chartId logic as
+  // handleShareToFeed above, just handed to the /feed composer as a pending
+  // attachment instead of publishing this chart as its own standalone post.
+  // Same access requirements (ensureChartId already gates on a logged-in
+  // user; the server re-validates ownership/visibility regardless).
+  const handleAttachToPost = useCallback(async () => {
+    if (!selectedWidget) {
+      message.warning(t('share_select_chart'));
+      return;
+    }
+    if (!user?.id) {
+      message.warning(t('share_login_required'));
+      return;
+    }
+    if (!hasConfiguredData(selectedWidget)) {
+      message.warning(t('share_needs_data'));
+      return;
+    }
+
+    setPreparing(true);
+    try {
+      const chartId = await ensureChartId();
+      if (!chartId) return;
+      const title = selectedWidget.title?.trim() || t('untitled_chart');
+      const snapshot_payload = buildChartSnapshotPayload({
+        title,
+        chartWidget: {
+          chartType: selectedWidget.chartType,
+          chartData: selectedWidget.chartData,
+          chartOptions: selectedWidget.chartOptions,
+          chartQuery: selectedWidget.chartQuery,
+        },
+        sourcePath: '/chart-designer',
+        chartId,
+        dashboardId: selectedWidget.dashboardId ? String(selectedWidget.dashboardId) : undefined,
+      }) as unknown as Record<string, unknown>;
+      writePendingFeedAttachment({ asset_type: 'chart', asset_id: chartId, title, snapshot_payload });
+      router.push('/feed');
+    } catch (error) {
+      message.error(formatFeedPublishError(error, t('share_save_required')));
+    } finally {
+      setPreparing(false);
+    }
+  }, [ensureChartId, hasConfiguredData, router, selectedWidget, t, user?.id]);
 
   const handleShowEmbed = useCallback(async () => {
     if (!selectedWidget) {
@@ -162,8 +225,15 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const shareMenuItems: MenuProps['items'] = [
     {
       key: 'feed',
-      label: tf('share_to_feed'),
+      icon: <ShareAltOutlined />,
+      label: menuItemWithDescription(tf('share_to_feed'), tf('share_to_feed_desc')),
       onClick: () => void handleShareToFeed(),
+    },
+    {
+      key: 'attach-to-post',
+      icon: <PaperClipOutlined />,
+      label: menuItemWithDescription(th('attach_to_new_post'), th('attach_to_new_post_desc')),
+      onClick: () => void handleAttachToPost(),
     },
     {
       key: 'embed',

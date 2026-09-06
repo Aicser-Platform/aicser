@@ -16,7 +16,7 @@ import pytest
 def test_strip_nonserializable_state_basic():
     """strip_nonserializable_state keeps primitives, dict, list, tuple; removes Queue."""
     try:
-        from src.modules.ai.services.langgraph_base import strip_nonserializable_state
+        from ee.modules.ai.services.langgraph_base import strip_nonserializable_state
     except ImportError as e:
         pytest.skip(f"langgraph_base not available: {e}")
 
@@ -31,7 +31,7 @@ def test_strip_nonserializable_state_basic():
 def test_strip_nonserializable_state_removes_queue():
     """_stream_queue and asyncio.Queue are removed so checkpointer never sees them."""
     try:
-        from src.modules.ai.services.langgraph_base import strip_nonserializable_state
+        from ee.modules.ai.services.langgraph_base import strip_nonserializable_state
     except ImportError as e:
         pytest.skip(f"langgraph_base not available: {e}")
 
@@ -45,7 +45,7 @@ def test_strip_nonserializable_state_removes_queue():
 def test_strip_nonserializable_state_tuple_with_bad_value():
     """Tuples are recursed; nonserializable values inside are stripped."""
     try:
-        from src.modules.ai.services.langgraph_base import (
+        from ee.modules.ai.services.langgraph_base import (
             strip_nonserializable_state,
             _strip_nonserializable_deep,
         )
@@ -63,7 +63,7 @@ def test_strip_nonserializable_state_tuple_with_bad_value():
 def test_format_schema_for_prompt():
     """_format_schema_for_prompt produces table/column summary for discovery."""
     try:
-        from src.modules.ai.utils.question_discovery import _format_schema_for_prompt
+        from ee.modules.ai.utils.question_discovery import _format_schema_for_prompt
     except ImportError as e:
         pytest.skip(f"question_discovery not available: {e}")
 
@@ -82,7 +82,7 @@ def test_format_schema_for_prompt():
 def test_generate_suggestions_empty_schema():
     """generate_suggestions returns default questions when schema has no tables."""
     try:
-        from src.modules.ai.utils.question_discovery import QuestionDiscoveryService
+        from ee.modules.ai.utils.question_discovery import QuestionDiscoveryService
     except ImportError as e:
         pytest.skip(f"question_discovery not available: {e}")
 
@@ -96,7 +96,7 @@ def test_generate_suggestions_empty_schema():
 def test_generate_suggestions_with_tables():
     """generate_suggestions uses table/column names when present."""
     try:
-        from src.modules.ai.utils.question_discovery import QuestionDiscoveryService
+        from ee.modules.ai.utils.question_discovery import QuestionDiscoveryService
     except ImportError as e:
         pytest.skip(f"question_discovery not available: {e}")
 

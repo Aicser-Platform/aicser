@@ -46,6 +46,7 @@ async def render_page_export(
     viewport: Optional[Dict[str, int]] = None,
     device_scale_factor: float = 2.0,
     pdf_options: Optional[Dict[str, Any]] = None,
+    content_selector: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     """Render a chrome-free embed route via headless Chromium.
 
@@ -53,11 +54,25 @@ async def render_page_export(
     for hi-DPI PNG/PDF output - this is the right lever for export quality
     since capture is a server-side screenshot, not a change to how ECharts
     renders on-screen.
+
+    content_selector: a CSS selector that only appears once the embed page's
+    own async data fetch has actually populated real content (e.g. the
+    report embed's ".report-header", which only renders after its useEffect
+    fetch resolves - the loading/error states render a different subtree
+    entirely). `wait_until="networkidle"` alone is not sufficient: idle network
+    fires on the SPA shell's own bundle load, before its post-mount data
+    fetch has even started - so the fixed follow-up wait below is the only
+    thing standing between "captured after data arrived" and "captured a
+    half-second too early" - live-reproduced: an identical back-to-back call
+    against the same report produced a full 4-page PDF once and a ~1KB
+    blank-page PDF the next time, pure timing variance. Waiting for this
+    selector (when the caller has one) removes that race at the source;
+    callers with no natural selector keep the old timeout-only behavior.
     """
     if export_format not in _MIME_TYPES:
         raise ValueError(f"Unsupported export format: {export_format!r}. Supported: {sorted(_MIME_TYPES)}")
 
-    base = (settings.FRONTEND_URL or "http://localhost:3000").rstrip("/")
+    base = (settings.INTERNAL_FRONTEND_URL or settings.FRONTEND_URL or "http://localhost:3000").rstrip("/")
     url = f"{base}{embed_path}"
     if token:
         separator = "&" if "?" in url else "?"
@@ -73,11 +88,41 @@ async def render_page_export(
                 device_scale_factor=device_scale_factor,
             )
             await page.goto(url, wait_until="networkidle", timeout=30000)
+            if content_selector:
+                try:
+                    await page.wait_for_selector(content_selector, timeout=15000)
+                except Exception:
+                    logger.warning(
+                        "render_page_export: content_selector %r never appeared for %s; "
+                        "capturing whatever loaded (likely an error/empty state)",
+                        content_selector, embed_path,
+                    )
             await page.wait_for_timeout(2000)
 
             if export_format == "png":
                 file_bytes = await page.screenshot(full_page=True)
             elif export_format == "pdf":
+                # page.pdf() applies @media print CSS (via Chrome DevTools
+                # Protocol's Page.printToPDF), but — unlike an interactive
+                # print dialog reached through window.print() — it does NOT
+                # dispatch the page's own `beforeprint`/`afterprint` DOM
+                # events. ReportDocument.tsx's SectionChart listens for
+                # exactly that event to resize each ECharts canvas to its
+                # now print-constrained container (a ResizeObserver alone
+                # doesn't reliably fire for print-only layout changes); with
+                # no real print dialog in this headless path, that listener
+                # was live-reproduced as never firing, so every chart kept
+                # its full on-screen canvas width and just got clipped by
+                # its container's overflow:hidden — exactly the reported
+                # "each chart cut off, not within container" bug. Firing it
+                # here manually closes the gap without needing the frontend
+                # to special-case a non-interactive export.
+                await page.evaluate("window.dispatchEvent(new Event('beforeprint'))")
+                # ECharts' resize() call (triggered by that event) queues a
+                # re-render on the next animation frame rather than painting
+                # synchronously — give it a moment to actually redraw the
+                # canvas at its new dimensions before the PDF snapshot below.
+                await page.wait_for_timeout(300)
                 options: Dict[str, Any] = {"format": "A4", "print_background": True}
                 options.update(pdf_options or {})
                 file_bytes = await page.pdf(**options)

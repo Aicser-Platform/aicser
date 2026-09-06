@@ -74,6 +74,38 @@ export function handlePlanLimitError(error: unknown): boolean {
   return true;
 }
 
+/**
+ * Check if an error is a plan-feature-gate 402 (require_plan_feature /
+ * org_entitlement on the backend — e.g. embed_analytics, embed_white_label)
+ * and, if so, show the same "Upgrade Plan" modal handlePlanLimitError uses.
+ * Generic by design: this is the shape every require_plan_feature-gated
+ * endpoint across the app already returns (feature/upgrade_required/
+ * required_plan), not something embed-specific — a fix here covers every
+ * future gated feature that reuses that dependency, not just embed.
+ */
+export function handleUpgradeRequiredError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 402) return false;
+  const detail = error.detail;
+  if (!detail || typeof detail !== 'object' || !detail.upgrade_required) return false;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Modal } = require('antd');
+    const requiredPlan = typeof detail.required_plan === 'string' ? detail.required_plan : 'a higher plan';
+    Modal.warning({
+      title: `Upgrade to ${requiredPlan.charAt(0).toUpperCase()}${requiredPlan.slice(1)}`,
+      content: detail.message || 'This capability requires a higher plan.',
+      okText: 'Upgrade Plan',
+      onOk: () => {
+        window.dispatchEvent(new CustomEvent('open-pricing-modal'));
+      },
+    });
+  } catch {
+    // If antd is unavailable, fall through
+  }
+  return true;
+}
+
 // When running in the browser prefer same-origin proxy so all frontend calls
 // go through `/api/...` and benefit from cookie forwarding and CORS handling.
 export const API_URL = ((): string => {
@@ -143,16 +175,16 @@ async function exchangeEeTokenForAicserBearer(providerToken: string): Promise<st
 }
 
 /**
- * API fetch utility with automatic JSON parsing.
- *
- * Supabase Bearer when enabled; else CE JWT from sessionStorage as Bearer (same secret as auth_token cookie).
- * Returns parsed JSON response.
- *
- * @param endpoint - API endpoint path
- * @param options - Fetch options
- * @returns Parsed JSON data
+ * Shared request-building logic behind fetchApi/fetchApiBlob: resolves the
+ * target URL (auth endpoints vs normal API, same-origin proxy vs direct) and
+ * the auth/org headers (CE bearer token, or EE token-exchange fallback).
+ * Extracted so blob-returning callers (e.g. PDF export downloads) don't have
+ * to reimplement this auth logic to stay in sync with fetchApi.
  */
-export const fetchApi = async <T = any>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+async function buildApiRequest(
+  endpoint: string,
+  options: RequestInit,
+): Promise<{ url: string; headers: Record<string, string> }> {
   // Don't set Content-Type for FormData - browser will set it automatically with boundary
   const isFormData = options.body instanceof FormData;
   const defaultHeaders: Record<string, string> = isFormData
@@ -165,6 +197,19 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
     const organizationId = getSelectedOrganizationId();
     if (organizationId) {
       defaultHeaders['X-Organization-Id'] = organizationId;
+    }
+
+    // Sent on every request so the AI backend can ground "today"/"this week"
+    // in the user's actual local date instead of only UTC. Intl's resolved
+    // timeZone needs no permission prompt (unlike geolocation) and is
+    // supported in every browser this app already targets.
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) {
+        defaultHeaders['X-Client-Timezone'] = tz;
+      }
+    } catch {
+      /* Intl unavailable — omit the header, backend falls back to UTC */
     }
 
     // CE bearer token (sessionStorage) always takes priority — it carries the
@@ -216,6 +261,22 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
     isAuthEndpoint && typeof window !== 'undefined'
       ? `/api/auth/${normalizedEndpoint}`
       : `${baseUrl}/${normalizedEndpoint}`;
+
+  return { url, headers: defaultHeaders };
+}
+
+/**
+ * API fetch utility with automatic JSON parsing.
+ *
+ * Supabase Bearer when enabled; else CE JWT from sessionStorage as Bearer (same secret as auth_token cookie).
+ * Returns parsed JSON response.
+ *
+ * @param endpoint - API endpoint path
+ * @param options - Fetch options
+ * @returns Parsed JSON data
+ */
+export const fetchApi = async <T = any>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+  const { url, headers: defaultHeaders } = await buildApiRequest(endpoint, options);
 
   const response = await fetch(url, {
     ...options,
@@ -288,4 +349,47 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
 
   // Parse and return JSON
   return (await response.json()) as T;
+};
+
+/**
+ * Same auth/routing as fetchApi, but for endpoints that return a binary
+ * file (PDF/PNG/HTML export) rather than JSON — e.g. the server-side
+ * Playwright export endpoints (reports/{id}/{id}/export,
+ * dashboards/{id}/export). Returns the blob plus the filename from the
+ * response's Content-Disposition header, if the server sent one.
+ */
+export const fetchApiBlob = async (
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<{ blob: Blob; filename: string | null }> => {
+  const { url, headers: defaultHeaders } = await buildApiRequest(endpoint, options);
+
+  const response = await fetch(url, {
+    ...options,
+    credentials: 'include',
+    cache: 'no-store',
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let message = errorText || `Request failed (${response.status})`;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (typeof parsed?.detail === 'string') message = parsed.detail;
+      else if (typeof parsed?.message === 'string') message = parsed.message;
+    } catch {
+      /* not JSON — use raw text */
+    }
+    throw new ApiError(response.status, message, errorText);
+  }
+
+  const disposition = response.headers.get('content-disposition') || '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = match ? match[1] : null;
+
+  return { blob: await response.blob(), filename };
 };

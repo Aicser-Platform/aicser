@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { ErrorDetailsButton } from '@/components/ui/ErrorDetailsButton';
 import { WidgetPreview } from '../widgets/WidgetPreview';
 import { WidgetInteractionHint } from './WidgetInteractionHint';
+import { WidgetFilterWarningHint } from './WidgetFilterWarningHint';
 import { DrillBreadcrumb } from './DrillBreadcrumb';
 import { createCrossFilterChartReady } from '../utils/crossFilterChart';
 import {
@@ -37,6 +38,11 @@ type Props = {
   onUpdateConfig?: (updates: Record<string, unknown>) => void;
   /** When set, failed widgets show a retry button instead of the default error state. */
   onRetryWidget?: (widgetId: string) => void;
+  /** Suppresses the "click to drill down / shift+click to cross-filter" hint icon.
+   * Interactions themselves stay functional — this only hides the chrome, for
+   * read-only consumption contexts (e.g. the feed) where it reads as clutter
+   * rather than useful affordance. */
+  hideInteractionHint?: boolean;
 };
 
 /**
@@ -54,6 +60,7 @@ export function DashboardWidgetCell({
   onWidgetChartClick,
   onUpdateConfig,
   onRetryWidget,
+  hideInteractionHint = false,
 }: Props) {
   const t = useTranslations('dashboard_viewer');
   const widgetDrillState = useDashboardStore((s) => s.widgetDrillState);
@@ -87,7 +94,8 @@ export function DashboardWidgetCell({
 
   return (
     <>
-      <WidgetInteractionHint widget={widget} />
+      {!hideInteractionHint && <WidgetInteractionHint widget={widget} />}
+      {!hideInteractionHint && <WidgetFilterWarningHint widget={widget} />}
       {drillPath.length > 0 && drillState ? (
         <DrillBreadcrumb
           drillPath={drillPath}

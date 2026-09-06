@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from src.modules.ai.utils.guaranteed_chart_builder import build_guaranteed_chart
+from ee.modules.ai.utils.guaranteed_chart_builder import build_guaranteed_chart
 
 
 def _category_labels_from_chart(chart: Dict[str, Any]) -> List[str]:

@@ -1,6 +1,6 @@
 """Tests for LangGraph workflow input guardrails."""
 
-from src.modules.ai.utils.workflow_guardrails import (
+from ee.modules.ai.utils.workflow_guardrails import (
     evaluate_workflow_input_guardrails,
     guardrail_user_message,
 )

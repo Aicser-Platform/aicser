@@ -788,6 +788,17 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
   root.style.overflow = 'visible';
   root.style.backgroundColor = backgroundColor;
 
+  // The container was just resized to its full unclipped content box (above),
+  // which can differ from what was on screen (e.g. a scrolled/short viewport).
+  // Every chart widget already listens for a window 'resize' to re-measure
+  // itself (EChartWidget/RawEChartWidget/GeoMapWidget) — reusing that instead
+  // of a bespoke per-chart-instance hook here keeps capture correctness in
+  // sync with whatever those components already do for live layout changes,
+  // and closes the gap where a chart mid-resize at click time could otherwise
+  // get captured at a stale size.
+  window.dispatchEvent(new Event('resize'));
+  await waitFrames(2);
+
   const rootRect = root.getBoundingClientRect();
   const zoom = readCssZoom(root) || 1;
   const cssBands: WidgetBand[] = [];

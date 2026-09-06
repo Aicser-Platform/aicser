@@ -48,7 +48,7 @@ interface ChartFieldsProps {
   onUpdateChartOption?: (key: string, value: any) => void;
   onUpdateChartOptions?: (updates: Record<string, any>) => void;
   onFieldDrop?: (targetKey: string, field: DashboardFieldDragPayload) => void;
-  mode?: 'mapping' | 'customize' | 'colors' | 'advanced' | 'filters';
+  mode?: 'mapping' | 'customize' | 'colors' | 'sort' | 'filters';
   dashboardPages?: { id: string; name: string }[];
   fetchDistinctValues?: (field: string) => Promise<Array<{ label: string; value: string }>>;
   /** Saved / custom SQL card — new metrics default to Don't summarize */
@@ -548,6 +548,16 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 options={LINE_CHART_TYPE_OPTIONS}
                 showSearch={false}
               />
+
+              <PpLabel>{t('conditional_formatting')}</PpLabel>
+              <ConditionalFormattingEditor
+                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                  label: c.label,
+                  value: c.value,
+                })) ?? []}
+              />
             </>
           )}
 
@@ -642,13 +652,25 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
           )}
 
           {(chartType === 'pie' || chartType === 'donut') && onUpdateChartOption && (
-            <SelectField
-              label={t('donut_hole')}
-              value={chartOptions?.innerRadius ?? (chartType === 'donut' ? 40 : 0)}
-              onChange={(value) => onUpdateChartOption('innerRadius', value)}
-              options={[0, 10, 20, 30, 40, 50, 60, 70, 80].map((v) => ({ label: `${v}%`, value: v }))}
-              showSearch={false}
-            />
+            <>
+              <SelectField
+                label={t('donut_hole')}
+                value={chartOptions?.innerRadius ?? (chartType === 'donut' ? 40 : 0)}
+                onChange={(value) => onUpdateChartOption('innerRadius', value)}
+                options={[0, 10, 20, 30, 40, 50, 60, 70, 80].map((v) => ({ label: `${v}%`, value: v }))}
+                showSearch={false}
+              />
+
+              <PpLabel>{t('conditional_formatting')}</PpLabel>
+              <ConditionalFormattingEditor
+                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                  label: c.label,
+                  value: c.value,
+                })) ?? []}
+              />
+            </>
           )}
 
           {chartType === 'stat' && onUpdateChartOption && (
@@ -1106,39 +1128,45 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
         </div>
       )}
 
-      {mode === 'advanced' && (
+      {mode === 'sort' && (
         <>
-          <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <SelectField
-              label={t('sort_by')}
-              value={chartQuery.sortBy === 'record_order' ? undefined : chartQuery.sortBy}
-              onChange={(val) => onUpdateChartQuery('sortBy', val || 'record_order')}
-              options={dynamicSortOptions}
-              placeholder={t('default_order')}
-              showSearch={false}
-            />
+          {propertyProfile.showSortControls ? (
+            <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <SelectField
+                label={t('sort_by')}
+                value={chartQuery.sortBy === 'record_order' ? undefined : chartQuery.sortBy}
+                onChange={(val) => onUpdateChartQuery('sortBy', val || 'record_order')}
+                options={dynamicSortOptions}
+                placeholder={t('default_order')}
+                showSearch={false}
+              />
 
-            {chartQuery.sortBy && chartQuery.sortBy !== 'record_order' && (
-              <div style={{ marginTop: -8, marginBottom: 8 }}>
-                <CheckboxField 
-                  label={t('sort_ascending')} 
-                  checked={chartQuery.sortOrder === 'asc'} 
-                  onChange={(checked) => onUpdateChartQuery('sortOrder', checked ? 'asc' : 'desc')} 
-                />
-              </div>
-            )}
+              {chartQuery.sortBy && chartQuery.sortBy !== 'record_order' && (
+                <div style={{ marginTop: -8, marginBottom: 8 }}>
+                  <CheckboxField
+                    label={t('sort_ascending')}
+                    checked={chartQuery.sortOrder === 'asc'}
+                    onChange={(checked) => onUpdateChartQuery('sortOrder', checked ? 'asc' : 'desc')}
+                  />
+                </div>
+              )}
 
-            <InputField
-              label={t('row_limit')}
-              type="number"
-              value={chartQuery.limit}
-              placeholder="Default (5000)"
-              onChange={(val) => {
-                const numVal = Math.max(1, Number(val));
-                onUpdateChartQuery('limit', val === undefined ? undefined : numVal);
-              }}
-            />
-          </div>
+              <InputField
+                label={t('row_limit')}
+                type="number"
+                value={chartQuery.limit}
+                placeholder="Default (5000)"
+                onChange={(val) => {
+                  const numVal = Math.max(1, Number(val));
+                  onUpdateChartQuery('limit', val === undefined ? undefined : numVal);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="panel-section" style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 12 }}>
+              {t('sort_not_applicable')}
+            </div>
+          )}
 
           {(chartQuery.drillPath?.length ?? 0) > 0 ? (
             <>
@@ -1205,18 +1233,30 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
       )}
 
       {/* Visual filters live on the Filters tab (industry standard: Build ≠ Filters) */}
-      {mode === 'filters' && (
+      {mode === 'filters' && (() => {
+        const filterFields = config.fields.filter(f => f.key.toLowerCase().includes('filter'));
+        const visibleFilterFields = filterFields.filter(
+          f => !f.conditionalRender || f.conditionalRender(chartQuery, chartOptions),
+        );
+        // Builder-generated widgets carry no filterable field defs at all
+        // (config never listed one); AI-generated raw-SQL widgets have the
+        // field def but it's conditionally hidden (see PropertiesPanelConfig's
+        // compiled_semantic_sql check) — different reasons, so a different,
+        // more accurate explanation for each.
+        const hiddenReason =
+          filterFields.length > 0 && visibleFilterFields.length === 0
+            ? 'This widget was generated from AI-written SQL and doesn’t support visual-level filters.'
+            : filterFields.length === 0
+              ? 'This widget type does not support visual-level filters.'
+              : null;
+        return (
         <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {config.fields.filter(f => f.key.toLowerCase().includes('filter')).length === 0 ? (
+          {hiddenReason ? (
             <div style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 12 }}>
-              This widget type does not support visual-level filters.
+              {hiddenReason}
             </div>
           ) : (
-            config.fields.filter(f => f.key.toLowerCase().includes('filter')).map((field) => {
-              if (field.conditionalRender && !field.conditionalRender(chartQuery, chartOptions)) {
-                return null;
-              }
-
+            visibleFilterFields.map((field) => {
               switch (field.type) {
                 case 'filter-list':
                   return (
@@ -1280,7 +1320,8 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
             })
           )}
         </div>
-      )}
+        );
+      })()}
     </>
   );
 };

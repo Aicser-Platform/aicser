@@ -10,6 +10,7 @@ import { shouldShowWidgetHeader } from '@/app/(dashboard)/dashboards/utils/widge
 import { filterVisibleWidgets, filterVisibleLayout } from '@/app/(dashboard)/dashboards/utils/dashboardViewerScope';
 import type { FeedItem } from '@/services/socialFeedService';
 import type { WidgetInstance } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
+import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
 // Same stylesheet the dashboard canvas and shared/embed viewers load (see
 // FeedDashboardViewer.tsx) — needed here too, since this snapshot path renders
 // widgets through the .widget-card / .widget-card-body structure below.
@@ -122,6 +123,28 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
   const dashboardId = payload?.provenance?.dashboardId || item.assetId || item.id;
 
   if (!payload || !widgets.length) {
+    // No dashboard-widget snapshot exists for this post — true for every non-
+    // dashboard/chart share today (executive reports among them), since their
+    // content isn't widget-shaped. Falling back to a bare "unavailable" empty
+    // state discarded title/excerpt/thumbnail data that publishing already
+    // captured correctly — this renders that instead of nothing.
+    const excerpt = item.asset.excerpt || item.description;
+    const thumbnail = resolveBackendMediaUrl(item.asset.thumbnailUrl);
+    if (excerpt || thumbnail) {
+      return (
+        <div className="feed-snapshot-viewer feed-snapshot-viewer--text-fallback rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] overflow-hidden">
+          {thumbnail ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumbnail} alt={item.title} className="block w-full max-h-[420px] object-cover object-top" />
+          ) : null}
+          {excerpt ? (
+            <p className="m-0 p-5 text-sm leading-relaxed text-[var(--ant-color-text-secondary)] whitespace-pre-line">
+              {excerpt}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
     return (
       <div className="feed-snapshot-viewer feed-snapshot-viewer--empty">
         <Empty description={t('snapshot_unavailable')} />
@@ -151,6 +174,19 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
     const pageWidgets = filterVisibleWidgets(widgets, layoutForWidgets, activePageId, pages, defaultPageId);
     const pageLayout = filterVisibleLayout(layoutForWidgets, pageWidgets);
 
+    // A snapshot only ever captures a FEATURED subset of the source dashboard's
+    // widgets (buildDashboardSnapshotPayload caps at 6, ranked by relevance),
+    // not necessarily all of them — a flat canvas floor sized for "a normal
+    // full dashboard" left a couple of small, compact featured widgets
+    // floating in a mostly-empty box well past 480px tall. Deriving the floor
+    // from this snapshot's own actual widget footprint (max row extent × the
+    // grid's real row-height+margin, from DashboardViewerGrid's rowHeight=42/
+    // margin=[8,8]) means a 1-2-widget snapshot gets a canvas sized to what it
+    // actually shows, while a richer one still grows the same way it always did.
+    const maxRowExtent = pageLayout.length ? Math.max(...pageLayout.map((item) => item.y + item.h)) : 0;
+    const contentHeightPx = maxRowExtent * (42 + 8);
+    const detailCanvasMinHeight = `${Math.max(200, contentHeightPx + 32)}px`;
+
     // 'preserve' uses the widgets' actual saved x/y/w/h, so the snapshot lands in
     // the same place and at the same size as the original dashboard design —
     // the same grid component and layout mode the live dashboard path uses.
@@ -167,7 +203,7 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
           dashboardId={dashboardId}
           runtimeFilters={[]}
           onCrossFilter={noopCrossFilter}
-          canvasMinHeight="480px"
+          canvasMinHeight={detailCanvasMinHeight}
           layoutMode="preserve"
         />
       </div>

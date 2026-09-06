@@ -965,15 +965,15 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   font-size: 11px !important;
 }
 
-.filter-select.ant-select .ant-select-content {
+.filter-select.ant-select .ant-select-selector {
   border-radius: 6px !important;
   border-color: var(--ant-color-border) !important;
   padding: 2px 8px !important;
   min-height: 32px !important;
 }
 
-.filter-select.ant-select:hover .ant-select-content,
-.filter-select.ant-select-focused .ant-select-content {
+.filter-select.ant-select:hover .ant-select-selector,
+.filter-select.ant-select-focused .ant-select-selector {
   border-color: var(--ant-color-primary) !important;
   box-shadow: 0 0 0 2px var(--color-brand-primary-light) !important;
 }
@@ -1063,10 +1063,6 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   flex: 1 1 auto;
 }
 
-.studio-context-presentation .studio-refresh-dropdown-trigger.studio-context-btn {
-  max-width: min(200px, 32vw);
-}
-
 .studio-wrapper:fullscreen .studio-context-presentation,
 .studio-wrapper:-webkit-full-screen .studio-context-presentation {
   margin-top: 4px;
@@ -1085,23 +1081,6 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   position: sticky;
   top: 0;
   z-index: 12;
-}
-
-/* Dense icon toolbar on the page chrome — matches View/Add density above */
-.studio-context-actions .studio-refresh-dropdown-trigger.ant-btn,
-.studio-context-actions .studio-filter-btn.ant-btn {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.studio-context-actions .studio-style-menu-btn.ant-btn {
-  height: 32px;
-  padding-inline: 8px;
 }
 
 .dashboard-page-chrome-viewer {

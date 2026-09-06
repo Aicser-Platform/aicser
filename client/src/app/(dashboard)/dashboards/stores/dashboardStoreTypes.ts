@@ -107,6 +107,10 @@ export type WidgetInstance = {
   chartData?: ChartData;
   isLoading?: boolean;
   error?: string | null;
+  /** Non-fatal, e.g. "a dashboard filter replaced this widget's own saved
+   * filter on the same field" — surfaced as a small indicator, not an error
+   * state (chartData is still valid and rendered). */
+  filterWarnings?: string[] | null;
   lastFetchedQueryHash?: string;
   isLocked?: boolean;
   /** Client-only LWW timestamp for collaborative edits */

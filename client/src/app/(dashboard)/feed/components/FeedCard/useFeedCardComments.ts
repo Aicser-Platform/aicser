@@ -5,6 +5,10 @@ import type { MouseEvent } from 'react';
 import { message } from 'antd';
 import type { FeedComment, FeedItem, ReactionType } from '@/services/socialFeedService';
 import { socialFeedService } from '@/services/socialFeedService';
+import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { useProjectStore } from '@/stores/useProjectStore';
+import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
 import { COMMENT_CHAR_LIMIT } from './constants';
 import {
   applyReactionMap,
@@ -18,12 +22,21 @@ import {
 interface UseFeedCardCommentsArgs {
   item: FeedItem;
   compact: boolean;
-  onAddComment: (itemId: string, content: string, parentCommentId?: string) => Promise<void> | void;
+  onAddComment: (itemId: string, content: string, parentCommentId?: string, mentionedUsers?: string[]) => Promise<void> | void;
   onCommentDeleted?: (itemId: string, commentCount: number) => void;
   commenting: boolean;
 }
 
 const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, commenting }: UseFeedCardCommentsArgs) => {
+  const { user } = useAuth();
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const organizationId =
+    currentProject?.organization_id || (currentProject as { organizationId?: string } | null)?.organizationId || undefined;
+  // Org-scoped regardless of this post's own visibility - simplest correct
+  // default (mentioning never bypasses the post's own access gate anyway,
+  // see _assert_can_view_post), and avoids needing project context threaded
+  // all the way down into this hook.
+  const { members: mentionMembers, options: mentionOptions } = useMentionableMembers('organization', organizationId, user?.id);
   const [commentValue, setCommentValue] = useState('');
   const [showCommentBox, setShowCommentBox] = useState(false);
   const [expandedComments, setExpandedComments] = useState(false);
@@ -226,7 +239,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
   const handleCommentSubmit = async () => {
     const trimmed = commentValue.trim();
     if (!trimmed || commenting || trimmed.length > COMMENT_CHAR_LIMIT) return;
-    await onAddComment(item.id, trimmed);
+    await onAddComment(item.id, trimmed, undefined, resolveMentionedUserIds(trimmed, mentionMembers));
     setCommentValue('');
     setShowCommentBox(false);
     await refreshComments(expandedComments);
@@ -239,7 +252,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
 
     setPendingReply(true);
     try {
-      await onAddComment(item.id, trimmed, commentId);
+      await onAddComment(item.id, trimmed, commentId, resolveMentionedUserIds(trimmed, mentionMembers));
       setReplyValue('');
       setReplyToCommentId(null);
       setExpandedReplyGroups((prev) => ({ ...prev, [commentId]: true }));
@@ -247,7 +260,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
       setExpandedComments(true);
       setShowCommentsList(true);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Unable to add reply');
+      message.error(errorMessage(error, 'Unable to add reply'));
     } finally {
       setPendingReply(false);
     }
@@ -275,7 +288,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
       setEditingCommentId(null);
       setEditValue('');
     } catch (error) {
-      message.error(error instanceof Error ? error.message : 'Unable to update comment');
+      message.error(errorMessage(error, 'Unable to update comment'));
     } finally {
       setPendingEdit(false);
     }
@@ -324,7 +337,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
           userReaction: previousReaction,
         })),
       );
-      message.error(error instanceof Error ? error.message : 'Unable to react to comment');
+      message.error(errorMessage(error, 'Unable to react to comment'));
     } finally {
       setPendingCommentReactionId(null);
     }
@@ -370,7 +383,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
     } catch (error) {
       setCommentTree(previousTree);
       setFullComments(previousFull);
-      message.error(error instanceof Error ? error.message : 'Unable to delete comment');
+      message.error(errorMessage(error, 'Unable to delete comment'));
     } finally {
       setPendingDeleteCommentId(null);
     }
@@ -408,6 +421,7 @@ const useFeedCardComments = ({ item, compact, onAddComment, onCommentDeleted, co
   }, []);
 
   return {
+    mentionOptions,
     commentValue,
     setCommentValue,
     showCommentBox,

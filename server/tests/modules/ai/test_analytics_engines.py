@@ -10,20 +10,20 @@ import numpy as np
 import pandas as pd
 import os
 
-from src.modules.ai.utils.data_profiler import DataProfile, profile_dataframe
-from src.modules.ai.utils.descriptive_analytics import (
+from ee.modules.ai.utils.data_profiler import DataProfile, profile_dataframe
+from ee.modules.ai.utils.descriptive_analytics import (
     generate_descriptive_summary,
     DescriptiveSummary,
 )
-from src.modules.ai.utils.predictive_models import (
+from ee.modules.ai.utils.predictive_models import (
     TimeSeriesForecaster,
     ForecastResult,
 )
-from src.modules.ai.utils.diagnostic_engine import (
+from ee.modules.ai.utils.diagnostic_engine import (
     run_diagnostic,
     DiagnosticResult,
 )
-from src.modules.ai.utils.prescriptive_engine import (
+from ee.modules.ai.utils.prescriptive_engine import (
     run_prescriptive,
     PrescriptiveResult,
 )

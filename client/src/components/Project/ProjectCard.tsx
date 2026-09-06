@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Button, Card, Skeleton, Tag, Tooltip } from 'antd';
-import { TeamOutlined, DatabaseOutlined, UserOutlined, SwapOutlined } from '@ant-design/icons';
+import { Button, Card, Skeleton, Space, Tag, Tooltip } from 'antd';
+import { TeamOutlined, DatabaseOutlined, UserOutlined, SwapOutlined, SettingOutlined, CheckCircleFilled } from '@ant-design/icons';
 import type { Project } from '@/types/project';
 
 export interface ProjectCardStats {
@@ -17,6 +17,7 @@ export interface ProjectCardProps {
   stats: ProjectCardStats;
   loadingStats?: boolean;
   onSelect: (project: Project) => void;
+  onSettings?: (project: Project) => void;
 }
 
 /** Small muted stat chip — icon + count, with loading/error sub-states. */
@@ -52,6 +53,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   stats,
   loadingStats = false,
   onSelect,
+  onSettings,
 }) => {
   const isGrid = layout === 'grid';
   const ownerName = project.owner_name || 'Unknown';
@@ -63,9 +65,26 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
     </div>
   );
 
+  const settingsAction = onSettings ? (
+    <Tooltip title="Project settings">
+      <Button
+        size="small"
+        icon={<SettingOutlined />}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSettings(project);
+        }}
+      />
+    </Tooltip>
+  ) : null;
+
   // A dedicated action, not a whole-card click target: browsing/reading cards in this
   // list (member counts, description) must never itself change the user's active
-  // project. Only the active card omits this — it's already selected.
+  // project. The active card swaps this for a same-sized disabled indicator
+  // (not null) — dropping the button outright left the action row a
+  // different width on the active card than every sibling card, which read
+  // as a layout clash across the grid/list rather than a clean "already
+  // selected" state.
   const switchAction = !isActive ? (
     <Button
       size="small"
@@ -75,9 +94,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
         onSelect(project);
       }}
     >
-      Switch to this project
+      Switch project
     </Button>
-  ) : null;
+  ) : (
+    <Button size="small" icon={<CheckCircleFilled />} disabled>
+      Current project
+    </Button>
+  );
 
   const nameAndDescription = (
     <div className="min-w-0 flex-1">
@@ -120,16 +143,28 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       {isGrid ? (
         <div className="flex flex-col gap-3">
           {nameAndDescription}
-          <div className="flex items-center justify-between gap-2">
+          {/* flex-wrap, not a fixed row: a 3-column grid leaves each card too
+              narrow to fit both stat chips and the full-width "Switch
+              project"/"Current project" button on one line without either
+              overflowing the card's own padding or the row shrinking them
+              illegibly - wrapping the actions onto their own line keeps
+              everything inside the card at any grid width. */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
             {statChips}
-            {switchAction}
+            <Space size={8} className="shrink-0">
+              {settingsAction}
+              {switchAction}
+            </Space>
           </div>
         </div>
       ) : (
-        <div className="flex flex-row items-center justify-between gap-4">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-4">
           {nameAndDescription}
           {statChips}
-          {switchAction}
+          <Space size={8} className="shrink-0">
+            {settingsAction}
+            {switchAction}
+          </Space>
         </div>
       )}
     </Card>

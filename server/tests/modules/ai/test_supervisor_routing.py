@@ -53,7 +53,7 @@ def test_data_analysis_plan_diagnostic_labels():
 
 
 def test_decision_intelligence_and_all_aliases_are_preserved():
-    from src.modules.ai.config.workflow_config import get_effective_analytics_type
+    from ee.modules.ai.config.workflow_config import get_effective_analytics_type
 
     assert get_effective_analytics_type("decision_intelligence", "standard") == "decision_intelligence"
     assert get_effective_analytics_type(None, "decision_intelligence") == "decision_intelligence"
@@ -62,7 +62,7 @@ def test_decision_intelligence_and_all_aliases_are_preserved():
 
 
 def test_initial_state_normalizes_all_alias():
-    from src.modules.ai.orchestrator.initial_state import build_initial_state
+    from ee.modules.ai.orchestrator.initial_state import build_initial_state
 
     state = build_initial_state(
         litellm_service=object(),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckboxField } from './FormFields';
+import { CheckboxField, SelectField, InputField } from './FormFields';
 import { PpLabel } from './PpLabel';
 import { DEFAULT_CHART_CONFIG } from '../widgets/WidgetRendererConfig';
 import { useTranslations } from 'next-intl';
@@ -88,15 +88,31 @@ export const ChartOptions: React.FC<ChartOptionsProps> = ({
       <PpLabel>{t('options')}</PpLabel>
       <div className="pp-options-grid">
         {profile.showLegendToggle ? (
-          <CheckboxField
-            label={t('legend')}
-            checked={
-              chartOptions.showLegend !== undefined
-                ? !!chartOptions.showLegend
-                : !!DEFAULT_CHART_CONFIG.showLegend
-            }
-            onChange={(checked) => onUpdateChartOption('showLegend', checked)}
-          />
+          <>
+            <CheckboxField
+              label={t('legend')}
+              checked={
+                chartOptions.showLegend !== undefined
+                  ? !!chartOptions.showLegend
+                  : !!DEFAULT_CHART_CONFIG.showLegend
+              }
+              onChange={(checked) => onUpdateChartOption('showLegend', checked)}
+            />
+            {(chartOptions.showLegend !== undefined ? !!chartOptions.showLegend : !!DEFAULT_CHART_CONFIG.showLegend) ? (
+              <SelectField
+                label={t('legend_position')}
+                value={chartOptions.legendPosition || 'top'}
+                onChange={(v) => onUpdateChartOption('legendPosition', v)}
+                options={[
+                  { label: t('legend_position_top'), value: 'top' },
+                  { label: t('legend_position_bottom'), value: 'bottom' },
+                  { label: t('legend_position_left'), value: 'left' },
+                  { label: t('legend_position_right'), value: 'right' },
+                ]}
+                showSearch={false}
+              />
+            ) : null}
+          </>
         ) : null}
         {profile.showDataLabelToggle ? (
           <CheckboxField
@@ -118,6 +134,21 @@ export const ChartOptions: React.FC<ChartOptionsProps> = ({
             />
             <CheckboxField label={t('x_axis')} checked={showXAxis} onChange={setXAxis} />
             <CheckboxField label={t('y_axis')} checked={showYAxis} onChange={setYAxis} />
+            {/* xAxisLabel/yAxisLabel already render as the axis title in the
+                echarts config (WidgetRendererConfig.getXAxisConfig/getYAxisConfig)
+                — this was previously plumbed with no field to actually set it. */}
+            <InputField
+              label={t('x_axis_title')}
+              value={chartOptions.xAxisLabel ?? ''}
+              placeholder={t('axis_title_placeholder')}
+              onChange={(v) => onUpdateChartOption('xAxisLabel', v || undefined)}
+            />
+            <InputField
+              label={t('y_axis_title')}
+              value={chartOptions.yAxisLabel ?? ''}
+              placeholder={t('axis_title_placeholder')}
+              onChange={(v) => onUpdateChartOption('yAxisLabel', v || undefined)}
+            />
           </>
         ) : null}
         {shouldShowYAxisLegend ? (

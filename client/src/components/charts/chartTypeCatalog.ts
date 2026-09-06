@@ -38,6 +38,44 @@ export const DASHBOARD_SWITCHABLE_CHART_TYPES = [
 
 export type DashboardSwitchableChartType = (typeof DASHBOARD_SWITCHABLE_CHART_TYPES)[number];
 
+/**
+ * "Switch to" targets for the dashboard-facing "Change chart type" menus (chat preview tile,
+ * Studio Properties panel, Explain-with-AI drawer). This is the core 8 only — every one of the
+ * extended 7 (heatmap/funnel/gauge/treemap/waterfall/bullet/geo) falls through, in
+ * echartsToSharedWidget.ts's buildFromQueryResult, to the generic single-series x/y builder,
+ * which produces the wrong data shape for all of them (a 2D matrix for heatmap, a hierarchy for
+ * treemap, region codes for geo, a running-total sequence for waterfall, a value+target pair for
+ * bullet) — so offering them as a switch target produces broken or blank charts on real data.
+ *
+ * The extended 7 stay valid, renderable `chartType` values everywhere else
+ * (DASHBOARD_SWITCHABLE_CHART_TYPES, isDashboardSwitchableChartType) for widgets the AI created
+ * directly as one of them with a correctly-built payload at creation time — they're excluded
+ * only as menu TARGETS. See dashboardChartTypeSwitchTargets() below for how a widget's own
+ * current extended type is still represented in its own menu.
+ */
+export const SAFE_CHART_TYPE_SWITCH_TARGETS = SHARED_CHART_TYPE_ORDER;
+
+export function isSafeChartTypeSwitchTarget(type: string): boolean {
+  return (SAFE_CHART_TYPE_SWITCH_TARGETS as readonly string[]).includes(type);
+}
+
+/**
+ * Builds the type list for a "Change chart type" control on one widget. Always the safe core 8;
+ * if the widget's CURRENT type is itself one of the extended 7 (e.g. the AI created it as a
+ * correctly-built Geo map), that type is appended so it can still be shown/selected as "current"
+ * — a no-op re-select — without offering any OTHER extended type as a target. Without this, an
+ * extended-type widget's menu would show no indication of its own current type at all.
+ */
+export function dashboardChartTypeSwitchTargets(currentType?: string): string[] {
+  const current = String(currentType || '').toLowerCase();
+  // No current type (or already-safe) → just the safe core 8, nothing appended —
+  // guards against dangling an empty-string "type" onto the list.
+  if (!current || isSafeChartTypeSwitchTarget(current)) {
+    return [...SAFE_CHART_TYPE_SWITCH_TARGETS];
+  }
+  return [...SAFE_CHART_TYPE_SWITCH_TARGETS, current];
+}
+
 /** Chart types available for instant client-side transform in chat / preview. */
 export const INTERACTIVE_CHART_TYPES = [
   'bar',

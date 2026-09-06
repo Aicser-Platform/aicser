@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
 from jose import JWTError, jwt
 
 from src.core.config import settings
@@ -106,6 +107,19 @@ async def create_embed_token(
     expires_in_hours: int = DEFAULT_EXPIRY_HOURS,
     theme: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    # SECURITY: a resource-scoped token (dashboard/chart/report) with no
+    # resource_id used to verify successfully against *any* resource of that
+    # type (verify_dashboard_read_access's `"" in ("", str(dashboard_id))`
+    # check was always True when the token carried no resource_id) — a
+    # cross-tenant data leak, not just a UX gap. Reject at creation instead of
+    # relying solely on the read-side check to catch it.
+    _RESOURCE_SCOPED = {"dashboard", "chart", "report"}
+    if not resource_id and any(s in _RESOURCE_SCOPED for s in scopes):
+        raise HTTPException(
+            status_code=400,
+            detail="A specific dashboard, chart, or report must be selected for this embed scope.",
+        )
+
     token_id = str(uuid.uuid4())
     created_at = _now()
     expires_at = created_at + timedelta(hours=expires_in_hours)
@@ -156,6 +170,15 @@ async def list_embed_tokens(user_id: str) -> List[Dict[str, Any]]:
         }
         for record in records
     ]
+
+
+async def get_embed_token_record(user_id: str, token_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single embed token record without modifying it — used to
+    resolve which org a token belongs to before enforcing org-scoped
+    permission/plan checks on update/revoke (mirrors create_embed_token's
+    own org-scoping fix; see router.py)."""
+    records = await _load_records(user_id)
+    return next((r for r in records if r.get("id") == token_id), None)
 
 
 async def update_embed_token_theme(

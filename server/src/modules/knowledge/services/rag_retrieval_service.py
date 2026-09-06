@@ -28,7 +28,11 @@ from src.shared.embedding import QUERY_INSTRUCTION_PREFIX, get_embedding_service
 logger = logging.getLogger(__name__)
 
 HYBRID_ALPHA = 0.7  # weight for embedding similarity; 0.3 for keyword
-USE_RAG_RERANK = os.environ.get("USE_RAG_RERANK", "").strip().lower() in ("1", "true", "yes")
+# Defaults on now that rerank is a real cross-encoder (see
+# RAG_RERANK_CROSS_ENCODER_MODEL below), not just the keyword-overlap blend
+# this flag used to gate -- opt out with USE_RAG_RERANK=false/0 if needed
+# (e.g. no outbound internet for the first-run model download).
+USE_RAG_RERANK = os.environ.get("USE_RAG_RERANK", "true").strip().lower() in ("1", "true", "yes")
 RAG_RERANK_TOP_N = int(os.environ.get("RAG_RERANK_TOP_N", "10").strip() or "10")
 
 
@@ -90,17 +94,74 @@ def _keyword_score(query: str, content: str) -> float:
 
 RERANK_KEYWORD_WEIGHT = 0.4  # blended with the existing hybrid score, not a replacement for it
 
+# Cross-encoder rerank: a real relevance model (not just keyword overlap) scores
+# each (query, chunk) pair directly, the industry-standard second stage after a
+# fast bi-encoder/vector search narrows the candidate set. sentence-transformers
+# already ships CrossEncoder alongside the SentenceTransformer this file's
+# sibling embedding.py uses for embeddings -- no new dependency. Falls back to
+# the keyword-blend rerank below on any load/inference failure (offline
+# environment, first-run model download failure, ...), matching this
+# codebase's fail-open convention for every optional AI enhancement.
+RAG_RERANK_CROSS_ENCODER_MODEL = os.environ.get(
+    "RAG_RERANK_CROSS_ENCODER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"
+).strip()
+_cross_encoder_cache: dict = {}  # model_name -> loaded CrossEncoder, one per process
+_cross_encoder_unavailable = False  # sticky after first load failure -- don't retry every call
 
-def _rerank_chunks(chunks: List[RetrievedChunk], query: str) -> List[RetrievedChunk]:
+
+def _load_cross_encoder(model_name: str):
+    model = _cross_encoder_cache.get(model_name)
+    if model is None:
+        from sentence_transformers import CrossEncoder
+        model = CrossEncoder(model_name)
+        _cross_encoder_cache[model_name] = model
+    return model
+
+
+async def _cross_encoder_rerank(chunks: List[RetrievedChunk], query: str) -> Optional[List[RetrievedChunk]]:
+    """Real cross-encoder rerank. Returns None (caller falls back to keyword
+    blend) on any failure -- never raises, this is a quality enhancement, not
+    a correctness requirement."""
+    global _cross_encoder_unavailable
+    if _cross_encoder_unavailable:
+        return None
+    try:
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        model = await loop.run_in_executor(None, _load_cross_encoder, RAG_RERANK_CROSS_ENCODER_MODEL)
+        pairs = [(query, ch.content) for ch in chunks]
+        # predict() is sync/CPU-bound (or GPU if available) -- executor keeps
+        # the event loop free, same pattern as embedding.py's model.encode().
+        raw_scores = await loop.run_in_executor(None, lambda: model.predict(pairs))
+        # ms-marco cross-encoders output unbounded relevance logits, not a
+        # 0..1 probability -- min-max normalize per-request so this always
+        # sorts correctly regardless of the score's raw scale, and stays
+        # comparable if a caller ever wants to blend it with something else.
+        lo, hi = float(min(raw_scores)), float(max(raw_scores))
+        spread = hi - lo
+        normalized = [((float(s) - lo) / spread if spread > 1e-9 else 0.5) for s in raw_scores]
+        scored = sorted(zip(normalized, chunks), key=lambda x: x[0], reverse=True)
+        return [c for _, c in scored]
+    except ImportError:
+        logger.info("RAG rerank: sentence_transformers CrossEncoder not available, falling back to keyword rerank")
+        _cross_encoder_unavailable = True
+        return None
+    except Exception as e:
+        logger.warning("RAG cross-encoder rerank failed (%s): %s", RAG_RERANK_CROSS_ENCODER_MODEL, e)
+        return None
+
+
+def _keyword_rerank(chunks: List[RetrievedChunk], query: str) -> List[RetrievedChunk]:
     """
-    Optional rerank: re-score top candidates by keyword relevance to improve order.
+    Fallback rerank when the cross-encoder isn't available: re-score top
+    candidates by keyword relevance to improve order.
 
     QUALITY: this used to fully replace the ranking with keyword overlap alone,
     discarding the embedding-similarity signal the hybrid score (ch.score) had
     already computed -- a chunk that's genuinely relevant but phrased with
     different vocabulary than the query could get pushed below a lexically-
     matching but less relevant one. Blends the two instead of replacing.
-    Can still be swapped for a real cross-encoder later.
     """
     if not chunks or not query or not query.strip():
         return chunks
@@ -111,6 +172,17 @@ def _rerank_chunks(chunks: List[RetrievedChunk], query: str) -> List[RetrievedCh
         scored.append((blended, ch))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [c for _, c in scored]
+
+
+async def _rerank_chunks(chunks: List[RetrievedChunk], query: str) -> List[RetrievedChunk]:
+    """Rerank the top candidates: real cross-encoder when available, keyword
+    blend otherwise. See _cross_encoder_rerank / _keyword_rerank docstrings."""
+    if not chunks or not query or not query.strip():
+        return chunks
+    reranked = await _cross_encoder_rerank(chunks, query)
+    if reranked is not None:
+        return reranked
+    return _keyword_rerank(chunks, query)
 
 
 class RAGRetrievalService:
@@ -159,15 +231,15 @@ class RAGRetrievalService:
             ann = await self._session.execute(
                 text(
                     """
-                    SELECT dc.id, dc.document_id, dc.content, dc.token_count, dc.chunk_metadata,
+                    SELECT dc.id, dc.document_id, dc.content, dc.token_count, dc.metadata,
                            kd.filename,
-                           (dc.embedding_vector <=> :qvec::vector) AS dist
+                           (dc.embedding_vector <=> CAST(:qvec AS vector)) AS dist
                     FROM document_chunks dc
                     JOIN knowledge_documents kd ON kd.id = dc.document_id
                     WHERE dc.data_source_id = :ds_id
                       AND kd.status = 'ready'
                       AND dc.embedding_vector IS NOT NULL
-                    ORDER BY dc.embedding_vector <=> :qvec::vector
+                    ORDER BY dist
                     LIMIT :limit
                     """
                 ),
@@ -177,7 +249,18 @@ class RAGRetrievalService:
             if not rows:
                 return None
         except Exception as exc:
-            logger.debug("pgvector retrieval unavailable, falling back to JSONB: %s", exc)
+            # RELIABILITY: this used to catch-and-continue without rolling
+            # back -- any failure here (this one included: `:qvec::vector`
+            # silently breaks SQLAlchemy's text() bind-parameter parsing,
+            # a known gotcha, always throwing PostgresSyntaxError) leaves the
+            # session's transaction poisoned. The caller's own JSONB fallback
+            # query then failed too, with a *different*, misleading
+            # InFailedSQLTransactionError that fully masked this one -- and
+            # since this was logged at debug level, none of it was visible
+            # in production logs. Rolling back here, and logging at warning,
+            # is what makes the JSONB fallback actually work as a fallback.
+            logger.warning("pgvector retrieval failed, falling back to JSONB: %s", exc)
+            await self._session.rollback()
             return None
 
         schema_tables_lower: Set[str] = set()
@@ -211,7 +294,7 @@ class RAGRetrievalService:
             )
         candidates.sort(key=lambda c: c.score, reverse=True)
         if USE_RAG_RERANK and len(candidates) > top_k:
-            candidates = _rerank_chunks(candidates, query)
+            candidates = await _rerank_chunks(candidates, query)
         return candidates[:top_k]
 
     async def retrieve(
@@ -321,7 +404,7 @@ class RAGRetrievalService:
 
         # 5. Optional rerank over top candidates
         if USE_RAG_RERANK and len(candidates) > top_k:
-            candidates = _rerank_chunks(candidates, query)
+            candidates = await _rerank_chunks(candidates, query)
         return candidates[:top_k]
 
     async def retrieve_multi(

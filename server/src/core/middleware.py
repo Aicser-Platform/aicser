@@ -1,10 +1,10 @@
 """HTTP middleware: rate limiting and embed token validation."""
-import contextvars
+import re
 import time
 import uuid
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.core.cache import cache
+from src.core.request_id import REQUEST_ID as _REQUEST_ID  # noqa: F401 -- re-exported, see below
 
 logger = logging.getLogger(__name__)
 
@@ -19,27 +20,90 @@ _ai_rl_fallback_store: dict = {}
 
 # OBSERVABILITY: there was no request-ID/correlation-ID mechanism anywhere in
 # the backend -- tracing a single request across app logs, the ARQ worker,
-# and Redis/Postgres had no supporting infrastructure at all. A ContextVar
-# (not a plain global) so concurrent requests handled on the same event loop
-# never see each other's ID.
-_REQUEST_ID: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+# and Redis/Postgres had no supporting infrastructure at all. The ContextVar
+# itself (not a plain global, so concurrent requests handled on the same
+# event loop never see each other's ID) and the log record factory that
+# reads it live in src.core.request_id instead of here -- that module is
+# import-cheap (stdlib only) so it can be installed before anything else in
+# the app logs a single line, including this module's own `from
+# src.core.cache import cache` above, which logs a message as a side effect
+# of import. Re-imported here (rather than every call site importing straight
+# from request_id) purely so RequestIDMiddleware below keeps a short, local
+# name for it.
 
 
-class RequestIDLogFilter(logging.Filter):
-    """Injects the current request's ID into every log record as %(request_id)s.
+# Embed dashboards are iframed, so the embed JWT/DB token (EmbedTokenMiddleware
+# above) has to travel as a URL query param -- an <iframe src="..."> can't send
+# custom headers. uvicorn's access logger records the full request line
+# (method + path + query string) at INFO by default, which put every embed
+# token in plaintext in stdout/Docker logs for as long as those logs are
+# retained, well past the token's own short expiry. Same shape of leak for any
+# other bearer-style query param (?api_key=, ?access_token=, ?signature=), so
+# this redacts by param name rather than special-casing "token" alone.
+_SENSITIVE_QUERY_PARAM_RE = re.compile(
+    r"(?i)([?&](?:token|api[_-]?key|access[_-]?token|auth|signature|secret)=)[^&\s\"']+"
+)
 
-    Records emitted outside a request (startup, background jobs) get "-".
+
+def _redact_sensitive_query_params(text: str) -> str:
+    return _SENSITIVE_QUERY_PARAM_RE.sub(r"\1***REDACTED***", text)
+
+
+class SensitiveQueryParamLogFilter(logging.Filter):
+    """Redacts token-like URL query param values from uvicorn's access log line.
+
+    Runs on the uvicorn.access logger specifically (wired in main.py) — the
+    request line is uvicorn's own %-args (client_addr, "METHOD path HTTP/ver",
+    status_code), not something this app's request handlers format, so it has
+    to be scrubbed here rather than at the call site.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = _REQUEST_ID.get()
+        if isinstance(record.msg, str) and "%" not in record.msg:
+            record.msg = _redact_sensitive_query_params(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _redact_sensitive_query_params(a) if isinstance(a, str) else a
+                for a in record.args
+            )
         return True
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Baseline security response headers — table-stakes for enterprise
+    security review (SOC 2 / ISO 27001 control evidence), previously absent
+    entirely: only X-Request-ID and a route-scoped embed CSP existed.
+
+    Registered outermost (last add_middleware call — see main.py), so this
+    runs after every other middleware's response processing, including
+    EmbedTokenMiddleware's. HSTS/nosniff/Referrer-Policy are safe
+    unconditionally. Framing control is deliberately NOT unconditional:
+    EmbedTokenMiddleware already sets its own `frame-ancestors` CSP on embed
+    routes specifically so those pages CAN be iframed on allow-listed
+    external domains — a blanket X-Frame-Options here would silently break
+    that (X-Frame-Options has no allow-list concept and wins over a
+    permissive CSP in browsers that honor both), so it's only added when no
+    CSP is already present on the response.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if "Content-Security-Policy" not in response.headers:
+            response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        return response
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Generate (or propagate) a request ID, expose it on request.state and
     the response header, and make it available to every log line emitted
-    while handling this request via RequestIDLogFilter."""
+    while handling this request via the record factory installed by
+    src.core.request_id.install_request_id_log_record_factory()."""
 
     async def dispatch(self, request: Request, call_next):
         incoming = request.headers.get("X-Request-ID")
@@ -371,12 +435,23 @@ class EmbedTokenMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Embed token not valid for this dashboard"},
                     )
 
-            domain_err = _check_embed_domain(request, verified.get("allowed_domains") or [])
+            allowed_domains = verified.get("allowed_domains") or []
+            domain_err = _check_embed_domain(request, allowed_domains)
             if domain_err:
                 return domain_err
 
             request.state.embed_jwt = verified
-            return await call_next(request)
+            response = await call_next(request)
+            if allowed_domains:
+                # Browser-enforced counterpart to the domain check above —
+                # deliberately NOT a blanket X-Frame-Options/CSP (these pages
+                # are meant to be iframed on external domains, that's the
+                # point of embedding); only set, and only frame-ancestors,
+                # when this token actually carries a non-empty allowed_domains
+                # list — matching the "unrestricted when not configured"
+                # behavior _check_embed_domain already has.
+                response.headers["Content-Security-Policy"] = f"frame-ancestors {' '.join(allowed_domains)}"
+            return response
 
         except Exception as exc:  # JWTError and anything else
             logger.warning("JWT embed token rejected: %s", exc)

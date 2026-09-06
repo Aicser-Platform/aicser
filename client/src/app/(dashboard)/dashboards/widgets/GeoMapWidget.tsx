@@ -158,11 +158,14 @@ export function GeoMapWidget({ data, config = {}, onChartReady, minHeight }: Geo
 
     const scheduleResize = () => requestAnimationFrame(() => instanceRef.current?.resize());
     window.addEventListener('resize', scheduleResize);
+    // See EChartWidget.tsx for why 'beforeprint' is needed alongside 'resize'.
+    window.addEventListener('beforeprint', scheduleResize);
     const ro = new ResizeObserver(scheduleResize);
     ro.observe(chartRef.current);
 
     return () => {
       window.removeEventListener('resize', scheduleResize);
+      window.removeEventListener('beforeprint', scheduleResize);
       ro.disconnect();
     };
   }, [geoReady, data, config, isDarkMode]);

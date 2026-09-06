@@ -1,8 +1,10 @@
 import React from 'react';
-import { Avatar, Button, Input, Modal, Tag, Typography } from 'antd';
+import Link from 'next/link';
+import { Avatar, Button, Input, Mentions, Modal, Tag, Typography } from 'antd';
 import { DownOutlined, LikeOutlined, UndoOutlined, UpOutlined } from '@ant-design/icons';
 import type { FeedComment, FeedItem, ReactionType } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
+import { renderTextWithMentions } from '@/components/Feed/MentionText';
 import { COMMENT_CHAR_LIMIT, reactionOptions } from './constants';
 
 const { Text } = Typography;
@@ -49,12 +51,14 @@ interface FeedCardCommentsProps {
   onScheduleCommentReactionPickerClose: () => void;
   onToggleCommentReactionPicker: (commentId: string) => void;
   stopPropagation: (event: React.MouseEvent<HTMLElement>) => void;
+  mentionOptions?: { value: string; label: string }[];
 }
 
 const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
   item,
   compact,
   commentValue,
+  mentionOptions,
   showCommentBox,
   showCommentsList,
   commentTree,
@@ -132,26 +136,55 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
       });
     };
 
-    const threadClassName = `pl-${Math.min(depth, 3) * 6} ${depth > 0 ? 'mt-3 border-l-2 border-[var(--ant-color-border-secondary)]' : 'mt-4'}`;
+    // Capped at depth 1 (not 3) — matches FeedDiscussionComment's flat
+    // Twitter/Reddit-style threading: only the first reply level indents,
+    // replies-to-replies stay at that same indent instead of marching
+    // further right with each additional nesting level.
+    const threadClassName = `pl-${Math.min(depth, 1) * 6} ${depth > 0 ? 'mt-3 border-l-2 border-[var(--ant-color-border-secondary)]' : 'mt-4'}`;
     const commentClassName = `flex gap-3 relative group ${isDeleting ? 'opacity-50 pointer-events-none' : ''}`;
     const authorLabel = isOwnComment ? 'You' : comment.author.name;
+    // Same fix as FeedGridCard/FeedCardHeader/FeedDiscussionComment: comment
+    // authors had no click-through to their profile at all.
+    const authorProfileHref = comment.author.username
+      ? `/discover/author/${encodeURIComponent(comment.author.username.replace(/^@/, ''))}`
+      : null;
 
     return (
       <div key={comment.id} className={threadClassName}>
         <div className={commentClassName}>
-          <Avatar
-            size={32}
-            src={comment.author.avatarUrl}
-            className="shrink-0 mt-1 shadow-sm border border-[var(--ant-color-border-secondary)]"
-          >
-            {comment.author.name.charAt(0)}
-          </Avatar>
+          {authorProfileHref ? (
+            <Link href={authorProfileHref} onClick={(e) => e.stopPropagation()} className="shrink-0">
+              <Avatar
+                size={32}
+                src={comment.author.avatarUrl}
+                className="mt-1 shadow-sm border border-[var(--ant-color-border-secondary)] cursor-pointer"
+              >
+                {comment.author.name.charAt(0)}
+              </Avatar>
+            </Link>
+          ) : (
+            <Avatar
+              size={32}
+              src={comment.author.avatarUrl}
+              className="shrink-0 mt-1 shadow-sm border border-[var(--ant-color-border-secondary)]"
+            >
+              {comment.author.name.charAt(0)}
+            </Avatar>
+          )}
           <div className="flex-1 min-w-0">
             <div className="bg-[var(--ant-color-bg-layout)] border border-[var(--ant-color-border-secondary)] rounded-xl px-3.5 py-2.5 flex flex-col gap-1 w-full relative">
               <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
-                <Text strong className="text-sm text-[var(--ant-color-text)] leading-none">
-                  {authorLabel}
-                </Text>
+                {authorProfileHref ? (
+                  <Link href={authorProfileHref} onClick={(e) => e.stopPropagation()}>
+                    <Text strong className="text-sm text-[var(--ant-color-text)] leading-none hover:text-[var(--ant-color-primary)]">
+                      {authorLabel}
+                    </Text>
+                  </Link>
+                ) : (
+                  <Text strong className="text-sm text-[var(--ant-color-text)] leading-none">
+                    {authorLabel}
+                  </Text>
+                )}
                 {comment.isPostAuthor && !isOwnComment ? (
                   <span className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] text-[10px] font-bold px-1.5 py-0.5 rounded leading-none">
                     Author
@@ -196,7 +229,7 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
                 </div>
               ) : (
                 <div className="text-sm text-[var(--ant-color-text)] leading-relaxed mt-1 break-words">
-                  {comment.content}
+                  {renderTextWithMentions(comment.content)}
                 </div>
               )}
             </div>
@@ -286,13 +319,14 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
             {isReplying ? (
               <div className="mt-3 flex flex-col gap-2 relative">
                 <div className="absolute -left-6 top-0 bottom-0 w-px bg-[var(--ant-color-border-secondary)]" />
-                <Input.TextArea
+                <Mentions
                   autoFocus
                   value={replyValue}
-                  onChange={(event) => onReplyValueChange(event.target.value)}
+                  onChange={onReplyValueChange}
+                  options={mentionOptions}
                   maxLength={COMMENT_CHAR_LIMIT}
                   autoSize={{ minRows: 2, maxRows: 4 }}
-                  placeholder="Write a reply... Use @username for mentions"
+                  placeholder="Write a reply... use @ to mention a colleague"
                   className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-primary)] text-sm"
                 />
                 <div className="flex items-center justify-between">
@@ -343,10 +377,11 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
           className="p-4 border-t border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-layout)] flex flex-col gap-3"
           onClick={stopPropagation}
         >
-          <Input.TextArea
+          <Mentions
             value={commentValue}
-            onChange={(event) => onCommentValueChange(event.target.value)}
-            placeholder="Write a comment... Use @username for mentions"
+            onChange={onCommentValueChange}
+            options={mentionOptions}
+            placeholder="Write a comment... use @ to mention a colleague"
             maxLength={COMMENT_CHAR_LIMIT}
             autoSize={{ minRows: 2, maxRows: 4 }}
             className="rounded-xl border-[var(--ant-color-border)] focus:border-[var(--ant-color-primary)] shadow-sm"

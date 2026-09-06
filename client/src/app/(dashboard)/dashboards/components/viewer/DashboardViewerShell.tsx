@@ -227,8 +227,9 @@ export function DashboardViewerShell({
                     }
                   >
                     <Button
+                      type="text"
                       size="small"
-                      className="studio-context-btn studio-refresh-dropdown-trigger shared-dashboard-refresh-trigger"
+                      className="icon-only-btn shared-dashboard-refresh-trigger"
                       icon={<ReloadOutlined spin={refreshing} />}
                       disabled={refreshing}
                       aria-haspopup="menu"
@@ -271,6 +272,7 @@ export function DashboardViewerShell({
             keyInsight={meta.keyInsight}
             storyArc={meta.storyArc}
             widgetInsights={widgetInsights}
+            dashboardId={dashboardId}
           />
         )}
 

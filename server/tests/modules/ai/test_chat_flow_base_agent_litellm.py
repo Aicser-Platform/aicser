@@ -10,7 +10,12 @@ import pytest
 
 from ee.modules.chats.core.ai_flows.agents.base_agent import BaseAgent
 
-_REPO = "src.modules.chats.node_memory.repository.ChatNodeRepository"
+# base_agent.py imports ChatNodeRepository via the ee.modules.chats path, not
+# src.modules.chats (a separately-loaded module object - src/modules/chats/__init__.py
+# __path__-redirects into the ee tree, but that's a second load, not an alias)
+# - patching the src-path copy here left the real repository running, which
+# then hit a real (and here, incompletely-registered) DB session.
+_REPO = "ee.modules.chats.node_memory.repository.ChatNodeRepository"
 
 
 class _ConcreteAgent(BaseAgent):

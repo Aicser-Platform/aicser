@@ -331,7 +331,25 @@ class ChartService:
                     self._canonical_schema_table_name(table_part.strip(), schema_info),
                     schema_part.strip() or self._default_schema(),
                 )
-            return self._canonical_schema_table_name(raw, schema_info), self._default_schema()
+            # RELIABILITY: a bare tableName (no "schema.table" dot) used to
+            # resolve to self._default_schema() unconditionally, ignoring
+            # schema_info entirely -- wrong for any data source whose tables
+            # live in a named schema other than the default (e.g. the
+            # multi-domain sample DuckDB, where education's tables are under
+            # "education", not "main"). Dashboard widgets generated with a
+            # bare tableName ("grades") then queried a table that doesn't
+            # exist in the default schema, the query raised, and -- for
+            # sample_duckdb sources specifically -- that exception was
+            # silently swallowed into _sample_template_fallback_result's
+            # fabricated placeholder data ("Segment A/B/C/D") instead of a
+            # real error, so the widget looked like it worked while showing
+            # entirely made-up numbers. _base_table_schema_name already does
+            # exactly this per-table schema lookup correctly (used at 3 other
+            # call sites in this file) -- reuse it here instead of defaulting.
+            return (
+                self._canonical_schema_table_name(raw, schema_info),
+                self._base_table_schema_name(schema_info, raw),
+            )
         return self._resolve_table_and_schema(schema_info)
 
     def _is_valid_table_reference(self, ref: str) -> bool:
@@ -1345,12 +1363,22 @@ class ChartService:
             if data_source.type == "file":
                 return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
             else:
-                try:
-                    return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
-                except Exception:
-                    if data_source.type == "sample_duckdb":
-                        return self._sample_template_fallback_result(chart)
-                    raise
+                # RELIABILITY: this used to swallow ANY execution exception
+                # for a sample_duckdb source into fabricated placeholder
+                # data, not just the "sample file genuinely absent" case the
+                # fallback exists for (that case already returned above, at
+                # the _sample_duckdb_file_available() check). A real bug
+                # (e.g. a widget referencing a table in a non-default schema
+                # -- see _resolve_table_from_chart's fix above) hit this
+                # except clause and got hidden behind plausible-looking but
+                # entirely made-up numbers instead of a real error, live-
+                # reproduced: a "Breakdown by Grade Letter" widget showed
+                # "Segment A/B/C/D" instead of the real A-F grade letters.
+                # The file-availability check already covers the legitimate
+                # use case; any exception past that point is a genuine
+                # failure and must surface as one, same as every other data
+                # source type.
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
 
         # -------------------------
         # 4. Execute Standard Charts
@@ -1427,21 +1455,23 @@ class ChartService:
                     series_limit=series_limit,
                 )
         else:
-            try:
-                result = await self._execute_db_source(
-                    data_source, x_field, aggregate, y_metric, y_metrics_list,
-                    has_y_metrics_defined, group_field, order_clause,
-                    n_primary=n_primary, x_grain=x_grain,
-                    filters=filters, metric_filters=metric_filters,
-                    limit=limit,
-                    series_limit=series_limit,
-                    chart_query=chart_query,
-                    identity=identity,
-                )
-            except Exception:
-                if data_source.type == "sample_duckdb":
-                    return self._sample_template_fallback_result(chart)
-                raise
+            # RELIABILITY: same fix as the scatter-chart path above -- this
+            # is the exact call site that was masking the live bug (a
+            # tableName without its schema prefix, fixed in
+            # _resolve_table_from_chart) behind fabricated "Segment A/B/C/D"
+            # placeholder data instead of a real error. The file-availability
+            # check above already covers the one legitimate reason to show
+            # placeholder content; any exception here is a genuine failure.
+            result = await self._execute_db_source(
+                data_source, x_field, aggregate, y_metric, y_metrics_list,
+                has_y_metrics_defined, group_field, order_clause,
+                n_primary=n_primary, x_grain=x_grain,
+                filters=filters, metric_filters=metric_filters,
+                limit=limit,
+                series_limit=series_limit,
+                chart_query=chart_query,
+                identity=identity,
+            )
 
         # Stat charts must return {"value": N}. Normalize if the execution path
         # returned the generic {"x": [...], "y": [...]} shape instead.
@@ -1777,8 +1807,11 @@ class ChartService:
         multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
         if not exec_res.get("success"):
-            if data_source.type == "sample_duckdb":
-                return self._sample_template_fallback_result(chart)
+            # RELIABILITY: same fix as the other _sample_template_fallback_result
+            # call sites -- a genuine query failure here must surface honestly,
+            # not get hidden behind fabricated placeholder data. The file-
+            # availability check elsewhere already covers the one legitimate
+            # reason to show placeholder content.
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
@@ -1982,7 +2015,26 @@ class ChartService:
                 y_vals = [row.get("y") for row in rows]
                 return {"value": y_vals[-1] if y_vals else None}
             primary = columns[0] if columns else None
-            return {"value": first_row.get(primary) if primary else None}
+            out: Dict[str, Any] = {"value": first_row.get(primary) if primary else None}
+            # AI-generated KPI tiles with a temporal column: _sql_kpi emits a
+            # sibling `comparison_<primary>` column (prior-period equivalent
+            # of the windowed primary metric) precisely so this raw-SQL path
+            # — which has no structured chart_query/filters for
+            # _apply_stat_period_comparison's WoW/MoM/QoQ/YoY re-execution to
+            # shift — can still show a trend badge. See report_templates.py's
+            # _sql_kpi docstring (time_col param) for the full rationale.
+            # No comparisonLabel here on purpose — StatWidget.tsx already
+            # falls back to an i18n'd t('prior_period') string for the
+            # label-less case (see its sparkline-trend branch); sending a
+            # hardcoded English label from this Python response would bypass
+            # that and always render in English regardless of the viewer's
+            # locale.
+            comparison_col = f"comparison_{primary}" if primary else None
+            if comparison_col and comparison_col in columns:
+                comp_val = first_row.get(comparison_col)
+                if comp_val is not None:
+                    out["comparisonValue"] = comp_val
+            return out
 
         if x_col and y_metrics:
             metric_series = []

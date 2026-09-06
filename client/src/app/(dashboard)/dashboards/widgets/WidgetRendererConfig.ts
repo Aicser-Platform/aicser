@@ -106,6 +106,31 @@ export const COLOR_PALETTES = {
     '#6236ff', '#b620e0', '#6dd400', '#32c5ff', '#44d7b6',
     '#f7b500', '#fa6400', '#e02020', '#6b52ff', '#00c2cb',
   ],
+  // Okabe & Ito (2008) / "Wong 2011" — the categorical set recommended by
+  // Nature Methods and widely treated as the accessibility baseline (also
+  // Tableau's own "Color Blind Safe" preset draws from it). Reliable
+  // distinction under all three common CVD types tops out around 8 hues —
+  // an inherent limit of color-only encoding, not a gap in this set — so it
+  // repeats as tint/shade pairs of the same 8 hues to reach 20 rather than
+  // introducing new hues that would erode that guarantee.
+  colorblindSafe: [
+    '#E69F00', '#56B4E9', '#009E73', '#F0E442',
+    '#0072B2', '#D55E00', '#CC79A7', '#000000',
+    '#F2C36B', '#8ECDEF', '#4DBE9D', '#F5EC7A',
+    '#4D96C2', '#E08A4D', '#D9A0BF', '#595959',
+    '#B37A00', '#2E86AB', '#00654A', '#B5A800',
+  ],
+  // Single-hue sequential (brand teal, light -> dark) — for series that are
+  // ranked/ordinal (e.g. a ranked bar chart, a single-metric heatmap-style
+  // breakdown) rather than categorical, where distinct hues would falsely
+  // imply the categories are unrelated. Standard ColorBrewer sequential
+  // construction: constant hue, monotonic lightness ramp.
+  monochrome: [
+    '#e6fbfc', '#d0f6f8', '#b9f0f3', '#a3ebee', '#8ce5e9',
+    '#76e0e4', '#5fdadf', '#49d5da', '#32cfd5', '#1ccad0',
+    '#00c2cb', '#00b0b8', '#009ea5', '#008c93', '#007a80',
+    '#00686d', '#00565a', '#004447', '#003234', '#002021',
+  ],
 };
 
 /** First / fallback series color — brand teal (not ECharts default blue). */
@@ -339,6 +364,11 @@ export interface ChartConfig {
   hAxisLabelSlant?: 'none' | 'right-diagonal' | 'left-diagonal' | 'up' | 'down';
   hAxisFontSize?: number;
   hAxisColor?: string;
+  /** Override ECharts' own auto-hide-on-overlap heuristic for x-axis category labels
+   * (default 'auto' for vertical bars/lines can decide a label doesn't fit and silently
+   * drop it, even with just one category, if its width estimate is off) — pass 0 to
+   * force every label to render regardless. Undefined preserves today's default. */
+  hAxisLabelInterval?: number | 'auto';
   hAxisBold?: boolean;
   hAxisItalic?: boolean;
   hAxisStrikethrough?: boolean;
@@ -524,7 +554,10 @@ export const getCartesianEmphasis = (
 };
 
 export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: ChartConfig) => {
-  const position = config?.legendPosition || (showLegend ? 'top' : 'hide');
+  // showLegend=false must always win — a leftover/explicit legendPosition
+  // shouldn't resurrect a legend the user just turned off (previously
+  // `legendPosition || (...)` let a truthy position override showLegend=false).
+  const position = showLegend === false ? 'hide' : (config?.legendPosition || 'top');
   const feedPreview = config?.isFeedPreview === true;
 
   if (position === 'hide') {
@@ -566,7 +599,7 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
 export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
   const feedPreview = config.isFeedPreview === true;
-  const legendPos = config.legendPosition || (config.showLegend !== false ? 'top' : 'hide');
+  const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
   const axisVisibility = resolveAxisVisibility(config);
   const showXAxisLabels = axisVisibility.x;
   const showYAxisLabels = axisVisibility.y;
@@ -662,8 +695,8 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
                 ? -45
                 : 0,
       margin: compact ? 6 : 12,
-      interval: isHorizontalBar ? undefined : 'auto', // Auto-hide labels if they don't fit
-      hideOverlap: !isHorizontalBar, // explicit hide overlap
+      interval: config.hAxisLabelInterval ?? (isHorizontalBar ? undefined : 'auto'), // Auto-hide labels if they don't fit
+      hideOverlap: config.hAxisLabelInterval !== undefined ? false : !isHorizontalBar, // explicit hide overlap
       overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : 'break',
       width: isHorizontalBar ? undefined : hasXAxisTextDecoration ? undefined : compact ? undefined : 80,
       formatter: (value: any) => {

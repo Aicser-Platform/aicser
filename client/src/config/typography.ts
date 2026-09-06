@@ -10,6 +10,12 @@ export const GOOGLE_FONTS_HREF =
   'family=Noto+Sans+JP:wght@400;500;600;700&' +
   'family=Noto+Sans+Thai:wght@400;500;600;700&' +
   'family=Noto+Sans+Khmer:wght@400;500;600;700&' +
+  // Kantumruy Pro: Google's purpose-built Khmer *UI* typeface (with Cadson
+  // Demak) — tighter metrics and a fuller weight range tuned for interface
+  // text at small sizes, vs. Noto Sans Khmer's document-oriented design.
+  // Listed first in the km stack below; Noto Sans Khmer stays as the
+  // fallback for the rare glyph Kantumruy Pro doesn't cover.
+  'family=Kantumruy+Pro:wght@400;500;600;700&' +
   'display=swap';
 
 const SYSTEM_FALLBACK =
@@ -21,6 +27,7 @@ export const MULTILINGUAL_FONT_STACK = [
   '"Noto Sans SC"',
   '"Noto Sans JP"',
   '"Noto Sans Thai"',
+  '"Kantumruy Pro"',
   '"Noto Sans Khmer"',
   SYSTEM_FALLBACK,
 ].join(', ');
@@ -36,7 +43,10 @@ export const LOCALE_FONT_STACK: Record<string, string> = {
   zh: `"Noto Sans SC", "Noto Sans", ${SYSTEM_FALLBACK}`,
   ja: `"Noto Sans JP", "Noto Sans", ${SYSTEM_FALLBACK}`,
   th: `"Noto Sans Thai", "Noto Sans", ${SYSTEM_FALLBACK}`,
-  km: `"Noto Sans Khmer", "Noto Sans", ${SYSTEM_FALLBACK}`,
+  // Kantumruy Pro first (built for UI text), Noto Sans Khmer as the
+  // broader-coverage fallback — same "script-specific face, then Noto,
+  // then system" pattern as zh/ja/th above.
+  km: `"Kantumruy Pro", "Noto Sans Khmer", "Noto Sans", ${SYSTEM_FALLBACK}`,
 };
 
 export function getFontStackForLocale(locale: string): string {

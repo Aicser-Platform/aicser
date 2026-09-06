@@ -27,11 +27,14 @@ const SHOW_FEED_APPROVALS_UI = false;
 
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useFeedFiltersStore } from '@/stores/useFeedFiltersStore';
+import { useProjectStore } from '@/stores/useProjectStore';
 import FeedFilters from './components/FeedFilters';
 import FeedCard from './components/FeedCard';
 import FeedGridCard from './components/FeedGridCard';
+import { isTextPostItem } from '@/components/Feed/feedPostDisplay';
 import FeedCardSkeleton from './components/FeedCardSkeleton';
 import FeedDiscoveryDrawer from '@/components/Feed/FeedDiscoveryDrawer';
+import NewPostComposer from '@/components/Feed/NewPostComposer';
 import { formatTimeAgo, socialFeedService } from '@/services/socialFeedService';
 import { consumeFeedHighlight, resolveFeedHighlightPostId } from '@/components/Feed/feedHighlight';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
@@ -63,6 +66,10 @@ const SocialFeedPage: React.FC = () => {
   const queryPostId = searchParams?.get('post') || '';
   const highlightPostId = useMemo(() => resolveFeedHighlightPostId(queryPostId), [queryPostId]);
   const { user } = useAuth();
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const activeOrganizationId =
+    currentProject?.organization_id || (currentProject as { organizationId?: string } | null)?.organizationId;
+  const activeProjectId = currentProject?.id != null ? String(currentProject.id) : undefined;
 
   // ─── Shared filter/sidebar-control UI state (Zustand — read by FeedFilters,
   // FeedDiscoveryDrawer) ───────────────────────────────────
@@ -87,8 +94,24 @@ const SocialFeedPage: React.FC = () => {
       sort: filters.sort,
       tags: filters.tags,
       search: debouncedSearch,
+      // Without these, 'organization'/'project' scope silently falls back
+      // (server-side) to "every org/project I belong to" instead of the one
+      // active in the header — switching projects there had no effect on
+      // the "My Project" feed filter at all.
+      organizationId: activeOrganizationId ? String(activeOrganizationId) : undefined,
+      projectId: activeProjectId,
+      privateProjectOnly: filters.privateProjectOnly,
     }),
-    [debouncedSearch, filters.assetType, filters.scope, filters.sort, filters.tags]
+    [
+      debouncedSearch,
+      filters.assetType,
+      filters.scope,
+      filters.sort,
+      filters.tags,
+      filters.privateProjectOnly,
+      activeOrganizationId,
+      activeProjectId,
+    ]
   );
 
   // ─── Server data (React Query) ────────────────────────────────────────────
@@ -96,21 +119,34 @@ const SocialFeedPage: React.FC = () => {
   const { items } = feedQuery;
   const loading = feedQuery.isLoading || feedQuery.isFetchingNextPage;
 
-  const filterOptionsQuery = useFeedFilterOptionsQuery(filters.scope);
+  const filterOptionsQuery = useFeedFilterOptionsQuery(filters.scope, {
+    organizationId: activeOrganizationId ? String(activeOrganizationId) : undefined,
+    projectId: activeProjectId,
+    privateProjectOnly: filters.privateProjectOnly,
+  });
   const filterOptions = filterOptionsQuery.data ?? EMPTY_FILTER_OPTIONS;
 
-  const sidebarQuery = useFeedSidebarQuery(filters.scope, sidebarControls);
+  const sidebarQuery = useFeedSidebarQuery(filters.scope, sidebarControls, {
+    organizationId: activeOrganizationId ? String(activeOrganizationId) : undefined,
+    projectId: activeProjectId,
+    privateProjectOnly: filters.privateProjectOnly,
+  });
   const sidebarData = sidebarQuery.data ?? EMPTY_SIDEBAR_DATA;
 
   const refreshSidebar = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: feedKeys.sidebar(filters.scope, sidebarControls) });
   }, [filters.scope, queryClient, sidebarControls]);
 
-  const { pendingInteractions, handleReact, handleSave, handleToggleFollow, handleDeleteItem } = useFeedInteractions(
-    items,
-    useFeedItemsCacheSetter(requestFilters),
-    { onSidebarRefresh: refreshSidebar }
-  );
+  const {
+    pendingInteractions,
+    handleReact,
+    handleSave,
+    handleAddComment,
+    handleCommentDeleted,
+    handleToggleFollow,
+    handleDeleteItem,
+    handleUpdatePost,
+  } = useFeedInteractions(items, useFeedItemsCacheSetter(requestFilters), { onSidebarRefresh: refreshSidebar });
 
   const { approvalQueue, canModerateApprovals, accessResolved: approvalAccessResolved, isLoading: loadingApprovals } =
     useApprovalQueueQuery({ enabled: SHOW_FEED_APPROVALS_UI });
@@ -135,6 +171,14 @@ const SocialFeedPage: React.FC = () => {
   const highlightScrolledRef = useRef(false);
   const highlightFetchRef = useRef<string | null>(null);
   const prependFeedItem = usePrependFeedItem(requestFilters);
+
+  const handleNewPost = useCallback(
+    async (postId: string) => {
+      const item = await socialFeedService.getItemById(postId).catch(() => null);
+      if (item) prependFeedItem(item);
+    },
+    [prependFeedItem]
+  );
 
   useEffect(() => {
     itemsRef.current = items;
@@ -193,6 +237,8 @@ const SocialFeedPage: React.FC = () => {
           sort: 'recent',
           limit: 5,
           offset: 0,
+          organizationId: activeOrganizationId ? String(activeOrganizationId) : undefined,
+          projectId: activeProjectId,
         });
         const newItems = response.items ?? [];
         if (newItems.length > 0 && newItems[0].id !== latestItemIdRef.current) {
@@ -205,7 +251,7 @@ const SocialFeedPage: React.FC = () => {
       }
     }, 60_000);
     return () => window.clearInterval(interval);
-  }, [filters.scope]);
+  }, [filters.scope, activeOrganizationId, activeProjectId]);
 
   // ─── Keyboard navigation: j=next, k=prev, o=open post ────────────────────
   useEffect(() => {
@@ -463,6 +509,7 @@ const SocialFeedPage: React.FC = () => {
 
       <div className="mt-5 flex min-w-0 flex-col pb-10">
         <div className="w-full max-w-[1600px] mx-auto">
+              <NewPostComposer onPosted={handleNewPost} />
               {/* New posts available banner */}
               {newPostsCount > 0 && !loading && (
                 <div className="mb-4 flex justify-center">
@@ -565,11 +612,9 @@ const SocialFeedPage: React.FC = () => {
                   <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
                     {emptyStateTitle}
                   </h3>
-                  {showContextualEmptyState && (
-                    <p className="m-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
-                      {emptyStateSubtitle}
-                    </p>
-                  )}
+                  <p className="m-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
+                    {emptyStateSubtitle}
+                  </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
                     <Button
                       type="primary"
@@ -634,18 +679,42 @@ const SocialFeedPage: React.FC = () => {
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">
-                {items.map((item, idx) => (
-                  <FeedGridCard
-                    key={item.id}
-                    item={item}
-                    highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
-                    onReact={handleReact}
-                    onSave={handleSave}
-                    onToggleFollow={handleToggleFollow}
-                    onDeleteItem={handleDeleteItem}
-                    interactionState={pendingInteractions[item.id]}
-                  />
-                ))}
+                {items.map((item, idx) =>
+                  // Text/discussion posts have no visual asset to browse and exist to
+                  // be read and replied to — a thumbnail grid tile that defers comments
+                  // to a full page navigation kills exactly the back-and-forth this
+                  // feature was built for. Render them full-width with the same
+                  // inline-comment FeedCard already used on Saved/My Comments, and
+                  // keep the compact tile treatment for dashboard/chart discovery.
+                  isTextPostItem(item) ? (
+                    <div key={item.id} className="col-span-full">
+                      <FeedCard
+                        item={item}
+                        compact
+                        highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
+                        onReact={handleReact}
+                        onSave={handleSave}
+                        onAddComment={handleAddComment}
+                        onToggleFollow={handleToggleFollow}
+                        onDeleteItem={handleDeleteItem}
+                        onUpdatePost={handleUpdatePost}
+                        onCommentDeleted={handleCommentDeleted}
+                        interactionState={pendingInteractions[item.id]}
+                      />
+                    </div>
+                  ) : (
+                    <FeedGridCard
+                      key={item.id}
+                      item={item}
+                      highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
+                      onReact={handleReact}
+                      onSave={handleSave}
+                      onToggleFollow={handleToggleFollow}
+                      onDeleteItem={handleDeleteItem}
+                      interactionState={pendingInteractions[item.id]}
+                    />
+                  )
+                )}
                 {loading &&
                   Array.from({ length: items.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT }).map(
                     (_, index) => (

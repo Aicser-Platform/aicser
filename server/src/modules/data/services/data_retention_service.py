@@ -123,6 +123,90 @@ class DataRetentionService:
                 pass
             return 0
 
+    async def cleanup_expired_conversations(self, organization_id: Optional[str] = None) -> int:
+        """
+        Soft-delete AI conversations older than the org's plan-based retention
+        window (same data_history_days used for file sources above).
+
+        Gap this closes: file-based data sources already respect the plan's
+        retention window, but AI conversation history did not - a Free-plan
+        org's chat history persisted forever regardless of the 7-day window
+        the plan advertises for "data history". This applies the identical,
+        already-established policy (same config, same soft-delete semantics -
+        is_active=FALSE, not a hard delete) to conversations, nothing new.
+
+        NOT covered here, and deliberately so - these need a product/legal
+        decision this service should not make unilaterally: whether message
+        content itself (query/answer text) should ever be scrubbed or hard-
+        deleted, and on what timeline, for actual GDPR/CCPA-style erasure
+        rather than plan-tier storage hygiene. This only hides expired
+        conversations from listings, the same way file sources are hidden,
+        not deleted.
+
+        Returns number of conversations affected.
+        """
+        try:
+            if organization_id is not None:
+                org_query = sa.text(
+                    "SELECT id, COALESCE(plan_type, 'free') AS plan_type FROM organizations WHERE id = :org_id"
+                )
+                org_result = await self.db.execute(org_query, {"org_id": organization_id})
+            else:
+                org_query = sa.text(
+                    "SELECT id, COALESCE(plan_type, 'free') AS plan_type FROM organizations"
+                )
+                org_result = await self.db.execute(org_query)
+
+            org_rows = org_result.fetchall() or []
+            total_affected = 0
+
+            for org in org_rows:
+                org_id = str(org.id)
+                plan_type = org.plan_type or "free"
+                limits = get_plan_limits(plan_type)
+                days = limits.get("data_history_days")
+
+                if not days or days <= 0:
+                    continue
+
+                cutoff = datetime.utcnow() - timedelta(days=days)
+
+                update_q = sa.text(
+                    """
+                    UPDATE conversation
+                    SET is_active = FALSE,
+                        updated_at = NOW()
+                    WHERE id IN (
+                        SELECT c.id
+                        FROM conversation c
+                        INNER JOIN projects p ON c.project_id = p.id
+                        WHERE CAST(p.organization_id AS TEXT) = CAST(:org_id AS TEXT)
+                          AND COALESCE(c.is_active, TRUE) = TRUE
+                          AND c.created_at < :cutoff
+                    )
+                    """
+                )
+                result = await self.db.execute(update_q, {"org_id": org_id, "cutoff": cutoff})
+                affected = result.rowcount or 0
+                if affected:
+                    logger.info(
+                        f"🧹 Conversation retention: org={org_id}, plan={plan_type}, "
+                        f"days={days}, expired_conversations={affected}"
+                    )
+                total_affected += affected
+
+            await self.db.commit()
+            logger.info(f"✅ Conversation retention cleanup completed. Total conversations affected: {total_affected}")
+            return total_affected
+
+        except Exception as e:
+            logger.error(f"❌ Conversation retention cleanup failed: {e}", exc_info=True)
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            return 0
+
 
 
 

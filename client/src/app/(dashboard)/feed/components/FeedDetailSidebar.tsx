@@ -1,8 +1,10 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Avatar, Card, Descriptions, Statistic, Tag, Typography } from 'antd';
-import { BookOutlined, CommentOutlined, EyeOutlined, LikeOutlined } from '@ant-design/icons';
+import { BankOutlined, CommentOutlined, EyeOutlined, LikeOutlined } from '@ant-design/icons';
+import { BookmarkIcon } from '@/components/icons/BookmarkIcon';
 import { useTranslations } from 'next-intl';
 import type { FeedItem } from '@/services/socialFeedService';
 
@@ -30,7 +32,7 @@ const FeedDetailSidebar: React.FC<FeedDetailSidebarProps> = ({ item, visibilityL
     { key: 'views', label: t('sidebar_tooltip_views'), value: item.metrics.views, icon: <EyeOutlined /> },
     { key: 'reactions', label: t('sidebar_tooltip_likes'), value: item.metrics.reactions, icon: <LikeOutlined /> },
     { key: 'comments', label: t('sidebar_tooltip_comments'), value: item.metrics.comments, icon: <CommentOutlined /> },
-    { key: 'saves', label: t('save'), value: item.metrics.bookmarks, icon: <BookOutlined /> },
+    { key: 'saves', label: t('save'), value: item.metrics.bookmarks, icon: <BookmarkIcon /> },
   ];
 
   return (
@@ -39,30 +41,45 @@ const FeedDetailSidebar: React.FC<FeedDetailSidebarProps> = ({ item, visibilityL
         <Title level={5} className="!mb-4 !mt-0">
           {t('author')}
         </Title>
-        <div className="flex items-center gap-3">
-          <Avatar
-            size={48}
-            src={item.author.avatarUrl}
-            className="shrink-0 bg-[var(--ant-color-primary-bg)] font-semibold text-[var(--ant-color-primary)]"
-          >
-            {item.author.name.charAt(0).toUpperCase()}
-          </Avatar>
-          <div className="min-w-0">
-            <Text strong className="block truncate text-base">
-              {item.author.name}
-            </Text>
-            {item.author.username ? (
-              <Text type="secondary" className="block truncate text-sm">
-                @{item.author.username.replace(/^@/, '')}
-              </Text>
-            ) : null}
-            {item.author.title ? (
-              <Text type="secondary" className="mt-1 block truncate text-xs">
-                {item.author.title}
-              </Text>
-            ) : null}
-          </div>
-        </div>
+        {(() => {
+          const authorProfileHref = item.author.username
+            ? `/discover/author/${encodeURIComponent(item.author.username.replace(/^@/, ''))}`
+            : null;
+          const authorBlock = (
+            <div className="flex items-center gap-3">
+              <Avatar
+                size={48}
+                src={item.author.avatarUrl}
+                className={`shrink-0 bg-[var(--ant-color-primary-bg)] font-semibold text-[var(--ant-color-primary)] ${authorProfileHref ? 'cursor-pointer' : ''}`}
+              >
+                {item.author.name.charAt(0).toUpperCase()}
+              </Avatar>
+              <div className="min-w-0">
+                <Text strong className={`block truncate text-base ${authorProfileHref ? 'hover:text-[var(--ant-color-primary)]' : ''}`}>
+                  {item.author.name}
+                </Text>
+                {item.author.username ? (
+                  <Text type="secondary" className="block truncate text-sm">
+                    @{item.author.username.replace(/^@/, '')}
+                  </Text>
+                ) : null}
+                {item.author.title ? (
+                  // Self-reported profile text (Settings -> Profile -> Company),
+                  // not a link to a real org page — this platform's Organization
+                  // entities aren't looked up here, so there's nowhere true to
+                  // send a click yet. The icon+"at" framing at least reads
+                  // unambiguously as an affiliation, not part of the person's
+                  // name/handle (previously bare text, easy to misread as such).
+                  <Text type="secondary" className="mt-1 flex items-center gap-1 truncate text-xs">
+                    <BankOutlined className="shrink-0" />
+                    <span className="truncate">at {item.author.title}</span>
+                  </Text>
+                ) : null}
+              </div>
+            </div>
+          );
+          return authorProfileHref ? <Link href={authorProfileHref}>{authorBlock}</Link> : authorBlock;
+        })()}
       </Card>
 
       <Card className="border-[var(--ant-color-border-secondary)] shadow-none" styles={{ body: { padding: 20 } }}>
@@ -116,6 +133,15 @@ const FeedDetailSidebar: React.FC<FeedDetailSidebarProps> = ({ item, visibilityL
               label: t('last_activity'),
               children: formatDate(item.lastActivityAt),
             },
+            ...(item.isEdited && item.editedAt
+              ? [
+                  {
+                    key: 'edited',
+                    label: t('edited_label_short'),
+                    children: formatDate(item.editedAt),
+                  },
+                ]
+              : []),
           ]}
         />
       </Card>

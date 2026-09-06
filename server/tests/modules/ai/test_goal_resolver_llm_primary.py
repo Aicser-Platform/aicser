@@ -93,6 +93,33 @@ async def test_export_mention_fast_path_skips_llm():
 
 
 @pytest.mark.asyncio
+async def test_referenced_filename_does_not_skip_llm_or_force_export():
+    """Regression: a live user's KB follow-up question -- "What else does
+    ABA_FY2024_Audited_FS-EN.pdf say about this topic?" -- named a document by
+    its real filename. _EXPORT_RE's old \\b(...|pdf|...)\\b pattern matched the
+    ".pdf" extension inside that filename ("\\b" only needs a word/non-word
+    transition, and "." satisfies that just as well as whitespace), setting
+    deliverable_type=export -- which ALSO sets skip_llm=True in resolve_goal,
+    so this was a case where a false-positive regex match got zero chance of
+    LLM correction, unlike most guesses in this file. Fixed with the same
+    filename-extension guard already applied to nodes/planner_node.py /
+    kernel/planner.py. This must now behave like any other quiet-mode message:
+    call the LLM as primary classifier."""
+    llm = FakeLiteLLM(
+        json.dumps({"deliverable_type": "kb_answer", "objective": "x", "success_criteria": []})
+    )
+    goal = await resolve_goal(
+        {
+            "query": "What else does ABA_FY2024_Audited_FS-EN.pdf say about this topic?",
+            "agent_context": {"analysis_mode": "standard"},
+        },
+        litellm_service=llm,
+    )
+    assert len(llm.calls) == 1
+    assert goal.deliverable_type == DeliverableType.kb_answer
+
+
+@pytest.mark.asyncio
 async def test_llm_failure_fails_open_to_heuristic():
     """A failed/timed-out LLM call in the new primary path must never leave the
     request with no goal at all - falls back to the heuristic result."""

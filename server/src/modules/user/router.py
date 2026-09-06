@@ -6,7 +6,6 @@ Mounted at /api/users in core/api.py.
 
 import json
 import logging
-import os
 import secrets
 import uuid as _uuid
 import base64
@@ -20,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import async_session, get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.pricing.feature_gate import require_plan_feature
 from src.modules.user.service import UserService
 from src.modules.user.schemas import UserProfileUpdate, UserProfileResponse
 from src.core.edition import is_ee_enabled
@@ -32,6 +32,7 @@ from src.modules.user.avatar_storage_service import (
     generate_avatar_s3_url,
     generate_avatar_sas_url,
     is_avatar_data_uri,
+    resolve_storage_backend,
 )
 from src.modules.user.utils import mask_key
 from src.modules.user.user_setting_repository import UserSettingRepository
@@ -285,22 +286,7 @@ async def upload_avatar(
     # EE: S3/Azure store a stable object URL in users.avatar_url and profile
     # reads return a signed display URL when needed. Self-host PostgreSQL keeps
     # the compressed data URI in the user row, same as CE.
-    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
-    storage_config = None
-    try:
-        from src.core.system_settings.runtime_config import get_effective_storage_config
-
-        effective_storage = await get_effective_storage_config()
-        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
-        if effective_storage.get("enabled") and effective_backend:
-            storage_backend = effective_backend
-            if effective_backend == "s3":
-                storage_config = effective_storage
-    except Exception:
-        logger.debug(
-            "Runtime storage config unavailable; using env avatar storage backend",
-            exc_info=True,
-        )
+    storage_backend, storage_config = await resolve_storage_backend()
 
     if storage_backend == "postgresql":
         return await _store_avatar_as_data_uri(db, user_id, file_content)
@@ -326,11 +312,21 @@ async def upload_avatar(
             else AvatarStorageService()
         )
     except ValueError as e:
-        logger.error(f"Avatar storage not configured: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Avatar storage is not configured on this server.",
+        # RELIABILITY: a self-hosted EE deployment with neither STORAGE_BACKEND
+        # nor Azure/S3 credentials set (all empty here) used to hard-fail the
+        # entire upload with a 503, surfaced to the end user as a generic
+        # "Failed to upload photo. Please try again." with no way to actually
+        # succeed by retrying — the constructor fails identically every time.
+        # sibling storage_backend == "postgresql" case above already proves
+        # the compressed-data-URI path is safe for this deployment; use the
+        # same one here instead of blocking the upload entirely, matching CE's
+        # own default behavior for the exact same "no cloud storage" case.
+        logger.warning(
+            "Avatar cloud storage not configured (%s) — falling back to "
+            "postgres data-URI storage for this upload",
+            e,
         )
+        return await _store_avatar_as_data_uri(db, user_id, file_content)
 
     # Upload (overwrite=True replaces the existing blob at the fixed path — no delete needed)
     avatar_url = await avatar_svc.upload_avatar(
@@ -504,7 +500,10 @@ async def put_notification_preferences(
 
 # ─── Platform API keys & AI provider keys ───────────────────────────────────
 
-@router.get("/api-keys")
+_require_api_access = Depends(require_plan_feature("api_access"))
+
+
+@router.get("/api-keys", dependencies=[_require_api_access])
 async def list_api_keys(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
@@ -520,7 +519,7 @@ async def list_api_keys(
         return []
 
 
-@router.post("/api-keys")
+@router.post("/api-keys", dependencies=[_require_api_access])
 async def create_api_key(
     payload: ApiKeyCreateRequest,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
@@ -559,7 +558,7 @@ async def create_api_key(
     }
 
 
-@router.delete("/api-keys/{key_id}")
+@router.delete("/api-keys/{key_id}", dependencies=[_require_api_access])
 async def delete_api_key(
     key_id: str,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),

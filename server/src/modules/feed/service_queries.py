@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Set
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select, false
+from sqlalchemy import String, and_, cast, func, or_, select, false
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
@@ -177,17 +177,24 @@ class FeedServiceQueryMixin:
         organization_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
         user_id: Optional[UUID] = None,
+        private_project_only: bool = False,
     ) -> List[Any]:
         filters: List[Any] = []
 
         if scope == FeedScope.private:
             if user_id:
-                filters.append(
-                    and_(
-                        FeedPost.author_id == user_id,
-                        FeedPost.visibility == FeedVisibility.private.value,
-                    )
-                )
+                # Unlike organization/project scope, "Only Me" defaults to
+                # cross-project by design — a personal scratch space, not
+                # scoped to whatever's active in the header's project
+                # selector. private_project_only is the opt-in toggle for
+                # narrowing it to the active project instead.
+                private_clauses = [
+                    FeedPost.author_id == user_id,
+                    FeedPost.visibility == FeedVisibility.private.value,
+                ]
+                if private_project_only and project_id:
+                    private_clauses.append(FeedPost.project_id == project_id)
+                filters.append(and_(*private_clauses))
             else:
                 filters.append(false())
         elif scope == FeedScope.organization:
@@ -330,6 +337,8 @@ class FeedServiceQueryMixin:
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
         previews = await self._load_preview_payloads(posts, max_snapshot_widgets=6)
+        attachments = await self._load_post_attachments(posts, viewer_id=user_id)
+        reaction_breakdown = await self._load_post_reaction_breakdown(posts)
 
         items = [
             self._build_item_response(
@@ -341,6 +350,8 @@ class FeedServiceQueryMixin:
                 followed_authors=followed_authors,
                 preview_payload=previews.get(post.id),
                 viewer_id=user_id,
+                attachments=attachments,
+                reaction_breakdown=reaction_breakdown,
             )
             for post in posts
         ]
@@ -362,6 +373,7 @@ class FeedServiceQueryMixin:
         user_payload: Optional[Dict[str, Any]],
         organization_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
+        private_project_only: bool = False,
     ) -> FeedResponse:
         await self._seed_mock_data_if_empty()
 
@@ -381,7 +393,11 @@ class FeedServiceQueryMixin:
 
         filters.extend(
             self._feed_scope_filters(
-                scope, organization_id=organization_id, project_id=project_id, user_id=user_id
+                scope,
+                organization_id=organization_id,
+                project_id=project_id,
+                user_id=user_id,
+                private_project_only=private_project_only,
             )
         )
 
@@ -572,11 +588,14 @@ class FeedServiceQueryMixin:
             return None
 
         users = await self._load_users([post.author_id] if post.author_id else [])
+        org_names = await self._load_primary_organizations([post.author_id] if post.author_id else [])
         reactions = await self._load_user_reactions(user_id, [post])
         bookmarks = await self._load_user_bookmarks(user_id, [post])
         followed_authors = await self._load_followed_authors(user_id, [post])
         comments = await self._load_recent_comments([post], per_asset_limit=100, viewer_id=user_id)
         previews = await self._load_preview_payloads([post])
+        attachments = await self._load_post_attachments([post], viewer_id=user_id)
+        reaction_breakdown = await self._load_post_reaction_breakdown([post])
 
         return self._build_item_response(
             post,
@@ -587,6 +606,9 @@ class FeedServiceQueryMixin:
             followed_authors=followed_authors,
             preview_payload=previews.get(post.id),
             viewer_id=user_id,
+            org_names=org_names,
+            attachments=attachments,
+            reaction_breakdown=reaction_breakdown,
         )
 
     async def get_public_item_by_id(self, item_id: UUID) -> Optional[FeedItemResponse]:
@@ -608,6 +630,7 @@ class FeedServiceQueryMixin:
         scope: FeedScope = FeedScope.organization,
         organization_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
+        private_project_only: bool = False,
     ) -> FeedFilterOptionsResponse:
         await self._seed_mock_data_if_empty()
 
@@ -625,7 +648,11 @@ class FeedServiceQueryMixin:
 
         filters.extend(
             self._feed_scope_filters(
-                scope, organization_id=organization_id, project_id=project_id, user_id=user_id
+                scope,
+                organization_id=organization_id,
+                project_id=project_id,
+                user_id=user_id,
+                private_project_only=private_project_only,
             )
         )
         if scope == FeedScope.public and not user_id:
@@ -652,6 +679,8 @@ class FeedServiceQueryMixin:
                 asset_counts.insight += 1
             elif asset_type_value == AssetType.query.value:
                 asset_counts.query += 1
+            elif asset_type_value == AssetType.post.value:
+                asset_counts.post += 1
 
         users = await self._load_users(author_ids)
         authors = [self._to_author(users.get(author_id), author_id) for author_id in author_ids]
@@ -670,6 +699,7 @@ class FeedServiceQueryMixin:
         scope: FeedScope,
         organization_id: Optional[UUID] = None,
         project_id: Optional[UUID] = None,
+        private_project_only: bool = False,
         time_range: LeaderboardTimeRange = LeaderboardTimeRange.week,
         content_type: Optional[AssetType] = None,
         sort_by: LeaderboardSortBy = LeaderboardSortBy.popular,
@@ -683,7 +713,11 @@ class FeedServiceQueryMixin:
         post_filters: List[Any] = [FeedPost.status == PublicationStatus.approved.value]
         post_filters.extend(
             self._feed_scope_filters(
-                scope, organization_id=organization_id, project_id=project_id, user_id=user_id
+                scope,
+                organization_id=organization_id,
+                project_id=project_id,
+                user_id=user_id,
+                private_project_only=private_project_only,
             )
         )
         if scope == FeedScope.public and not user_id:
@@ -1280,6 +1314,8 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, posts)
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
+        attachments = await self._load_post_attachments(posts, viewer_id=user_id)
+        reaction_breakdown = await self._load_post_reaction_breakdown(posts)
 
         serialized_items: List[FeedCollectionItem] = []
         for item in items:
@@ -1293,6 +1329,9 @@ class FeedServiceQueryMixin:
                 bookmarks=bookmarks,
                 comments=comments,
                 followed_authors=followed_authors,
+                viewer_id=user_id,
+                attachments=attachments,
+                reaction_breakdown=reaction_breakdown,
             )
             serialized_items.append(
                 FeedCollectionItem(
@@ -1417,6 +1456,8 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, posts)
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
+        attachments = await self._load_post_attachments(posts, viewer_id=user_id)
+        reaction_breakdown = await self._load_post_reaction_breakdown(posts)
 
         queue_items: List[ApprovalQueueItem] = []
         for post in posts:
@@ -1439,6 +1480,9 @@ class FeedServiceQueryMixin:
                 bookmarks=bookmarks,
                 comments=comments,
                 followed_authors=followed_authors,
+                viewer_id=user_id,
+                attachments=attachments,
+                reaction_breakdown=reaction_breakdown,
             )
             queue_items.append(
                 ApprovalQueueItem(
@@ -1663,6 +1707,8 @@ class FeedServiceQueryMixin:
         bookmarks = await self._load_user_bookmarks(user_id, posts)
         followed_authors = await self._load_followed_authors(user_id, posts)
         comments = await self._load_recent_comments(posts, viewer_id=user_id)
+        attachments = await self._load_post_attachments(posts, viewer_id=user_id)
+        reaction_breakdown = await self._load_post_reaction_breakdown(posts)
 
         items = [
             self._build_item_response(
@@ -1672,6 +1718,9 @@ class FeedServiceQueryMixin:
                 bookmarks=bookmarks,
                 comments=comments,
                 followed_authors=followed_authors,
+                viewer_id=user_id,
+                attachments=attachments,
+                reaction_breakdown=reaction_breakdown,
             )
             for post in posts
         ]
@@ -1689,7 +1738,14 @@ class FeedServiceQueryMixin:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
         await self._set_rls_context(user_id)
-        await self._validate_publish_asset(asset_type, asset_id, user_id)
+        asset_project_id = await self._validate_publish_asset(asset_type, asset_id, user_id)
+        asset_project_name: Optional[str] = None
+        if asset_project_id:
+            from src.modules.project.models import Project
+
+            asset_project_name = await self.db.scalar(
+                select(Project.name).where(Project.id == asset_project_id)
+            )
 
         post = await self.db.scalar(
             select(FeedPost)
@@ -1701,7 +1757,11 @@ class FeedServiceQueryMixin:
             .limit(1)
         )
         if not post:
-            return PublicationLookupResponse(exists=False)
+            return PublicationLookupResponse(
+                exists=False,
+                asset_project_id=str(asset_project_id) if asset_project_id else None,
+                asset_project_name=asset_project_name,
+            )
 
         visibility = _enum_value(post.visibility)
         return PublicationLookupResponse(
@@ -1711,6 +1771,8 @@ class FeedServiceQueryMixin:
             published_at=post.published_at,
             snapshot_version=int(post.snapshot_version or 0),
             visibility=FeedVisibility(visibility) if visibility in FeedVisibility.__members__ else None,
+            asset_project_id=str(asset_project_id) if asset_project_id else None,
+            asset_project_name=asset_project_name,
         )
 
     async def get_public_author_profile(
@@ -1734,17 +1796,46 @@ class FeedServiceQueryMixin:
             user = await self.db.scalar(
                 select(User).where(func.lower(User.email).like(f"{clean}@%"))
             )
+        if not user and "-" in clean:
+            # _to_author's fallback (for accounts with no real username set)
+            # is "<email-local-part-or-'user'>-<8 hex chars of the account's
+            # own id>" - the label before the dash is just a human-readable
+            # hint and isn't unique on its own (two accounts can share an
+            # email under different auth providers, and did in this DB), but
+            # the id fragment is. Recover it and match directly against the
+            # real id rather than trusting the label.
+            id_fragment = clean.rsplit("-", 1)[-1]
+            if len(id_fragment) == 8 and all(c in "0123456789abcdef" for c in id_fragment):
+                user = await self.db.scalar(
+                    select(User).where(
+                        func.replace(cast(User.id, String), "-", "").ilike(f"{id_fragment}%")
+                    )
+                )
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Author not found")
 
         author_id = user.id
-        public_filters = and_(
+        # RLS was never actually enforcing anything here (feed_posts carries
+        # zero policies despite _set_rls_context setting app.user_id), so the
+        # only real gate was this app-level filter - narrowed to the single
+        # "fully public, no login, results_only" tier. That's the right scope
+        # for an anonymous/third-party visitor (matches what they can
+        # actually open), but it also applied to the author viewing their
+        # OWN profile, undercounting posts/views against org- or
+        # project-scoped work that's real but not globally public - "wrong
+        # count" from the one viewer who should see the true total.
+        is_self_view = bool(user_id) and user_id == author_id
+        base_filters = [
             FeedPost.author_id == author_id,
-            FeedPost.visibility == FeedVisibility.public.value,
             FeedPost.status == PublicationStatus.approved.value,
-            FeedPost.requires_login.is_(False),
-            FeedPost.public_access_level == "results_only",
-        )
+        ]
+        if not is_self_view:
+            base_filters += [
+                FeedPost.visibility == FeedVisibility.public.value,
+                FeedPost.requires_login.is_(False),
+                FeedPost.public_access_level == "results_only",
+            ]
+        public_filters = and_(*base_filters)
 
         post_count = int(await self.db.scalar(select(func.count()).select_from(FeedPost).where(public_filters)) or 0)
         total_views = int(
@@ -1776,7 +1867,7 @@ class FeedServiceQueryMixin:
             is_following = follow_row is not None
 
         return PublicAuthorProfileResponse(
-            author=self._to_author(user, author_id),
+            author=self._to_author(user, author_id, include_bio=True),
             stats=PublicAuthorStats(
                 post_count=post_count,
                 total_views=total_views,

@@ -27,7 +27,8 @@ from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.authentication.helpers import extract_user_payload
 from src.core.config import settings
 from src.core.edition import is_ee_enabled
-from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Request, status, Query
+from src.core.middleware import _check_embed_domain
+from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Request, Response, status, Query
 from typing import Union
 import asyncio
 import os
@@ -3028,50 +3029,119 @@ async def get_dashboard_for_embed(
 
 
 @router.get("/embed/{slug}")
-async def get_chart_for_embed(slug: str, token: Optional[str] = None):
+async def get_chart_for_embed(slug: str, request: Request, response: Response, token: Optional[str] = None):
     """
-    Return chart data for public embed rendering by slug or chart id.
+    Return chart data for public embed rendering by chart id, gated by the
+    shared JWT embed-token system (server/src/modules/embed/service.py) - the
+    same one dashboard and report embeds use.
+
+    This previously queried a `widgets` table with `config`/`settings`
+    columns and an `id OR slug` match - none of that schema exists (charts
+    live in the `charts` table with `chart_query`/`chart_options` columns,
+    no `slug` column at all), so this endpoint 500'd unconditionally for
+    every request; the `is_public`/`embed_token`-in-settings gate it
+    implemented was equally fictional (Chart has no such columns). Rewritten
+    to match the real schema and the real (already-audited) auth mechanism.
+
+    SECURITY: unlike dashboard embed (EmbedTokenMiddleware._check_embed_domain)
+    and report embed (reports/router.py's manual check, added for the same
+    reason), this endpoint skipped the "Allowed Domains" origin check
+    entirely — a chart embed token with allowed_domains configured could be
+    replayed from any site, not just the domains it was scoped to. Mirrors
+    the report endpoint's manual pattern (this path isn't covered by
+    EmbedTokenMiddleware's `_embed_protected_path` matcher either).
     """
+    import uuid as _uuid
+
+    from src.modules.charts.services.v2.chart_service import ChartService
+    from src.modules.embed import service as embed_service
+
     try:
-        from src.db.session import async_session
+        chart_uuid = _uuid.UUID(str(slug))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=404, detail="Chart not found")
 
-        async with async_session() as db:
-            from sqlalchemy import text as sa_text
-            result = await db.execute(
-                sa_text("SELECT id, title, config, settings FROM widgets WHERE id = :slug OR slug = :slug LIMIT 1"),
-                {"slug": slug},
-            )
-            row = result.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Chart not found")
+    try:
+        verified = await embed_service.verify_embed_token(token or "", required_scope="chart")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or missing embed token")
 
-            config = row.config if isinstance(row.config, dict) else {}
-            settings_data = row.settings if isinstance(row.settings, dict) else {}
-            is_public = settings_data.get("is_public", False)
-            if not is_public:
-                expected_token = settings_data.get("embed_token")
-                # SECURITY: was a plain `!=` comparison -- non-constant-time,
-                # vulnerable in principle to a timing side-channel on the
-                # token value. Also bypasses EmbedTokenMiddleware entirely
-                # (this route isn't matched by that middleware's protected-
-                # path check), so this comparison is the only gate here.
-                import hmac as _hmac
+    # Exact match only - a token minted for one chart must not read another
+    # (see the equivalent, already-fixed check in dashboards/operations.py's
+    # verify_dashboard_read_access).
+    if str(verified.get("resource_id") or "") != str(chart_uuid):
+        raise HTTPException(status_code=403, detail="Embed token is not authorized for this chart")
 
-                if not token or not expected_token or not _hmac.compare_digest(str(token), str(expected_token)):
-                    raise HTTPException(status_code=403, detail="Chart not public or invalid token")
+    allowed_domains = verified.get("allowed_domains") or []
+    domain_err = _check_embed_domain(request, allowed_domains)
+    if domain_err:
+        return domain_err
 
-            return {
-                "id": str(row.id),
-                "title": row.title,
-                "chart_option": config.get("chart_option"),
-                "echarts_option": config.get("echarts_option"),
-            }
+    if allowed_domains:
+        # Browser-enforced counterpart to the server-side check above. Only
+        # set when allowed_domains is actually configured — matching the
+        # existing "unrestricted when not configured" behavior of the check
+        # itself, just also expressed as a header.
+        response.headers["Content-Security-Policy"] = f"frame-ancestors {' '.join(allowed_domains)}"
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Embed chart fetch failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    async with async_session() as db:
+        service = ChartService(db)
+        chart = await service.get(chart_uuid)
+        if not chart:
+            raise HTTPException(status_code=404, detail="Chart not found")
+
+        # Defense in depth: confirm the token's own org actually owns this
+        # chart, in case a resource_id is ever reused across orgs.
+        token_org_id = verified.get("org_id")
+        project_id = getattr(chart, "project_id", None)
+        if token_org_id and project_id:
+            from src.modules.project.models import Project
+
+            org_result = await db.execute(select(Project.organization_id).where(Project.id == project_id))
+            chart_org_id = org_result.scalar_one_or_none()
+            if chart_org_id and str(chart_org_id) != str(token_org_id):
+                raise HTTPException(status_code=403, detail="Embed token is not authorized for this chart")
+
+        try:
+            data = await service.execute(chart, identity=None)
+        except Exception as exc:
+            logger.error(f"Embed chart execution failed for {chart_uuid}: {exc}")
+            # This endpoint always executes with identity=None (a public embed
+            # has no signed-in viewer to attribute the query to) - when the
+            # chart's data source has column security configured,
+            # _enforce_column_security (multi_engine_query_service.py) fails
+            # closed rather than serving ungoverned columns, which is correct,
+            # not a bug. But by the time that reaches here it's already been
+            # flattened into a plain string ("Query execution failed: ...",
+            # via _execute_db_source's `raise Exception(f"...{exec_res.get
+            # ('error')}")`), losing the RowSecurityIdentityRequired type - so
+            # this is a substring match, not an isinstance check. Surfacing it
+            # as a generic 500 "Chart could not be executed" made a correct,
+            # by-design policy refusal indistinguishable from a real server
+            # bug, with no way for the viewer (or the admin who shared the
+            # link) to know it needs the data source's column security
+            # disabled, or a different data source, to be embeddable at all.
+            if "column security configured" in str(exc):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "This chart can't be shown in a public embed: its data source "
+                        "has column-level security enabled, and a public embed has no "
+                        "signed-in viewer to check permissions against. Disable column "
+                        "security on the data source, or embed a chart built on a "
+                        "different data source, to continue."
+                    ),
+                )
+            raise HTTPException(status_code=500, detail="Chart could not be executed")
+
+        return {
+            "id": str(chart.id),
+            "title": chart.title,
+            "chart_type": chart.chart_type,
+            "chart_query": chart.chart_query,
+            "chart_options": chart.chart_options,
+            "data": data,
+        }
 
 
 # ============================================================

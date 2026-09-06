@@ -22,7 +22,7 @@ from ee.modules.ai.skills import skill_graph_handlers
 async def test_skill_run_sql_passes_services_to_nl2sql_node(monkeypatch):
     captured = {}
 
-    async def fake_nl2sql_node(state, *, litellm_service=None, data_service=None, multi_query_service=None):
+    async def fake_nl2sql_node(state, *, litellm_service=None, data_service=None, multi_query_service=None, async_session_factory=None):
         captured["litellm_service"] = litellm_service
         captured["data_service"] = data_service
         captured["multi_query_service"] = multi_query_service
@@ -33,12 +33,14 @@ async def test_skill_run_sql_passes_services_to_nl2sql_node(monkeypatch):
         state["query_result"] = [{"a": 1}]
         return state
 
-    # skill_graph_handlers imports via the `src.modules.ai` alias (redirected to
-    # ee/modules/ai by src/modules/ai/__init__.py when EE is enabled), which is a
-    # separately-loaded module object from `ee.modules.ai...` - patch the same
-    # alias production code actually resolves against.
-    import src.modules.ai.nodes.nl2sql_node as nl2sql_module
-    import src.modules.ai.nodes.query_execution_node as query_exec_module
+    # skill_graph_handlers imports directly from ee.modules.ai (confirmed via
+    # `ee.modules.ai.nodes.nl2sql_node is not src.modules.ai.nodes.nl2sql_node`
+    # despite both loading the same file on disk - they're separate module
+    # objects, so patching the src.modules.ai alias silently no-ops and lets
+    # the real node run instead of the fake). Patch the actual path production
+    # code resolves against.
+    import ee.modules.ai.nodes.nl2sql_node as nl2sql_module
+    import ee.modules.ai.nodes.query_execution_node as query_exec_module
 
     monkeypatch.setattr(nl2sql_module, "nl2sql_node", fake_nl2sql_node)
     monkeypatch.setattr(query_exec_module, "query_execution_node", fake_query_execution_node)

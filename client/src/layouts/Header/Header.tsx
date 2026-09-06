@@ -85,6 +85,16 @@ export const LayoutHeader: React.FC<Props> = ({
   );
   const [customizerOpen, setCustomizerOpen] = React.useState(false);
 
+  // Fully built (invitations/alerts/AI tips/activity, mark-read, dismiss,
+  // ack actions) but never actually mounted anywhere in the app — the only
+  // place a user could see a notification was the separate, feed-specific
+  // bell on /discover (DiscoverNotifications), which only covers social
+  // events (follow/comment/reaction), not this broader activity inbox.
+  const ActivityInboxBell = React.useMemo(
+    () => dynamic(() => import('@/ee').then((m) => ({ default: m.ActivityInboxBell })), { ssr: false }),
+    []
+  );
+
   const { currentProject, selectProject } = useProjectStore();
   const queryClient = useQueryClient();
 
@@ -448,6 +458,8 @@ export const LayoutHeader: React.FC<Props> = ({
               />
             </Tooltip>
           )}
+
+          {isEnterpriseEdition && <ActivityInboxBell />}
 
           <UserProfileDropdown showText={false} className="header-profile-trigger" />
         </div>

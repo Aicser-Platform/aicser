@@ -48,6 +48,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('charts/')) {
       target = `${targetBase}/${pathSegment}`;
+    } else if (pathSegment.startsWith('reports/')) {
+      // reports_router is mounted at /reports (no /api prefix) — see
+      // src/core/router.py. Needed so the report embed page's fetch
+      // (useReportEmbedState.ts) can go through this same-origin proxy
+      // instead of a raw absolute NEXT_PUBLIC_API_URL, which is meant to be
+      // a Docker-internal hostname and isn't reachable from an actual
+      // visitor's browser.
+      target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('ai/')) {
       target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('conversations') || pathSegment.startsWith('chats')) {

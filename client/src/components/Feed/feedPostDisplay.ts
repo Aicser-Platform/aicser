@@ -8,17 +8,26 @@ function isGenericLegacySummary(summary: string, assetType: AssetType): boolean 
 
 /** Resolve the text body shown under the title (user desc → excerpt → legacy summary). */
 export function resolveFeedPostSummary(item: FeedItem, descriptionOverride?: string): string {
+  const title = item.title?.trim().toLowerCase();
+  // A candidate that's just a repeat of the title (a chart left at its
+  // default, un-customized name - e.g. "Line" - flows unchanged into the
+  // backend's own last-resort `summary: description or title` fallback,
+  // see service_preview.py) reads as a literal duplicate under the title,
+  // not real content. Same "don't show it if it just repeats the title"
+  // rule resolveFeedPostQuestion already applies just below.
+  const isTitleRepeat = (candidate: string) => Boolean(title) && candidate.trim().toLowerCase() === title;
+
   const override = descriptionOverride?.trim();
-  if (override) return override;
+  if (override && !isTitleRepeat(override)) return override;
 
   const description = item.description?.trim();
-  if (description) return description;
+  if (description && !isTitleRepeat(description)) return description;
 
   const excerpt = item.asset?.excerpt?.trim();
-  if (excerpt) return excerpt;
+  if (excerpt && !isTitleRepeat(excerpt)) return excerpt;
 
   const summary = item.asset?.summary?.trim();
-  if (summary && !isGenericLegacySummary(summary, item.assetType)) {
+  if (summary && !isTitleRepeat(summary) && !isGenericLegacySummary(summary, item.assetType)) {
     return summary;
   }
 
@@ -32,6 +41,14 @@ export function resolveFeedPostQuestion(item: FeedItem, titleOverride?: string):
   return question !== title ? question : undefined;
 }
 
+/** True for pure text/discussion posts — these render full-width with an
+ * inline comment thread (FeedCard) instead of a thumbnail grid tile
+ * (FeedGridCard), since there is no visual asset to browse and the whole
+ * point is to read/join the discussion without leaving the feed. */
+export function isTextPostItem(item: FeedItem): boolean {
+  return item.assetType === 'post';
+}
+
 export function assetTypeLabelKey(assetType: AssetType): string {
   switch (assetType) {
     case 'dashboard':
@@ -42,6 +59,8 @@ export function assetTypeLabelKey(assetType: AssetType): string {
       return 'insights_type';
     case 'query':
       return 'query_type';
+    case 'post':
+      return 'badge_type_post';
     default:
       return 'badge_type_chart';
   }

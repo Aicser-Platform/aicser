@@ -27,28 +27,11 @@
   flex-shrink: 0;
 }
 
-.studio-refresh-dropdown-trigger.studio-context-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Unified Filter control (single button — opens menu) */
-.studio-filter-btn {
-  display: inline-flex;
-  align-items: center;
-  font-size: 12px;
-}
-
 .studio-last-refreshed {
   font-size: 11px;
   color: var(--ant-color-text-tertiary);
   white-space: nowrap;
   padding-left: 2px;
-}
-
-.studio-context-btn {
-  font-size: 12px !important;
 }
 
 .studio-filters-panel {
@@ -426,6 +409,30 @@ html[data-theme='dark'] .studio-canvas-area {
   color: var(--studio-primary);
 }
 
+.widget-filter-warning-hint-wrap {
+  position: absolute;
+  top: 2px;
+  right: 34px; /* left of widget-interaction-hint-wrap so both can coexist */
+  z-index: 6;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.widget-filter-warning-hint-btn.ant-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  color: var(--ant-color-warning, #d48806);
+  opacity: 0.7;
+}
+
+.widget-card-body:hover .widget-filter-warning-hint-btn.ant-btn,
+.widget-filter-warning-hint-btn.ant-btn:hover,
+.widget-filter-warning-hint-btn.ant-btn:focus-visible {
+  opacity: 1;
+}
+
 /* ─── Explain Chart Drawer ────────────────────────────────────────────────── */
 @keyframes explain-blink {
   0%, 100% { opacity: 1; }
@@ -518,6 +525,7 @@ html[data-theme='dark'] .studio-canvas-area {
   .add-block-popover-trigger,
   .studio-multi-select-bar,
   .widget-interaction-hint-wrap,
+  .widget-filter-warning-hint-wrap,
   .react-resizable-handle,
   .aiser-watermark-overlay,
   .no-print,
@@ -916,4 +924,103 @@ body.dashboard-print-mode .sidebar-toggle-btn {
 
 .dashboard-collab-comment-text {
   font-size: 13px !important;
+}
+
+/* DashboardExecutiveBanner (AI dashboard key-insight/story-arc card) --
+   duplicated from SharedDashboard.css rather than importing that file here,
+   since it carries a lot of shared-page-specific layout this studio page
+   doesn't want. Kept identical (same --studio-* tokens, already defined in
+   this file) so the banner looks the same in view mode as it does in the
+   shared/embed/publish viewer that originally only had these rules. */
+.dashboard-executive-banner {
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: var(--studio-radius, 8px);
+  border: 1px solid var(--studio-border, rgba(0, 0, 0, 0.08));
+  background: linear-gradient(
+    135deg,
+    var(--studio-card-bg, #fff) 0%,
+    var(--studio-primary-light, rgba(0, 194, 203, 0.06)) 100%
+  );
+  box-shadow: var(--studio-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.05));
+}
+
+.dashboard-executive-banner-headline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dashboard-executive-banner-icon {
+  color: var(--studio-primary, #00c2cb);
+  font-size: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.dashboard-executive-banner-insight {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--studio-text-main, #24292f);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard-executive-banner-narrative {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--studio-text-secondary, rgba(0, 0, 0, 0.65));
+}
+
+.dashboard-executive-banner-insights {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-executive-banner-insights li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--studio-bg, rgba(0, 0, 0, 0.02));
+}
+
+.dashboard-executive-banner-widget-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--studio-text-muted, rgba(0, 0, 0, 0.45));
+}
+
+.dashboard-executive-banner-widget-insight {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--studio-text-main, #24292f);
+}
+
+.dashboard-executive-banner-toggle {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--studio-primary, #00c2cb);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-executive-banner-toggle:hover {
+  text-decoration: underline;
 }

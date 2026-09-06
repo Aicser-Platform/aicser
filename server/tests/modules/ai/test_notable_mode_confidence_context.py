@@ -77,7 +77,7 @@ async def test_prompt_notes_absence_of_data_source():
 
 @pytest.mark.asyncio
 async def test_fails_open_without_litellm_service():
-    confident, alternatives, reclassify_to = await check_notable_mode_confidence(
+    confident, alternatives, reclassify_to, _needs_chart, _needs_narrative = await check_notable_mode_confidence(
         "which region has the highest churn", "diagnostic", litellm_service=None,
     )
     assert confident is True
@@ -91,7 +91,7 @@ async def test_fails_open_when_model_calls_no_tool():
     didn't produce a verdict) must fail open exactly like the old "no content"
     case did, not be treated as an error or as low confidence."""
     llm = FakeLiteLLM({}, tool_calls=[])
-    confident, alternatives, reclassify_to = await check_notable_mode_confidence(
+    confident, alternatives, reclassify_to, _needs_chart, _needs_narrative = await check_notable_mode_confidence(
         "which region has the highest churn", "diagnostic", litellm_service=llm,
     )
     assert confident is True
@@ -104,7 +104,7 @@ async def test_reclassifies_when_llm_is_confident_in_a_specific_alternative():
     llm = FakeLiteLLM(
         {"confident": False, "alternatives": ["predictive"], "alternative_confidence": "high"}
     )
-    confident, alternatives, reclassify_to = await check_notable_mode_confidence(
+    confident, alternatives, reclassify_to, _needs_chart, _needs_narrative = await check_notable_mode_confidence(
         "what will churn look like next quarter", "diagnostic", litellm_service=llm,
     )
     assert confident is False
@@ -120,7 +120,7 @@ async def test_does_not_reclassify_when_alternative_confidence_is_low():
     llm = FakeLiteLLM(
         {"confident": False, "alternatives": ["predictive", "prescriptive"], "alternative_confidence": "low"}
     )
-    confident, alternatives, reclassify_to = await check_notable_mode_confidence(
+    confident, alternatives, reclassify_to, _needs_chart, _needs_narrative = await check_notable_mode_confidence(
         "what should we expect and do about churn", "diagnostic", litellm_service=llm,
     )
     assert confident is False
@@ -131,7 +131,7 @@ async def test_does_not_reclassify_when_alternative_confidence_is_low():
 @pytest.mark.asyncio
 async def test_no_reclassify_target_when_confident_in_original_guess():
     llm = FakeLiteLLM({"confident": True, "alternatives": []})
-    confident, alternatives, reclassify_to = await check_notable_mode_confidence(
+    confident, alternatives, reclassify_to, _needs_chart, _needs_narrative = await check_notable_mode_confidence(
         "which region has the highest churn", "diagnostic", litellm_service=llm,
     )
     assert confident is True

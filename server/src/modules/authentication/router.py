@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -30,6 +32,8 @@ from src.modules.authentication.service import (
     request_password_reset,
     reset_password_with_token_or_code,
     resolve_pending_two_factor_login,
+    revoke_access_token,
+    revoke_all_sessions_for_user,
     start_totp_enrollment,
 )
 from src.modules.authentication.cookies import clear_auth_token_cookie, set_auth_token_cookie
@@ -59,8 +63,37 @@ async def _register(db: AsyncSession, email: str, username: str, password: str):
     return await get_auth_provider().register(db, email, username, password)
 
 
+def _reject_if_sso_only() -> None:
+    """Block local email/password login and registration on an EE deployment
+    that has been explicitly pointed at an external identity provider.
+
+    An EE org with AUTH_PROVIDER set to anything other than 'local' (unset
+    also means local) has delegated identity to that provider - letting
+    /auth/login or /auth/register silently create or authenticate a local
+    password account would bypass whatever access policy the org enforces
+    there (SSO-required MFA, deprovisioning on offboarding, etc.). Checks the
+    raw env var directly rather than src.core.edition.get_auth_provider()
+    (which normalizes an unsupported form-auth value like 'keycloak' back to
+    'local' for the *form-auth strategy selector* - a different concern from
+    this "is an external provider configured at all" gate). CE has no such
+    org-level SSO policy to enforce, so it is never gated here regardless of
+    AUTH_PROVIDER.
+    """
+    from src.core.edition import is_ee_enabled
+
+    if not is_ee_enabled():
+        return
+    provider = os.getenv("AUTH_PROVIDER", "local").strip().lower()
+    if provider and provider != "local":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Local email/password sign-in is disabled for this organization. Please sign in through your identity provider.",
+        )
+
+
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(body: LoginRequest, response: Response, db: AsyncSession = Depends(get_async_session)):
+    _reject_if_sso_only()
     user = await _authenticate(db, body.email, body.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,6 +116,7 @@ async def login(body: LoginRequest, response: Response, db: AsyncSession = Depen
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, response: Response, db: AsyncSession = Depends(get_async_session)):
+    _reject_if_sso_only()
     try:
         user = await _register(db, body.email, body.username, body.password)
     except ValueError as e:
@@ -101,9 +135,34 @@ async def register(body: RegisterRequest, response: Response, db: AsyncSession =
 
 
 @router.post("/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    token = None
+    auth_h = (request.headers.get("Authorization") or request.headers.get("authorization") or "").strip()
+    if auth_h.lower().startswith("bearer "):
+        parts = auth_h.split(None, 1)
+        if len(parts) > 1 and parts[1].strip() and parts[1].strip() != "null":
+            token = parts[1].strip()
+    if not token:
+        token = request.cookies.get(COOKIE_NAME)
+    # Revoking is best-effort and never blocks logout: an already-expired,
+    # malformed, or missing token just means there's nothing to revoke.
+    if token:
+        revoke_access_token(token)
     clear_auth_token_cookie(response)
     return {"message": "Logged out"}
+
+
+@router.post("/auth/logout-all")
+async def logout_all_sessions(request: Request, response: Response):
+    """Invalidate every session for the current user, including this one --
+    for a lost/stolen device, or after noticing account activity that wasn't
+    yours. Every other browser/tab is signed out on its next request."""
+    from src.modules.authentication.deps.auth_bearer import get_current_user
+
+    payload = await get_current_user(request)
+    revoke_all_sessions_for_user(str(payload["sub"]))
+    clear_auth_token_cookie(response)
+    return {"message": "Logged out of all sessions"}
 
 
 @router.post("/auth/forgot-password", response_model=PasswordResetMessageResponse)

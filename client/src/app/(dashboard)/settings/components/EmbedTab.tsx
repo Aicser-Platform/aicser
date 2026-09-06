@@ -21,31 +21,24 @@ import {
   BgColorsOutlined,
   CodeOutlined,
   DeleteOutlined,
+  EditOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { fetchApi } from '@/utils/api';
+import { fetchApi, handleUpgradeRequiredError } from '@/utils/api';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useKnowledgeLibraries } from '@/hooks/useKnowledgeLibraries';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
+import { EmbedAssistantModal } from './embed/EmbedAssistantModal';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import { buildEmbedChatUrl, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
+import type { EmbedAssistantRecord } from '../types';
 import type { TabComponentProps } from '../page';
 
 const { Paragraph } = Typography;
-
-type EmbedCapability = 'rag_only' | 'full_engine';
-
-export interface EmbedAssistantRecord {
-  id: string;
-  name: string;
-  capabilities: string;
-  library_ids?: string[];
-  allowed_modes?: string[];
-  allowed_domains?: string[];
-}
 
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
 
@@ -75,10 +68,27 @@ interface EmbedTokenCreated extends EmbedTokenRecord {
   embed_urls?: Record<string, string>;
 }
 
-const SCOPE_OPTIONS: { label: string; value: EmbedScope }[] = [
+// Chart scope now works end-to-end: GET /charts/embed/{id} previously
+// queried a `widgets` table with `config`/`settings` columns that don't
+// exist (real charts live in the `charts` table, `chart_query`/
+// `chart_options`) and checked a `widget.settings.embed_token` that nothing
+// ever wrote — it 500'd on every single request. Rewritten to query the
+// real table and verify through this same JWT embed-token system (the one
+// this form mints), so re-enabled here.
+//
+// Chat scope on *this* generic token is genuinely dead: the chat-embed page
+// requires a full authenticated session (a different JWT secret than embed
+// tokens use), so a token minted with this scope silently does nothing when
+// used. It used to be listed here as "Chat (coming soon)", which read as
+// "chat embedding doesn't exist yet" — misleading, since it does: the Embed
+// Assistants card below this form is the real, working chat-embed path (its
+// own embed_jwt/anonymous token system, unrelated to this one). Rather than
+// keep a perpetually-disabled option pointing at a mechanism that was never
+// going to be finished, "chat" is dropped from this checklist entirely so
+// there's one obvious way to embed chat, not two — one broken, one not.
+const SCOPE_OPTIONS: { label: string; value: EmbedScope; disabled?: boolean }[] = [
   { label: 'Dashboard', value: 'dashboard' },
   { label: 'Chart', value: 'chart' },
-  { label: 'Chat (EE)', value: 'chat' },
 ];
 
 export const EmbedTab: React.FC<TabComponentProps> = () => {
@@ -86,15 +96,15 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const tEmbed = useTranslations('embed_modal');
   const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const [form] = Form.useForm();
-  const [assistantForm] = Form.useForm();
   const [editThemeForm] = Form.useForm();
-  const [assistants, setAssistants] = useState<EmbedAssistantRecord[]>([]);
+  const { embedAssistants, embedAssistantsLoading, loadEmbedAssistants } = useSettingsStore();
   const [tokens, setTokens] = useState<EmbedTokenRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [creatingAssistant, setCreatingAssistant] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showAssistantModal, setShowAssistantModal] = useState(false);
+  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
+  const [assistantModalMode, setAssistantModalMode] = useState<'create' | 'edit'>('create');
+  const [editingAssistant, setEditingAssistant] = useState<EmbedAssistantRecord | null>(null);
   const [createdToken, setCreatedToken] = useState<EmbedTokenCreated | null>(null);
   const [editingThemeToken, setEditingThemeToken] = useState<EmbedTokenRecord | null>(null);
   const [savingTheme, setSavingTheme] = useState(false);
@@ -107,7 +117,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const [selectedEmbedScope, setSelectedEmbedScope] = useState<string>('dashboard');
   const { createEmbedCode } = useEmbedCode();
 
-  const { libraries, isLoading: librariesLoading } = useKnowledgeLibraries(orgId);
+  const { libraries } = useKnowledgeLibraries(orgId);
 
   const loadTokens = useCallback(async () => {
     setLoading(true);
@@ -125,56 +135,20 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     void loadTokens();
   }, [loadTokens]);
 
-  const loadAssistants = useCallback(async () => {
-    if (!orgId) return;
-    try {
-      const res = await fetchApi(
-        `/api/embed/assistants?organization_id=${encodeURIComponent(String(orgId))}`,
-      );
-      setAssistants(res.assistants || []);
-    } catch {
-      setAssistants([]);
-    }
-  }, [orgId]);
-
   useEffect(() => {
-    void loadAssistants();
-  }, [loadAssistants]);
+    if (orgId) void loadEmbedAssistants(orgId);
+  }, [orgId, loadEmbedAssistants]);
 
-  const handleCreateAssistant = async (values: {
-    name: string;
-    capabilities: EmbedCapability;
-    library_ids?: string[];
-    allowed_modes?: string[];
-    allowed_domains?: string;
-  }) => {
-    if (!orgId) return;
-    setCreatingAssistant(true);
-    try {
-      const domains = (values.allowed_domains || '')
-        .split(',')
-        .map((d) => d.trim())
-        .filter(Boolean);
-      await fetchApi('/api/embed/assistants', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: values.name,
-          organization_id: orgId,
-          capabilities: values.capabilities,
-          library_ids: values.library_ids || [],
-          allowed_modes: values.allowed_modes?.length ? values.allowed_modes : ['ai_search'],
-          allowed_domains: domains,
-        }),
-      });
-      message.success(t('embed_assistant_created'));
-      setShowAssistantModal(false);
-      assistantForm.resetFields();
-      void loadAssistants();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : t('embed_assistant_create_failed'));
-    } finally {
-      setCreatingAssistant(false);
-    }
+  const openCreateAssistant = () => {
+    setEditingAssistant(null);
+    setAssistantModalMode('create');
+    setAssistantModalOpen(true);
+  };
+
+  const openEditAssistant = (assistant: EmbedAssistantRecord) => {
+    setEditingAssistant(assistant);
+    setAssistantModalMode('edit');
+    setAssistantModalOpen(true);
   };
 
   const handleCreate = async (values: {
@@ -225,7 +199,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       setCreatedToken(created);
       void loadTokens();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('embed_create_failed'));
+      if (!handleUpgradeRequiredError(err)) {
+        message.error(err instanceof Error ? err.message : t('embed_create_failed'));
+      }
     } finally {
       setCreating(false);
     }
@@ -271,7 +247,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       editThemeForm.resetFields();
       void loadTokens();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('embed_theme_update_failed'));
+      if (!handleUpgradeRequiredError(err)) {
+        message.error(err instanceof Error ? err.message : t('embed_theme_update_failed'));
+      }
     } finally {
       setSavingTheme(false);
     }
@@ -360,11 +338,13 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       title: t('col_actions'),
       key: 'actions',
       render: (_: unknown, record: EmbedTokenRecord) => (
-        <Space>
+        <Space size={0}>
           <Button
             type="text"
+            className="icon-only-btn"
             icon={<BgColorsOutlined />}
             title={t('embed_edit_theme')}
+            aria-label={t('embed_edit_theme')}
             disabled={record.status !== 'active'}
             onClick={() => {
               setEditingThemeToken(record);
@@ -383,7 +363,15 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
             okText={t('yes')}
             cancelText={t('no')}
           >
-            <Button type="text" danger icon={<DeleteOutlined />} disabled={record.status !== 'active'} />
+            <Button
+              type="text"
+              danger
+              className="icon-only-btn"
+              icon={<DeleteOutlined />}
+              title={t('embed_revoke')}
+              aria-label={t('embed_revoke')}
+              disabled={record.status !== 'active'}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -402,7 +390,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         />
       }
     >
-      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+      <div className="flex flex-col gap-5">
+      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
         {t('embed_tab_desc')}
       </Paragraph>
 
@@ -432,10 +421,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       <Card
         size="small"
         title={t('embed_assistants_title')}
-        style={{ marginTop: 16 }}
         extra={
           <PermissionGuard permission={Permission.EMBED_CREATE}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAssistantModal(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateAssistant}>
               {t('embed_create_assistant')}
             </Button>
           </PermissionGuard>
@@ -445,7 +433,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         <Table
           rowKey="id"
           size="small"
-          dataSource={assistants}
+          loading={embedAssistantsLoading}
+          dataSource={embedAssistants}
           pagination={false}
           locale={{ emptyText: t('embed_assistants_empty') }}
           columns={[
@@ -475,77 +464,32 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
                 </Button>
               ),
             },
+            {
+              title: t('col_actions'),
+              key: 'actions',
+              render: (_, row) => (
+                <Button
+                  type="text"
+                  className="icon-only-btn"
+                  icon={<EditOutlined />}
+                  title={t('embed_edit_assistant')}
+                  aria-label={t('embed_edit_assistant')}
+                  onClick={() => openEditAssistant(row)}
+                />
+              ),
+            },
           ]}
         />
       </Card>
+      </div>
 
-      <Modal
-        title={t('embed_create_assistant')}
-        open={showAssistantModal}
-        onCancel={() => {
-          setShowAssistantModal(false);
-          assistantForm.resetFields();
-        }}
-        footer={null}
-        destroyOnHidden
-      >
-        <Form
-          form={assistantForm}
-          layout="vertical"
-          initialValues={{ capabilities: 'rag_only', allowed_modes: ['ai_search'] }}
-          onFinish={(values) => void handleCreateAssistant(values)}
-        >
-          <Form.Item name="name" label={t('embed_assistant_name')} rules={[{ required: true, message: t('embed_name_required') }]}>
-            <Input placeholder={t('embed_assistant_name')} />
-          </Form.Item>
-          <Form.Item name="capabilities" label={t('embed_assistant_capabilities')} rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: 'rag_only', label: t('embed_assistant_cap_rag') },
-                { value: 'full_engine', label: t('embed_assistant_cap_full') },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="library_ids"
-            label={t('embed_assistant_libraries')}
-            extra={t('embed_assistant_libraries_help')}
-          >
-            <Select
-              mode="multiple"
-              loading={librariesLoading}
-              placeholder={t('embed_assistant_libraries')}
-              options={libraries.map((lib) => ({ value: lib.id, label: lib.name }))}
-              allowClear
-            />
-          </Form.Item>
-          <Form.Item name="allowed_modes" label={t('embed_assistant_modes')}>
-            <Select
-              mode="multiple"
-              options={[
-                { value: 'ai_search', label: 'AI Search' },
-                { value: 'standard', label: 'Standard' },
-                { value: 'deep', label: 'Deep analysis' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="allowed_domains"
-            label={t('embed_assistant_domains')}
-            extra={t('embed_assistant_domains_help')}
-          >
-            <Input placeholder="intranet.example.com, teams.microsoft.com" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button onClick={() => setShowAssistantModal(false)}>{t('cancel')}</Button>
-              <Button type="primary" htmlType="submit" loading={creatingAssistant}>
-                {t('create_key')}
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+      <EmbedAssistantModal
+        open={assistantModalOpen}
+        mode={assistantModalMode}
+        organizationId={orgId}
+        assistant={editingAssistant}
+        onClose={() => setAssistantModalOpen(false)}
+      />
 
       <Modal
         title={t('embed_create_token')}
@@ -569,7 +513,23 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           <Form.Item name="scopes" label={t('embed_scopes')} rules={[{ required: true, message: t('embed_scopes_required') }]}>
             <Checkbox.Group options={SCOPE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="resource_id" label={t('embed_resource')} extra={t('embed_resource_help')}>
+          <Form.Item
+            name="resource_id"
+            label={t('embed_resource')}
+            extra={t('embed_resource_help')}
+            dependencies={['scopes']}
+            rules={[
+              {
+                validator: async (_rule, value) => {
+                  const scopes: string[] = form.getFieldValue('scopes') || [];
+                  const needsResource = scopes.some((s) => ['dashboard', 'chart', 'report'].includes(s));
+                  if (needsResource && !value) {
+                    throw new Error(t('embed_resource_required'));
+                  }
+                },
+              },
+            ]}
+          >
             <Input placeholder={t('embed_resource_placeholder')} />
           </Form.Item>
           <Form.Item name="allowed_domains" label={t('embed_allowed_domains')} extra={t('embed_allowed_domains_help')}>

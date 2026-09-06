@@ -1,6 +1,6 @@
 """Tests for stream_event_builder partial_results contract."""
 
-from src.modules.ai.services.stream_event_builder import (
+from ee.modules.ai.services.stream_event_builder import (
     build_partial_results,
     enrich_partial_results_quality,
     is_final_state_update,

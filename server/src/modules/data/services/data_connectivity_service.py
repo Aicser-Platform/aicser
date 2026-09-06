@@ -3025,24 +3025,29 @@ class DataConnectivityService:
             logger.error(f"Failed to delete data source {data_source_id}: {e}")
             return {'success': False, 'error': str(e)}
 
-    async def generate_data_insights(self, data_source_id: str) -> Dict[str, Any]:
+    async def generate_data_insights(
+        self,
+        data_source_id: str,
+        user_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Generate AI insights for a data source"""
         try:
             logger.info(f"🔍 Generating AI insights for data source: {data_source_id}")
-            
+
             # Get the data source
             data_source = self.data_sources.get(data_source_id)
             if not data_source:
                 return {'success': False, 'error': 'Data source not found'}
-            
+
             # Get data and schema
             data = data_source.get('data', [])
             schema = data_source.get('schema', {})
             name = data_source.get('name', 'Unknown')
-            
+
             # Generate insights using AI
             insights_result = await self.ai_schema_service.generate_data_insights(
-                data, schema, name
+                data, schema, name, user_id=user_id, organization_id=organization_id
             )
             
             return insights_result

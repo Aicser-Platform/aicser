@@ -71,6 +71,17 @@ export function makeMessageUserFriendly(message: string): string {
     .replace(/[ \t]*:[ \t]*/g, ': ')     // Normalize spacing around colons (horizontal only)
     .trim();
 
+  // Safety net: the replacements above are a fixed list of known patterns -
+  // not exhaustive, and this function is the one place any error string from
+  // anywhere (a backend response, a network failure, an unexpected
+  // client-side exception) ultimately passes through before reaching the
+  // chat bubble. A raw Python/JS exception class name, stack frame, or file
+  // path that doesn't match any pattern above would otherwise be shown
+  // almost verbatim, just re-capitalized.
+  if (/\b(traceback|stack ?trace|at line \d|file "|raise |assert |keyerror|typeerror|valueerror|attributeerror|importerror|nameerror|runtimeerror|nullpointer(?:exception)?|__init__|0x[0-9a-f]{4}|class '|exception:)/i.test(friendlyMessage)) {
+    return 'Something went wrong on our end. Please try again, or rephrase your question.';
+  }
+
   // Capitalize first letter
   if (friendlyMessage.length > 0) {
     friendlyMessage = friendlyMessage.charAt(0).toUpperCase() + friendlyMessage.slice(1);
@@ -116,18 +127,46 @@ export function makeProgressMessageUserFriendly(
     'complete': 'Complete!',
   };
 
-  // If message is provided and not a duplicate of stage message, use it
-  if (message && message.trim()) {
+  const stageMessage = stageMessages[stage] || 'Working on it...';
+
+  // Generic pre-first-stage text ("Starting analysis...", "Starting workflow...")
+  // carries no information beyond "the run has begun" — none of makeMessageUserFriendly's
+  // replacements below target it (it's not a technical term to translate), so it was
+  // passing straight through as raw backend copy instead of the friendly stage label
+  // that already exists for exactly this moment, showing up as a redundant second line
+  // wherever loadingMessage/rotatingMessage is rendered.
+  //
+  // Same problem, different shape: advance_plan_step's (graph_state.py) own
+  // plan-aware progress text is "Step {n}/{total}: {label}" — internal
+  // checklist framing, not written for an end user, and (like the generic
+  // start text) has no technical jargon for makeMessageUserFriendly's
+  // replacements to catch, so it also sailed straight through verbatim.
+  // Live-reproduced: "Step 2/7: Preparing your data query" rendered as a
+  // bare line as soon as the supervisor's routing decision landed (the
+  // "understand" plan step completing triggers this for the very next
+  // step), well before the nl2sql stage had anything of its own to show.
+  const isGenericStartMessage = (msg: string): boolean => {
+    const lower = msg.trim().toLowerCase();
+    return (
+      lower === '' ||
+      lower === 'start' ||
+      /^(starting|beginning)\b/.test(lower) ||
+      /^step\s+\d+\s*\/\s*\d+\s*:/.test(lower)
+    );
+  };
+
+  // If message is provided, not a duplicate of stage message, and not just a
+  // generic "starting..." phrase, use it
+  if (message && message.trim() && !isGenericStartMessage(message)) {
     const friendlyMessage = makeMessageUserFriendly(message);
     // Avoid duplicate: if message is same as stage message, use stage message only
-    const stageMessage = stageMessages[stage] || 'Working on it...';
     if (friendlyMessage.toLowerCase() === stageMessage.toLowerCase()) {
       return stageMessage;
     }
     return friendlyMessage;
   }
 
-  return stageMessages[stage] || 'Working on it...';
+  return stageMessage;
 }
 
 /** Get actionable guidance based on error code; optional analyticsType for mode-specific suggestions */
@@ -215,6 +254,14 @@ export function getErrorGuidance(
         'Try rephrasing your question',
         'Check your data source connection',
         'Contact support if this persists'
+      ]
+    },
+    'SQL_CORRECTION_FAILED': {
+      message: "I couldn't automatically fix the query for this question.",
+      suggestions: [
+        'Rephrase your question — different wording can lead the AI to a different table or column',
+        'Check that the metric and time period you mean actually exist in this data source',
+        'Try a simpler version of the question first, then add detail back in'
       ]
     },
     'UNIFIED_NODE_CRITICAL': {

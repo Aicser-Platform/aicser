@@ -1,6 +1,6 @@
 """Tests for mode quality and degradation surfacing."""
 
-from src.modules.ai.utils.mode_quality import apply_mode_degradation, merge_quality_metadata
+from ee.modules.ai.utils.mode_quality import apply_mode_degradation, merge_quality_metadata
 
 
 def test_apply_mode_degradation_sets_metadata():

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Input } from 'antd';
+import { Button, Mentions } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
 import { COMMENT_CHAR_LIMIT } from '../FeedCard/constants';
 
@@ -8,6 +8,7 @@ interface FeedDiscussionComposerProps {
   onCommentValueChange: (value: string) => void;
   onCommentSubmit: () => void;
   commenting: boolean;
+  mentionOptions?: { value: string; label: string }[];
 }
 
 /** Always-visible comment composer for the Discussion panel. */
@@ -16,16 +17,18 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
   onCommentValueChange,
   onCommentSubmit,
   commenting,
+  mentionOptions,
 }) => {
   const trimmedLength = commentValue.trim().length;
   const canSubmit = trimmedLength > 0 && trimmedLength <= COMMENT_CHAR_LIMIT && !commenting;
 
   return (
     <div className="rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-3">
-      <Input.TextArea
+      <Mentions
         value={commentValue}
-        onChange={(event) => onCommentValueChange(event.target.value)}
-        placeholder="Write a comment..."
+        onChange={onCommentValueChange}
+        options={mentionOptions}
+        placeholder="Write a comment... use @ to mention a colleague"
         maxLength={COMMENT_CHAR_LIMIT}
         autoSize={{ minRows: 2, maxRows: 6 }}
         className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-primary)] !shadow-none"

@@ -7,7 +7,7 @@ two concrete shapes to assert the produced chart_query against.
 
 import pytest
 
-from src.modules.ai.schemas.dashboard_plan import DashboardWidgetPlan
+from ee.modules.ai.schemas.dashboard_plan import DashboardWidgetPlan
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +406,7 @@ def test_computed_metric_format_is_not_overridden_by_field_inference():
 
 def test_materialize_runs_validator_and_labels():
     """End-to-end materialize: surrogate-key widget dropped, raw label humanized."""
-    from src.modules.ai.schemas.dashboard_plan import DashboardLLMPlan, DashboardPagePlan
+    from ee.modules.ai.schemas.dashboard_plan import DashboardLLMPlan, DashboardPagePlan
     from ee.modules.ai.services.dashboard_llm_planner import materialize_dashboard_plan
 
     plan = DashboardLLMPlan(
@@ -434,4 +434,10 @@ def test_materialize_runs_validator_and_labels():
     names = [w["name"] for w in widgets]
     assert "Bad metric" not in names           # surrogate-key metric dropped
     assert meta.get("dropped_widgets")
-    assert "Loan Amount USD" in names          # raw snake_case label humanized
+    assert "loan_amount_usd" not in names      # raw snake_case label never leaks through
+    # validate_widgets' chart-type-aware titling (dashboard_widget_validator.py)
+    # names a bar chart with a dimension "<Metric> by <Dimension>", not a bare
+    # humanized metric name - "Loan Amount by Branch" here, matching standard
+    # BI convention (same as a line/area chart getting "<Metric> Trend", or a
+    # stat card getting "Total <Metric>").
+    assert "Loan Amount by Branch" in names

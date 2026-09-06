@@ -72,6 +72,10 @@ function buildStatFromConfig(cfg: Record<string, unknown>): SharedChartProps | n
     chartData: { x: [], y: [], value },
     chartOptions: {
       title: title || 'KPI',
+      // The chat message wrapper (ChartMessage.tsx) always renders its own
+      // chart-title header above this — StatWidget's 'tile' layout renders
+      // title text unconditionally, so without this it showed twice.
+      hideTitle: true,
       format: 'number',
       // 'tile' gives the card its own bordered, palette-tinted background — the
       // same layout StatWidget offers on a dashboard, but self-contained rather
@@ -102,7 +106,21 @@ function inferChartType(cfg: Record<string, unknown>): string | null {
   }
   if (chartType === 'heatmap') return 'heatmap';
   if (cfg.visualMap && chartType === 'scatter') return 'heatmap';
-  if (chartType === 'gauge' || chartType === 'stat') return 'stat';
+  // 'gauge' used to be folded into 'stat' here, so an AI-authored gauge chart always
+  // rendered as a plain KPI tile with no indication anything different happened.
+  // Gauge has a real, working renderer (ChartOptionsBuilder's `type === 'gauge'`
+  // branch → an actual ECharts dial via EChartWidget) that only needs the same
+  // single-scalar value stat needs — it reads chartData.value, then falls back to
+  // chartData.y[0] / chartData.series[0].data[0], all of which the generic
+  // buildFromEchartsConfig/buildFromQueryResult paths below already populate. So
+  // letting 'gauge' fall through to `SUPPORTED.has(chartType)` (true — it's part of
+  // DASHBOARD_SWITCHABLE_CHART_TYPES) now renders it as a real gauge instead of a
+  // mislabeled stat card. This only affects charts the AI authored directly as
+  // 'gauge' via resolveSharedChartProps — buildSharedChartPropsForType (the
+  // in-place chart-type *switcher* path) never calls this function, and 'gauge'
+  // is intentionally excluded from SAFE_CHART_TYPE_SWITCH_TARGETS, so switching an
+  // arbitrary existing widget to Gauge is still not offered anywhere.
+  if (chartType === 'stat') return 'stat';
   return SUPPORTED.has(chartType) ? chartType : null;
 }
 
@@ -622,7 +640,8 @@ export function resolveSharedChartProps(
   if (chartType === 'stat') {
     const fromStat = buildStatFromConfig(cfg);
     if (fromStat) return tagChatSource(fromStat);
-    // Fall through to query rows if gauge/stat series empty
+    // Fall through to query rows if the stat series is empty. ('gauge' no longer
+    // reaches this branch — inferChartType above stopped coercing it to 'stat'.)
   }
 
   // Prefer populated ECharts option over re-inferring columns from query rows
@@ -658,7 +677,13 @@ export function resolveSharedChartProps(
           chartData: { x: [], y: [], value: Number(row[yKey]) },
           // Same layout choice as buildStatFromConfig above — keep both stat-building
           // paths in this file rendering identically rather than drifting apart.
-          chartOptions: { title: yKey, format: 'number', layout: 'tile' },
+          // title: switching chart type to KPI used to show the raw column key
+          // (e.g. "avg_order_value") instead of a formatted label — the same
+          // columnHeaderFromKey helper already used for table column headers
+          // below fixes that. hideTitle: true for the same reason as
+          // buildStatFromConfig above — ChartMessage.tsx's own header already
+          // shows this title.
+          chartOptions: { title: columnHeaderFromKey(yKey), hideTitle: true, format: 'number', layout: 'tile' },
           chartQuery: { yMetric: yKey },
         });
       }
@@ -695,7 +720,13 @@ export function buildSharedChartPropsForType(
     showLegend: chartType === 'pie' || chartType === 'donut' ? true : props.chartOptions?.showLegend,
     // Same tile treatment as the AI's own stat responses — manually switching an
     // existing chart to "Stat" via the chart-type menu shouldn't look different.
-    ...(chartType === 'stat' ? { layout: props.chartOptions?.layout || 'tile' } : {}),
+    // buildFromQueryResult above never sets a title (chartOptions: {} for every
+    // chart type — the outer ChartMessage.tsx header owns the title and stays
+    // stable across type switches), so without hideTitle here StatWidget fell
+    // back to its generic "Key Metric" placeholder every time a chart was
+    // switched to Stat — read as "the title changed" even though the real
+    // title (in the header) never moved.
+    ...(chartType === 'stat' ? { layout: props.chartOptions?.layout || 'tile', hideTitle: true } : {}),
   };
   if (chartType === 'donut') {
     chartOptions.innerRadius = 40;

@@ -1,22 +1,22 @@
 """Regression tests for holistic workflow hardening (alignment, chart, routing, mode matrix)."""
 
-from src.modules.ai.nodes.post_query_brain import _check_intent_result_alignment
-from src.modules.ai.utils.guaranteed_chart_builder import build_guaranteed_chart
-from src.modules.ai.data_source_capabilities import is_file_upload_duckdb, uses_duckdb_for_execution
-from src.modules.ai.utils.schema_for_llm import (
+from ee.modules.ai.nodes.post_query_brain import _check_intent_result_alignment
+from ee.modules.ai.utils.guaranteed_chart_builder import build_guaranteed_chart
+from ee.modules.ai.data_source_capabilities import is_file_upload_duckdb, uses_duckdb_for_execution
+from ee.modules.ai.utils.schema_for_llm import (
     compute_likely_dimension_columns,
     format_schema_for_llm,
     list_temporal_column_names_from_schema,
     schema_needs_refresh,
 )
-from src.modules.ai.nodes.error_correction_node import (
+from ee.modules.ai.nodes.error_correction_node import (
     _sql_fingerprint,
     _record_attempted_sql,
     _is_duplicate_sql,
     _format_sql_history_for_prompt,
     _uses_post_query_sql_budget_lane,
 )
-from src.modules.ai.config.workflow_config import WorkflowConfig
+from ee.modules.ai.config.workflow_config import WorkflowConfig
 
 
 def test_alignment_gate_triggers_on_metric_mismatch():
@@ -130,7 +130,7 @@ def test_record_and_detect_duplicate_sql():
 
 async def test_correct_sql_truncated_llm_output_does_not_consume_budget(monkeypatch):
     """Truncated proposed SQL must not increment sql_correction (was burning 4/4 on token-cutoff loops)."""
-    from src.modules.ai.nodes import error_correction_node as ecn
+    from ee.modules.ai.nodes import error_correction_node as ecn
 
     async def fake_fix(*args, **kwargs):
         # No FROM clause → sql_looks_truncated True
@@ -263,7 +263,7 @@ def test_schema_format_includes_sample_values():
 
 def test_extract_sql_preserves_single_line_date_trunc():
     """Step 4 JSON cleanup must not strip everything after the `',` in date_trunc('month', col)."""
-    from src.modules.ai.utils.sql_cleaner import extract_sql_from_llm_output, sql_looks_truncated
+    from ee.modules.ai.utils.sql_cleaner import extract_sql_from_llm_output, sql_looks_truncated
 
     sql = (
         "SELECT date_trunc('month', c.closed_date) AS m, SUM(c.amount) AS t "
@@ -275,7 +275,7 @@ def test_extract_sql_preserves_single_line_date_trunc():
 
 
 def test_normalize_sql_contract_skips_lossy_extract_for_json_object():
-    from src.modules.ai.utils.sql_cleaner import normalize_sql_from_llm_contract, sql_looks_truncated
+    from ee.modules.ai.utils.sql_cleaner import normalize_sql_from_llm_contract, sql_looks_truncated
 
     sql = (
         "SELECT date_trunc('month', c.closed_date) AS m FROM insurance.claims c"
@@ -286,7 +286,7 @@ def test_normalize_sql_contract_skips_lossy_extract_for_json_object():
 
 
 def test_normalize_workflow_sql_input_matches_contract_and_state():
-    from src.modules.ai.utils.sql_cleaner import normalize_workflow_sql_input, sql_looks_truncated
+    from ee.modules.ai.utils.sql_cleaner import normalize_workflow_sql_input, sql_looks_truncated
 
     sql = "SELECT date_trunc('month', x.d) AS m FROM t x"
     out = normalize_workflow_sql_input(sql, state={"sql_contract": "json_object"})
@@ -347,7 +347,7 @@ def test_schema_needs_refresh_detects_incomplete_schema():
 
 def test_intent_analysis_detects_follow_up():
     """Queries referencing previous results should set is_follow_up=True."""
-    from src.modules.ai.utils.intent_analysis import extract_query_intent
+    from ee.modules.ai.utils.intent_analysis import extract_query_intent
 
     follow_ups = [
         "show that by month",
@@ -376,7 +376,7 @@ def test_intent_analysis_detects_follow_up():
 
 def test_user_friendly_errors_blocks_technical_details():
     """Technical stack traces and class names should never reach the user."""
-    from src.modules.ai.utils.user_friendly_errors import make_error_user_friendly
+    from ee.modules.ai.utils.user_friendly_errors import make_error_user_friendly
 
     technical_msgs = [
         'Traceback (most recent call last): File "/app/main.py", line 42',
@@ -393,6 +393,24 @@ def test_user_friendly_errors_blocks_technical_details():
     long_msg = "x " * 200
     result = make_error_user_friendly(long_msg)
     assert len(result) <= 320, f"Error message too long ({len(result)} chars)"
+
+
+def test_user_friendly_errors_circuit_breaker_gets_distinct_message():
+    """A provider-wide circuit-breaker trip must not fall into the generic
+    "rephrase your question" bucket -- no rewording fixes a provider outage,
+    and the message must never echo the raw exception class name."""
+    from ee.modules.ai.utils.user_friendly_errors import make_error_user_friendly
+
+    raw = (
+        "SQL generation failed - Output does not appear to be a valid SELECT/WITH "
+        "statement.: {\"sql_query\": null, \"error\": \"Failed after 2 attempt(s). "
+        "Last error: _LLMCircuitBreakerOpen: LLM circuit breaker is open\"}"
+    )
+    result = make_error_user_friendly(raw)
+    assert "_LLMCircuitBreakerOpen" not in result
+    assert "circuitbreakeropen" not in result.lower()
+    assert "rephrase" not in result.lower()
+    assert "try again" in result.lower()
 
 
 # ── Graceful response column regex ───────────────────────────────────────────

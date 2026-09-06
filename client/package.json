@@ -62,6 +62,7 @@
     "echarts": "^6.1.0",
     "es-abstract": "^1.22.0",
     "fabric": "^7.4.0",
+    "form-data": "^4.0.6",
     "formdata-polyfill": "^4.0.10",
     "formidable": "^3.5.4",
     "highlight.js": "^11.11.1",

@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from src.modules.organizations.service import OrganizationService
+from ee.modules.organizations.service import OrganizationService
 
 
 @pytest.mark.asyncio

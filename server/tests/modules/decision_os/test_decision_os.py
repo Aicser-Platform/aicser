@@ -16,8 +16,8 @@ from ee.modules.decision_os.decision_synthesizer import (
     fallback_brief,
 )
 from ee.modules.decision_os.stakes_classifier import classify_stakes_level
-from src.modules.ai.schemas.workflow_result import DeliverableKind
-from src.modules.ai.services.deliverable_validator import infer_deliverable_kind, validate_deliverable
+from ee.modules.ai.schemas.workflow_result import DeliverableKind
+from ee.modules.ai.services.deliverable_validator import infer_deliverable_kind, validate_deliverable
 
 
 def test_classify_attachment():
@@ -188,3 +188,36 @@ async def test_decision_workflow_node_no_hitl_note_when_confident():
 
     assert result["hitl_required"] is False
     assert "Human review recommended" not in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_decision_workflow_node_hitl_note_survives_response_finalizer_overwrite():
+    """response_finalizer_node (which runs immediately after this node in
+    both the classic graph and the kernel's decision_brief capability)
+    unconditionally rebuilds state["message"] from state["executive_summary"]
+    at the end (state["message"] = state.get("executive_summary", "")) — a
+    note appended only to "message" here was silently discarded before ever
+    reaching the user. Live-confirmed via a real kernel-routed decision
+    brief where hitl_required=True but the note never appeared in the final
+    message. Fixed by appending to executive_summary too, whenever present."""
+    from ee.modules.decision_os.nodes.case_intake_node import decision_workflow_node
+
+    state = {
+        "query": "Should we shut down the Cambodia office?",
+        "case_file": {"domain_pack_id": "generic", "evidence_items": []},
+        "confidence_score": 0.4,
+        "message": "Executive decision: proceed with caution.",
+        "executive_summary": "Executive decision: proceed with caution.",
+    }
+    with patch(
+        "ee.modules.decision_os.nodes.case_intake_node.classify_stakes_level",
+        new=AsyncMock(return_value="critical"),
+    ):
+        result = await decision_workflow_node(state)
+
+    assert "Human review recommended" in result["message"]
+    assert "Human review recommended" in result["executive_summary"]
+    # Simulate response_finalizer_node's actual overwrite line
+    # (response_finalizer_node.py: state["message"] = state.get("executive_summary", ""))
+    final_message = result.get("executive_summary", "")
+    assert "Human review recommended" in final_message

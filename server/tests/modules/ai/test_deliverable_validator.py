@@ -1,11 +1,11 @@
 """Tests for deliverable contract validation."""
 
-from src.modules.ai.services.deliverable_validator import (
+from ee.modules.ai.services.deliverable_validator import (
     apply_deliverable_metadata,
     infer_deliverable_kind,
     validate_deliverable,
 )
-from src.modules.ai.schemas.workflow_result import DeliverableKind
+from ee.modules.ai.schemas.workflow_result import DeliverableKind
 
 
 def test_infer_dashboard():

@@ -11,7 +11,7 @@ pytest.importorskip("ee.modules.organizations.user_workspace")
 
 
 def test_resolve_self_host_org_role_first_user_is_owner():
-    from src.modules.organizations.deployment_org import resolve_self_host_org_role
+    from ee.modules.organizations.deployment_org import resolve_self_host_org_role
 
     role = resolve_self_host_org_role(
         email="founder@example.com",
@@ -25,7 +25,7 @@ def test_resolve_self_host_org_role_first_user_is_owner():
 def test_resolve_self_host_org_role_admin_email_is_owner():
     with patch.dict("os.environ", {"AISER_ADMIN_EMAIL": "admin@company.com"}):
         from importlib import reload
-        import src.modules.organizations.deployment_org as mod
+        import ee.modules.organizations.deployment_org as mod
 
         reload(mod)
         role = mod.resolve_self_host_org_role(
@@ -38,7 +38,7 @@ def test_resolve_self_host_org_role_admin_email_is_owner():
 
 
 def test_resolve_self_host_org_role_subsequent_user_is_member():
-    from src.modules.organizations.deployment_org import resolve_self_host_org_role
+    from ee.modules.organizations.deployment_org import resolve_self_host_org_role
 
     role = resolve_self_host_org_role(
         email="user@example.com",
@@ -51,15 +51,15 @@ def test_resolve_self_host_org_role_subsequent_user_is_member():
 
 @pytest.mark.asyncio
 async def test_ensure_user_workspace_self_host_passes_email():
-    from src.modules.organizations.user_workspace import ensure_user_workspace
+    from ee.modules.organizations.user_workspace import ensure_user_workspace
 
     uid = str(uuid4())
     with patch(
-        "src.modules.organizations.user_workspace.is_self_host_deployment",
+        "ee.modules.organizations.user_workspace.is_self_host_deployment",
         return_value=True,
     ):
         with patch(
-            "src.modules.organizations.user_workspace.ensure_self_host_user_membership",
+            "ee.modules.organizations.user_workspace.ensure_self_host_user_membership",
             new_callable=AsyncMock,
         ) as self_host:
             await ensure_user_workspace(uid, "founder@example.com")
@@ -68,15 +68,15 @@ async def test_ensure_user_workspace_self_host_passes_email():
 
 @pytest.mark.asyncio
 async def test_ensure_user_workspace_self_host_joins_deployment_org():
-    from src.modules.organizations.user_workspace import ensure_user_workspace
+    from ee.modules.organizations.user_workspace import ensure_user_workspace
 
     uid = str(uuid4())
     with patch(
-        "src.modules.organizations.user_workspace.is_self_host_deployment",
+        "ee.modules.organizations.user_workspace.is_self_host_deployment",
         return_value=True,
     ):
         with patch(
-            "src.modules.organizations.user_workspace.ensure_self_host_user_membership",
+            "ee.modules.organizations.user_workspace.ensure_self_host_user_membership",
             new_callable=AsyncMock,
         ) as self_host:
             await ensure_user_workspace(uid, "user@example.com", realm_roles=["viewer"])
@@ -85,18 +85,18 @@ async def test_ensure_user_workspace_self_host_joins_deployment_org():
 
 @pytest.mark.asyncio
 async def test_ensure_user_workspace_saas_defers_org_creation_to_onboarding():
-    from src.modules.organizations.user_workspace import ensure_user_workspace
+    from ee.modules.organizations.user_workspace import ensure_user_workspace
 
     uid = str(uuid4())
     with patch(
-        "src.modules.organizations.user_workspace.is_self_host_deployment",
+        "ee.modules.organizations.user_workspace.is_self_host_deployment",
         return_value=False,
     ), patch(
-        "src.modules.organizations.user_workspace._user_has_org_membership",
+        "ee.modules.organizations.user_workspace._user_has_org_membership",
         new_callable=AsyncMock,
         return_value=False,
     ) as has_membership, patch(
-        "src.modules.organizations.user_workspace.ensure_self_host_user_membership",
+        "ee.modules.organizations.user_workspace.ensure_self_host_user_membership",
         new_callable=AsyncMock,
     ) as self_host:
         await ensure_user_workspace(uid, "new-user@example.com")

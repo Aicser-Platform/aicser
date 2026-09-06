@@ -107,21 +107,44 @@ async def test_skill_result_sql_and_chart_promote_to_top_level_state():
 
 
 @pytest.mark.asyncio
-async def test_regex_fast_path_never_calls_the_llm():
-    """Export-intent queries planner_node already handles must not pay for an LLM call."""
-    called = {"llm": False}
+async def test_regex_fast_path_never_calls_the_llm_for_selection():
+    """Export-intent queries planner_node already handles must not pay for an
+    LLM call to SELECT the skill (regex already found it). A separate LLM
+    call now legitimately happens for generate_pdf specifically -- the
+    clarification judge (see _llm_judge_skill_clarification) that decides
+    whether this specific request has a real audience/detail-level ambiguity
+    worth asking about. Distinguished here by tool name, since both calls go
+    through the same generate_completion_with_tools method."""
+    calls = {"selection": False, "clarification": False}
 
-    async def fake_should_not_be_called(self, prompt, system_context, tools, **kwargs):
-        called["llm"] = True
+    async def fake_generate_completion_with_tools(self, prompt, system_context, tools, **kwargs):
+        tool_names = {t["function"]["name"] for t in tools}
+        if "clarification_decision" in tool_names:
+            calls["clarification"] = True
+            return {
+                "success": True,
+                "tool_calls": [{"name": "clarification_decision", "arguments": {"needs_clarification": False}}],
+                "content": "",
+            }
+        calls["selection"] = True  # Would mean regex-based selection was bypassed -- the regression this guards.
         return {"success": True, "tool_calls": [], "content": ""}
 
-    with patch(
-        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
-        new=fake_should_not_be_called,
-    ):
-        state = {"query": "export this as a pdf report", "user_id": "u1", "organization_id": None}
-        out = await skill_executor_node(state)
+    async def _fake_generate_pdf(ctx):
+        return {"success": True, "message": "PDF generated."}
+
+    original_handler = _REGISTRY["generate_pdf"].handler
+    _REGISTRY["generate_pdf"].handler = _fake_generate_pdf
+    try:
+        with patch(
+            "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+            new=fake_generate_completion_with_tools,
+        ):
+            state = {"query": "export this as a pdf report", "user_id": "u1", "organization_id": None}
+            out = await skill_executor_node(state)
+    finally:
+        _REGISTRY["generate_pdf"].handler = original_handler
 
     assert out["current_stage"] == "skill_complete"
     assert out["agent_plan"].get("trigger") != "llm_selection"
-    assert called["llm"] is False
+    assert calls["selection"] is False
+    assert calls["clarification"] is True

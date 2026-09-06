@@ -1,4 +1,4 @@
-from src.modules.ai.utils.workflow_decisions import (
+from ee.modules.ai.utils.workflow_decisions import (
     response_finalizer_route,
     post_execution_route,
     error_correction_route,
@@ -301,7 +301,13 @@ def test_mode_requirements_gate_route_critical_failure():
     assert mode_requirements_gate_route(state, auto_execution_enabled=True) == "graceful_response"
 
 
-def test_mode_requirements_gate_route_auto_degrades_with_data():
+def test_mode_requirements_gate_route_asks_instead_of_auto_degrading_with_data():
+    """Prefer asking over guessing: having *some* query_result data doesn't mean
+    it satisfies the specific mode's requirement (e.g. predictive needs a
+    time+numeric column) - silently swapping to descriptive used to answer a
+    different question than the one asked, with no visible signal that
+    happened. This must ask (clarify) regardless of auto_execution_enabled or
+    whether unrelated data exists, and must not mutate analytics_type/state."""
     state = {
         "current_stage": "mode_requirements_not_met",
         "query_result": [{"value": 10}],
@@ -309,24 +315,22 @@ def test_mode_requirements_gate_route_auto_degrades_with_data():
         "execution_metadata": {"trace_id": "t1"},
     }
     route = mode_requirements_gate_route(state, auto_execution_enabled=True)
-    assert route == "proceed"
-    assert state.get("analytics_type") == "descriptive"
-    assert state.get("current_stage") == "mode_requirements_auto_proceed"
+    assert route == "clarify"
+    assert state.get("analytics_type") == "predictive"
+    assert state.get("current_stage") == "mode_requirements_not_met"
     meta = state.get("execution_metadata") or {}
-    assert meta.get("mode_degraded") is True
-    assert meta.get("degradation_reason") == "mode_requirements_not_met"
+    assert meta.get("mode_degraded") is None
 
 
-def test_mode_requirements_gate_route_no_auto_but_has_data():
+def test_mode_requirements_gate_route_no_auto_but_has_data_still_clarifies():
     state = {
         "current_stage": "mode_requirements_not_met",
         "query_result": [{"value": 10}],
         "analytics_type": "diagnostic",
     }
     route = mode_requirements_gate_route(state, auto_execution_enabled=False)
-    assert route == "proceed"
-    assert state.get("analytics_type") == "descriptive"
-    assert state.get("current_stage") == "mode_requirements_passed"
+    assert route == "clarify"
+    assert state.get("analytics_type") == "diagnostic"
 
 
 def test_mode_requirements_gate_route_no_data_clarifies():
@@ -501,7 +505,7 @@ def test_insight_engine_route_summary_or_data_or_chart_proceed():
 
 
 def test_increment_retry_post_query_skips_total_retries():
-    from src.modules.ai.schemas.graph_state import increment_retry
+    from ee.modules.ai.schemas.graph_state import increment_retry
 
     state: dict = {"execution_metadata": {"unified_retry_state": {"total_retries": 5}}}
     increment_retry(state, "post_query_correction", count_toward_total=False)
@@ -511,7 +515,7 @@ def test_increment_retry_post_query_skips_total_retries():
 
 
 def test_explain_retry_block_flags_total_circuit_breaker():
-    from src.modules.ai.schemas.graph_state import DEFAULT_RETRY_LIMITS, explain_retry_block
+    from ee.modules.ai.schemas.graph_state import DEFAULT_RETRY_LIMITS, explain_retry_block
 
     cap = int(DEFAULT_RETRY_LIMITS["total_retries"])
     state = {

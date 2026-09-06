@@ -30,19 +30,25 @@ const EEChatPage = dynamic(() => import('../../../ee/chat-page'), {
 export default function ChatPageClient() {
   const router = useRouter();
   const t = useTranslations('chat');
-  const aiAvailability = useAiAvailability();
+  // validate=false: only "configured" is read below, and that doesn't depend on
+  // a live test-completion call — skip paying for one on every chat page load.
+  const aiAvailability = useAiAvailability(false);
 
   useEffect(() => {
-    if (!aiAvailability.loading && !aiAvailability.available) {
+    if (!aiAvailability.loading && !aiAvailability.configured) {
       router.prefetch('/settings?tab=api-keys&subtab=providers');
     }
-  }, [aiAvailability.available, aiAvailability.loading, router]);
+  }, [aiAvailability.configured, aiAvailability.loading, router]);
 
   if (aiAvailability.loading) {
     return <ChatPageFallback />;
   }
 
-  if (!aiAvailability.available) {
+  // Gate on "a key is configured", not "the last live validation call happened to
+  // succeed" — a transient provider hiccup or rate limit shouldn't lock a user with
+  // a working key out of chat entirely (they'll get a real error at the point of
+  // use if something is actually wrong).
+  if (!aiAvailability.configured) {
     return (
       <div className="relative min-h-screen">
         <div aria-hidden className="pointer-events-none min-h-screen select-none blur-[4px]">

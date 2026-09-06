@@ -1,6 +1,6 @@
 """Tests for tenant-scoped AI cache keys."""
 
-from src.modules.ai.utils.tenant_cache import (
+from ee.modules.ai.utils.tenant_cache import (
     build_query_cache_digest,
     normalize_org_id,
     tenant_lg_result_key,

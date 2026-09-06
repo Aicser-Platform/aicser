@@ -32,12 +32,14 @@ export function FeedPostContent({
 
   return (
     <div className={`feed-post-content flex flex-col ${className}`.trim()}>
-      <Paragraph
-        className={`leading-snug text-[var(--ant-color-text)] ${compactTitle ? 'text-sm font-semibold' : 'text-base font-semibold'}`}
-        ellipsis={compactTitle ? { rows: 2 } : false}
-      >
-        {title}
-      </Paragraph>
+      {title ? (
+        <Paragraph
+          className={`leading-snug text-[var(--ant-color-text)] ${compactTitle ? 'text-sm font-semibold' : 'text-base font-semibold'}`}
+          ellipsis={compactTitle ? { rows: 2 } : false}
+        >
+          {title}
+        </Paragraph>
+      ) : null}
       {question ? (
         <Text type="secondary" className="text-sm leading-relaxed line-clamp-2">
           {question}

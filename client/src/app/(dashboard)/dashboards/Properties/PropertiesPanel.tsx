@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Tabs, Input, Select, Button, Tooltip, Collapse, Modal, Segmented } from 'antd';
 import {
   MenuUnfoldOutlined,
@@ -22,7 +22,7 @@ import { getDashboardFieldDragData, isDashboardFieldDrag } from '../utils/dashbo
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { useTranslations } from 'next-intl';
 import { isContentWidgetType, isControlWidgetType } from './widgetPropertyProfile';
-import { DASHBOARD_CHART_TYPE_SWITCHER } from './dashboardChartTypeSwitcher';
+import { buildDashboardChartTypeSwitcherOptions } from './dashboardChartTypeSwitcher';
 import './PropertiesPanel.css';
 
 interface PropertiesPanelProps {
@@ -44,8 +44,6 @@ interface PropertiesPanelProps {
   /** Opens Manage filters (page/global) from empty Filters state. */
   onOpenManageFilters?: () => void;
 }
-
-const CHART_TYPES = DASHBOARD_CHART_TYPE_SWITCHER;
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   selectedWidget,
@@ -208,6 +206,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const isSlicer = isControlWidgetType(selectedWidget?.chartType);
   /** Narrative / media blocks — no data mapping (Notion / Looker content widgets). */
   const isContentBlock = isContentWidgetType(selectedWidget?.chartType);
+
+  // Safe switch targets (core 8) plus the widget's own current type if it's one of the
+  // extended 7 (e.g. AI-authored Geo/Heatmap) — keeps that button visible/active instead of
+  // offering a switch that would silently break the widget's data. See dashboardChartTypeSwitchTargets.
+  const chartTypeSwitcherOptions = useMemo(
+    () => buildDashboardChartTypeSwitcherOptions(selectedWidget?.chartType),
+    [selectedWidget?.chartType],
+  );
 
   // Sync pending state when widget selection changes
   useEffect(() => {
@@ -590,7 +596,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               <div>
                 <PpLabel>{tDash('chart_type_label')}</PpLabel>
                 <div className="pp-chart-type-row">
-                  {CHART_TYPES.map(({ type, icon, label }) => (
+                  {chartTypeSwitcherOptions.map(({ type, icon, label }) => (
                     <Tooltip key={type} title={label} placement="top">
                       <button
                         className={`pp-chart-type-btn${pendingChartType === type ? ' active' : ''}`}
@@ -833,8 +839,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     </div>
   );
 
-  // ── Analytics tab ────────────────────────────────────────────────────────────
-  const analyticsTab = (
+  // ── Sort tab ─────────────────────────────────────────────────────────────────
+  const sortTab = (
     <div className="properties-panel-body">
       {!hasWidget || isSlicer || isContentBlock ? (
         <div className="pp-empty-state">
@@ -857,7 +863,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           onUpdateChartOption={(key, val) =>
             updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
           }
-          mode="advanced"
+          mode="sort"
           dashboardPages={dashboardPages}
           sqlBound={sqlBound}
         />
@@ -920,13 +926,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 children: filtersTab,
               },
               {
-                key: 'interact',
+                key: 'sort',
                 label: (
-                  <Tooltip title={tDash('tab_interact_tip')}>
-                    <span>{tDash('tab_interact')}</span>
+                  <Tooltip title={tDash('tab_sort_tip')}>
+                    <span>{tDash('tab_sort')}</span>
                   </Tooltip>
                 ),
-                children: analyticsTab,
+                children: sortTab,
               },
             ]}
           />

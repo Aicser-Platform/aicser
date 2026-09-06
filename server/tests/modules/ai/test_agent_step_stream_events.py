@@ -20,15 +20,15 @@ from ee.modules.ai.kernel.stream_events import (
     emit_step_failed,
     emit_step_started,
 )
-# stream_events.py's _emit() reads the queue via `from src.modules.ai.utils.
+# stream_events.py's _emit() reads the queue via `from ee.modules.ai.utils.
 # stream_queue_context import get_stream_queue` - src.modules.ai is a
 # separately-loaded module object from ee.modules.ai (src/modules/ai/__init__.py
 # redirects __path__ to the ee tree when EE is enabled, but that's a *second*
 # load, not an alias), so it holds its own independent ContextVar instance.
-# Setting the ee-path one here would leave production's src-path get_stream_queue()
+# Setting the src-path one here would leave production's ee-path get_stream_queue()
 # reading None, silently no-opping _emit() and hanging any test that awaits the
-# queue - must import through the same src alias production code actually uses.
-from src.modules.ai.utils.stream_queue_context import set_stream_queue
+# queue - must import through the same ee path production code actually uses.
+from ee.modules.ai.utils.stream_queue_context import set_stream_queue
 
 
 def _make_plan() -> AgentPlan:

@@ -31,7 +31,6 @@ langchain = "^1.0"
 langchain-openai = "^1.0"
 langgraph = "^1.0"
 boto3 = "^1.26.137"
-colorama = "^0.4.6"
 pandas = "^2.2.3"
 numpy = "^1.24.0"
 pillow = "^12.3.0"
@@ -47,22 +46,14 @@ prometheus-client = "^0.26.0"
 python-dotenv = "^1.0.0"
 python-multipart = "^0.0.32"
 openpyxl = "^3.1.2"
-xlrd = "^2.0.1"
-tabula-py = "^2.8.2"
 pyarrow = "^14.0.2"
-fastparquet = "^2024.2.0"
-python-snappy = "^0.6.1"
 chardet = "^5.2.0"
 python-telegram-bot = "^22.0.0"
 # Database Drivers
 pymysql = "^1.1.0"
-mysql-connector-python = "^9.7.0"
 pyodbc = "^5.0.1"
-oracledb = "^2.5.0"
 pymongo = "^4.6.0"
 elasticsearch = "^8.11.0"
-influxdb-client = "^1.38.0"
-neo4j = "^5.15.0"
 # Data Warehouse Drivers
 snowflake-connector-python = "^4.4.0"
 google-cloud-bigquery = "^3.13.0"
@@ -77,24 +68,19 @@ azure-core = "^1.41.0"
 redshift-connector = "^2.1.15"
 databricks-sql-connector = "^3.0.0"
 databricks-connect = "^14.0.0"
-clickhouse-connect = "^0.7.0"
-clickhouse-driver = "^0.2.6"
 # Statistical & ML Libraries (Advanced Analytics Modes)
 prophet = ">=1.1.5"
 statsmodels = ">=0.14.1"
 pmdarima = ">=2.0.4"
 scikit-learn = ">=1.4.0"
 scipy = ">=1.12.0"
-mapie = ">=0.9.0"
 # Document parsing for RAG knowledge base
 pymupdf = ">=1.24.0"
 python-docx = ">=1.1.0"
 # Optional: native vector operations (graceful fallback to JSONB cosine similarity)
 pgvector = {version = ">=0.3.0", optional = true}
 # Additional utilities
-sqlalchemy-utils = "^0.41.1"
 PyYAML = "^6.0.1"
-psutil = "^5.9.8"
 python-socketio = "^5.16.3"
 python-engineio = "^4.13.3"
 sqlparse = "^0.6.0"
@@ -109,7 +95,6 @@ duckdb = "^1.5"
 aiomysql = "^0.3.2"
 aiosqlite = "^0.21.0"
 aioodbc = "^0.5.0"
-debugpy = "^1.8.0"
 stripe = "^11.6.0"
 # Chart/dashboard PNG export (also installed explicitly in Dockerfiles)
 playwright = ">=1.40.0"
@@ -162,6 +147,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "legacy_orchestrator: tests for deprecated RobustMultiAgentOrchestrator/EnhancedWorkflowPipeline (run explicitly or in legacy CI; will be migrated to LangGraph).",
+    "integration: exercises the real orchestrator/DB/model against a running stack, no mocks. Skipped by default; set RUN_INTEGRATION_TESTS=1 and run inside a container with service access (see tests/integration/test_mode_smoke.py).",
 ]
 
 [tool.mypy]

@@ -27,6 +27,31 @@ function readEffectiveDarkFromStorage(): boolean {
     }
 }
 
+function hexToRgb(bgHex: string): [number, number, number] | null {
+    const hex = bgHex.replace('#', '');
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+    return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+    return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/** WCAG relative luminance for 0-255 channel values. */
+function relativeLuminance(r: number, g: number, b: number): number {
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const [rl, gl, bl] = [r, g, b].map((v) => lin(v / 255));
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+}
+
+/** WCAG contrast ratio between two relative luminances. */
+function contrastRatio(l1: number, l2: number): number {
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
 /**
  * White text on the default brand teal (#00c2cb) measures ~2.2:1, well under
  * WCAG AA's 4.5:1 - and a static dark-text swap would break the same way for
@@ -35,14 +60,46 @@ function readEffectiveDarkFromStorage(): boolean {
  * background, so it adapts to brand overrides instead of assuming teal.
  */
 function pickReadableTextColor(bgHex: string, darkText: string, lightText: string): string {
-    const hex = bgHex.replace('#', '');
-    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return lightText;
-    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-    const [r, g, b] = [0, 2, 4].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
-    const bgLuminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    const contrastWithBlack = (bgLuminance + 0.05) / 0.05;
-    const contrastWithWhite = 1.05 / (bgLuminance + 0.05);
-    return contrastWithBlack >= contrastWithWhite ? darkText : lightText;
+    const rgb = hexToRgb(bgHex);
+    if (!rgb) return lightText;
+    const bgLuminance = relativeLuminance(...rgb);
+    return contrastRatio(bgLuminance, 0) >= contrastRatio(bgLuminance, 1) ? darkText : lightText;
+}
+
+/**
+ * Darkens bgHex just enough that fixed white text reaches WCAG AA (4.5:1)
+ * against it, scaling all three channels toward black together so hue and
+ * saturation are preserved (this is what "darken the teal" means visually,
+ * as opposed to desaturating or hue-shifting it). Returns bgHex unchanged
+ * when white already passes, so an already-dark brand color (custom org
+ * theme, or a color already adjusted for dark mode upstream) is never
+ * needlessly altered - this makes the result automatically correct in both
+ * light and dark mode, since it reacts to whatever primaryColor resolves to
+ * per-mode rather than hardcoding either.
+ */
+function darkenForWhiteText(bgHex: string, targetRatio = 4.6): string {
+    const rgb = hexToRgb(bgHex);
+    if (!rgb) return bgHex;
+    const [r, g, b] = rgb;
+    if (contrastRatio(relativeLuminance(r, g, b), 1) >= targetRatio) {
+        return bgHex;
+    }
+    // Binary search the largest scale factor t in [0, 1] (t=1 is the
+    // original color, t=0 is black) for which contrast still passes -
+    // contrast-with-white is monotonically non-increasing as t grows, so
+    // this converges on the least amount of darkening that still meets AA.
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        const luminance = relativeLuminance(r * mid, g * mid, b * mid);
+        if (contrastRatio(luminance, 1) >= targetRatio) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return rgbToHex(r * lo, g * lo, b * lo);
 }
 
 /** Reads the brand color overrides set by the (EE) ThemeCustomizer, if any. */
@@ -117,6 +174,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const primaryColorText = useMemo(
         () => pickReadableTextColor(primaryColor, '#0d1117', '#ffffff'),
         [primaryColor]
+    );
+    // Guaranteed-readable-for-white-text versions of the primary gradient
+    // stops, for surfaces (e.g. the chat user-message bubble) that always
+    // want white text rather than switching to dark text on light brand
+    // colors - darkening the background instead keeps both legible.
+    const primaryBubbleBg = useMemo(() => darkenForWhiteText(primaryColor), [primaryColor]);
+    const primaryBubbleBgHover = useMemo(
+        () => darkenForWhiteText(primaryColorHover),
+        [primaryColorHover]
     );
 
     const navigationSiderBg = useMemo(
@@ -234,6 +300,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             // (e.g. `color: var(--color-primary-text, #fff)` in place of a
             // hardcoded `color: #fff` on a primaryColor background).
             '--color-primary-text': primaryColorText,
+            // Darkened gradient stops guaranteeing AA contrast for fixed white
+            // text (e.g. chat user-message bubble) - see darkenForWhiteText().
+            '--color-primary-bubble-bg': primaryBubbleBg,
+            '--color-primary-bubble-bg-hover': primaryBubbleBgHover,
 
             // Functional Colors - Minimal usage
             '--ant-color-success': '#16a34a',
@@ -262,7 +332,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         deprecatedVars.forEach(key => {
             root.style.removeProperty(key);
         });
-    }, [isDarkMode, brandTokens, primaryColor, primaryColorHover, primaryColorActive, primaryColorOutline, primaryColorText]);
+    }, [isDarkMode, brandTokens, primaryColor, primaryColorHover, primaryColorActive, primaryColorOutline, primaryColorText, primaryBubbleBg, primaryBubbleBgHover]);
 
     // Wrapper to ensure persistence on every change
     const setDarkModeWithPersistence = (value: boolean | ((prev: boolean) => boolean)) => {
@@ -469,6 +539,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
                             colorBorder: isDarkMode ? '#67717d' : '#7a7f85', // see Input above
                             borderRadius: 6,
+                            // Input (above) sets these explicitly so hover/focus reads as the
+                            // brand color rather than antd's derived default - Select lacked
+                            // the same pair, so a Select sitting next to an Input in the same
+                            // form (e.g. Settings → Profile) looked inconsistent the moment a
+                            // user interacted with either field, even though both look
+                            // identical at rest.
+                            hoverBorderColor: primaryColor,
+                            activeBorderColor: primaryColor,
                             // The popup itself renders on colorBgElevated ('#1c2128'/'#f1f3f5') -
                             // these used to reuse that same Elevated tier (or the adjacent
                             // Container tier, one step away) for hover/selected, which measures

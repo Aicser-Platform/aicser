@@ -27,7 +27,7 @@ import {
 import SidebarNav, { RAIL_WIDTH, type SidebarNavHandle, type SidebarNavIconMap } from './SidebarNav';
 
 const { Sider } = Layout;
-const EXPANDED_WIDTH = 256;
+export const EXPANDED_WIDTH = 256;
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -117,9 +117,9 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const enterpriseItems = React.useMemo<NavItemDef[]>(
     () => [
+      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
       ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
       { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
-      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
       {
         kind: 'group',
         key: 'dashboard-studio',

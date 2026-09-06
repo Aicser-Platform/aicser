@@ -78,7 +78,7 @@ async def test_load_report_payload_uses_org_branding_when_nothing_persisted():
     branding = {"name": "Acme Co", "logo_url": "https://cdn.example.com/logo.png"}
 
     with patch("ee.modules.ai.reports.operations.async_session", return_value=_async_session_returning([message])), \
-         patch("src.modules.organizations.branding.resolve_report_branding", new=AsyncMock(return_value=branding)):
+         patch("ee.modules.organizations.branding.resolve_report_branding", new=AsyncMock(return_value=branding)):
         payload = await load_report_payload(
             "00000000-0000-0000-0000-000000000001", "msg-1", organization_id="org-1"
         )
@@ -97,7 +97,7 @@ async def test_load_report_payload_prefers_persisted_organization_name_over_bran
     branding = {"name": "Fresh Org Name", "logo_url": None}
 
     with patch("ee.modules.ai.reports.operations.async_session", return_value=_async_session_returning([message])), \
-         patch("src.modules.organizations.branding.resolve_report_branding", new=AsyncMock(return_value=branding)):
+         patch("ee.modules.organizations.branding.resolve_report_branding", new=AsyncMock(return_value=branding)):
         payload = await load_report_payload(
             "00000000-0000-0000-0000-000000000001", "msg-1", organization_id="org-1"
         )

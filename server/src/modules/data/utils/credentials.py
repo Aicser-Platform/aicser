@@ -45,7 +45,11 @@ def encrypt_credentials(config: Dict[str, Any]) -> Dict[str, Any]:
         return config
     f = _get_fernet()
 
-    sensitive = {"password", "api_key", "token", "secret_access_key", "access_key_id", "connection_string", "credentials"}
+    sensitive = {
+        "password", "api_key", "token", "secret_access_key", "access_key_id", "connection_string", "credentials",
+        # OAuth2 delegated-flow fields (server/src/modules/data/models.py OAuthConnectorConnection)
+        "client_secret", "access_token", "refresh_token",
+    }
     out = dict(config)
     for k in list(out.keys()):
         if k in sensitive and out.get(k) not in (None, ""):

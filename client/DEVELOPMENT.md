@@ -422,7 +422,7 @@ Follow the same structure but place files under `ee/src/` instead of `src/ee/`. 
 
 ### Double borders / nested boxes
 
-Global card and panel rules live in `aiser-unified-design-system.css` and `aiser-aesthetic-enhancements.css`. Layout routes (chat, query editor, settings) are flattened in **`workspace-chrome.css`** (imported last in `globals.css`): one shell edge per workspace, leaf cards only.
+Global card and panel rules live in `aiser-unified-design-system.css`. Layout routes (chat, query editor, settings) are flattened in **`workspace-chrome.css`** (imported last in `globals.css`): one shell edge per workspace, leaf cards only.
 
 If you add a new full-page workspace, extend `workspace-chrome.css` rather than adding another global `.panel` border.
 

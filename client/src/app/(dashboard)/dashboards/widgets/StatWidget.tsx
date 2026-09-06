@@ -157,6 +157,10 @@ export interface StatWidgetProps {
   };
   config: {
     title?: string;
+    /** Suppress the internal title text — for callers that already show the
+     * title in their own wrapping header (chat's chart-title row, the
+     * dashboard-preview grid's TileHeader), so it isn't shown twice. */
+    hideTitle?: boolean;
     value?: number | string;
     format?: 'currency' | 'percent' | 'number';
     trendValue?: string;
@@ -431,6 +435,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       computedTrendValue = `${sign}${pct.toFixed(1)}%`;
       trendIsPositive = pct >= 0;
       trendIsNeutral = false;
+      // AI-generated KPI tiles (report_templates.py's _sql_kpi) send a bare
+      // comparisonValue with no label for exactly this reason — same
+      // fallback as the sparkline-trend branch below.
+      if (!comparisonLabel) comparisonLabel = config.comparisonPeriodLabel || t('prior_period');
     }
   } else if (!trendValue && comparisonValue === undefined && sparklineValues.length >= 2) {
     const curr = Number(sparklineValues[sparklineValues.length - 1]);
@@ -469,6 +477,12 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       }`
     : '';
   const ariaLabel = `${displayTitle || t('key_metric')}: ${formattedValue}${ariaTrend}`;
+  // Callers embedding this inside their own title header (chat's chart wrapper,
+  // the dashboard-preview grid's TileHeader) set hideTitle -- otherwise the
+  // same title text rendered twice (once by the wrapping header, once here)
+  // for what's normally a single line of chrome elsewhere, but for a KPI's
+  // small tile reads as an obvious, cramped duplicate.
+  const titleLabel = config.hideTitle ? '' : displayTitle || t('key_metric');
 
   const interactiveProps = clickable
     ? {
@@ -559,9 +573,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
                 overflow: 'visible',
                 wordBreak: 'break-word',
               }}
-              title={displayTitle || t('key_metric')}
+              title={titleLabel}
             >
-              {displayTitle || t('key_metric')}
+              {titleLabel}
             </div>
           </div>
         </div>
@@ -645,9 +659,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
-          title={displayTitle || t('key_metric')}
+          title={titleLabel}
         >
-          {displayTitle || t('key_metric')}
+          {titleLabel}
         </Text>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <Title level={2} className={valueClass} style={{ margin: 0, fontSize: `${fontSize}px`, fontWeight: 700, color: valueColor, lineHeight: 1.1 }}>
@@ -793,9 +807,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
-          title={displayTitle || t('key_metric')}
+          title={titleLabel}
         >
-          {displayTitle || t('key_metric')}
+          {titleLabel}
         </Text>
       )}
 

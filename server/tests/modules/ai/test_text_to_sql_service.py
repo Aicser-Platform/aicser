@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 if os.getenv("AISER_EDITION", "community").lower() in ("enterprise", "ee") or os.getenv("AISER_EDITION_LICENSE_KEY"):
     pytest.skip("CE-only text-to-sql", allow_module_level=True)
 
-from src.modules.ai.services.text_to_sql_service import (
+from ee.modules.ai.services.text_to_sql_service import (
     dialect_for_type,
     extract_sql,
     is_read_only_sql,

@@ -23,10 +23,15 @@ async def run_data_retention_cleanup(ctx: Dict[str, Any]) -> Dict[str, Any]:
         async with async_session() as db:
             service = DataRetentionService(db)
             affected = await service.cleanup_expired_file_sources()
-        logger.info("Retention cleanup complete: %s data sources affected", affected)
+            affected_conversations = await service.cleanup_expired_conversations()
+        logger.info(
+            "Retention cleanup complete: %s data sources, %s conversations affected",
+            affected, affected_conversations,
+        )
         return {
             "success": True,
             "affected": affected,
+            "affected_conversations": affected_conversations,
             "completed_at": datetime.utcnow().isoformat(),
         }
     except Exception as e:
@@ -70,6 +75,77 @@ async def run_data_quality_check(ctx: Dict[str, Any], data_source_id: str) -> Di
         }
     except Exception as e:
         logger.error(f"Data quality check failed for {data_source_id}: {e}")
+        raise
+
+
+async def classify_data_source_columns(ctx: Dict[str, Any], data_source_id: str) -> Dict[str, Any]:
+    """
+    Background LLM column classification for one data source (metric /
+    dimension / identifier / timestamp per column), batched into a single
+    LLM call and cached in semantic_column_classifications.
+
+    Enqueued by column_semantic_classifier.ensure_column_classifications_fresh
+    on a cache miss (lazy: the first analytics query against a data source, or
+    the first query after its schema changed, serves that request off the
+    instant heuristic in data_profiler.py and enqueues this job in the
+    background rather than blocking on an LLM call). Also safe to enqueue
+    proactively (e.g. after a schema-drift sync) since it's idempotent --
+    upsert_column_classifications overwrites in place keyed by
+    (data_source_id, table_name, column_name).
+    """
+    logger.info(f"Classifying columns via LLM for data source: {data_source_id}")
+    try:
+        from src.core.edition import is_ee_enabled
+
+        # src/shared is a CE-protected module (test_module_conventions.py's
+        # test_protected_ce_modules_avoid_direct_ee_imports) -- must not
+        # statically import the ee package by name, so a CE-only deployment
+        # (no ee/ submodule on disk) can still import this whole file. Same
+        # importlib.import_module(...) indirection this file's own
+        # refresh_artifact_data already uses a few functions up.
+        # LLM column classification is an EE feature; data_profiler.py's
+        # structural/PK-FK heuristic already serves every request instantly
+        # regardless of whether this job ever runs, so no-op-ing here in CE is
+        # a real no-op, not a degraded experience -- the caller
+        # (ensure_column_classifications_fresh, itself EE-only) never enqueues
+        # this job at all when EE is disabled.
+        if not is_ee_enabled():
+            return {"success": False, "error": "EE edition required for LLM column classification", "data_source_id": data_source_id}
+
+        import importlib
+
+        from src.modules.data.services.data_connectivity_service import DataConnectivityService
+
+        _classifier_svc = importlib.import_module("ee.modules.ai.services.column_semantic_classifier")
+        classify_data_source_columns_llm = _classifier_svc.classify_data_source_columns_llm
+
+        svc = DataConnectivityService()
+        schema_result = await svc.get_source_schema(data_source_id)
+        if not schema_result.get("success"):
+            return {"success": False, "error": f"Schema retrieval failed: {schema_result.get('error')}"}
+        schema = schema_result.get("schema") or {}
+
+        # Best-effort sample of real values to ground the classification --
+        # a failed/empty sample still lets classification proceed on column
+        # name+type alone (see column_semantic_classifier._build_prompt).
+        sample_rows = None
+        try:
+            sample_result = await svc.get_data_from_source(data_source_id, limit=20)
+            if sample_result.get("success"):
+                sample_rows = sample_result.get("data")
+        except Exception as exc:
+            logger.debug("classify_data_source_columns: sample fetch failed for %s: %s", data_source_id, exc)
+
+        result = await classify_data_source_columns_llm(data_source_id, schema, sample_rows)
+        return {
+            "success": bool(result.get("success")),
+            "data_source_id": data_source_id,
+            "classified": result.get("classified", 0),
+            "error": result.get("error"),
+            "completed_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"classify_data_source_columns failed for {data_source_id}: {e}")
         raise
 
 
@@ -297,3 +373,325 @@ async def refresh_all_active_schemas(ctx: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception("refresh_all_active_schemas failed: %s", exc)
         raise
+
+
+async def reindex_stale_knowledge_chunks(ctx: Dict[str, Any], batch_size: int = 200) -> Dict[str, Any]:
+    """
+    Re-embed document_chunks rows with a missing or stale embedding.
+
+    "Stale" covers two cases, both silent-by-default without this job:
+      - embedding IS NULL: the chunk was never successfully embedded (e.g.
+        ingested during the transaction-poisoning bug this job was added
+        alongside fixing, or any transient embedding-service failure at
+        ingestion time).
+      - embedding_model doesn't match the currently configured embedding
+        model: EMBEDDING_PROVIDER/EMBEDDING_LOCAL_MODEL changed since the
+        chunk was embedded, so its vector is in a different embedding space
+        than anything queried against it now -- comparing it to a fresh
+        query embedding produces meaningless similarity scores, not just a
+        missing one.
+
+    Runs a bounded batch per invocation (default 200) rather than the whole
+    backlog at once -- the ARQ worker's job_timeout is 5 minutes, and local
+    embedding generation is CPU-bound; the cron schedule re-triggers this
+    often enough to fully catch up a realistic backlog within a few runs
+    without risking a timeout on a large one.
+    """
+    from sqlalchemy import select, or_, and_, text as sa_text
+    from src.db.session import async_session
+    from src.modules.knowledge.models import DocumentChunk, KnowledgeDocument
+    from src.shared.embedding import get_embedding_service
+    from src.modules.knowledge.services.document_ingestion_service import PGVECTOR_EMBEDDING_DIMENSIONS
+
+    embedding_service = get_embedding_service()
+    current_model_id = embedding_service.current_model_id()
+
+    logger.info("reindex_stale_knowledge_chunks: starting (current_model=%s, batch_size=%d)", current_model_id, batch_size)
+
+    try:
+        async with async_session() as session:
+            stmt = (
+                select(DocumentChunk.id, DocumentChunk.content)
+                .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
+                .where(
+                    KnowledgeDocument.status == "ready",
+                    or_(
+                        DocumentChunk.embedding.is_(None),
+                        DocumentChunk.embedding_model.is_(None),
+                        and_(
+                            DocumentChunk.embedding_model != current_model_id,
+                            # A chunk embedded with an org's BYOK key (see
+                            # user_byok_embedding.py; identity strings are
+                            # tagged "byok_org:<provider>:...") is NOT stale
+                            # just because it differs from the platform-wide
+                            # current_model_id computed above -- this job has
+                            # no per-organization context (it scans across
+                            # every org's documents in one pass), so
+                            # re-embedding these here would silently
+                            # overwrite a deliberate org BYOK choice with the
+                            # platform default on every run. Leave them for a
+                            # future org-aware reindex instead of clobbering
+                            # them.
+                            ~DocumentChunk.embedding_model.like("byok_org:%"),
+                        ),
+                    ),
+                )
+                .limit(batch_size)
+            )
+            rows = (await session.execute(stmt)).all()
+
+            if not rows:
+                logger.info("reindex_stale_knowledge_chunks: nothing to do")
+                return {"success": True, "reembedded": 0, "failed": 0, "completed_at": datetime.utcnow().isoformat()}
+
+            chunk_ids = [r[0] for r in rows]
+            contents = [r[1] for r in rows]
+            embeddings = await embedding_service.embed_texts(contents)
+
+            reembedded = 0
+            failed = 0
+            pgvector_available = await session.execute(
+                sa_text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM pg_extension WHERE extname = 'vector'"
+                    ") AND EXISTS ("
+                    "  SELECT 1 FROM information_schema.columns "
+                    "  WHERE table_name = 'document_chunks' AND column_name = 'embedding_vector'"
+                    ")"
+                )
+            )
+            pgvector_ok = bool(pgvector_available.scalar())
+
+            for chunk_id, embedding in zip(chunk_ids, embeddings):
+                if not isinstance(embedding, list):
+                    failed += 1
+                    continue
+                await session.execute(
+                    sa_text(
+                        "UPDATE document_chunks SET embedding = :embedding, "
+                        "embedding_model = :model, embedding_dims = :dims WHERE id = :id"
+                    ),
+                    {
+                        "embedding": _json_dumps(embedding),
+                        "model": current_model_id,
+                        "dims": len(embedding),
+                        "id": chunk_id,
+                    },
+                )
+                if pgvector_ok and len(embedding) == PGVECTOR_EMBEDDING_DIMENSIONS:
+                    vec_literal = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+                    await session.execute(
+                        sa_text(
+                            "UPDATE document_chunks SET embedding_vector = CAST(:vec AS vector) WHERE id = :id"
+                        ),
+                        {"vec": vec_literal, "id": chunk_id},
+                    )
+                reembedded += 1
+
+            await session.commit()
+
+        logger.info("reindex_stale_knowledge_chunks: complete (reembedded=%d failed=%d)", reembedded, failed)
+        return {
+            "success": True,
+            "reembedded": reembedded,
+            "failed": failed,
+            "completed_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        logger.exception("reindex_stale_knowledge_chunks failed: %s", exc)
+        raise
+
+
+async def ingest_knowledge_document(
+    ctx: Dict[str, Any],
+    document_id: str,
+    object_key: str,
+    data_source_id: str,
+    user_id: str,
+    filename: str,
+    project_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Background document ingestion for the knowledge base: fetches the
+    original file bytes back from durable object storage (S3/Azure Blob/
+    PostgreSQL -- see UploadDatasourceStorageService, the same backend
+    CSV/datasource uploads use), writes a short-lived local tempfile for
+    DocumentIngestionService's parsers (which need a real file_path, same as
+    the pattern ee/modules/knowledge_connectors/router.py already uses for
+    its own ephemeral ingestion inputs), then parses/chunks/embeds via the
+    existing service unchanged.
+
+    Enqueued by src/modules/knowledge/router.py's /create and /upload
+    endpoints instead of calling ingest_document() inline in the request
+    handler -- parsing + chunking + embedding a normal multi-page PDF
+    (chunked at DocumentIngestionService.CHUNK_TARGET_TOKENS=600 tokens/
+    chunk) can take real CPU time with a local embedding model and no GPU,
+    which used to block the HTTP response for the whole duration and risked
+    reverse-proxy/client timeouts regardless of which embedding model was
+    configured. The router creates the KnowledgeDocument row up front with
+    status="processing" and passes its id here so ingest_document() updates
+    that same row (see its `document_id` param) instead of creating a
+    second one -- the row the caller already has in hand (and returned in
+    its HTTP response) is the one that ends up "ready"/"failed".
+
+    A failure inside ingest_document() itself (bad PDF, embedding provider
+    down, etc.) is already caught there and recorded as status="failed" on
+    the document row -- that's a normal, non-retried outcome, so this
+    returns {"success": False, ...} for it rather than raising. Only
+    failures outside that (can't reach object storage, can't write the
+    tempfile) raise, so ARQ's retry mechanism engages for genuinely
+    transient infra problems.
+    """
+    import os
+    import tempfile
+    import uuid as _uuid
+
+    logger.info("ingest_knowledge_document: starting for document %s (%s)", document_id, filename)
+
+    doc_uuid = document_id if isinstance(document_id, _uuid.UUID) else _uuid.UUID(str(document_id))
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "tmp"
+
+    from src.db.session import async_session
+    from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+    from src.modules.knowledge.models import KnowledgeDocument
+    from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
+    from sqlalchemy import update as _sa_update
+
+    storage_service = UploadDatasourceStorageService()
+    try:
+        file_content = await storage_service.get_file(object_key, project_id)
+    except Exception as exc:
+        # The document row exists (router-created) but has no bytes to
+        # ingest -- record this as a normal failed outcome on the row itself
+        # (same place any other ingestion failure surfaces to the KB
+        # documents UI) rather than leaving it stuck at "processing".
+        logger.exception("ingest_knowledge_document: failed to fetch object_key=%s for document %s", object_key, document_id)
+        try:
+            async with async_session() as session:
+                await session.execute(
+                    _sa_update(KnowledgeDocument)
+                    .where(KnowledgeDocument.id == doc_uuid)
+                    .values(status="failed", error_message=f"Failed to retrieve stored file: {str(exc)[:400]}")
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("ingest_knowledge_document: also failed to mark document %s as failed", document_id)
+        return {"success": False, "document_id": document_id, "error": str(exc)[:200]}
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+
+        async with async_session() as session:
+            service = DocumentIngestionService(session)
+            doc = await service.ingest_document(
+                file_path=tmp_path,
+                data_source_id=data_source_id,
+                user_id=user_id,
+                filename=filename,
+                document_id=doc_uuid,
+                object_key=object_key,
+            )
+
+        logger.info(
+            "ingest_knowledge_document: finished for document %s: status=%s chunks=%s",
+            document_id, doc.status, doc.chunk_count,
+        )
+        return {
+            "success": doc.status == "ready",
+            "document_id": document_id,
+            "status": doc.status,
+            "chunk_count": doc.chunk_count or 0,
+        }
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def _json_dumps(value) -> str:
+    import json
+    return json.dumps(value)
+
+
+async def sync_salesforce_object(
+    ctx: Dict[str, Any],
+    organization_id: str,
+    project_id: Optional[str],
+    source_connection_id: str,
+    target_data_source_id: str,
+    object_api_name: str,
+    created_by: Optional[str] = None,
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Sync one Salesforce object into an existing (Postgres) data source the
+    org already has connected. Enqueued on-demand from
+    POST /api/connectors/oauth/salesforce/sync (ee/modules/data/router.py),
+    which creates the DataIngestionJob row (job_id) up front so it can hand
+    the caller an id to poll before this job ever runs.
+    See salesforce_sync_service.py for the full design rationale."""
+    logger.info(
+        "sync_salesforce_object: org=%s object=%s source_connection=%s target=%s job_id=%s",
+        organization_id, object_api_name, source_connection_id, target_data_source_id, job_id,
+    )
+    from src.db.session import async_session
+    from ee.modules.data.services.salesforce_sync_service import sync_object
+
+    async with async_session() as db:
+        result = await sync_object(
+            db,
+            organization_id=organization_id,
+            project_id=project_id,
+            source_connection_id=source_connection_id,
+            target_data_source_id=target_data_source_id,
+            object_api_name=object_api_name,
+            created_by=created_by,
+            job_id=job_id,
+        )
+    logger.info(
+        "sync_salesforce_object: finished object=%s rows_read=%s rows_written=%s",
+        object_api_name, result.get("rows_read"), result.get("rows_written"),
+    )
+    return result
+
+
+async def sync_hubspot_object(
+    ctx: Dict[str, Any],
+    organization_id: str,
+    project_id: Optional[str],
+    source_connection_id: str,
+    target_data_source_id: str,
+    object_api_name: str,
+    created_by: Optional[str] = None,
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Sync one HubSpot object into an existing (Postgres) data source the
+    org already has connected. Mirrors sync_salesforce_object's contract --
+    see hubspot_sync_service.py for the full design rationale."""
+    logger.info(
+        "sync_hubspot_object: org=%s object=%s source_connection=%s target=%s job_id=%s",
+        organization_id, object_api_name, source_connection_id, target_data_source_id, job_id,
+    )
+    from src.db.session import async_session
+    from ee.modules.data.services.hubspot_sync_service import sync_object
+
+    async with async_session() as db:
+        result = await sync_object(
+            db,
+            organization_id=organization_id,
+            project_id=project_id,
+            source_connection_id=source_connection_id,
+            target_data_source_id=target_data_source_id,
+            object_api_name=object_api_name,
+            created_by=created_by,
+            job_id=job_id,
+        )
+    logger.info(
+        "sync_hubspot_object: finished object=%s rows_read=%s rows_written=%s",
+        object_api_name, result.get("rows_read"), result.get("rows_written"),
+    )
+    return result

@@ -17,7 +17,7 @@ def test_dashboard_mode_allowed_on_free_and_paid_plans():
 
 
 def test_api_streaming_plan_gate_allows_dashboard_for_free():
-    from src.modules.ai.api_streaming import _plan_allows_mode
+    from ee.modules.ai.api_streaming import _plan_allows_mode
 
     assert _plan_allows_mode("free", "dashboard") is True
     assert _plan_allows_mode("pro", "dashboard") is True
@@ -25,7 +25,7 @@ def test_api_streaming_plan_gate_allows_dashboard_for_free():
 
 
 def test_combined_modes_are_paid_entitlements():
-    from src.modules.ai.api_streaming import _effective_billing_analysis_mode, _plan_allows_mode
+    from ee.modules.ai.api_streaming import _effective_billing_analysis_mode, _plan_allows_mode
 
     assert "decision_intelligence" in PAID_ALLOWED_AI_MODES
     assert "business_journey" in PAID_ALLOWED_AI_MODES

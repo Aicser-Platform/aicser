@@ -50,6 +50,10 @@ export function DataSection() {
   const selectedWidgetId = useDashboardStore((s) => s.selectedWidgetId);
   const widgets = useDashboardStore((s) => s.widgets);
   const updateWidget = useDashboardStore((s) => s.updateWidget);
+  // Shared with the Data Modeling tab via the same global store - see the
+  // matching change there. Only consulted as a fallback below, after the
+  // selected widget's own source (which must keep taking priority).
+  const globalSelectedId = useDataSourceStore((s) => s.selectedId);
   const selectGlobalDataSource = useDataSourceStore((s) => s.select);
   const selectedWidget = useMemo(
     () => widgets.find((w) => w.id === selectedWidgetId) ?? null,
@@ -80,8 +84,14 @@ export function DataSection() {
       return;
     }
     if (!activeSourceId && dataSources[0]?.id) {
-      setActiveSourceId(dataSources[0].id);
-      selectGlobalDataSource(dataSources[0].id);
+      // Prefer whatever's already selected elsewhere (e.g. Data Modeling)
+      // over always defaulting to the first source in the list.
+      const preferred =
+        globalSelectedId && dataSources.some((d) => d.id === globalSelectedId)
+          ? globalSelectedId
+          : dataSources[0].id;
+      setActiveSourceId(preferred);
+      selectGlobalDataSource(preferred);
     }
   }, [
     selectedWidgetId,
@@ -89,6 +99,7 @@ export function DataSection() {
     selectedWidget?.dataSourceId,
     dataSources,
     activeSourceId,
+    globalSelectedId,
     selectGlobalDataSource,
     updateWidget,
   ]);
@@ -172,7 +183,15 @@ export function DataSection() {
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={t('data_no_sources')}
         style={{ padding: '24px 16px' }}
-      />
+      >
+        <Button
+          type="primary"
+          size="small"
+          onClick={() => window.dispatchEvent(new CustomEvent('aiser-open-data-source-modal'))}
+        >
+          {t('data_connect_source_cta')}
+        </Button>
+      </Empty>
     );
   }
 
@@ -410,6 +429,19 @@ export function DataSection() {
               <CheckOutlined />
               <span>{selectedColumnRole ? defaultAggregation(selectedColumn, selectedColumnRole) : t('data_none')}</span>
             </div>
+            {/* Role/aggregation above are inferred client-side from the column
+                name and type, not read from a saved definition - this panel
+                has no save action for them. Without this, "Field Properties"
+                reads like an editable inspector (it's styled exactly like
+                one) that silently does nothing when the inference is wrong,
+                instead of pointing at the one place these are actually
+                defined and saved. */}
+            {activeSourceId ? (
+              <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                {t('data_role_inferred_note')}{' '}
+                <a href={`/data/sources/${activeSourceId}/semantic`}>{t('data_open_semantic_model')}</a>
+              </Text>
+            ) : null}
             <Text className="data-workbench-kicker">{t('data_nullable')}</Text>
             <div className="data-workbench-source-note">
               <CheckOutlined />

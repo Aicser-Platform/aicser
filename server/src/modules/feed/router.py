@@ -65,6 +65,8 @@ from src.modules.feed.schemas import (
     UpdateCommentResponse,
     UpdateCollectionItemRequest,
     UpdateCollectionRequest,
+    UpdatePostRequest,
+    UpdatePostResponse,
     NotificationResponse,
 )
 from src.modules.feed.service import FeedService
@@ -93,6 +95,7 @@ async def get_feed(
     offset: int = Query(default=0, ge=0),
     organization_id: Optional[UUID] = Query(default=None, alias="organizationId"),
     project_id: Optional[UUID] = Query(default=None, alias="projectId"),
+    private_project_only: bool = Query(default=False, alias="privateProjectOnly"),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ) -> FeedResponse:
@@ -110,6 +113,7 @@ async def get_feed(
         user_payload=_normalize_user_payload(current_user),
         organization_id=organization_id,
         project_id=project_id,
+        private_project_only=private_project_only,
     )
 
 
@@ -231,6 +235,7 @@ async def get_feed_filters(
     scope: FeedScope = Query(default=FeedScope.organization),
     organization_id: Optional[UUID] = Query(default=None, alias="organizationId"),
     project_id: Optional[UUID] = Query(default=None, alias="projectId"),
+    private_project_only: bool = Query(default=False, alias="privateProjectOnly"),
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ) -> FeedFilterOptionsResponse:
@@ -240,6 +245,7 @@ async def get_feed_filters(
         scope=scope,
         organization_id=organization_id,
         project_id=project_id,
+        private_project_only=private_project_only,
     )
 
 
@@ -248,6 +254,7 @@ async def get_feed_sidebar(
     scope: FeedScope = Query(default=FeedScope.organization),
     organization_id: Optional[UUID] = Query(default=None, alias="organizationId"),
     project_id: Optional[UUID] = Query(default=None, alias="projectId"),
+    private_project_only: bool = Query(default=False, alias="privateProjectOnly"),
     time_range: LeaderboardTimeRange = Query(default=LeaderboardTimeRange.week, alias="timeRange"),
     content_type: Optional[AssetType] = Query(default=None, alias="contentType"),
     sort_by: LeaderboardSortBy = Query(default=LeaderboardSortBy.popular, alias="sortBy"),
@@ -261,6 +268,7 @@ async def get_feed_sidebar(
         scope=scope,
         organization_id=organization_id,
         project_id=project_id,
+        private_project_only=private_project_only,
         time_range=time_range,
         content_type=content_type,
         sort_by=sort_by,
@@ -518,6 +526,17 @@ async def delete_feed_item(
 ) -> DeleteItemResponse:
     service = FeedService(db)
     return await service.delete_item(item_id, _normalize_user_payload(current_user))
+
+
+@router.patch("/{item_id}", response_model=UpdatePostResponse)
+async def update_feed_post(
+    item_id: UUID,
+    payload: UpdatePostRequest,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> UpdatePostResponse:
+    service = FeedService(db)
+    return await service.update_post(item_id, payload, _normalize_user_payload(current_user))
 
 
 @router.post("/{item_id}/react", response_model=ReactResponse)

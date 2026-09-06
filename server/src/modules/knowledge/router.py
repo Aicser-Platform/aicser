@@ -5,11 +5,11 @@ Mounted at /knowledge prefix in the main API router.
 """
 
 import logging
-import os
 import uuid
 from typing import List, Optional, Union
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,8 +54,32 @@ def _ensure_uuid(raw_id: str) -> str:
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"test-user-{raw_id}"))
 
 
-async def _save_uploaded_file(file: UploadFile) -> str:
-    """Save an uploaded file to disk and return the file path."""
+# file_type (as tracked on KnowledgeDocument.file_type / detected by
+# DocumentIngestionService._detect_file_type) -> a real Content-Type for the
+# download endpoint's response. Falls back to octet-stream for anything not
+# listed (shouldn't happen given ALLOWED_EXTENSIONS, but a wrong-but-valid
+# fallback beats a crash).
+_FILE_TYPE_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "md": "text/markdown",
+    "txt": "text/plain",
+}
+
+
+async def _store_uploaded_file(file: UploadFile, data_source_id: str, project_id: Optional[str], user_id: str) -> str:
+    """
+    Validate and durably store an uploaded file's bytes via
+    UploadDatasourceStorageService -- the same S3/Azure Blob/PostgreSQL-backed
+    object storage CSV/datasource uploads already use (selected via
+    STORAGE_BACKEND; see upload_datasource_storage_service.py). Returns the
+    resulting object_key.
+
+    Replaces the prior behavior of writing straight to a local UPLOAD_DIR
+    path (a Docker volume, not S3-compatible/horizontally scalable) that was
+    also never cleaned up afterward -- a pure disk leak, since nothing ever
+    re-referenced that path once ingestion had read it once.
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -66,20 +90,81 @@ async def _save_uploaded_file(file: UploadFile) -> str:
             detail=f"Unsupported file type: .{ext}. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
 
-    upload_dir = os.path.join(settings.UPLOAD_DIR, "knowledge")
-    os.makedirs(upload_dir, exist_ok=True)
-    file_id = str(uuid.uuid4())
-    file_path = os.path.join(upload_dir, f"{file_id}.{ext}")
-
     contents = await file.read()
     if len(contents) > settings.MAX_FILE_SIZE_MB * 1024 * 1024:
         raise HTTPException(
             status_code=400,
             detail=f"File too large. Maximum size: {settings.MAX_FILE_SIZE_MB}MB",
         )
-    with open(file_path, "wb") as f:
-        f.write(contents)
-    return file_path
+
+    from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+
+    storage_service = UploadDatasourceStorageService()
+    object_key = await storage_service.store_file(
+        file_content=contents,
+        project_id=project_id,
+        original_filename=file.filename,
+        content_type=file.content_type or _FILE_TYPE_CONTENT_TYPES.get(ext, "application/octet-stream"),
+        source_id=data_source_id,
+        user_id=user_id,
+    )
+    logger.info(
+        "Stored KB upload %s in %s: %s", file.filename, storage_service.storage_type, object_key,
+    )
+    return object_key
+
+
+async def _resolve_data_source_project_id(data_source_id: str, session: AsyncSession) -> Optional[str]:
+    """Resolve a data source's project_id so KB file storage/retrieval is
+    scoped consistently with how CSV/datasource uploads scope object storage
+    keys (see UploadDatasourceStorageService.store_file's project_id param).
+    Best-effort: returns None (CE-style unscoped storage) on any lookup
+    failure rather than blocking upload/download."""
+    try:
+        from src.modules.data.models import DataSource
+
+        result = await session.execute(select(DataSource.project_id).where(DataSource.id == data_source_id))
+        row = result.first()
+        return str(row[0]) if row and row[0] else None
+    except Exception:
+        logger.debug("Failed to resolve project_id for data source %s", data_source_id, exc_info=True)
+        return None
+
+
+async def _create_pending_document(
+    session: AsyncSession,
+    data_source_id: str,
+    user_id: str,
+    filename: str,
+    object_key: str,
+) -> KnowledgeDocument:
+    """
+    Create the KnowledgeDocument row up front with status="processing"
+    before handing ingestion off to a background job, so the HTTP response
+    can return a real document id/status immediately instead of blocking on
+    parse+chunk+embed (which, for a normal multi-page PDF chunked at
+    CHUNK_TARGET_TOKENS=600 tokens/chunk, can take real CPU time on a local
+    embedding model with no GPU -- risking reverse-proxy/client timeouts).
+
+    DocumentIngestionService.ingest_document() (run later, in the background
+    job) is passed this same document id and reuses/updates this row rather
+    than creating a second one -- see its `document_id` param.
+    """
+    from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
+
+    doc = KnowledgeDocument(
+        id=uuid.uuid4(),
+        data_source_id=data_source_id,
+        user_id=user_id,
+        filename=filename,
+        file_type=DocumentIngestionService._detect_file_type(filename),
+        object_key=object_key,
+        status="processing",
+    )
+    session.add(doc)
+    await session.commit()
+    await session.refresh(doc)
+    return doc
 
 
 async def _create_kb_data_source(
@@ -158,26 +243,36 @@ async def create_knowledge_base(
         except Exception:
             logger.warning("Knowledge library wrapper creation skipped for %s", ds_id, exc_info=True)
 
-    # Ingest each file
-    from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
-    ingestion_service = DocumentIngestionService(session)
+    # Store each file durably, create a "processing" placeholder row, and
+    # enqueue background ingestion -- parse+chunk+embed no longer happens
+    # inline in this request (see ingest_knowledge_document in
+    # src/shared/jobs/tasks.py); the response returns immediately with each
+    # document in "processing" state.
+    from src.shared.jobs.client import enqueue_job
+
     results: List[KnowledgeUploadResponse] = []
 
     for file in files:
         try:
-            file_path = await _save_uploaded_file(file)
-            doc = await ingestion_service.ingest_document(
-                file_path=file_path,
+            object_key = await _store_uploaded_file(file, ds_id, project_id, user_id)
+            doc = await _create_pending_document(
+                session, ds_id, user_id, file.filename or "unknown", object_key,
+            )
+            await enqueue_job(
+                "ingest_knowledge_document",
+                document_id=str(doc.id),
+                object_key=object_key,
                 data_source_id=ds_id,
                 user_id=user_id,
                 filename=file.filename or "unknown",
+                project_id=project_id,
             )
             results.append(KnowledgeUploadResponse(
-                success=doc.status == "ready",
+                success=True,
                 document_id=str(doc.id),
                 filename=file.filename or "unknown",
-                status=doc.status or "failed",
-                message=f"Ingestion {'complete' if doc.status == 'ready' else doc.status}: {doc.chunk_count or 0} chunks",
+                status=doc.status or "processing",
+                message="Ingestion started",
             ))
         except Exception as exc:
             logger.warning("Ingestion failed for %s: %s", file.filename, exc)
@@ -212,29 +307,36 @@ async def upload_knowledge_document(
     """
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:create")
-    file_path = await _save_uploaded_file(file)
+
+    project_id = await _resolve_data_source_project_id(data_source_id, session)
+    object_key = await _store_uploaded_file(file, data_source_id, project_id, user_id)
 
     try:
-        from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
+        from src.shared.jobs.client import enqueue_job
 
-        service = DocumentIngestionService(session)
-        doc = await service.ingest_document(
-            file_path=file_path,
+        doc = await _create_pending_document(
+            session, data_source_id, user_id, file.filename or "unknown", object_key,
+        )
+        await enqueue_job(
+            "ingest_knowledge_document",
+            document_id=str(doc.id),
+            object_key=object_key,
             data_source_id=data_source_id,
             user_id=user_id,
             filename=file.filename or "unknown",
+            project_id=project_id,
         )
 
         return KnowledgeUploadResponse(
-            success=doc.status == "ready",
+            success=True,
             document_id=str(doc.id),
             filename=file.filename or "unknown",
-            status=doc.status or "failed",
-            message=f"Ingestion {'complete' if doc.status == 'ready' else doc.status}: {doc.chunk_count or 0} chunks",
+            status=doc.status or "processing",
+            message="Ingestion started",
         )
     except Exception as exc:
-        logger.exception("Ingestion failed for %s", file.filename)
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(exc)[:200]}")
+        logger.exception("Failed to start ingestion for %s", file.filename)
+        raise HTTPException(status_code=500, detail=f"Failed to start ingestion: {str(exc)[:200]}")
 
 
 # ── List Documents ───────────────────────────────────────────────────────
@@ -303,6 +405,69 @@ async def get_knowledge_document(
         metadata=doc.doc_metadata,
         created_at=doc.created_at,
         updated_at=doc.updated_at,
+    )
+
+
+# ── Download Original File ───────────────────────────────────────────────
+
+@router.get("/documents/{doc_id}/download")
+async def download_knowledge_document(
+    doc_id: str,
+    session: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """
+    Stream the original uploaded file back for a knowledge document.
+
+    Read-scoped ("knowledge:view", same permission knowledge_retrieval_health
+    uses -- not "knowledge:create") plus the same ownership filter
+    get_knowledge_document above uses.
+
+    Documents ingested before object_key existed (see the
+    2026_09_02_knowledge_doc_object_key migration) have no durably-stored
+    original to serve -- their upload-time file was written to local disk,
+    read once by the parser, and never persisted anywhere retrievable. That
+    is a 404, not a crash.
+    """
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:view")
+
+    stmt = select(KnowledgeDocument).where(
+        KnowledgeDocument.id == doc_id,
+        KnowledgeDocument.user_id == user_id,
+    )
+    result = await session.execute(stmt)
+    doc = result.scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not doc.object_key:
+        raise HTTPException(
+            status_code=404,
+            detail="Original file not available for this document (uploaded before durable storage was added)",
+        )
+
+    from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+
+    project_id = await _resolve_data_source_project_id(doc.data_source_id, session)
+    storage_service = UploadDatasourceStorageService()
+    try:
+        content = await storage_service.get_file(doc.object_key, project_id)
+    except Exception:
+        logger.exception("Failed to retrieve stored file for document %s (object_key=%s)", doc_id, doc.object_key)
+        raise HTTPException(status_code=404, detail="Original file could not be retrieved from storage")
+
+    import io
+
+    content_type = _FILE_TYPE_CONTENT_TYPES.get(doc.file_type or "", "application/octet-stream")
+    filename = doc.filename or f"document.{doc.file_type or 'bin'}"
+    safe_filename = filename.replace('"', "'")
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
     )
 
 

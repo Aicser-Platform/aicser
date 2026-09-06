@@ -122,6 +122,7 @@ const FeedDiscussion: React.FC<FeedDiscussionProps> = ({ item, onAddComment, onC
           onCommentValueChange={commentApi.setCommentValue}
           onCommentSubmit={commentApi.handleCommentSubmit}
           commenting={commenting}
+          mentionOptions={commentApi.mentionOptions}
         />
       </div>
     </div>

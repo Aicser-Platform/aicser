@@ -30,7 +30,12 @@ class FeedPost(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
 
     asset_type = Column(
-        Enum("dashboard", "chart", "insight", "query", name="asset_type_enum"),
+        # "post": a pure-text discussion post with no backing dashboard/chart/
+        # insight/query row - asset_id is still a real (random) UUID for this
+        # type, same synthetic-id trick already used for "insight"/"query",
+        # so this NOT NULL column and every index/query assuming it's present
+        # never had to change.
+        Enum("dashboard", "chart", "insight", "query", "post", name="asset_type_enum"),
         nullable=False,
     )
     asset_id = Column(UUID(as_uuid=True), nullable=False)
@@ -38,6 +43,16 @@ class FeedPost(Base):
     organization_id = Column(UUID(as_uuid=True), *_org_fk(), nullable=True)
     project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True)
     author_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    # @mentions on the post body itself (not a comment) - mirrors
+    # FeedComment.mentions below; same notification fan-out via
+    # FeedServiceActionsMixin._notify_mentions.
+    mentions = Column(ARRAY(UUID(as_uuid=True)), nullable=True)
+    # Set only when the author edits a pure-text post's own content after
+    # publishing (mirrors FeedComment.edited_at) - deliberately separate from
+    # `updated_at` below, which also moves on unrelated denormalized-counter
+    # writes (comment_count, reaction_count, ...) and so can't double as an
+    # "edited by the author" signal.
+    edited_at = Column(DateTime(timezone=True), nullable=True)
 
     visibility = Column(
         Enum("private", "project", "organization", "public", name="feed_visibility_enum"),
@@ -177,6 +192,43 @@ class FeedCommentReaction(Base):
     __table_args__ = (
         UniqueConstraint("comment_id", "user_id", name="uq_feed_comment_reaction_user"),
         Index("idx_feed_comment_reactions_comment", "comment_id"),
+    )
+
+
+class FeedPostAttachment(Base):
+    """
+    Existing dashboards/charts referenced ("attached") by a feed post - distinct
+    from FeedPost.asset_type/asset_id (the post's own primary subject, or a
+    synthetic id for a pure-text "post"). A post can reference several of these;
+    each is access-checked per-VIEWER at serialization time (service_serialization.py),
+    not just once at creation, since a post's own visibility doesn't imply every
+    viewer can also see every asset it happens to reference.
+    Table: feed_post_attachments
+    """
+    __tablename__ = "feed_post_attachments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    asset_type = Column(Enum("dashboard", "chart", name="feed_attachment_asset_type_enum"), nullable=False)
+    asset_id = Column(UUID(as_uuid=True), nullable=False)
+    # The real feed publication that represents this dashboard/chart - created
+    # on the fly (same pipeline as "Publish to Feed") the first time it's
+    # attached anywhere, and reused after that. Attachments used to link
+    # straight into the live dashboards app by (asset_type, asset_id), which
+    # depended on that app's own routing/project-context state and had no
+    # real preview to show; a publication always renders correctly at
+    # /feed/{id} and already has a proper preview/snapshot. Nullable + SET
+    # NULL: if the publication is later deleted, the attachment just shows as
+    # no longer available rather than taking the whole post down with it.
+    referenced_post_id = Column(
+        UUID(as_uuid=True), ForeignKey("feed_posts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    position = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("post_id", "asset_type", "asset_id", name="uq_feed_post_attachment"),
+        Index("idx_feed_post_attachments_post", "post_id"),
     )
 
 

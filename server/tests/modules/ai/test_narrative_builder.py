@@ -1,6 +1,6 @@
 """Tests for narrative_builder."""
 
-from src.modules.ai.utils.narrative_builder import build_user_narrative, sync_narrative_fields
+from ee.modules.ai.utils.narrative_builder import build_user_narrative, sync_narrative_fields
 
 
 def test_build_user_narrative_prefers_executive_summary():

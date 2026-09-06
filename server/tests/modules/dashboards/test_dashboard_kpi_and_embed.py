@@ -6,7 +6,6 @@ from uuid import uuid4
 import pytest
 
 from ee.modules.ai.services.dashboard_kpi_validator import (
-    apply_insight_trend_fallback,
     enrich_stat_chart_query,
     enrich_widget_spec_for_kpi,
     stat_result_is_rich,
@@ -41,9 +40,35 @@ def test_enrich_stat_chart_query_adds_temporal_axis():
     assert options["showSparkline"] is True
 
 
-def test_apply_insight_trend_fallback_parses_percent():
-    options = apply_insight_trend_fallback({}, "Revenue ↑22% vs prior month — on track")
-    assert options["trendValue"] == "↑22%"
+def test_kpi_enrichment_never_fabricates_trend_from_insight_text():
+    """Regression: apply_insight_trend_fallback used to regex-extract a
+    percentage out of the LLM's free-text insight commentary and stamp it
+    into chart_options.trendValue whenever no temporal column existed to
+    compute a real comparison. StatWidget.tsx renders trendValue with the
+    exact same styling as a genuine computed trend, so a number the LLM
+    happened to mention in passing (which might describe a completely
+    different period/metric than the card itself) was shown with the same
+    visual confidence as a real query result. Removed entirely: a KPI card
+    with no temporal column now shows no trend badge at all rather than one
+    that might not mean what it looks like -- the insight text itself still
+    renders as the card's subtitle, untouched."""
+    spec = {
+        "chart_type": "stat",
+        "chart_query": {"yMetrics": [{"field": "revenue", "aggregation": "sum"}]},
+        "chart_options": {"subtitle": "Revenue grew roughly 22% this quarter, well ahead of plan."},
+    }
+    out = enrich_widget_spec_for_kpi(
+        spec,
+        schema={},
+        table_name="orders",
+        # No temporal column available -- the exact case that used to trigger
+        # the text-extraction fallback.
+        classify_columns_fn=lambda *_: {"temporal": [], "numeric": ["revenue"], "categorical": []},
+    )
+    assert "trendValue" not in out["chart_options"]
+    # The narrative commentary is preserved -- only the fabricated numeric
+    # trend badge is gone.
+    assert "22%" in out["chart_options"]["subtitle"]
 
 
 def test_stat_result_is_rich_with_comparison():

@@ -14,6 +14,7 @@ import { dataSourceKeys } from '@/hooks/dataSourceKeys';
 import { listProjectMembers } from '@/api/projects';
 import { listDataSources } from '@/api/dataSources';
 import { ProjectCard, type ProjectCardStats } from '@/components/Project/ProjectCard';
+import { ProjectSettingsModal } from '@/components/Project/ProjectSettingsModal';
 import type { Project } from '@/types/project';
 import type { TabComponentProps } from '../page';
 
@@ -42,6 +43,7 @@ export const ProjectTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const { projects, isLoading } = useProjects(organizationId);
 
   const [layout, setLayout] = useState<'grid' | 'list'>('grid');
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
 
   // No primary action for this tab — clear whatever the previous tab registered.
   useEffect(() => {
@@ -85,6 +87,7 @@ export const ProjectTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         stats={stats}
         loadingStats={query?.isLoading ?? false}
         onSelect={handleSelectProject}
+        onSettings={setSettingsProject}
       />
     );
   });
@@ -119,6 +122,12 @@ export const ProjectTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       ) : (
         <div className="flex flex-col gap-2">{cards}</div>
       )}
+
+      <ProjectSettingsModal
+        project={settingsProject}
+        open={!!settingsProject}
+        onClose={() => setSettingsProject(null)}
+      />
     </div>
   );
 };

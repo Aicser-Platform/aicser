@@ -100,12 +100,22 @@ function EChartWidgetCore({
     };
     const onWin = () => scheduleResize();
     window.addEventListener('resize', onWin);
+    // `beforeprint` fires reliably once print CSS has actually been applied;
+    // a plain 'resize' event and this ResizeObserver both go quiet for a
+    // print-triggered layout change (same root cause the executive report's
+    // print export had — see ExecutiveReport's beforeprint-driven resize).
+    // Registering it per-widget here, rather than only where a dedicated
+    // Print button exists, means every chart resizes correctly on ANY path
+    // that reaches native print — Ctrl+P included, and the shared/embedded
+    // dashboard viewer, which has no Print button of its own at all.
+    window.addEventListener('beforeprint', onWin);
     const resizeObserver = new ResizeObserver(() => scheduleResize());
     resizeObserver.observe(el);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onWin);
+      window.removeEventListener('beforeprint', onWin);
       resizeObserver.disconnect();
     };
   }, []);

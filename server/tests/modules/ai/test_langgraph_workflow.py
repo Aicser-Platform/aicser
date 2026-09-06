@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, patch
 def orchestrator():
     """Build orchestrator with minimal deps (no DB required for graph/state tests)."""
     try:
-        from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
-        from src.modules.ai.services.litellm_service import LiteLLMService
+        from ee.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+        from ee.modules.ai.services.litellm_service import LiteLLMService
     except ImportError as e:
         pytest.skip(f"LangGraph not available: {e}")
     litellm = LiteLLMService()
@@ -191,7 +191,7 @@ def test_v2_quality_gate_removed(orchestrator):
 def test_sql_dialect_rules_module():
     """Centralized dialect rules and dialect library (sqlglot) integration."""
     try:
-        from src.modules.ai.utils.sql_dialect_rules import (
+        from ee.modules.ai.utils.sql_dialect_rules import (
             get_dialect_rules,
             get_dialect_name_for_prompt,
             get_fix_strategy_for_error,
@@ -245,7 +245,7 @@ def _import_response_builder():
 def _import_schema_for_llm():
     """Import schema_for_llm (requires app). Skip if not installed."""
     try:
-        from src.modules.ai.utils import schema_for_llm
+        from ee.modules.ai.utils import schema_for_llm
         return schema_for_llm
     except ModuleNotFoundError:
         pytest.skip("App dependencies not installed (e.g. fastapi)")

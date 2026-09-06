@@ -39,6 +39,8 @@ import {
   SafetyCertificateOutlined,
   SafetyOutlined,
   FundOutlined,
+  LineChartOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -100,6 +102,15 @@ const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => (
 const AuditLogTab = nextDynamic(() => import('./components/AuditLogTab').then((m) => ({ default: m.default })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
+const AIQualityTab = nextDynamic(() => import('./components/AIQualityTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AIAuditLogTab = nextDynamic(() => import('./components/AIAuditLogTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const FeatureGate = nextDynamic((() => import('@/ee').then((m) => ({ default: m.FeatureGate }))) as any, {
+  ssr: false,
+}) as React.ComponentType<{ feature: string; children: React.ReactNode }>;
 
 /** Props passed to every tab so it can register an action button with the page header. */
 export interface TabComponentProps {
@@ -124,6 +135,12 @@ interface NavItem {
   requiredPermission?: Permission | Permission[];
   component: React.ComponentType<TabComponentProps>;
   description?: string;
+  /** Plan-feature key (usePlanRestrictions/hasFeature) this tab requires.
+   * Nav item still shows (so the tab is discoverable and pitches the
+   * upgrade), but its content is replaced with a contextual upgrade prompt
+   * instead of the tab's real content — avoids a confusing 402 on click for
+   * a plan-gated tab a lower tier could otherwise get to. */
+  requiredFeature?: string;
 }
 interface NavGroup {
   label: string;
@@ -248,6 +265,7 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <KeyOutlined />,
         component: ApiKeysTab,
         description: 'Programmatic access tokens',
+        requiredFeature: 'api_access',
       },
       {
         key: 'embed',
@@ -265,6 +283,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AuditLogTab,
         description: 'Activity history',
         requiredPermission: Permission.AUDIT_VIEW,
+        requiredFeature: 'audit_logs',
       },
     ],
   },
@@ -279,6 +298,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AgentSkillsTab,
         description: 'Custom tool integrations',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
       },
       {
         key: 'agent-workflows',
@@ -288,6 +308,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AgentWorkflowsTab,
         description: 'Multi-step agent plans',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
       },
       {
         key: 'agent-capabilities',
@@ -297,6 +318,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AgentCapabilitiesTab,
         description: 'Enable or disable AI agent capabilities',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
       },
       {
         key: 'kpi-definitions',
@@ -306,6 +328,25 @@ const NAV_GROUPS: NavGroup[] = [
         component: KpiDefinitionsTab,
         description: 'Teach the AI how your org calculates key metrics',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
+      },
+      {
+        key: 'ai-quality',
+        label: 'AI Quality',
+        icon: <LineChartOutlined />,
+        eeOnly: true,
+        component: AIQualityTab,
+        description: 'Grounding, goal completion, and feedback trends',
+        requiredPermission: Permission.AUDIT_VIEW,
+      },
+      {
+        key: 'ai-audit-log',
+        label: 'AI Audit Log',
+        icon: <FileSearchOutlined />,
+        eeOnly: true,
+        component: AIAuditLogTab,
+        description: 'Every LLM call — who, when, which model, cost, outcome',
+        requiredPermission: Permission.AUDIT_VIEW,
       },
       {
         key: 'briefings',
@@ -315,6 +356,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: BriefingsTab,
         description: 'Scheduled AI reports',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
       },
     ],
   },
@@ -353,6 +395,18 @@ const SettingsPage: React.FC = () => {
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pageAction, setPageAction] = useState<React.ReactNode>(null);
+
+  // Every contextual upgrade CTA in this app (handleUpgradeRequiredError,
+  // plan-gated tab banners, etc.) opens the pricing modal by dispatching this
+  // event rather than holding a ref to whichever page happens to render it —
+  // chat/page.tsx already listens for it. Settings rendered its own
+  // <PricingModal> but never listened, so every "Upgrade" button reachable
+  // from a settings tab was a dead click.
+  useEffect(() => {
+    const handler = () => setPricingModalVisible(true);
+    window.addEventListener('open-pricing-modal', handler);
+    return () => window.removeEventListener('open-pricing-modal', handler);
+  }, []);
 
   const visibleNavGroups = useMemo(
     () =>
@@ -539,7 +593,13 @@ const SettingsPage: React.FC = () => {
           )}
 
           {/* Tab content */}
-          <ActiveComponent key={activeTab} onSetAction={handleSetAction} />
+          {activeItem?.requiredFeature ? (
+            <FeatureGate feature={activeItem.requiredFeature} key={activeTab}>
+              <ActiveComponent onSetAction={handleSetAction} />
+            </FeatureGate>
+          ) : (
+            <ActiveComponent key={activeTab} onSetAction={handleSetAction} />
+          )}
         </main>
       </div>
 

@@ -125,7 +125,7 @@ export function useDashboardViewerState(
       );
 
       try {
-        const { chartData, chartOptions } = await fetchWidgetChartData({
+        const { chartData, chartOptions, filterWarnings } = await fetchWidgetChartData({
           dashboardId,
           widget,
           runtimeFilters,
@@ -141,6 +141,7 @@ export function useDashboardViewerState(
                   chartOptions: chartOptions
                     ? { ...(w.chartOptions || {}), ...chartOptions }
                     : w.chartOptions,
+                  filterWarnings,
                   isLoading: false,
                   error: null,
                 }
@@ -189,6 +190,7 @@ export function useDashboardViewerState(
             return {
               ...w,
               chartData: partitionSeriesData(result.data!, w),
+              filterWarnings: result.filter_warnings,
               isLoading: false,
               error: null,
             };
@@ -434,14 +436,24 @@ export function useDashboardViewerState(
 
     const prev = prevFiltersRef.current;
     prevFiltersRef.current = runtimeFilters;
-    if (prev.length === 0) return;
+    if (prev.length === 0 && runtimeFilters.length === 0) return;
 
-    const changedFields = runtimeFilters
-      .filter((f) => {
-        const old = prev.find((p) => p.field === f.field);
-        return !old || JSON.stringify(old.value) !== JSON.stringify(f.value);
-      })
-      .map((f) => f.field);
+    // Union of prev+next fields — not just next — so a filter that was fully
+    // removed (present in prev, absent from runtimeFilters) still counts as
+    // "changed" and triggers a refetch of the widgets that had been narrowed
+    // by it. Mirrors useDashboardChartRefresh.ts's refreshAffected, which
+    // this hook duplicates for the standalone/embedded viewer.
+    const changedFieldSet = new Set([
+      ...prev.map((f) => f.field),
+      ...runtimeFilters.map((f) => f.field),
+    ]);
+    const changedFields = Array.from(changedFieldSet).filter((field) => {
+      const old = prev.filter((p) => p.field === field).map((p) => ({ operator: p.operator, value: p.value }));
+      const current = runtimeFilters
+        .filter((p) => p.field === field)
+        .map((p) => ({ operator: p.operator, value: p.value }));
+      return JSON.stringify(old) !== JSON.stringify(current);
+    });
 
     const affected = getAffectedWidgetIds(
       widgets,

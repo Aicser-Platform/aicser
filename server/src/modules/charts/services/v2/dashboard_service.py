@@ -99,12 +99,17 @@ class DashboardService:
 
     async def delete(self, dashboard: Dashboard) -> None:
         """Soft-delete dashboard into trash. Structure kept for restore."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         if hasattr(dashboard, "is_deleted"):
             dashboard.is_deleted = True
             if hasattr(dashboard, "deleted_at"):
-                dashboard.deleted_at = datetime.now(timezone.utc)
+                # BaseModel.deleted_at/updated_at are plain DateTime (naive,
+                # TIMESTAMP WITHOUT TIME ZONE) with onupdate=datetime.utcnow.
+                # A tz-aware value here made asyncpg fail to bind alongside
+                # the naive updated_at: "can't subtract offset-naive and
+                # offset-aware datetimes". Match the naive convention.
+                dashboard.deleted_at = datetime.utcnow()
             await self.db.commit()
             return
         await self.purge(dashboard)

@@ -36,6 +36,7 @@ const SavedFeedPage: React.FC = () => {
     handleAddComment,
     handleToggleFollow,
     handleDeleteItem,
+    handleUpdatePost,
     handleCommentDeleted,
   } = useFeedInteractions(items, setItems);
 
@@ -110,6 +111,7 @@ const SavedFeedPage: React.FC = () => {
                   onAddComment={handleAddComment}
                   onToggleFollow={handleToggleFollow}
                   onDeleteItem={handleDeleteItem}
+                  onUpdatePost={handleUpdatePost}
                   onCommentDeleted={handleCommentDeleted}
                   interactionState={pendingInteractions[item.id]}
                   compact

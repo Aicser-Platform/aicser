@@ -1,6 +1,8 @@
 import { getBackendUrl } from '@/utils/backendUrl';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutItem, RuntimeFilter, WidgetInstance, WidgetType } from '../stores/useDashboardStore';
+import { normalizeRuntimeFiltersForBackend } from './filterOperators';
+import { parseEmbedErrorDetail } from '@/utils/embedMessaging';
 
 export type EmbedWidgetPayload = {
   id: string;
@@ -80,18 +82,40 @@ export async function fetchEmbedDashboardPayload(
     runtimeFilters?: RuntimeFilter[];
   },
 ): Promise<EmbedDashboardPayload> {
-  const base = getBackendUrl();
+  // Same-origin relative path in the browser — NOT `getBackendUrl()`'s raw
+  // NEXT_PUBLIC_API_URL, which is meant to be a Docker-internal service
+  // hostname (e.g. http://chat2chart-server:8000) for server-side use. An
+  // embed page is loaded straight into a visitor's browser (often via
+  // iframe on a third-party site), which can't resolve that hostname at
+  // all — every embed fetch failed outright ("Failed to fetch") wherever
+  // NEXT_PUBLIC_API_URL is set to an internal address, which self-hosted
+  // deployments commonly do. Mirrors how fetchApi's API_URL already handles
+  // this for the rest of the app.
+  const base = typeof window !== 'undefined' ? '' : getBackendUrl();
   const params = new URLSearchParams();
   if (opts?.token) params.set('token', opts.token);
   if (opts?.pageId) params.set('page_id', opts.pageId);
   if (opts?.runtimeFilters?.length) {
-    params.set('filters', encodeURIComponent(JSON.stringify(opts.runtimeFilters)));
+    // Every other chartService entry point runs runtimeFilters through this
+    // same normalization before sending (executeChartWithFilters,
+    // refreshDashboardCharts, ...) — this one didn't, so a date-range filter
+    // arrived at the backend still shaped as {operator:'between', value:[from,to]}
+    // instead of split into >=/<= entries. merge_runtime_filters (operations.py)
+    // has no 'between' handling, so it fell through to a literal equality
+    // comparison against the array's string repr ("WHERE date = '[from, to]'"),
+    // which DuckDB/Postgres reject as an invalid timestamp — the exact
+    // "Data unavailable" seen only in full/preview (embed-payload) mode,
+    // never in the normal dashboard-viewer path that already normalizes.
+    const normalized = normalizeRuntimeFiltersForBackend(opts.runtimeFilters);
+    if (normalized.length) {
+      params.set('filters', encodeURIComponent(JSON.stringify(normalized)));
+    }
   }
   const qs = params.toString() ? `?${params.toString()}` : '';
   const res = await fetch(`${base}/api/dashboards/${dashboardId}/embed${qs}`);
   if (!res.ok) {
     const detail = await res.json().catch(() => ({}));
-    throw new Error(typeof detail.detail === 'string' ? detail.detail : 'Failed to load dashboard');
+    throw new Error(parseEmbedErrorDetail(detail, `Failed to load dashboard (${res.status})`));
   }
   return res.json() as Promise<EmbedDashboardPayload>;
 }

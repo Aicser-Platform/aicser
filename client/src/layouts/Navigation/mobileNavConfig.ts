@@ -9,8 +9,8 @@ export type MobileTabDef = {
 
 /** Primary bottom tabs — max 4 + More (industry standard). */
 export const EE_MOBILE_TABS: MobileTabDef[] = [
-  { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
   { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+  { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
   { key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
   { key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
 ];

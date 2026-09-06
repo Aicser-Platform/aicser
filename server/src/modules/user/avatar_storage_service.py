@@ -198,6 +198,40 @@ def compress_image_to_webp(file_content: bytes) -> bytes:
         return buf.getvalue()
 
 
+async def resolve_storage_backend() -> tuple[str, Optional[dict]]:
+    """Resolve which blob storage backend (if any) is configured for
+    avatar/logo image uploads: '' (Azure default), 'postgresql', or 's3'.
+
+    Checks the STORAGE_BACKEND env var first, then the runtime system-
+    settings override (which can flip a self-host deployment's backend
+    without a redeploy). Extracted from upload_avatar's own inline version
+    of this so upload_organization_logo can honor the exact same "no cloud
+    storage configured -> compressed data URI" fallback instead of the two
+    features drifting apart (logo upload used to skip this check entirely
+    and just hard-503 - see upload_organization_logo's own comment).
+
+    Returns (backend, s3_config) - s3_config is only populated when
+    backend == "s3" (the config S3AvatarStorageService needs).
+    """
+    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
+    storage_config: Optional[dict] = None
+    try:
+        from src.core.system_settings.runtime_config import get_effective_storage_config
+
+        effective_storage = await get_effective_storage_config()
+        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
+        if effective_storage.get("enabled") and effective_backend:
+            storage_backend = effective_backend
+            if effective_backend == "s3":
+                storage_config = effective_storage
+    except Exception:
+        logger.debug(
+            "Runtime storage config unavailable; using env storage backend",
+            exc_info=True,
+        )
+    return storage_backend, storage_config
+
+
 class AvatarStorageService:
     """Azure Blob Storage service for profile avatar images."""
 

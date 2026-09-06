@@ -121,7 +121,14 @@ export const createDashboardRuntimeSlice: StateCreator<
     });
 
     const applyBatchResults = (
-      results: Array<{ widget_id?: string; chart_id: string; success: boolean; data?: ChartData; error?: string }>,
+      results: Array<{
+        widget_id?: string;
+        chart_id: string;
+        success: boolean;
+        data?: ChartData;
+        error?: string;
+        filter_warnings?: string[];
+      }>,
     ) => {
       const byWidget = new Map<string, (typeof results)[number]>();
       results.forEach((r) => {
@@ -137,7 +144,13 @@ export const createDashboardRuntimeSlice: StateCreator<
             return { ...w, isLoading: false, error: result.error || 'Failed to fetch chart data' };
           }
           const processedData = get().partitionSeriesData(result.data!, w);
-          return { ...w, chartData: processedData, isLoading: false, error: null };
+          return {
+            ...w,
+            chartData: processedData,
+            filterWarnings: result.filter_warnings,
+            isLoading: false,
+            error: null,
+          };
         });
         const dashboards = s.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d,

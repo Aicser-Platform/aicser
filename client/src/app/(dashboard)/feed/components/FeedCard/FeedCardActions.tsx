@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Button, Popover, message } from 'antd';
 import {
-  BookOutlined,
   CheckCircleFilled,
   EyeOutlined,
   HeartOutlined,
@@ -13,9 +12,12 @@ import {
   ReadOutlined,
   ShareAltOutlined,
 } from '@ant-design/icons';
+import { BookmarkIcon } from '@/components/icons/BookmarkIcon';
 import { socialFeedService } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
+import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
 import { reactionOptions } from './constants';
+import ReactionBreakdownTooltip from './ReactionBreakdownTooltip';
 import { useTranslations } from 'next-intl';
 
 export interface FeedCardActionsHandle {
@@ -194,7 +196,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
             shareCopyTimerRef.current = null;
           }, 1700);
         } catch (error) {
-          message.error(error instanceof Error ? error.message : t('unable_copy_link'));
+          message.error(errorMessage(error, t('unable_copy_link')));
         }
       },
       [copyShareLink, clearShareCopyTimer, item.id]
@@ -258,12 +260,24 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
 
     const hasMetrics = item.metrics.reactions > 0 || item.metrics.comments > 0 || item.metrics.views > 0;
 
-    // Build the stacked reaction icon list:
-    // - If the user has reacted, show only their reaction type
-    // - Otherwise fall back to 'like' as the default display icon
+    // Build the stacked reaction icon list from the real per-type breakdown
+    // (top 3 most-used types) - this used to always show just the CURRENT
+    // VIEWER's own reaction (or a hardcoded 'like') repeated once, which
+    // looked like a LinkedIn-style "who reacted with what" summary but
+    // carried no actual data about anyone else's reactions.
     const reactionIconKeys: ReactionType[] = useMemo(() => {
+      const breakdown = item.metrics.reactionBreakdown;
+      const withCounts = breakdown
+        ? (Object.entries(breakdown) as [ReactionType, number][]).filter(([, count]) => count > 0)
+        : [];
+      if (withCounts.length > 0) {
+        return withCounts
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([key]) => key);
+      }
       return currentReaction ? [currentReaction] : ['like'];
-    }, [currentReaction]);
+    }, [item.metrics.reactionBreakdown, currentReaction]);
 
     const reactionIconMap = useMemo(() => Object.fromEntries(reactionOptions.map((o) => [o.key, o])), []);
 
@@ -342,24 +356,26 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
                   ))}
                 </div>
               )}
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
-                style={currentReaction ? { color: reactionPalette[currentReaction].color } : undefined}
-                disabled={reacting}
-                aria-label={reactionLabel}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleReactionSelect(currentReaction || 'like');
-                }}
-                onPointerDown={handleReactionPointerDown}
-                onPointerUp={clearLongPressTimer}
-                onPointerCancel={clearLongPressTimer}
-                onPointerLeave={clearLongPressTimer}
-              >
-                {selectedReaction?.icon || <HeartOutlined className="text-base" />}
-                <span>{item.metrics.reactions}</span>
-              </button>
+              <ReactionBreakdownTooltip breakdown={item.metrics.reactionBreakdown}>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
+                  style={currentReaction ? { color: reactionPalette[currentReaction].color } : undefined}
+                  disabled={reacting}
+                  aria-label={reactionLabel}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleReactionSelect(currentReaction || 'like');
+                  }}
+                  onPointerDown={handleReactionPointerDown}
+                  onPointerUp={clearLongPressTimer}
+                  onPointerCancel={clearLongPressTimer}
+                  onPointerLeave={clearLongPressTimer}
+                >
+                  {selectedReaction?.icon || <HeartOutlined className="text-base" />}
+                  <span>{item.metrics.reactions}</span>
+                </button>
+              </ReactionBreakdownTooltip>
             </div>
 
             <button
@@ -413,7 +429,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
               onSave(item.id);
             }}
           >
-            <BookOutlined className="text-sm" />
+            <BookmarkIcon filled={isBookmarked} className="text-sm" />
             <span>{isBookmarked ? t('saved') : t('save')}</span>
           </button>
         </div>
@@ -552,7 +568,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
           <Button
             type="text"
             className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors ${item.userInteraction.isBookmarked ? 'text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
-            icon={<BookOutlined className="text-lg" />}
+            icon={<BookmarkIcon filled={item.userInteraction.isBookmarked} className="text-lg" />}
             loading={saving}
             disabled={saving}
             onClick={(event) => {

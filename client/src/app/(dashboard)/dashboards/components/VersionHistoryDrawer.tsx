@@ -110,7 +110,7 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
         </Space>
       }
       placement="right"
-      size={360}
+      size={420}
       open={open}
       onClose={onClose}
       styles={{ body: { padding: 0 } }}
@@ -167,6 +167,10 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
           renderItem={(v) => (
             <List.Item
               style={{ padding: '10px 16px', alignItems: 'flex-start' }}
+              // Keep the two action buttons pinned top-right instead of
+              // vertically centering against the (now often 2-line) title +
+              // description stack once the title wraps/truncates.
+              styles={{ actions: { alignItems: 'flex-start', marginInlineStart: 8 } }}
               actions={[
                 <Tooltip title="Restore this snapshot" key="restore">
                   <Popconfirm
@@ -177,7 +181,9 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
                     cancelText="Cancel"
                   >
                     <Button
+                      type="text"
                       size="small"
+                      className="icon-only-btn"
                       icon={<UndoOutlined />}
                       loading={restoringId === v.id}
                       disabled={deletingId === v.id}
@@ -193,8 +199,10 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
                   cancelText="Cancel"
                 >
                   <Button
+                    type="text"
                     size="small"
                     danger
+                    className="icon-only-btn icon-only-btn--danger"
                     icon={<DeleteOutlined />}
                     loading={deletingId === v.id}
                     disabled={restoringId === v.id}
@@ -204,9 +212,11 @@ export function VersionHistoryDrawer({ open, onClose }: VersionHistoryDrawerProp
             >
               <List.Item.Meta
                 title={
-                  <Text style={{ fontSize: 13, fontWeight: 500 }} ellipsis>
-                    {v.label}
-                  </Text>
+                  <Tooltip title={v.label} placement="topLeft" mouseEnterDelay={0.4}>
+                    <Text style={{ fontSize: 13, fontWeight: 500, display: 'block' }} ellipsis>
+                      {v.label}
+                    </Text>
+                  </Tooltip>
                 }
                 description={
                   <Space size={4} wrap>

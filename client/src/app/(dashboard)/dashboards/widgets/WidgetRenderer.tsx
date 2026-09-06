@@ -441,22 +441,19 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
     // Stat / Metric
     if (type === 'stat') {
-      const crossField = query?.x;
+      // Not click-to-filter: `query.x` on a stat widget is the temporal column
+      // added purely to drive the trend sparkline, not a dimension the KPI
+      // represents. Wiring it up made every KPI card silently clickable (no
+      // visible affordance) and, when clicked, pinned the *entire* dashboard
+      // to a single arbitrary date (the sparkline's last bucket) — producing
+      // the "numbers look wrong after clicking a card" reports. A single
+      // aggregate number has no discrete category to cross-filter by, unlike
+      // a bar/pie segment or table row, so stat widgets don't cross-filter.
       return (
         <StatWidget
           data={effectiveData}
           config={config}
           query={query as StatWidgetProps['query']}
-          filterValue={
-            crossField && effectiveData && Array.isArray((effectiveData as { x?: unknown[] }).x)
-              ? (effectiveData as { x: unknown[] }).x[(effectiveData as { x: unknown[] }).x.length - 1]
-              : undefined
-          }
-          onFilter={
-            onFilter && crossField
-              ? (value) => onFilter(crossField, value)
-              : undefined
-          }
         />
       );
     }

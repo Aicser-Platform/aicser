@@ -326,7 +326,13 @@ async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
                 "workflow_complete": True,
                 "success": True,
                 "current_stage": "complete",
-                "message": "Done",
+                # _has_substantive_assistant_content() (api_streaming.py) requires
+                # a message over 20 chars, or is_final gets forced back to False
+                # (deliberate guard against premature type=complete before real
+                # narration is filled in) - a bare "Done" fails that and silently
+                # skips the whole "track credits only after successful stream
+                # completion" block this test exists to verify.
+                "message": "Monthly sales are trending up 12% month over month.",
                 "execution_metadata": {"status": "completed"},
             }
 

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ConfigProvider, Input, Segmented, Select, Tag } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Input, Segmented, Select, Tag } from 'antd';
+import { SearchOutlined, ProjectOutlined } from '@ant-design/icons';
 import type { AssetType, FeedFilterOptions, FeedScope, FeedSort } from '@/services/socialFeedService';
 import { useTranslations } from 'next-intl';
 
@@ -16,6 +16,11 @@ export interface FeedFiltersValue {
   sort: FeedSort;
   tags: string[];
   search?: string;
+  /** "Only Me" is cross-project by design (a personal scratch space) unlike
+   * every other scope, which follows the active project selection — this is
+   * the opt-in narrowing toggle for when a user wants their private posts
+   * from just the current project. Ignored by every scope but 'private'. */
+  privateProjectOnly?: boolean;
 }
 
 interface FeedFiltersProps {
@@ -25,13 +30,14 @@ interface FeedFiltersProps {
 }
 
 type AssetOptionDef = {
-  labelKey: 'filter_asset_all' | 'filter_asset_dashboard' | 'filter_asset_chart' | 'filter_asset_insight' | 'filter_asset_query';
+  labelKey: 'filter_asset_all' | 'filter_asset_post' | 'filter_asset_dashboard' | 'filter_asset_chart' | 'filter_asset_insight' | 'filter_asset_query';
   value: 'all' | AssetType;
   countKey?: AssetType;
 };
 
 const ASSET_OPTION_DEFS: AssetOptionDef[] = [
   { labelKey: 'filter_asset_all', value: 'all' },
+  { labelKey: 'filter_asset_post', value: 'post', countKey: 'post' },
   { labelKey: 'filter_asset_dashboard', value: 'dashboard', countKey: 'dashboard' },
   { labelKey: 'filter_asset_chart', value: 'chart', countKey: 'chart' },
   // { labelKey: 'filter_asset_insight', value: 'insight', countKey: 'insight' },
@@ -59,8 +65,8 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
   };
 
   const assetSelectOptions = useMemo(() => {
-    const counts = options.assetCounts || { dashboard: 0, chart: 0, insight: 0, query: 0 };
-    const allCount = counts.dashboard + counts.chart + counts.insight + (counts.query ?? 0);
+    const counts = options.assetCounts || { dashboard: 0, chart: 0, insight: 0, query: 0, post: 0 };
+    const allCount = counts.dashboard + counts.chart + counts.insight + (counts.query ?? 0) + (counts.post ?? 0);
 
     return ASSET_OPTION_DEFS.map((def) => {
       const count = def.countKey ? counts[def.countKey] : allCount;
@@ -73,85 +79,67 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({ value, options, onChange }) =
     });
   }, [options.assetCounts, value.assetType, t]);
 
-  const quickTags = useMemo(() => (options.tags ?? []).slice(0, 8), [options.tags]);
-
-  const toggleQuickTag = (tag: string) => {
-    const next = value.tags.includes(tag) ? value.tags.filter((item) => item !== tag) : [...value.tags, tag];
-    update({ tags: next });
-  };
-
+  // Tag filtering used to also have a second, differently-styled row of quick-
+  // pick chips below this bar — a redundant second control for the exact same
+  // `value.tags` state as the Select just below, styled as loose pills instead
+  // of a dropdown. Dropped in favor of one consistent control (this Select,
+  // styled identically to the "All assets" Select) and one line overall.
   return (
-    <div className="flex flex-col gap-4">
-      {/* Scope tabs */}
-      <div className="flex justify-start">
-        <Segmented
-          value={value.scope}
-          options={scopeOptions}
-          onChange={(next) => update({ scope: next as FeedScope })}
-          aria-label={t('feed_scope_aria')}
-          className="!rounded-lg p-0.5 bg-[var(--ant-color-bg-layout)] border border-[var(--ant-color-border-secondary)]"
-        />
-      </div>
-
-      {/* Filters row: selects on the left, search on the right */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 w-full">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Select
-            value={value.sort}
-            onChange={(next) => update({ sort: next as FeedSort })}
-            className="min-w-[140px] [&>.ant-select-content]:!rounded-lg"
-            options={[
-              { label: t('sort_recommended'), value: 'recommended' },
-              { label: t('sort_trending'), value: 'trending' },
-              { label: t('sort_recent'), value: 'recent' },
-            ]}
-          />
-          <Select
-            value={value.assetType}
-            onChange={(next) => update({ assetType: next as 'all' | AssetType })}
-            options={assetSelectOptions}
-            className="min-w-[160px] [&>.ant-select-content]:!rounded-lg"
-          />
-          <Select
-            mode="multiple"
-            placeholder={t('filter_tags')}
-            value={value.tags}
-            onChange={(next) => update({ tags: next })}
-            options={(options.tags ?? []).map((tag) => ({ label: tag, value: tag }))}
-            className="min-w-[180px] sm:min-w-[200px] lg:w-[260px] [&>.ant-select-content]:!rounded-lg"
-            maxTagCount={2}
-          />
-        </div>
-        <Input
-          allowClear
-          placeholder={t('search_feed')}
-          value={value.search || ''}
-          onChange={(event) => update({ search: event.target.value })}
-          prefix={<SearchOutlined className="text-gray-400" />}
-          className="w-full sm:w-64 rounded-lg"
-        />
-      </div>
-
-      {/* Quick tag chips */}
-      {quickTags.length > 0 && (
-        <ConfigProvider wave={{ disabled: true }}>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-            {quickTags.map((tag) => {
-              const selected = value.tags.includes(tag);
-              return (
-                <Tag
-                  key={tag}
-                  color={selected ? 'blue' : 'default'}
-                  className="cursor-pointer px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap m-0 border border-[var(--ant-color-border)] hover:border-[var(--ant-color-primary-border)]"
-                  onClick={() => toggleQuickTag(tag)}
-                >
-                  #{tag}
-                </Tag>
-              );
-            })}
-          </div>
-        </ConfigProvider>
+    <div className="flex flex-wrap items-center gap-2.5">
+      <Segmented
+        value={value.scope}
+        options={scopeOptions}
+        onChange={(next) => update({ scope: next as FeedScope })}
+        aria-label={t('feed_scope_aria')}
+        className="!rounded-lg p-0.5 bg-[var(--ant-color-bg-layout)] border border-[var(--ant-color-border-secondary)]"
+      />
+      {value.scope === 'private' && (
+        <Tag
+          icon={<ProjectOutlined />}
+          color={value.privateProjectOnly ? 'blue' : 'default'}
+          className="cursor-pointer select-none rounded-full px-2.5 py-0.5 text-xs font-medium m-0 border border-[var(--ant-color-border)]"
+          onClick={() => update({ privateProjectOnly: !value.privateProjectOnly })}
+          title={t('scope_private_project_only_hint')}
+        >
+          {t('scope_private_project_only')}
+        </Tag>
       )}
+      <Select
+        value={value.sort}
+        onChange={(next) => update({ sort: next as FeedSort })}
+        className="min-w-[140px] [&_.ant-select-selector]:!rounded-lg"
+        options={[
+          { label: t('sort_recommended'), value: 'recommended' },
+          { label: t('sort_trending'), value: 'trending' },
+          { label: t('sort_recent'), value: 'recent' },
+        ]}
+      />
+      <Select
+        value={value.assetType}
+        onChange={(next) => update({ assetType: next as 'all' | AssetType })}
+        options={assetSelectOptions}
+        className="min-w-[160px] [&_.ant-select-selector]:!rounded-lg"
+      />
+      <Select
+        mode="multiple"
+        placeholder={t('filter_tags')}
+        value={value.tags}
+        onChange={(next) => update({ tags: next })}
+        options={(options.tags ?? []).map((tag) => ({ label: tag, value: tag }))}
+        // Tag chips get their own tinted pill (bg + matching-tint border)
+        // instead of antd's default gray-on-gray chip, which read as a
+        // "double border" sitting this close to the selector's own edge.
+        className="min-w-[160px] [&_.ant-select-selector]:!rounded-lg [&_.ant-select-selection-item]:!border-[var(--ant-color-primary-border)] [&_.ant-select-selection-item]:!bg-[var(--ant-color-primary-bg)]"
+        maxTagCount="responsive"
+      />
+      <Input
+        allowClear
+        placeholder={t('search_feed')}
+        value={value.search || ''}
+        onChange={(event) => update({ search: event.target.value })}
+        prefix={<SearchOutlined className="text-gray-400" />}
+        className="ml-auto w-full sm:w-64 rounded-lg"
+      />
     </div>
   );
 };

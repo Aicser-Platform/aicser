@@ -30,7 +30,19 @@ def test_replan_marks_retry_step_for_escalation():
     assert retry_step.params.get("retry") is True
 
 
-def test_escalation_forces_reasoning_tier_and_resets():
+def test_escalation_forces_reasoning_tier_and_resets(monkeypatch):
+    # This suite runs against a live deploy env with real provider credentials
+    # configured (TokenHarbor primary override + real Azure) - left unset, one
+    # of those registers for real and resolve_model_for_node then (correctly)
+    # resolves a fast-tier model for it instead of "no escalation needed".
+    for var in (
+        "PRIMARY_MODEL_PROVIDER", "PRIMARY_MODEL_DEPLOYMENT_NAME", "PRIMARY_MODEL_API_KEY", "PRIMARY_MODEL_ENDPOINT",
+        "REASONING_MODEL_PROVIDER", "REASONING_MODEL_DEPLOYMENT_NAME", "REASONING_MODEL_API_KEY", "REASONING_MODEL_ENDPOINT",
+        "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_GPT41_API_KEY", "AZURE_OPENAI_GPT41_ENDPOINT",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
     service = LiteLLMService()
     service.available_models["azure_reasoning"] = {
         "name": "Reasoning",

@@ -1,12 +1,67 @@
 """Tests for AI dashboard generation planning."""
 
-from src.modules.ai.services.dashboard_generation_service import (
+from ee.modules.ai.services.dashboard_generation_service import (
     plan_dashboard_widgets,
     _pick_focus_columns,
     _classify_columns,
     _heuristic_flat_widgets,
     _merge_widget_specs,
+    _dashboard_title_from_prompt,
+    _validate_global_filters,
 )
+
+
+def test_dashboard_title_generic_prompt_falls_back_to_data_source_name():
+    # Live-reproduced: "create a dashboard for this dataset" strips down to
+    # "this dataset" (real content), which produced the technically-correct
+    # but meaningless title "This Dataset" with no clue what the dashboard
+    # is actually about. data_source_name is real content — prefer it.
+    title = _dashboard_title_from_prompt(
+        "create a dashboard for this dataset", "Sample: Banking (Cambodia/SEA)"
+    )
+    assert title == "Sample: Banking (Cambodia/SEA)"
+
+
+def test_dashboard_title_generic_prompt_without_data_source_name_keeps_old_behavior():
+    title = _dashboard_title_from_prompt("create a dashboard for this dataset", None)
+    assert title == "This Dataset"
+
+
+def test_dashboard_title_content_bearing_prompt_is_unaffected():
+    title = _dashboard_title_from_prompt("show me revenue by region", "Sample: Banking")
+    assert title == "Revenue By Region"
+
+
+def test_dashboard_title_empty_prompt_uses_data_source_name():
+    assert _dashboard_title_from_prompt("", "Sample: Banking") == "Sample: Banking"
+    assert _dashboard_title_from_prompt("", None) == "AI Dashboard"
+
+
+def test_validate_global_filters_stamps_data_source_id():
+    # Live-reproduced: none of the three filter-bar sources (LLM plan, PESD
+    # heuristic, schema heuristic) ever set dataSourceId themselves, since a
+    # single data source powers the whole generation call. Without it, the
+    # persisted filter had an empty "Data source" dropdown in Manage Filters
+    # and get_filter_options() had no data_source_id to query against.
+    schema = {"tables": [{"name": "loans", "columns": [{"name": "npl_flag", "type": "varchar"}]}]}
+    filters = [{"type": "select", "field": "npl_flag", "label": "Npl Flag"}]
+    cleaned = _validate_global_filters(filters, schema, "loans", data_source_id="ds-123")
+    assert cleaned[0]["dataSourceId"] == "ds-123"
+    assert cleaned[0]["tableName"] == "loans"
+
+
+def test_validate_global_filters_does_not_overwrite_existing_data_source_id():
+    schema = {"tables": [{"name": "loans", "columns": [{"name": "npl_flag", "type": "varchar"}]}]}
+    filters = [{"type": "select", "field": "npl_flag", "label": "Npl Flag", "dataSourceId": "already-set"}]
+    cleaned = _validate_global_filters(filters, schema, "loans", data_source_id="ds-123")
+    assert cleaned[0]["dataSourceId"] == "already-set"
+
+
+def test_validate_global_filters_without_data_source_id_leaves_field_unset():
+    schema = {"tables": [{"name": "loans", "columns": [{"name": "npl_flag", "type": "varchar"}]}]}
+    filters = [{"type": "select", "field": "npl_flag", "label": "Npl Flag"}]
+    cleaned = _validate_global_filters(filters, schema, "loans")
+    assert "dataSourceId" not in cleaned[0]
 
 
 def test_plan_dashboard_widgets_includes_kpi_and_charts():

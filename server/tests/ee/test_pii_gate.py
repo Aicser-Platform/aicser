@@ -5,6 +5,7 @@ def test_scrub_prompt_preserves_sql_partition_keyword(monkeypatch):
     import src.modules.data.services.pii_scrubber as pii_module
     from ee.modules.ai.services.pii_gate import scrub_prompt_text
 
+    monkeypatch.setenv("AISER_PII_GATE_ENABLED", "true")
     monkeypatch.setattr(pii_module, "_presidio_analyzer", None)
     monkeypatch.setattr(pii_module, "_presidio_anonymizer", None)
 
@@ -21,6 +22,7 @@ def test_moderate_llm_output_preserves_sql_partition_keyword(monkeypatch):
     import src.modules.data.services.pii_scrubber as pii_module
     from ee.modules.ai.services.pii_gate import moderate_llm_output
 
+    monkeypatch.setenv("AISER_PII_GATE_ENABLED", "true")
     monkeypatch.setattr(pii_module, "_presidio_analyzer", None)
     monkeypatch.setattr(pii_module, "_presidio_anonymizer", None)
 

@@ -10,6 +10,7 @@ import { LayoutPresetPicker } from './LayoutPresetPicker';
 import type { WidgetTemplate } from '../widgetTemplates';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutPreset } from './LayoutPresetsMenu';
+import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 
 interface AddBlockPopoverProps {
   children: React.ReactNode;
@@ -19,6 +20,8 @@ interface AddBlockPopoverProps {
   filtersPanelOpen?: boolean;
   onOpenFilterPanel?: () => void;
   onOpenFilterManager?: () => void;
+  /** Current dashboard widgets — used to auto-recommend the best-fitting layout preset. */
+  widgets?: WidgetInstance[];
 }
 
 export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
@@ -29,6 +32,7 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
   filtersPanelOpen = false,
   onOpenFilterPanel,
   onOpenFilterManager,
+  widgets = [],
 }) => {
   const t = useTranslations('dashboards_page');
   const td = useTranslations('dashboards');
@@ -88,6 +92,7 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
         ),
         children: (
           <LayoutPresetPicker
+            widgets={widgets}
             onSelect={(preset) => {
               onApplyLayoutPreset?.(preset);
               closeAndReset();
@@ -96,7 +101,7 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
         ),
       },
     ],
-    [onAddFilterPreset, onApplyLayoutPreset, onOpenFilterManager, onSelect, search, t],
+    [onAddFilterPreset, onApplyLayoutPreset, onOpenFilterManager, onSelect, search, t, widgets],
   );
 
   const content = (
@@ -163,7 +168,7 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
       }}
       placement="bottomLeft"
       classNames={{
-        root: '[&_.ant-popover-inner]:!p-0 [&_.ant-popover-inner]:!rounded-lg [&_.ant-popover-inner]:!overflow-hidden [&_.ant-popover-inner]:!shadow-md [&_.ant-popover-inner]:!border [&_.ant-popover-inner]:!border-border-light [&_.ant-popover-inner]:!bg-bg-container',
+        root: '[&_.ant-popover-inner]:!p-0 [&_.ant-popover-inner]:!rounded-lg [&_.ant-popover-inner]:!overflow-hidden [&_.ant-popover-inner]:!shadow-md [&_.ant-popover-inner]:!border [&_.ant-popover-inner]:!border-border-light [&_.ant-popover-inner]:!bg-bg-elevated',
       }}
       arrow={false}
     >

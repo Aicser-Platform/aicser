@@ -30,13 +30,25 @@ from ee.modules.ai.nodes.supervisor_node import supervisor_node
 
 
 def _unused_litellm_service():
-    """A litellm_service double that fails loudly if actually invoked. Phase -1 runs
-    immediately after the `data_source_id` check (before any conversational/mode-confidence
-    LLM call), and `_llm_select_skills` instantiates its own LiteLLMService rather than
-    using this one - so this object should never be called in any of these tests."""
-    mock = AsyncMock()
-    mock.generate_completion = AsyncMock(side_effect=AssertionError("litellm_service should not be called"))
-    return mock
+    """A real LiteLLMService instance (not a generic AsyncMock) with generate_completion
+    wired to fail loudly if actually invoked.
+
+    Must be a real instance, not a disconnected mock: _llm_select_skills_checked reuses
+    whatever `litellm_service` it's given rather than always building a fresh one (see its
+    own "PERFORMANCE" doc comment) - Phase -1 passes this exact object straight through to
+    `generate_completion_with_tools`. A plain `AsyncMock()` has no relationship to the real
+    LiteLLMService class, so every test's `patch("...LiteLLMService.generate_completion_with_tools",
+    ...)` silently never fired through it - the call landed on an unconfigured, unspecced
+    mock attribute instead, raised (awaiting a non-awaitable default return), and got
+    swallowed by _llm_select_skills_checked's own except-and-fail-open, making Phase -1 look
+    like it always failed/abstained regardless of what a test's fake function returned. A
+    real instance picks up class-level patches through normal attribute lookup, exactly like
+    the class's own callers do."""
+    from ee.modules.ai.services.litellm_service import LiteLLMService
+
+    instance = LiteLLMService()
+    instance.generate_completion = AsyncMock(side_effect=AssertionError("litellm_service should not be called"))
+    return instance
 
 
 def _base_state(query: str) -> dict:
@@ -91,38 +103,174 @@ async def test_no_skill_match_falls_through_to_normal_routing_unchanged():
 
 
 @pytest.mark.asyncio
-async def test_llm_skill_selection_not_consulted_when_regex_already_matched():
-    """Regex-matched requests (export/report keywords, explicit tag) must not pay for
-    an extra LLM call - Phase -1 should only reach the new LLM check when _infer_plan_steps
-    returns nothing."""
+async def test_regex_match_gets_llm_confirmation_and_agreement_keeps_routing():
+    """A regex match is no longer trusted blindly (see the false-positive tests
+    below) - it now gets a confirmation call through the same conservative LLM
+    selector. When the LLM independently agrees a skill fits, routing proceeds
+    exactly as before, just with one extra (cheap, narrow-path) call."""
     called = {"llm": False}
 
-    async def fake_should_not_be_called(self, prompt, system_context, tools, **kwargs):
+    async def fake_confirms(self, prompt, system_context, tools, **kwargs):
         called["llm"] = True
-        return {"success": True, "tool_calls": [], "content": ""}
+        assert any(t["function"]["name"] == "generate_pdf" for t in tools)
+        return {"success": True, "tool_calls": [{"name": "generate_pdf", "arguments": {}}], "content": ""}
 
     with patch(
         "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
-        new=fake_should_not_be_called,
+        new=fake_confirms,
     ):
         state = _base_state("export this as a pdf report")
         out = await supervisor_node(state, litellm_service=_unused_litellm_service())
 
     assert out["current_stage"] == "routed_to_agent_skills"
-    assert called["llm"] is False
+    assert called["llm"] is True
+
+
+@pytest.mark.asyncio
+async def test_regex_false_positive_discarded_when_llm_confirmation_disagrees():
+    """Reproduces a live bug: a user's KB follow-up question -- "What else does
+    ABA_FY2024_Audited_FS-EN.pdf say about this topic?" -- got hijacked into a
+    content-less PDF export because the regex matched the ".pdf" extension
+    inside the referenced filename (separately fixed at the regex level with a
+    lookbehind guard in nodes/planner_node.py - this test simulates the regex
+    still matching something, via a query the guard doesn't cover, to exercise
+    this second, independent safety net). When the LLM confirmation
+    independently finds no skill fits, the regex's match must be discarded and
+    routing must fall through to normal (non-skills) routing, exactly as if
+    the regex had found nothing to begin with."""
+    async def fake_disagrees(self, prompt, system_context, tools, **kwargs):
+        return {"success": True, "tool_calls": [], "content": ""}
+
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_disagrees,
+    ):
+        # "excel" is a bare format word (matches _EXPORT_PATTERNS) inside a
+        # sentence that isn't actually an export request - a stand-in for any
+        # regex-hit-but-wrong case the confirmation layer exists to catch.
+        state = _base_state("what happened to our excel-based reporting process last year")
+        out = await supervisor_node(state, litellm_service=_unused_litellm_service())
+
+    assert out["current_stage"] != "routed_to_agent_skills"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_failure_fails_open_and_keeps_regex_routing():
+    """A broken/unavailable LLM provider during the confirmation call must
+    never be able to block a request that the regex already had a concrete
+    answer for - matching the fail-open design of every other confidence
+    check in this codebase (routing_utils.check_notable_mode_confidence)."""
+    async def fake_raises(self, prompt, system_context, tools, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_raises,
+    ):
+        state = _base_state("export this as a pdf report")
+        out = await supervisor_node(state, litellm_service=_unused_litellm_service())
+
+    assert out["current_stage"] == "routed_to_agent_skills"
+
+
+@pytest.mark.asyncio
+async def test_export_request_not_hijacked_by_sticky_dashboard_context():
+    """Live-reproduced bug: sending "Export this dashboard as a PowerPoint
+    presentation" while an existing dashboard was the active/sticky chat target
+    (target_dashboard_id set) got routed into dashboard-lifecycle "refine"
+    instead of the correctly-matched generate_pptx agent skill. Phase -1 (above)
+    found the right route and set primary_agent="agent_skills", but the sticky-
+    dashboard block further down in the "Build Execution Plan" ladder used to run
+    detect_dashboard_lifecycle_action() unconditionally whenever a dashboard was
+    sticky - that heuristic only knows "a dashboard is open" + its own keyword
+    guesses (its mentions_board catch-all matches on the literal word "dashboard"
+    appearing anywhere in the query), so it reclassified the same export request
+    as a board edit and silently discarded the correct, already-confirmed skill
+    route - sending the request into the dashboard-edit LLM instead, which
+    hallucinated a bogus, unbound widget for a sentence that was never an edit
+    instruction to begin with. An explicit, already-confirmed agent_skills route
+    from Phase -1 must never be shadowed by this softer heuristic."""
+    async def fake_confirms(self, prompt, system_context, tools, **kwargs):
+        assert any(t["function"]["name"] == "generate_pptx" for t in tools)
+        return {
+            "success": True,
+            "tool_calls": [{"name": "generate_pptx", "arguments": {}}],
+            "content": "",
+        }
+
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_confirms,
+    ):
+        state = _base_state("Export this dashboard as a PowerPoint presentation")
+        state["target_dashboard_id"] = "dash-1"
+        out = await supervisor_node(state, litellm_service=_unused_litellm_service())
+
+    assert out["current_stage"] == "routed_to_agent_skills"
+    assert out["agent_plan"]["steps"][0]["skill"] == "generate_pptx"
+    assert out.get("dashboard_lifecycle_action") is None
+
+
+@pytest.mark.asyncio
+async def test_export_request_wins_even_against_a_hard_lifecycle_keyword_match():
+    """Narrower isolation of the fix above: detect_dashboard_lifecycle_action's
+    HARD keyword lists (_UPDATE_KEYWORDS here, via the literal phrase "refresh
+    this dashboard") are a separate, more confident code path than the soft
+    mentions_board catch-all - so even a query that trips one of those exact
+    phrases, while also being a Phase -1-confirmed export skill match, must
+    still route to the skill. Proves the guard is keyed on "Phase -1 already
+    decided agent_skills", not on which part of detect_dashboard_lifecycle_action
+    would have fired."""
+    async def fake_confirms(self, prompt, system_context, tools, **kwargs):
+        assert any(t["function"]["name"] == "generate_pdf" for t in tools)
+        return {
+            "success": True,
+            "tool_calls": [{"name": "generate_pdf", "arguments": {}}],
+            "content": "",
+        }
+
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_confirms,
+    ):
+        state = _base_state("refresh this dashboard and export it as a pdf")
+        state["target_dashboard_id"] = "dash-1"
+        out = await supervisor_node(state, litellm_service=_unused_litellm_service())
+
+    assert out["current_stage"] == "routed_to_agent_skills"
+    assert out["agent_plan"]["steps"][0]["skill"] == "generate_pdf"
 
 
 @pytest.mark.asyncio
 async def test_agent_kernel_routing_reachable():
-    """should_use_agent_kernel() returns True by default for any data-source query,
-    so its routing_decision must survive all the way to current_stage - previously
-    it was silently overwritten by the Build Execution Plan ladder's routed_to_nl2sql
-    default, making the entire agent_kernel pipeline unreachable in practice."""
+    """A multi-step request's routing_decision must survive all the way to
+    current_stage - previously it was silently overwritten by the Build Execution
+    Plan ladder's routed_to_nl2sql default, making the entire agent_kernel pipeline
+    unreachable in practice.
+
+    Updated for should_use_agent_kernel's narrowing (goal_resolver.py): this test's
+    original query, "show revenue by month as a bar chart", is a plain single-
+    deliverable request and now correctly declines kernel routing (see
+    test_agent_kernel.py's is_multi_step_request tests) - it's swapped here for a
+    genuinely multi-step query so this test still exercises what it's named for
+    (ladder reachability), not should_use_agent_kernel's own decision logic."""
     mock = AsyncMock()
     mock.generate_completion = AsyncMock(return_value={"success": True, "content": "{}"})
 
-    state = _base_state("show revenue by month as a bar chart")
-    out = await supervisor_node(state, litellm_service=mock)
+    async def fake_no_match(self, prompt, system_context, tools, **kwargs):
+        return {"success": True, "tool_calls": [], "content": ""}
+
+    # Phase -1's LLM skill-selection fallback reuses the injected `litellm_service`
+    # (see _unused_litellm_service's docstring above) - without this class-level
+    # patch it makes a real, slow LLM call that isn't reliably conservative,
+    # nondeterministically claiming this query for agent_skills before it ever
+    # reaches should_use_agent_kernel.
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_no_match,
+    ):
+        state = _base_state("do a comprehensive end to end analysis of revenue by month and show it as a bar chart")
+        out = await supervisor_node(state, litellm_service=mock)
 
     assert out["current_stage"] == "routed_to_agent_kernel"
 
@@ -135,10 +283,12 @@ async def test_executive_report_not_shadowed_by_agent_kernel():
     Phase -1-ish early block regardless of analysis_mode (it doesn't consult it), and
     the executive_report elif in the "Build Execution Plan" ladder was checked AFTER
     the agent_kernel elif — so it could never fire once agent_kernel already matched.
-    Unlike dashboard/business_journey (which get independent priority checks earlier
-    in that same ladder, keyed off analysis_mode rather than primary_agent),
-    executive_report had no such protection. Fixed by reordering the executive_report
-    elif before the agent_kernel one, mirroring dashboard/business_journey's immunity."""
+
+    Kernel-unification roadmap step 1 has since closed that gap the other way:
+    executive_report's capability reached parity in capability_registry.py, so the
+    standalone executive_report ladder branch was removed entirely and it now
+    deliberately falls through to (and is genuinely handled by) agent_kernel - this
+    pins that it isn't shadowed by, but *is*, the kernel route."""
     mock = AsyncMock()
     mock.generate_completion = AsyncMock(return_value={"success": True, "content": "{}"})
 
@@ -146,7 +296,8 @@ async def test_executive_report_not_shadowed_by_agent_kernel():
     state["agent_context"] = {"analysis_mode": "executive_report"}
     out = await supervisor_node(state, litellm_service=mock)
 
-    assert out["current_stage"] == "routed_to_executive_report"
+    assert out["current_stage"] == "routed_to_agent_kernel"
+    assert out["execution_metadata"]["analysis_mode"] == "executive_report"
 
 
 @pytest.mark.asyncio
@@ -175,7 +326,7 @@ async def test_decision_intelligence_not_shadowed_by_agent_kernel():
 @pytest.mark.asyncio
 async def test_explicit_animate_mode_not_shadowed_by_agent_kernel():
     """Live-reproduced bug: selecting "Animate" mode and asking a question produced
-    the agent kernel's own "Next, I am planning autonomous execution." plan and a
+    the agent kernel's own "Next, I am planning execution." plan and a
     bare partial SQL result - never an animated chart. Same root cause as Decide's:
     should_use_agent_kernel() has no exclusion for any mode, so an explicit
     diagnostic/predictive/prescriptive/animate selection was claimed by agent_kernel

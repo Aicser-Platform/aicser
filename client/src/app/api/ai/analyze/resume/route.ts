@@ -77,7 +77,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to proxy resume request',
+        // See generate-code/route.ts's identical fix: prefer the real error
+        // (matches formatUserError's network-error classifier) over a
+        // hardcoded string that always won and hid it from the user. This
+        // path matters more than most - a resume is a clarification answer
+        // the user already gave, so a swallowed reconnect error here looks
+        // like their answer vanished rather than "connection hiccup, retry."
+        error: error instanceof Error ? error.message : 'Failed to proxy resume request',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }

@@ -39,6 +39,10 @@ export type WidgetPropertyProfile = {
   showValueFormat: boolean;
   /** Format → trend / average / reference overlays */
   showOverlays: boolean;
+  /** Sort tab → sort-by / row-limit controls. False for single-value widgets
+   *  (stat, gauge) that have no rows to sort or cap — those controls rendered
+   *  unconditionally before and did nothing when changed. */
+  showSortControls: boolean;
 };
 
 const CONTENT: WidgetPropertyProfile = {
@@ -51,6 +55,7 @@ const CONTENT: WidgetPropertyProfile = {
   showLegendSeriesControls: false,
   showValueFormat: false,
   showOverlays: false,
+  showSortControls: false,
 };
 
 const CONTROL: WidgetPropertyProfile = {
@@ -63,6 +68,7 @@ const CONTROL: WidgetPropertyProfile = {
   showLegendSeriesControls: false,
   showValueFormat: false,
   showOverlays: false,
+  showSortControls: false,
 };
 
 const CARTESIAN: WidgetPropertyProfile = {
@@ -75,6 +81,7 @@ const CARTESIAN: WidgetPropertyProfile = {
   showLegendSeriesControls: true,
   showValueFormat: true,
   showOverlays: true,
+  showSortControls: true,
 };
 
 export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
@@ -92,6 +99,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: true,
     showValueFormat: false,
     showOverlays: false,
+    showSortControls: true,
   },
   donut: {
     kind: 'pie',
@@ -103,6 +111,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: true,
     showValueFormat: false,
     showOverlays: false,
+    showSortControls: true,
   },
   table: {
     kind: 'table',
@@ -114,6 +123,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: false,
     showOverlays: false,
+    showSortControls: true,
   },
   stat: {
     kind: 'kpi',
@@ -125,6 +135,8 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: false,
     showOverlays: false,
+    // A stat tile is one aggregate value — no rows to sort or cap.
+    showSortControls: false,
   },
   heatmap: {
     kind: 'heatmap',
@@ -136,6 +148,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: true,
     showOverlays: false,
+    showSortControls: true,
   },
   funnel: {
     kind: 'funnel',
@@ -147,6 +160,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: true,
     showValueFormat: true,
     showOverlays: false,
+    showSortControls: true,
   },
   gauge: {
     kind: 'gauge',
@@ -158,6 +172,8 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: false,
     showOverlays: false,
+    // Same as stat — a single needle/value, nothing to sort or cap.
+    showSortControls: false,
   },
   treemap: {
     kind: 'treemap',
@@ -169,6 +185,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: true,
     showOverlays: false,
+    showSortControls: true,
   },
   waterfall: {
     kind: 'waterfall',
@@ -180,6 +197,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: true,
     showOverlays: false,
+    showSortControls: true,
   },
   bullet: {
     kind: 'bullet',
@@ -191,6 +209,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: true,
     showOverlays: false,
+    showSortControls: true,
   },
   geo: {
     kind: 'map',
@@ -202,6 +221,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showLegendSeriesControls: false,
     showValueFormat: false,
     showOverlays: false,
+    showSortControls: true,
   },
   text: CONTENT,
   image: CONTENT,
@@ -221,6 +241,7 @@ const FALLBACK: WidgetPropertyProfile = {
   showLegendSeriesControls: true,
   showValueFormat: true,
   showOverlays: false,
+  showSortControls: true,
 };
 
 export function getWidgetPropertyProfile(chartType?: string): WidgetPropertyProfile {

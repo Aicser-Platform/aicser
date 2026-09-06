@@ -67,7 +67,15 @@ def test_reasoning_tier_still_supports_azure(monkeypatch):
 def test_platform_default_model_gets_real_tier_not_hardcoded_fast(monkeypatch):
     """An operator pointing the plain default at a strong model (not a mini)
     should get correct reasoning-tier routing automatically."""
-    for var in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"):
+    for var in (
+        "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT",
+        # This suite runs against a live deploy env with real PRIMARY_MODEL_*/
+        # REASONING_MODEL_* overrides configured (TokenHarbor) - left unset,
+        # those register for real and platform_reasoning wins get_model_for_tier
+        # over this test's own synthetic openai_gpt4o_mini.
+        "PRIMARY_MODEL_PROVIDER", "PRIMARY_MODEL_DEPLOYMENT_NAME", "PRIMARY_MODEL_API_KEY", "PRIMARY_MODEL_ENDPOINT",
+        "REASONING_MODEL_PROVIDER", "REASONING_MODEL_DEPLOYMENT_NAME", "REASONING_MODEL_API_KEY", "REASONING_MODEL_ENDPOINT",
+    ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "fake-openai-key")
     monkeypatch.setenv("OPENAI_MODEL_ID", "o3-mini")

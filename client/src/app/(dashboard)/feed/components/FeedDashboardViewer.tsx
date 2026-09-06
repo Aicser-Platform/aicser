@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Empty, Spin } from 'antd';
+import { FilterOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useDashboardViewerState';
 import { DashboardFilterPanel } from '@/app/(dashboard)/dashboards/components/DashboardFilterPanel';
@@ -78,7 +79,17 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         </div>
       ) : null}
 
-      {viewer.combinedFiltersConfig.length > 0 ? (
+      {/* The toolbar filter bar assumes page-width room (150-225px per field,
+          a non-shrinking Reset button, and a wrap breakpoint keyed to the
+          VIEWPORT, not this container) - correct for the 'detail' variant,
+          but inside a ~300px feed grid tile or attachment card it has
+          nowhere to go but a cramped horizontal scrollbar. A preview card
+          previews; enterprise BI share-to-feed/Slack conventions (Looker,
+          Metabase, PowerBI) show a static summary in that context and leave
+          full filtering for the expanded view, which 'card' already does
+          for the widget grid below - filters were the one piece still
+          rendered at full interactive size regardless of variant. */}
+      {viewer.combinedFiltersConfig.length > 0 && variant !== 'card' ? (
         <div className="feed-dashboard-viewer-filters">
           <DashboardFilterPanel
             variant="toolbar"
@@ -89,6 +100,13 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
             minimal
             showHeader={false}
           />
+        </div>
+      ) : viewer.combinedFiltersConfig.length > 0 ? (
+        <div className="flex items-center gap-1.5 px-1 pb-2 text-xs text-[var(--ant-color-text-tertiary)]">
+          <FilterOutlined style={{ fontSize: 11 }} />
+          <span>
+            {t('card_filters_available', { count: viewer.combinedFiltersConfig.length })}
+          </span>
         </div>
       ) : null}
 
@@ -105,6 +123,10 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         // detail page matches the canvas's place and layout exactly; only the
         // small feed-list 'card' thumbnail reflows into a simplified grid.
         layoutMode={variant === 'card' ? 'preview' : 'preserve'}
+        // The feed is a read-only, social-consumption surface — the drill-down /
+        // cross-filter hint icon is chrome meant for the interactive dashboard
+        // canvas, not a passive feed post. Interactions themselves stay live.
+        hideInteractionHint
       />
     </div>
   );

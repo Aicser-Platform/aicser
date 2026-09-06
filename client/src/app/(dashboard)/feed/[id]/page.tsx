@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Breadcrumb, Button, Card, Empty, Tag, Typography } from 'antd';
+import { Breadcrumb, Button, Card, Dropdown, Empty, Modal, Tag, Typography } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   ArrowLeftOutlined,
   BarChartOutlined,
@@ -10,6 +11,7 @@ import {
   DashboardOutlined,
   EditOutlined,
   MessageOutlined,
+  MoreOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
@@ -17,11 +19,14 @@ import type { FeedItem } from '@/services/socialFeedService';
 import { socialFeedService } from '@/services/socialFeedService';
 import FeedDetailSkeleton from '../components/FeedDetailSkeleton';
 import FeedCardActions from '../components/FeedCard/FeedCardActions';
+import FeedPostEditBox from '../components/FeedCard/FeedPostEditBox';
 import FeedDiscussion from '../components/FeedDiscussion/FeedDiscussion';
 import FeedDetailSidebar from '../components/FeedDetailSidebar';
 import { FeedPostViewer } from '../components/FeedPostViewer';
 import FeedPreviewVisual from '../components/FeedPreviewVisual';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { useProjectStore } from '@/stores/useProjectStore';
+import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
 import { useTranslations } from 'next-intl';
 import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useFeedItemInteractions } from '@/hooks/feed/useFeedInteractions';
@@ -39,9 +44,27 @@ const FeedDetailPage: React.FC = () => {
 
   const [item, setItem] = useState<FeedItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [editPostValue, setEditPostValue] = useState('');
 
-  const { pendingInteractions, handleReact, handleSave, handleAddComment, handleCommentDeleted } =
-    useFeedItemInteractions(item, setItem);
+  const {
+    pendingInteractions,
+    handleReact,
+    handleSave,
+    handleAddComment,
+    handleCommentDeleted,
+    handleDeleteItem,
+    handleUpdatePost,
+  } = useFeedItemInteractions(item, setItem);
+
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const organizationId =
+    currentProject?.organization_id || (currentProject as { organizationId?: string } | null)?.organizationId;
+  const { members: mentionMembers, options: editMentionOptions } = useMentionableMembers(
+    'organization',
+    organizationId,
+    user?.id
+  );
 
   // No-op stand-ins for FeedCardActions props that have no equivalent on the
   // detail page (there's no comment-box-toggle concept anymore, and "open"
@@ -125,6 +148,35 @@ const FeedDetailPage: React.FC = () => {
 
   const isPostOwner = !!user && item.author?.id === user.id;
   const canOpenAsset = canOpenFeedAsset(item, isPostOwner);
+  const handleStartEditPost = () => {
+    setEditPostValue(item.description);
+    setIsEditingPost(true);
+  };
+  const handleCancelEditPost = () => setIsEditingPost(false);
+  const handleSaveEditPost = async () => {
+    const body = editPostValue.trim();
+    if (!body) return;
+    const mentionedUsers = resolveMentionedUserIds(body, mentionMembers);
+    const success = await handleUpdatePost(item.id, body, mentionedUsers);
+    if (success) setIsEditingPost(false);
+  };
+  const handleDeletePost = () => {
+    Modal.confirm({
+      title: t('delete_post_confirm_title'),
+      content: t('delete_post_confirm_content'),
+      okText: t('delete'),
+      okType: 'danger',
+      cancelText: t('cancel'),
+      onOk: async () => {
+        await handleDeleteItem(item.id);
+        router.push('/feed');
+      },
+    });
+  };
+  const moreMenuItems: MenuProps['items'] = [
+    ...(item.canEdit ? [{ key: 'edit', label: t('edit_post') }] : []),
+    ...(isPostOwner ? [{ key: 'delete', danger: true, label: t('delete_post') }] : []),
+  ];
   const isDashboard = item.assetType === 'dashboard';
   const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
   const visibilityLabel = (() => {
@@ -151,6 +203,8 @@ const FeedDetailPage: React.FC = () => {
         return <SearchOutlined />;
       case 'insight':
         return <BulbOutlined />;
+      case 'post':
+        return <MessageOutlined />;
     }
   })();
   const snapshotDate = item.snapshot?.capturedAt
@@ -207,10 +261,22 @@ const FeedDetailPage: React.FC = () => {
                   </Tag>
                 ) : null} */}
               </div>
-              <Title level={2} className="!mb-2 !mt-0 !text-2xl sm:!text-3xl">
-                {item.title}
-              </Title>
-              {item.description ? (
+              {item.title ? (
+                <Title level={2} className="!mb-2 !mt-0 !text-2xl sm:!text-3xl">
+                  {item.title}
+                </Title>
+              ) : null}
+              {isEditingPost ? (
+                <FeedPostEditBox
+                  compact={false}
+                  value={editPostValue}
+                  onChange={setEditPostValue}
+                  mentionOptions={editMentionOptions}
+                  saving={Boolean(pendingInteractions[item.id]?.updatingPost)}
+                  onSave={handleSaveEditPost}
+                  onCancel={handleCancelEditPost}
+                />
+              ) : item.description ? (
                 <Paragraph type="secondary" className="!mb-0 max-w-3xl !text-sm !leading-6 sm:!text-base">
                   {item.description}
                 </Paragraph>
@@ -232,6 +298,20 @@ const FeedDetailPage: React.FC = () => {
                 >
                   {isPostOwner && isDashboard ? t('edit_dashboard') : t('open_in_studio')}
                 </Button>
+              )}
+              {moreMenuItems.length > 0 && (
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: moreMenuItems,
+                    onClick: ({ key }) => {
+                      if (key === 'edit') handleStartEditPost();
+                      else if (key === 'delete') handleDeletePost();
+                    },
+                  }}
+                >
+                  <Button icon={<MoreOutlined />} aria-label={t('more_options')} />
+                </Dropdown>
               )}
             </div>
           </div>
@@ -261,28 +341,30 @@ const FeedDetailPage: React.FC = () => {
 
         <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="flex min-w-0 flex-col gap-5">
-            <div className="overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)]">
-              <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="shrink-0 text-[var(--ant-color-primary)]">{assetIcon}</span>
-                  <span className="truncate text-sm font-medium text-[var(--ant-color-text)]">{previewHeading}</span>
-                </div>
-                {snapshotDate ? (
-                  <span className="shrink-0 text-xs font-normal text-[var(--ant-color-text-tertiary)]">
-                    {t('snapshot_from_date', { date: snapshotDate })}
-                  </span>
-                ) : null}
-              </div>
-              <div className="min-h-[340px] bg-[var(--ant-color-bg-layout)] p-4 sm:p-5">
-                {useFullViewer ? (
-                  <FeedPostViewer item={item} variant="detail" />
-                ) : (
-                  <div className="min-h-[300px] overflow-hidden rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] shadow-sm">
-                    <FeedPreviewVisual item={item} />
+            {item.assetType !== 'post' && (
+              <div className="overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)]">
+                <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-[var(--ant-color-primary)]">{assetIcon}</span>
+                    <span className="truncate text-sm font-medium text-[var(--ant-color-text)]">{previewHeading}</span>
                   </div>
-                )}
+                  {snapshotDate ? (
+                    <span className="shrink-0 text-xs font-normal text-[var(--ant-color-text-tertiary)]">
+                      {t('snapshot_from_date', { date: snapshotDate })}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="min-h-[340px] bg-[var(--ant-color-bg-layout)] p-4 sm:p-5">
+                  {useFullViewer ? (
+                    <FeedPostViewer item={item} variant="detail" />
+                  ) : (
+                    <div className="min-h-[300px] overflow-hidden rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] shadow-sm">
+                      <FeedPreviewVisual item={item} />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <FeedDiscussion
               item={item}

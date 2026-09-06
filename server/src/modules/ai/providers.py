@@ -37,6 +37,8 @@ PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
     # still nominally alive (shutdown Oct 16 2026) but has been intermittently
     # 404ing since Jul 9 2026, so the 3.x family is the safe default now.
     "google": [
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
+        {"id": "gemini-3.7-flash", "name": "Gemini 3.7 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite", "tier": "fast", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.6-flash", "name": "Gemini 3.6 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)", "tier": "reasoning", "cost_per_1k_tokens": 0},

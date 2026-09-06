@@ -1,12 +1,16 @@
-"""Regression test: deleting a dashboard in CE must not 500.
+"""Regression test: permanently deleting a dashboard in CE must not 500.
 
-DashboardService.delete() used to unconditionally clean up the legacy
-``dashboard_widgets`` table. That table is only created by an EE-gated
-migration (alembic/versions/2026_05_24_ee_platform_tables.py checks
-_is_ee_enabled() before op.create_table), so in a Community Edition
-deployment the table never exists and the DELETE raised
-asyncpg.exceptions.UndefinedTableError, aborting the whole delete with a 500
-before any of the dashboard's real rows (charts, pages, shares) were removed.
+DashboardService.purge() (the hard-delete path — .delete() now only soft-
+deletes into trash, restorable via .restore(); purge() is what actually
+removes rows, called either as .delete()'s fallback for a model without
+is_deleted or by a separate "empty trash" / permanently-delete flow) used to
+unconditionally clean up the legacy ``dashboard_widgets`` table. That table
+is only created by an EE-gated migration
+(alembic/versions/2026_05_24_ee_platform_tables.py checks _is_ee_enabled()
+before op.create_table), so in a Community Edition deployment the table
+never exists and the DELETE raised asyncpg.exceptions.UndefinedTableError,
+aborting the whole purge with a 500 before any of the dashboard's real rows
+(charts, pages, shares) were removed.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -40,7 +44,7 @@ async def test_delete_skips_legacy_dashboard_widgets_table_in_ce(monkeypatch):
     db = _make_mock_db()
     dashboard = Dashboard(id=uuid4(), name="Test Dashboard")
 
-    await DashboardService(db).delete(dashboard)
+    await DashboardService(db).purge(dashboard)
 
     statements = _executed_sql_statements(db)
     assert not any("dashboard_widgets" in sql for sql in statements), (
@@ -57,7 +61,7 @@ async def test_delete_still_cleans_legacy_dashboard_widgets_table_in_ee(monkeypa
     db = _make_mock_db()
     dashboard = Dashboard(id=uuid4(), name="Test Dashboard")
 
-    await DashboardService(db).delete(dashboard)
+    await DashboardService(db).purge(dashboard)
 
     statements = _executed_sql_statements(db)
     assert any("dashboard_widgets" in sql for sql in statements), (
@@ -81,7 +85,7 @@ async def test_delete_skips_legacy_scheduled_emails_cleanup_in_ce(monkeypatch):
     db = _make_mock_db()
     dashboard = Dashboard(id=uuid4(), name="Test Dashboard")
 
-    await DashboardService(db).delete(dashboard)
+    await DashboardService(db).purge(dashboard)
 
     statements = _executed_sql_statements(db)
     assert not any("scheduled_emails" in sql for sql in statements), (
@@ -97,7 +101,7 @@ async def test_delete_still_cleans_scheduled_emails_in_ee(monkeypatch):
     db = _make_mock_db()
     dashboard = Dashboard(id=uuid4(), name="Test Dashboard")
 
-    await DashboardService(db).delete(dashboard)
+    await DashboardService(db).purge(dashboard)
 
     statements = _executed_sql_statements(db)
     assert any("scheduled_emails" in sql for sql in statements), (

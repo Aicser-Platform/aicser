@@ -10,6 +10,7 @@ import {
   ExportOutlined,
   EyeOutlined,
   SendOutlined,
+  PaperClipOutlined,
   ClockCircleOutlined,
   UnorderedListOutlined,
   GlobalOutlined,
@@ -22,6 +23,7 @@ import { chartService } from '../services/chartService';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
+import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 
 type Props = {
   dashboardId: string | null;
@@ -37,6 +39,12 @@ type Props = {
   isEditMode?: boolean;
   isEnterprise?: boolean;
   onPublish?: () => void;
+  /** "Attach to a new post" - captures this dashboard's snapshot right here
+   * and hands it to the /feed composer, rather than publishing it as its own
+   * standalone post (onPublish). Same permission requirements as onPublish -
+   * this is strictly a lighter-weight variant of the same action, not a
+   * separate access path. */
+  onAttachToPost?: () => void;
   onScheduleDelivery?: () => void;
   onManageSchedules?: () => void;
   isPublic?: boolean;
@@ -55,6 +63,7 @@ export function DashboardShareMenu({
   isEditMode = false,
   isEnterprise = false,
   onPublish,
+  onAttachToPost,
   onScheduleDelivery,
   onManageSchedules,
   isPublic = false,
@@ -167,16 +176,25 @@ export function DashboardShareMenu({
     },
   ];
 
-  if (isEditMode && onPublish) {
+  if (onPublish) {
     items.push(
       { type: 'divider' as const },
       {
         key: 'publish',
         icon: <SendOutlined />,
-        label: tt('publish'),
+        label: menuItemWithDescription(tt('publish'), tt('publish_desc')),
         onClick: onPublish,
       }
     );
+  }
+
+  if (onAttachToPost) {
+    items.push({
+      key: 'attach-to-post',
+      icon: <PaperClipOutlined />,
+      label: menuItemWithDescription(tt('attach_to_new_post'), tt('attach_to_new_post_desc')),
+      onClick: onAttachToPost,
+    });
   }
 
   if (isEditMode && isEnterprise && onScheduleDelivery && onManageSchedules) {

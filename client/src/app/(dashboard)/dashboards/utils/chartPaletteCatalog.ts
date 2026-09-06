@@ -10,6 +10,9 @@ export const CHART_PALETTE_CATALOG = [
   { id: 'corporate', labelKey: 'palette_corporate', colors: COLOR_PALETTES.corporate.slice(0, 8) },
   { id: 'pastel', labelKey: 'palette_pastel', colors: COLOR_PALETTES.pastel.slice(0, 8) },
   { id: 'infographic', labelKey: 'palette_infographic', colors: COLOR_PALETTES.infographic.slice(0, 8) },
+  { id: 'spectrum', labelKey: 'palette_spectrum', colors: COLOR_PALETTES.spectrum.slice(0, 8) },
+  { id: 'colorblindSafe', labelKey: 'palette_colorblind_safe', colors: COLOR_PALETTES.colorblindSafe.slice(0, 8) },
+  { id: 'monochrome', labelKey: 'palette_monochrome', colors: COLOR_PALETTES.monochrome.slice(0, 8) },
 ] as const;
 
 export type ChartPaletteId = (typeof CHART_PALETTE_CATALOG)[number]['id'] | 'custom';

@@ -1,6 +1,6 @@
 """Executive report retry_failed_sections preference."""
 
-from src.modules.ai.nodes.executive_report_execution_node import _user_friendly_section_error
+from ee.modules.ai.nodes.executive_report_execution_node import _user_friendly_section_error
 
 
 def test_user_friendly_section_error_hides_sql():

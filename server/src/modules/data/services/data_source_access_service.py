@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Sequence
 from uuid import UUID, uuid4
 
@@ -834,7 +834,11 @@ class DataSourceAccessService:
 
         grant.is_active = False
         grant.is_deleted = True
-        grant.deleted_at = datetime.now(timezone.utc)
+        # DataSourceAccessGrant inherits BaseModel's naive DateTime columns
+        # (onupdate=datetime.utcnow) — a tz-aware value here makes asyncpg
+        # fail to bind alongside the naive updated_at: "can't subtract
+        # offset-naive and offset-aware datetimes".
+        grant.deleted_at = datetime.utcnow()
         return True
 
     @staticmethod

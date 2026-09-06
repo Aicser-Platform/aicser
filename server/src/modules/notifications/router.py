@@ -68,6 +68,7 @@ async def get_activity_inbox(
             email=email,
             dismissed_tips=dismissed,
             prefs=prefs,
+            user_payload=payload,
         )
         unread = compute_unread_count(items, last_viewed, dismissed)
     except Exception as e:

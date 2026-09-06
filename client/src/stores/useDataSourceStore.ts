@@ -102,6 +102,14 @@ export interface DataSource {
 
 interface DataSourceUIState {
   selectedId: string | null;
+  /** True right after the user explicitly cleared the selection (the
+   * dropdown's own X button) — distinct from selectedId being null just
+   * because nothing has loaded/selected yet. The auto-select-first effect
+   * below needs this distinction: it's supposed to heal a stale/invalid
+   * selection (e.g. after a project switch), not immediately undo a
+   * deliberate "I want no source selected right now" action, which is
+   * indistinguishable from a stale selection by selectedId alone. */
+  explicitlyCleared: boolean;
   filterType: string | null;
   schemaCache: Record<string, SchemaInfo>;
   schemaLoading: boolean;
@@ -115,10 +123,11 @@ export const useDataSourceStore = create<DataSourceUIState>()(
   devtools(
     (set) => ({
       selectedId: null,
+      explicitlyCleared: false,
       filterType: null,
       schemaCache: {},
       schemaLoading: false,
-      select: (id) => set({ selectedId: id }),
+      select: (id) => set({ selectedId: id, explicitlyCleared: id === null }),
       setFilter: (type) => set({ filterType: type }),
       setSchemaCache: (id, schema) =>
         set((s) => ({ schemaCache: { ...s.schemaCache, [id]: schema } })),
@@ -133,6 +142,7 @@ export const useDataSourceStore = create<DataSourceUIState>()(
 
 export function useDataSources() {
   const selectedId = useDataSourceStore((state) => state.selectedId);
+  const explicitlyCleared = useDataSourceStore((state) => state.explicitlyCleared);
   const schemaCache = useDataSourceStore((state) => state.schemaCache);
   const setSelectedId = useDataSourceStore((state) => state.select);
   const setSchemaLoading = useDataSourceStore((state) => state.setSchemaLoading);
@@ -155,11 +165,16 @@ export function useDataSources() {
   const dataSources: DataSource[] = data ?? [];
 
   // Auto-select a project data source when none is selected (or selection is stale after project switch).
+  // Skipped right after the user explicitly cleared the selection — otherwise
+  // this effect re-fires on the very next render (selectedId just went null)
+  // and immediately re-selects the first source, making the clear button a
+  // no-op from the user's perspective.
   useEffect(() => {
     if (dataSources.length === 0) {
       if (selectedId) setSelectedId(null);
       return;
     }
+    if (explicitlyCleared) return;
     const stillValid = selectedId && dataSources.some((ds) => ds.id === selectedId);
     if (stillValid) return;
     const preferred =
@@ -167,7 +182,7 @@ export function useDataSources() {
     if (preferred?.id) {
       setSelectedId(preferred.id);
     }
-  }, [dataSources, selectedId, setSelectedId]);
+  }, [dataSources, selectedId, explicitlyCleared, setSelectedId]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteDataSource(id),

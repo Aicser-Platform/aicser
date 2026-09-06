@@ -136,6 +136,43 @@ _SQL_DANGEROUS_PATTERN = re.compile(
 # sp_configure, ...) — matched separately since they're prefixes, not whole words.
 _SQL_DANGEROUS_PREFIX_PATTERN = re.compile(r'(?:^|[\s,;(])(XP_|SP_)\w+', re.IGNORECASE)
 
+# RELIABILITY: unlike direct_sql_pool.py's DEFAULT_STATEMENT_TIMEOUT_SECONDS
+# (enforced server-side via connect_args for real customer DB connections),
+# DuckDB queries — the engine behind every sample_duckdb data source AND
+# every uploaded CSV/Excel file — ran with no timeout at all: a single
+# expensive aggregation or accidental cross join could block the event loop
+# indefinitely, with nothing to cut it off. DuckDB itself has no SQL-level
+# statement_timeout, so this is enforced from the Python side instead (see
+# _execute_duckdb_with_timeout): the blocking conn.execute() call runs in a
+# worker thread under asyncio.wait_for, and conn.interrupt() actually
+# cancels the in-flight query on timeout rather than merely giving up on
+# waiting for it (DuckDB's own documented cancellation API).
+DUCKDB_STATEMENT_TIMEOUT_SECONDS = int(os.getenv("DUCKDB_STATEMENT_TIMEOUT_SECONDS", "30"))
+
+
+async def _execute_duckdb_with_timeout(conn: "duckdb.DuckDBPyConnection", query: str) -> list:
+    """Run conn.execute(query).fetchall() in a worker thread under a real
+    async timeout, instead of blocking the event loop for the query's full
+    duration. On timeout, calls conn.interrupt() to actually cancel the
+    running query (DuckDB's documented cancellation API) rather than merely
+    abandoning the wait — the query would otherwise keep consuming CPU/memory
+    in its worker thread regardless of whether anything is still waiting on it.
+    conn.description remains readable on `conn` afterward exactly as before,
+    since this is still the same single-threaded-at-a-time connection object.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: conn.execute(query).fetchall()),
+            timeout=DUCKDB_STATEMENT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        try:
+            conn.interrupt()
+        except Exception:
+            pass
+        raise TimeoutError(f"Query exceeded the {DUCKDB_STATEMENT_TIMEOUT_SECONDS}s execution limit")
+
 
 def check_sql_read_only_safety(query: str) -> Optional[str]:
     """Return an error message if `query` trips the dangerous-operation blocklist, else None."""
@@ -1648,7 +1685,7 @@ class DuckDBEngine(BaseQueryEngine):
             
             # Execute query
             try:
-                result = conn.execute(duckdb_query).fetchall()
+                result = await _execute_duckdb_with_timeout(conn, duckdb_query)
                 # Get column names from the result description
                 columns = []
                 if conn.description:

@@ -79,7 +79,7 @@ async def test_selects_a_tool(monkeypatch):
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(True, None)),
     )
 
@@ -101,7 +101,7 @@ async def test_empty_selection_is_success_not_failure(monkeypatch):
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(True, None)),
     )
 
@@ -124,7 +124,7 @@ async def test_blocked_when_org_over_budget(monkeypatch):
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(False, "Organization AI budget exceeded")),
     )
 
@@ -140,6 +140,9 @@ async def test_blocked_when_org_over_budget(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_outbound_prompt_is_pii_scrubbed(monkeypatch):
+    # AISER_PII_GATE_ENABLED defaults to "false" — this test is specifically
+    # about verifying scrubbing behavior, so the gate must be on.
+    monkeypatch.setenv("AISER_PII_GATE_ENABLED", "true")
     captured = {}
 
     async def fake_acompletion(**params):
@@ -148,7 +151,7 @@ async def test_outbound_prompt_is_pii_scrubbed(monkeypatch):
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(True, None)),
     )
 
@@ -166,12 +169,16 @@ async def test_outbound_prompt_is_pii_scrubbed(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_returned_content_is_moderated(monkeypatch):
+    # AISER_PII_GATE_ENABLED defaults to "false" — this test is specifically
+    # about verifying scrubbing behavior, so the gate must be on.
+    monkeypatch.setenv("AISER_PII_GATE_ENABLED", "true")
+
     async def fake_acompletion(**params):
         return _FakeResponse(_FakeMessage(content="contact jane@company.com for details"))
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(True, None)),
     )
 
@@ -195,7 +202,7 @@ async def test_stream_callback_also_budget_gated(monkeypatch):
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
     monkeypatch.setattr(
-        "src.modules.ai.services.org_budget_service.check_org_budget_allowed",
+        "ee.modules.ai.services.org_budget_service.check_org_budget_allowed",
         AsyncMock(return_value=(False, "Organization AI budget exceeded")),
     )
 

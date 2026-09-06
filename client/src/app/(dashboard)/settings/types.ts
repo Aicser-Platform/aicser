@@ -160,3 +160,53 @@ export interface OverviewStats {
   dataSources: number;
   apiKeys: number;
 }
+
+// Embed assistants (Settings > Embed > Chat assistants builder)
+export type EmbedCapability = 'rag_only' | 'full_engine';
+export type EmbedAuthMode = 'session' | 'embed_jwt' | 'anonymous';
+export type EmbedAssistantVisibility = 'private' | 'shared' | 'public';
+
+export interface EmbedAssistantRecord {
+  id: string;
+  name: string;
+  organization_id?: string;
+  project_id?: string | null;
+  capabilities: string;
+  library_ids?: string[];
+  primary_data_source_id?: string | null;
+  /** New multi-select data source list — `primary_data_source_id` stays for backward compat. */
+  data_source_ids?: string[];
+  allowed_modes?: string[];
+  auth_mode?: EmbedAuthMode;
+  allowed_domains?: string[];
+  settings?: Record<string, unknown>;
+  system_prompt?: string | null;
+  welcome_message?: string | null;
+  fallback_message?: string | null;
+  conversation_starters?: string[];
+  icon_emoji?: string | null;
+  color?: string | null;
+  preferred_model?: string | null;
+  temperature?: number | null;
+  visibility?: EmbedAssistantVisibility;
+  is_active?: boolean;
+  /** Team+ gated server-side (assistant_router.py) — same flag/gate as the
+   * dashboard/chart/report embed token's theme.hide_aicser_branding. */
+  hide_aicser_branding?: boolean;
+}
+
+/** Payload shape for create/update — same fields as the record, minus server-assigned ones. */
+export type EmbedAssistantPayload = Partial<Omit<EmbedAssistantRecord, 'id'>> & {
+  name?: string;
+  organization_id?: string;
+};
+
+/** A single grant of a "shared" assistant to a colleague or a whole project. */
+export interface EmbedAssistantShare {
+  id: string;
+  assistant_id?: string;
+  shared_with?: string | null;
+  project_id?: string | null;
+  expires_at?: string | null;
+  created_at?: string;
+}

@@ -17,7 +17,7 @@ import {
   Alert,
   Select,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import { fetchApi } from '@/utils/api';
@@ -88,10 +88,29 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
     { value: 'deepseek-v4-pro', labelKey: 'ai_model_deepseek_v4_pro' },
   ],
   // OpenRouter fronts hundreds of vendor/model slugs (e.g. "z-ai/glm-4.6") — no small
-  // fixed list covers it, so GLM 5.2 is the one preset called out explicitly; anything
+  // fixed list covers it, so these are the presets called out explicitly; anything
   // else goes through the custom-model field below.
+  // qwen3.8-27b is the default pick here despite the "Flash" variant's name:
+  // OpenRouter's own measured P50 numbers show 27B at 0.48s TTFT / 75 tok/s
+  // vs Flash's 3.07s TTFT / 54 tok/s — faster despite not being the "Flash"
+  // branded one. Muse Glimmer 30B is Meta Superintelligence Labs' first
+  // open-weight release, distinct from the Llama family.
   openrouter: [
+    { value: 'qwen/qwen3.8-27b', labelKey: 'ai_model_qwen3_8_27b', suffix: 'default' },
     { value: 'z-ai/glm-5.2', labelKey: 'ai_model_glm_5_2' },
+    { value: 'qwen/qwen3.8-flash', labelKey: 'ai_model_qwen3_8_flash' },
+    { value: 'qwen/qwen3.8-max', labelKey: 'ai_model_qwen3_8_max' },
+    { value: 'meta/muse-glimmer-30b', labelKey: 'ai_model_muse_glimmer_30b' },
+  ],
+  // Both confirmed as real, first-party publishes to Ollama's own library
+  // (ollama.com/library) under Apache 2.0 — genuinely runnable fully
+  // offline/self-hosted, not just the cloud-routed OpenRouter versions above.
+  // Tags must match exactly what `ollama pull` uses; anything else pulled
+  // locally goes through the custom-model field below.
+  ollama: [
+    { value: 'qwen3.8:27b', labelKey: 'ai_model_qwen3_8_27b' },
+    { value: 'muse-glimmer:30b', labelKey: 'ai_model_muse_glimmer_30b' },
+    { value: 'llama3.2:1b', labelKey: 'ai_model_llama3_2_1b', suffix: 'default' },
   ],
 };
 
@@ -140,10 +159,8 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     apiKeys,
     providerApiKeys,
     loading,
-    showApiKey,
     showProviderKeyModal,
     editingProvider,
-    toggleApiKeyVisibility,
     setShowProviderKeyModal,
     setEditingProvider,
     loadApiKeys,
@@ -237,8 +254,11 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       if (provider === 'ollama') {
         providerKeyForm.setFieldsValue({
           endpoint: 'http://ollama:11434',
-          model: '__custom__',
-          model_custom: 'llama3.2:1b',
+          // Preset dropdown selection now that ollama has real entries in
+          // PROVIDER_MODEL_DEFS — was forced into free-text '__custom__'
+          // before, requiring users to already know the exact Ollama tag
+          // syntax just to get started.
+          model: 'llama3.2:1b',
         });
       }
     }
@@ -306,15 +326,14 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       dataIndex: 'key',
       key: 'key',
       render: (text: string, record: ApiKey) => (
-        <Space>
-          <Text code>{showApiKey[record.id] ? record.key : '••••••••••••' + record.key.slice(-4)}</Text>
-          <Button
-            type="text"
-            size="small"
-            icon={showApiKey[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-            onClick={() => toggleApiKeyVisibility(record.id)}
-          />
-        </Space>
+        // RELIABILITY: the list endpoint (GET /users/api-keys) never returns the
+        // real secret — the backend masks it before storing (mask_key(secret)),
+        // by design (the full key is shown exactly once, at creation). This used
+        // to re-mask that already-masked string on top ('••••••••••••' +
+        // record.key.slice(-4)), which happened to render the same bullets by
+        // coincidence but made toggling "show" a no-op — there was never a real
+        // secret in `record.key` to reveal for a key loaded from the list.
+        <Text code>{record.key}</Text>
       ),
     },
     {
@@ -350,7 +369,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           okText={t('yes')}
           cancelText={t('no')}
         >
-          <Button type="text" danger icon={<DeleteOutlined />} />
+          <Button type="text" danger className="icon-only-btn" icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
     },
@@ -381,7 +400,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     <div>
       <Card variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <Tabs
-          className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-body-holder]:block [&_.ant-tabs-body-holder]:h-auto [&_.ant-tabs-body-holder]:min-h-0 [&_.ant-tabs-body-holder]:flex-none [&_.ant-tabs-body-holder]:overflow-visible [&_.ant-tabs-body-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
+          className="settings-inline-tabs bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-body-holder]:block [&_.ant-tabs-body-holder]:h-auto [&_.ant-tabs-body-holder]:min-h-0 [&_.ant-tabs-body-holder]:flex-none [&_.ant-tabs-body-holder]:overflow-visible [&_.ant-tabs-body-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
           activeKey={activeApiTab}
           onChange={handleApiTabChange}
           destroyOnHidden

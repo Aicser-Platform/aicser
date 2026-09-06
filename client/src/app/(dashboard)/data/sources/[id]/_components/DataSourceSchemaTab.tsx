@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Input, Table, Tag, Typography } from 'antd';
-import { EyeInvisibleOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Empty, Input, message, Table, Tag, Typography } from 'antd';
+import { CheckOutlined, EyeInvisibleOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useDataSource, useDataSourceSchema } from '@/hooks/useDataSources';
+import { useDataSource, useDataSourceSchema, dataSourceKeys } from '@/hooks/useDataSources';
+import { updateDataSourceBusinessMetadata } from '@/api/dataSources';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import {
   normalizeType,
@@ -52,11 +54,51 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
   const { schema, isLoading } = useDataSourceSchema(dataSourceId);
   const businessMetadata = useMemo(() => getBusinessMetadata(schema), [schema]);
   const tables = useMemo(() => normalizeSchemaTables(schema), [schema]);
+  const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedTableId, setExpandedTableId] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
+  // Column-description editing: draft text per fieldKey while the user is
+  // typing (only committed on blur/Enter), and which key is mid-save.
+  const [descDrafts, setDescDrafts] = useState<Record<string, string>>({});
+  const [savingDescKey, setSavingDescKey] = useState<string | null>(null);
+
+  const saveColumnDescription = async (key: string, value: string) => {
+    const trimmed = value.trim();
+    // No-op if unchanged from the persisted value - avoids a save round-trip
+    // (and possibly clobbering a concurrent edit elsewhere) on a blur that
+    // didn't actually change anything.
+    const current = businessMetadata.column_descriptions?.[key] || '';
+    if (trimmed === current) {
+      setDescDrafts((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+    setSavingDescKey(key);
+    try {
+      // The backend replaces the WHOLE column_descriptions map on this key,
+      // not a per-entry patch (see updateDataSourceBusinessMetadata's own
+      // comment) - so every other column's existing description has to be
+      // sent along, not just the one being edited.
+      const merged = { ...(businessMetadata.column_descriptions || {}), [key]: trimmed };
+      await updateDataSourceBusinessMetadata(dataSourceId, { column_descriptions: merged });
+      await queryClient.invalidateQueries({ queryKey: dataSourceKeys.schema(dataSourceId) });
+      setDescDrafts((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('description_save_failed'));
+    } finally {
+      setSavingDescKey(null);
+    }
+  };
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search.trim().toLowerCase()), 250);
@@ -176,6 +218,40 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
                   render: (_: unknown, column: SchemaFieldColumn) => {
                     const role = inferSemanticRole(column, businessMetadata);
                     return <Tag color={roleColor(role)}>{td(roleLabelKey(role))}</Tag>;
+                  },
+                },
+                {
+                  // Business-metadata authoring: the AI already reads
+                  // column_descriptions into its NL2SQL prompts
+                  // (schema_for_llm.py) and the Studio Data tab already
+                  // displays them read-only - this PATCH endpoint
+                  // (business-metadata) existed and worked, but nothing in
+                  // the product could actually write to it, so in practice
+                  // only a heuristic auto-generator or a dbt/Cube import
+                  // ever populated it. Inline-editable here, next to the
+                  // raw column list, mirrors how dbt/Looker treat column
+                  // descriptions as part of browsing the schema, not a
+                  // separate authoring flow.
+                  title: t('schema_column_description'),
+                  key: 'description',
+                  width: 280,
+                  render: (_: unknown, column: SchemaFieldColumn) => {
+                    const key = fieldKey(table, column);
+                    const persisted = businessMetadata.column_descriptions?.[key] || '';
+                    const value = key in descDrafts ? descDrafts[key] : persisted;
+                    const isSaving = savingDescKey === key;
+                    return (
+                      <Input
+                        size="small"
+                        value={value}
+                        placeholder={t('schema_column_description_placeholder')}
+                        disabled={isSaving}
+                        suffix={isSaving ? <CheckOutlined spin /> : undefined}
+                        onChange={(e) => setDescDrafts((prev) => ({ ...prev, [key]: e.target.value }))}
+                        onBlur={(e) => void saveColumnDescription(key, e.target.value)}
+                        onPressEnter={(e) => (e.target as HTMLInputElement).blur()}
+                      />
+                    );
                   },
                 },
                 {

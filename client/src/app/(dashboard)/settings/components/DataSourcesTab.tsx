@@ -194,13 +194,15 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
             key: 'actions',
             width: canManageAccess ? 160 : 120,
             render: (_: unknown, record: SettingsDataSource) => (
-              <Space>
+              <Space size={0}>
                 {canManageAccess ? (
                   <Tooltip title={t('data_source_access_manage')}>
                     <Button
                       type="text"
                       size="small"
+                      className="icon-only-btn"
                       icon={<SafetyCertificateOutlined />}
+                      aria-label={t('data_source_access_manage')}
                       onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
                       disabled={!!deletingId}
                     />
@@ -210,7 +212,9 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
                   <Button
                     type="text"
                     size="small"
+                    className="icon-only-btn"
                     icon={<EditOutlined />}
+                    aria-label={t('edit_connection')}
                     onClick={() => handleEdit(record)}
                     disabled={!!deletingId}
                   />
@@ -220,7 +224,9 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
                     type="text"
                     size="small"
                     danger
+                    className="icon-only-btn"
                     icon={<DeleteOutlined />}
+                    aria-label={t('delete')}
                     loading={deletingId === record.id}
                     onClick={() => handleDelete(record)}
                     disabled={!!deletingId}

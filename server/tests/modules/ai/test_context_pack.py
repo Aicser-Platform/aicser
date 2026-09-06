@@ -1,6 +1,6 @@
 """Golden-style checks for context pack shape (trust / eval replay)."""
 
-from src.modules.ai.services.context_pack import (
+from ee.modules.ai.services.context_pack import (
     CONTEXT_PACK_VERSION,
     build_context_pack_conversational,
     build_context_pack_from_final_state,
@@ -40,7 +40,7 @@ def test_build_context_pack_from_final_state_minimal():
 
 
 def test_build_context_pack_includes_decision_evidence():
-    from src.modules.ai.services.context_pack import build_context_pack_from_final_state
+    from ee.modules.ai.services.context_pack import build_context_pack_from_final_state
 
     state = {
         "decision_brief": {

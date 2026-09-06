@@ -37,6 +37,13 @@ export const ProjectSelectorModal    = (_props: ProjectSelectorModalProps): null
 export const PricingModalEE          = (): null => null;
 export const AnimatedAIAvatar        = (): null => null;
 export const ActivityInboxBell       = (): null => null;
+// CE has no billing/plan tiers — every gated feature is available, so this
+// renders children directly rather than the EE version's null-when-a
+// null-when-gated behavior (which would otherwise hide every tab wrapped in
+// <FeatureGate> under a CE build).
+export function FeatureGate({ children }: ProviderProps & { feature?: string }) {
+  return children;
+}
 export const OrganizationSettingsTab = (): null => null;
 export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;

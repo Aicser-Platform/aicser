@@ -121,8 +121,20 @@ class Settings(BaseSettings):
         "http://localhost:3000,http://127.0.0.1:3000,http://aiser:3000",
     )
 
-    # Frontend URL (used for invitation accept links)
+    # Frontend URL (used for invitation accept links, embed share links, etc.
+    # — human-facing, must be the publicly reachable address).
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    # Frontend URL for the server's OWN outbound requests (Playwright export
+    # navigating to a chrome-free /embed/* route to screenshot/print it — see
+    # playwright_export_service.py). Deliberately separate from FRONTEND_URL:
+    # in Docker, FRONTEND_URL is typically a host-mapped "http://localhost:PORT"
+    # for links a human clicks in their own browser, which is unreachable from
+    # inside the server's own container (its "localhost" is itself, not the
+    # client container) — confirmed live as the reason report/dashboard export
+    # always failed with net::ERR_CONNECTION_REFUSED. Falls back to FRONTEND_URL
+    # for non-Docker setups where the two are the same reachable address.
+    INTERNAL_FRONTEND_URL: str = os.getenv("INTERNAL_FRONTEND_URL", "")
 
     # Supabase Settings
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
@@ -176,8 +188,9 @@ class Settings(BaseSettings):
     AISER_EDITION_LICENSE_KEY: str = os.getenv("AISER_EDITION_LICENSE_KEY", "")
     LICENSE_SERVER_URL: str = os.getenv("LICENSE_SERVER_URL", "https://license.aicser.com")
     # Instance-local grace period for offline tolerance — not the license server's
-    # per-license grace_period_days (not exposed by its public API).
-    LICENSE_GRACE_PERIOD_DAYS: int = int(os.getenv("LICENSE_GRACE_PERIOD_DAYS", "3"))
+    # per-license grace_period_days (not exposed by its public API). 3 days was too
+    # tight for a genuinely "self-hosted" instance.
+    LICENSE_GRACE_PERIOD_DAYS: int = int(os.getenv("LICENSE_GRACE_PERIOD_DAYS", "30"))
     LICENSE_REFRESH_INTERVAL_MINUTES: int = int(os.getenv("LICENSE_REFRESH_INTERVAL_MINUTES", "15"))
 
     # Cube.js Environment Variables (with defaults)

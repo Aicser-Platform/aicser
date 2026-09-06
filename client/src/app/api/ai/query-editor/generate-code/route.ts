@@ -49,7 +49,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: 'Failed to proxy query-editor generate-code request',
+        // Prefer the real error (e.g. "fetch failed" when the backend is
+        // briefly unreachable) - formatUserError's network-error classifier
+        // matches on that text. The old hardcoded string here always won,
+        // discarding it and showing raw internal plumbing text to the user
+        // instead of "Could not reach the server, try again."
+        error: error instanceof Error ? error.message : 'Failed to proxy query-editor generate-code request',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }

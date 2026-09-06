@@ -27,12 +27,22 @@ if "database.azure.com" in async_url:
 # Use SQLALCHEMY_ECHO=1 only for local debugging; never in production or shared logs.
 # pool_pre_ping: drop stale asyncpg connections (avoids "connection is closed" on first query after idle/proxy drop).
 # pool_recycle: proactively recycle connections before server-side timeouts (Azure PG, pgbouncer, etc.).
+# pool_size/max_overflow: this is the pool that actually serves nearly all app
+# request traffic (every FastAPI route via get_async_session/async_session) -
+# leaving these unset with poolclass=None silently falls back to SQLAlchemy's
+# hardcoded default (5 + 10 overflow = 15 total), completely ignoring
+# DB_POOL_SIZE/DB_POOL_MAX_OVERFLOW. Only get_sync_engine() below (migrations
+# only) was reading those env vars, so raising them previously had zero effect
+# on the real bottleneck - confirmed live via QueuePool errors still reporting
+# "size 5 overflow 10" long after that env change shipped.
 _async_pool_recycle = int(os.getenv("DB_ASYNC_POOL_RECYCLE", "1800"))
 async_engine = create_async_engine(
     async_url,
     future=True,
     echo=bool(os.getenv("SQLALCHEMY_ECHO", "false").lower() in ("1", "true")),
     poolclass=None,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+    max_overflow=int(os.getenv("DB_POOL_MAX_OVERFLOW", "10")),
     pool_pre_ping=True,
     pool_recycle=_async_pool_recycle,
     connect_args=connect_args,

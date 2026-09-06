@@ -7,6 +7,7 @@ token — no reason to invalidate a distributed embed link just to change a colo
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from src.modules.embed import service as embed_service
 
@@ -106,6 +107,37 @@ async def test_update_embed_token_theme_changes_branding_without_new_token():
 
 
 @pytest.mark.asyncio
+async def test_dashboard_scope_without_resource_id_is_rejected():
+    """A resource-scoped token minted with no resource_id used to verify
+    against ANY dashboard (verify_dashboard_read_access's fallback treated a
+    missing resource_id as a wildcard match) — a real cross-tenant data leak,
+    not just a permissive default. Must fail at creation time instead."""
+    with pytest.raises(HTTPException) as exc_info:
+        await embed_service.create_embed_token(
+            user_id="u1", org_id="org1", name="Leaky", scopes=["dashboard"],
+        )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_report_scope_without_resource_id_is_rejected():
+    with pytest.raises(HTTPException) as exc_info:
+        await embed_service.create_embed_token(
+            user_id="u1", org_id="org1", name="Leaky", scopes=["report"],
+        )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_chat_only_scope_does_not_require_resource_id():
+    """chat is not resource-scoped — must still work with no resource_id."""
+    created = await embed_service.create_embed_token(
+        user_id="u1", org_id="org1", name="Chat widget", scopes=["chat"],
+    )
+    assert created["resource_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_update_embed_token_theme_returns_none_for_unknown_token():
     result = await embed_service.update_embed_token_theme("u1", "does-not-exist", {"primary_color": "#000"})
     assert result is None
@@ -115,6 +147,7 @@ async def test_update_embed_token_theme_returns_none_for_unknown_token():
 async def test_update_embed_token_theme_can_clear_theme_to_none():
     created = await embed_service.create_embed_token(
         user_id="u1", org_id="org1", name="Dash", scopes=["dashboard"],
+        resource_id="dash-1",
         theme={"primary_color": "#ff0000"},
     )
     updated = await embed_service.update_embed_token_theme("u1", created["id"], None)

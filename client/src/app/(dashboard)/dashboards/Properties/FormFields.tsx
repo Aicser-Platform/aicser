@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Input, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
+import { Input, InputNumber, DatePicker, Select, Switch, Segmented, Checkbox, Typography, Dropdown, MenuProps, ColorPicker, Button, Space, Radio, Divider, Modal, Tabs, Popover, Tooltip } from 'antd';
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import dayjs from 'dayjs';
 import { METRIC_OPTIONS } from './PropertiesPanelConfig';
 import type { SegmentedOption, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
 import { ComputedMetricEditor } from './ComputedMetricEditor';
@@ -837,6 +838,14 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   };
 
   const filterOp = FILTER_OPERATORS.find(op => op.value === tempFilter.operator);
+  const selectedColumnType = columnOptions.find(opt => opt.value === tempFilter.field)?.type;
+  // Same detection style as the Column dropdown's '#'/'abc' icon above -
+  // reused here so the Value input adapts to the column's actual data type
+  // (date picker for dates, numeric input for numbers) instead of a plain
+  // text box for everything, which is what Tableau/Power BI/Looker do for
+  // per-widget filter value entry.
+  const isDateColumn = /(date|time|timestamp)/i.test(String(selectedColumnType || ''));
+  const isNumericColumn = /(int|float|double|decimal|numeric|number|real)/i.test(String(selectedColumnType || ''));
 
   const filterConfigContent = (
     <div style={{ width: 280, padding: '4px 8px' }}>
@@ -927,6 +936,23 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
               options={distinctOptions}
               value={tempFilter.value != null && tempFilter.value !== '' ? String(tempFilter.value) : undefined}
               onChange={(val) => setTempFilter({ ...tempFilter, value: val })}
+            />
+          ) : isDateColumn ? (
+            <DatePicker
+              size="small"
+              style={{ width: '100%' }}
+              value={tempFilter.value ? dayjs(String(tempFilter.value)) : null}
+              onChange={(d) => setTempFilter({ ...tempFilter, value: d ? d.format('YYYY-MM-DD') : '' })}
+              allowClear
+            />
+          ) : isNumericColumn ? (
+            <InputNumber
+              size="small"
+              className="premium-input"
+              style={{ width: '100%' }}
+              placeholder="Filter value"
+              value={tempFilter.value === '' || tempFilter.value == null ? undefined : Number(tempFilter.value)}
+              onChange={(val) => setTempFilter({ ...tempFilter, value: val ?? '' })}
             />
           ) : (
             <Input

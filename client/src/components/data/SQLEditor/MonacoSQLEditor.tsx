@@ -61,11 +61,11 @@ import { PerformancePane } from '@/components/data/SQLEditor/panes/PerformancePa
 import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistoryPane';
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
-import NL2SqlPromptBar from '@/components/data/SQLEditor/NL2SqlPromptBar';
 import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
 import { useAiAvailability } from '@/hooks/useAiAvailability';
 import { AiMarkdownContent } from '@/components/ui/AiMarkdownContent';
 import { getChatHref } from '@/utils/appPaths';
+import { writePendingChatContext } from '@/utils/pendingChatContext';
 import {
   isSameQueryName,
   resolveQueryTabSaveName,
@@ -523,11 +523,23 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [openViewTabs, setOpenViewTabs] = useState<string[]>([]);
   const [aiAssistantInput, setAiAssistantInput] = useState<string>('');
   const [aiGenerating, setAiGenerating] = useState<boolean>(false);
+  // Elapsed time while generating — the only real signal available today
+  // that generation is progressing rather than stuck, since generate-code
+  // is a single-shot request/response with no backend progress events (see
+  // handleAIGenerate below). A ticking counter proves it's alive; a static
+  // spinner doesn't distinguish "working" from "frozen" once you've stared
+  // at it for more than a couple of seconds.
+  const [aiGenerateElapsedS, setAiGenerateElapsedS] = useState(0);
   const aiGenerateAbortRef = useRef<AbortController | null>(null);
   const [aiModel, setAiModel] = useState<string | undefined>();
   const selectedAiModel = aiModel ?? 'auto';
-  const aiAvailability = useAiAvailability(true, IS_EE);
-  const aiAvailable = !IS_EE || aiAvailability.available;
+  // validate=false: only "configured" is read below, which doesn't need a live
+  // test-completion call — Settings already validates keys live at save time.
+  const aiAvailability = useAiAvailability(false, IS_EE);
+  // "configured" (a key is registered), not "available" (the last live test call
+  // succeeded) — gating on live validation would lock out users with a
+  // perfectly working key during transient provider hiccups.
+  const aiAvailable = !IS_EE || aiAvailability.configured;
   const [aiExplainOpen, setAiExplainOpen] = useState(false);
   const [aiExplainContent, setAiExplainContent] = useState('');
   const [aiExplaining, setAiExplaining] = useState(false);
@@ -2263,6 +2275,16 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     message.success(t('optimize_success'));
   };
 
+  useEffect(() => {
+    if (!aiGenerating) return;
+    setAiGenerateElapsedS(0);
+    const startedAt = Date.now();
+    const id = setInterval(() => {
+      setAiGenerateElapsedS(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [aiGenerating]);
+
   const handleAIGenerate = async () => {
     if (!aiAvailable) {
       message.warning('AI is unavailable. Add or update an AI provider key in Settings.');
@@ -2949,9 +2971,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   <Button
                     size="small"
                     danger
+                    className="qe-ai-stop-btn"
                     icon={<CloseCircleOutlined />}
                     onClick={handleCancelAIGenerate}
-                  />
+                  >
+                    {t('stop')}
+                  </Button>
                 </Tooltip>
               ) : (
                 <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
@@ -2974,6 +2999,19 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 dropdownWidth={200}
               />
             </div>
+            {aiGenerating && (
+              <div className="qe-ai-generating-status" role="status" aria-live="polite">
+                <span className="qe-ai-generating-dot" aria-hidden="true" />
+                <span>
+                  {t(editorLanguage === 'python' ? 'generating_python' : 'generating_sql', {
+                    seconds: aiGenerateElapsedS,
+                  })}
+                </span>
+                {aiGenerateElapsedS >= 15 && (
+                  <span className="qe-ai-generating-reassurance">{t('generating_taking_longer')}</span>
+                )}
+              </div>
+            )}
           </div>
           )}
 
@@ -3266,13 +3304,22 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   flexDirection: 'column',
                 }}
               >
-                {!['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
-                  <NL2SqlPromptBar
-                    dataSourceId={selectedDataSource?.id ? String(selectedDataSource.id) : undefined}
-                    onInsert={(sql) => editorInsertRef.current?.insertTextAtCursor(sql)}
-                  />
-                )}
                 <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                  {aiGenerating && (
+                    // The AI status row above (qe-ai-bar) is easy to miss -
+                    // it's a small strip above the tabs, while the user's
+                    // eyes are on the editor itself waiting for code to
+                    // appear. This puts the same "AI is working" signal
+                    // where they're actually looking, without blocking the
+                    // existing query underneath (current_sql is sent along
+                    // as context, so it's still relevant while waiting).
+                    <div className="qe-ai-editor-banner" role="status" aria-live="polite">
+                      <span className="qe-ai-generating-dot" aria-hidden="true" />
+                      {t(editorLanguage === 'python' ? 'generating_python' : 'generating_sql', {
+                        seconds: aiGenerateElapsedS,
+                      })}
+                    </div>
+                  )}
                   <MemoryOptimizedEditor
                     ref={editorInsertRef}
                     height="100%"
@@ -3445,10 +3492,19 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                               onClick={() => {
                                 const sql = latestEditorContentRef.current || sqlQuery;
                                 const cols = results.length > 0 ? Object.keys(results[0]).join(', ') : '';
-                                const promptText = `I ran this SQL query:\n${sql}\n\nThe result has ${results.length} rows with columns: ${cols}.\n\nHelp me understand and explore these results.`;
+                                const promptText = `I ran this SQL query:\n${sql}\n\nThe result has ${results.length} rows with columns: ${cols}. A sample of the actual rows is attached as context below.\n\nHelp me understand and explore these results.`;
+                                // Sample rows travel via sessionStorage, not the URL - the full
+                                // result set can be large, and even just the SQL text used to go
+                                // straight into a /chat?prompt=... query string, which lands in
+                                // browser history/address bar/any proxy or server log that
+                                // records full request URLs. See pendingChatContext.ts.
+                                writePendingChatContext({
+                                  prompt: promptText,
+                                  sampleRows: results,
+                                  totalRowCount: results.length,
+                                });
                                 window.open(
                                   getChatHref({
-                                    prompt: promptText,
                                     // Chat's deep-link reader only checks the snake_case key — see chat/page.tsx.
                                     data_source_id: selectedDataSourceId || undefined,
                                   }),

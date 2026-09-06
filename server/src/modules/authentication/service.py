@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import html
 import secrets
+import time
+import uuid as uuid_module
 from typing import Optional
 from uuid import UUID as PyUUID
 
@@ -13,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
+from src.core.cache import cache
 from src.core.config import settings
 from src.modules.authentication.models import PasswordResetToken
 from src.modules.user.models import User
@@ -41,15 +44,89 @@ def verify_password(plain: str, hashed: str) -> bool:
     return _pwd.verify(plain, hashed)
 
 
+_REVOKED_JTI_PREFIX = "auth:revoked_jti:"
+_SESSION_FLOOR_PREFIX = "auth:session_floor:"
+
+
 def create_access_token(user_id: str, email: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(seconds=EXPIRY_SECONDS)
-    payload = {"sub": str(user_id), "email": email, "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(seconds=EXPIRY_SECONDS)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire,
+        "iat": now,
+        # Per-token id so a single session can be revoked (logout) without
+        # touching every other session for the same user — see
+        # revoke_access_token/revoke_all_sessions_for_user.
+        "jti": uuid_module.uuid4().hex,
+    }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict:
-    """Raise JWTError if invalid or expired."""
-    return jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    """Raise JWTError if invalid, expired, or revoked."""
+    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    if _is_revoked(payload):
+        raise JWTError("Token has been revoked")
+    return payload
+
+
+def _is_revoked(payload: dict) -> bool:
+    # Tokens minted before this claim existed have no jti/iat — fail open on
+    # revocation for them (they simply can't be individually revoked) rather
+    # than rejecting every already-logged-in session on deploy.
+    if not cache:
+        return False
+    jti = payload.get("jti")
+    if jti and cache.exists(f"{_REVOKED_JTI_PREFIX}{jti}"):
+        return True
+    user_id = payload.get("sub")
+    iat = payload.get("iat")
+    if user_id and iat is not None:
+        floor = cache.get(f"{_SESSION_FLOOR_PREFIX}{user_id}")
+        # JWT iat/exp round-trip as whole-second integers (JWT spec), so the
+        # floor must be compared at the same second granularity — mixing a
+        # sub-second float in here would reject a token minted a genuine
+        # instant after the revoke just because it landed in the same
+        # second. <= (not <) means a token issued in the very same second as
+        # the revoke call is still treated as revoked, which is the standard,
+        # accepted edge case for this pattern — anything a full second later
+        # is unambiguously fine.
+        if floor is not None and int(iat) <= int(floor):
+            return True
+    return False
+
+
+def revoke_access_token(token: str) -> None:
+    """Revoke a single session token (logout). Best-effort and safe to call
+    on an already-expired/invalid/claim-less token — it just becomes a no-op."""
+    if not cache:
+        return
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except JWTError:
+        return
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or exp is None:
+        return
+    remaining = int(exp - time.time())
+    if remaining <= 0:
+        return  # already expired naturally — nothing to revoke
+    cache.set(f"{_REVOKED_JTI_PREFIX}{jti}", "1", ttl=remaining)
+
+
+def revoke_all_sessions_for_user(user_id: str) -> None:
+    """Invalidate every session token issued for this user up to now — e.g. on
+    password change, or a user-initiated 'log out of all other sessions'.
+    Tokens issued after this call (a fresh login) remain valid."""
+    if not cache:
+        return
+    cache.set(f"{_SESSION_FLOOR_PREFIX}{user_id}", int(time.time()), ttl=EXPIRY_SECONDS)
 
 
 def _pick_user_for_email(users: list[User], email: str) -> Optional[User]:
@@ -142,6 +219,10 @@ async def change_user_password(
             raise ValueError("Current password is incorrect")
     user.hashed_password = hash_password(new_password)
     await db.commit()
+    # A changed password is the classic "I think my session may be
+    # compromised" moment — kill every other session so a stolen token
+    # doesn't outlive the credential change that was meant to fix it.
+    revoke_all_sessions_for_user(user_id)
 
 
 def _hash_reset_value(value: str) -> str:
@@ -315,6 +396,9 @@ async def reset_password_with_token_or_code(
         .values(used_at=now)
     )
     await db.commit()
+    # Same reasoning as change_user_password — a reset implies the old
+    # credential/session may not be trustworthy.
+    revoke_all_sessions_for_user(str(user.id))
     return user
 
 

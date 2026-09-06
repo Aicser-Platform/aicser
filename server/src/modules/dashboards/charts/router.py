@@ -12,7 +12,13 @@ from src.modules.authentication.rbac.guard import require_permission, user_id_fr
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.charts.permissions import enforce_publish_owner_chart_edit
 from src.modules.dashboards.chart_data_validation import validate_chart_data
-from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, verify_dashboard_read_access
+from src.modules.dashboards.operations import (
+    merge_runtime_filters,
+    apply_drill_context,
+    verify_dashboard_read_access,
+    detect_unsupported_runtime_filters,
+    detect_filter_overrides,
+)
 from src.modules.data.services.query_identity import QueryIdentity
 
 router = APIRouter()
@@ -335,13 +341,19 @@ async def _execute_chart_data(
             token_payload=identity.token_payload,
         )
 
+    filter_warnings: List[str] = []
     exec_chart = chart
     if runtime_filters or drill_context:
         exec_chart = copy.deepcopy(chart)
         base_query = copy.deepcopy(chart.chart_query or {})
         if runtime_filters:
+            filter_warnings.extend(detect_unsupported_runtime_filters(runtime_filters))
+            filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
             base_query = merge_runtime_filters(base_query, runtime_filters)
         if drill_context:
+            filter_warnings.extend(
+                detect_unsupported_runtime_filters(drill_context.get("drill_filters"))
+            )
             base_query = apply_drill_context(base_query, drill_context)
         exec_chart.chart_query = base_query
 
@@ -363,10 +375,13 @@ async def _execute_chart_data(
     if not validation.valid:
         raise HTTPException(status_code=400, detail=validation.reason or "Chart returned invalid data")
 
-    return {
+    result: Dict[str, Any] = {
         "chart": serialize_chart(chart),
         "data": data,
     }
+    if filter_warnings:
+        result["filter_warnings"] = filter_warnings
+    return result
 
 
 @router.get("/{chart_id}/data")

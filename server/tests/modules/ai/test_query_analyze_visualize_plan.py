@@ -151,19 +151,45 @@ async def test_three_steps_execute_in_order_with_state_threading(monkeypatch):
         assert state.get("analytics_metadata", {}).get("top_contributors") == ["West"], (
             "visualize step must see analyze step's output across the plan-step boundary"
         )
-        state["echarts_config"] = {"type": "bar"}
+        # response_finalizer_node's chart-alignment check (now wired into
+        # _exec_visualize's chain) requires a non-empty series with data, or
+        # it triggers the chart_error retry path - a bare {"type": "bar"}
+        # used to be enough before that finalizer step existed.
+        state["echarts_config"] = {
+            "type": "bar",
+            "series": [{"type": "bar", "data": [100]}],
+        }
         return state
 
     async def fake_insight_synthesizer_node(state, litellm_service=None):
-        state["insights"] = ["West region leads revenue"]
+        # response_finalizer_node (now wired into _exec_visualize's chain -
+        # see capability_registry.py) requires an executive_summary and
+        # dict-shaped insights (matching insight_synthesizer_node's real
+        # {"what": ..., "so_what": ..., "confidence": ...} schema) - a bare
+        # string list used to be enough before that finalizer step existed.
+        state["executive_summary"] = "West region leads revenue with $100 in sales."
+        state["insights"] = [
+            {
+                "type": "kpi",
+                "title": "West leads revenue",
+                "what": "West region leads revenue with $100 in sales.",
+                "so_what": "West is the strongest-performing region.",
+                "confidence": 0.9,
+            }
+        ]
         return state
 
     monkeypatch.setattr(
         "ee.modules.ai.skills.skill_graph_handlers.skill_run_sql", fake_run_sql
     )
+    # capability_registry.py imports these via the ee.modules.ai path, not
+    # src.modules.ai (a separately-loaded module object - src/modules/ai/__init__.py
+    # __path__-redirects into the ee tree, but that's a second load, not an
+    # alias) - patching the src-path copies here left the real node functions
+    # running against production's ee-path imports.
     import ee.modules.ai.nodes.analytics_node as analytics_module
-    import src.modules.ai.nodes.chart_builder_node as chart_module
-    import src.modules.ai.nodes.insight_synthesizer_node as insight_module
+    import ee.modules.ai.nodes.chart_builder_node as chart_module
+    import ee.modules.ai.nodes.insight_synthesizer_node as insight_module
 
     monkeypatch.setattr(analytics_module, "analytics_node", fake_analytics_node)
     monkeypatch.setattr(chart_module, "chart_builder_node", fake_chart_builder_node)
@@ -182,6 +208,7 @@ async def test_three_steps_execute_in_order_with_state_threading(monkeypatch):
         plan, executed, result = await execute_next_step(state, plan, litellm_service=object())
         assert executed.status == "complete", f"step {executed.id} failed: {executed.error}"
 
-    assert state["echarts_config"] == {"type": "bar"}
-    assert state["insights"] == ["West region leads revenue"]
+    assert state["echarts_config"]["type"] == "bar"
+    assert state["echarts_config"]["series"][0]["data"] == [100]
+    assert state["insights"][0]["what"] == "West region leads revenue with $100 in sales."
     assert all(s.status == "complete" for s in plan.steps)

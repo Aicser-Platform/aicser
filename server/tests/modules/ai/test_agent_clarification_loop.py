@@ -17,7 +17,7 @@ from ee.modules.ai.kernel.nodes import (
 from ee.modules.ai.kernel.schemas import AgentGoal, AgentPlan, AgentPlanStep, DeliverableType
 from ee.modules.ai.kernel.verifier import verify_goal_semantic
 from ee.modules.ai.orchestrator.initial_state import build_initial_state
-from src.modules.ai.schemas.graph_state import get_retry_state
+from ee.modules.ai.schemas.graph_state import get_retry_state
 
 
 class FakeLiteLLM:

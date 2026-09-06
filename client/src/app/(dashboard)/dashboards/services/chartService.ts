@@ -84,6 +84,10 @@ export interface ChartData {
 export interface ChartExecutionResponse {
   chart: Chart;
   data: ChartData;
+  /** Present when a submitted runtime filter was silently ignored server-side
+   * (e.g. a raw-SQL filter, rejected for security reasons) — surface to the user
+   * rather than letting the chart render as if the filter had been applied. */
+  filter_warnings?: string[];
 }
 
 export interface BatchChartRefreshItem {
@@ -103,6 +107,8 @@ export interface BatchChartRefreshResult {
   success: boolean;
   data?: ChartData;
   error?: string;
+  /** See ChartExecutionResponse.filter_warnings. */
+  filter_warnings?: string[];
 }
 
 export interface BatchChartRefreshResponse {

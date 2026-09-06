@@ -6,7 +6,7 @@ import type { MenuProps } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { NavItemDef } from './navConfig';
 
-export const RAIL_WIDTH = 80;
+export const RAIL_WIDTH = 64;
 
 export interface SidebarNavIconMap {
   [key: string]: React.ReactNode;

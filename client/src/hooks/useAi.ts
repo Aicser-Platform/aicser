@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { getAiModels, generateSql, type GenerateSqlPayload } from '@/api/ai';
+import { useQuery } from '@tanstack/react-query';
+import { getAiModels } from '@/api/ai';
 
 export const aiKeys = {
   models: ['ai', 'models'] as const,
@@ -10,11 +10,5 @@ export function useAiModels() {
     queryKey: aiKeys.models,
     queryFn: getAiModels,
     staleTime: 60_000,
-  });
-}
-
-export function useGenerateSql() {
-  return useMutation({
-    mutationFn: (payload: GenerateSqlPayload) => generateSql(payload),
   });
 }

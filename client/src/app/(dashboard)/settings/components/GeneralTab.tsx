@@ -135,11 +135,10 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   }
 
   return (
-    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={DEFAULTS}>
+    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={DEFAULTS} className="flex flex-col gap-5">
       <Card
         size="small"
         title={t('language_region')}
-        className="mb-6"
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
       >
         <Row gutter={[16, 16]}>
@@ -251,7 +250,6 @@ export const GeneralTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           </Col>
         </Row>
       </Card>
-
     </Form>
   );
 };

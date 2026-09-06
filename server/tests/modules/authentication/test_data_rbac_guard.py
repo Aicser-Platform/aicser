@@ -30,29 +30,38 @@ def _request(method: str = "GET", path: str = "/data/sources"):
 async def test_ce_skips_guard_entirely():
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=False):
         # No token at all — would 401 under EE, must be a no-op under CE.
-        await data_rbac_guard(_request(), current_token=None)
+        await data_rbac_guard(_request())
 
 
 @pytest.mark.asyncio
 async def test_missing_token_is_unauthenticated():
+    # data_rbac_guard no longer accepts current_token as a parameter (see
+    # _resolve_token's docstring: an un-Depends-marked current_token param on
+    # a router-level Depends(...) guard gets silently bound to the request
+    # body by FastAPI on POST/PUT/PATCH, replacing real auth with whatever
+    # JSON the client sent) - it always resolves the token itself internally
+    # via _resolve_token(request), which this mocks by patching what that
+    # calls (JWTCookieBearer.__call__), not by injecting a parameter.
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=True), patch(
         "src.modules.authentication.deps.auth_bearer.JWTCookieBearer.__call__",
         new=AsyncMock(side_effect=HTTPException(status_code=401, detail="Authentication required.")),
     ):
         with pytest.raises(HTTPException) as exc:
-            await data_rbac_guard(_request(), current_token=None)
+            await data_rbac_guard(_request())
     assert exc.value.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_authenticated_without_permission_is_forbidden():
-    token = {"sub": "user-1"}
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=True), patch(
+        "ee.modules.authentication.rbac.guard._resolve_token",
+        new=AsyncMock(return_value={"sub": "user-1"}),
+    ), patch(
         "ee.modules.authentication.rbac.rbac_service.RBACService.check_permission",
         new=AsyncMock(return_value=False),
     ) as mock_check:
         with pytest.raises(HTTPException) as exc:
-            await data_rbac_guard(_request("GET"), current_token=token)
+            await data_rbac_guard(_request("GET"))
     assert exc.value.status_code == 403
     mock_check.assert_awaited_once()
     kwargs = mock_check.await_args.kwargs
@@ -62,22 +71,26 @@ async def test_authenticated_without_permission_is_forbidden():
 
 @pytest.mark.asyncio
 async def test_authenticated_with_permission_passes_through():
-    token = {"sub": "user-1"}
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=True), patch(
+        "ee.modules.authentication.rbac.guard._resolve_token",
+        new=AsyncMock(return_value={"sub": "user-1"}),
+    ), patch(
         "ee.modules.authentication.rbac.rbac_service.RBACService.check_permission",
         new=AsyncMock(return_value=True),
     ):
-        await data_rbac_guard(_request("GET"), current_token=token)  # must not raise
+        await data_rbac_guard(_request("GET"))  # must not raise
 
 
 @pytest.mark.asyncio
 async def test_method_maps_to_edit_permission_for_writes():
-    token = {"sub": "user-1"}
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=True), patch(
+        "ee.modules.authentication.rbac.guard._resolve_token",
+        new=AsyncMock(return_value={"sub": "user-1"}),
+    ), patch(
         "ee.modules.authentication.rbac.rbac_service.RBACService.check_permission",
         new=AsyncMock(return_value=True),
     ) as mock_check:
-        await data_rbac_guard(_request("POST"), current_token=token)
+        await data_rbac_guard(_request("POST"))
     kwargs = mock_check.await_args.kwargs
     permission_code = kwargs.get("permission_code") or mock_check.await_args.args[1]
     assert permission_code == "data:edit"
@@ -85,12 +98,14 @@ async def test_method_maps_to_edit_permission_for_writes():
 
 @pytest.mark.asyncio
 async def test_method_maps_to_delete_permission_for_delete():
-    token = {"sub": "user-1"}
     with patch("ee.modules.authentication.rbac.guard.is_ee_enabled", return_value=True), patch(
+        "ee.modules.authentication.rbac.guard._resolve_token",
+        new=AsyncMock(return_value={"sub": "user-1"}),
+    ), patch(
         "ee.modules.authentication.rbac.rbac_service.RBACService.check_permission",
         new=AsyncMock(return_value=True),
     ) as mock_check:
-        await data_rbac_guard(_request("DELETE"), current_token=token)
+        await data_rbac_guard(_request("DELETE"))
     kwargs = mock_check.await_args.kwargs
     permission_code = kwargs.get("permission_code") or mock_check.await_args.args[1]
     assert permission_code == "data:delete"

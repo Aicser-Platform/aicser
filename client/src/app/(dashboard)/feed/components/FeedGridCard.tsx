@@ -3,23 +3,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Avatar, Button, Dropdown, Modal, Popover, message } from 'antd';
+import { Avatar, Button, Dropdown, Modal, Popover, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  BookOutlined,
   CheckCircleFilled,
+  CheckOutlined,
   HeartOutlined,
   LinkOutlined,
   MessageOutlined,
   MoreOutlined,
   ShareAltOutlined,
+  UserAddOutlined,
 } from '@ant-design/icons';
+import { BookmarkIcon } from '@/components/icons/BookmarkIcon';
 import { useTranslations } from 'next-intl';
 import { socialFeedService, formatTimeAgo } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
-import { resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
+import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import { resolveFeedPostSummary, buildPreviewFeedItem } from '@/components/Feed/feedPostDisplay';
 import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
+import ReactionBreakdownTooltip from './FeedCard/ReactionBreakdownTooltip';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 
 interface FeedGridCardProps {
@@ -82,6 +86,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const reacting = Boolean(interactionState?.reacting);
   const saving = Boolean(interactionState?.saving);
   const deleting = Boolean(interactionState?.deleting);
+  const followPending = Boolean(interactionState?.following);
   const detailPath = `${detailBasePath}/${item.id}`;
 
   // Compare by username too: author.id can come from a different identity source
@@ -99,6 +104,41 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const isBookmarked = item.userInteraction.isBookmarked;
   const authorTitle = item.author.title?.trim();
   const description = useMemo(() => resolveFeedPostSummary(item), [item]);
+
+  // A pure text post has no primary asset of its own (FeedCardMedia skips
+  // its thumbnail entirely for assetType 'post'), so without this a text
+  // post with one or more attached charts/dashboards rendered as bare
+  // title+description in the grid - no visual hint it references anything,
+  // unlike the exact same post's detail page (FeedCardBody), which already
+  // renders every attachment via FeedAttachmentList. Surfacing the first
+  // viewable attachment's thumbnail here (same FeedCardMedia treatment a
+  // real published chart/dashboard card gets) closes that gap; the
+  // remaining count (if any) is called out with the same "+N" pill style
+  // already used for overflow tags below.
+  const visibleAttachments = useMemo(
+    () => item.attachments?.filter((a) => !a.restricted && a.referencedPostId) ?? [],
+    [item.attachments]
+  );
+  const primaryAttachment = visibleAttachments[0];
+  const extraAttachmentCount = Math.max(0, visibleAttachments.length - 1);
+  const attachmentPreviewItem = useMemo(() => {
+    if (item.assetType !== 'post' || !primaryAttachment) return null;
+    return buildPreviewFeedItem({
+      assetType: primaryAttachment.asset_type,
+      assetId: primaryAttachment.asset_id,
+      title: primaryAttachment.title || item.title,
+      renderMode: primaryAttachment.renderMode,
+      snapshotPayload: primaryAttachment.snapshotPayload ?? undefined,
+      previewMetadata: {
+        previewType: primaryAttachment.previewType,
+        previewData: primaryAttachment.previewData,
+        previews: primaryAttachment.previews,
+        chartWidget: primaryAttachment.chartWidget,
+        dashboardId: primaryAttachment.dashboardId,
+      },
+    });
+  }, [item.assetType, item.title, primaryAttachment]);
+  const mediaItem = attachmentPreviewItem ?? item;
 
   const handleOpen = useCallback(() => router.push(detailPath), [router, detailPath]);
   const handlePrefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
@@ -134,7 +174,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
         message.success(t('link_copied'));
         window.setTimeout(() => setIsLinkCopied(false), 1700);
       } catch (error) {
-        message.error(error instanceof Error ? error.message : t('unable_copy_link'));
+        message.error(errorMessage(error, t('unable_copy_link')));
       }
     },
     [getShareUrl, item.id, t]
@@ -238,10 +278,17 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
       : []),
   ];
 
-  const authorProfileHref =
-    detailBasePath === '/discover' && item.author.username
-      ? `/discover/author/${encodeURIComponent(item.author.username.replace(/^@/, ''))}`
-      : null;
+  // RELIABILITY: this used to only compute a profile link when detailBasePath
+  // was '/discover' — '/feed' (this component's own default prop value) never
+  // got one at all, so an author's name and avatar were dead, unclickable text
+  // on the actual feed page. /discover/author/[username] (backed by the real
+  // GET /public/authors/{username} endpoint) already exists and already
+  // handles viewing your own post's author the same way as anyone else's
+  // (standard social-app convention — Twitter/LinkedIn do the same), so there
+  // was never a reason to gate this by which page the card happened to be on.
+  const authorProfileHref = item.author.username
+    ? `/discover/author/${encodeURIComponent(item.author.username.replace(/^@/, ''))}`
+    : null;
 
   const shareMenuContent = (
     <div
@@ -284,13 +331,25 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
         {/* Header */}
         <div className="flex items-start justify-between gap-2 px-3 py-2 border-b border-[var(--ant-color-border-secondary)]">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Avatar
-              size={32}
-              src={item.author.avatarUrl}
-              className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
-            >
-              {item.author.name.charAt(0).toUpperCase()}
-            </Avatar>
+            {authorProfileHref ? (
+              <Link href={authorProfileHref} onClick={stopPropagation} className="shrink-0">
+                <Avatar
+                  size={32}
+                  src={item.author.avatarUrl}
+                  className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] font-medium cursor-pointer"
+                >
+                  {item.author.name.charAt(0).toUpperCase()}
+                </Avatar>
+              </Link>
+            ) : (
+              <Avatar
+                size={32}
+                src={item.author.avatarUrl}
+                className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
+              >
+                {item.author.name.charAt(0).toUpperCase()}
+              </Avatar>
+            )}
             <div className="flex flex-col min-w-0">
               {authorProfileHref ? (
                 <Link href={authorProfileHref} onClick={stopPropagation} className="truncate">
@@ -310,29 +369,55 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             </div>
           </div>
 
-          <Dropdown
-            trigger={['click']}
-            classNames={{ root: "min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1" }}
-            menu={{
-              items: menuItems,
-              onClick: ({ key, domEvent }) => {
-                domEvent.stopPropagation();
-                if (key === 'open') handleOpen();
-                else if (key === 'copy') void handleCopyLink();
-                else if (key === 'follow') handleToggleFollow();
-                else if (key === 'delete') handleDeleteItem();
-              },
-            }}
-          >
-            <Button
-              type="text"
-              className="text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-bg-layout)] rounded-full w-7 h-7 flex items-center justify-center p-0 shrink-0"
-              disabled={deleting}
-              onClick={stopPropagation}
+          <div className="flex items-center gap-1 shrink-0">
+            {canFollow && (
+              <Tooltip title={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}>
+                <Button
+                  type="text"
+                  size="small"
+                  shape="circle"
+                  aria-label={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}
+                  icon={
+                    isFollowingAuthor ? (
+                      <CheckOutlined className="text-[var(--ant-color-primary)]" />
+                    ) : (
+                      <UserAddOutlined />
+                    )
+                  }
+                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)]"
+                  loading={followPending}
+                  disabled={followPending || deleting}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleToggleFollow();
+                  }}
+                />
+              </Tooltip>
+            )}
+            <Dropdown
+              trigger={['click']}
+              classNames={{ root: "min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1" }}
+              menu={{
+                items: menuItems,
+                onClick: ({ key, domEvent }) => {
+                  domEvent.stopPropagation();
+                  if (key === 'open') handleOpen();
+                  else if (key === 'copy') void handleCopyLink();
+                  else if (key === 'follow') handleToggleFollow();
+                  else if (key === 'delete') handleDeleteItem();
+                },
+              }}
             >
-              <MoreOutlined className="text-base rotate-90" />
-            </Button>
-          </Dropdown>
+              <Button
+                type="text"
+                className="text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-bg-layout)] rounded-full w-7 h-7 flex items-center justify-center p-0 shrink-0"
+                disabled={deleting}
+                onClick={stopPropagation}
+              >
+                <MoreOutlined className="text-base rotate-90" />
+              </Button>
+            </Dropdown>
+          </div>
         </div>
 
         {/* Flexible content: title/description + thumbnail + tags grow to fill the row's height */}
@@ -349,14 +434,23 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             )}
           </div>
 
-          {/* Thumbnail + tags — shared with FeedCardBody (the inline-comment card variant) */}
+          {/* Thumbnail + tags — shared with FeedCardBody (the inline-comment card variant).
+              For a text post, `mediaItem` is a synthetic preview built from its first
+              attachment (see attachmentPreviewItem above) rather than the post itself. */}
           <FeedCardMedia
-            item={item}
+            item={mediaItem}
             maxPreviews={2}
             previewClickable
             onPreviewClick={handleOpen}
             thumbnailWrapperClassName="px-3 pb-2.5"
             tagsWrapperClassName="px-3 pb-1.5"
+            cornerBadge={
+              extraAttachmentCount > 0 ? (
+                <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
+                  +{extraAttachmentCount}
+                </span>
+              ) : undefined
+            }
           />
         </div>
 
@@ -402,24 +496,26 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
                   ))}
                 </div>
               )}
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
-                style={currentReaction ? { color: REACTION_PALETTE[currentReaction].color } : undefined}
-                disabled={reacting}
-                aria-label={selectedReaction?.label || ta('like')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleReactionSelect(currentReaction || 'like');
-                }}
-                onPointerDown={handleReactionPointerDown}
-                onPointerUp={clearLongPressTimer}
-                onPointerCancel={clearLongPressTimer}
-                onPointerLeave={clearLongPressTimer}
-              >
-                {selectedReaction?.icon || <HeartOutlined className="text-base" />}
-                <span>{item.metrics.reactions}</span>
-              </button>
+              <ReactionBreakdownTooltip breakdown={item.metrics.reactionBreakdown}>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
+                  style={currentReaction ? { color: REACTION_PALETTE[currentReaction].color } : undefined}
+                  disabled={reacting}
+                  aria-label={selectedReaction?.label || ta('like')}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleReactionSelect(currentReaction || 'like');
+                  }}
+                  onPointerDown={handleReactionPointerDown}
+                  onPointerUp={clearLongPressTimer}
+                  onPointerCancel={clearLongPressTimer}
+                  onPointerLeave={clearLongPressTimer}
+                >
+                  {selectedReaction?.icon || <HeartOutlined className="text-base" />}
+                  <span>{item.metrics.reactions}</span>
+                </button>
+              </ReactionBreakdownTooltip>
             </div>
 
             <button
@@ -470,7 +566,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
               void onSave?.(item.id);
             }}
           >
-            <BookOutlined className="text-sm" />
+            <BookmarkIcon filled={isBookmarked} className="text-sm" />
             <span>{isBookmarked ? ta('saved') : ta('save')}</span>
           </button>
         </div>

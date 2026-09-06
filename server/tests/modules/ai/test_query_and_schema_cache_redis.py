@@ -1,42 +1,23 @@
-"""Tests for query_cache_service / schema_cache_service on the shared Redis cache.
+"""Tests for schema_cache_service on the shared Redis cache.
 
-Both used to be in-process dicts - correct within one process, silently stale
-or missing across replicas. They now go through src.core.cache.cache (the same
+Used to be an in-process dict - correct within one process, silently stale
+or missing across replicas. It now goes through src.core.cache.cache (the same
 singleton org_budget_service/llm_quota_service use), which itself falls back to
 an in-process store only when Redis is truly unreachable - so these tests exercise
 real Redis in this dev environment and still pass portably wherever it isn't.
+
+query_cache_service.py (the sibling this file used to also test) was removed:
+its SQL-normalization cache key replaced every quoted literal with a fixed
+placeholder before hashing, so `WHERE region='US'` and `WHERE region='EU'`
+hashed identically and one query's cached result rows could be served for the
+other - a real data leak, not just a stale-shape bug. It was reachable only
+through OptimizationIntegration, which nothing in the live pipeline ever
+instantiated; removed together rather than fixed, since nl2sql_cache_service.py
+already is the correctly-scoped, live query-result cache for this pipeline.
 """
 
 from src.core.cache import cache
-from src.modules.ai.services.query_cache_service import get_query_cache_service
-from src.modules.ai.services.schema_cache_service import get_schema_cache_service
-
-
-def test_query_cache_round_trip_and_invalidate():
-    svc = get_query_cache_service()
-    ds_id = "test-ds-query-cache"
-    sql = "SELECT * FROM widgets"
-
-    assert svc.get_result(ds_id, sql) is None  # clean slate
-
-    svc.set_result(ds_id, sql, {"rows": [1, 2, 3]})
-    assert svc.get_result(ds_id, sql) == {"rows": [1, 2, 3]}
-
-    # A differently-worded query with the same normalized SQL still hits.
-    assert svc.get_result(ds_id, "select   *   from   widgets") == {"rows": [1, 2, 3]}
-
-    svc.invalidate(ds_id)
-    assert svc.get_result(ds_id, sql) is None
-
-
-def test_query_cache_skips_oversized_results():
-    svc = get_query_cache_service()
-    ds_id = "test-ds-oversized"
-    sql = "SELECT * FROM huge_table"
-    huge_result = {"rows": ["x" * 1000] * 20000}  # well over the 10MB guard
-
-    svc.set_result(ds_id, sql, huge_result)
-    assert svc.get_result(ds_id, sql) is None
+from ee.modules.ai.services.schema_cache_service import get_schema_cache_service
 
 
 def test_schema_cache_round_trip_and_invalidate():
@@ -66,16 +47,15 @@ def test_schema_cache_is_tenant_scoped():
     svc.invalidate(ds_id, organization_id="org-b")
 
 
-def test_caches_are_visible_through_the_shared_singleton_directly():
+def test_cache_is_visible_through_the_shared_singleton_directly():
     """The whole point of the migration: another process reading the same
     Redis-backed `cache` singleton sees what this one wrote - unlike the old
-    per-process dicts, which a second replica could never see at all."""
-    svc = get_query_cache_service()
+    per-process dict, which a second replica could never see at all."""
+    svc = get_schema_cache_service()
     ds_id = "test-ds-cross-process"
-    sql = "SELECT 1"
-    svc.set_result(ds_id, sql, {"rows": [1]})
+    svc.set_schema(ds_id, {"tables": ["x"]})
 
-    cache_key = svc._get_cache_key(ds_id, sql)
+    cache_key = svc._get_cache_key(ds_id)
     assert cache.get(cache_key) is not None
 
     svc.invalidate(ds_id)

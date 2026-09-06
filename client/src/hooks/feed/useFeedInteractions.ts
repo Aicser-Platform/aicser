@@ -205,7 +205,7 @@ export function useFeedInteractions(
   );
 
   const handleAddComment = useCallback(
-    async (itemId: string, content: string, parentCommentId?: string) => {
+    async (itemId: string, content: string, parentCommentId?: string, mentionedUsers?: string[]) => {
       if (commentingItemsRef.current.has(itemId)) return;
       const existingItem = itemsRef.current.find((item) => item.id === itemId);
       if (!existingItem) return;
@@ -225,7 +225,7 @@ export function useFeedInteractions(
       }));
 
       try {
-        const response = await socialFeedService.addComment(itemId, content, parentCommentId);
+        const response = await socialFeedService.addComment(itemId, content, parentCommentId, mentionedUsers);
         updateItem(itemId, (item) => ({
           ...item,
           lastActivityAt: response.comment.createdAt,
@@ -330,6 +330,30 @@ export function useFeedInteractions(
     [setInteractionPending, setItems, t]
   );
 
+  const updatingPostItemsRef = useRef<Set<string>>(new Set());
+
+  const handleUpdatePost = useCallback(
+    async (itemId: string, description: string, mentionedUsers?: string[]) => {
+      if (updatingPostItemsRef.current.has(itemId)) return false;
+      updatingPostItemsRef.current.add(itemId);
+      setInteractionPending(itemId, 'updatingPost', true);
+
+      try {
+        const result = await socialFeedService.updatePost(itemId, description, mentionedUsers);
+        setItems((prev) => prev.map((item) => (item.id === itemId ? result.item : item)));
+        message.success(t('post_updated'));
+        return true;
+      } catch (error) {
+        message.error(errorMessage(error, t('unable_update_post')));
+        return false;
+      } finally {
+        updatingPostItemsRef.current.delete(itemId);
+        setInteractionPending(itemId, 'updatingPost', false);
+      }
+    },
+    [setInteractionPending, setItems, t]
+  );
+
   return {
     pendingInteractions,
     handleReact,
@@ -337,6 +361,7 @@ export function useFeedInteractions(
     handleAddComment,
     handleToggleFollow,
     handleDeleteItem,
+    handleUpdatePost,
     handleCommentDeleted,
     updateItem,
   };

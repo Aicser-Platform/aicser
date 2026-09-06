@@ -16,6 +16,22 @@ services:
       - "${DEV_KEYCLOAK_PORT:-8080}:8080"
     restart: unless-stopped
 
+  # Optional, opt-in self-hosted model server (CPU-only). Off unless you ask
+  # for the "ollama" profile: make -C deploy dev-ee-ollama (or
+  # `docker compose ... --profile ollama up -d ollama` directly). Then set
+  # OLLAMA_BASE_URL=http://ollama:11434 in your .env and pull a model:
+  # docker exec aiser-ollama-dev-ee ollama pull qwen2.5:7b
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aiser-ollama-dev-ee
+    profiles:
+      - ollama
+    volumes:
+      - ollama_dev_ee_models:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    restart: unless-stopped
+
   server:
     entrypoint:
       - /bin/sh
@@ -57,7 +73,10 @@ services:
       AISER_EDITION: enterprise
       AISER_EDITION_LICENSE_KEY: ${AISER_EDITION_LICENSE_KEY:-}
       RUN_EE_DEV_SEEDS: "true"
-      LANGGRAPH_CHECKPOINT_POSTGRES_URI: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
+      # Plain postgresql:// (psycopg, not SQLAlchemy) - +asyncpg here fails to
+      # parse and silently degraded this to MemorySaver (live-verified: the
+      # error is swallowed by _get_checkpointer()'s own except-and-fall-back).
+      LANGGRAPH_CHECKPOINT_POSTGRES_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-123}@postgres:5432/${POSTGRES_DB:-aiser_world_db}
       AISER_CHECKPOINTER_ENABLED: ${AISER_CHECKPOINTER_ENABLED:-true}
       AISER_AI_JOB_QUEUE: ${AISER_AI_JOB_QUEUE:-false}
       AISER_ORG_LLM_CONCURRENCY: ${AISER_ORG_LLM_CONCURRENCY:-5}
@@ -85,6 +104,49 @@ services:
       AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT:-}
       AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION:-}
       AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      # Embeddings (src/ee/modules/ai/utils/embedding_service.py). Defaults to
+      # local (sentence-transformers, no key needed); set EMBEDDING_PROVIDER to
+      # azure | openai | google | gemini | openai_compat to use a hosted/
+      # self-hosted API instead.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+      EMBEDDING_LOCAL_MODEL: ${EMBEDDING_LOCAL_MODEL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_API_BASE: ${EMBEDDING_API_BASE:-}
+      EMBEDDING_API_VERSION: ${EMBEDDING_API_VERSION:-}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Self-hosted / OpenAI-compatible chat models (litellm_service.py's
+      # _register_private_models). Off by default. From inside this container
+      # "localhost" points at the container itself -- use host.docker.internal
+      # (wired below via extra_hosts) for a model server running on the host,
+      # or its LAN IP for one running elsewhere.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
+      OPENAI_COMPAT_MODEL: ${OPENAI_COMPAT_MODEL:-}
+      AISER_PRIVATE_MODELS: ${AISER_PRIVATE_MODELS:-}
+      # PII scrubbing of LLM prompts/output/row samples -- off by default,
+      # see docker-compose.ee.yml for why.
+      AISER_PII_GATE_ENABLED: ${AISER_PII_GATE_ENABLED:-false}
+      # Primary (fast/default) and reasoning (strong) tier overrides -- make
+      # any OpenAI-compatible gateway (e.g. TokenHarbor) the default/reasoning
+      # model without touching the Azure config above. See docker-compose.ee.yml
+      # for the full explanation; same env vars here.
+      PRIMARY_MODEL_PROVIDER: ${PRIMARY_MODEL_PROVIDER:-}
+      PRIMARY_MODEL_DEPLOYMENT_NAME: ${PRIMARY_MODEL_DEPLOYMENT_NAME:-}
+      PRIMARY_MODEL_API_KEY: ${PRIMARY_MODEL_API_KEY:-}
+      PRIMARY_MODEL_ENDPOINT: ${PRIMARY_MODEL_ENDPOINT:-}
+      PRIMARY_MODEL_API_VERSION: ${PRIMARY_MODEL_API_VERSION:-}
+      REASONING_MODEL_PROVIDER: ${REASONING_MODEL_PROVIDER:-}
+      REASONING_MODEL_DEPLOYMENT_NAME: ${REASONING_MODEL_DEPLOYMENT_NAME:-}
+      REASONING_MODEL_API_KEY: ${REASONING_MODEL_API_KEY:-}
+      REASONING_MODEL_ENDPOINT: ${REASONING_MODEL_ENDPOINT:-}
+      REASONING_MODEL_API_VERSION: ${REASONING_MODEL_API_VERSION:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       keycloak:
         condition: service_started
@@ -109,3 +171,6 @@ services:
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_PUBLIC_CLIENT_ID:-aiser-client}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       WATCHPACK_POLLING: "true"
+
+volumes:
+  ollama_dev_ee_models:

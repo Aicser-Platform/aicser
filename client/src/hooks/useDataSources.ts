@@ -5,6 +5,7 @@ import { ApiError } from '@/utils/api';
 import type { DataSource } from '@/stores/useDataSourceStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { dataSourceKeys, isEnterpriseEdition, resolveDataSourceProjectId } from '@/hooks/dataSourceKeys';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 
 export type UseDataSourcesOptions = {
   /** EE only: list sources from all projects the user can access (e.g. semantic layer hub). */
@@ -122,11 +123,32 @@ export const useDataSourceMyRowAccess = (id: string | null, enabled = true) => {
   return { myRowAccess: data ?? null, error, isLoading, isFetching };
 };
 
+// Creating/deleting a data source is exactly the event that changes the
+// "Data Sources" count shown in the profile dropdown and billing settings -
+// but that count comes from a separately-cached subscription/usage store
+// (useSubscriptionStore) that otherwise only refetches on login or once a
+// minute on window focus (see (dashboard)/layout.tsx's SubscriptionInitializer).
+// Without this, adding or removing a source left the displayed count stale
+// for up to a minute (or until the next focus/reload) - "not dynamic" is
+// exactly what that looked like. silent: true - this is a background
+// refresh, not something that should flip the dropdown into a loading state.
+const refreshDataSourceUsage = () => {
+  // CE's useSubscriptionStore is a plain stub function, not a real Zustand
+  // store - it has no .getState() at all, so this must stay EE-only.
+  if (!isEnterpriseEdition) return;
+  void (useSubscriptionStore as unknown as { getState: () => { refreshUsage: (opts?: { silent?: boolean }) => Promise<void> } })
+    .getState()
+    .refreshUsage({ silent: true });
+};
+
 export const useCreateDataSource = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Partial<DataSource>) => api.createDataSource(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: dataSourceKeys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.all });
+      refreshDataSourceUsage();
+    },
   });
 };
 
@@ -145,7 +167,10 @@ export const useDeleteDataSource = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deleteDataSource(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: dataSourceKeys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.all });
+      refreshDataSourceUsage();
+    },
   });
 };
 

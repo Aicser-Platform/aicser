@@ -92,12 +92,6 @@
   margin-left: 6px;
 }
 
-.report-filter-icon-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-}
-
 .report-filter-reset-button {
   height: 34px;
   min-width: 84px;
@@ -159,7 +153,7 @@
 }
 
 .report-filter-toolbar .ant-picker,
-.report-filter-toolbar .ant-select-content,
+.report-filter-toolbar .ant-select-selector,
 .report-filter-toolbar .ant-input {
   min-height: 28px;
   border-radius: 0;

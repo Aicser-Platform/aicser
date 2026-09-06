@@ -54,8 +54,11 @@ export type {
 };
 export { scopedFiltersForWidget, isNonDataWidget };
 
-/** Map backend chart records to studio widgets + grid layout (page assignment included). */
-function chartsToWidgetsAndLayout(charts: Chart[]): {
+/** Map backend chart records to studio widgets + grid layout (page assignment included).
+ * Exported so other callers (e.g. building a feed-attachment snapshot) reuse the exact
+ * same chart-record -> widget/layout mapping this store's own loadDashboardById uses,
+ * instead of a second, drifting implementation. */
+export function chartsToWidgetsAndLayout(charts: Chart[]): {
   widgets: WidgetInstance[];
   layout: LayoutItem[];
 } {
@@ -1129,7 +1132,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       try {
         const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-        const { chartData } = await fetchWidgetChartData({
+        const { chartData, filterWarnings } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: { ...widget, chartId: chart.id },
           runtimeFilters: get().runtimeFilters,
@@ -1139,7 +1142,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         set((state) => {
           const nextWidgets = state.widgets.map((w) =>
             w.id === widget.id
-              ? { ...w, chartData, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
+              ? { ...w, chartData, filterWarnings, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
               : w
           );
           const dashboards = state.dashboards.map((d) =>
@@ -1262,7 +1265,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         });
       } else {
         const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
-        const { chartData } = await fetchWidgetChartData({
+        const { chartData, filterWarnings } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: {
             ...widget,
@@ -1292,6 +1295,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
                   chartQuery,
                   chartOptions: liveOptions,
                   chartData,
+                  filterWarnings,
                   isLoading: false,
                   error: null,
                 }
@@ -1379,7 +1383,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       });
 
       const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-      const { chartData } = await fetchWidgetChartData({
+      const { chartData, filterWarnings } = await fetchWidgetChartData({
         dashboardId: activeDashboardId,
         widget,
         runtimeFilters: get().runtimeFilters,
@@ -1389,7 +1393,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) =>
-          w.id === widgetId ? { ...w, chartData, isLoading: false } : w
+          w.id === widgetId ? { ...w, chartData, filterWarnings, isLoading: false } : w
         );
         const dashboards = state.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d

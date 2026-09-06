@@ -86,6 +86,7 @@ async def test_render_page_export_passes_pdf_options_through():
     page = MagicMock()
     page.goto = AsyncMock()
     page.wait_for_timeout = AsyncMock()
+    page.evaluate = AsyncMock()
     page.pdf = AsyncMock(return_value=b"pdf-bytes")
     ctx, browser, page = _make_fake_playwright(page)
 
@@ -106,6 +107,67 @@ async def test_render_page_export_passes_pdf_options_through():
     assert call_kwargs["format"] == "A4"
     assert "Acme Corp" in call_kwargs["header_template"]
     assert "pageNumber" in call_kwargs["footer_template"]
+
+
+@pytest.mark.asyncio
+async def test_render_page_export_pdf_dispatches_beforeprint_before_snapshot():
+    """Live bug: every exported chart kept its full on-screen canvas width and
+    got clipped by its container instead of shrinking to fit. Root cause:
+    page.pdf() applies @media print CSS but, unlike an interactive print
+    dialog, never dispatches the page's own beforeprint DOM event -- the
+    exact event ReportDocument.tsx's SectionChart listens for to resize each
+    ECharts canvas to its print-constrained container. This must be
+    dispatched manually, and dispatched BEFORE the pdf() snapshot is taken
+    (order matters — dispatching after the fact wouldn't help)."""
+    call_order: list[str] = []
+
+    page = MagicMock()
+    page.goto = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+
+    async def _evaluate(script):
+        assert "beforeprint" in script
+        call_order.append("evaluate_beforeprint")
+
+    async def _pdf(**kwargs):
+        call_order.append("pdf")
+        return b"pdf-bytes"
+
+    page.evaluate = AsyncMock(side_effect=_evaluate)
+    page.pdf = AsyncMock(side_effect=_pdf)
+    ctx, browser, page = _make_fake_playwright(page)
+
+    with patch("src.core.config.settings.FRONTEND_URL", "https://app.example.com"), \
+         patch("playwright.async_api.async_playwright", return_value=ctx):
+        await render_page_export(
+            embed_path="/embed/report/conv-1:msg-1",
+            token="tok123",
+            export_format="pdf",
+        )
+
+    page.evaluate.assert_awaited_once()
+    assert call_order == ["evaluate_beforeprint", "pdf"]
+
+
+@pytest.mark.asyncio
+async def test_render_page_export_png_does_not_dispatch_beforeprint():
+    """PNG export is a plain on-screen snapshot, not a print-media render --
+    it must not trigger the print-only chart resize."""
+    page = MagicMock()
+    page.goto = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+    page.evaluate = AsyncMock()
+    page.screenshot = AsyncMock(return_value=b"png-bytes")
+    ctx, browser, page = _make_fake_playwright(page)
+
+    with patch("src.core.config.settings.FRONTEND_URL", "https://app.example.com"), \
+         patch("playwright.async_api.async_playwright", return_value=ctx):
+        await render_page_export(
+            embed_path="/embed/dashboard/dash-1",
+            export_format="png",
+        )
+
+    page.evaluate.assert_not_awaited()
 
 
 def test_unsupported_export_format_raises():

@@ -39,9 +39,9 @@ async def test_predictive_mode_runs_mode_query_planner_and_multi_query_execution
     executor_mock = AsyncMock(side_effect=lambda s, mq, ds: {**s, "query_result": [{"month": "2026-01", "amount": 100}]})
 
     with patch(
-        "src.modules.ai.nodes.mode_query_planner_node.mode_query_planner_node", planner_mock
+        "ee.modules.ai.nodes.mode_query_planner_node.mode_query_planner_node", planner_mock
     ), patch(
-        "src.modules.ai.nodes.multi_query_execution_node.multi_query_execution_node", executor_mock
+        "ee.modules.ai.nodes.multi_query_execution_node.multi_query_execution_node", executor_mock
     ):
         out = await _maybe_build_deep_analytics_evidence({"multi_query_service": mqs, "data_service": dsvc}, state)
 

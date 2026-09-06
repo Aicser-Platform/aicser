@@ -6,7 +6,7 @@ import { RocketOutlined, RobotOutlined, ReloadOutlined, CloseOutlined, SendOutli
 import { getChatHref } from '@/utils/appPaths';
 import { useRouter } from 'next/navigation';
 import { ChartTypeSelect } from '@/components/charts/ChartTypeSelect';
-import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
+import { dashboardChartTypeSwitchTargets } from '@/components/charts/chartTypeCatalog';
 import { fetchApi } from '@/utils/api';
 import { useProjectStore } from '@/stores/useProjectStore';
 
@@ -376,7 +376,11 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
           <ChartTypeSelect
             className="chart-type-select"
             value={(widget.chartType || 'bar').toLowerCase()}
-            availableTypes={DASHBOARD_SWITCHABLE_CHART_TYPES}
+            // Safe switch targets only (core 8), plus the widget's own current type if it's
+            // one of the extended 7 (e.g. AI-authored Geo/Heatmap) — see
+            // dashboardChartTypeSwitchTargets in chartTypeCatalog.ts for why the extended
+            // types aren't offered as switch targets.
+            availableTypes={dashboardChartTypeSwitchTargets(widget.chartType)}
             onChange={(type) => {
               if (type !== (widget.chartType || '').toLowerCase()) onChangeChartType(type);
             }}

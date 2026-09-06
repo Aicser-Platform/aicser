@@ -28,25 +28,44 @@ class EmbeddingService(ABC):
         self,
         texts: List[str],
         instruction_prefix: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> List[Optional[List[float]]]:
-        """Embed multiple texts. Returns one vector per input (None on failure)."""
+        """Embed multiple texts. Returns one vector per input (None on failure).
+
+        organization_id: when given (or resolvable from the ambient AI request
+        context), an org BYOK embedding key -- if one is configured for this
+        org -- is used instead of the platform-wide EMBEDDING_PROVIDER config.
+        See ee/modules/ai/services/user_byok_embedding.py.
+        """
         raise NotImplementedError
 
     async def embed_text(
         self,
         text: str,
         instruction_prefix: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> Optional[List[float]]:
         """Embed a single text string."""
         if not text or not text.strip():
             return None
-        results = await self.embed_texts([text], instruction_prefix=instruction_prefix)
+        results = await self.embed_texts(
+            [text], instruction_prefix=instruction_prefix, organization_id=organization_id
+        )
         return results[0] if results else None
 
     def current_model_id(self) -> str:
-        """Identifier for whichever model is currently live. See rationale on
-        the EE implementation this delegates to (current_embedding_model_id)."""
+        """Identifier for whichever *platform-wide* model is currently live.
+        See rationale on the EE implementation this delegates to
+        (current_embedding_model_id). Does not know about org BYOK -- use
+        current_model_id_async() when an organization_id is available."""
         return "unknown"
+
+    async def current_model_id_async(self, organization_id: Optional[str] = None) -> str:
+        """Org-BYOK-aware model identity. Callers that persist this alongside
+        a stored embedding (so later staleness checks can tell BYOK-embedded
+        rows apart from platform-embedded ones) should prefer this over the
+        sync current_model_id() whenever they have an organization_id."""
+        return self.current_model_id()
 
 
 class _EEEmbeddingService(EmbeddingService):
@@ -56,10 +75,13 @@ class _EEEmbeddingService(EmbeddingService):
         self,
         texts: List[str],
         instruction_prefix: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> List[Optional[List[float]]]:
         from src.modules.ai.utils.embedding_service import get_embedding_batch
 
-        return await get_embedding_batch(texts, instruction_prefix=instruction_prefix)
+        return await get_embedding_batch(
+            texts, instruction_prefix=instruction_prefix, organization_id=organization_id
+        )
 
     def current_model_id(self) -> str:
         try:
@@ -69,6 +91,14 @@ class _EEEmbeddingService(EmbeddingService):
         except Exception:
             return "unknown"
 
+    async def current_model_id_async(self, organization_id: Optional[str] = None) -> str:
+        try:
+            from src.modules.ai.utils.embedding_service import current_embedding_model_id_async
+
+            return await current_embedding_model_id_async(organization_id)
+        except Exception:
+            return self.current_model_id()
+
 
 class _NoOpEmbeddingService(EmbeddingService):
     """Fallback when embeddings are unavailable (CE without EE shim)."""
@@ -77,6 +107,7 @@ class _NoOpEmbeddingService(EmbeddingService):
         self,
         texts: List[str],
         instruction_prefix: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> List[Optional[List[float]]]:
         return [None] * len(texts)
 

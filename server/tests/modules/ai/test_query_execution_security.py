@@ -1,6 +1,6 @@
 import pytest
-from src.modules.ai.nodes import query_execution_node as qen
-from src.modules.ai.nodes.query_execution_node import _execute_clickhouse_http
+from ee.modules.ai.nodes import query_execution_node as qen
+from ee.modules.ai.nodes.query_execution_node import _execute_clickhouse_http
 
 
 @pytest.mark.asyncio
