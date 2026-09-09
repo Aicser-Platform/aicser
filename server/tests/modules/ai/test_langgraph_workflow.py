@@ -461,3 +461,63 @@ def test_schema_retrieval_multi_table_subset():
     for t in out_tables:
         cols = t.get("columns", [])
         assert len(cols) >= 1
+
+
+@pytest.mark.asyncio
+async def test_get_schema_cached_returns_the_gold_schema_for_a_ready_pipeline(monkeypatch):
+    """Pipeline-managed, ready database source: schema comes from the Gold schema_snapshot, not live introspection."""
+    import uuid
+    from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+
+    async def fake_resolve(data_source):
+        return {
+            **data_source,
+            "type": "lakehouse_iceberg",
+            "storage_uri": "s3://lake/orgs/o1/gold/orders/",
+            "format": "iceberg",
+            "schema": {"columns": [{"name": "id", "type": "bigint"}, {"name": "total", "type": "double"}]},
+        }
+
+    monkeypatch.setattr(
+        "src.modules.data.services.query_routing.resolve_query_source", fake_resolve
+    )
+
+    orchestrator = LangGraphMultiAgentOrchestrator.__new__(LangGraphMultiAgentOrchestrator)
+    orchestrator.data_service = object()  # not used on the lakehouse-managed path
+
+    out = await orchestrator._get_schema_cached("ds-1", organization_id="org-1", user_id="user-1")
+
+    assert out["schema"]["tables"] == [
+        {
+            "name": "data",
+            "columns": [
+                {"name": "id", "type": "bigint"},
+                {"name": "total", "type": "double"},
+            ],
+        }
+    ]
+    assert out["db_type"] == "duckdb"
+    assert out["data_source_type"] == "lakehouse_iceberg"
+
+
+@pytest.mark.asyncio
+async def test_get_schema_cached_returns_a_clean_error_when_the_lakehouse_is_not_ready(monkeypatch):
+    """Pipeline-managed, not-ready database source: schema is None with a clean error, no guessing against no schema."""
+    import uuid
+    from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+    from src.modules.data.services.query_routing import LakehouseNotReady
+
+    async def fake_resolve(data_source):
+        raise LakehouseNotReady(pipeline_id=uuid.uuid4(), last_run_status="failed")
+
+    monkeypatch.setattr(
+        "src.modules.data.services.query_routing.resolve_query_source", fake_resolve
+    )
+
+    orchestrator = LangGraphMultiAgentOrchestrator.__new__(LangGraphMultiAgentOrchestrator)
+    orchestrator.data_service = object()
+
+    out = await orchestrator._get_schema_cached("ds-1", organization_id="org-1", user_id="user-1")
+
+    assert out["schema"] is None
+    assert "pipeline" in out["schema_error"].lower()
