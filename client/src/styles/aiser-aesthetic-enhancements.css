@@ -161,6 +161,18 @@
   letter-spacing: 0.01em !important;
 }
 
+.ant-btn.ant-btn-icon-only,
+.ant-btn-text.ant-btn-icon-only,
+.step-rail-action-btn {
+  padding: 0 !important;
+  min-height: unset !important;
+  height: 24px !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
 /* Ripple effect on click */
 .ant-btn::before {
   content: '';

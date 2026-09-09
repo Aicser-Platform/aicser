@@ -9,13 +9,25 @@
    ======================================== */
 
 /* Root Layout Container */
-.ant-layout {
+.layout-app-shell.ant-layout,
+body > .ant-layout {
   margin: 0 !important;
   padding: 0 !important;
   background: var(--ant-color-bg-layout) !important;
   min-height: 100vh !important;
   width: 100% !important;
   display: flex !important;
+}
+
+.ant-layout {
+  margin: 0;
+  padding: 0;
+  background: var(--ant-color-bg-layout);
+}
+
+.page-wrapper .ant-layout,
+.page-container .ant-layout {
+  min-height: 0 !important;
 }
 
 /* App root only: fixed sidebar + main column side-by-side */

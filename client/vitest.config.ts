@@ -37,6 +37,8 @@ export default defineConfig({
       'ee/src/ee/app/\\(dashboard\\)/pipelines/**/*.test.tsx',
       'ee/src/ee/components/pipeline-builder/**/*.test.ts',
       'ee/src/ee/components/pipeline-builder/**/*.test.tsx',
+      'ee/src/ee/components/shared/**/*.test.tsx',
+      'ee/src/ee/components/shared/**/*.test.ts',
       'ee/src/ee/stores/**/*.test.ts',
       'ee/src/ee/hooks/**/*.test.ts',
       'ee/src/ee/hooks/**/*.test.tsx',

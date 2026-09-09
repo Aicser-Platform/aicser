@@ -192,3 +192,41 @@ def test_incompatible_type_change_fails_loudly(local_catalog):
 
     assert "amount" in str(exc.value)
     assert exc.value.error_code == "schema_conflict"
+
+
+def test_compatible_utc_timestamp_variance_is_accepted(local_catalog):
+    """UTC and Etc/UTC are synonymous and must not trigger schema conflict."""
+    from src.modules.pipeline.load.iceberg_loader import load_to_iceberg
+
+    local_catalog.create_namespace("org_x")
+    initial = pa.table(
+        {
+            "id": pa.array([1], type=pa.int64()),
+            "_ingested_at": pa.array([1700000000000000], type=pa.timestamp("us", tz="UTC")),
+        }
+    )
+    load_to_iceberg(
+        local_catalog,
+        namespace="org_x",
+        table_name="ts_test",
+        table=initial,
+        write_mode="append",
+        primary_key=[],
+    )
+
+    incoming_etc_utc = pa.table(
+        {
+            "id": pa.array([2], type=pa.int64()),
+            "_ingested_at": pa.array([1700000001000000], type=pa.timestamp("us", tz="Etc/UTC")),
+        }
+    )
+    # Must succeed without SchemaConflict
+    result = load_to_iceberg(
+        local_catalog,
+        namespace="org_x",
+        table_name="ts_test",
+        table=incoming_etc_utc,
+        write_mode="append",
+        primary_key=[],
+    )
+    assert result["rows_written"] == 1
