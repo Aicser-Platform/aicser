@@ -49,9 +49,10 @@ const { Content } = Layout;
 
 interface CustomLayoutProps {
   children: React.ReactNode;
+  banner?: React.ReactNode;
 }
 
-const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
+const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner }) => {
     const t = useTranslations('layout');
   const [collapsed, setCollapsed] = useState(() => getStoredLayoutSidebarCollapsed());
   const [isBreakpoint, setIsBreakpoint] = useState(false);
@@ -195,6 +196,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
           highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
           failedDataSourcesCount={failedDataSourcesCount}
         />
+        {banner}
         <Content
           id="main-content"
           tabIndex={-1}

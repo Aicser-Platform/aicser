@@ -7,6 +7,8 @@
     "prebuild": "node scripts/generate-pwa-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "predev": "node scripts/setup-ee.js",
     "predev:light": "node scripts/setup-ee.js",
     "predev:turbo": "node scripts/setup-ee.js",
@@ -99,6 +101,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/js-cookie": "^3.0.6",

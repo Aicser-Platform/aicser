@@ -263,6 +263,18 @@
   font-size: var(--font-size-sm) !important;
 }
 
+.ant-btn.ant-btn-icon-only,
+.ant-btn-text.ant-btn-icon-only,
+.step-rail-action-btn {
+  padding: 0 !important;
+  min-height: unset !important;
+  height: 24px !important;
+  width: 24px !important;
+  min-width: 24px !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
 .ant-btn:hover {
   box-shadow: var(--shadow-sm) !important;
 }
@@ -449,7 +461,7 @@
 
 .data-table {
   border-radius: var(--radius-lg) !important;
-  overflow: hidden !important;
+  overflow: scroll !important;
   background: var(--ant-color-bg-container) !important;
 }
 
@@ -1254,10 +1266,16 @@ div[class*="Card"] {
   border-radius: var(--radius-lg) !important;
 }
 
-/* Ensure all tables have consistent styling */
-div[class*="table"],
-div[class*="Table"] {
+/* Ensure Ant Design tables have consistent styling */
+.ant-table-wrapper,
+.ant-table {
   background: var(--ant-color-bg-container) !important;
+}
+
+/* FortuneSheet spreadsheet overlay must remain transparent */
+.luckysheet-cell-sheettable,
+.fortune-sheet-overlay {
+  background: transparent !important;
 }
 
 /* Ensure all buttons have consistent styling */
