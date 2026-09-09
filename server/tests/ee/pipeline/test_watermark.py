@@ -119,3 +119,26 @@ async def test_changes_queries_strictly_after_the_checkpoint():
     assert "updated_at > " in sql
     assert "ORDER BY updated_at" in sql
     assert params["since"] == "2026-08-01 00:00:00+00:00"
+
+
+async def test_build_watermark_source_raises_when_the_table_is_not_in_the_schema(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from src.modules.pipeline.ingest.watermark_source import build_watermark_source
+
+    class FakeDataConnectivityService:
+        async def get_data_source_by_id(self, source_id):
+            return {"id": source_id, "type": "database"}
+
+        async def get_source_schema(self, source_id):
+            return {"success": True, "schema": {"tables": [{"name": "customers", "columns": []}]}}
+
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        FakeDataConnectivityService,
+    )
+
+    ctx = type("Ctx", (), {"pipeline": type("P", (), {"source_asset_id": "ds-1", "options": {}})()})()
+
+    with pytest.raises(ValueError, match="not found in the source schema"):
+        await build_watermark_source(ctx, "orders")

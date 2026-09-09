@@ -2444,6 +2444,103 @@ class DirectSQLEngine(BaseQueryEngine):
             return {"success": False, "error": str(e)}
 
 
+class DirectSQLArrowExecutor:
+    """A CDCSource-compatible executor bound to one data source's live connection —
+    used only by the pipeline's watermark/CDC ingest path (server/ee/modules/pipeline/),
+    never by chat/chart queries (those stay on DirectSQLEngine.execute).
+
+    Deliberately does not share code with DirectSQLEngine.execute: that method is the
+    production query path for every already-connected database customer today, and this
+    narrower helper keeps changes here from risking it.
+
+    Supports Postgres, MySQL and SQL Server (the dialects SQLAlchemy connects to directly).
+    ClickHouse (HTTP-only) is not supported here yet.
+    """
+
+    def __init__(self, data_source: Dict[str, Any]):
+        self.data_source = data_source
+
+    def _connection_uri(self) -> str:
+        conn_info = (
+            self.data_source.get('connection_info')
+            or self.data_source.get('connection_config')
+            or self.data_source.get('metadata')
+            or self.data_source.get('config')
+            or {}
+        )
+        if isinstance(conn_info, str):
+            try:
+                conn_info = json.loads(conn_info)
+            except Exception:
+                conn_info = {}
+        if isinstance(conn_info, dict):
+            try:
+                from src.modules.data.utils.credentials import decrypt_credentials
+                conn_info = decrypt_credentials(conn_info)
+            except Exception:
+                pass
+
+        conn_uri = conn_info.get('uri') or conn_info.get('connection_string')
+        if conn_uri:
+            return conn_uri
+
+        db_type = (
+            conn_info.get('db_type') or conn_info.get('type')
+            or self.data_source.get('db_type') or 'postgresql'
+        ).lower()
+        if db_type == 'clickhouse':
+            raise NotImplementedError(
+                "the pipeline ingest path does not support ClickHouse (HTTP-only) "
+                "sources yet"
+            )
+
+        user = conn_info.get('username') or conn_info.get('user')
+        password = conn_info.get('password') or conn_info.get('pass')
+        host = conn_info.get('host') or conn_info.get('hostname')
+        port = conn_info.get('port')
+        database = (
+            conn_info.get('database') or conn_info.get('db')
+            or conn_info.get('database_name') or conn_info.get('initial_database')
+        )
+        if not host or not database:
+            raise ValueError(
+                "Pipeline ingest requires a database connection with 'host' and "
+                "'database' (or a full 'uri'/'connection_string') in connection_info"
+            )
+
+        scheme = {
+            'postgresql': 'postgresql+psycopg2',
+            'postgres': 'postgresql+psycopg2',
+            'mysql': 'mysql+pymysql',
+            'sqlserver': 'mssql+pyodbc',
+            'mssql': 'mssql+pyodbc',
+        }.get(db_type, db_type)
+
+        from urllib.parse import quote_plus
+        auth = f"{quote_plus(user)}:{quote_plus(password or '')}@" if user else ""
+        hostpart = f"{host}:{port}" if port else host
+        return f"{scheme}://{auth}{hostpart}/{database}"
+
+    async def fetch_arrow(self, sql: str, params: Dict[str, Any]) -> List[Any]:
+        import pyarrow as pa
+
+        from src.modules.data.services.direct_sql_pool import get_sync_engine
+
+        conn_uri = self._connection_uri()
+
+        def run_sync() -> List[Dict[str, Any]]:
+            eng = get_sync_engine(self.data_source, conn_uri)
+            with eng.connect() as conn:
+                result = conn.execute(sa.text(sql), params or {})
+                cols = list(result.keys())
+                return [dict(zip(cols, row)) for row in result.fetchall()]
+
+        rows = await asyncio.to_thread(run_sync)
+        if not rows:
+            return []
+        return pa.Table.from_pylist(rows).to_batches()
+
+
 class PandasEngine(BaseQueryEngine):
     """Pandas engine for small dataset operations"""
 
