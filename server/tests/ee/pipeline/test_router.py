@@ -1,4 +1,5 @@
 import os
+import pytest
 
 os.environ.setdefault("AISER_EDITION", "enterprise")
 
@@ -37,6 +38,7 @@ def test_create_request_validates_cron():
         name="Daily orders",
         source_asset_type="data_source",
         source_asset_id="ds-1",
+        source_table="public.orders",
         target_layer="silver",
         schedule_cron="0 2 * * *",
     )
@@ -47,12 +49,14 @@ def test_create_request_validates_cron():
             name="Bad",
             source_asset_type="data_source",
             source_asset_id="ds-1",
+            source_table="public.bad",
             target_layer="silver",
             schedule_cron="every tuesday",
         )
 
 
-def test_attach_yaml_artifact_links_pipeline_to_published_snapshot():
+@pytest.mark.asyncio
+async def test_attach_yaml_artifact_links_pipeline_to_published_snapshot():
     import uuid
 
     from src.modules.data.models import DataPipeline, SemanticLayerArtifact
@@ -64,6 +68,9 @@ def test_attach_yaml_artifact_links_pipeline_to_published_snapshot():
 
         def add(self, item):
             self.added.append(item)
+
+        async def flush(self):
+            pass
 
     pipeline = DataPipeline(
         id=uuid.uuid4(),
@@ -77,7 +84,7 @@ def test_attach_yaml_artifact_links_pipeline_to_published_snapshot():
     )
     session = FakeSession()
 
-    _attach_yaml_artifact(session, pipeline, "version: 1", uuid.uuid4())
+    await _attach_yaml_artifact(session, pipeline, "version: 1", uuid.uuid4())
 
     assert pipeline.yaml_artifact_id is not None
     assert len(session.added) == 1
@@ -114,3 +121,41 @@ def test_run_validation_rejects_pipeline_without_saved_yaml():
 
     assert exc.value.status_code == 400
     assert "save the pipeline before running it" in exc.value.detail
+
+
+async def test_create_pipeline_rejects_a_database_source_with_no_table():
+    from pydantic import ValidationError
+
+    from src.modules.pipeline.schemas import PipelineCreateRequest
+
+    with pytest.raises(ValidationError, match="source_table is required"):
+        PipelineCreateRequest(
+            name="Orders sync",
+            source_asset_type="data_source",
+            source_asset_id="ds-1",
+        )
+
+
+def test_pipeline_response_surfaces_source_table_and_watermark_column():
+    import uuid
+
+    from src.modules.data.models import DataPipeline
+    from src.modules.pipeline.router import _to_response
+
+    pipeline = DataPipeline(
+        id=uuid.uuid4(),
+        organization_id=uuid.uuid4(),
+        name="Orders sync",
+        slug="orders-sync",
+        source_asset_type="data_source",
+        source_asset_id="ds-1",
+        options={"source_table": "public.orders", "watermark_column": "updated_at"},
+        target_layer="silver",
+        ingest_mode="incremental",
+        enabled=True,
+    )
+
+    response = _to_response(pipeline)
+
+    assert response.source_table == "public.orders"
+    assert response.watermark_column == "updated_at"

@@ -564,6 +564,7 @@ class DataPipeline(BaseModel):
         nullable=False,
         server_default=text("'snapshot'"),
     )
+    options = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     yaml_artifact_id = Column(
         UUID(as_uuid=True),
         ForeignKey("semantic_layer_artifacts.id", ondelete="SET NULL"),
