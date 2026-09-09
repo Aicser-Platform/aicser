@@ -11,6 +11,14 @@ async def test_resolve_query_source_passes_through_non_database_sources():
     assert result is ds
 
 
+async def test_resolve_query_source_passes_through_when_no_id_present():
+    from src.modules.data.services.query_routing import resolve_query_source
+
+    ds = {"type": "database"}  # no "id" or "data_source_id" key
+    result = await resolve_query_source(ds)
+    assert result is ds
+
+
 async def test_resolve_query_source_passes_through_when_not_pipeline_managed(monkeypatch):
     from src.modules.data.services.query_routing import resolve_query_source
 
