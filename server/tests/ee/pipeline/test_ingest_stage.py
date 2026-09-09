@@ -104,3 +104,176 @@ async def test_ingest_stage_writes_bronze_and_records_the_lake_object(
     assert added[0].layer == "bronze"
     assert added[0].format == "parquet"
     assert added[0].row_count == 2
+
+
+async def test_ingest_stage_uses_the_persisted_watermark_for_incremental_runs():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.modules.pipeline.ingest.base import Checkpoint
+    from src.modules.pipeline.ingest.stage import IngestStage
+    from src.modules.pipeline.runner import RunContext
+
+    added = []
+    session = AsyncMock()
+    session.add = MagicMock(side_effect=added.append)
+
+    org_id = uuid.uuid4()
+    ctx = RunContext(
+        session=session,
+        run=type("R", (), {"id": uuid.uuid4(), "checkpoint": {}, "status": "running"})(),
+        pipeline=type(
+            "P",
+            (),
+            {
+                "id": uuid.uuid4(),
+                "organization_id": org_id,
+                "source_asset_type": "data_source",
+                "source_asset_id": "ds-1",
+                "ingest_mode": "incremental",
+                "target_layer": "silver",
+                "options": {"source_table": "orders"},
+            },
+        )(),
+        org_id=org_id,
+    )
+
+    class FakeSource:
+        def __init__(self):
+            self.since_received = None
+
+        async def changes(self, since, *, load_id):
+            self.since_received = since
+            yield pa.RecordBatch.from_pydict({"id": pa.array([3], type=pa.int64())})
+
+        def next_checkpoint(self, batch):
+            return Checkpoint(offset="3")
+
+    fake_source = FakeSource()
+
+    class FakeS3:
+        async def store_file(self, file_content, object_key, **kwargs):
+            return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
+
+    with patch(
+        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
+        new=AsyncMock(return_value=fake_source),
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.load_cdc_state",
+        new=AsyncMock(return_value=Checkpoint(offset="1")),
+    ) as mocked_load, patch(
+        "src.modules.pipeline.ingest.watermark_source.save_cdc_state",
+        new=AsyncMock(),
+    ) as mocked_save:
+        result = await IngestStage().execute(ctx)
+
+    assert result.rows == 1
+    assert fake_source.since_received.offset == "1"
+    mocked_load.assert_awaited_once()
+    mocked_save.assert_awaited_once()
+    assert mocked_save.await_args.kwargs["checkpoint"].offset == "3"
+
+
+async def test_ingest_stage_treats_an_empty_incremental_tick_as_a_successful_noop():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.modules.pipeline.ingest.base import Checkpoint
+    from src.modules.pipeline.ingest.stage import IngestStage
+    from src.modules.pipeline.runner import RunContext
+
+    session = AsyncMock()
+    session.add = MagicMock()
+
+    org_id = uuid.uuid4()
+    ctx = RunContext(
+        session=session,
+        run=type("R", (), {"id": uuid.uuid4(), "checkpoint": {}, "status": "running"})(),
+        pipeline=type(
+            "P",
+            (),
+            {
+                "id": uuid.uuid4(),
+                "organization_id": org_id,
+                "source_asset_type": "data_source",
+                "source_asset_id": "ds-1",
+                "ingest_mode": "incremental",
+                "target_layer": "silver",
+                "options": {"source_table": "orders"},
+            },
+        )(),
+        org_id=org_id,
+    )
+
+    class EmptySource:
+        async def changes(self, since, *, load_id):
+            return
+            yield  # pragma: no cover - makes this an async generator with zero items
+
+    with patch(
+        "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
+        new=AsyncMock(return_value=EmptySource()),
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.load_cdc_state",
+        new=AsyncMock(return_value=Checkpoint(offset="1")),
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.save_cdc_state", new=AsyncMock()
+    ) as mocked_save:
+        result = await IngestStage().execute(ctx)
+
+    assert result.rows == 0
+    assert result.outputs.get("note") == "no_new_rows_since_watermark"
+    mocked_save.assert_not_called()
+    session.add.assert_not_called()
+
+
+async def test_ingest_stage_first_run_snapshot_does_not_require_an_existing_bronze_object():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.modules.pipeline.ingest.stage import IngestStage
+    from src.modules.pipeline.runner import RunContext
+
+    added = []
+    session = AsyncMock()
+    session.add = MagicMock(side_effect=added.append)
+
+    org_id = uuid.uuid4()
+    ctx = RunContext(
+        session=session,
+        run=type("R", (), {"id": uuid.uuid4(), "checkpoint": {}, "status": "running"})(),
+        pipeline=type(
+            "P",
+            (),
+            {
+                "id": uuid.uuid4(),
+                "organization_id": org_id,
+                "source_asset_type": "data_source",
+                "source_asset_id": "ds-1",
+                "ingest_mode": "snapshot",
+                "target_layer": "silver",
+                "options": {"source_table": "orders"},
+            },
+        )(),
+        org_id=org_id,
+    )
+
+    class FakeSource:
+        async def snapshot(self, *, load_id):
+            yield pa.RecordBatch.from_pydict({"id": pa.array([1, 2], type=pa.int64())})
+
+    class FakeS3:
+        async def store_file(self, file_content, object_key, **kwargs):
+            return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
+
+    with patch(
+        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
+        new=AsyncMock(return_value=FakeSource()),
+    ):
+        # No DataLakeObject exists for this data source yet — this must not raise
+        # "no Bronze object for data source ...".
+        result = await IngestStage().execute(ctx)
+
+    assert result.rows == 2
+    assert len(added) == 1
