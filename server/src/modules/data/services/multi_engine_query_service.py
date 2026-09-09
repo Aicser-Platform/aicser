@@ -1179,6 +1179,29 @@ class MultiEngineQueryService:
                         logger.error(f"❌ Failed to rewrite query table name: {_e}", exc_info=True)
                         # Don't fail the query, but log the error for debugging
 
+            # Pipeline-managed database sources read from the lakehouse, never live
+            # production. This must run before engine selection so no engine — not
+            # just DirectSQL — ever sees the original type/connection for one of these.
+            from src.modules.data.services.query_routing import (
+                LakehouseNotReady, resolve_query_source)
+
+            try:
+                data_source = await resolve_query_source(data_source)
+            except LakehouseNotReady as exc:
+                if exc.last_run_status in ("queued", "running"):
+                    message = (
+                        "This data source's analytics pipeline is still syncing its "
+                        "first load. Try again shortly."
+                    )
+                else:
+                    message = (
+                        "This data source's analytics pipeline hasn't produced data "
+                        "yet (last run: "
+                        f"{exc.last_run_status or 'never run'}). Contact an admin to "
+                        "check the pipeline."
+                    )
+                return {"success": False, "error": message, "data": [], "columns": [], "row_count": 0}
+
             # Select engine if not specified
             if not engine:
                 engine = QueryOptimizer.select_optimal_engine(
@@ -1631,6 +1654,8 @@ class DuckDBEngine(BaseQueryEngine):
                             pass
                         google_sheets_temp_path = None
                     raise
+            elif data_source.get("type") == "lakehouse_iceberg":
+                await self._load_lakehouse_iceberg(conn, data_source)
             elif is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 # MULTI-FILE SUPPORT: Detect if query references multiple files and load them all
                 detected_file_ids = self._detect_file_references(query)
@@ -2009,6 +2034,23 @@ class DuckDBEngine(BaseQueryEngine):
         # This would connect to the source database and load data
         # For now, we'll simulate loading data
         pass
+
+    async def _load_lakehouse_iceberg(self, conn, data_source: Dict[str, Any]) -> None:
+        """Load a pipeline-managed source's Gold Iceberg table as the single "data"
+        table — the same convention file/sheet sources use, so no query rewriting
+        or schema-shape special-casing is needed anywhere downstream."""
+        from src.modules.pipeline.ingest.duckdb_s3 import (
+            configure_duckdb_iceberg, configure_duckdb_s3, iceberg_scan_sql)
+
+        configure_duckdb_s3(conn)
+        configure_duckdb_iceberg(conn)
+
+        storage_uri = data_source.get("storage_uri")
+        if not storage_uri:
+            raise ValueError("lakehouse_iceberg source is missing storage_uri")
+
+        scan_sql = iceberg_scan_sql(storage_uri)
+        conn.execute(f"CREATE TABLE data AS {scan_sql}")
 
 
 class SparkEngine(BaseQueryEngine):
