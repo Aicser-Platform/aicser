@@ -115,3 +115,37 @@ async def test_run_pipeline_job_skips_when_already_running():
     assert run.status == "failed"
     assert run.error_code == "already_running"
     await session.commit()
+
+
+async def test_runner_stops_after_an_empty_incremental_tick_and_reports_success():
+    """IngestStage's no-op result carries no Bronze storage_uri, so running
+    Transform/Load after it would raise and mark an empty (but correct) tick as
+    failed. The run ends successfully at ingest instead."""
+    from src.modules.pipeline.runner import PipelineRunner, StageResult
+
+    class NoOpIngest:
+        name = "ingest"
+
+        def __init__(self):
+            self.calls = 0
+
+        async def execute(self, ctx):
+            self.calls += 1
+            return StageResult(
+                stage=self.name,
+                rows=0,
+                outputs={"note": "no_new_rows_since_watermark"},
+            )
+
+    ingest = NoOpIngest()
+    transform = FakeStage("transform", 8)
+    load = FakeStage("load", 8)
+
+    ctx = _ctx()
+    status = await PipelineRunner([ingest, transform, load]).run(ctx)
+
+    assert status == "succeeded"
+    assert ingest.calls == 1
+    assert transform.calls == 0
+    assert load.calls == 0
+    assert ctx.checkpoint["stage"] == "ingest"

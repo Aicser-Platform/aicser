@@ -677,3 +677,98 @@ async def test_default_deny_blocks_tables_without_a_matching_predicate(monkeypat
         )
 
     assert caught.value.table == "dim_product"
+
+
+@pytest.mark.asyncio
+async def test_apply_sql_rls_applies_a_real_table_policy_to_the_lakehouse_data_table(
+    monkeypatch,
+):
+    """A pipeline-managed source is read from the lakehouse, where the query
+    references the DuckDB table "data" while the policy is configured against
+    the source's real table name. Registering the predicate under both names
+    keeps the filter applied instead of silently losing it."""
+    policy_id = uuid4()
+    policy = SimpleNamespace(
+        id=policy_id, data_source_id="ds-1", enabled=True, default_deny=True
+    )
+    rule = SimpleNamespace(
+        policy_id=policy_id,
+        table_name="orders",
+        column_name="region",
+        operator="eq",
+        value_type="user_attribute",
+        value="region",
+    )
+
+    async def grants(*_args, **_kwargs):
+        return [SimpleNamespace(rls_policy_id=policy_id)]
+
+    monkeypatch.setattr(rls_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService, "get_applicable_grants", staticmethod(grants)
+    )
+    monkeypatch.setattr(
+        DataSourceRLSEnforcementService,
+        "_load_user_attributes",
+        staticmethod(_user_attrs),
+    )
+
+    query, applied = await DataSourceRLSEnforcementService.apply_sql_rls(
+        'SELECT * FROM "data"',
+        user_id="user-1",
+        data_source_id="ds-1",
+        organization_id="org-1",
+        project_id="project-1",
+        token_payload={},
+        session=_Session([_ExecuteResult([policy]), _ExecuteResult([rule])]),
+        dialect="duckdb",
+        table_name_aliases={"data": "orders"},
+    )
+
+    assert applied is True
+    assert "region = 'APAC'" in query
+
+
+@pytest.mark.asyncio
+async def test_apply_sql_rls_without_aliases_still_denies_the_lakehouse_data_table(
+    monkeypatch,
+):
+    """Regression guard: with no alias mapping, a default-deny policy on the real
+    table must deny the "data" query rather than silently pass it through."""
+    policy_id = uuid4()
+    policy = SimpleNamespace(
+        id=policy_id, data_source_id="ds-1", enabled=True, default_deny=True
+    )
+    rule = SimpleNamespace(
+        policy_id=policy_id,
+        table_name="orders",
+        column_name="region",
+        operator="eq",
+        value_type="user_attribute",
+        value="region",
+    )
+
+    async def grants(*_args, **_kwargs):
+        return [SimpleNamespace(rls_policy_id=policy_id)]
+
+    monkeypatch.setattr(rls_mod, "is_ee_enabled", lambda: True)
+    monkeypatch.setattr(
+        DataSourceAccessService, "get_applicable_grants", staticmethod(grants)
+    )
+    monkeypatch.setattr(
+        DataSourceRLSEnforcementService,
+        "_load_user_attributes",
+        staticmethod(_user_attrs),
+    )
+
+    with pytest.raises(RowSecurityDenied):
+        await DataSourceRLSEnforcementService.apply_sql_rls(
+            'SELECT * FROM "data"',
+            user_id="user-1",
+            data_source_id="ds-1",
+            organization_id="org-1",
+            project_id="project-1",
+            token_payload={},
+            session=_Session([_ExecuteResult([policy]), _ExecuteResult([rule])]),
+            dialect="duckdb",
+        )

@@ -123,17 +123,23 @@ def test_run_validation_rejects_pipeline_without_saved_yaml():
     assert "save the pipeline before running it" in exc.value.detail
 
 
-async def test_create_pipeline_rejects_a_database_source_with_no_table():
-    from pydantic import ValidationError
-
+async def test_create_pipeline_accepts_a_data_source_with_no_table():
+    """`source_asset_type="data_source"` is ALSO how the onboarding wizard and the
+    ingest empty state create pipelines for spreadsheet/file uploads (see
+    client/ee/src/ee/components/onboarding/OnboardingWizard.tsx and
+    IngestEmptyState.tsx) — neither sends a source_table. Requiring one here 422s
+    both file-upload flows. `source_table` stays optional; a live-database
+    pipeline is identified by actually having it set."""
     from src.modules.pipeline.schemas import PipelineCreateRequest
 
-    with pytest.raises(ValidationError, match="source_table is required"):
-        PipelineCreateRequest(
-            name="Orders sync",
-            source_asset_type="data_source",
-            source_asset_id="ds-1",
-        )
+    req = PipelineCreateRequest(
+        name="Orders sync",
+        source_asset_type="data_source",
+        source_asset_id="ds-1",
+    )
+
+    assert req.source_table is None
+    assert req.source_asset_type == "data_source"
 
 
 def test_pipeline_response_surfaces_source_table_and_watermark_column():

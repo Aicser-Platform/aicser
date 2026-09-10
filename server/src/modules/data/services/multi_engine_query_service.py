@@ -654,6 +654,17 @@ class MultiEngineQueryService:
         except Exception:
             resolved = dialect
 
+        # A pipeline-managed source is read from the lakehouse, where the query
+        # may reference DuckDB's "data" table while the policy is configured
+        # against the source's real table name. Both names identify the same
+        # rows (the loader registers a view under the real name), so the
+        # predicate is registered under both rather than silently missing.
+        table_name_aliases: Dict[str, str] = {}
+        if (data_source.get("type") or "").lower() == "lakehouse_iceberg":
+            real_table = (data_source.get("source_table") or "").strip()
+            if real_table and real_table.lower() != "data":
+                table_name_aliases["data"] = real_table
+
         try:
             return await self._apply_sql_rls(
                 query,
@@ -663,6 +674,7 @@ class MultiEngineQueryService:
                 project_id=access.project_id,
                 token_payload=dict(access.token_payload or {}),
                 dialect=resolved,
+                table_name_aliases=table_name_aliases or None,
             )
         except RowSecurityIdentityRequired:
             raise
@@ -695,6 +707,38 @@ class MultiEngineQueryService:
         rather than by callers, so chat, dashboards, charts and the HTTP handlers
         cannot reach data by a route that skips it.
         """
+        # Resolve the source FIRST. A pipeline-managed source is read from the
+        # lakehouse, so row/column security must be computed against the source
+        # that will actually be queried — that dict determines the SQL dialect
+        # the predicates are rendered in and the table names they are matched
+        # against. Enforcing against the original live-database dict and only
+        # then switching engines would render predicates for the wrong dialect.
+        from src.modules.data.services.query_routing import (LakehouseNotReady,
+                                                             resolve_query_source)
+
+        try:
+            data_source = await resolve_query_source(data_source)
+        except LakehouseNotReady as exc:
+            if exc.last_run_status in ("queued", "running"):
+                message = (
+                    "This data source's analytics pipeline is still syncing its "
+                    "first load. Try again shortly."
+                )
+            else:
+                message = (
+                    "This data source's analytics pipeline hasn't produced data "
+                    "yet (last run: "
+                    f"{exc.last_run_status or 'never run'}). Contact an admin to "
+                    "check the pipeline."
+                )
+            return {
+                "success": False,
+                "error": message,
+                "data": [],
+                "columns": [],
+                "row_count": 0,
+            }
+
         try:
             query, columns_omitted = await self._enforce_column_security(
                 query, data_source, identity
@@ -947,28 +991,10 @@ class MultiEngineQueryService:
                         logger.error(f"❌ Failed to rewrite query table name: {_e}", exc_info=True)
                         # Don't fail the query, but log the error for debugging
 
-            # Pipeline-managed database sources read from the lakehouse, never live
-            # production. This must run before engine selection so no engine — not
-            # just DirectSQL — ever sees the original type/connection for one of these.
-            from src.modules.data.services.query_routing import (
-                LakehouseNotReady, resolve_query_source)
-
-            try:
-                data_source = await resolve_query_source(data_source)
-            except LakehouseNotReady as exc:
-                if exc.last_run_status in ("queued", "running"):
-                    message = (
-                        "This data source's analytics pipeline is still syncing its "
-                        "first load. Try again shortly."
-                    )
-                else:
-                    message = (
-                        "This data source's analytics pipeline hasn't produced data "
-                        "yet (last run: "
-                        f"{exc.last_run_status or 'never run'}). Contact an admin to "
-                        "check the pipeline."
-                    )
-                return {"success": False, "error": message, "data": [], "columns": [], "row_count": 0}
+            # NOTE: pipeline-managed database sources are routed to the lakehouse
+            # by ``execute_query`` before row/column security runs, so by the time
+            # this method is reached ``data_source`` is already the resolved dict.
+            # Resolving here instead would hand RLS/CLS the live-database source.
 
             # Select engine if not specified
             if not engine:
@@ -1848,6 +1874,14 @@ class DuckDBEngine(BaseQueryEngine):
 
         scan_sql = iceberg_scan_sql(storage_uri)
         conn.execute(f"CREATE TABLE data AS {scan_sql}")
+
+        # SQL generated against the source's real schema (chart_service builds
+        # exactly that) references the pipeline's configured table name, so
+        # expose the same rows under that name too.
+        real_name = data_source.get("source_table")
+        if real_name and real_name != "data":
+            safe_name = real_name.replace('"', '""')
+            conn.execute(f'CREATE VIEW "{safe_name}" AS SELECT * FROM data')
 
 
 class CubeEngine(BaseQueryEngine):
