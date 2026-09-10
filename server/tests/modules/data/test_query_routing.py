@@ -149,3 +149,122 @@ async def test_resolve_query_source_returns_a_lakehouse_source_when_ready(monkey
     assert result["format"] == "iceberg"
     assert result["schema"] == {"columns": [{"name": "id", "type": "bigint"}]}
     assert result["name"] == "Prod DB"  # original fields preserved
+
+
+async def test_resolve_query_source_accepts_a_silver_object_as_ready(monkeypatch):
+    """target_layer defaults to "silver" everywhere (client store, both create
+    flows, the schema default), and Silver already means cleaned/typed data off
+    the live database — which is exactly what this gate guarantees. Requiring
+    Gold would leave every default pipeline permanently "not ready"."""
+    from src.modules.data.services.query_routing import resolve_query_source
+
+    fake_pipeline = type("P", (), {"id": uuid.uuid4(), "options": {}})()
+    fake_silver = type(
+        "S",
+        (),
+        {
+            "layer": "silver",
+            "storage_uri": "s3://lake/orgs/o1/silver/orders/",
+            "schema_snapshot": {"columns": [{"name": "id", "type": "bigint"}]},
+        },
+    )()
+
+    calls = {"n": 0}
+
+    class FakeResult:
+        def __init__(self, value):
+            self._value = value
+
+        def scalars(self):
+            outer = self
+
+            class S:
+                def first(self):
+                    return outer._value
+
+            return S()
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def execute(self, stmt):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return FakeResult(fake_pipeline)
+            return FakeResult(fake_silver)
+
+    monkeypatch.setattr("src.db.session.async_session", lambda: FakeSession())
+
+    result = await resolve_query_source({"id": "ds-1", "type": "database"})
+
+    assert result["type"] == "lakehouse_iceberg"
+    assert result["storage_uri"] == "s3://lake/orgs/o1/silver/orders/"
+    assert result["format"] == "iceberg"
+
+
+def test_resolve_query_source_lake_object_query_accepts_silver_or_gold():
+    """The readiness lookup must not filter on layer == "gold" alone."""
+    import inspect
+
+    from src.modules.data.services import query_routing
+
+    src = inspect.getsource(query_routing.resolve_query_source)
+    assert 'DataLakeObject.layer == "gold"' not in src
+    assert 'layer.in_(["silver", "gold"])' in src
+
+
+async def test_resolve_query_source_carries_the_pipelines_source_table(monkeypatch):
+    """The DuckDB loader exposes the lakehouse table under its real name as well
+    as "data", so SQL built against the source's real schema still resolves."""
+    from src.modules.data.services.query_routing import resolve_query_source
+
+    fake_pipeline = type(
+        "P", (), {"id": uuid.uuid4(), "options": {"source_table": "orders"}}
+    )()
+    fake_obj = type(
+        "G",
+        (),
+        {
+            "layer": "gold",
+            "storage_uri": "s3://lake/orgs/o1/gold/orders/",
+            "schema_snapshot": {"columns": []},
+        },
+    )()
+
+    calls = {"n": 0}
+
+    class FakeResult:
+        def __init__(self, value):
+            self._value = value
+
+        def scalars(self):
+            outer = self
+
+            class S:
+                def first(self):
+                    return outer._value
+
+            return S()
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def execute(self, stmt):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return FakeResult(fake_pipeline)
+            return FakeResult(fake_obj)
+
+    monkeypatch.setattr("src.db.session.async_session", lambda: FakeSession())
+
+    result = await resolve_query_source({"id": "ds-1", "type": "database"})
+
+    assert result["source_table"] == "orders"

@@ -63,12 +63,18 @@ async def resolve_query_source(data_source: Dict[str, Any]) -> Dict[str, Any]:
         if pipeline is None:
             return data_source
 
+        # Silver — not Gold — is the default target_layer everywhere (client
+        # store, both create-pipeline flows, the schema default), and Silver
+        # already means cleaned, typed data read off the lakehouse rather than
+        # the live database, which is what this gate exists to guarantee.
+        # Requiring Gold would leave every default pipeline permanently
+        # "not ready".
         gold = (
             await db.execute(
                 select(DataLakeObject)
                 .where(
                     DataLakeObject.data_source_id == str(ds_id),
-                    DataLakeObject.layer == "gold",
+                    DataLakeObject.layer.in_(["silver", "gold"]),
                     DataLakeObject.status == "active",
                 )
                 .order_by(desc(DataLakeObject.created_at))
@@ -96,4 +102,10 @@ async def resolve_query_source(data_source: Dict[str, Any]) -> Dict[str, Any]:
             "storage_uri": gold.storage_uri,
             "format": "iceberg",
             "schema": gold.schema_snapshot,
+            # The DuckDB loader registers the scanned table under this name in
+            # addition to "data", so SQL written against the source's real
+            # schema (chart_service builds exactly that) still resolves.
+            "source_table": (getattr(pipeline, "options", None) or {}).get(
+                "source_table"
+            ),
         }

@@ -521,3 +521,92 @@ async def test_get_schema_cached_returns_a_clean_error_when_the_lakehouse_is_not
 
     assert out["schema"] is None
     assert "pipeline" in out["schema_error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_schema_cached_does_not_gate_a_file_source(monkeypatch):
+    """The lakehouse gate must key off the source's REAL type. Hardcoding
+    "database" made resolve_query_source look for a pipeline for file/upload
+    sources too — those must pass straight through its unchanged-return branch."""
+    from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+
+    seen = {}
+
+    async def fake_resolve(data_source):
+        seen.update(data_source)
+        # Real resolve_query_source behaviour for a non-database type.
+        if (data_source.get("type") or "").lower() not in ("database", "enterprise_connector"):
+            return data_source
+        raise AssertionError("a file source must never reach the pipeline lookup")
+
+    monkeypatch.setattr(
+        "src.modules.data.services.query_routing.resolve_query_source", fake_resolve
+    )
+
+    class FakeDataService:
+        async def get_data_source_by_id(self, ds_id):
+            return {
+                "id": ds_id,
+                "type": "file",
+                "format": "csv",
+                "name": "Sales upload",
+                "schema": {"tables": [{"name": "data", "columns": [{"name": "id"}]}]},
+            }
+
+    orchestrator = LangGraphMultiAgentOrchestrator.__new__(LangGraphMultiAgentOrchestrator)
+    orchestrator.data_service = FakeDataService()
+
+    out = await orchestrator._get_schema_cached("ds-file-1", organization_id="org-1", user_id="user-1")
+
+    assert seen.get("type") == "file"
+    assert out.get("schema_error") is None
+    assert out["data_source_type"] == "file"
+    assert out["db_type"] == "duckdb"
+    # The source's own schema, not a lakehouse Gold schema_snapshot substitution
+    assert [c["name"] for c in out["schema"]["tables"][0]["columns"]] == ["id"]
+
+
+@pytest.mark.asyncio
+async def test_nl2sql_schema_fallback_does_not_gate_a_file_source(monkeypatch):
+    """Same fix in the nl2sql one-off fallback: a file source is not gated and
+    keeps its own schema."""
+    from src.modules.ai.nodes import nl2sql_node
+
+    seen = {}
+
+    async def fake_resolve(data_source):
+        seen.update(data_source)
+        if (data_source.get("type") or "").lower() not in ("database", "enterprise_connector"):
+            return data_source
+        raise AssertionError("a file source must never reach the pipeline lookup")
+
+    monkeypatch.setattr(
+        "src.modules.data.services.query_routing.resolve_query_source", fake_resolve
+    )
+
+    class FakeDataService:
+        async def get_source_schema(self, ds_id):
+            return {
+                "success": True,
+                "schema": {"tables": [{"name": "data", "columns": [{"name": "id"}]}]},
+            }
+
+        async def get_data_source_by_id(self, ds_id):
+            return {"id": ds_id, "type": "file", "format": "csv"}
+
+    resolved_type = await nl2sql_node._resolve_gate_source_type(
+        {"data_source_id": "ds-file-1", "data_source_type": "file"},
+        FakeDataService(),
+        "ds-file-1",
+    )
+    assert resolved_type == "file"
+
+    # And with no data_source_type in state it falls back to the record, not "database"
+    resolved_type = await nl2sql_node._resolve_gate_source_type(
+        {"data_source_id": "ds-file-1"}, FakeDataService(), "ds-file-1"
+    )
+    assert resolved_type == "file"
+
+    # With neither available, "database" is the closest thing to prior behaviour
+    resolved_type = await nl2sql_node._resolve_gate_source_type({}, None, "ds-file-1")
+    assert resolved_type == "database"
