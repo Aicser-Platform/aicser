@@ -391,3 +391,84 @@ async def test_stream_billing_passes_credit_idempotency_key(monkeypatch):
     )
     _ = await _collect_sse_events(response)
     assert seen_keys == ["abc123key"]
+
+
+@pytest.mark.asyncio
+async def test_resume_with_trace_id_and_choices_uses_stateless_rerun(monkeypatch):
+    """Field confirm + trace_id must inject choices, not Command(resume) on a missing checkpoint."""
+
+    class _FakeLiteLLMService:
+        pass
+
+    class _FakeDataConnectivityService:
+        pass
+
+    class _FakeMultiEngineQueryService:
+        pass
+
+    class _FakeOrchestrator:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def execute_streaming_resume(self, **_kwargs):
+            raise AssertionError("must not Command(resume) when field choices are present")
+            yield  # pragma: no cover
+
+        async def execute_streaming(self, **kwargs):
+            assert kwargs.get("clarification_response") == {
+                "choices": {"time_column": "order_date"}
+            }
+            yield {
+                "type": "progress",
+                "current_stage": "nl2sql",
+                "progress_percentage": 30,
+                "message": "Preparing query",
+            }
+            yield {
+                "type": "complete",
+                "event_type": "complete",
+                "workflow_complete": True,
+                "success": True,
+                "current_stage": "complete",
+                "message": "Done",
+                "execution_metadata": {"status": "completed"},
+            }
+
+    def _fake_orchestrator_imports():
+        return (
+            _FakeOrchestrator,
+            (lambda err, context=None: str(err or "")),
+            (lambda msg: msg),
+        )
+
+    monkeypatch.setattr(api_streaming, "LiteLLMService", _FakeLiteLLMService)
+    monkeypatch.setattr(api_streaming, "_get_langgraph_orchestrator_imports", _fake_orchestrator_imports)
+
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.data.services import multi_engine_query_service
+
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService",
+        _FakeDataConnectivityService,
+    )
+    monkeypatch.setattr(
+        multi_engine_query_service,
+        "get_multi_engine_query_service",
+        lambda: _FakeMultiEngineQueryService(),
+    )
+
+    request = api_streaming.ResumeRequestSchema(
+        conversation_id="conv-resume-trace",
+        resume={"choices": {"time_column": "order_date"}},
+        query="forecast monthly sales",
+        data_source_id="ds-1",
+        trace_id="trace-missing-checkpoint",
+        analytics_type="predictive",
+        analysis_mode="predictive",
+    )
+    token = {"id": "u-resume-trace", "organization_id": "org-resume"}
+
+    response = await api_streaming.analyze_resume_streaming(request=request, current_token=token)
+    events = await _collect_sse_events(response)
+    complete = next(event for event in events if event.get("type") == "complete")
+    assert complete.get("workflow_complete") is True

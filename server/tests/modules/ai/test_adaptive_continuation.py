@@ -13,11 +13,12 @@ from ee.modules.ai.services.adaptive_continuation_service import (
 
 def test_prompt_to_decision_intelligence_mode() -> None:
     action = _prompt_to_continuation_action(
-        "Run a complete Decision Intelligence analysis",
+        "What should we decide next?",
         default_mode="auto",
     )
     assert action["analysis_mode"] == "decision_intelligence"
     assert action["type"] == "analytics"
+    assert action.get("reuse_last_result") is True
 
 
 def test_prompt_to_dashboard_mode() -> None:
@@ -27,6 +28,17 @@ def test_prompt_to_dashboard_mode() -> None:
     )
     assert action["analysis_mode"] == "dashboard"
     assert action["type"] == "analytics"
+
+
+def test_alert_chip_uses_skill_not_business_os() -> None:
+    action = _prompt_to_continuation_action(
+        "Create an alert to monitor this metric",
+        default_mode="diagnostic",
+    )
+    assert action["type"] == "alert"
+    assert action["requested_skill"] == "create_alert"
+    assert action["reuse_last_result"] is True
+    assert action["analysis_mode"] != "business_journey"
 
 
 def test_apply_continuation_sets_metadata() -> None:

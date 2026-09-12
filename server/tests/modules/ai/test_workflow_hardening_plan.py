@@ -158,6 +158,57 @@ async def test_correct_sql_truncated_llm_output_does_not_consume_budget(monkeypa
     assert state.get("sql_correction_skip_reason") == "llm_returned_truncated_sql"
 
 
+async def test_forecast_correction_uses_schema_grounded_sql_instead_of_duplicate_loop(monkeypatch):
+    """Failed Forecast SQL must not die on duplicate_sql; emit period+value from schema."""
+    from ee.modules.ai.nodes import error_correction_node as ecn
+
+    monkeypatch.setattr(ecn, "_apply_sql_rule_fixes", lambda *a, **k: None)
+
+    async def boom(*args, **kwargs):
+        raise AssertionError("LLM fixer must not run when schema-grounded Forecast SQL exists")
+
+    monkeypatch.setattr(ecn, "_fix_sql_with_llm", boom)
+
+    failed = (
+        "WITH base AS (SELECT date_trunc('month', disbursed_at) AS period, SUM(amount) AS value "
+        "FROM banking.loans GROUP BY 1) SELECT disbursed_at AS period, SUM(amount) AS value FROM base GROUP BY 1"
+    )
+    state = {
+        "analytics_type": "predictive",
+        "sql_query": failed,
+        "error": 'column "disbursed_at" does not exist',
+        "data_source_schema": {
+            "tables": [{
+                "schema": "banking",
+                "name": "loans",
+                "columns": [
+                    {"name": "disbursed_at", "type": "timestamp"},
+                    {"name": "amount", "type": "numeric"},
+                ],
+            }]
+        },
+        "data_source_db_type": "postgresql",
+        "data_source_type": "postgres",
+        "delegation_context": {
+            "time_column": "disbursed_at",
+            "target_metric": "amount",
+            "time_granularity": "month",
+            "metric_aggregation": "sum",
+        },
+        "execution_metadata": {
+            "mode": "standard",
+            "unified_retry_state": {"sql_correction": 0, "total_retries": 0},
+        },
+        "correction_context": {"error_type": "sql", "issue": "query_execution_error"},
+    }
+    ok = await ecn._correct_sql(state, litellm_service=object())
+    assert ok is True
+    sql = (state.get("sql_query") or "").lower()
+    assert "as period" in sql and "as value" in sql
+    assert "from base" not in sql
+    assert "loans" in sql
+
+
 def test_format_sql_history_for_prompt_empty_and_populated():
     """History prompt should be empty when no attempts, and contain entries when populated."""
     empty_state = {"execution_metadata": {}}
@@ -411,6 +462,22 @@ def test_user_friendly_errors_circuit_breaker_gets_distinct_message():
     assert "circuitbreakeropen" not in result.lower()
     assert "rephrase" not in result.lower()
     assert "try again" in result.lower()
+
+
+def test_user_friendly_errors_warehouse_timeout_vs_llm_timeout():
+    from ee.modules.ai.utils.user_friendly_errors import make_error_user_friendly
+
+    warehouse = make_error_user_friendly("canceling statement due to statement timeout")
+    assert "warehouse" in warehouse.lower()
+    assert "rephrase" not in warehouse.lower()
+
+    llm = make_error_user_friendly("LLM request timed out after 60s")
+    assert "ai service" in llm.lower()
+    assert "warehouse" not in llm.lower()
+
+    denied = make_error_user_friendly("permission denied for table customer_accounts")
+    assert "permission" in denied.lower()
+    assert "admin" in denied.lower()
 
 
 # ── Graceful response column regex ───────────────────────────────────────────

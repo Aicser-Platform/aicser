@@ -8,6 +8,7 @@ import {
   CheckCircleOutlined,
   CopyOutlined,
   LinkOutlined,
+  PaperClipOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
@@ -21,6 +22,8 @@ import { socialFeedService, uploadFeedThumbnail } from '@/services/socialFeedSer
 import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { useProfileStore } from '@/stores/useProfileStore';
+import { writePendingFeedAttachment } from './pendingFeedAttachment';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
@@ -47,6 +50,7 @@ export function FeedPublishComposer({
   const tf = useTranslations('feed');
   const router = useRouter();
   const { user } = useAuth();
+  const profile = useProfileStore((s) => s.profile);
   const currentProject = useProjectStore((s) => s.currentProject);
   const allProjects = useProjectStore((s) => s.projects);
   const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
@@ -95,18 +99,25 @@ export function FeedPublishComposer({
   const projectMismatch = isAssetSourceMode && !!assetProject && assetProject.id !== projectId;
 
   const authorName = useMemo(() => {
+    const fromProfile = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
+    if (fromProfile) return fromProfile;
     const meta = user?.user_metadata as Record<string, unknown> | undefined;
     const full =
       (typeof meta?.full_name === 'string' && meta.full_name) ||
       (typeof meta?.name === 'string' && meta.name) ||
       '';
     if (full.trim()) return full.trim();
+    if (profile?.username?.trim()) return profile.username.trim();
     if (user?.username?.trim()) return user.username.trim();
     if (user?.email?.includes('@')) return user.email.split('@')[0];
     return t('you');
-  }, [user, t]);
+  }, [user, profile, t]);
 
-  const authorHandle = user?.username?.trim() || (user?.email?.includes('@') ? user.email.split('@')[0] : '');
+  const authorHandle =
+    profile?.username?.trim() ||
+    user?.username?.trim() ||
+    (user?.email?.includes('@') ? user.email.split('@')[0] : '');
+  const authorAvatarUrl = profile?.avatar_url || undefined;
 
   useEffect(() => {
     if (draft.source.mode !== 'asset' || !draft.source.assetId) return;
@@ -153,6 +164,31 @@ export function FeedPublishComposer({
     } catch {
       message.error(t('copy_failed'));
     }
+  };
+
+  // Dashboard/chart only: hand the same snapshot to /feed's composer as an
+  // attachment so authors can add commentary — consolidates the old separate
+  // "Attach to a new post" menu item into this publish flow.
+  const canContinueWithPost =
+    draft.source.mode === 'asset' &&
+    Boolean(draft.source.assetId) &&
+    (draft.assetType === 'dashboard' || draft.assetType === 'chart');
+
+  const handleContinueWithPost = () => {
+    if (draft.source.mode !== 'asset' || !draft.source.assetId) return;
+    if (draft.assetType !== 'dashboard' && draft.assetType !== 'chart') return;
+    const ok = writePendingFeedAttachment({
+      asset_type: draft.assetType,
+      asset_id: draft.source.assetId,
+      title: title.trim() || draft.title || t('default_title'),
+      snapshot_payload: draft.snapshotPayload ?? null,
+    });
+    if (!ok) {
+      message.error(t('continue_with_post_storage_error'));
+      return;
+    }
+    onCancel?.();
+    router.push('/feed');
   };
 
   const handlePublish = async () => {
@@ -242,7 +278,9 @@ export function FeedPublishComposer({
       setSuccessResult(result);
       onSuccess?.(result);
     } catch (error) {
-      setPublishError(formatFeedPublishError(error, t('publish_failed')));
+      const friendly = formatFeedPublishError(error, t('publish_failed'));
+      setPublishError(friendly);
+      message.error(friendly);
     } finally {
       setSubmitting(false);
     }
@@ -334,6 +372,7 @@ export function FeedPublishComposer({
             description={description}
             authorName={authorName}
             authorHandle={authorHandle}
+            authorAvatarUrl={authorAvatarUrl}
             compact={layout === 'embedded'}
           />
         </section>
@@ -458,6 +497,23 @@ export function FeedPublishComposer({
           >
             {t('publish_button')}
           </Button>
+          {canContinueWithPost ? (
+            <>
+              <Button
+                size="large"
+                block
+                icon={<PaperClipOutlined />}
+                className="feed-publish-continue-post"
+                disabled={submitting}
+                onClick={handleContinueWithPost}
+              >
+                {t('continue_with_post_button')}
+              </Button>
+              <p className="feed-publish-field-hint feed-publish-continue-hint">
+                {t('continue_with_post_hint')}
+              </p>
+            </>
+          ) : null}
         </section>
       </div>
     </div>

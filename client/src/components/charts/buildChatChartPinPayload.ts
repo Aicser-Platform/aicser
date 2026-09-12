@@ -10,6 +10,7 @@ import {
   measureHintsFromEchartsConfig,
   promoteChartQueryToMultiMetrics,
 } from '@/components/charts/normalizeMultiMetricChartQuery';
+import { inferSeriesChartType } from '@/components/charts/chartTypeCatalog';
 
 export interface ChatChartImportPayload {
   config?: Record<string, unknown>;
@@ -41,17 +42,9 @@ export interface ChatMessagePinSource {
 
 export function inferChartTypeFromConfig(config: Record<string, unknown>): string {
   if (config.aiserWidgetType === 'stat') return 'stat';
-  const series = config.series as Array<{ type?: string; areaStyle?: unknown; stack?: string }> | undefined;
-  const first = series?.[0];
-  if (!first?.type) return 'bar';
-  let chartType = String(first.type);
-  if (chartType === 'line' && series?.some((s) => s.areaStyle)) chartType = 'area';
-  if (chartType === 'pie') {
-    const radius = (first as { radius?: unknown }).radius;
-    if (Array.isArray(radius) && parseFloat(String(radius[0])) > 0) chartType = 'donut';
-  }
-  if (chartType === 'gauge' || chartType === 'stat') return 'stat';
-  return chartType;
+  const inferred = inferSeriesChartType(config, null);
+  if (inferred === 'gauge' || inferred === 'stat') return 'stat';
+  return inferred;
 }
 
 function normalizeChartQueryFromMeta(

@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
 import type { AssetType, FeedItem } from '@/services/socialFeedService';
 import FeedPreviewVisual from '@/app/(dashboard)/feed/components/FeedPreviewVisual';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
-import { assetTypeLabelKey, buildPreviewFeedItem } from '@/components/Feed/feedPostDisplay';
+import { assetTypeLabelKey, buildPreviewFeedItem, showFeedAssetTypeBadge } from '@/components/Feed/feedPostDisplay';
 import type { FeedPublishDraft } from '@/components/Feed/feedPublishDraft';
 
 export interface FeedPostPreviewProps {
@@ -16,6 +16,7 @@ export interface FeedPostPreviewProps {
   description?: string;
   authorName: string;
   authorHandle?: string;
+  authorAvatarUrl?: string | null;
   compact?: boolean;
 }
 
@@ -25,6 +26,7 @@ export function FeedPostPreview({
   description,
   authorName,
   authorHandle,
+  authorAvatarUrl,
   compact = false,
 }: FeedPostPreviewProps) {
   const t = useTranslations('feed_publish_page');
@@ -55,13 +57,14 @@ export function FeedPostPreview({
 
   const assetType: AssetType = draft.assetType;
   const typeLabel = tf(assetTypeLabelKey(assetType) as 'insights_type');
+  const showTypeBadge = showFeedAssetTypeBadge(assetType);
 
   return (
     <div className="feed-post-preview">
       <div className="feed-publish-preview-label">{t('preview_label')}</div>
 
       <div className="feed-publish-author">
-        <Avatar size={36} className="feed-publish-author-avatar">
+        <Avatar size={36} className="feed-publish-author-avatar" src={authorAvatarUrl || undefined}>
           {authorName.charAt(0).toUpperCase()}
         </Avatar>
         <div>
@@ -77,26 +80,28 @@ export function FeedPostPreview({
         compactTitle
       />
 
-      <div className="feed-publish-preview-badges">
-        <Tag>{typeLabel}</Tag>
-        {draft.hasChart ? (
-          <Tag icon={<BarChartOutlined />} color="blue">
-            {t('includes_chart')}
-          </Tag>
-        ) : null}
-        {draft.hasSql ? (
-          <Tag icon={<CodeOutlined />} color="geekblue">
-            SQL
-          </Tag>
-        ) : null}
-      </div>
+      {showTypeBadge || draft.hasChart || draft.hasSql ? (
+        <div className="feed-publish-preview-badges">
+          {showTypeBadge ? <Tag>{typeLabel}</Tag> : null}
+          {draft.hasChart ? (
+            <Tag icon={<BarChartOutlined />} color="blue">
+              {t('includes_chart')}
+            </Tag>
+          ) : null}
+          {draft.hasSql ? (
+            <Tag icon={<CodeOutlined />} color="geekblue">
+              SQL
+            </Tag>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className={`feed-post-preview-visual ${compact ? 'feed-post-preview-visual--compact' : ''} ${
           assetType === 'dashboard' ? 'feed-post-preview-visual--dashboard' : ''
         }`}
       >
-        <FeedPreviewVisual item={previewItem} maxPreviews={compact ? 2 : 4} showOverflowBadge={compact} />
+        <FeedPreviewVisual item={previewItem} maxPreviews={4} showOverflowBadge={compact} />
       </div>
     </div>
   );

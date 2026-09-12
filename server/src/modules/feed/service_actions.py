@@ -644,6 +644,27 @@ class FeedServiceActionMixin:
                 best = candidate
                 best_rank = candidate_rank
         if best:
+            # Re-attaching after the author edits the dashboard/chart must refresh
+            # the frozen snapshot on the reused publication. Returning `best`
+            # unchanged discarded the newly captured payload and left feed cards
+            # showing a stale preview forever.
+            if snapshot_payload:
+                title = (
+                    await self._resolve_attachment_title(asset_type, asset_id)
+                    or best.title
+                    or asset_type.capitalize()
+                )
+                await self._apply_publication_snapshot(
+                    best,
+                    user_id=author_id,
+                    render_mode=FeedRenderMode.snapshot,
+                    snapshot_payload=snapshot_payload,
+                    preview_metadata=dict(best.preview_metadata or {}),
+                    asset_type=asset_type,
+                    title=title,
+                    description=best.description,
+                )
+                await self.db.flush()
             return best
 
         title = await self._resolve_attachment_title(asset_type, asset_id)
@@ -952,6 +973,50 @@ class FeedServiceActionMixin:
             # merged with whatever existed before.
             await self.db.execute(delete(FeedPostAttachment).where(FeedPostAttachment.post_id == post.id))
             for position, attachment in enumerate(request.attachments[:MAX_POST_ATTACHMENTS]):
+                if attachment.publication_id:
+                    publication = await self.db.get(FeedPost, attachment.publication_id)
+                    if publication is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Publication not found",
+                        )
+                    if not await self._can_view_post(publication, user_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to attach this publication",
+                        )
+                    pub_type = _enum_value(publication.asset_type)
+                    if pub_type not in ("dashboard", "chart", "insight"):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This post cannot be attached",
+                        )
+                    if attachment.snapshot_payload:
+                        await self._apply_publication_snapshot(
+                            publication,
+                            user_id=user_id,
+                            render_mode=FeedRenderMode.snapshot,
+                            snapshot_payload=attachment.snapshot_payload,
+                            preview_metadata=dict(publication.preview_metadata or {}),
+                            asset_type=pub_type,
+                            title=publication.title or pub_type.capitalize(),
+                            description=publication.description,
+                        )
+                    self.db.add(
+                        FeedPostAttachment(
+                            post_id=post.id,
+                            asset_type=pub_type,
+                            asset_id=publication.asset_id,
+                            referenced_post_id=publication.id,
+                            position=position,
+                        )
+                    )
+                    continue
+                if attachment.asset_type == "insight":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Insights must be attached from an existing publication",
+                    )
                 if not await self._can_view_dashboard_or_chart(
                     attachment.asset_type, attachment.asset_id, user_id, user_payload
                 ):

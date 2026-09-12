@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Input, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Input, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { CheckCircleOutlined, NodeIndexOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -12,7 +12,12 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import type { DataSource } from '@/stores/useDataSourceStore';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
-import { DashboardPageHeader, DashboardPageLoading, DashboardPageShell, DashboardPageEmpty } from '@/components/layout/DashboardPageShell';
+import {
+  DashboardPageHeader,
+  DashboardPageLoading,
+  DashboardPageShell,
+  DashboardPageEmpty,
+} from '@/components/layout/DashboardPageShell';
 import { isSemanticModelEligible } from '@/utils/semanticEligibleSources';
 
 const { Text } = Typography;
@@ -41,7 +46,6 @@ export default function SemanticLayerHubPage() {
   // Semantic layer intentionally lists all org-accessible sources.
   const { dataSources, isLoading } = useDataSources(undefined, { allProjects: true });
   const [search, setSearch] = useState('');
-  const [metricSearch, setMetricSearch] = useState('');
   const [summaries, setSummaries] = useState<Record<string, SourceSummary>>({});
   const [summaryLoading, setSummaryLoading] = useState(false);
 
@@ -52,18 +56,9 @@ export default function SemanticLayerHubPage() {
 
   const filteredSources = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const mq = metricSearch.trim().toLowerCase();
-    return modelSources.filter((ds) => {
-      const nameMatch = !q || (ds.name || '').toLowerCase().includes(q);
-      if (!nameMatch) return false;
-      if (!mq) return true;
-      // Filter by metric name if metricSearch is active (future: could search actual metric names from summaries)
-      const s = summaries[ds.id];
-      // Simple: include source if it has metrics matching the metric search term
-      // (In a full implementation, you'd fetch metric names; here we match on source name as fallback)
-      return !s || s.metric_count > 0;
-    });
-  }, [modelSources, search, metricSearch, summaries]);
+    if (!q) return modelSources;
+    return modelSources.filter((ds) => (ds.name || '').toLowerCase().includes(q));
+  }, [modelSources, search]);
 
   useEffect(() => {
     if (!isEnterpriseEdition || modelSources.length === 0) {
@@ -96,7 +91,7 @@ export default function SemanticLayerHubPage() {
     return () => {
       cancelled = true;
     };
-  }, [modelSources, projectId]);
+  }, [modelSources, projectId, t]);
 
   const openStudio = (id: string) => {
     router.push(`/data/sources/${id}/semantic`);
@@ -113,7 +108,11 @@ export default function SemanticLayerHubPage() {
           <span>
             <Text strong>{name}</Text>
             {summaries[record.id]?.certified_metric_count > 0 && (
-              <Tooltip title={t('certified_metrics_tooltip', { n: summaries[record.id].certified_metric_count })}>
+              <Tooltip
+                title={t('certified_metrics_tooltip', {
+                  n: summaries[record.id].certified_metric_count,
+                })}
+              >
                 <CheckCircleOutlined
                   style={{ color: 'var(--ant-color-success)', fontSize: 12, marginLeft: 6 }}
                 />
@@ -124,64 +123,53 @@ export default function SemanticLayerHubPage() {
       ),
     },
     {
-      title: t('col_metrics'),
-      key: 'metrics',
-      width: 90,
-      sorter: (a: DataSource, b: DataSource) => (summaries[a.id]?.metric_count ?? 0) - (summaries[b.id]?.metric_count ?? 0),
+      title: t('col_model'),
+      key: 'model',
+      width: 220,
+      sorter: (a: DataSource, b: DataSource) =>
+        (summaries[a.id]?.metric_count ?? 0) - (summaries[b.id]?.metric_count ?? 0),
       render: (_: unknown, record: DataSource) => {
         const s = summaries[record.id];
-        const n = s?.metric_count ?? 0;
         if (summaryLoading && !s) return '—';
-        return n > 0
-          ? <Tag bordered className="page-table-tag" color="blue">{n}</Tag>
-          : <Text type="secondary">0</Text>;
-      },
-    },
-    {
-      title: t('col_dimensions'),
-      key: 'dimensions',
-      width: 100,
-      sorter: (a: DataSource, b: DataSource) => (summaries[a.id]?.dimension_count ?? 0) - (summaries[b.id]?.dimension_count ?? 0),
-      render: (_: unknown, record: DataSource) => {
-        const s = summaries[record.id];
-        return summaryLoading && !s ? '—' : s?.dimension_count ?? 0;
-      },
-    },
-    {
-      title: t('col_certified'),
-      key: 'certified',
-      width: 100,
-      sorter: (a: DataSource, b: DataSource) => (summaries[a.id]?.certified_metric_count ?? 0) - (summaries[b.id]?.certified_metric_count ?? 0),
-      render: (_: unknown, record: DataSource) => {
-        const s = summaries[record.id];
-        const n = s?.certified_metric_count ?? 0;
-        return n > 0 ? (
-          <Tag bordered className="page-table-tag" color="success" icon={<CheckCircleOutlined />}>{n}</Tag>
-        ) : (
-          <Text type="secondary">0</Text>
-        );
-      },
-    },
-    {
-      title: t('col_readiness'),
-      key: 'readiness',
-      width: 120,
-      render: (_: unknown, record: DataSource) => {
-        const s = summaries[record.id];
-        if (!s || summaryLoading) return null;
+        if (!s) {
+          return isEnterpriseEdition ? (
+            <Text type="secondary">0</Text>
+          ) : (
+            <Tag color="default">{t('readiness_empty')}</Tag>
+          );
+        }
         const total = (s.metric_count ?? 0) + (s.dimension_count ?? 0);
         if (total === 0) return <Tag color="default">{t('readiness_empty')}</Tag>;
-        if (s.certified_metric_count > 0) return <Tag color="success">{t('readiness_certified')}</Tag>;
-        return <Tag color="warning">{t('readiness_draft')}</Tag>;
+        const readiness =
+          s.certified_metric_count > 0 ? (
+            <Tag color="success">{t('readiness_certified')}</Tag>
+          ) : (
+            <Tag color="warning">{t('readiness_draft')}</Tag>
+          );
+        return (
+          <Space size={6} wrap>
+            {readiness}
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t('model_summary', {
+                metrics: s.metric_count ?? 0,
+                dims: s.dimension_count ?? 0,
+              })}
+            </Text>
+          </Space>
+        );
       },
     },
     {
       title: tData('col_status'),
       dataIndex: 'connection_status',
       key: 'connection_status',
-      width: 110,
+      width: 120,
       render: (status: string) => (
-        <Tag bordered className="page-table-tag" color={status === 'connected' ? 'success' : status === 'error' ? 'error' : 'default'}>
+        <Tag
+          bordered
+          className="page-table-tag"
+          color={status === 'connected' ? 'success' : status === 'error' ? 'error' : 'default'}
+        >
           {status || 'unknown'}
         </Tag>
       ),
@@ -189,9 +177,17 @@ export default function SemanticLayerHubPage() {
     {
       title: tData('col_actions'),
       key: 'actions',
-      width: 120,
+      width: 140,
       render: (_: unknown, record: DataSource) => (
-        <Button type="link" size="small" onClick={() => openStudio(record.id)}>
+        <Button
+          type="primary"
+          ghost
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            openStudio(record.id);
+          }}
+        >
           {t('open_studio')}
         </Button>
       ),
@@ -199,71 +195,81 @@ export default function SemanticLayerHubPage() {
   ];
 
   return (
-    <DashboardPageShell maxWidth={1400}>
+    <DashboardPageShell>
       <DashboardPageHeader
         icon={<NodeIndexOutlined />}
         title={t('title')}
         description={t('description')}
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/data')}>
+            {t('connect_data')}
+          </Button>
+        }
       />
 
       <div className="page-body">
-      {isLoading ? (
-        <DashboardPageLoading />
-      ) : modelSources.length === 0 ? (
-        <DashboardPageEmpty
-          description={
-            <span>
-              <Text strong>{t('empty_title')}</Text>
-              <br />
-              <Text type="secondary">{t('empty_desc')}</Text>
-            </span>
-          }
-          action={
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/data')}>
-              {t('connect_data')}
-            </Button>
-          }
-        />
-      ) : (
-        <Card
-          className="page-section-card content-card"
-          title={t('sources_title')}
-          extra={
-            <Space wrap>
+        {isLoading ? (
+          <DashboardPageLoading />
+        ) : modelSources.length === 0 ? (
+          <DashboardPageEmpty
+            description={
+              <span>
+                <Text strong>{t('empty_title')}</Text>
+                <br />
+                <Text type="secondary">{t('empty_desc')}</Text>
+              </span>
+            }
+            action={
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => router.push('/data')}>
+                {t('connect_data')}
+              </Button>
+            }
+          />
+        ) : (
+          <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+            <Text type="secondary" style={{ display: 'block' }}>
+              {t('trust_line')}
+            </Text>
+            <div className="flex flex-wrap items-center gap-2">
               <Input
                 allowClear
                 prefix={<SearchOutlined />}
                 placeholder={t('search_placeholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ width: 180 }}
+                style={{ width: 260 }}
               />
-              <Input
-                allowClear
-                prefix={<SearchOutlined />}
-                placeholder={t('search_metrics_placeholder')}
-                value={metricSearch}
-                onChange={(e) => setMetricSearch(e.target.value)}
-                style={{ width: 180 }}
+            </div>
+            {filteredSources.length === 0 ? (
+              <DashboardPageEmpty
+                description={
+                  <span>
+                    <Text strong>{t('empty_filtered_title')}</Text>
+                    <br />
+                    <Text type="secondary">{t('empty_filtered_desc')}</Text>
+                  </span>
+                }
+                action={
+                  <Button onClick={() => setSearch('')}>{t('clear_search')}</Button>
+                }
               />
-            </Space>
-          }
-        >
-          <Table
-            className="page-data-table"
-            rowKey="id"
-            dataSource={filteredSources}
-            columns={columns}
-            loading={summaryLoading && Object.keys(summaries).length === 0}
-            pagination={filteredSources.length > 10 ? { pageSize: 10 } : false}
-            onRow={(record) => ({
-              onClick: () => openStudio(record.id),
-              style: { cursor: 'pointer' },
-            })}
-          />
-        </Card>
-      )}
+            ) : (
+              <Table
+                className="page-data-table"
+                rowKey="id"
+                dataSource={filteredSources}
+                columns={columns}
+                loading={summaryLoading && Object.keys(summaries).length === 0}
+                pagination={filteredSources.length > 10 ? { pageSize: 10 } : false}
+                onRow={(record) => ({
+                  onClick: () => openStudio(record.id),
+                  style: { cursor: 'pointer' },
+                })}
+              />
+            )}
+          </Space>
+        )}
       </div>
     </DashboardPageShell>
   );
-};
+}

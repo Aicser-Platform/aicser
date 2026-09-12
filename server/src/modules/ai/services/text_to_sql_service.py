@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Any, Optional
 
 import sqlparse
 
@@ -26,11 +26,19 @@ _DIALECTS = {
     "file": "duckdb",
     "postgresql": "postgres",
     "postgres": "postgres",
+    "pg": "postgres",
     "mysql": "mysql",
     "mariadb": "mysql",
     "snowflake": "snowflake",
     "duckdb": "duckdb",
     "sample_duckdb": "duckdb",
+    "bigquery": "bigquery",
+    "clickhouse": "clickhouse",
+    "redshift": "redshift",
+    "mssql": "tsql",
+    "sqlserver": "tsql",
+    "tsql": "tsql",
+    "sqlite": "sqlite",
 }
 
 _READ_ONLY_STARTS = ("select", "with")
@@ -42,8 +50,18 @@ class NoProviderKeyError(Exception):
         self.provider = provider
 
 
+class DataSourceAccessDeniedError(Exception):
+    pass
+
+
 class DataSourceNotFoundError(Exception):
     pass
+
+
+class UnsafeSqlError(Exception):
+    def __init__(self, sql: str):
+        self.sql = sql
+        super().__init__("Generated SQL is not a read-only SELECT")
 
 
 def dialect_for_type(ds_type: str | None) -> str:
@@ -81,6 +99,7 @@ def render_schema(schema: dict[str, Any], max_tables: int = 40, max_cols: int = 
     # names but execution needs the physical ones, so present those to the LLM.
     duckdb_tables = schema.get("duckdb_tables") or {}
     lines: list[str] = []
+    prompt_tables: list[dict[str, Any]] = []
     for table in tables[:max_tables]:
         name = table.get("name") or table.get("table") or "table"
         physical = duckdb_tables.get(name) or name
@@ -89,7 +108,17 @@ def render_schema(schema: dict[str, Any], max_tables: int = 40, max_cols: int = 
             f"{c.get('name')}:{c.get('type', 'unknown')}" for c in cols[:max_cols] if c.get("name")
         )
         lines.append(f"- {physical}({rendered_cols})")
-    return "\n".join(lines) if lines else "(no schema available)"
+        prompt_tables.append({**table, "name": physical})
+    body = "\n".join(lines) if lines else "(no schema available)"
+    try:
+        from src.shared.sql_schema_bind import format_join_paths_for_llm
+
+        join_block = format_join_paths_for_llm({"tables": prompt_tables}, compact=True, max_tables=max_tables)
+        if join_block:
+            body = body + "\n" + join_block
+    except Exception:
+        pass
+    return body
 
 
 def build_messages(question: str, schema: dict[str, Any], dialect: str) -> list[dict[str, str]]:
@@ -101,6 +130,7 @@ def build_messages(question: str, schema: dict[str, Any], dialect: str) -> list[
         "- The statement MUST be read-only: a single SELECT (or WITH ... SELECT). "
         "Never write INSERT/UPDATE/DELETE/DROP/ALTER/CREATE.\n"
         "- Use only the given tables and columns; do not invent names.\n"
+        "- JOIN only when both tables list the same key column. Never invent a column to force a JOIN.\n"
         "- Add a reasonable LIMIT when the question implies a preview.\n\n"
         f"Schema:\n{render_schema(schema)}"
     )
@@ -148,9 +178,10 @@ def _response_content(resp: Any) -> str:
 
 
 class TextToSqlService:
-    def __init__(self, data_service=None, completion=None, provider_keys_fn=None):
+    def __init__(self, data_service=None, completion=None, provider_keys_fn=None, access_check_fn=None):
         self._data_service = data_service or _get_default_data_service()
         self._provider_keys_fn = provider_keys_fn or saved_provider_keys
+        self._access_check_fn = access_check_fn
         self._completion = completion
         if self._completion is None:
             import litellm
@@ -190,6 +221,14 @@ class TextToSqlService:
         if not question or not data_source_id:
             raise ValueError("question and data_source_id are required")
 
+        if self._access_check_fn is not None:
+            allowed = await self._access_check_fn(user_id, data_source_id)
+        else:
+            from src.modules.data.services.data_source_access_service import DataSourceAccessService
+            allowed = await DataSourceAccessService.can_query(user_id, data_source_id)
+        if not allowed:
+            raise DataSourceAccessDeniedError(data_source_id)
+
         keys = await self._provider_keys_fn(user_id)
         chosen_model = self._pick_model(model, keys)
         if not chosen_model:
@@ -220,9 +259,42 @@ class TextToSqlService:
             completion_kwargs["api_base"] = api_base
         resp = await self._completion(**completion_kwargs)
         sql = extract_sql(_response_content(resp))
-        warning = None if is_read_only_sql(sql) else (
-            "Generated statement is not a read-only SELECT; review before running."
-        )
+        if not is_read_only_sql(sql):
+            raise UnsafeSqlError(sql)
+        warning = None
+        try:
+            from src.shared.sql_schema_bind import bind_sql_to_schema, bind_fix_instruction, format_bind_error
+
+            bound = bind_sql_to_schema(sql, schema, rewrite=True)
+            sql = bound.sql
+            if bound.issues:
+                instruction = bind_fix_instruction(bound, schema)
+                repair_messages = list(messages) + [
+                    {"role": "assistant", "content": sql},
+                    {
+                        "role": "user",
+                        "content": (
+                            "That SQL is invalid against the schema:\n"
+                            f"{instruction}\n"
+                            "Rewrite ONE valid SELECT using only listed tables/columns and JOIN PATHS."
+                        ),
+                    },
+                ]
+                repair_kwargs = dict(completion_kwargs)
+                repair_kwargs["messages"] = repair_messages
+                resp2 = await self._completion(**repair_kwargs)
+                repaired = extract_sql(_response_content(resp2))
+                if is_read_only_sql(repaired):
+                    bound2 = bind_sql_to_schema(repaired, schema, rewrite=True)
+                    sql = bound2.sql
+                    if bound2.issues:
+                        warning = format_bind_error(bound2, schema)
+                    else:
+                        warning = None
+                else:
+                    warning = format_bind_error(bound, schema)
+        except Exception:
+            pass
         return {
             "success": True,
             "sql": sql,

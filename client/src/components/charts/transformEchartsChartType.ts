@@ -28,15 +28,53 @@ export function transformEchartsChartType(
 
   if (targetType === 'bar' || targetType === 'line' || targetType === 'area') {
     const series = Array.isArray(cfg.series) ? cfg.series : [];
-    cfg.series = series.map((s: Record<string, unknown>) => ({
-      ...s,
-      type: targetType === 'area' ? 'line' : targetType,
-      areaStyle: targetType === 'area' ? { opacity: 0.25 } : undefined,
-      smooth: targetType === 'line' || targetType === 'area',
-      symbol: targetType === 'line' ? 'circle' : undefined,
-      symbolSize: targetType === 'line' ? 6 : undefined,
-      stack: undefined,
-    }));
+    const isCiHelper = (s: Record<string, unknown>) => {
+      const n = String(s.name || '').toLowerCase();
+      return (
+        s._forecastCiHelper === true ||
+        n === '_ci_lower' ||
+        n === '95% interval' ||
+        n.includes('confidence') ||
+        n === 'lower bound' ||
+        s.stack === 'ci' ||
+        s.stack === 'confidence-band'
+      );
+    };
+    cfg.series = series
+      .filter((s: Record<string, unknown>) => {
+        // Keep modern `stack: 'ci'` / `95% interval` bands when staying on line;
+        // only drop legacy Lower Bound helpers when switching away from line.
+        if (targetType === 'line' && isCiHelper(s)) return true;
+        const n = String(s.name || '').toLowerCase();
+        return n !== 'lower bound' && !n.includes('confidence') && s.stack !== 'confidence-band';
+      })
+      .map((s: Record<string, unknown>) => {
+        if (isCiHelper(s)) {
+          // Preserve stacked CI band geometry — wiping areaStyle/stack is why
+          // "95% interval" stayed in the legend with no visible envelope.
+          return {
+            ...s,
+            type: 'line',
+            symbol: 'none',
+            stack: s.stack || 'ci',
+            stackStrategy: s.stackStrategy || 'all',
+            areaStyle:
+              String(s.name || '') === '_ci_lower'
+                ? { opacity: 0, color: 'transparent' }
+                : s.areaStyle || { color: 'rgba(145, 204, 117, 0.35)' },
+          };
+        }
+        return {
+          ...s,
+          type: targetType === 'area' ? 'line' : targetType,
+          areaStyle: targetType === 'area' ? { opacity: 0.25 } : undefined,
+          smooth: targetType === 'line' || targetType === 'area',
+          symbol: targetType === 'line' ? 'circle' : undefined,
+          symbolSize: targetType === 'line' ? 6 : undefined,
+          stack: s.stack === 'confidence-band' ? s.stack : undefined,
+          connectNulls: s.connectNulls === true,
+        };
+      });
     if (!cfg.xAxis) cfg.xAxis = { type: 'category', data: [] };
     if (!cfg.yAxis) cfg.yAxis = { type: 'value' };
     return { viewType: targetType, config: cfg };

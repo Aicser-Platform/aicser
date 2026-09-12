@@ -2,13 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { Button, Empty, Spin } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import FeedCard from '@/app/(dashboard)/feed/components/FeedCard';
+import FeedCardActions from '@/app/(dashboard)/feed/components/FeedCard/FeedCardActions';
+import FeedDiscussion from '@/app/(dashboard)/feed/components/FeedDiscussion/FeedDiscussion';
 import { FeedPostViewer } from '@/app/(dashboard)/feed/components/FeedPostViewer';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
 import { DiscoverDetailActions } from '@/components/discover/DiscoverDetailActions';
@@ -34,9 +35,13 @@ function DiscoverDetailContent() {
     handleReact,
     handleSave,
     handleAddComment,
-    handleToggleFollow,
-    handleDeleteItem,
+    handleCommentDeleted,
   } = useFeedItemInteractions(item, setItem);
+
+  const noop = useCallback(() => {}, []);
+  const stopPropagation = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  }, []);
 
   useEffect(() => {
     if (!itemId) {
@@ -76,32 +81,9 @@ function DiscoverDetailContent() {
     );
   }
 
-  if (isAuthenticated) {
-    return (
-      <>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          className="mb-4"
-          onClick={() => router.push('/discover')}
-        >
-          {t('back_to_discover')}
-        </Button>
-        <DiscoverDetailActions item={item} className="mb-4" />
-        <FeedCard
-          item={item}
-          detailBasePath="/discover"
-          onReact={handleReact}
-          onSave={handleSave}
-          onAddComment={handleAddComment}
-          onToggleFollow={handleToggleFollow}
-          onDeleteItem={handleDeleteItem}
-          interactionState={pendingInteractions[item.id]}
-          compact={false}
-        />
-      </>
-    );
-  }
+  const reacting = Boolean(pendingInteractions[item.id]?.reacting);
+  const saving = Boolean(pendingInteractions[item.id]?.saving);
+  const commenting = Boolean(pendingInteractions[item.id]?.commenting);
 
   return (
     <>
@@ -113,24 +95,55 @@ function DiscoverDetailContent() {
       >
         {t('back_to_discover')}
       </Button>
-
       <DiscoverDetailActions item={item} className="mb-4" />
 
       <div className="discover-detail-preview">
-        <div className="px-5 pt-4 pb-2 border-b border-[var(--ant-color-border-secondary)]">
-          <FeedPostContent item={item} />
+        <div className="px-5 pt-4 pb-3 border-b border-[var(--ant-color-border-secondary)]">
+          <FeedPostContent item={item} variant="detail" />
         </div>
         <div className="discover-detail-preview-inner">
           <FeedPostViewer item={item} variant="detail" />
         </div>
       </div>
 
-      <div className="discover-signin-cta my-6">
-        <p>{t('interact_cta')}</p>
-        <Link href={`/login?next=${encodeURIComponent(`/discover/${itemId}`)}`}>
-          <Button type="primary">{t('sign_in')}</Button>
-        </Link>
-      </div>
+      {isAuthenticated ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <FeedCardActions
+            item={item}
+            reacting={reacting}
+            saving={saving}
+            commenting={commenting}
+            detailPath={`/discover/${item.id}`}
+            stopPropagation={stopPropagation}
+            onReact={handleReact}
+            onSave={handleSave}
+            onOpen={noop}
+            onPrefetch={noop}
+            showCommentBox={false}
+            hideOpen
+            hideMetricsSummary
+            onToggleCommentBox={() => {
+              document.getElementById('discover-detail-discussion')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            closeCommentReactionPicker={noop}
+          />
+          <div id="discover-detail-discussion">
+            <FeedDiscussion
+              item={item}
+              onAddComment={handleAddComment}
+              onCommentDeleted={handleCommentDeleted}
+              commenting={commenting}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="discover-signin-cta my-6">
+          <p>{t('interact_cta')}</p>
+          <Link href={`/login?next=${encodeURIComponent(`/discover/${itemId}`)}`}>
+            <Button type="primary">{t('sign_in')}</Button>
+          </Link>
+        </div>
+      )}
     </>
   );
 }

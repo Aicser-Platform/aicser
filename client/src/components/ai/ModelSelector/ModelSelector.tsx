@@ -156,7 +156,7 @@ function modelMatchesSearch(model: ModelInfo, input: string): boolean {
 }
 
 const FALLBACK_DESC: Record<string, string> = {
-  auto: 'Automatically picks the best model for each task — recommended for most users.',
+  auto: 'Picks the best available LLM — click to choose a specific model',
   azure_gpt41_mini:
     'Fast, cost-effective model for everyday analysis — great for SQL generation, summaries, and quick insights.',
   openai_gpt4o_mini: 'Reliable general-purpose model with good quality and low latency — ideal for daily use.',
@@ -168,12 +168,12 @@ const FALLBACK_DESC: Record<string, string> = {
 // glance. This one is specifically about which LLM answers, so it says so.
 const AUTO_MODEL: ModelInfo = {
   id: 'auto',
-  name: 'Auto model',
+  name: 'Best available',
   provider: 'auto',
   cost_per_1k_tokens: 0,
   available: true,
   category: 'auto',
-  description: FALLBACK_DESC.auto,
+  description: 'Picks the best available LLM — click to choose a specific model',
 };
 
 /** Composer toolbar: show friendly label; full id stays in tooltip (e.g. "Gemini (gemini-…)" → "Gemini"). */

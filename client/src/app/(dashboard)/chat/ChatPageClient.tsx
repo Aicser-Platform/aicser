@@ -1,11 +1,12 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, type ComponentType } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Modal, Spin } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useAiAvailability } from '@/hooks/useAiAvailability';
+import { asDynamicModule } from '@/utils/asDynamicModule';
 
 function ChatPageFallback() {
   return (
@@ -22,10 +23,19 @@ function ChatPageFallback() {
   );
 }
 
-const EEChatPage = dynamic(() => import('../../../ee/chat-page'), {
-  ssr: false,
-  loading: ChatPageFallback,
-});
+const EEChatPage = dynamic(
+  () =>
+    import('../../../ee/chat-page').then((m) =>
+      asDynamicModule(
+        (m as { default?: ComponentType }).default ?? (m as ComponentType),
+        ChatPageFallback,
+      ),
+    ),
+  {
+    ssr: false,
+    loading: ChatPageFallback,
+  },
+);
 
 export default function ChatPageClient() {
   const router = useRouter();
@@ -68,6 +78,9 @@ export default function ChatPageClient() {
             // of the app while they sort it out with a teammate.
             <Button key="dismiss" onClick={() => router.push('/dashboards')}>
               {t('ai_provider_key_required_dismiss')}
+            </Button>,
+            <Button key="data" onClick={() => router.push('/data')}>
+              {t('connect_data_action')}
             </Button>,
             <Button
               key="configure"

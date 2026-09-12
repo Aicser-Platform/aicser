@@ -46,6 +46,9 @@ def test_primary_override_becomes_default_model(monkeypatch):
     assert config["api_key"] == "thk_fake_key"
     assert service.default_model == "primary_override"
     assert service.get_model_for_tier("fast") == "primary_override"
+    # Best available must not silently upgrade SQL/insight nodes to a
+    # slower curated Pro just because OPENROUTER_API_KEY registered one.
+    assert service.get_model_for_tier("reasoning") == "primary_override"
 
 
 def test_primary_override_wins_over_azure_without_deleting_azure_config(monkeypatch):

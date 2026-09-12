@@ -45,6 +45,11 @@ const EXPORT_IGNORE_CLASSES = [
   'aiser-watermark-overlay',
   'no-export',
   'no-print',
+  'shared-dashboard-header',
+  'shared-dashboard-toolbar',
+  'shared-dashboard-filters',
+  'dashboard-data-freshness',
+  'dashboard-executive-banner',
 ] as const;
 
 const COLOR_PROPS = [
@@ -373,6 +378,10 @@ function prepareExportLayout(root: HTMLElement): () => void {
       node.classList.contains('studio-canvas-area') ||
       node.classList.contains('dashboard-workspace') ||
       node.classList.contains('dashboard-workspace-main') ||
+      node.classList.contains('dashboard-canvas-wrapper') ||
+      node.classList.contains('dashboard-viewer-canvas') ||
+      node.classList.contains('shared-dashboard-content') ||
+      node.classList.contains('shared-dashboard-container') ||
       node.classList.contains('studio-body') ||
       node.classList.contains('studio-wrapper')
     ) {
@@ -694,7 +703,11 @@ export type ExportOptions = {
    * Paid plans: title + logo header only.
    */
   branding?: boolean;
+  /** html2canvas scale override (default: clamp devicePixelRatio to 2–2.5). */
+  scale?: number;
 };
+
+export type DashboardExportFormat = 'png' | 'pdf' | 'print';
 
 function waitFrames(n = 2): Promise<void> {
   return new Promise((resolve) => {
@@ -704,6 +717,56 @@ function waitFrames(n = 2): Promise<void> {
     };
     step(n);
   });
+}
+
+/** Let ECharts finish paint after layout resize before rasterizing. */
+async function settleChartsForExport(root: HTMLElement): Promise<void> {
+  window.dispatchEvent(new Event('resize'));
+  await waitFrames(3);
+  await new Promise((r) => setTimeout(r, 280));
+  const canvases = root.querySelectorAll('canvas');
+  if (!canvases.length) return;
+  await waitFrames(2);
+}
+
+/**
+ * html2canvas often blanks WebGL/canvas chart surfaces. Replace each live
+ * canvas with a PNG <img> in the clone so the export matches on-screen charts.
+ */
+function replaceCanvasesWithImages(
+  clonedDoc: Document,
+  clonedRoot: HTMLElement,
+  sourceRoot: HTMLElement,
+) {
+  const sourceCanvases = Array.from(sourceRoot.querySelectorAll('canvas'));
+  const cloneCanvases = Array.from(clonedRoot.querySelectorAll('canvas'));
+  const count = Math.min(sourceCanvases.length, cloneCanvases.length);
+  for (let i = 0; i < count; i++) {
+    const src = sourceCanvases[i];
+    const clone = cloneCanvases[i];
+    if (!(src instanceof HTMLCanvasElement) || !(clone instanceof HTMLCanvasElement)) continue;
+    if (src.width < 2 || src.height < 2) continue;
+    try {
+      const dataUrl = src.toDataURL('image/png');
+      if (!dataUrl || dataUrl === 'data:,') continue;
+      const img = clonedDoc.createElement('img');
+      img.src = dataUrl;
+      img.alt = '';
+      img.width = src.width;
+      img.height = src.height;
+      const cs = window.getComputedStyle(src);
+      img.style.cssText = [
+        `width:${cs.width || `${src.clientWidth}px`}`,
+        `height:${cs.height || `${src.clientHeight}px`}`,
+        'display:block',
+        'max-width:100%',
+        'object-fit:contain',
+      ].join(';');
+      clone.replaceWith(img);
+    } catch {
+      /* tainted canvas — leave as-is */
+    }
+  }
 }
 
 /**
@@ -791,13 +854,9 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
   // The container was just resized to its full unclipped content box (above),
   // which can differ from what was on screen (e.g. a scrolled/short viewport).
   // Every chart widget already listens for a window 'resize' to re-measure
-  // itself (EChartWidget/RawEChartWidget/GeoMapWidget) — reusing that instead
-  // of a bespoke per-chart-instance hook here keeps capture correctness in
-  // sync with whatever those components already do for live layout changes,
-  // and closes the gap where a chart mid-resize at click time could otherwise
-  // get captured at a stale size.
-  window.dispatchEvent(new Event('resize'));
-  await waitFrames(2);
+  // itself (EChartWidget/RawEChartWidget/GeoMapWidget) — settle before capture
+  // so png/pdf don't rasterize mid-resize blank canvases.
+  await settleChartsForExport(root);
 
   const rootRect = root.getBoundingClientRect();
   const zoom = readCssZoom(root) || 1;
@@ -811,22 +870,31 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
   });
 
   try {
-    const captureScale = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 2 : 2);
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 2 : 2;
+    const captureScale =
+      typeof opts.scale === 'number' && opts.scale > 0
+        ? opts.scale
+        : Math.min(2.5, Math.max(2, dpr));
     const html2canvasOpts = {
       backgroundColor,
       scale: captureScale,
       useCORS: true,
+      allowTaint: false,
       logging: false,
+      imageTimeout: 15000,
       width: box.width,
       height: box.height,
+      windowWidth: box.width,
+      windowHeight: box.height,
       x: 0,
       y: 0,
       scrollX: -window.scrollX,
       scrollY: -window.scrollY,
       ignoreElements: shouldIgnoreExportElement,
-      onclone: (_clonedDoc: Document, clonedElement: HTMLElement) => {
+      onclone: (clonedDoc: Document, clonedElement: HTMLElement) => {
         if (!(clonedElement instanceof HTMLElement)) return;
         sanitizeCloneForHtml2Canvas(clonedElement, root);
+        replaceCanvasesWithImages(clonedDoc, clonedElement, root);
         clonedElement.style.width = `${box.width}px`;
         clonedElement.style.height = `${box.height}px`;
         clonedElement.style.minHeight = `${box.height}px`;
@@ -916,7 +984,13 @@ export async function exportDashboardCanvas(format: 'png' | 'pdf', opts: ExportO
   const jsPDFMod = await import('jspdf');
   const jsPDF = jsPDFMod.default ?? jsPDFMod;
   const orientation = canvas.width >= canvas.height * 0.85 ? 'landscape' : 'portrait';
-  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  pdf.setProperties({
+    title: title || filename,
+    subject: 'Aicser dashboard export',
+    creator: 'Aicser',
+    author: 'Aicser',
+  });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   // Industry-tight margins (~0.4")
@@ -934,7 +1008,8 @@ export async function exportDashboardCanvas(format: 'png' | 'pdf', opts: ExportO
     pdf.setFillColor(fill.r, fill.g, fill.b);
     pdf.rect(0, 0, pageW, pageH, 'F');
     const piece = sliceCanvas(canvas, slice.y, slice.h, backgroundColor);
-    pdf.addImage(piece.toDataURL('image/png'), 'PNG', margin, margin, drawW, slice.h * scale);
+    // JPEG keeps multi-page dashboard PDFs small without visible chart loss at 0.92
+    pdf.addImage(piece.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, drawW, slice.h * scale);
   });
   pdf.save(`${filename}.pdf`);
 }

@@ -3,63 +3,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Empty } from 'antd';
 import { useTranslations } from 'next-intl';
-import { WidgetPreview } from '@/app/(dashboard)/dashboards/widgets/WidgetPreview';
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
 import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/DashboardPageTabs';
-import { shouldShowWidgetHeader } from '@/app/(dashboard)/dashboards/utils/widgetCardHelpers';
 import { filterVisibleWidgets, filterVisibleLayout } from '@/app/(dashboard)/dashboards/utils/dashboardViewerScope';
 import type { FeedItem } from '@/services/socialFeedService';
-import type { WidgetInstance } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
-import { resolveBackendMediaUrl } from '@/utils/mediaUrl';
-// Same stylesheet the dashboard canvas and shared/embed viewers load (see
-// FeedDashboardViewer.tsx) — needed here too, since this snapshot path renders
-// widgets through the .widget-card / .widget-card-body structure below.
+import { resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
+import { isVideoMediaUrl, resolveBackendMediaUrl } from '@/utils/mediaUrl';
 import '@/app/(dashboard)/dashboards/DashboardStudio.css';
 import {
   snapshotLayoutFromPayload,
   snapshotWidgetsFromPayload,
   type FeedSnapshotPayload,
 } from '../utils/buildFeedSnapshotPayload';
-
-/**
- * Renders one widget using the exact same `.widget-card` / `.widget-card-header` /
- * `.widget-card-body` structure as `DashboardViewerGrid` (the canvas's read-only
- * grid). Reusing that structure — not an ad-hoc Ant `Card` — is what lets
- * `WidgetPreview`'s flex-fill chart sizing (`.widget-content-root` /
- * `.widget-chart-shell`) work, and keeps snapshots visually identical to the canvas.
- * The wrapper gets an explicit pixel height (snapshots aren't on a react-grid-layout
- * track, so there's no row height to inherit `height: 100%` from).
- */
-function SnapshotWidgetCard({
-  widget,
-  minHeight,
-  compactPreview = false,
-}: {
-  widget: WidgetInstance;
-  minHeight: number;
-  compactPreview?: boolean;
-}) {
-  const showHeader = shouldShowWidgetHeader(widget);
-
-  return (
-    <div
-      className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}
-      style={{ height: minHeight }}
-    >
-      {showHeader && (
-        <div className="widget-card-header widget-card-header-stack">
-          <span className="widget-card-title">{widget.title}</span>
-          {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
-            <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
-          ) : null}
-        </div>
-      )}
-      <div className="widget-card-body no-drag">
-        <WidgetPreview widget={widget} readOnly compactPreview={compactPreview} />
-      </div>
-    </div>
-  );
-}
+import { FEED_DASHBOARD_PREVIEW_MAX, isFeedPreviewableWidget, pickFeedPreviewWidgets } from '../utils/feedDashboardPreviewLayout';
+import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
 
 type Props = {
   item: FeedItem;
@@ -112,8 +69,11 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
       .map((id) => widgetById.get(id))
       .filter((widget): widget is (typeof orderedWidgets)[number] => Boolean(widget));
     const featuredSet = new Set(featured.map((widget) => widget.id));
-    const candidates = [...featured, ...orderedWidgets.filter((widget) => !featuredSet.has(widget.id))];
-    return maxWidgets ? candidates.slice(0, maxWidgets) : candidates;
+    const candidates = [...featured, ...orderedWidgets.filter((widget) => !featuredSet.has(widget.id))].filter(
+      (widget) => isFeedPreviewableWidget(widget.chartType),
+    );
+    const limit = maxWidgets ?? FEED_DASHBOARD_PREVIEW_MAX;
+    return pickFeedPreviewWidgets(candidates, limit);
   }, [maxWidgets, orderedWidgets, payload?.visuals.presentation?.featuredWidgetIds, variant]);
 
   const layoutForWidgets = useMemo(
@@ -128,14 +88,26 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
     // content isn't widget-shaped. Falling back to a bare "unavailable" empty
     // state discarded title/excerpt/thumbnail data that publishing already
     // captured correctly — this renders that instead of nothing.
-    const excerpt = item.asset.excerpt || item.description;
+    const excerpt = resolveFeedPostSummary(item) || item.asset.excerpt || item.description;
     const thumbnail = resolveBackendMediaUrl(item.asset.thumbnailUrl);
     if (excerpt || thumbnail) {
       return (
-        <div className="feed-snapshot-viewer feed-snapshot-viewer--text-fallback rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] overflow-hidden">
+        <div className="feed-snapshot-viewer feed-snapshot-viewer--text-fallback overflow-hidden bg-[var(--ant-color-bg-container)]">
           {thumbnail ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumbnail} alt={item.title} className="block w-full max-h-[420px] object-cover object-top" />
+            isVideoMediaUrl(thumbnail) ? (
+              <video
+                src={thumbnail}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                className="block w-full max-h-[420px] object-contain bg-[var(--ant-color-bg-container)]"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumbnail} alt={item.title} className="block w-full max-h-[420px] object-contain object-top bg-[var(--ant-color-bg-container)]" />
+            )
           ) : null}
           {excerpt ? (
             <p className="m-0 p-5 text-sm leading-relaxed text-[var(--ant-color-text-secondary)] whitespace-pre-line">
@@ -153,16 +125,13 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
   }
 
   if (variant === 'card') {
-    const widgetMinHeight = widgets.length === 1 ? 300 : 132;
-
+    const previewableCount = pickFeedPreviewWidgets(orderedWidgets, 999).length;
     return (
-      <div className="relative min-h-[420px] overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)] bg-gradient-to-br from-[var(--ant-color-primary-bg)] via-[var(--ant-color-bg-container)] to-[var(--ant-color-fill-quaternary)] p-1.5 shadow-inner">
-        <div className={`grid min-h-0 grid-cols-2 gap-1.5 ${widgets.length === 1 ? 'grid-cols-1' : ''}`}>
-          {widgets.map((widget) => (
-            <SnapshotWidgetCard key={widget.id} widget={widget} minHeight={widgetMinHeight} compactPreview />
-          ))}
-        </div>
-      </div>
+      <FeedDashboardPreviewGrid
+        widgets={widgets}
+        maxWidgets={maxWidgets ?? FEED_DASHBOARD_PREVIEW_MAX}
+        totalWidgetCount={previewableCount}
+      />
     );
   }
 
@@ -174,24 +143,15 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
     const pageWidgets = filterVisibleWidgets(widgets, layoutForWidgets, activePageId, pages, defaultPageId);
     const pageLayout = filterVisibleLayout(layoutForWidgets, pageWidgets);
 
-    // A snapshot only ever captures a FEATURED subset of the source dashboard's
-    // widgets (buildDashboardSnapshotPayload caps at 6, ranked by relevance),
-    // not necessarily all of them — a flat canvas floor sized for "a normal
-    // full dashboard" left a couple of small, compact featured widgets
-    // floating in a mostly-empty box well past 480px tall. Deriving the floor
-    // from this snapshot's own actual widget footprint (max row extent × the
-    // grid's real row-height+margin, from DashboardViewerGrid's rowHeight=42/
-    // margin=[8,8]) means a 1-2-widget snapshot gets a canvas sized to what it
-    // actually shows, while a richer one still grows the same way it always did.
+    // Studio publish captures every widget; feed-attach snapshots may be a
+    // smaller ranked set. Size the canvas to this payload's own footprint so a
+    // 1–2 widget snapshot is not stranded in a huge empty box.
     const maxRowExtent = pageLayout.length ? Math.max(...pageLayout.map((item) => item.y + item.h)) : 0;
     const contentHeightPx = maxRowExtent * (42 + 8);
-    const detailCanvasMinHeight = `${Math.max(200, contentHeightPx + 32)}px`;
+    const detailCanvasMinHeight = `${Math.max(contentHeightPx + 16, 240)}px`;
 
-    // 'preserve' uses the widgets' actual saved x/y/w/h, so the snapshot lands in
-    // the same place and at the same size as the original dashboard design —
-    // the same grid component and layout mode the live dashboard path uses.
     return (
-      <div className="feed-snapshot-viewer feed-snapshot-viewer--detail">
+      <div className="feed-snapshot-viewer feed-snapshot-viewer--detail w-full">
         {pages.length > 1 ? (
           <div className="mb-2">
             <DashboardPageTabs pages={pages} activePageId={activePageId} onSelect={setActivePageId} readOnly showEmptyPlaceholder={false} />
@@ -205,6 +165,8 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
           onCrossFilter={noopCrossFilter}
           canvasMinHeight={detailCanvasMinHeight}
           layoutMode="preserve"
+          hideInteractionHint
+          eagerMount
         />
       </div>
     );

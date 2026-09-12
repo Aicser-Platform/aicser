@@ -6,9 +6,9 @@ import {
   measureHintsFromEchartsConfig,
   promoteChartQueryToMultiMetrics,
 } from '@/components/charts/normalizeMultiMetricChartQuery';
-import { columnHeaderFromKey } from '@/utils/columnLabels';
+import { columnHeaderFromKey, resolveColumnHeader } from '@/utils/columnLabels';
 
-import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
+import { DASHBOARD_SWITCHABLE_CHART_TYPES, isForecastEchartsConfig } from '@/components/charts/chartTypeCatalog';
 
 export type SharedChartProps = {
   chartType: string;
@@ -28,6 +28,18 @@ const CHART_ANIMATION_DEFAULTS = {
   animationDuration: 800,
   animationEasing: 'cubicOut',
 } as const;
+
+/** Presentation overrides stamped by the AI chart builder (aiserChartOptions). */
+function extractAiserChartOptions(cfg: Record<string, unknown>): Record<string, unknown> {
+  const stamped = cfg.aiserChartOptions;
+  if (!stamped || typeof stamped !== 'object' || Array.isArray(stamped)) return {};
+  const src = stamped as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of ['barChartType', 'showDataLabel', 'showLegend', 'design', 'legendPosition'] as const) {
+    if (src[key] !== undefined) out[key] = src[key];
+  }
+  return out;
+}
 
 function tagChatSource(props: SharedChartProps): SharedChartProps {
   return {
@@ -93,13 +105,55 @@ function buildStatFromConfig(cfg: Record<string, unknown>): SharedChartProps | n
   };
 }
 
+function toPlotNumber(d: unknown): number | null {
+  if (d == null || d === '') return null;
+  if (typeof d === 'object' && !Array.isArray(d) && d !== null && 'value' in d) {
+    const v = (d as { value: unknown }).value;
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (Array.isArray(d)) {
+    const n = Number(d[1] ?? d[0]);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(d);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isHelperForecastSeries(s: Record<string, unknown>): boolean {
+  const n = String(s.name || '').toLowerCase();
+  return (
+    s._forecastCiHelper === true ||
+    n === 'lower bound' ||
+    n === '_ci_lower' ||
+    n === '95% interval' ||
+    n.includes('confidence') ||
+    s.stack === 'confidence-band' ||
+    s.stack === 'ci'
+  );
+}
+
 function inferChartType(cfg: Record<string, unknown>): string | null {
   if (cfg.aiserWidgetType === 'stat') return 'stat';
+  const stamped = cfg.aiserChartType;
+  if (typeof stamped === 'string' && stamped.trim()) return stamped.trim().toLowerCase();
+  const cq = cfg._chart_query as { chartType?: string } | undefined;
+  if (typeof cq?.chartType === 'string' && cq.chartType.trim()) {
+    return cq.chartType.trim().toLowerCase();
+  }
+  if (isForecastEchartsConfig(cfg)) return 'line';
   const series = cfg.series as Array<Record<string, unknown>> | undefined;
   const first = series?.[0];
   if (!first?.type) return null;
   let chartType = String(first.type);
-  if (chartType === 'line' && series?.some((s) => s.areaStyle)) chartType = 'area';
+  if (chartType === 'line' && series?.some((s) => {
+    const area = s.areaStyle as { opacity?: number } | boolean | undefined;
+    if (!area) return false;
+    if (area === true) return true;
+    const opacity = typeof area === 'object' && typeof area.opacity === 'number' ? area.opacity : 0.3;
+    return opacity >= 0.2;
+  })) chartType = 'area';
   if (chartType === 'pie') {
     const radius = first.radius;
     if (Array.isArray(radius) && parseFloat(String(radius[0])) > 0) chartType = 'donut';
@@ -125,6 +179,12 @@ function inferChartType(cfg: Record<string, unknown>): string | null {
 }
 
 function isComplexEcharts(cfg: Record<string, unknown>): boolean {
+  if (isForecastEchartsConfig(cfg)) return true;
+  if (cfg.__animate) return true;
+  const series = (cfg.series as Array<Record<string, unknown>> | undefined) || [];
+  if (series.some((s) => s.markLine || s.stack === 'waterfall' || s.stack === 'confidence-band' || s.stack === 'ci')) {
+    return true;
+  }
   const graphic = cfg.graphic;
   if (!graphic) return false;
   // Only skip shared path for animation overlay graphics, not static heatmap labels.
@@ -191,7 +251,12 @@ function buildScatterFromQueryResult(
     return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0] as [number, number];
   });
 
-  const formatLabel = columnHeaderFromKey;
+  const formatLabel = (field: string) =>
+    resolveColumnHeader(
+      field,
+      (message as { analyticsMetadata?: { column_display_names?: Record<string, string> } })?.analyticsMetadata
+        ?.column_display_names,
+    );
 
   return {
     chartType: 'scatter',
@@ -220,6 +285,9 @@ function buildFromQueryResult(
   if (chartType === 'scatter') {
     return buildScatterFromQueryResult(rows, message);
   }
+  const displayNames = (message as { analyticsMetadata?: { column_display_names?: Record<string, string> } })
+    ?.analyticsMetadata?.column_display_names;
+  const labelOf = (field: string) => resolveColumnHeader(field, displayNames);
   const keys = Object.keys(rows[0]);
   const meta =
     (message as { executionMetadata?: { chart_query?: Record<string, unknown> } })?.executionMetadata
@@ -299,7 +367,7 @@ function buildFromQueryResult(
       return {
         chartType,
         chartData: { x: xOrder, y: series[0]?.data ?? [], series },
-        chartOptions: {},
+        chartOptions: { yAxisLabel: labelOf(yKey) },
         chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: groupKey },
       };
     }
@@ -317,8 +385,8 @@ function buildFromQueryResult(
     });
     return {
       chartType,
-      chartData: { x: xOrder, y: collapsed, series: [{ name: String(yKey), data: collapsed }] },
-      chartOptions: {},
+      chartData: { x: xOrder, y: collapsed, series: [{ name: labelOf(yKey), data: collapsed }] },
+      chartOptions: { yAxisLabel: labelOf(yKey) },
       chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: undefined },
     };
   }
@@ -336,7 +404,7 @@ function buildFromQueryResult(
 
   const x = rows.map((r) => String(r[xKey] ?? ''));
   const series = fieldsForType.map((field) => ({
-    name: String(field),
+    name: labelOf(field),
     data: rows.map((r) => Number(r[field]) || 0),
   }));
 
@@ -347,7 +415,7 @@ function buildFromQueryResult(
       y: series[0]?.data || [],
       series,
     },
-    chartOptions: {},
+    chartOptions: { yAxisLabel: labelOf(yKey) },
     chartQuery: {
       ...chartQuery,
       yMetrics: fieldsForType.map((field) => ({ field, aggregation: 'none' })),
@@ -394,7 +462,7 @@ function buildScatterFromEchartsConfig(cfg: Record<string, unknown>): SharedChar
       y: mappedSeries[0].data.map((p) => (Array.isArray(p) ? p[1] : 0)),
       series: mappedSeries,
     },
-    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true },
+    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true, ...extractAiserChartOptions(cfg) },
     chartQuery: {},
   };
 }
@@ -537,6 +605,7 @@ function buildFromDatasetEncode(cfg: Record<string, unknown>, chartType: string)
       ...CHART_ANIMATION_DEFAULTS,
       animation: cfg.animation ?? true,
       ...extractBarOrientationOptions(cfg),
+      ...extractAiserChartOptions(cfg),
     },
     chartQuery: chartQuery as Record<string, unknown>,
   };
@@ -582,16 +651,10 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
   const x = xRaw.map((v) => String(v ?? ''));
 
   const mappedSeries = series
-    .filter((s) => SUPPORTED.has(String(s.type || chartType)))
+    .filter((s) => !isHelperForecastSeries(s) && SUPPORTED.has(String(s.type || chartType)))
     .map((s, i) => {
       const raw = (s.data as unknown[]) || [];
-      const data = raw.map((d) => {
-        if (d && typeof d === 'object' && 'value' in (d as object)) {
-          return Number((d as { value: unknown }).value) || 0;
-        }
-        if (Array.isArray(d)) return Number(d[1]) || Number(d[0]) || 0;
-        return Number(d) || 0;
-      });
+      const data = raw.map((d) => toPlotNumber(d));
       return { name: String(s.name || `Series ${i + 1}`), data };
     });
 
@@ -618,6 +681,7 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
       ...CHART_ANIMATION_DEFAULTS,
       animation: cfg.animation ?? true,
       ...extractBarOrientationOptions(cfg),
+      ...extractAiserChartOptions(cfg),
     },
     chartQuery: chartQuery as Record<string, unknown>,
   };

@@ -4,15 +4,20 @@ Datasource upload object storage selector.
 Community Edition stores uploaded datasource files in the local PostgreSQL
 database. Enterprise Edition supports three backends selected via STORAGE_BACKEND:
   s3          — any S3-compatible provider (AWS, R2, Spaces, MinIO, Railway)
-  azure_blob  — Azure Blob Storage (default EE behaviour when STORAGE_BACKEND is unset)
-  postgresql  — PostgreSQL BYTEA (CE default, also available in EE)
+  azure_blob  — Azure Blob Storage
+  postgresql  — PostgreSQL BYTEA (CE default; also the EE local/docker default)
 
-When STORAGE_BACKEND is unset in EE, the service auto-detects: tries Azure
-credentials first, then falls back to PostgreSQL (backward-compatible).
+When STORAGE_BACKEND is unset in EE, auto-detect in order:
+  1. S3 credentials present → s3
+  2. Azure account URL + container present → azure_blob
+  3. otherwise → postgresql (works out of the box for local Docker)
 """
+
+from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Optional
 
 from src.core.edition import is_ee_enabled
@@ -23,9 +28,76 @@ logger = logging.getLogger(__name__)
 POSTGRES_OBJECT_PREFIX = "user_files/"
 CE_OBJECT_PREFIX = "user_files/ce/"
 
+# Env / credential names must never reach end users in API error text.
+_INTERNAL_STORAGE_DETAIL_RE = re.compile(
+    r"(?i)\b(?:AZURE_|S3_|STORAGE_BACKEND|environment variable|account[_ ]?key|"
+    r"secret[_ ]?access|endpoint_url|bucket_name|AccountIsDisabled)\b"
+)
+
+
+def public_storage_error_message(exc: BaseException | str) -> str:
+    """User-safe upload/storage failure text (no env var / credential leaks)."""
+    raw = str(exc or "").strip()
+    if not raw:
+        return "File upload failed. Please try again."
+    if _INTERNAL_STORAGE_DETAIL_RE.search(raw):
+        return (
+            "File storage is not configured on this server. "
+            "Ask your admin to enable S3-compatible storage or local database storage, "
+            "then try again."
+        )
+    # Keep short business-facing messages; drop nested exception noise.
+    if "File upload failed:" in raw:
+        raw = raw.split("File upload failed:", 1)[-1].strip()
+    if len(raw) > 220:
+        return "File upload failed. Please try again."
+    return raw
+
 
 def _get_backend() -> str:
     return os.getenv("STORAGE_BACKEND", "").lower().strip()
+
+
+def _s3_credentials_present() -> bool:
+    return bool(
+        os.getenv("S3_ACCESS_KEY_ID", "").strip()
+        and os.getenv("S3_SECRET_ACCESS_KEY", "").strip()
+        and os.getenv("S3_BUCKET_NAME", "").strip()
+    )
+
+
+def _azure_credentials_present() -> bool:
+    account_url = os.getenv("AZURE_STORAGE_ACCOUNT_URL", "").strip()
+    if not account_url:
+        account_name = (
+            os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "").strip()
+            or os.getenv("AZURE_STORAGE_ACCOUNT", "").strip()
+        )
+        if account_name:
+            account_url = f"https://{account_name}.blob.core.windows.net"
+    container = (
+        os.getenv("AZURE_STORAGE_CONTAINER_NAME", "").strip()
+        or os.getenv("AZURE_STORAGE_CONTAINER", "").strip()
+    )
+    return bool(account_url and container)
+
+
+def detect_storage_backend() -> str:
+    """Resolve EE storage backend from explicit env or available credentials."""
+    if not is_ee_enabled():
+        return "postgresql"
+    backend = _get_backend()
+    if backend == "s3":
+        return "s3"
+    if backend == "azure_blob":
+        return "azure_blob"
+    if backend == "postgresql":
+        return "postgresql"
+    if _s3_credentials_present():
+        return "s3"
+    if _azure_credentials_present():
+        return "azure_blob"
+    return "postgresql"
 
 
 class UploadDatasourceStorageService:
@@ -33,17 +105,7 @@ class UploadDatasourceStorageService:
 
     @property
     def storage_type(self) -> str:
-        if not is_ee_enabled():
-            return "postgresql"
-        backend = _get_backend()
-        if backend == "s3":
-            return "s3"
-        if backend == "azure_blob":
-            return "azure_blob"
-        if backend == "postgresql":
-            return "postgresql"
-        # Auto-detect: default to azure_blob for backward-compatibility (EE default)
-        return "azure_blob"
+        return detect_storage_backend()
 
     def _use_postgres_for_key(self, object_key: str) -> bool:
         return not is_ee_enabled() or object_key.startswith(POSTGRES_OBJECT_PREFIX)
@@ -78,10 +140,25 @@ class UploadDatasourceStorageService:
             config = await get_effective_storage_config()
             backend = str(config.get("backend") or "").lower().strip()
             if config.get("enabled") and backend in ("s3", "azure_blob", "postgresql"):
-                return backend, config
+                # Admin/env may set STORAGE_BACKEND=s3 without credentials yet —
+                # fall through to auto-detect so local docker still works.
+                if backend == "s3" and not (
+                    (config.get("access_key_id") and config.get("secret_access_key") and config.get("bucket_name"))
+                    or _s3_credentials_present()
+                ):
+                    logger.warning(
+                        "STORAGE_BACKEND=s3 configured but credentials missing; auto-detecting fallback"
+                    )
+                    return detect_storage_backend(), None
+                if backend == "azure_blob" and not _azure_credentials_present():
+                    logger.warning(
+                        "STORAGE_BACKEND=azure_blob configured but credentials missing; auto-detecting fallback"
+                    )
+                    return detect_storage_backend(), None
+                return backend, config if backend == "s3" else None
         except Exception:
             logger.exception("Failed to resolve runtime storage config; falling back to env")
-        return self.storage_type, None
+        return detect_storage_backend(), None
 
     async def store_file(
         self,
@@ -96,37 +173,57 @@ class UploadDatasourceStorageService:
         """Store uploaded datasource content and return its object key."""
         backend, storage_config = await self._resolved_backend()
 
-        if backend == "s3":
-            logger.info("Using S3 storage for datasource upload")
-            return await self._s3_storage(storage_config).store_file(
+        async def _store_postgres() -> str:
+            logger.info("Using PostgreSQL local storage for datasource upload")
+            return await self._postgres_storage().store_file(
                 file_content=file_content,
                 project_id=project_id,
                 original_filename=original_filename,
                 content_type=content_type,
-                source_id=source_id,
-                organization_id=organization_id,
-                user_id=user_id,
             )
+
+        if backend == "s3":
+            try:
+                logger.info("Using S3 storage for datasource upload")
+                return await self._s3_storage(storage_config).store_file(
+                    file_content=file_content,
+                    project_id=project_id,
+                    original_filename=original_filename,
+                    content_type=content_type,
+                    source_id=source_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "S3 storage failed (%s); falling back to PostgreSQL",
+                    public_storage_error_message(exc),
+                    exc_info=True,
+                )
+                return await _store_postgres()
 
         if backend == "azure_blob":
-            logger.info("Using Azure Blob Storage for datasource upload")
-            return await self._azure_storage().store_file(
-                file_content=file_content,
-                project_id=project_id,
-                original_filename=original_filename,
-                content_type=content_type,
-                source_id=source_id,
-                organization_id=organization_id,
-                user_id=user_id,
-            )
+            try:
+                logger.info("Using Azure Blob Storage for datasource upload")
+                return await self._azure_storage().store_file(
+                    file_content=file_content,
+                    project_id=project_id,
+                    original_filename=original_filename,
+                    content_type=content_type,
+                    source_id=source_id,
+                    organization_id=organization_id,
+                    user_id=user_id,
+                )
+            except Exception as exc:
+                # Common local-dev case: Azure env present but account disabled/unreachable.
+                logger.warning(
+                    "Azure blob storage failed (%s); falling back to PostgreSQL",
+                    public_storage_error_message(exc),
+                    exc_info=True,
+                )
+                return await _store_postgres()
 
-        logger.info("Using PostgreSQL local storage for datasource upload")
-        return await self._postgres_storage().store_file(
-            file_content=file_content,
-            project_id=project_id,
-            original_filename=original_filename,
-            content_type=content_type,
-        )
+        return await _store_postgres()
 
     async def get_file(self, object_key: str, project_id: Optional[str]) -> bytes:
         """Retrieve uploaded datasource content from the storage backend."""

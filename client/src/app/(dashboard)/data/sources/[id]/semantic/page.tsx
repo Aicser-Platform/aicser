@@ -31,7 +31,7 @@ export default function SemanticStudioPage() {
   }, [authenticatedFetch, dataSourceId]);
 
   return (
-    <DashboardPageShell maxWidth={1400}>
+    <DashboardPageShell>
       <DashboardPageHeader
         title={name || t('page_title')}
         description={t('page_subtitle')}

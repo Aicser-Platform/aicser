@@ -7,6 +7,7 @@ Azure credentials are broken).
 """
 
 import asyncio
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -61,6 +62,7 @@ async def test_heartbeat_fires_periodically_during_a_slow_call():
     # "Still working with azure/glm-5.3".
     assert "azure/glm-5.3" not in events[0]
     assert "still working" in events[0].lower()
+    assert not re.search(r"\(\d+\s*s\)", events[0])
 
 
 @pytest.mark.asyncio

@@ -165,7 +165,7 @@ class FeedAttachmentPayload(BaseModel):
     referenced post's own visibility, in service_serialization.py), the UI
     renders a placeholder instead. `referencedPostId` is unset only if the
     publication was later deleted - the UI renders "no longer available"."""
-    asset_type: Literal["dashboard", "chart"]
+    asset_type: Literal["dashboard", "chart", "insight"]
     asset_id: str
     restricted: bool = False
     title: Optional[str] = None
@@ -451,10 +451,10 @@ class PublicationMode(str, Enum):
 
 
 class AttachmentRef(BaseModel):
-    """One existing dashboard/chart a NEW post wants to reference. Validated
+    """One existing dashboard/chart/insight a NEW post wants to reference. Validated
     against the AUTHOR's own access at publish time (publish_asset), then
     re-checked per-VIEWER at read time (service_serialization.py)."""
-    asset_type: Literal["dashboard", "chart"]
+    asset_type: Literal["dashboard", "chart", "insight"]
     asset_id: UUID
     # Captured client-side at pick time (AttachmentPicker, reusing the same
     # snapshot-build logic "Publish to Feed" already uses) so the auto-
@@ -462,6 +462,9 @@ class AttachmentRef(BaseModel):
     # instead of a live per-viewer query - see _get_or_create_attachment_
     # publication. None falls back to a live render, same as before.
     snapshot_payload: Optional[Dict[str, Any]] = None
+    # When attaching an already-published feed post, reuse that publication
+    # as referenced_post_id instead of auto-publishing a second copy.
+    publication_id: Optional[UUID] = None
 
 
 MAX_POST_ATTACHMENTS = 5

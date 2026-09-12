@@ -6,7 +6,9 @@ import { ApiOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+import { isEnterpriseEdition } from '@/utils/appPaths';
+
+const isEE = isEnterpriseEdition();
 
 const EEDataPlatformPage = dynamic(
   () => import('@/ee').then((m) => ({ default: m.DataPlatformPage })),

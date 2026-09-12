@@ -489,6 +489,18 @@
   color: var(--ant-color-primary);
 }
 
+.pp-chart-type-btn.is-disabled,
+.pp-chart-type-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.pp-chart-type-btn.is-disabled:hover,
+.pp-chart-type-btn:disabled:hover {
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
+}
+
 .pp-palette-row {
   display: flex;
   gap: 6px;

@@ -346,7 +346,9 @@ const SECTION_BY_CATEGORY: Record<string, string> = {
 
 /** Group shared templates into Add Block / empty-canvas sections. */
 export function buildWidgetSections(templates: WidgetTemplate[] = WIDGET_TEMPLATES) {
-  const ordered = orderedWidgetTemplates(templates);
+  // One on-canvas filter control (slicer). Legacy `filter` widgets still render.
+  const visible = templates.filter((t) => t.type !== 'filter');
+  const ordered = orderedWidgetTemplates(visible);
   const order = ['Charts', 'Indicators', 'Data', 'Content'];
   const grouped = new Map<string, WidgetTemplate[]>();
 

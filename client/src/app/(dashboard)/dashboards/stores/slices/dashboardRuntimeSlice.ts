@@ -33,7 +33,7 @@ export type DashboardRuntimeSlice = {
 type StoreWithRuntime = DashboardRuntimeSlice & {
   activeDashboardId: string | null;
   widgets: WidgetInstance[];
-  dashboards: { id: string; widgets: WidgetInstance[] }[];
+  dashboards: { id: string; widgets: WidgetInstance[]; config?: Record<string, unknown> }[];
   partitionSeriesData: (data: ChartData, widget: WidgetInstance) => ChartData;
   fetchChartData: (widgetId: string) => Promise<void>;
 };
@@ -86,7 +86,21 @@ export const createDashboardRuntimeSlice: StateCreator<
     await get().fetchChartData(widgetId);
   },
 
-  setGlobalFiltersConfig: (filters) => set({ globalFiltersConfig: filters }),
+  setGlobalFiltersConfig: (filters) =>
+    set((s) => {
+      const activeId = s.activeDashboardId;
+      // Keep dashboards[].config.global_filters in sync so later writers
+      // (tags/publish/feed snapshot) do not overwrite newer filter saves
+      // with a stale in-memory config.
+      const dashboards = activeId
+        ? s.dashboards.map((d) =>
+            String(d.id) === String(activeId)
+              ? { ...d, config: { ...(d.config || {}), global_filters: filters } }
+              : d,
+          )
+        : s.dashboards;
+      return { globalFiltersConfig: filters, dashboards };
+    }),
 
   setPageFiltersConfig: (filters) => set({ pageFiltersConfig: filters }),
 

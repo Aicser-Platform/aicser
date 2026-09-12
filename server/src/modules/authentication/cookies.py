@@ -42,6 +42,15 @@ def auth_cookie_secure() -> bool:
     if explicit in ("0", "false", "no"):
         return False
 
+    frontend_url = (
+        os.getenv("FRONTEND_URL")
+        or os.getenv("NEXT_PUBLIC_APP_URL")
+        or os.getenv("APP_URL")
+        or ""
+    ).strip().lower()
+    if frontend_url.startswith("https://"):
+        return True
+
     global _warned_insecure_production
     if not _warned_insecure_production:
         try:
@@ -49,11 +58,10 @@ def auth_cookie_secure() -> bool:
 
             if is_production():
                 logger.warning(
-                    "COOKIE_SECURE is not set in a production environment -- the session "
+                    "COOKIE_SECURE is not set and FRONTEND_URL is not https:// — the session "
                     "cookie is being sent without the Secure flag. If this deployment is "
-                    "reachable over HTTPS (directly or via a reverse proxy), set "
-                    "COOKIE_SECURE=true. If it's served over plain HTTP (e.g. localhost-only "
-                    "self-host), this is expected and safe to ignore."
+                    "reachable over HTTPS, set COOKIE_SECURE=true. If it is served over plain "
+                    "HTTP (localhost-only self-host), this is expected."
                 )
         except Exception:
             pass

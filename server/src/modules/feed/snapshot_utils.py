@@ -108,7 +108,7 @@ def build_snapshot_payload_from_preview(
     return None
 
 
-MAX_LIVE_SNAPSHOT_WIDGETS = 6
+MAX_LIVE_SNAPSHOT_WIDGETS = 24
 
 
 def _json_safe(value: Any) -> Any:

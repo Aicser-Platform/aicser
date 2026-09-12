@@ -4,19 +4,13 @@ import React from 'react';
 import { Tooltip } from 'antd';
 import {
   AppstoreOutlined,
-  PlusSquareOutlined,
   DatabaseOutlined,
   ApartmentOutlined,
 } from '@ant-design/icons';
+import { useTranslations } from 'next-intl';
 import './StudioSidebar.css';
 
 export type SidebarSection = 'dashboards' | 'data' | 'modeling';
-
-const SECTIONS: { key: SidebarSection; icon: React.ReactNode; label: string }[] = [
-  { key: 'dashboards', icon: <AppstoreOutlined />, label: 'Dashboards' },
-  { key: 'data', icon: <DatabaseOutlined />, label: 'Data' },
-  { key: 'modeling', icon: <ApartmentOutlined />, label: 'Data Modeling' },
-];
 
 interface StudioSidebarRailProps {
   activeSection: SidebarSection | null;
@@ -24,9 +18,16 @@ interface StudioSidebarRailProps {
 }
 
 export function StudioSidebarRail({ activeSection, onSectionChange }: StudioSidebarRailProps) {
+  const t = useTranslations('dashboards_page');
+  const sections: { key: SidebarSection; icon: React.ReactNode; label: string }[] = [
+    { key: 'dashboards', icon: <AppstoreOutlined />, label: t('rail_dashboards') },
+    { key: 'data', icon: <DatabaseOutlined />, label: t('rail_data') },
+    { key: 'modeling', icon: <ApartmentOutlined />, label: t('rail_modeling') },
+  ];
+
   return (
     <div className="studio-sidebar-rail">
-      {SECTIONS.map(({ key, icon, label }) => (
+      {sections.map(({ key, icon, label }) => (
         <Tooltip key={key} title={label} placement="right" mouseEnterDelay={0.4}>
           <button
             className={`studio-rail-btn${activeSection === key ? ' active' : ''}`}

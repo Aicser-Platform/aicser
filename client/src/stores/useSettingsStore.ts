@@ -90,6 +90,7 @@ interface SettingsState {
   deleteApiKey: (keyId: string) => Promise<void>;
   loadProviderApiKeys: () => Promise<void>;
   saveProviderKey: (provider: string, data: ProviderKeyFormValues) => Promise<void>;
+  deleteProviderKey: (provider: string) => Promise<void>;
   loadAiModelPreference: () => Promise<void>;
   updateAiModelPreference: (model: string) => Promise<void>;
   loadAvailableModels: () => Promise<void>;
@@ -446,6 +447,28 @@ export const useSettingsStore = create<SettingsState>()(
           });
         } catch (error) {
           console.error('Failed to save provider key:', error);
+          throw error;
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
+      deleteProviderKey: async (provider) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          await fetchApi(`users/ai-provider-keys/${provider}`, { method: 'DELETE' });
+          await get().loadProviderApiKeys();
+          await get().loadAvailableModels();
+          set((state) => {
+            state.showProviderKeyModal = false;
+            state.editingProvider = null;
+          });
+        } catch (error) {
+          console.error('Failed to delete provider key:', error);
           throw error;
         } finally {
           set((state) => {

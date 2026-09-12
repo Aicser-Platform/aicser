@@ -37,7 +37,7 @@ export function chatDraftToPublishDraft(draft: ChatFeedDraft, captureSelector?: 
     title: draft.title,
     questionTitle: draft.questionTitle,
     excerpt: draft.excerpt,
-    defaultDescription: draft.description,
+    defaultDescription: draft.excerpt || draft.description,
     hasChart: draft.hasChart,
     hasSql: draft.hasSql,
     chartPreview: draft.chartPreview,

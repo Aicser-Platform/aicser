@@ -48,6 +48,13 @@ export function useDashboardChartRefresh(params: {
         if (all.length) void refreshCharts(all);
         return;
       }
+      if (prev.length > 0 && next.length === 0) {
+        const all = getAffectedWidgetIds(widgets, prev, combinedFiltersConfig, [
+          ...new Set(prev.map((f) => f.field)),
+        ]);
+        if (all.length) void refreshCharts(all);
+        return;
+      }
 
       const fields = new Set([...prev.map((f) => f.field), ...next.map((f) => f.field)]);
       const changedFields = Array.from(fields).filter((field) => {

@@ -38,6 +38,8 @@ interface FeedCardActionsProps {
   showCommentBox: boolean;
   onToggleCommentBox: () => void;
   closeCommentReactionPicker: () => void;
+  hideOpen?: boolean;
+  hideMetricsSummary?: boolean;
   /** Lean icon-row footer (grid cards) instead of the full labeled action bar (detail view). */
   compact?: boolean;
 }
@@ -58,6 +60,8 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
       showCommentBox,
       onToggleCommentBox,
       closeCommentReactionPicker,
+      hideOpen = false,
+      hideMetricsSummary = false,
       compact = false,
     },
     ref
@@ -225,6 +229,30 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
       [getShareUrl, item.id, item.title]
     );
 
+    const handleShareToTelegram = useCallback(
+      (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        const url = encodeURIComponent(getShareUrl());
+        const text = encodeURIComponent(item.title);
+        window.open(`https://t.me/share/url?url=${url}&text=${text}`, '_blank', 'noopener,noreferrer');
+        void socialFeedService.shareItem(item.id);
+        setIsSharePopoverOpen(false);
+      },
+      [getShareUrl, item.id, item.title]
+    );
+
+    const handleShareToWhatsApp = useCallback(
+      (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.stopPropagation();
+        const shareUrl = getShareUrl();
+        const text = encodeURIComponent(`${item.title}\n${shareUrl}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
+        void socialFeedService.shareItem(item.id);
+        setIsSharePopoverOpen(false);
+      },
+      [getShareUrl, item.id, item.title]
+    );
+
     useEffect(() => {
       return () => {
         clearReactionCloseTimer();
@@ -308,6 +336,20 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
           onClick={handleShareToX}
         >
           {t('share_to_x')}
+        </button>
+        <button
+          type="button"
+          className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+          onClick={handleShareToTelegram}
+        >
+          {t('share_to_telegram')}
+        </button>
+        <button
+          type="button"
+          className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+          onClick={handleShareToWhatsApp}
+        >
+          {t('share_to_whatsapp')}
         </button>
       </div>
     );
@@ -439,7 +481,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
     return (
       <div className="flex flex-col border-t border-[var(--ant-color-border-secondary)]" onClick={stopPropagation}>
         {/* LinkedIn-style social metrics summary */}
-        {hasMetrics && (
+        {hasMetrics && !hideMetricsSummary && (
           <div className="flex px-5 py-2.5 items-center justify-between text-xs text-[var(--ant-color-text-secondary)] border-b border-[var(--ant-color-bg-layout)]">
             {item.metrics.reactions > 0 && (
               <span className="flex items-center gap-1.5 font-medium cursor-pointer hover:text-[var(--ant-color-primary)] transition-colors">
@@ -579,19 +621,21 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
             <span className="hidden sm:inline">{item.userInteraction.isBookmarked ? t('saved') : t('save')}</span>
           </Button>
 
-          <Button
-            type="text"
-            className="flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
-            icon={<ReadOutlined className="text-lg" />}
-            onMouseEnter={onPrefetch}
-            onFocus={onPrefetch}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen();
-            }}
-          >
-            <span className="hidden sm:inline">{t('open')}</span>
-          </Button>
+          {!hideOpen ? (
+            <Button
+              type="text"
+              className="flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+              icon={<ReadOutlined className="text-lg" />}
+              onMouseEnter={onPrefetch}
+              onFocus={onPrefetch}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+            >
+              <span className="hidden sm:inline">{t('open')}</span>
+            </Button>
+          ) : null}
 
           <Popover
             trigger="click"

@@ -59,7 +59,20 @@ def test_publish_asset_request_accepts_attachments_and_mentions():
 
 def test_attachment_ref_rejects_unknown_asset_type():
     with pytest.raises(ValidationError):
-        AttachmentRef(asset_type="insight", asset_id=uuid4())
+        AttachmentRef(asset_type="post", asset_id=uuid4())
+
+
+def test_attachment_ref_accepts_insight_publication():
+    post_id = uuid4()
+    asset_id = uuid4()
+    payload = AttachmentRef(
+        asset_type="insight",
+        asset_id=asset_id,
+        publication_id=post_id,
+    )
+    assert payload.asset_type == "insight"
+    assert payload.publication_id == post_id
+    assert payload.asset_id == asset_id
 
 
 def test_publish_asset_request_rejects_too_many_attachments():

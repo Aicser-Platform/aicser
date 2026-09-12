@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { ConfigProvider, Spin, message } from 'antd';
+import { ConfigProvider, Spin, Typography, message } from 'antd';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../dashboards/DashboardStudio.css';
@@ -14,6 +14,7 @@ import { ChartDesignerToolbar } from './ChartDesignerToolbar';
 import { useChartDesignerStore, type ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -35,6 +36,10 @@ function EmptyDesignerState({ onSelect }: { onSelect: (template: any) => void })
   return (
     <div className="canvas-empty">
       <div className="canvas-empty-content animate-in">
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+          {t('studio_primary_hint')}{' '}
+          <Link href="/dashboards">{t('open_studio')}</Link>
+        </Typography.Text>
         <WidgetBlockPicker variant="canvas" onSelect={onSelect} hintText={t('empty_state_hint')} />
       </div>
     </div>

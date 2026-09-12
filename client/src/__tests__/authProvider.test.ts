@@ -4,7 +4,7 @@ vi.mock('@/auth/ce/authActions', () => ({
   ceAuthActions: { login: vi.fn(), signup: vi.fn(), logout: vi.fn(), _source: 'ce' },
 }));
 
-vi.mock('@/ee', () => ({
+vi.mock('@/ee/auth/authActions', () => ({
   eeAuthActions: { login: vi.fn(), signup: vi.fn(), logout: vi.fn(), _source: 'ee' },
 }));
 
@@ -24,7 +24,7 @@ describe('getAuthActions', () => {
   it('returns eeAuthActions when NEXT_PUBLIC_EDITION is "EE"', async () => {
     vi.stubEnv('NEXT_PUBLIC_EDITION', 'enterprise');
     const { getAuthActions } = await import('@/auth/authProvider');
-    const { eeAuthActions } = await import('@/ee');
+    const { eeAuthActions } = await import('@/ee/auth/authActions');
     expect(getAuthActions()).toBe(eeAuthActions);
   });
 });

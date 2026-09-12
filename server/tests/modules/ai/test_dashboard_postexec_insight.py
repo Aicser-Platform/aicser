@@ -16,12 +16,14 @@ state["dashboard_executed_sections"] with real data.
 
 from unittest.mock import AsyncMock, patch
 
+import json
 import pytest
 
 from ee.modules.ai.services.dashboard_llm_planner import (
     _format_executed_sections_for_prompt,
     regenerate_insight_from_real_data,
 )
+from ee.modules.ai.services.dashboard_generation_service import is_scaffolding_executive_copy
 
 
 def _section(title, data, status="complete"):
@@ -63,10 +65,29 @@ class TestFormatExecutedSections:
         assert "+15 more" in out
 
 
+class TestScaffoldingDetection:
+    def test_board_composition_and_focus_on_are_scaffolding(self):
+        assert is_scaffolding_executive_copy("Board composition: 1 narrative, 3 KPIs, 4 analytical views.")
+        assert is_scaffolding_executive_copy("Focus on how score varies by grade letter.")
+        assert is_scaffolding_executive_copy("This dashboard tracks revenue performance across region.")
+        assert is_scaffolding_executive_copy("This board answers: show me sales.")
+
+    def test_real_finding_is_not_scaffolding(self):
+        assert not is_scaffolding_executive_copy("F-grade students (24) outnumber every other grade band.")
+
+
 class TestRegenerateInsightFromRealData:
     @pytest.mark.asyncio
     async def test_writes_grounded_insight_from_real_data(self):
-        fake_result = {"success": True, "content": "F-grade students (24) outnumber every other grade band."}
+        fake_result = {
+            "success": True,
+            "content": json.dumps(
+                {
+                    "key_insight": "F-grade students (24) outnumber every other grade band.",
+                    "story_arc": "F grades dominate at 24 students — review the grade breakdown next.",
+                }
+            ),
+        }
         with patch(
             "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
             new=AsyncMock(return_value=fake_result),
@@ -79,7 +100,7 @@ class TestRegenerateInsightFromRealData:
         assert "F-grade" in insight
 
     @pytest.mark.asyncio
-    async def test_fails_open_on_provider_error(self):
+    async def test_provider_error_uses_deterministic_fallback(self):
         with patch(
             "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
             new=AsyncMock(side_effect=RuntimeError("provider unreachable")),
@@ -87,8 +108,10 @@ class TestRegenerateInsightFromRealData:
             insight, ok = await regenerate_insight_from_real_data(
                 [_section("Score by Grade Letter", [{"grade_letter": "F", "count": 24}])],
             )
-        assert ok is False
-        assert insight is None
+        assert ok is True
+        assert insight is not None
+        assert "Score by Grade Letter" in insight
+        assert "24" in insight
 
     @pytest.mark.asyncio
     async def test_no_real_data_skips_the_llm_call_entirely(self):
@@ -113,7 +136,14 @@ class TestRegenerateInsightFromRealData:
             new=AsyncMock(),
         ) as mock_hydrate, patch(
             "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
-            new=AsyncMock(return_value={"success": True, "content": "A real finding."}),
+            new=AsyncMock(
+                return_value={
+                    "success": True,
+                    "content": json.dumps(
+                        {"key_insight": "A real finding.", "story_arc": "A real finding with context."}
+                    ),
+                }
+            ),
         ):
             await regenerate_insight_from_real_data(
                 [_section("Widget", [{"value": 1}])],
@@ -173,7 +203,15 @@ async def test_materializer_uses_regenerated_insight_and_clears_the_honesty_note
     ), patch("src.db.session.async_session"), patch(
         "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
         new=AsyncMock(
-            return_value={"success": True, "content": "F grades are the largest group at 2009.3 total."}
+            return_value={
+                "success": True,
+                "content": json.dumps(
+                    {
+                        "key_insight": "F grades are the largest group at 2009.3 total.",
+                        "story_arc": "F grades lead at 2009.3 — review the grade breakdown next.",
+                    }
+                ),
+            }
         ),
     ):
         out = await dashboard_materializer_node(state)

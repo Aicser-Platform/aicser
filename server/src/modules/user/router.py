@@ -171,7 +171,7 @@ async def _get_org_ai_provider_settings(user_id: str, organization_id: Optional[
         return {}
 
 
-async def _save_org_ai_provider_setting(organization_id: str, provider: str, value: str) -> None:
+async def _save_org_ai_provider_setting(organization_id: str, provider: str, value: Optional[str]) -> None:
     from src.modules.organizations.models import Organization
 
     oid = _uuid.UUID(str(organization_id))
@@ -190,7 +190,10 @@ async def _save_org_ai_provider_setting(organization_id: str, provider: str, val
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
         settings = dict(org.settings or {})
         keys = dict(settings.get("ai_provider_keys") or {})
-        keys[provider] = value
+        if value is None:
+            keys.pop(provider, None)
+        else:
+            keys[provider] = value
         settings["ai_provider_keys"] = keys
         org.settings = settings
         await session.commit()
@@ -378,7 +381,13 @@ class ProviderKeyPayload(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     endpoint: Optional[str] = None
+<<<<<<< HEAD
     workspace_id: Optional[str] = None
+=======
+    # Enabled model ids for the chat picker (multi-model BYOK). When omitted on
+    # update, existing models are preserved; when [] the list is cleared.
+    models: Optional[List[str]] = None
+>>>>>>> da629f5 (update all refinements)
 
 
 class AiModelPreferenceRequest(BaseModel):
@@ -663,6 +672,7 @@ async def save_ai_provider_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="api_key is required for new provider key")
     if key_normalized == "ollama" and not (endpoint_val or existing.get("endpoint")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint is required for Ollama")
+<<<<<<< HEAD
     store = {
         "model": (payload.model or "").strip() or existing.get("model"),
         "endpoint": endpoint_val or existing.get("endpoint"),
@@ -670,6 +680,23 @@ async def save_ai_provider_key(
     }
     if api_key_val:
         store["api_key"] = api_key_val
+=======
+    from src.modules.ai.provider_key_store import normalize_store_for_save
+
+    resolved_key = None
+    if api_key_val and not api_key_val.startswith("••••"):
+        resolved_key = api_key_val
+    elif existing.get("api_key"):
+        resolved_key = existing["api_key"]
+
+    store = normalize_store_for_save(
+        api_key=resolved_key,
+        endpoint=endpoint_val or None,
+        model=(payload.model or "").strip() or None,
+        models=payload.models,
+        existing=existing,
+    )
+>>>>>>> da629f5 (update all refinements)
     try:
         store = encrypt_credentials(store)
     except RuntimeError as exc:
@@ -682,6 +709,72 @@ async def save_ai_provider_key(
         return {"success": True, "provider": key_normalized, "scope": "organization"}
     await _user_settings_repo.set_setting(user_id, f"provider_key.{key_normalized}", json.dumps(store))
     return {"success": True, "provider": key_normalized, "scope": "personal"}
+
+
+@router.delete("/ai-provider-keys/{provider}")
+async def delete_ai_provider_key(
+    provider: str,
+    request: Request,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Remove a BYOK provider configuration (personal or org-scoped)."""
+    user_id = _require_user_id(current_token)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
+    key_normalized = provider.strip().lower().replace(" ", "_")
+    organization_id = _request_organization_id(request)
+    if organization_id:
+        if not await _user_is_org_member(user_id, organization_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization membership is required")
+        await _require_org_provider_key_manager(user_id, organization_id)
+        await _save_org_ai_provider_setting(organization_id, key_normalized, None)
+        return {"success": True, "provider": key_normalized, "scope": "organization", "deleted": True}
+    await _user_settings_repo.delete_setting(user_id, f"provider_key.{key_normalized}")
+    return {"success": True, "provider": key_normalized, "scope": "personal", "deleted": True}
+
+
+@router.get("/ai-provider-keys/ollama/tags")
+async def list_ollama_tags(
+    endpoint: str = Query(..., description="Ollama base URL, e.g. http://localhost:11434"),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Proxy Ollama /api/tags so the browser can discover local models without CORS issues."""
+    _require_user_id(current_token)
+    base = (endpoint or "").strip().rstrip("/")
+    if not base.startswith("http://") and not base.startswith("https://"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint must be an http(s) URL")
+    # Block obvious SSRF to cloud metadata; allow private LAN for self-hosted Ollama.
+    low = base.lower()
+    if "169.254.169.254" in low or "metadata.google" in low:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint not allowed")
+    import httpx
+
+    url = f"{base}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not reach Ollama at {base}: {exc}",
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ollama returned HTTP {resp.status_code}",
+        )
+    try:
+        payload = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Invalid JSON from Ollama") from exc
+    models = []
+    for item in payload.get("models") or []:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or item.get("model") or "").strip()
+        if name:
+            models.append({"id": name, "name": name})
+    return {"success": True, "endpoint": base, "models": models}
 
 
 # ─── AI model preference ─────────────────────────────────────────────────────

@@ -303,3 +303,30 @@ def test_extract_kpi_values_llm_signal_is_optional_and_fails_open_to_heuristic()
     kpis_explicit_none = _extract_kpi_values(row, None)
     assert kpis_default == kpis_explicit_none
     assert {k["label"] for k in kpis_default} == {"Total Records", "Total Revenue"}
+
+
+def test_fraction_interest_rate_displays_as_percent_not_point_one_one():
+    """Sample loans store interest_rate as 0.05–0.17. Showing 0.11% is ungrounded."""
+    kpis = _extract_kpi_values({"avg_interest_rate": 0.11, "row_count": 120})
+    rate = next(k for k in kpis if "interest" in k["label"].lower())
+    assert "0.11" not in rate["value"]
+    assert rate["value"].replace(" ", "").endswith("%")
+    assert "11" in rate["value"]
+    # Column does not say monthly vs annual — do not invent a period.
+    assert "month" not in rate["label"].lower()
+    assert "year" not in rate["label"].lower()
+    assert "annual" not in rate["label"].lower()
+
+
+def test_percent_point_rate_is_not_multiplied_again():
+    kpis = _extract_kpi_values({"avg_churn_rate": 11.5})
+    rate = next(k for k in kpis if "churn" in k["label"].lower())
+    assert "11.50%" in rate["value"]
+
+
+def test_annual_in_column_name_is_the_only_period_we_claim():
+    kpis = _extract_kpi_values({"avg_annual_interest_rate": 0.11})
+    rate = next(k for k in kpis if "interest" in k["label"].lower())
+    assert "annual" in rate["label"].lower()
+    assert "11" in rate["value"]
+    assert "0.11" not in rate["value"]

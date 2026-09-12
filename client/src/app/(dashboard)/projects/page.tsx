@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import ProjectsPageClient from './ProjectsPageClient';
-
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
 export default function ProjectsPage() {
-  if (!isEE) redirect('/dashboards');
+  if (!isEnterpriseEdition()) redirect('/dashboards');
   return <ProjectsPageClient />;
 }

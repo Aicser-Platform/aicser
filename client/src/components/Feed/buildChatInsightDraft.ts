@@ -128,9 +128,20 @@ export function buildChatInsightDraft(params: {
       : typeof message.executive_summary === 'string'
         ? message.executive_summary
         : '';
+  const narrationText =
+    typeof message.narration === 'string'
+      ? message.narration
+      : typeof message.message === 'string'
+        ? message.message
+        : '';
   const answerText = typeof message.answer === 'string' ? message.answer.trim() : '';
-  const excerptSource = executiveSummary.trim() || answerText;
+  const excerptSource =
+    executiveSummary.trim() || narrationText.trim() || answerText;
   const cleanExcerpt = excerptSource ? plainTextExcerpt(excerptSource) : '';
+  // Store a full executive narration (cards clamp in the UI). Historically we
+  // baked a 320-char ellipsis into description/excerpt/snapshot, which made
+  // /feed/[id] look cut off even when meta had a longer copy.
+  const storedExcerpt = cleanExcerpt ? truncateWithEllipsis(cleanExcerpt, 2000) : undefined;
 
   return {
     conversationId,
@@ -138,7 +149,7 @@ export function buildChatInsightDraft(params: {
     title,
     questionTitle,
     description: undefined,
-    excerpt: cleanExcerpt ? truncateWithEllipsis(cleanExcerpt, 320) : undefined,
+    excerpt: storedExcerpt,
     hasChart,
     hasSql,
     chartPreview,
@@ -151,14 +162,14 @@ export function buildChatInsightDraft(params: {
       conversationId,
       messageId,
       ...(questionTitle ? { questionTitle } : {}),
-      ...(cleanExcerpt ? { excerpt: truncateWithEllipsis(cleanExcerpt, 2000) } : {}),
+      ...(storedExcerpt ? { excerpt: storedExcerpt } : {}),
       ...(sqlSnippet ? { sql: sqlSnippet.slice(0, 500) } : {}),
       ...(chartPreview ? { chartWidget: chartPreview } : {}),
     },
     snapshotPayload: buildInsightSnapshotPayload({
       title,
       questionTitle,
-      excerpt: cleanExcerpt ? truncateWithEllipsis(cleanExcerpt, 320) : undefined,
+      excerpt: storedExcerpt,
       chartPreview,
       conversationId,
       messageId,

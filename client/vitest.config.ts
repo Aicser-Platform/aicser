@@ -26,6 +26,8 @@ export default defineConfig({
       'src/app/**/__tests__/**/*.test.tsx',
       'src/hooks/**/__tests__/**/*.test.ts',
       'src/hooks/**/__tests__/**/*.test.tsx',
+      'src/utils/**/*.test.ts',
+      'src/components/Feed/**/*.test.ts',
       'src/components/charts/**/*.test.ts',
       'src/components/charts/**/*.test.tsx',
       'ee/src/ee/components/ai/chat/**/*.test.tsx',

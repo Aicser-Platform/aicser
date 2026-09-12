@@ -65,19 +65,63 @@ const pricingModalNoop = path.resolve(__dirname, 'src/components/PricingModal.no
 const edition = (process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase();
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const eeEntry = isEnterprise ? path.dirname(eeIndex) : eeFallback;
-// API route handlers (route.ts) only need the proxy functions, never UI components.
-// Importing from '@/ee' pulls in the full barrel (including components like
-// ThoughtProcessDisplay -> @ant-design/icons), which breaks with "createContext
-// is not a function" when bundled into a route handler's server module graph.
+// API route handlers (route.ts) and chat hot-path modules must not import the
+// @/ee barrel. The barrel re-exports ChatPage / useConversationStore, which
+// import fetchApi — a cycle that left ChatPanel undefined on /chat.
+// Deep @/ee/* aliases below (and CE fallbacks) keep those graphs split.
+// Importing the barrel into a route handler also pulls UI (ThoughtProcessDisplay
+// -> @ant-design/icons) and fails with "createContext is not a function".
 const eePricingProxy = isEnterprise
   ? path.resolve(__dirname, 'ee/src/ee/api/pricingProxy.ts')
   : path.resolve(__dirname, 'src/ee-api-fallback.ts');
 const eeSubscriptionStore = isEnterprise
   ? path.resolve(__dirname, 'ee/src/ee/stores/useSubscriptionStore.ts')
   : eeFallback;
+const eeConversationStore = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/stores/useConversationStore.ts')
+  : eeFallback;
+const eeOnboardingStore = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/stores/useOnboardingStore.ts')
+  : eeFallback;
+const eeAuthClient = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/auth/authClient.ts')
+  : eeFallback;
+const eeAuthActionsMod = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/auth/authActions.ts')
+  : eeFallback;
+const eeOrganizationsApi = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/api/organizations.ts')
+  : eeFallback;
+const eeBrandThemeProvider = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/components/Providers/BrandThemeProvider.tsx')
+  : eeFallback;
+const eeFeaturebaseMessenger = isEnterprise
+  ? path.resolve(__dirname, 'ee/src/ee/components/FeaturebaseMessenger/FeaturebaseMessenger.tsx')
+  : path.resolve(__dirname, 'src/ee-featurebase-fallback.tsx');
 const eeSubscriptionStoreTurbo = isEnterprise
   ? './ee/src/ee/stores/useSubscriptionStore.ts'
   : './src/ee-fallback.ts';
+const eeConversationStoreTurbo = isEnterprise
+  ? './ee/src/ee/stores/useConversationStore.ts'
+  : './src/ee-fallback.ts';
+const eeOnboardingStoreTurbo = isEnterprise
+  ? './ee/src/ee/stores/useOnboardingStore.ts'
+  : './src/ee-fallback.ts';
+const eeAuthClientTurbo = isEnterprise
+  ? './ee/src/ee/auth/authClient.ts'
+  : './src/ee-fallback.ts';
+const eeAuthActionsTurbo = isEnterprise
+  ? './ee/src/ee/auth/authActions.ts'
+  : './src/ee-fallback.ts';
+const eeOrganizationsApiTurbo = isEnterprise
+  ? './ee/src/ee/api/organizations.ts'
+  : './src/ee-fallback.ts';
+const eeBrandThemeProviderTurbo = isEnterprise
+  ? './ee/src/ee/components/Providers/BrandThemeProvider.tsx'
+  : './src/ee-fallback.ts';
+const eeFeaturebaseMessengerTurbo = isEnterprise
+  ? './ee/src/ee/components/FeaturebaseMessenger/FeaturebaseMessenger.tsx'
+  : './src/ee-featurebase-fallback.tsx';
 const eePricingProxyTurbo = isEnterprise
   ? './ee/src/ee/api/pricingProxy.ts'
   : './src/ee-api-fallback.ts';
@@ -104,6 +148,13 @@ const nextConfig = {
   output: 'standalone',
 
   productionBrowserSourceMaps: false,
+
+  async redirects() {
+    return [
+      { source: '/ai-search', destination: '/chat?mode=ai_search', permanent: false },
+      { source: '/ai-analytics', destination: '/chat', permanent: false },
+    ];
+  },
 
   experimental: {
     ...(process.env.NEXT_DEV_CPUS
@@ -132,7 +183,14 @@ const nextConfig = {
         ? { '@/ee/components/PricingModal': './src/components/PricingModal.noop.tsx' }
         : {}),
       '@/ee/stores/useSubscriptionStore': eeSubscriptionStoreTurbo,
+      '@/ee/stores/useConversationStore': eeConversationStoreTurbo,
+      '@/ee/stores/useOnboardingStore': eeOnboardingStoreTurbo,
+      '@/ee/auth/authClient': eeAuthClientTurbo,
+      '@/ee/auth/authActions': eeAuthActionsTurbo,
+      '@/ee/api/organizations': eeOrganizationsApiTurbo,
       '@/ee/api/pricingProxy': eePricingProxyTurbo,
+      '@/ee/components/Providers/BrandThemeProvider': eeBrandThemeProviderTurbo,
+      '@/ee/components/FeaturebaseMessenger/FeaturebaseMessenger': eeFeaturebaseMessengerTurbo,
       ...antdEllipsisAlias,
     },
   },
@@ -145,7 +203,14 @@ const nextConfig = {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       '@/ee/stores/useSubscriptionStore': eeSubscriptionStore,
+      '@/ee/stores/useConversationStore': eeConversationStore,
+      '@/ee/stores/useOnboardingStore': eeOnboardingStore,
+      '@/ee/auth/authClient': eeAuthClient,
+      '@/ee/auth/authActions': eeAuthActionsMod,
+      '@/ee/api/organizations': eeOrganizationsApi,
       '@/ee/api/pricingProxy': eePricingProxy,
+      '@/ee/components/Providers/BrandThemeProvider': eeBrandThemeProvider,
+      '@/ee/components/FeaturebaseMessenger/FeaturebaseMessenger': eeFeaturebaseMessenger,
       '@/ee': eeEntry,
       ...(!isEnterprise
         ? { '@/ee/components/PricingModal': pricingModalNoop }

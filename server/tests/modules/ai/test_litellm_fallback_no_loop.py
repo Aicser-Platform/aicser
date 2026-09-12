@@ -198,3 +198,44 @@ async def test_transient_azure_500_retries_same_model_when_no_fallback(monkeypat
     assert result.get("success") is False
     # Initial call + one transient same-model retry = 2.
     assert calls["azure"] == 2, f"Transient 500 should retry the same model once, got {calls['azure']}"
+
+
+def _empty_response():
+    msg = types.SimpleNamespace(
+        content=None,
+        text=None,
+        message=None,
+        reasoning_content=None,
+        thinking_blocks=None,
+        refusal=None,
+    )
+    choice = types.SimpleNamespace(message=msg, finish_reason="stop")
+    return types.SimpleNamespace(choices=[choice], usage=None)
+
+
+@pytest.mark.asyncio
+async def test_json_object_empty_content_does_not_return_connect_data_fallback(monkeypatch):
+    """Report section narratives request json_object. Empty LLM output used to
+    come back as success=True with the canned 'Connect Data' help template,
+    which then leaked into the executive report document.
+    """
+
+    async def fake_acompletion(**params):
+        return _empty_response()
+
+    monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
+
+    service = _make_service()
+    result = await service.generate_completion(
+        prompt="analyze disbursement trends",
+        model_id="fake_azure",
+        timeout=2.0,
+        num_retries=1,
+        response_format={"type": "json_object"},
+    )
+
+    assert result.get("success") is False
+    assert result.get("content") in (None, "")
+    blob = str(result.get("content") or "") + str(result.get("error") or "")
+    assert "Connect Data" not in blob
+    assert "technical difficulties" not in blob.lower()

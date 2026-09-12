@@ -22,6 +22,7 @@ import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 import { DASHBOARD_CHART_TYPES } from '../utils/filterConfigMerge';
+import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
 
 const widgetChunkLoading = () => (
   <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -197,15 +198,17 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   if (echartsSnapshot && !hasRenderableChartData(effectiveData)) {
     const paletteId = resolveChartPaletteId(config?.colorPalette, config?.dashboardDefaultPalette);
     const paletteColors = getColorsFromPalette(paletteId);
-    const snapshotOption = enhanceEchartsInteractivity(
-      {
-        ...echartsSnapshot,
-        color: Array.isArray(echartsSnapshot.color) && echartsSnapshot.color.length
-          ? echartsSnapshot.color
-          : paletteColors,
-      },
-      { suppressCardTitle: true },
-    );
+    const design = normalizeChartDesign(config?.design);
+    const withPalette = {
+      ...echartsSnapshot,
+      color: Array.isArray(echartsSnapshot.color) && echartsSnapshot.color.length
+        ? echartsSnapshot.color
+        : paletteColors,
+    };
+    const designed = design
+      ? compileDesignToEcharts(withPalette, design, { chartType: type })
+      : withPalette;
+    const snapshotOption = enhanceEchartsInteractivity(designed, { suppressCardTitle: true });
 
     return (
       <div className="widget-content-root">

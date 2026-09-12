@@ -1,18 +1,15 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { Breadcrumb, Button, Card, Dropdown, Empty, Modal, Tag, Typography } from 'antd';
+import './feed-detail.css';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Button, Card, Dropdown, Empty, Modal, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ArrowLeftOutlined,
-  BarChartOutlined,
-  BulbOutlined,
-  DashboardOutlined,
+  CompressOutlined,
   EditOutlined,
-  MessageOutlined,
+  ExpandOutlined,
   MoreOutlined,
-  SearchOutlined,
 } from '@ant-design/icons';
 import { useParams, useRouter } from 'next/navigation';
 import type { FeedItem } from '@/services/socialFeedService';
@@ -21,7 +18,7 @@ import FeedDetailSkeleton from '../components/FeedDetailSkeleton';
 import FeedCardActions from '../components/FeedCard/FeedCardActions';
 import FeedPostEditBox from '../components/FeedCard/FeedPostEditBox';
 import FeedDiscussion from '../components/FeedDiscussion/FeedDiscussion';
-import FeedDetailSidebar from '../components/FeedDetailSidebar';
+import FeedDetailByline from '../components/FeedDetailSidebar';
 import { FeedPostViewer } from '../components/FeedPostViewer';
 import FeedPreviewVisual from '../components/FeedPreviewVisual';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
@@ -31,9 +28,11 @@ import { useTranslations } from 'next-intl';
 import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { useFeedItemInteractions } from '@/hooks/feed/useFeedInteractions';
 import { canOpenFeedAsset, getFeedAskAiPath, getFeedAssetPath } from '@/utils/feedAssetLinks';
-import { assetTypeLabelKey } from '@/components/Feed/feedPostDisplay';
+import { feedItemDisplayTitle } from '@/utils/sanitizeDisplayTitle';
+import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import { resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
 
-const { Paragraph, Title } = Typography;
+const { Title } = Typography;
 
 const FeedDetailPage: React.FC = () => {
   const t = useTranslations('feed');
@@ -41,6 +40,8 @@ const FeedDetailPage: React.FC = () => {
   const router = useRouter();
   const itemId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
   const { user } = useAuth();
+  const vizRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [item, setItem] = useState<FeedItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,12 +64,9 @@ const FeedDetailPage: React.FC = () => {
   const { members: mentionMembers, options: editMentionOptions } = useMentionableMembers(
     'organization',
     organizationId,
-    user?.id
+    user?.id,
   );
 
-  // No-op stand-ins for FeedCardActions props that have no equivalent on the
-  // detail page (there's no comment-box-toggle concept anymore, and "open"
-  // would just navigate to this same page).
   const noop = useCallback(() => {}, []);
   const stopPropagation = useCallback((event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
@@ -114,7 +112,7 @@ const FeedDetailPage: React.FC = () => {
                 ...prev,
                 metrics: { ...prev.metrics, views: response.view_count },
               }
-            : prev
+            : prev,
         );
       })
       .catch(() => {});
@@ -123,6 +121,22 @@ const FeedDetailPage: React.FC = () => {
       active = false;
     };
   }, [itemId]);
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const node = vizRef.current;
+    if (!node) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    void node.requestFullscreen();
+  }, []);
 
   if (loading) {
     return (
@@ -148,8 +162,9 @@ const FeedDetailPage: React.FC = () => {
 
   const isPostOwner = !!user && item.author?.id === user.id;
   const canOpenAsset = canOpenFeedAsset(item, isPostOwner);
+  const isDashboard = item.assetType === 'dashboard';
   const handleStartEditPost = () => {
-    setEditPostValue(item.description);
+    setEditPostValue(resolveFeedPostSummary(item) || item.description || '');
     setIsEditingPost(true);
   };
   const handleCancelEditPost = () => setIsEditingPost(false);
@@ -174,11 +189,13 @@ const FeedDetailPage: React.FC = () => {
     });
   };
   const moreMenuItems: MenuProps['items'] = [
+    { key: 'ask-ai', label: t('ask_ai_about_this') },
+    ...(canOpenAsset && !(isPostOwner && isDashboard)
+      ? [{ key: 'open-studio', label: t('open_in_studio') }]
+      : []),
     ...(item.canEdit ? [{ key: 'edit', label: t('edit_post') }] : []),
     ...(isPostOwner ? [{ key: 'delete', danger: true, label: t('delete_post') }] : []),
   ];
-  const isDashboard = item.assetType === 'dashboard';
-  const assetTypeLabel = t(assetTypeLabelKey(item.assetType) as 'insights_type');
   const visibilityLabel = (() => {
     switch (item.visibility) {
       case 'organization':
@@ -193,20 +210,6 @@ const FeedDetailPage: React.FC = () => {
         return t('scope_public');
     }
   })();
-  const assetIcon = (() => {
-    switch (item.assetType) {
-      case 'dashboard':
-        return <DashboardOutlined />;
-      case 'chart':
-        return <BarChartOutlined />;
-      case 'query':
-        return <SearchOutlined />;
-      case 'insight':
-        return <BulbOutlined />;
-      case 'post':
-        return <MessageOutlined />;
-    }
-  })();
   const snapshotDate = item.snapshot?.capturedAt
     ? new Date(item.snapshot.capturedAt).toLocaleDateString(undefined, {
         month: 'short',
@@ -215,12 +218,10 @@ const FeedDetailPage: React.FC = () => {
       })
     : null;
   const useFullViewer = isDashboard || item.renderMode === 'snapshot';
-  const previewHeading =
-    item.renderMode === 'snapshot'
-      ? t('snapshot_preview_heading')
-      : isDashboard
-        ? t('live_dashboard_preview')
-        : t('data_snapshot');
+  const displayTitle = feedItemDisplayTitle(
+    item,
+    isDashboard ? t('badge_type_dashboard') : t('badge_type_chart'),
+  );
 
   const detailPath = `/feed/${item.id}`;
   const reacting = Boolean(pendingInteractions[item.id]?.reacting);
@@ -229,152 +230,129 @@ const FeedDetailPage: React.FC = () => {
 
   return (
     <DashboardPageShell>
-      <main className="flex w-full min-w-0 flex-col gap-5">
-        <Breadcrumb
-          items={[
-            {
-              title: (
-                <button
-                  type="button"
-                  className="transition-colors hover:text-[var(--ant-color-primary)]"
-                  onClick={() => router.push('/feed')}
-                >
-                  {t('breadcrumb_feed')}
-                </button>
-              ),
-            },
-            { title: assetTypeLabel },
-          ]}
+      <main className="feed-detail-page flex w-full min-w-0 flex-col gap-5">
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="text"
+            size="small"
+            icon={<ArrowLeftOutlined />}
+            onClick={() => router.push('/feed')}
+            aria-label={t('back_to_feed')}
+          >
+            {t('back_to_feed')}
+          </Button>
+          <div className="flex items-center gap-2">
+            {canOpenAsset && isPostOwner && isDashboard ? (
+              <Button
+                type="primary"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => router.push(getFeedAssetPath(item))}
+              >
+                {t('edit_dashboard')}
+              </Button>
+            ) : null}
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: moreMenuItems,
+                onClick: ({ key }) => {
+                  if (key === 'ask-ai') router.push(getFeedAskAiPath(item));
+                  else if (key === 'open-studio') router.push(getFeedAssetPath(item));
+                  else if (key === 'edit') handleStartEditPost();
+                  else if (key === 'delete') handleDeletePost();
+                },
+              }}
+            >
+              <Button size="small" icon={<MoreOutlined />} aria-label={t('more_options')} />
+            </Dropdown>
+          </div>
+        </div>
+
+        <header className="min-w-0">
+          <FeedDetailByline item={item} visibilityLabel={visibilityLabel} />
+          {displayTitle ? (
+            <Title level={2} className="!mb-0 !mt-3 !text-2xl sm:!text-3xl">
+              {displayTitle}
+            </Title>
+          ) : null}
+          {isEditingPost ? (
+            <div className="mt-3">
+              <FeedPostEditBox
+                compact={false}
+                value={editPostValue}
+                onChange={setEditPostValue}
+                mentionOptions={editMentionOptions}
+                saving={Boolean(pendingInteractions[item.id]?.updatingPost)}
+                onSave={handleSaveEditPost}
+                onCancel={handleCancelEditPost}
+              />
+            </div>
+          ) : (
+            <div className="mt-3">
+              <FeedPostContent item={item} variant="detail" showTitle={false} />
+            </div>
+          )}
+        </header>
+
+        {item.assetType !== 'post' && (
+          <div
+            ref={vizRef}
+            className="feed-detail-viz rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]"
+          >
+            <div className="flex min-w-0 items-center justify-end gap-3 px-2 py-1 sm:px-3">
+              {snapshotDate ? (
+                <span className="mr-auto truncate text-xs text-[var(--ant-color-text-quaternary)]">
+                  {t('snapshot_from_date', { date: snapshotDate })}
+                </span>
+              ) : null}
+              <Button
+                type="text"
+                size="small"
+                icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />}
+                onClick={toggleFullscreen}
+                aria-label={isFullscreen ? t('exit_full_screen') : t('full_screen')}
+              />
+            </div>
+            <div className="feed-detail-viz-canvas bg-[var(--ant-color-bg-container)]">
+              {useFullViewer ? (
+                <FeedPostViewer item={item} variant="detail" />
+              ) : (
+                <div className="min-h-[360px] overflow-hidden bg-[var(--ant-color-bg-container)]">
+                  <FeedPreviewVisual item={item} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <FeedCardActions
+          item={item}
+          reacting={reacting}
+          saving={saving}
+          commenting={commenting}
+          detailPath={detailPath}
+          stopPropagation={stopPropagation}
+          onReact={handleReact}
+          onSave={handleSave}
+          onOpen={noop}
+          onPrefetch={noop}
+          showCommentBox={false}
+          hideOpen
+          hideMetricsSummary
+          onToggleCommentBox={() => {
+            document.getElementById('feed-detail-discussion')?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          closeCommentReactionPicker={noop}
         />
 
-        <section className="rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-5 sm:p-6">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Tag icon={assetIcon} color="blue" className="m-0 rounded-full px-3 py-1">
-                  {assetTypeLabel}
-                </Tag>
-                <Tag color="green" className="m-0 rounded-full px-3 py-1">{visibilityLabel}</Tag>
-                {/* {item.renderMode === 'snapshot' ? (
-                  <Tag color="purple" className="m-0 rounded-full px-3 py-1">
-                    {t('snapshot_badge')}
-                  </Tag>
-                ) : null} */}
-              </div>
-              {item.title ? (
-                <Title level={2} className="!mb-2 !mt-0 !text-2xl sm:!text-3xl">
-                  {item.title}
-                </Title>
-              ) : null}
-              {isEditingPost ? (
-                <FeedPostEditBox
-                  compact={false}
-                  value={editPostValue}
-                  onChange={setEditPostValue}
-                  mentionOptions={editMentionOptions}
-                  saving={Boolean(pendingInteractions[item.id]?.updatingPost)}
-                  onSave={handleSaveEditPost}
-                  onCancel={handleCancelEditPost}
-                />
-              ) : item.description ? (
-                <Paragraph type="secondary" className="!mb-0 max-w-3xl !text-sm !leading-6 sm:!text-base">
-                  {item.description}
-                </Paragraph>
-              ) : null}
-            </div>
-
-            <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:max-w-md lg:justify-end">
-              <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/feed')}>
-                {t('back_to_feed')}
-              </Button>
-              <Button icon={<MessageOutlined />} onClick={() => router.push(getFeedAskAiPath(item))}>
-                {t('ask_ai_about_this')}
-              </Button>
-              {canOpenAsset && (
-                <Button
-                  type="primary"
-                  icon={isPostOwner && isDashboard ? <EditOutlined /> : undefined}
-                  onClick={() => router.push(getFeedAssetPath(item))}
-                >
-                  {isPostOwner && isDashboard ? t('edit_dashboard') : t('open_in_studio')}
-                </Button>
-              )}
-              {moreMenuItems.length > 0 && (
-                <Dropdown
-                  trigger={['click']}
-                  menu={{
-                    items: moreMenuItems,
-                    onClick: ({ key }) => {
-                      if (key === 'edit') handleStartEditPost();
-                      else if (key === 'delete') handleDeletePost();
-                    },
-                  }}
-                >
-                  <Button icon={<MoreOutlined />} aria-label={t('more_options')} />
-                </Dropdown>
-              )}
-            </div>
-          </div>
-
-          {/* Applause / Save / Share actions, lifted up from the old embedded FeedCard footer.
-              "Open" is omitted in compact mode here since this already is the detail page —
-              navigating to itself would be a no-op surprise for the user. */}
-          <div className="-mx-1 mt-1 pt-1">
-            <FeedCardActions
-              item={item}
-              compact
-              reacting={reacting}
-              saving={saving}
-              commenting={commenting}
-              detailPath={detailPath}
-              stopPropagation={stopPropagation}
-              onReact={handleReact}
-              onSave={handleSave}
-              onOpen={noop}
-              onPrefetch={noop}
-              showCommentBox={false}
-              onToggleCommentBox={noop}
-              closeCommentReactionPicker={noop}
-            />
-          </div>
-        </section>
-
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="flex min-w-0 flex-col gap-5">
-            {item.assetType !== 'post' && (
-              <div className="overflow-hidden rounded-xl border border-[var(--ant-color-border-secondary)]">
-                <div className="flex min-w-0 flex-col gap-1 border-b border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 text-[var(--ant-color-primary)]">{assetIcon}</span>
-                    <span className="truncate text-sm font-medium text-[var(--ant-color-text)]">{previewHeading}</span>
-                  </div>
-                  {snapshotDate ? (
-                    <span className="shrink-0 text-xs font-normal text-[var(--ant-color-text-tertiary)]">
-                      {t('snapshot_from_date', { date: snapshotDate })}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="min-h-[340px] bg-[var(--ant-color-bg-layout)] p-4 sm:p-5">
-                  {useFullViewer ? (
-                    <FeedPostViewer item={item} variant="detail" />
-                  ) : (
-                    <div className="min-h-[300px] overflow-hidden rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] shadow-sm">
-                      <FeedPreviewVisual item={item} />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <FeedDiscussion
-              item={item}
-              onAddComment={handleAddComment}
-              onCommentDeleted={handleCommentDeleted}
-              commenting={commenting}
-            />
-          </div>
-
-          <FeedDetailSidebar item={item} visibilityLabel={visibilityLabel} />
+        <div id="feed-detail-discussion">
+          <FeedDiscussion
+            item={item}
+            onAddComment={handleAddComment}
+            onCommentDeleted={handleCommentDeleted}
+            commenting={commenting}
+          />
         </div>
       </main>
     </DashboardPageShell>

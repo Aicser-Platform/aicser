@@ -5,23 +5,21 @@ import { useTranslations } from 'next-intl';
 import { MARKETING_HOME_URL } from '@/constants/legalUrls';
 
 /**
- * The "Powered by Aicser" credit shown at the bottom of every embed surface
- * (dashboard/chart/report/chat) — the actual UI half of the theme's
- * `hide_aicser_branding` flag (Settings > Embed > Branding, Team+ plan
- * gated server-side in src/modules/embed/router.py's
- * _enforce_white_label_entitlement). The flag existed and was already
- * plan-gated end-to-end, but nothing ever rendered a badge for it to
- * actually hide — this component is that badge.
+ * The "Powered by Aicser" credit shown on embed surfaces
+ * (dashboard/chart/report/chat) — UI half of `hide_aicser_branding`
+ * (Settings > Embed > Branding, Team+ gated).
+ *
+ * Prefer ``variant="inline"`` anywhere the surface has bottom chrome
+ * (chat composer, forms). ``floating`` is for full-bleed viewports
+ * (dashboard/chart) without overlapping controls.
  */
 export function EmbedBrandingFooter({
   hidden,
   variant = 'floating',
 }: {
   hidden?: boolean;
-  /** 'floating': fixed pill over an iframe-style viewport (dashboard/chart/
-   * chat). 'inline': flows with the document instead — for the report page,
-   * a scrollable/printable document where a fixed-position badge would sit
-   * over content or get cut off on PDF export. */
+  /** 'floating': fixed pill for iframe-style viewports without bottom controls.
+   * 'inline': document flow — use under chat composers / printable reports. */
   variant?: 'floating' | 'inline';
 }) {
   const t = useTranslations('common');
@@ -31,6 +29,7 @@ export function EmbedBrandingFooter({
       href={`${MARKETING_HOME_URL}?utm_source=embed&utm_medium=badge`}
       target="_blank"
       rel="noopener noreferrer"
+      className={`embed-branding-footer embed-branding-footer--${variant}`}
       style={{
         position: variant === 'floating' ? 'fixed' : 'static',
         bottom: variant === 'floating' ? 8 : undefined,
@@ -38,6 +37,7 @@ export function EmbedBrandingFooter({
         zIndex: variant === 'floating' ? 50 : undefined,
         display: 'inline-block',
         fontSize: 11,
+        lineHeight: 1.3,
         padding: '3px 8px',
         borderRadius: 999,
         background: 'var(--ant-color-bg-elevated, rgba(255,255,255,0.9))',

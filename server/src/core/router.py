@@ -78,8 +78,14 @@ async def get_data_source_proxy(
     from src.modules.data.router import get_data_source
     try:
         return await get_data_source(data_source_id, current_token)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("get_data_source_proxy failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "internal_error", "message": "Failed to load data source"},
+        )
 
 
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
@@ -268,6 +274,17 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Knowledge libraries router not loaded: %s", _err)
+
+    try:
+        # Router already prefixes /knowledge/connectors — mount at root like oauth connectors.
+        from ee.modules.knowledge_connectors.router import router as knowledge_connectors_router
+        api_router.include_router(
+            knowledge_connectors_router,
+            tags=["knowledge-connectors"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Knowledge connectors router not loaded: %s", _err)
 
     try:
         from ee.modules.telegram.router import router as telegram_router

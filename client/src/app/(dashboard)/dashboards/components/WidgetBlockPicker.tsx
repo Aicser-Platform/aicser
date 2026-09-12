@@ -13,6 +13,8 @@ import {
   FEATURED_WIDGET_TYPES,
   localizeWidgetTemplate,
 } from '../utils/localizeWidgetTemplate';
+import { STORY_STARTERS, type StoryStarterId } from '../utils/storyStarters';
+import Link from 'next/link';
 
 const { Text } = Typography;
 
@@ -33,6 +35,8 @@ export type WidgetBlockPickerVariant = 'canvas' | 'popover';
 type Props = {
   variant?: WidgetBlockPickerVariant;
   onSelect: (template: WidgetTemplate) => void;
+  /** Dashboard Studio empty canvas — multi-widget story scaffolds. */
+  onApplyStoryStarter?: (id: StoryStarterId) => void;
   search?: string;
   hintText?: string;
 };
@@ -110,7 +114,13 @@ function WidgetBlockTile({
   );
 }
 
-export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', hintText }: Props) {
+export function WidgetBlockPicker({
+  variant = 'canvas',
+  onSelect,
+  onApplyStoryStarter,
+  search = '',
+  hintText,
+}: Props) {
   const t = useTranslations('dashboards_page');
   const tc = useTranslations('chart_designer');
   const [expanded, setExpanded] = useState(false);
@@ -227,9 +237,42 @@ export function WidgetBlockPicker({ variant = 'canvas', onSelect, search = '', h
 
   return (
     <div className="w-full max-w-[720px] mx-auto text-center">
-      <Text type="secondary" className="!block !mb-5 text-base opacity-85">
+      <Text strong className="!block !mb-1.5 text-lg text-text">
+        {t('empty_state_title')}
+      </Text>
+      <Text type="secondary" className="!block !mb-5 text-sm opacity-85 leading-relaxed">
         {hintText ?? t('empty_state_hint')}
       </Text>
+      {onApplyStoryStarter && !normalizedSearch ? (
+        <Text type="secondary" className="!block !mb-4 text-xs">
+          <Link href="/chart-designer" className="text-brand hover:underline">
+            {t('open_chart_library')}
+          </Link>
+        </Text>
+      ) : null}
+
+      {onApplyStoryStarter && !normalizedSearch ? (
+        <div className="mb-6 text-left">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mb-2 text-center">
+            {t('story_starters_label')}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {STORY_STARTERS.map((starter) => (
+              <button
+                key={starter.id}
+                type="button"
+                className="rounded-md border border-border-light bg-bg-container px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-brand-subtle focus-visible:border-brand focus-visible:outline-none"
+                onClick={() => onApplyStoryStarter(starter.id)}
+              >
+                <div className="text-sm font-semibold text-text">{t(starter.titleKey)}</div>
+                <div className="mt-0.5 text-[11px] leading-snug text-text-secondary">
+                  {t(starter.descKey)}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

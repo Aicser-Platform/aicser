@@ -102,7 +102,7 @@ function buildExplainQuery(title: string, summary: string, followUp?: string): s
   if (followUp?.trim()) {
     return `Regarding the dashboard widget "${title}":\n${summary}\n\n${followUp.trim()}`;
   }
-  return `Explain the insights from the dashboard widget "${title}" in clear business language. Focus on trends, outliers, and actionable takeaways (3–5 short paragraphs).\n\nWidget data context:\n${summary || 'No summary available.'}`;
+  return `Explain the insights from the dashboard widget "${title}" in clear business language. Focus on trends, outliers, and actionable takeaways (3–5 short paragraphs). If a different chart type or field mapping would tell the story better, say so briefly at the end.\n\nWidget data context:\n${summary || 'No summary available.'}`;
 }
 
 async function ensureExplainConversation(opts: {
@@ -396,7 +396,7 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
           <Space.Compact style={{ width: '100%' }}>
             <Input
               size="small"
-              placeholder="e.g. What's driving the spike in March?"
+              placeholder="e.g. What's driving March? Or: suggest a better chart type"
               value={followUp}
               onChange={(e) => setFollowUp(e.target.value)}
               onPressEnter={askFollowUp}

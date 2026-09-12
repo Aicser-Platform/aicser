@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Mentions } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
+import { useTranslations } from 'next-intl';
 import { COMMENT_CHAR_LIMIT } from '../FeedCard/constants';
 
 interface FeedDiscussionComposerProps {
@@ -19,6 +20,7 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
   commenting,
   mentionOptions,
 }) => {
+  const t = useTranslations('feed');
   const trimmedLength = commentValue.trim().length;
   const canSubmit = trimmedLength > 0 && trimmedLength <= COMMENT_CHAR_LIMIT && !commenting;
 
@@ -28,7 +30,7 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
         value={commentValue}
         onChange={onCommentValueChange}
         options={mentionOptions}
-        placeholder="Write a comment... use @ to mention a colleague"
+        placeholder={t('discussion_placeholder')}
         maxLength={COMMENT_CHAR_LIMIT}
         autoSize={{ minRows: 2, maxRows: 6 }}
         className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-primary)] !shadow-none"
@@ -51,7 +53,7 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
           onClick={onCommentSubmit}
           className="rounded-md font-medium"
         >
-          Send Comment
+          {t('discussion_send')}
         </Button>
       </div>
     </div>

@@ -41,7 +41,6 @@ import { TagOutlined } from '@ant-design/icons';
 import { useFolderStore } from '../stores/useFolderStore';
 import './DashboardTabs.css';
 import { AddBlockPopover } from './AddBlockPopover';
-import { writePendingFeedAttachment } from '@/components/Feed/pendingFeedAttachment';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutPreset } from './LayoutPresetsMenu';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
@@ -315,10 +314,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
 
   const handlePublishSuccess = useCallback(
     async (result: PublishAssetResponse) => {
-      if (!activeDashboardId || !result.publication_id) {
-        setIsPublishOpen(false);
-        return;
-      }
+      // Persist the publication fingerprint so later studio edits can
+      // detect a stale feed snapshot. Do not close the modal — the
+      // composer success screen (View in feed / Copy link) is the
+      // confirmation the author actually sees.
+      if (!activeDashboardId || !result.publication_id) return;
       try {
         const fingerprint = computeStudioSnapshotFingerprint({
           widgets,
@@ -335,14 +335,11 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             feed_snapshot_fingerprint: fingerprint,
           },
         });
-        message.success(t('published_to_feed'));
       } catch (err) {
         message.error(formatApiValidationError(err));
-      } finally {
-        setIsPublishOpen(false);
       }
     },
-    [activeDashboard, activeDashboardId, updateDashboardMeta, t],
+    [activeDashboard, activeDashboardId, updateDashboardMeta],
   );
 
   // Undo / redo
@@ -364,6 +361,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   const [subtitleDraft, setSubtitleDraft] = useState('');
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingSubtitle, setEditingSubtitle] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     setTitleDraft(activeDashboard?.name || '');
@@ -565,38 +563,17 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     setIsPublishOpen(true);
   };
 
-  // "Attach to a new post": reuses the exact same snapshot already computed
-  // for the Publish modal (publishSnapshotPayload, from this dashboard's own
-  // in-memory widgets/layout/filters - no extra fetch) instead of publishing
-  // it as its own standalone post. Same access requirements as Publish; the
-  // server re-validates regardless (_can_view_dashboard_or_chart), so there's
-  // no separate permission path to get wrong here.
-  const handleAttachToPost = () => {
-    if (!activeDashboardId || !activeDashboard) {
-      message.warning(t('select_dashboard_first'));
-      return;
-    }
-    if (widgets.length === 0) {
-      message.warning(t('dashboard_needs_widgets'));
-      return;
-    }
-    writePendingFeedAttachment({
-      asset_type: 'dashboard',
-      asset_id: activeDashboardId,
-      title: activeDashboard.name,
-      snapshot_payload: publishSnapshotPayload as Record<string, unknown> | null,
-    });
-    router.push('/feed');
-  };
-
   const handleDashboardExport = async (format: string) => {
     if (!activeDashboardId) {
       message.warning(t('select_dashboard_first'));
       return;
     }
+    if (exportBusy) return;
     const title = titleDraft.trim() || activeDashboard?.name || 'Dashboard';
     const subtitle = subtitleDraft.trim() || undefined;
     const isPdf = format === 'pdf';
+    const hide = message.loading(isPdf ? td('export_preparing_pdf') : td('export_preparing_png'), 0);
+    setExportBusy(true);
     try {
       await exportDashboardCanvas(isPdf ? 'pdf' : 'png', {
         filename: title,
@@ -610,16 +587,33 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     } catch (error) {
       const detail = error instanceof Error ? error.message : td('toast_export_failed');
       message.error(detail);
+    } finally {
+      hide();
+      setExportBusy(false);
     }
   };
 
   const handleDashboardPrint = () => {
+    if (exportBusy) return;
+    const title = titleDraft.trim() || activeDashboard?.name || 'Dashboard';
+    const subtitle = subtitleDraft.trim() || undefined;
+    const hide = message.loading(td('export_preparing_print'), 0);
+    setExportBusy(true);
     void printDashboardOnly({
-      title: titleDraft.trim() || activeDashboard?.name || 'Dashboard',
-      subtitle: subtitleDraft.trim() || undefined,
+      title,
+      subtitle,
       branding: exportBranding,
       matchTheme: true,
-    });
+    })
+      .then(() => message.success(td('toast_export_print_ok')))
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : td('toast_export_failed');
+        message.error(detail);
+      })
+      .finally(() => {
+        hide();
+        setExportBusy(false);
+      });
   };
 
   const toggleFullscreen = () => {
@@ -1331,13 +1325,13 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             onPreview={handlePreviewDashboard}
             onExport={(format) => void handleDashboardExport(format)}
             onPrint={handleDashboardPrint}
+            exportBusy={exportBusy}
             buildShareUrl={buildShareUrlWithContext}
             activePageId={activePageId}
             runtimeFilters={runtimeFilters}
             isEditMode={isEditMode}
             isEnterprise={isEnterpriseEdition}
             onPublish={openPublishModal}
-            onAttachToPost={handleAttachToPost}
             onScheduleDelivery={openAutoSendModal}
             onManageSchedules={openAutomationListModal}
             isPublic={Boolean((activeDashboard as { config?: { is_public?: boolean } })?.config?.is_public)}

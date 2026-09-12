@@ -1,0 +1,49 @@
+.feed-detail-viz {
+  overflow: visible;
+}
+
+.feed-detail-viz:fullscreen,
+.feed-detail-viz:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  border-radius: 0;
+  background: var(--ant-color-bg-layout);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.feed-detail-viz:fullscreen .feed-detail-viz-canvas,
+.feed-detail-viz:-webkit-full-screen .feed-detail-viz-canvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* Studio's global `.layout { min-height: 800px }` leaves a tall empty box and
+   can stretch the first tile over the rest of the dashboard. Size to the
+   captured grid instead. */
+.feed-detail-viz-canvas .layout,
+.feed-detail-viz-canvas .react-grid-layout {
+  min-height: 0 !important;
+  position: relative;
+  width: 100%;
+}
+
+.feed-detail-viz-canvas .dashboard-canvas-wrapper,
+.feed-detail-viz-canvas .dashboard-viewer-canvas {
+  width: 100%;
+  overflow: visible;
+  background: var(--ant-color-bg-container);
+}
+
+.feed-detail-viz-canvas .widget-card {
+  background: var(--ant-color-bg-container);
+  box-shadow: none;
+}
+
+.feed-detail-viz-canvas .widget-card:hover {
+  box-shadow: none;
+  border-color: transparent;
+}

@@ -54,6 +54,15 @@ describe('widgetPropertyProfile', () => {
     expect(getWidgetPropertyProfile('heatmap').showCartesianAxes).toBe(true);
   });
 
+  it('enables design controls for cartesian charts only', () => {
+    expect(getWidgetPropertyProfile('bar').showDesign).toBe(true);
+    expect(getWidgetPropertyProfile('scatter').showDesign).toBe(true);
+    expect(getWidgetPropertyProfile('waterfall').showDesign).toBe(true);
+    expect(getWidgetPropertyProfile('pie').showDesign).toBe(false);
+    expect(getWidgetPropertyProfile('stat').showDesign).toBe(false);
+    expect(getWidgetPropertyProfile('table').showDesign).toBe(false);
+  });
+
   it('hides irrelevant legend/palette for table, map, and heatmap', () => {
     expect(getWidgetPropertyProfile('table').showLegendToggle).toBe(false);
     expect(getWidgetPropertyProfile('table').showColorPalette).toBe(false);

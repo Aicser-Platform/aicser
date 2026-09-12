@@ -4,7 +4,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { ReactNode, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { ThemeProvider } from './ThemeProvider';
-import { BrandThemeProvider } from '@/ee';
+import { BrandThemeProvider } from '@/ee/components/Providers/BrandThemeProvider';
 import { LocaleProvider } from './LocaleProvider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -12,7 +12,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import ClientDebugOverlay from '@/components/DevTools/ClientDebugOverlay';
 
 const FeaturebaseMessenger = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.FeaturebaseMessenger })),
+  () => import('@/ee/components/FeaturebaseMessenger/FeaturebaseMessenger'),
   { ssr: false, loading: () => null }
 );
 

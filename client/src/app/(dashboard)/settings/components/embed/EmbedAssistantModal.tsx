@@ -31,12 +31,17 @@ import type {
   EmbedAssistantVisibility,
 } from '../../types';
 import { EmbedAssistantSharePanel } from './EmbedAssistantSharePanel';
+import { asDynamicComponent } from '@/utils/asDynamicModule';
 
 // Dynamic + ssr:false, same as ApiKeysTab.tsx — ModelSelector's "full" (non-compact)
 // mode reads from a client-only preference/localStorage path.
+const ModelSelectorFallback = () => null;
 const ModelSelector = dynamic(
-  () => import('@/components/ai/ModelSelector/ModelSelector').then((m) => m.ModelSelector),
-  { ssr: false }
+  () =>
+    import('@/components/ai/ModelSelector/ModelSelector').then((m) =>
+      asDynamicComponent(m.ModelSelector ?? m.default, ModelSelectorFallback),
+    ),
+  { ssr: false },
 );
 
 const { TextArea } = Input;

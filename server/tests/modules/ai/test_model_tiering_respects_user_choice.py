@@ -33,7 +33,7 @@ rarely helps.
 
 from unittest.mock import patch
 
-from ee.modules.ai.services.model_tiering import resolve_model_for_node
+from ee.modules.ai.services.model_tiering import insight_tier_for_state, resolve_model_for_node
 
 
 class _FakeLiteLLM:
@@ -80,3 +80,28 @@ def test_retry_escalation_still_overrides_an_explicit_choice():
 
 def test_no_litellm_service_and_no_user_model_returns_none():
     assert resolve_model_for_node("skill_executor", None, None) is None
+
+
+def test_insight_tier_simple_descriptive_is_fast():
+    assert insight_tier_for_state({
+        "analytics_type": "descriptive",
+        "query_intent": {"query_complexity": "simple"},
+        "execution_metadata": {"analysis_mode": "standard"},
+    }) == "fast"
+
+
+def test_insight_tier_diagnostic_forecast_complex_is_fast_first():
+    """Strong is the retry upgrade in insight_synthesizer_node, not attempt 0."""
+    assert insight_tier_for_state({
+        "analytics_type": "descriptive",
+        "query_intent": {"query_complexity": "complex"},
+    }) == "fast"
+    assert insight_tier_for_state({"analytics_type": "predictive"}) == "fast"
+    assert insight_tier_for_state({"analytics_type": "diagnostic"}) == "fast"
+
+
+def test_tier_override_fast_beats_insight_node_default():
+    resolved = resolve_model_for_node(
+        "insight_synthesizer", _FakeLiteLLM(), None, tier_override="fast"
+    )
+    assert resolved == "auto_fast_model"

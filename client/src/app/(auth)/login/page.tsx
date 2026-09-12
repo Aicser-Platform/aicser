@@ -379,48 +379,56 @@ export default function LoginPage() {
 
             {IS_EE ? (
               <>
-                <Divider plain className="login-divider">
-                  {t('or_continue_with')}
-                </Divider>
                 {IS_SUPABASE_AUTH ? (
-                  <div className="login-oauth-buttons">
-                    {SUPABASE_OAUTH_PROVIDERS.map((provider) => (
-                      <Button
-                        key={provider}
-                        block
-                        size="large"
-                        type="default"
-                        className="login-sso-btn"
-                        icon={SUPABASE_OAUTH_PROVIDER_ICONS[provider]}
-                        loading={oauthLoadingProvider === provider}
-                        disabled={Boolean(oauthLoadingProvider)}
-                        onClick={() => onSupabaseOAuth(provider)}
-                      >
-                        {t('continue_with_provider', { provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider] })}
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <Button
-                    block
-                    size="large"
-                    type="default"
-                    className="login-sso-btn"
-                    loading={ssoLoading}
-                    disabled={!IS_KEYCLOAK_SSO}
-                    onClick={async () => {
-                      setSsoLoading(true);
-                      try {
-                        const mod = await import('@/ee');
-                        mod.loginWithKeycloak();
-                      } catch {
-                        setSsoLoading(false);
-                      }
-                    }}
-                  >
-                    {t('continue_with_org')}
-                  </Button>
-                )}
+                  <>
+                    <Divider plain className="login-divider">
+                      {t('or_continue_with')}
+                    </Divider>
+                    <div className="login-oauth-buttons">
+                      {SUPABASE_OAUTH_PROVIDERS.map((provider) => (
+                        <Button
+                          key={provider}
+                          block
+                          size="large"
+                          type="default"
+                          className="login-sso-btn"
+                          icon={SUPABASE_OAUTH_PROVIDER_ICONS[provider]}
+                          loading={oauthLoadingProvider === provider}
+                          disabled={Boolean(oauthLoadingProvider)}
+                          onClick={() => onSupabaseOAuth(provider)}
+                        >
+                          {t('continue_with_provider', {
+                            provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider],
+                          })}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                ) : IS_KEYCLOAK_SSO ? (
+                  <>
+                    <Divider plain className="login-divider">
+                      {t('or_continue_with')}
+                    </Divider>
+                    <Button
+                      block
+                      size="large"
+                      type="default"
+                      className="login-sso-btn"
+                      loading={ssoLoading}
+                      onClick={async () => {
+                        setSsoLoading(true);
+                        try {
+                          const mod = await import('@/ee');
+                          mod.loginWithKeycloak();
+                        } catch {
+                          setSsoLoading(false);
+                        }
+                      }}
+                    >
+                      {t('continue_with_org')}
+                    </Button>
+                  </>
+                ) : null}
               </>
             ) : null}
 

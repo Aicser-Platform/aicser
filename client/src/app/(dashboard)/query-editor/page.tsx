@@ -583,7 +583,6 @@ export default function QueryEditorPage() {
           projectId={projectId}
           organizationId={organizationId}
           onCancel={() => setPublishOpen(false)}
-          onSuccess={() => setPublishOpen(false)}
         />
       )}
     </DashboardPageShell>

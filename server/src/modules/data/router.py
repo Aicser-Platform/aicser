@@ -42,6 +42,7 @@ from src.modules.data.services.multi_engine_query_service import (
 )
 from src.modules.data.services.upload_datasource_storage_service import (
     UploadDatasourceStorageService,
+    public_storage_error_message,
 )
 from src.modules.authentication.rbac.guard import (
     require_permission,
@@ -1734,7 +1735,9 @@ async def upload_file(
         else:
             raise HTTPException(
                 status_code=400,
-                detail=f"File upload failed: {result.get('error', 'Unknown error')}",
+                detail=public_storage_error_message(
+                    result.get("error") or "Unknown error"
+                ),
             )
 
     except HTTPException:
@@ -1745,8 +1748,10 @@ async def upload_file(
 
         error_trace = traceback.format_exc()
         logger.error(f"Full traceback: {error_trace}")
-        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
-
+        raise HTTPException(
+            status_code=500,
+            detail=public_storage_error_message(e),
+        )
 
 # Get data source endpoint
 @router.get("/sources/{data_source_id}")

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal, Drawer, Spin } from 'antd';
 import { DashboardLibrarySelect } from './components/DashboardLibrarySelect';
@@ -43,6 +43,7 @@ import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/constants/permissions';
 import { applyPresetWithScaffolds } from './utils/layoutScaffolds';
+import { buildStoryStarterLayout, type StoryStarterId } from './utils/storyStarters';
 import { inferPrimaryDataSourceId } from './utils/filterFieldUsage';
 import type { DashboardFilter } from '@/types/dashboard';
 import shortid from 'shortid';
@@ -305,6 +306,16 @@ export default function NewDashboardStudio() {
   const [collabCommentsOpen, setCollabCommentsOpen] = useState(false);
 
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const router = useRouter();
+  const [projectWaitTimedOut, setProjectWaitTimedOut] = useState(false);
+  useEffect(() => {
+    if (!(isEnterpriseEdition && !currentProjectId)) {
+      setProjectWaitTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setProjectWaitTimedOut(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [currentProjectId]);
   const td = useTranslations('dashboards');
   const filterCtx = useDashboardFilterContext(currentProjectId);
   const { handleRuntimeFiltersChange, runRefresh } = filterCtx;
@@ -903,6 +914,28 @@ export default function NewDashboardStudio() {
     [filterCtx, layout, widgets, t],
   );
 
+  const applyStoryStarter = useCallback(
+    (starterId: StoryStarterId) => {
+      const built = buildStoryStarterLayout(starterId, (key) => t(key));
+      if (!built) return;
+      pushUndoSnapshot();
+      const defaultPage = filterCtx.defaultPageIdRef.current || filterCtx.pages[0]?.id || null;
+      const scopedItems = filterCtx.pageLayout.length ? filterCtx.pageLayout : layout;
+      filterCtx.updatePageLayout(
+        filterCtx.activePageId,
+        [...scopedItems, ...built.layout],
+        defaultPage,
+      );
+      const prevWidgets = useDashboardStore.getState().widgets;
+      useDashboardStore.getState().setWidgets([...prevWidgets, ...built.widgets]);
+      built.widgets.forEach((w) => {
+        void createChartAndFetchData(w);
+      });
+      message.success(t('story_starter_added', { count: built.widgets.length }));
+    },
+    [createChartAndFetchData, filterCtx, layout, t],
+  );
+
   const handleAddFilterPreset = useCallback(
     async (partial: Partial<DashboardFilter>) => {
       const primaryDs = inferPrimaryDataSourceId(widgets);
@@ -1013,9 +1046,20 @@ export default function NewDashboardStudio() {
                 {isEnterpriseEdition && !currentProjectId ? t('waiting_project') : t('loading_dashboards')}
               </Text>
               {isEnterpriseEdition && !currentProjectId && (
-                <Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
-                  {t('waiting_project_hint')}
-                </Text>
+                <>
+                  <Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
+                    {projectWaitTimedOut ? t('waiting_project_timeout') : t('waiting_project_hint')}
+                  </Text>
+                  {projectWaitTimedOut && (
+                    <Button
+                      type="primary"
+                      style={{ marginTop: 12 }}
+                      onClick={() => router.push('/settings?tab=project')}
+                    >
+                      {t('waiting_project_cta')}
+                    </Button>
+                  )}
+                </>
               )}
             </>
           }
@@ -1419,6 +1463,7 @@ export default function NewDashboardStudio() {
                 onAddWidget={(template) => {
                   if (template) addWidget(template);
                 }}
+                onApplyStoryStarter={applyStoryStarter}
                 onDropWidget={(template, position) => addWidget(template, position)}
                 setPropertiesCollapsed={setPropertiesCollapsed}
                 onUpdateWidget={onUpdateWidget}
@@ -1487,6 +1532,7 @@ export default function NewDashboardStudio() {
               runtimeFilters={filterCtx.runtimeFilters}
               onRuntimeFiltersChange={filterCtx.handleRuntimeFiltersChange}
               onOpenManageFilters={() => filterCtx.setPageFiltersEditorOpen(true)}
+              onOpenDataModeling={() => handleSidebarSectionChange('modeling')}
             />
           ) : null}
         </div>

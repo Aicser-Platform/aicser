@@ -31,7 +31,8 @@ import { useProjectStore } from '@/stores/useProjectStore';
 import FeedFilters from './components/FeedFilters';
 import FeedCard from './components/FeedCard';
 import FeedGridCard from './components/FeedGridCard';
-import { isTextPostItem } from '@/components/Feed/feedPostDisplay';
+import SoftCollapsedFeedPost from './components/SoftCollapsedFeedPost';
+import { isInsightFeedItem, isNoiseTextPost, isTextPostItem } from '@/components/Feed/feedPostDisplay';
 import FeedCardSkeleton from './components/FeedCardSkeleton';
 import FeedDiscoveryDrawer from '@/components/Feed/FeedDiscoveryDrawer';
 import NewPostComposer from '@/components/Feed/NewPostComposer';
@@ -156,6 +157,7 @@ const SocialFeedPage: React.FC = () => {
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [streamView, setStreamView] = useState<'all' | 'insights' | 'discussions'>('all');
 
   const itemsRef = useRef<typeof items>([]);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -496,20 +498,34 @@ const SocialFeedPage: React.FC = () => {
     return t('empty_sub_default');
   }, [assetLabel, hasSearchFilter, hasTagFilters, scopeLabel, searchQuery, showContextualEmptyState, t]);
 
+  const visibleItems = useMemo(() => {
+    if (streamView === 'insights') return items.filter((item) => isInsightFeedItem(item));
+    if (streamView === 'discussions') return items.filter((item) => isTextPostItem(item) && !isInsightFeedItem(item));
+    return items;
+  }, [items, streamView]);
+
   return (
     <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-4 sm:px-6 text-[var(--ant-color-text)]">
-      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-4">
-        <div className="w-full">
-          <FeedFilters value={filters} options={filterOptions} onChange={setFilters} />
+      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-4 pb-3">
+        <div className="mx-auto w-full max-w-[1100px]">
+          <div className="page-section-card content-card rounded-[10px] border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-3">
+            <FeedFilters
+              value={filters}
+              options={filterOptions}
+              onChange={setFilters}
+              streamView={streamView}
+              onStreamViewChange={setStreamView}
+            />
+          </div>
         </div>
         {highlightPostId && !resolvedHighlightId ? (
-          <Alert type="info" showIcon message={t('finding_post')} className="mt-3" />
+          <Alert type="info" showIcon message={t('finding_post')} className="mx-auto mt-3 max-w-[1100px]" />
         ) : null}
       </div>
 
       <div className="mt-5 flex min-w-0 flex-col pb-10">
-        <div className="w-full max-w-[1600px] mx-auto">
-              <NewPostComposer onPosted={handleNewPost} />
+        <div className="mx-auto w-full max-w-[1100px]">
+              <NewPostComposer onPosted={handleNewPost} feedScope={filters.scope} />
               {/* New posts available banner */}
               {newPostsCount > 0 && !loading && (
                 <div className="mb-4 flex justify-center">
@@ -607,13 +623,19 @@ const SocialFeedPage: React.FC = () => {
                 </div>
               )}
 
-              {items.length === 0 && !loading && (
+              {visibleItems.length === 0 && !loading && (
                 <div className="flex flex-col items-center justify-center gap-3 p-10 text-center bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm my-6">
                   <h3 className="m-0 text-base font-semibold text-[var(--ant-color-text)]">
-                    {emptyStateTitle}
+                    {streamView !== 'all' && items.length > 0
+                      ? streamView === 'insights'
+                        ? t('empty_title_stream_insights')
+                        : t('empty_title_stream_discussions')
+                      : emptyStateTitle}
                   </h3>
                   <p className="m-0 text-sm text-[var(--ant-color-text-secondary)] max-w-md">
-                    {emptyStateSubtitle}
+                    {streamView !== 'all' && items.length > 0
+                      ? t('empty_sub_stream_switch')
+                      : emptyStateSubtitle}
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
                     <Button
@@ -678,20 +700,23 @@ const SocialFeedPage: React.FC = () => {
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4">
-                {items.map((item, idx) =>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                {visibleItems.map((item) => {
+                  const highlighted =
+                    resolvedHighlightId === item.id ||
+                    (focusedPostIndex >= 0 && items[focusedPostIndex]?.id === item.id);
                   // Text/discussion posts have no visual asset to browse and exist to
                   // be read and replied to — a thumbnail grid tile that defers comments
                   // to a full page navigation kills exactly the back-and-forth this
                   // feature was built for. Render them full-width with the same
                   // inline-comment FeedCard already used on Saved/My Comments, and
                   // keep the compact tile treatment for dashboard/chart discovery.
-                  isTextPostItem(item) ? (
-                    <div key={item.id} className="col-span-full">
+                  if (isTextPostItem(item)) {
+                    const card = (
                       <FeedCard
                         item={item}
                         compact
-                        highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
+                        highlighted={highlighted}
                         onReact={handleReact}
                         onSave={handleSave}
                         onAddComment={handleAddComment}
@@ -701,31 +726,41 @@ const SocialFeedPage: React.FC = () => {
                         onCommentDeleted={handleCommentDeleted}
                         interactionState={pendingInteractions[item.id]}
                       />
-                    </div>
-                  ) : (
+                    );
+                    return (
+                      <div key={item.id} className="col-span-full">
+                        {isNoiseTextPost(item) ? (
+                          <SoftCollapsedFeedPost item={item}>{card}</SoftCollapsedFeedPost>
+                        ) : (
+                          card
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
                     <FeedGridCard
                       key={item.id}
                       item={item}
-                      highlighted={resolvedHighlightId === item.id || focusedPostIndex === idx}
+                      highlighted={highlighted}
                       onReact={handleReact}
                       onSave={handleSave}
                       onToggleFollow={handleToggleFollow}
                       onDeleteItem={handleDeleteItem}
                       interactionState={pendingInteractions[item.id]}
                     />
-                  )
-                )}
+                  );
+                })}
                 {loading &&
-                  Array.from({ length: items.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT }).map(
-                    (_, index) => (
-                      <FeedCardSkeleton
-                        key={`feed-skeleton-${items.length === 0 ? 'initial' : 'append'}-${index}`}
-                        compact
-                      />
-                    )
-                  )}
+                  Array.from({
+                    length: visibleItems.length === 0 ? FEED_SKELETON_COUNT : FEED_SKELETON_APPEND_COUNT,
+                  }).map((_, index) => (
+                    <FeedCardSkeleton
+                      key={`feed-skeleton-${visibleItems.length === 0 ? 'initial' : 'append'}-${index}`}
+                      compact
+                    />
+                  ))}
                 <div ref={sentinelRef} className="col-span-full h-4" />
-                {!feedQuery.hasNextPage && items.length > 0 && !loading && (
+                {!feedQuery.hasNextPage && visibleItems.length > 0 && !loading && (
                   <div
                     ref={endFeedActionRef}
                     className={`col-span-full flex flex-col items-center gap-4 py-8 transition-all duration-300 ${

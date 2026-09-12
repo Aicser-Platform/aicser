@@ -125,9 +125,12 @@ app = FastAPI(
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 allowed_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
-for _extra in ("http://localhost:3001", "http://127.0.0.1:3001"):
-    if _extra not in allowed_origins:
-        allowed_origins.append(_extra)
+# Localhost is a credentialed origin. Only add it outside production so a
+# browser on an operator's laptop cannot talk to a deployed API with cookies.
+if not is_production():
+    for _extra in ("http://localhost:3001", "http://127.0.0.1:3001"):
+        if _extra not in allowed_origins:
+            allowed_origins.append(_extra)
 
 app.add_middleware(
     CORSMiddleware,
@@ -184,12 +187,19 @@ if is_ee_enabled():
     ]:
         try:
             import importlib
+            from fastapi import Depends as _LicenseDepends
+            from src.core.licensing.dependencies import require_valid_license as _require_valid_license
             _mod = importlib.import_module(_module_path)
-            app.include_router(getattr(_mod, _attr), prefix=_prefix)
+            app.include_router(
+                getattr(_mod, _attr),
+                prefix=_prefix,
+                dependencies=[_LicenseDepends(_require_valid_license)],
+            )
         except Exception as _err:
             logger.warning("%s router not loaded: %s", _label, _err)
 
-# Jobs status/enqueue router (authenticated)
+# Jobs status router (authenticated). Enqueue is server-side only — a public
+# /enqueue/{function_name} let any logged-in user fire privileged ARQ jobs.
 try:
     from fastapi import APIRouter as _APIRouter, Depends as _Depends, HTTPException as _HTTPException
     from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
@@ -207,13 +217,14 @@ try:
 
     @_jobs_router.post("/enqueue/{function_name}")
     async def enqueue_job_endpoint(
-        function_name: str,
-        payload: dict = {},
+        function_name: str,  # noqa: ARG001 — path kept so old clients get a stable 410
+        payload: dict = {},  # noqa: ARG001
         _token: dict = _Depends(_jobs_auth),
     ):
-        from src.shared.jobs.client import enqueue_job
-        job_id = await enqueue_job(function_name, **payload)
-        return {"job_id": job_id, "function": function_name}
+        raise _HTTPException(
+            status_code=410,
+            detail="Job enqueue is not a public API. Jobs are queued by the server.",
+        )
 
     app.include_router(_jobs_router)
 except Exception as _jobs_err:

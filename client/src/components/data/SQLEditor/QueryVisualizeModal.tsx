@@ -213,7 +213,7 @@ export function QueryVisualizeModal({
     <Modal
       open={open}
       title="Visualize query"
-      okText={target === 'dashboard' ? 'Add to dashboard' : 'Open in Chart Designer'}
+      okText={target === 'dashboard' ? 'Add to dashboard' : 'Open in Chart library'}
       okButtonProps={{ disabled: !canSubmit, loading: confirming }}
       onCancel={onCancel}
       onOk={() =>
@@ -255,10 +255,10 @@ export function QueryVisualizeModal({
               style={{ width: '100%', display: 'flex' }}
             >
               <Radio.Button value="dashboard" style={{ flex: 1, textAlign: 'center' }}>
-                <DashboardOutlined /> Dashboard
+                <DashboardOutlined /> Studio
               </Radio.Button>
               <Radio.Button value="chart-designer" style={{ flex: 1, textAlign: 'center' }}>
-                <LineChartOutlined /> Designer
+                <LineChartOutlined /> Chart library
               </Radio.Button>
             </Radio.Group>
           </div>

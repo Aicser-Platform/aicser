@@ -35,6 +35,58 @@ async def test_mode_gate_skips_descriptive():
     assert out.get("current_stage") != "mode_degraded"
 
 
+def test_confident_metric_from_query_only_when_clear():
+    """Clarification should not fire when the query clearly names a metric."""
+    from ee.modules.ai.nodes.mode_requirements_gate_node import (
+        _confident_metric_from_query,
+    )
+
+    metrics = ["revenue", "cost", "orders"]
+    assert _confident_metric_from_query(metrics, "forecast revenue next 6 months") == "revenue"
+    assert _confident_metric_from_query(metrics, "what will happen next quarter") is None
+    assert _confident_metric_from_query(["value"], "forecast the trend") == "value"
+
+
+def test_match_choice_maps_qualified_name_to_result_column():
+    from ee.modules.ai.nodes.mode_requirements_gate_node import _match_choice_to_candidates
+
+    assert _match_choice_to_candidates("loans.principal_amount", ["principal_amount", "interest_due"]) == "principal_amount"
+    assert _match_choice_to_candidates("loans.principal_amount", ["total_principal_amount"]) == "total_principal_amount"
+
+
+@pytest.mark.asyncio
+async def test_prescriptive_gate_does_not_reask_after_user_confirm():
+    """After the user picks metric + lever, SQL aliases must not pop the same card again."""
+    from ee.modules.ai.nodes.mode_requirements_gate_node import mode_requirements_gate_node
+
+    state = {
+        "analytics_type": "prescriptive",
+        "query": "what should we do next",
+        "query_result": [
+            {"branch_name": "A", "total": 100, "count": 3},
+            {"branch_name": "B", "total": 80, "count": 2},
+            {"branch_name": "C", "total": 60, "count": 1},
+            {"branch_name": "D", "total": 40, "count": 1},
+            {"branch_name": "E", "total": 20, "count": 1},
+        ],
+        "clarification_response": {
+            "choices": {
+                "objective_metric": "loans.principal_amount",
+                "lever_dimension": "loans.branch_name",
+                "optimization_direction": "maximize",
+            }
+        },
+        "execution_metadata": {},
+        "unified_retry_state": {},
+    }
+    out = await mode_requirements_gate_node(state)
+    assert out.get("current_stage") == "mode_requirements_passed"
+    assert out.get("needs_clarification") is not True
+    params = (out.get("execution_metadata") or {}).get("mode_parameters") or {}
+    assert params.get("objective_metric")
+    assert params.get("lever_dimension") == "branch_name"
+
+
 def test_fail_sets_needs_clarification_even_with_no_selections():
     """Regression: _fail() used to only set state["needs_clarification"] = True
     deep inside `if selections:` — when no schema/candidate-derived field options

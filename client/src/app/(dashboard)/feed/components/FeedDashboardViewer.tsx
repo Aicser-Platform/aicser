@@ -8,6 +8,8 @@ import { useDashboardViewerState } from '@/app/(dashboard)/dashboards/hooks/useD
 import { DashboardFilterPanel } from '@/app/(dashboard)/dashboards/components/DashboardFilterPanel';
 import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/DashboardPageTabs';
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
+import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
+import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
 // Same stylesheet the dashboard studio canvas and the shared/embed viewers load
 // (e.g. src/app/shared/dashboards/page.tsx, src/app/embed/dashboard/[id]/page.tsx) —
 // importing it here, not re-deriving widget-card/grid styling, is what keeps this
@@ -34,10 +36,11 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
     onReady,
   });
 
-  const widgets = variant === 'card' && maxWidgets ? viewer.visibleWidgets.slice(0, maxWidgets) : viewer.visibleWidgets;
+  const cardLimit = maxWidgets ?? FEED_DASHBOARD_PREVIEW_MAX;
+  const widgets = variant === 'card' ? viewer.visibleWidgets.slice(0, cardLimit) : viewer.visibleWidgets;
 
   const layout =
-    variant === 'card' && maxWidgets
+    variant === 'card'
       ? viewer.visibleLayout.filter((l) => widgets.some((w) => w.id === l.i))
       : viewer.visibleLayout;
 
@@ -61,6 +64,24 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
     return (
       <div className="feed-dashboard-viewer feed-dashboard-viewer--empty">
         <Empty description={t('detail_no_charts')} />
+      </div>
+    );
+  }
+
+  if (variant === 'card') {
+    return (
+      <div className="feed-dashboard-viewer feed-dashboard-viewer--card">
+        {viewer.combinedFiltersConfig.length > 0 ? (
+          <div className="flex items-center gap-1.5 px-1 pb-2 text-xs text-[var(--ant-color-text-tertiary)]">
+            <FilterOutlined style={{ fontSize: 11 }} />
+            <span>{t('card_filters_available', { count: viewer.combinedFiltersConfig.length })}</span>
+          </div>
+        ) : null}
+        <FeedDashboardPreviewGrid
+          widgets={widgets}
+          maxWidgets={cardLimit}
+          totalWidgetCount={viewer.visibleWidgets.length}
+        />
       </div>
     );
   }
@@ -118,15 +139,10 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         onCrossFilter={viewer.handleCrossFilter}
         onRetryWidget={viewer.handleRetryWidget}
         refreshing={viewer.refreshing}
-        canvasMinHeight={variant === 'card' ? '280px' : '480px'}
-        // 'detail' preserves the dashboard's actual saved x/y/w/h so the feed
-        // detail page matches the canvas's place and layout exactly; only the
-        // small feed-list 'card' thumbnail reflows into a simplified grid.
-        layoutMode={variant === 'card' ? 'preview' : 'preserve'}
-        // The feed is a read-only, social-consumption surface — the drill-down /
-        // cross-filter hint icon is chrome meant for the interactive dashboard
-        // canvas, not a passive feed post. Interactions themselves stay live.
+        canvasMinHeight="auto"
+        layoutMode="preserve"
         hideInteractionHint
+        eagerMount
       />
     </div>
   );

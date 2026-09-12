@@ -111,7 +111,7 @@ export const pricingPlans: PricingPlan[] = [
       '2 data sources',
       'Charts & Dashboard (with watermark)',
       'Community support',
-      'Standard AI modes only (Chat, Descriptive, Predictive, Animate)',
+      'Standard AI modes (Chat, Forecast, Animate)',
       'Export to PNG only',
     ],
     watermark: true,
@@ -130,7 +130,7 @@ export const pricingPlans: PricingPlan[] = [
     features: [
       'Multiple projects & data sources',
       'No watermarks',
-      'All AI modes (Chat, Descriptive, Predictive, Diagnostic, Prescriptive, Animate, Executive Report)',
+      'All AI modes (Chat, Forecast, Diagnose, Optimise, Animate, Report, Dashboard)',
       'Cross-source analytics',
       'Telegram Bot Integration',
       'Theme & brand customization',

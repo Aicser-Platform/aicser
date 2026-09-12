@@ -237,6 +237,42 @@ def test_replan_adds_heal_step():
     new_plan = replan(plan, state, verification)
     assert len(new_plan.steps) == 2
     assert new_plan.steps[-1].capability == "create_dashboard"
+    assert new_plan.steps[-1].thought
+
+
+def test_react_does_not_retry_a_timeout():
+    from ee.modules.ai.kernel.react import react_heal_step
+
+    plan = AgentPlan(
+        goal=AgentGoal(objective="why", deliverable_type=DeliverableType.chart_analysis),
+        steps=[AgentPlanStep(id="q1", capability="run_sql", label="Query", status="failed", error="LLM timed out after 45.0s")],
+    )
+    state = {"replan_count": 0, "error": "LLM timed out after 45.0s"}
+    verification = VerificationResult(passed=False, heal_action="replanner", issues=["step_failed"])
+    assert should_replan(state, verification) is False
+    assert react_heal_step(plan, state, verification) is None
+
+
+def test_react_retries_sql_with_warehouse_error_in_context():
+    from ee.modules.ai.kernel.react import react_heal_step
+
+    plan = AgentPlan(
+        goal=AgentGoal(objective="why", deliverable_type=DeliverableType.chart_analysis),
+        steps=[AgentPlanStep(id="q1", capability="run_sql", label="Query", status="failed")],
+        version=1,
+    )
+    state = {
+        "sql_query": 'SELECT COUNT(*) FROM "loans"',
+        "error": 'column "default_flag" does not exist',
+    }
+    verification = VerificationResult(passed=False, heal_action="replanner", issues=["step_failed"])
+    nxt = react_heal_step(plan, state, verification)
+    assert nxt is not None
+    assert nxt.capability == "run_sql"
+    assert nxt.params.get("last_sql_error")
+    assert nxt.params.get("escalate_model") is False
+    assert nxt.thought
+    assert "default_flag" in (nxt.observation or "")
 
 
 def test_continuation_persist_and_load():
@@ -368,7 +404,8 @@ async def test_agent_goal_planner_node_narration_clear_survives_dict_update_merg
     ):
         node_state = await agent_goal_planner_node(state)
 
-    # The node's own returned dict must have the keys explicitly cleared...
+    assert "execution_plan" not in node_state
+    assert node_state.get("agent_plan")
     assert node_state.get("narration") == ""
     assert node_state.get("message") == ""
 

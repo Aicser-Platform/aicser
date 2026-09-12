@@ -36,6 +36,8 @@ type Props = {
   layoutMode?: 'preserve' | 'preview' | 'auto';
   /** Passed straight through to each DashboardWidgetCell — see its own doc comment. */
   hideInteractionHint?: boolean;
+  /** Mount every widget immediately (feed/embed detail). Lazy IO can miss tiles in overflow-clipped ancestors. */
+  eagerMount?: boolean;
 };
 
 function getPreviewWidgetHeight(widget: WidgetInstance, sourceLayout?: LayoutItem): number {
@@ -99,6 +101,7 @@ export function DashboardViewerGrid({
   canvasMinHeight = 'calc(100vh - 180px)',
   layoutMode = 'auto',
   hideInteractionHint = false,
+  eagerMount = false,
 }: Props) {
   const screens = useBreakpoint();
   // `screens.md` is `undefined` until the media-query hook's effect has run
@@ -158,6 +161,8 @@ export function DashboardViewerGrid({
         containerPadding={[0, 0]}
         isDraggable={false}
         isResizable={false}
+        compactType={effectiveLayoutMode === 'preserve' ? null : 'vertical'}
+        preventCollision={effectiveLayoutMode === 'preserve'}
         useCSSTransforms
       >
         {widgets.map((widget) => {
@@ -182,7 +187,7 @@ export function DashboardViewerGrid({
                   </div>
                 )}
                 <div className="widget-card-body no-drag">
-                  <LazyWidgetMount>
+                  {eagerMount ? (
                     <DashboardWidgetCell
                       widget={widget}
                       dashboardId={dashboardId}
@@ -193,7 +198,20 @@ export function DashboardViewerGrid({
                       onRetryWidget={onRetryWidget}
                       hideInteractionHint={hideInteractionHint}
                     />
-                  </LazyWidgetMount>
+                  ) : (
+                    <LazyWidgetMount>
+                      <DashboardWidgetCell
+                        widget={widget}
+                        dashboardId={dashboardId}
+                        runtimeFilters={runtimeFilters}
+                        readOnly
+                        onCrossFilter={onCrossFilter}
+                        onWidgetChartClick={onWidgetChartClick}
+                        onRetryWidget={onRetryWidget}
+                        hideInteractionHint={hideInteractionHint}
+                      />
+                    </LazyWidgetMount>
+                  )}
                 </div>
               </div>
             </div>

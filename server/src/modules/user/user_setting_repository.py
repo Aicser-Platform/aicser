@@ -37,6 +37,19 @@ class UserSettingRepository:
             await session.commit()
             return _SettingEntry(key=key, value=value)
 
+    async def delete_setting(self, user_id: str, key: str) -> bool:
+        async with async_session() as session:
+            row = await self._get_user(session, user_id)
+            if row is None:
+                return False
+            blob: dict = dict(row.settings or {})
+            if key not in blob:
+                return False
+            blob.pop(key, None)
+            row.settings = blob
+            await session.commit()
+            return True
+
     async def get_all_settings(self, user_id: str) -> Dict[str, str]:
         async with async_session() as session:
             row = await self._get_user(session, user_id)

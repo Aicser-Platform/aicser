@@ -19,6 +19,7 @@ import { buildSeriesForType } from './ChartSeriesBuilder';
 import { getPieLayout } from './chartLayoutUtils';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { orientDataForHorizontalBar } from '@/components/charts/normalizeMultiMetricChartQuery';
+import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
 
 /** Format a numeric value according to the widget's configured valueFormat. */
 function fmtVal(v: unknown, valueFormat?: string): string {
@@ -614,7 +615,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     delete baseOptions.xAxis;
     delete baseOptions.yAxis;
     delete baseOptions.grid;
-    return baseOptions;
+    return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
   // ─── Treemap ──────────────────────────────────────────────────────────────
@@ -640,7 +641,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     delete baseOptions.xAxis;
     delete baseOptions.yAxis;
     delete baseOptions.grid;
-    return baseOptions;
+    return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
   // ─── Waterfall chart ──────────────────────────────────────────────────────
@@ -668,7 +669,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       { name: 'Decrease', type: 'bar', stack: 'wf', itemStyle: { color: chartColors[1] || '#ff4d4f' }, data: neg },
     ];
     baseOptions.legend = { show: finalConfig.showLegend ?? true, data: ['Increase', 'Decrease'] };
-    return baseOptions;
+    return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
   // ─── Bullet chart ─────────────────────────────────────────────────────────
@@ -760,8 +761,19 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       bottom: 24,
       containLabel: false,
     };
-    return baseOptions;
+    return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
-  return baseOptions;
+  return finalizeChartOptions(baseOptions, finalConfig, type);
 };
+
+/** Apply chartOptions.design on top of a fully built option (all chart types). */
+function finalizeChartOptions(
+  option: Record<string, unknown>,
+  config: ChartConfig,
+  chartType: string,
+): Record<string, unknown> {
+  const design = normalizeChartDesign(config.design);
+  if (!design) return option;
+  return compileDesignToEcharts(option, design, { chartType });
+}

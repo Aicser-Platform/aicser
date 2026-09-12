@@ -109,6 +109,31 @@ class TestDescriptiveAnalytics:
         assert len(summary.bottom_segments) > 0
         assert summary.top_segments[0].segment
 
+    def test_additive_metric_ranks_by_sum_not_mean(self):
+        """Monthly grain must not rank branches by average month; share % uses totals."""
+        df = pd.DataFrame({
+            "branch": (
+                ["Branch 5"] * 4
+                + ["Branch 2"] * 5
+                + ["Branch 3"] * 4
+                + ["Branch 1"] * 4
+                + ["Branch 4"] * 4
+            ),
+            "collateral_amount": [
+                210084.52, 196250.91, 60111.73, 240016.72,
+                98748.02, 124671.21, 178814.14, 127076.96, 79720.80,
+                181264.55, 155687.26, 157266.05, 93059.53,
+                142678.87, 26952.41, 237186.85, 141222.83,
+                187563.39, 70810.35, 227116.76, 43379.76,
+            ],
+        })
+        profile = profile_dataframe(df)
+        summary = generate_descriptive_summary(df, profile)
+        assert summary.top_segments[0].segment == "Branch 5"
+        assert summary.top_segments[0].basis == "sum"
+        assert summary.top_segments[0].value == pytest.approx(706463.88, rel=1e-4)
+        assert summary.top_segments[0].pct_of_total == pytest.approx(23.71, abs=0.05)
+
     def test_period_over_period(self, monthly_df, monthly_profile):
         summary = generate_descriptive_summary(monthly_df, monthly_profile)
         assert summary.period_over_period is not None
@@ -249,6 +274,58 @@ class TestDiagnosticEngine:
         result = run_diagnostic(monthly_df, monthly_profile, "revenue")
         d = result.to_dict()
         assert d["analytics_type"] == "diagnostic"
+        assert d["anomaly_scope"] in ("time", "concentration")
+
+    def test_ranking_snapshot_diagnoses_concentration(self, no_time_df):
+        """Go Deeper on a ranking must slice segments, not treat last SQL row as time."""
+        profile = profile_dataframe(no_time_df)
+        result = run_diagnostic(no_time_df, profile, "value")
+        assert result.error is None
+        assert result.anomaly_scope == "concentration"
+        assert len(result.dimension_slicing) >= 2
+        assert len(result.top_contributors) >= 1
+        peak = max(result.dimension_slicing, key=lambda s: s.segment_value)
+        assert peak.anomalous_segment == "D"
+
+    def test_one_row_per_segment_ranking_not_dropped(self):
+        df = pd.DataFrame({
+            "branch": ["Branch 1", "Branch 2", "Branch 3", "Branch 4", "Branch 5"],
+            "collateral_amount": [548041.0, 609031.0, 587278.0, 528870.0, 706464.0],
+        })
+        profile = profile_dataframe(df)
+        result = run_diagnostic(df, profile, "collateral_amount")
+        assert result.error is None
+        assert result.anomaly_scope == "concentration"
+        assert len(result.dimension_slicing) == 5
+        assert any("Branch 5" in c.factor for c in result.top_contributors)
+        d = result.to_dict()
+        assert d["dimension_slicing"]
+        assert d["top_contributors"]
+
+    def test_time_series_keeps_time_scope(self, monthly_df, monthly_profile):
+        result = run_diagnostic(monthly_df, monthly_profile, "revenue")
+        assert result.anomaly_scope == "time"
+
+    def test_ranking_diagnostic_chart_is_not_a_blind_replot(self):
+        from ee.modules.ai.nodes.chart_builder_node import _try_analytics_mode_chart
+
+        rows = [
+            {"category": "A", "value": 100},
+            {"category": "B", "value": 200},
+            {"category": "C", "value": 150},
+            {"category": "D", "value": 300},
+        ]
+        meta = run_diagnostic(
+            pd.DataFrame(rows), profile_dataframe(pd.DataFrame(rows)), "value"
+        ).to_dict()
+        chart = _try_analytics_mode_chart("diagnostic", meta, "why this ranking", rows)
+        assert chart is not None
+        series0 = chart["series"][0]
+        assert series0["type"] == "bar"
+        assert "markLine" in series0
+        assert "average" in (chart.get("title") or {}).get("subtext", "").lower() or \
+            "share" in (chart.get("title") or {}).get("subtext", "").lower() or \
+            "concentration" in (chart.get("title") or {}).get("subtext", "").lower()
 
     def test_missing_metric(self, monthly_df, monthly_profile):
         result = run_diagnostic(monthly_df, monthly_profile, "nonexistent_metric")

@@ -10,6 +10,7 @@ import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/Das
 import ShareInsightComposer from '@/components/Feed/ShareInsightComposer';
 import { readChatFeedDraft, type ChatFeedDraft } from '@/components/Feed/chatFeedDraft';
 import { socialFeedService } from '@/services/socialFeedService';
+import { getChatHref, isEnterpriseEdition } from '@/utils/appPaths';
 
 export default function FeedPublishPage() {
   const t = useTranslations('feed_publish_page');
@@ -62,14 +63,18 @@ export default function FeedPublishPage() {
             description={t('missing_draft')}
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           >
-            <button type="button" className="feed-publish-empty-back" onClick={() => router.push('/chat')}>
-              {t('back_to_chat')}
+            <button
+              type="button"
+              className="feed-publish-empty-back"
+              onClick={() => router.push(isEnterpriseEdition() ? getChatHref() : '/feed')}
+            >
+              {isEnterpriseEdition() ? t('back_to_chat') : t('back_to_feed')}
             </button>
           </Empty>
         ) : (
           <ShareInsightComposer
             draft={draft}
-            onBack={() => router.push('/chat')}
+            onBack={() => router.push(isEnterpriseEdition() ? getChatHref() : '/feed')}
           />
         )}
       </div>

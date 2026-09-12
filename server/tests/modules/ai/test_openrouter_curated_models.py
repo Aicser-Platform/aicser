@@ -55,23 +55,53 @@ def test_openrouter_key_registers_all_four_curated_models(monkeypatch):
         assert cfg["tier"] == tier
         assert cfg["supports_vision"] is vision
         assert cfg["api_key"] == "sk-or-fake-key"
-        assert cfg["provider"] == "openrouter"
+        # Display brand is inferred from the OpenRouter slug (deepseek/z-ai),
+        # not the routing gateway name.
+        assert cfg["provider"] in ("openrouter", "deepseek", "zai", "z-ai", "glm")
 
 
 def test_openrouter_glm_pro_is_a_reasoning_tier_fallback_candidate(monkeypatch):
-    """get_model_for_tier's step-2 scan (any config with tier=="reasoning")
-    must be able to reach the new GLM/DeepSeek Pro entries when
-    platform_reasoning isn't the one selected (e.g. removed from
-    available_models to simulate it being unavailable)."""
+    """get_model_for_tier's scan (any config with tier=="reasoning") must
+    reach GLM/DeepSeek Pro when the operator did not set PRIMARY_MODEL or
+    REASONING_MODEL (no primary_override / platform_reasoning)."""
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-key")
 
     service = LiteLLMService()
     service.active_model = service.default_model  # avoid the "explicit active model" early-return
     service.available_models.pop("platform_reasoning", None)
+    service.available_models.pop("primary_override", None)
 
     resolved = service.get_model_for_tier("reasoning")
     assert resolved in ("openrouter_deepseek_pro", "openrouter_glm_pro")
+
+
+def test_primary_glm_flash_is_not_upgraded_to_curated_pro(monkeypatch):
+    """Live bug: Best available + PRIMARY_MODEL=z-ai/glm-5.3-flash still
+    routed NL2SQL/insights to openrouter_glm_pro / deepseek_pro because
+    get_model_for_tier("reasoning") scanned the curated catalog. That is a
+    slower model than the operator's chosen Flash, and a timeout then hopped
+    to a different provider (including a configured-but-not-running Ollama).
+    """
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("PRIMARY_MODEL_PROVIDER", "openrouter")
+    monkeypatch.setenv("PRIMARY_MODEL_DEPLOYMENT_NAME", "z-ai/glm-5.3-flash")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-key")
+
+    service = LiteLLMService()
+    service.active_model = service.default_model
+    service.available_models.pop("platform_reasoning", None)
+    service.available_models.pop("azure_reasoning", None)
+
+    assert service.default_model == "primary_override"
+    assert service.get_model_for_tier("fast") == "primary_override"
+    assert service.get_model_for_tier("reasoning") == "primary_override"
+    assert service.get_fallback_model_id("primary_override") not in {
+        "openrouter_glm_pro",
+        "openrouter_deepseek_pro",
+        "openrouter_glm_flash",
+        "openrouter_deepseek_flash",
+    }
 
 
 def test_glm_flash_is_a_vision_fallback_candidate(monkeypatch):

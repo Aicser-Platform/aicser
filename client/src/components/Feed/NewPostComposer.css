@@ -42,6 +42,11 @@
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   margin-top: -2px;
+  line-height: 1.4;
+}
+
+.new-post-composer-audience-note {
+  color: var(--ant-color-text-secondary);
 }
 
 .new-post-composer-footer {
@@ -49,6 +54,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
   padding-top: 8px;
   border-top: 1px solid var(--ant-color-border-secondary);
 }
@@ -58,4 +64,9 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
+}
+
+.new-post-composer-attach {
+  font-weight: 600;
 }

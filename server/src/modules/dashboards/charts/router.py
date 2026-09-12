@@ -39,8 +39,12 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
         "chart_type": chart_type,
         "title": payload.get("title"),
         "chart_query": {} if is_text else {
+            # Keep unknown AI / Studio keys (xGrain, compiled_semantic_sql, …)
+            # so a round-trip save does not strip re-executable bindings.
+            **{k: v for k, v in chart_query.items() if v is not None},
             "tableName": chart_query.get("tableName"),
             "x": chart_query.get("x") or chart_query.get("xField"),
+            "xGrain": chart_query.get("xGrain"),
             "aggregate": chart_query.get("aggregate", "count"),
             "yMetric": chart_query.get("yMetric"),
             "xMetrics": chart_query.get("xMetrics", []),
@@ -57,6 +61,7 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "joins": chart_query.get("joins") or [],
             "saved_query_id": chart_query.get("saved_query_id"),
             "query_snapshot_id": chart_query.get("query_snapshot_id") or chart_query.get("snapshot_id"),
+            "compiled_semantic_sql": chart_query.get("compiled_semantic_sql"),
             "groupField": chart_query.get("groupField") or chart_query.get("legend"),
             "semantic_metric_id": chart_query.get("semantic_metric_id"),
             "semantic_dimension_ids": chart_query.get("semantic_dimension_ids") or [],

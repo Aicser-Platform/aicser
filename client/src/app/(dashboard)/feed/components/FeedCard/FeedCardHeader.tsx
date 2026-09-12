@@ -5,6 +5,7 @@ import type { MenuProps } from 'antd';
 import { CheckOutlined, MoreOutlined, UserAddOutlined } from '@ant-design/icons';
 import type { FeedItem } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
+import { useFeedAuthorDisplay } from '@/components/Feed/useFeedAuthorDisplay';
 import { approvalColors, visibilityColors } from './constants';
 import { useTranslations } from 'next-intl';
 
@@ -45,6 +46,7 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
   compact = false,
 }) => {
   const t = useTranslations('feed');
+  const { avatarUrl: authorAvatarUrl, name: authorName } = useFeedAuthorDisplay(item.author);
   const publishedAtMs = new Date(item.publishedAt).getTime();
   const lastActivityAtMs = new Date(item.lastActivityAt).getTime();
   const hasUpdates =
@@ -88,30 +90,30 @@ const FeedCardHeader: React.FC<FeedCardHeaderProps> = ({
             <Avatar
               className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] font-medium cursor-pointer"
               size={compact ? 32 : 36}
-              src={item.author.avatarUrl}
+              src={authorAvatarUrl}
             >
-              {item.author.name.charAt(0).toUpperCase()}
+              {authorName.charAt(0).toUpperCase()}
             </Avatar>
           </Link>
         ) : (
           <Avatar
             className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
             size={compact ? 32 : 36}
-            src={item.author.avatarUrl}
+            src={authorAvatarUrl}
           >
-            {item.author.name.charAt(0).toUpperCase()}
+            {authorName.charAt(0).toUpperCase()}
           </Avatar>
         )}
         <div className="flex flex-col min-w-0">
           {authorProfileHref ? (
             <Link href={authorProfileHref} onClick={handleStopPropagation} className="truncate">
               <Text strong className="text-sm text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
-                {item.author.name}
+                {authorName}
               </Text>
             </Link>
           ) : (
             <Text strong className="text-sm text-[var(--ant-color-text)] leading-tight truncate">
-              {item.author.name}
+              {authorName}
             </Text>
           )}
           <div className="flex items-center text-xs text-[var(--ant-color-text-tertiary)] mt-0.5 gap-1.5 flex-wrap">

@@ -18,6 +18,13 @@ from src.modules.exports.playwright_export_service import (
 
 
 def _make_fake_playwright(page: MagicMock):
+    page.evaluate = page.evaluate if isinstance(getattr(page, "evaluate", None), AsyncMock) else AsyncMock()
+    if not isinstance(getattr(page, "wait_for_selector", None), AsyncMock):
+        page.wait_for_selector = AsyncMock()
+    if not isinstance(getattr(page, "wait_for_timeout", None), AsyncMock):
+        page.wait_for_timeout = AsyncMock()
+    if not isinstance(getattr(page, "emulate_media", None), AsyncMock):
+        page.emulate_media = AsyncMock()
     browser = MagicMock()
     browser.new_page = AsyncMock(return_value=page)
     browser.close = AsyncMock()
@@ -55,6 +62,7 @@ async def test_render_page_export_uses_frontend_url_and_appends_token():
     page.goto.assert_awaited_once()
     called_url = page.goto.call_args.args[0]
     assert called_url == "https://app.example.com/embed/report/conv-1:msg-1?token=tok123"
+    assert page.goto.call_args.kwargs.get("wait_until") == "load"
     browser.new_page.assert_awaited_once()
     assert browser.new_page.call_args.kwargs["device_scale_factor"] == 2.0
     browser.close.assert_awaited_once()
@@ -110,34 +118,32 @@ async def test_render_page_export_passes_pdf_options_through():
 
 
 @pytest.mark.asyncio
-async def test_render_page_export_pdf_dispatches_beforeprint_before_snapshot():
-    """Live bug: every exported chart kept its full on-screen canvas width and
-    got clipped by its container instead of shrinking to fit. Root cause:
-    page.pdf() applies @media print CSS but, unlike an interactive print
-    dialog, never dispatches the page's own beforeprint DOM event -- the
-    exact event ReportDocument.tsx's SectionChart listens for to resize each
-    ECharts canvas to its print-constrained container. This must be
-    dispatched manually, and dispatched BEFORE the pdf() snapshot is taken
-    (order matters — dispatching after the fact wouldn't help)."""
+async def test_render_page_export_pdf_emulates_print_then_resizes_charts():
+    """page.pdf() applies print CSS but canvases stay at on-screen size unless
+    we emulate print media first, then resize ECharts, then snapshot."""
     call_order: list[str] = []
 
     page = MagicMock()
     page.goto = AsyncMock()
     page.wait_for_timeout = AsyncMock()
 
+    async def _emulate_media(**kwargs):
+        call_order.append(f"emulate:{kwargs.get('media')}")
+
     async def _evaluate(script):
-        assert "beforeprint" in script
-        call_order.append("evaluate_beforeprint")
+        call_order.append(str(script))
 
     async def _pdf(**kwargs):
         call_order.append("pdf")
         return b"pdf-bytes"
 
+    page.emulate_media = AsyncMock(side_effect=_emulate_media)
     page.evaluate = AsyncMock(side_effect=_evaluate)
     page.pdf = AsyncMock(side_effect=_pdf)
     ctx, browser, page = _make_fake_playwright(page)
 
     with patch("src.core.config.settings.FRONTEND_URL", "https://app.example.com"), \
+         patch("src.core.config.settings.INTERNAL_FRONTEND_URL", ""), \
          patch("playwright.async_api.async_playwright", return_value=ctx):
         await render_page_export(
             embed_path="/embed/report/conv-1:msg-1",
@@ -145,8 +151,14 @@ async def test_render_page_export_pdf_dispatches_beforeprint_before_snapshot():
             export_format="pdf",
         )
 
-    page.evaluate.assert_awaited_once()
-    assert call_order == ["evaluate_beforeprint", "pdf"]
+    assert "emulate:print" in call_order
+    assert any("__aiserResizeReportCharts" in str(c) for c in call_order)
+    assert any("beforeprint" in str(c) for c in call_order)
+    assert call_order[-1] == "pdf"
+    assert call_order.index("emulate:print") < next(
+        i for i, c in enumerate(call_order) if "__aiserResizeReportCharts" in str(c)
+    )
+    assert next(i for i, c in enumerate(call_order) if "__aiserResizeReportCharts" in str(c)) < call_order.index("pdf")
 
 
 @pytest.mark.asyncio
@@ -167,7 +179,40 @@ async def test_render_page_export_png_does_not_dispatch_beforeprint():
             export_format="png",
         )
 
-    page.evaluate.assert_not_awaited()
+    page.evaluate.assert_awaited()
+    for call in page.evaluate.await_args_list:
+        assert "beforeprint" not in str(call)
+    page.emulate_media.assert_not_called()
+
+
+def _empty_page():
+    page = MagicMock()
+    page.goto = AsyncMock()
+    page.wait_for_timeout = AsyncMock()
+    page.evaluate = AsyncMock()
+    page.wait_for_selector = AsyncMock()
+    page.screenshot = AsyncMock(return_value=b"png-bytes")
+    page.pdf = AsyncMock(return_value=b"pdf-bytes")
+    page.content = AsyncMock(return_value="<html></html>")
+    return page
+
+
+@pytest.mark.asyncio
+async def test_render_page_export_raises_when_content_selector_missing():
+    page = _empty_page()
+    page.wait_for_selector = AsyncMock(side_effect=TimeoutError("selector timeout"))
+    ctx, browser, page = _make_fake_playwright(page)
+
+    with patch("src.core.config.settings.FRONTEND_URL", "https://app.example.com"), \
+         patch("src.core.config.settings.INTERNAL_FRONTEND_URL", ""), \
+         patch("playwright.async_api.async_playwright", return_value=ctx):
+        with pytest.raises(RuntimeError, match="did not finish loading"):
+            await render_page_export(
+                embed_path="/embed/report/conv-1:msg-1",
+                token="tok123",
+                export_format="pdf",
+                content_selector=".report-header",
+            )
 
 
 def test_unsupported_export_format_raises():

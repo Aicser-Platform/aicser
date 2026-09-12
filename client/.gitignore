@@ -8,6 +8,7 @@
 
 # testing
 /coverage
+.vitest/
 
 # next.js
 /.next/
@@ -24,8 +25,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
 
 # local env files
+.env
 .env*.local
 
 # vercel
@@ -41,6 +44,7 @@ fix-permissions.sh
 # Cache directories
 .cache/
 node_modules/.cache/
+.turbo/
 
 .next/
 .next-local/
@@ -59,6 +63,7 @@ tmp/next-dev-cache/
 .next/**/hot-update.js
 tmp/**
 .superpowers/*
+
 # EE submodule content — populated by postinstall symlink
 src/ee/
 
@@ -66,3 +71,9 @@ src/ee/
 public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
+
+# Playwright / test artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

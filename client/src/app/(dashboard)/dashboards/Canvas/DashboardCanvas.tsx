@@ -44,6 +44,7 @@ import { useTranslations } from 'next-intl';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
 import { formatNumber } from '../utils/numberFormatter';
 import { resolveLayoutCollisions, hasLayoutOverlaps } from '../utils/layoutSanitize';
+import { isSafeChartTypeSwitchTarget } from '@/components/charts/chartTypeCatalog';
 
 const { Text } = Typography;
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -66,6 +67,7 @@ export default function DashboardCanvas({
   duplicateWidget,
   onAddWidget,
   onDropWidget,
+  onApplyStoryStarter,
   setPropertiesCollapsed,
   onUpdateWidget,
   onLayoutSync,
@@ -89,6 +91,7 @@ export default function DashboardCanvas({
   duplicateWidget?: (id: string) => void;
   onAddWidget: (template?: any) => void;
   onDropWidget?: (template: any, position?: { x: number; y: number }) => void;
+  onApplyStoryStarter?: (id: import('../utils/storyStarters').StoryStarterId) => void;
   setPropertiesCollapsed: (collapsed: boolean) => void;
   onUpdateWidget?: (id: string, updates: any) => void;
   onLayoutSync?: (l: any[]) => void;
@@ -674,10 +677,10 @@ export default function DashboardCanvas({
       });
     }
 
-    if (!isNonChart) {
+    if (!isNonChart && isEnterpriseEdition()) {
       items.push({
         key: 'explain',
-        label: 'Explain with AI',
+        label: td('explain_with_ai'),
         icon: <RobotOutlined />,
       });
     }
@@ -1153,7 +1156,11 @@ export default function DashboardCanvas({
       {widgets.length === 0 && isEditing && (
         <div className="canvas-empty">
           <div className="canvas-empty-content">
-            <WidgetBlockPicker variant="canvas" onSelect={(template) => onAddWidget(template)} />
+            <WidgetBlockPicker
+              variant="canvas"
+              onSelect={(template) => onAddWidget(template)}
+              onApplyStoryStarter={onApplyStoryStarter}
+            />
           </div>
         </div>
       )}
@@ -1164,6 +1171,11 @@ export default function DashboardCanvas({
         open={!!explainWidgetId}
         onClose={() => setExplainWidgetId(null)}
         widget={explainWidgetId ? (widgets.find((w) => w.id === explainWidgetId) ?? null) : null}
+        onChangeChartType={(chartType) => {
+          if (!explainWidgetId || !onUpdateWidget) return;
+          if (!isSafeChartTypeSwitchTarget(chartType)) return;
+          onUpdateWidget(explainWidgetId, { chartType });
+        }}
       />
       )}
 

@@ -865,16 +865,37 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
   },
 
   updateDashboardTags: async (id, tags) => {
-    // Optimistic update
+    // Optimistic update — merge live globalFiltersConfig so a tags write
+    // cannot wipe filters saved since the last dashboard config fetch.
+    const liveFilters = get().globalFiltersConfig;
     set((state) => ({
       dashboards: state.dashboards.map((d) =>
-        d.id === id ? { ...d, tags } : d
+        d.id === id
+          ? {
+              ...d,
+              tags,
+              config: {
+                ...(d.config || {}),
+                ...(liveFilters?.length || String(state.activeDashboardId) === String(id)
+                  ? { global_filters: liveFilters }
+                  : {}),
+                tags,
+              },
+            }
+          : d,
       ),
     }));
     try {
+      const dash = get().dashboards.find((d) => d.id === id);
       await chartService.updateDashboard(id, {
         tags,
-        config: { ...get().dashboards.find((d) => d.id === id)?.config, tags },
+        config: {
+          ...(dash?.config || {}),
+          ...(String(get().activeDashboardId) === String(id)
+            ? { global_filters: get().globalFiltersConfig }
+            : {}),
+          tags,
+        },
       } as any);
     } catch {
       console.error('[updateDashboardTags] failed to persist');

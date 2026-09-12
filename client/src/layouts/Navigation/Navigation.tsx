@@ -9,6 +9,10 @@ import {
   CodeOutlined,
   AppstoreOutlined,
   AreaChartOutlined,
+  BookOutlined,
+  BellOutlined,
+  NodeIndexOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -22,6 +26,8 @@ import {
   NAV_LABEL_KEYS,
   openKeysForPathname,
   selectedKeyForPathname,
+  buildEnterpriseSidebarItems,
+  buildCommunitySidebarItems,
   type NavItemDef,
 } from './navConfig';
 import SidebarNav, { RAIL_WIDTH, type SidebarNavHandle, type SidebarNavIconMap } from './SidebarNav';
@@ -49,6 +55,11 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   'grp-data': <DatabaseOutlined />,
   data: <DatabaseOutlined />,
+  'semantic-model': <NodeIndexOutlined />,
+  knowledge: <BookOutlined />,
+  'grp-operate': <BellOutlined />,
+  alerts: <BellOutlined />,
+  'platform-services': <ApiOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -58,6 +69,7 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   feed: <AppstoreOutlined />,
   'query-editor': <CodeOutlined />,
   data: <DatabaseOutlined />,
+  knowledge: <BookOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -116,40 +128,12 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   );
 
   const enterpriseItems = React.useMemo<NavItemDef[]>(
-    () => [
-      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
-      ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
-      { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
-      {
-        kind: 'group',
-        key: 'dashboard-studio',
-        labelKey: NAV_LABEL_KEYS['dashboard-studio'],
-        children: [
-          { key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
-          { key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
-        ],
-      },
-      { kind: 'divider' },
-      {
-        kind: 'group',
-        key: 'grp-data',
-        labelKey: NAV_LABEL_KEYS['grp-data'],
-        children: [
-          { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-        ],
-      },
-    ],
+    () => buildEnterpriseSidebarItems(showAiNav),
     [showAiNav]
   );
 
   const communityItems = React.useMemo<NavItemDef[]>(
-    () => [
-      { kind: 'link', key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
-      { kind: 'link', key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
-      { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
-      { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
-      { kind: 'link', key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-    ],
+    () => buildCommunitySidebarItems(),
     []
   );
 

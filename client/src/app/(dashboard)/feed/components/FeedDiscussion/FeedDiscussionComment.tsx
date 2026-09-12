@@ -1,10 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
-import { Avatar, Button, Input, Modal, Typography } from 'antd';
+import { Button, Input, Modal, Typography } from 'antd';
 import { CheckCircleOutlined, CheckCircleFilled, LikeOutlined } from '@ant-design/icons';
 import type { FeedComment, ReactionType } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
 import { renderTextWithMentions } from '@/components/Feed/MentionText';
+import { FeedAuthorAvatar } from '@/components/Feed/FeedAuthorAvatar';
 import { COMMENT_CHAR_LIMIT, reactionOptions } from '../FeedCard/constants';
 
 const { Text } = Typography;
@@ -145,22 +146,20 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
       <div className={rowClassName}>
         {authorProfileHref ? (
           <Link href={authorProfileHref} onClick={(e) => e.stopPropagation()} className="shrink-0">
-            <Avatar
+            <FeedAuthorAvatar
+              author={comment.author}
               size={32}
-              src={comment.author.avatarUrl}
               className="mt-1 shadow-sm border border-[var(--ant-color-border-secondary)] cursor-pointer"
-            >
-              {comment.author.name.charAt(0)}
-            </Avatar>
+              initial={authorLabel}
+            />
           </Link>
         ) : (
-          <Avatar
+          <FeedAuthorAvatar
+            author={comment.author}
             size={32}
-            src={comment.author.avatarUrl}
             className="shrink-0 mt-1 shadow-sm border border-[var(--ant-color-border-secondary)]"
-          >
-            {comment.author.name.charAt(0)}
-          </Avatar>
+            initial={authorLabel}
+          />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">

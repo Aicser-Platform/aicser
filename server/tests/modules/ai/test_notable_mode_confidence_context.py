@@ -136,3 +136,30 @@ async def test_no_reclassify_target_when_confident_in_original_guess():
     )
     assert confident is True
     assert reclassify_to is None
+
+
+@pytest.mark.asyncio
+async def test_llm_overrides_regex_hint_with_mode_and_pptx():
+    from ee.modules.ai.utils.routing_utils import classify_user_intent
+
+    llm = FakeLiteLLM({
+        "confident": True,
+        "mode": "executive_report",
+        "export_formats": ["pptx"],
+        "needs_chart": True,
+        "needs_narrative": True,
+    })
+    classified = await classify_user_intent(
+        "create me a report of data insights in power point",
+        "standard",
+        litellm_service=llm,
+    )
+    assert classified.mode == "executive_report"
+    assert classified.reclassify_to == "executive_report"
+    assert classified.export_formats == ["pptx"]
+    prompt = llm.calls[0]["prompt"]
+    assert "HINT only" in prompt
+    tools = llm.calls[0]["tools"]
+    props = tools[0]["function"]["parameters"]["properties"]
+    assert "mode" in props
+    assert "export_formats" in props

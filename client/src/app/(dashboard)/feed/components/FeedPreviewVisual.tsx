@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
 import type { EChartsOption } from 'echarts';
 import type { FeedAssetPreview, FeedItem, FeedPreviewType } from '@/services/socialFeedService';
 import { chartService } from '../../dashboards/services/chartService';
@@ -19,6 +17,8 @@ import { FeedPostViewer } from './FeedPostViewer';
 import { FeedDashboardChartGrid } from './FeedDashboardChartGrid';
 import { FeedPreviewEmpty } from './FeedPreviewEmpty';
 import { MiniEChart } from './MiniEChart';
+import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
+import { feedItemDisplayTitle } from '@/utils/sanitizeDisplayTitle';
 
 interface FeedPreviewVisualProps {
   item: FeedItem;
@@ -27,7 +27,7 @@ interface FeedPreviewVisualProps {
 }
 
 const PIE_COLORS = ['#1877f2', '#38bdf8', '#f59e0b', '#10b981'];
-const DASHBOARD_PREVIEW_LIMIT = 6;
+const DASHBOARD_PREVIEW_LIMIT = FEED_DASHBOARD_PREVIEW_MAX;
 const INSIGHT_CHART_MIN_HEIGHT = 200;
 
 type ChartPoint = {
@@ -91,7 +91,7 @@ const cartesianAxisConfig = (showAxes: boolean, compact: boolean): ChartConfig =
 });
 
 const buildAreaOption = (series: ChartPoint[], { showAxes, showTooltip }: { showAxes: boolean; showTooltip: boolean }): EChartsOption => ({
-  animation: false,
+  animation: true,
   grid: { left: 4, right: 6, top: showAxes ? 10 : 4, bottom: showAxes ? 4 : 4, containLabel: false },
   tooltip: showTooltip ? getBaseTooltipConfig('area') : undefined,
   xAxis: {
@@ -118,7 +118,7 @@ const buildAreaOption = (series: ChartPoint[], { showAxes, showTooltip }: { show
 } as EChartsOption);
 
 const buildPieOption = (series: ChartPoint[], compact: boolean, showTooltip: boolean): EChartsOption => ({
-  animation: false,
+  animation: true,
   tooltip: showTooltip ? getBaseTooltipConfig('pie') : undefined,
   series: [
     {
@@ -140,7 +140,7 @@ const buildLineOption = (series: ChartPoint[], { showAxes, showTooltip, compact 
   const chartData = toChartData(series);
   const axisConfig = cartesianAxisConfig(showAxes, compact);
   return {
-    animation: false,
+    animation: true,
     grid: getBaseGridConfig(axisConfig, chartData),
     tooltip: showTooltip ? getBaseTooltipConfig('line') : undefined,
     xAxis: getXAxisConfig(chartData, axisConfig, 'line'),
@@ -164,7 +164,7 @@ const buildBarOption = (series: ChartPoint[], { showAxes, showTooltip }: { showA
   const chartData = toChartData(series);
   const axisConfig = cartesianAxisConfig(showAxes, !showAxes);
   return {
-    animation: false,
+    animation: true,
     grid: getBaseGridConfig(axisConfig, chartData),
     tooltip: showTooltip ? getBaseTooltipConfig('bar') : undefined,
     xAxis: getXAxisConfig(chartData, axisConfig, 'bar'),
@@ -201,14 +201,14 @@ const renderPreview = (preview: FeedAssetPreview, compact: boolean) => {
 
     if (compact) {
       return (
-        <div className="w-full h-8 overflow-hidden rounded-md bg-[var(--ant-color-bg-layout)] bg-opacity-30">
+        <div className="w-full h-8 overflow-hidden rounded-md bg-[var(--ant-color-bg-container)]">
           <MiniEChart option={buildAreaOption(series, { showAxes: false, showTooltip: false })} />
         </div>
       );
     }
 
     return (
-      <div className="w-full min-h-[140px] h-[180px] flex flex-col p-4 bg-[var(--ant-color-bg-container)] rounded-lg border border-[var(--ant-color-border-secondary)] shadow-sm relative overflow-hidden transition-shadow hover:shadow-md">
+      <div className="w-full min-h-[140px] h-[180px] flex flex-col p-4 bg-[var(--ant-color-bg-container)] relative overflow-hidden">
         <div className="flex justify-between items-start mb-2 z-10 w-full">
           <div>
             <div className="text-xs font-semibold text-[var(--ant-color-text-secondary)] uppercase tracking-wider mb-1">
@@ -289,7 +289,7 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
         const chartOptions = { ...(chart.chartOptions || {}) };
         setWidget({
           id: `feed-chart-${item.id}`,
-          title: chart.title || item.title,
+          title: feedItemDisplayTitle({ title: chart.title || item.title, asset: item.asset }) || '',
           chartType: chart.chartType as WidgetInstance['chartType'],
           chartData: execution?.data ?? undefined,
           chartOptions,
@@ -329,12 +329,12 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
         onRetry={() => setRetryNonce((n) => n + 1)}
       />
     ) : (
-      <FeedPreviewEmpty label={item.asset.previewLabel || item.title} />
+      <FeedPreviewEmpty label={feedItemDisplayTitle(item) || item.asset.previewLabel || 'Chart'} />
     );
   }
 
   return (
-    <div className="w-full h-full min-h-[200px] p-3">
+    <div className="w-full h-full min-h-[200px]">
       <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
     </div>
   );
@@ -346,7 +346,7 @@ const InsightChartPreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     if (!chartWidget?.chartType) return null;
     return {
       id: `feed-insight-${item.id}`,
-      title: item.title,
+      title: feedItemDisplayTitle(item) || '',
       chartType: chartWidget.chartType as WidgetInstance['chartType'],
       chartData: chartWidget.chartData as WidgetInstance['chartData'],
       chartOptions: chartWidget.chartOptions,
@@ -356,7 +356,7 @@ const InsightChartPreview: React.FC<{ item: FeedItem }> = ({ item }) => {
 
   if (widget) {
     return (
-      <div className="w-full h-full min-h-[200px] p-4">
+      <div className="w-full h-full min-h-[200px]">
         <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
       </div>
     );
@@ -365,48 +365,16 @@ const InsightChartPreview: React.FC<{ item: FeedItem }> = ({ item }) => {
   return null;
 };
 
-const DashboardSnapshotPreview: React.FC<FeedPreviewVisualProps> = ({
+const DashboardSnapshotPreview: React.FC<Pick<FeedPreviewVisualProps, 'item' | 'maxPreviews'>> = ({
   item,
   maxPreviews,
-  showOverflowBadge = false,
 }) => {
-  const router = useRouter();
-  const t = useTranslations('feed');
   const previewLimit =
     typeof maxPreviews === 'number' ? Math.min(maxPreviews, DASHBOARD_PREVIEW_LIMIT) : DASHBOARD_PREVIEW_LIMIT;
-  const capturedWidgetCount = (item.asset.snapshotPayload as { visuals?: { widgets?: unknown[] } } | undefined)?.visuals
-    ?.widgets?.length;
-  const [totalWidgets, setTotalWidgets] = useState<number | null>(
-    capturedWidgetCount ?? item.asset.widgetCount ?? null
-  );
-
-  const handleViewDashboard = (event?: React.MouseEvent | React.KeyboardEvent) => {
-    event?.stopPropagation();
-    if (!item.assetId) return;
-    router.push(`/feed/${encodeURIComponent(item.id)}`);
-  };
-
-  const overflow = totalWidgets != null ? Math.max(0, totalWidgets - previewLimit) : 0;
 
   return (
     <div className="feed-dashboard-card-preview">
-      <FeedPostViewer
-        item={item}
-        variant="card"
-        maxWidgets={previewLimit}
-        onReady={({ widgetCount }) => setTotalWidgets(widgetCount)}
-      />
-      {showOverflowBadge && overflow > 0 ? (
-        <button
-          type="button"
-          className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-medium text-[var(--ant-color-text-secondary)] transition-colors hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-primary)]"
-          onClick={handleViewDashboard}
-        >
-          <span>{t('dashboard_overflow_charts', { count: overflow })}</span>
-          <span aria-hidden>&middot;</span>
-          <span>{t('view_full_dashboard')}</span>
-        </button>
-      ) : null}
+      <FeedPostViewer item={item} variant="card" maxWidgets={previewLimit} />
     </div>
   );
 };
@@ -416,14 +384,14 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
 
   if (item.assetType === 'dashboard') {
     if (item.renderMode === 'snapshot') {
-      return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
+      return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} />;
     }
 
     // Legacy live posts do not carry captured chart data, so fetch a bounded preview.
     if (item.asset.dashboardId) {
       return <FeedDashboardChartGrid item={item} maxWidgets={typeof maxPreviews === 'number' ? maxPreviews : 4} />;
     }
-    return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} showOverflowBadge={showOverflowBadge} />;
+    return <DashboardSnapshotPreview item={item} maxPreviews={maxPreviews} />;
   }
 
   // `chart` type — render live interactive chart via ECharts
@@ -447,7 +415,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
     }
     return (
       <div className="w-full h-full flex items-center justify-center p-8 text-sm text-[var(--ant-color-text-description)]">
-        {item.asset.previewLabel || item.title}
+        {feedItemDisplayTitle(item) || 'Chart'}
       </div>
     );
   }
@@ -466,7 +434,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
     }
     return (
       <div className="w-full h-full flex items-center justify-center p-8 text-sm text-[var(--ant-color-text-description)]">
-        {item.asset.previewLabel || item.title}
+        {feedItemDisplayTitle(item) || 'Insight'}
       </div>
     );
   }
@@ -487,7 +455,7 @@ const FeedPreviewVisual: React.FC<FeedPreviewVisualProps> = ({ item, maxPreviews
         {cappedPreviews.map((preview, index) => (
           <div
             key={`${preview.type}-${index}`}
-            className="relative bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-lg overflow-hidden flex items-center justify-center min-h-[160px]"
+            className="relative bg-[var(--ant-color-bg-container)] overflow-hidden flex items-center justify-center min-h-[160px]"
           >
             {renderPreview(preview, true)}
             {showOverflowBadge && overflow > 0 && index === cappedPreviews.length - 1 && (

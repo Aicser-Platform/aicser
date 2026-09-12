@@ -310,6 +310,42 @@ def test_compute_partial_success_sql_only():
     assert out["partial_message"] is None
 
 
+def test_compute_partial_success_chart_skipped_by_plan():
+    """Planned skip of chart/insights is a complete answer, not a failed visualization."""
+    rb = _import_response_builder()
+    _compute_partial_success = rb._compute_partial_success
+    state = {
+        "sql_query": "SELECT COUNT(*) AS n FROM accounts",
+        "query_result": [{"n": 80}],
+        "query_result_row_count": 1,
+        "echarts_config": None,
+        "insights": [{"title": "There are 80 accounts."}],
+        "executive_summary": "There are 80 accounts in the current snapshot.",
+        "error": None,
+        "critical_failure": False,
+        "execution_metadata": {"chart_skipped_by_plan": True},
+    }
+    out = _compute_partial_success(state)
+    assert out["partial_success"] is False
+    assert "chart" in out["completed_components"]
+    assert out["partial_message"] is None
+
+
+def test_compute_partial_success_dashboard_counts_as_complete():
+    rb = _import_response_builder()
+    _compute_partial_success = rb._compute_partial_success
+    state = {
+        "sql_query": None,
+        "query_result": None,
+        "dashboard_created": True,
+        "error": None,
+        "critical_failure": False,
+    }
+    out = _compute_partial_success(state)
+    assert out["meaningful_output"] is True
+    assert out["partial_success"] is False
+
+
 def test_build_workflow_response_partial_success_preserves_insight_narration():
     """When partial_success is insights+data but chart failed, append partial banner; keep insight text."""
     rb = _import_response_builder()

@@ -8,6 +8,7 @@ from ee.modules.ai.services.dashboard_generation_service import (
     _merge_widget_specs,
     _dashboard_title_from_prompt,
     _validate_global_filters,
+    _heal_chart_query,
 )
 
 
@@ -22,9 +23,17 @@ def test_dashboard_title_generic_prompt_falls_back_to_data_source_name():
     assert title == "Sample: Banking (Cambodia/SEA)"
 
 
-def test_dashboard_title_generic_prompt_without_data_source_name_keeps_old_behavior():
+def test_dashboard_title_generic_prompt_without_data_source_name_falls_back():
     title = _dashboard_title_from_prompt("create a dashboard for this dataset", None)
-    assert title == "This Dataset"
+    assert title == "AI Dashboard"
+
+
+def test_dashboard_title_request_phrasing_does_not_become_title():
+    title = _dashboard_title_from_prompt(
+        "how about build a dashboard for our management",
+        "Loan Book",
+    )
+    assert title == "Loan Book"
 
 
 def test_dashboard_title_content_bearing_prompt_is_unaffected():
@@ -262,3 +271,45 @@ def test_merge_widget_specs_fills_partial_llm_output():
     merged = _merge_widget_specs(partial, filler, min_count=4)
     assert len(merged) >= 4
     assert merged[0]["chart_type"] == "text"
+
+
+def test_validate_global_filters_strips_rolling_last_30_days_default():
+    schema = {
+        "tables": [{
+            "name": "loans",
+            "columns": [
+                {"name": "disbursement_date", "type": "date"},
+                {"name": "npl_flag", "type": "varchar"},
+            ],
+        }]
+    }
+    filters = [{
+        "type": "date_range",
+        "field": "disbursement_date",
+        "label": "Disbursement Date",
+        "default": "last_30_days",
+    }]
+    cleaned = _validate_global_filters(filters, schema, "loans", data_source_id="ds-1")
+    date_f = next(f for f in cleaned if f["field"] == "disbursement_date")
+    assert "default" not in date_f
+    assert "defaultValue" not in date_f
+    assert any(f["field"] == "npl_flag" for f in cleaned)
+
+
+def test_heal_chart_query_fills_missing_x_and_metric():
+    schema = {
+        "tables": [{
+            "name": "loans",
+            "columns": [
+                {"name": "customer_name", "type": "varchar"},
+                {"name": "principal_amount", "type": "float"},
+                {"name": "disbursement_date", "type": "date"},
+            ],
+        }]
+    }
+    spec = {"chart_type": "bar", "chart_query": {}}
+    healed = _heal_chart_query(spec, schema, "loans")
+    cq = healed["chart_query"]
+    assert cq["tableName"] == "loans"
+    assert cq.get("x")
+    assert cq.get("yMetrics") or cq.get("aggregate")

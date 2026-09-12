@@ -3,27 +3,40 @@ import type { PickedAttachment } from './AttachmentPicker';
 const PENDING_FEED_ATTACHMENT_KEY = 'aiser_pending_feed_attachment';
 
 /**
- * Hand-off for "Attach to a new post" from Chart Designer / Dashboards: the
- * snapshot is captured immediately (reusing the exact same
- * buildDashboardAttachmentSnapshot/buildChartAttachmentSnapshot + saved
- * chartId logic those pages already use for "Publish to Feed"), stashed
- * here, then the user is routed to /feed where NewPostComposer picks it up
- * on mount and drops it straight into the composer as a pending attachment -
- * so the author writes their own commentary around a chart/dashboard they
- * were just looking at, instead of first navigating to /feed and re-finding
- * it through the attachment picker's browse list.
+ * Hand-off from Share to Feed → "Add a note on Feed": the snapshot is already
+ * captured in PublishToFeedModal / FeedPublishComposer, stashed here, then
+ * /feed's NewPostComposer picks it up on mount. sessionStorage (not a query
+ * param) because snapshot payloads are too large for URLs.
  *
- * sessionStorage, not a query param: a snapshot payload (widget data, layout,
- * narrative) is too large to round-trip through a URL, and this hand-off is
- * inherently single-use / single-tab (same pattern as chatFeedDraft.ts).
+ * Returns false when nothing could be stored (quota / private mode). Callers
+ * should surface an error instead of navigating to an empty composer.
+ * On quota pressure we retry without snapshot_payload — the feed attach API
+ * rebuilds from the live asset when needed.
  */
-export function writePendingFeedAttachment(attachment: PickedAttachment): void {
-  if (typeof window === 'undefined') return;
-  try {
-    sessionStorage.setItem(PENDING_FEED_ATTACHMENT_KEY, JSON.stringify(attachment));
-  } catch {
-    // ignore quota errors — worst case the user just re-attaches from the picker
+export function writePendingFeedAttachment(attachment: PickedAttachment): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const tryWrite = (payload: PickedAttachment): boolean => {
+    try {
+      sessionStorage.setItem(PENDING_FEED_ATTACHMENT_KEY, JSON.stringify(payload));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (tryWrite(attachment)) return true;
+
+  // Drop heavy snapshot; keep asset identity so the server can rebuild.
+  if (attachment.snapshot_payload != null) {
+    const slim: PickedAttachment = {
+      ...attachment,
+      snapshot_payload: null,
+    };
+    if (tryWrite(slim)) return true;
   }
+
+  return false;
 }
 
 /** Reads and clears in one step — this is a one-shot hand-off, not durable state. */

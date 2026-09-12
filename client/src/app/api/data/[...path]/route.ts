@@ -52,6 +52,15 @@ async function handleDataRequest(
     const resolvedParams = rawParams && typeof rawParams.then === 'function' ? await rawParams : rawParams;
     const pathSegments = resolvedParams?.path || [];
     const path = Array.isArray(pathSegments) ? pathSegments.join('/') : String(pathSegments || '');
+    // Guard against clients calling /api/data/undefined when dataSourceId is missing.
+    if (
+      !path ||
+      path === 'undefined' ||
+      path === 'null' ||
+      path.split('/').some((seg) => seg === 'undefined' || seg === 'null')
+    ) {
+      return NextResponse.json({ detail: 'Data source id is required' }, { status: 400 });
+    }
     
     const backendBase = getBackendUrlForApi();
     const backendUrl = `${backendBase}/data/${path}`;

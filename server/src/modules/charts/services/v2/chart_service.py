@@ -1215,7 +1215,16 @@ class ChartService:
 
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")
-        if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip():
+        has_structured = bool(chart_query.get("tableName")) and bool(
+            chart_query.get("x")
+            or chart_query.get("xField")
+            or chart_query.get("yMetrics")
+            or chart_query.get("yMetric")
+            or chart_query.get("aggregate")
+        )
+        # Prefer structured x/yMetrics so dashboard runtime filters bind. Frozen
+        # SQL only projects aliases (x/y) and silently drops date/dimension filters.
+        if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip() and not has_structured:
             result = await self._execute_with_sample_sql(
                 chart, compiled_sql, identity=identity
             )
@@ -1247,7 +1256,9 @@ class ChartService:
             )
 
         # Template charts store a pre-built JOIN query in chart_options.sample_sql.
-        # Use it directly so JOINed fields (e.g. status_name) render correctly.
+        # Prefer it only when there is no structured mapping — otherwise runtime
+        # filters on date/dimension columns are silently dropped (SQL projects
+        # aliases like x/y only). Same rule as compiled_semantic_sql above.
         chart_options = chart.chart_options or {}
         if isinstance(chart_options, str):
             try:
@@ -1255,7 +1266,12 @@ class ChartService:
             except Exception:
                 chart_options = {}
         sample_sql = chart_options.get("sample_sql") if isinstance(chart_options, dict) else None
-        if sample_sql and isinstance(sample_sql, str) and sample_sql.strip():
+        if (
+            sample_sql
+            and isinstance(sample_sql, str)
+            and sample_sql.strip()
+            and not has_structured
+        ):
             result = await self._execute_with_sample_sql(
                 chart, sample_sql, identity=identity
             )
@@ -1978,7 +1994,19 @@ class ChartService:
                 return None
             if name in columns:
                 return name
-            return col_lower.get(str(name).lower())
+            found = col_lower.get(str(name).lower())
+            if found:
+                return found
+            key = re.sub(r"[^a-z0-9]", "", str(name).lower())
+            if not key:
+                return None
+            for col in columns:
+                if re.sub(r"[^a-z0-9]", "", str(col).lower()) == key:
+                    return col
+            bare = str(name).split(".")[-1]
+            if bare != name:
+                return resolve_col(bare)
+            return None
 
         x_col = resolve_col(x_field)
         g_col = resolve_col(group_field)

@@ -2,7 +2,7 @@ from typing import Optional, List, Mapping, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select
 
 from src.modules.dashboards.models import Dashboard
 
@@ -51,13 +51,10 @@ class DashboardService:
         return list(result.scalars())
 
     async def list_by_user(self, user_id: UUID) -> List[Dashboard]:
-        """CE scoping: a user's own dashboards plus legacy rows with no
-        recorded owner (created before the created_by column existed).
-        Never excludes pre-existing dashboards no one can be attributed to.
-        """
+        """CE scoping: only dashboards the caller owns."""
         stmt = (
             select(Dashboard)
-            .where(or_(Dashboard.created_by == user_id, Dashboard.created_by.is_(None)))
+            .where(Dashboard.created_by == user_id)
             .order_by(Dashboard.created_at.desc())
         )
         result = await self.db.execute(stmt)

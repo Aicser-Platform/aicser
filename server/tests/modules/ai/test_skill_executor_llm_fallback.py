@@ -148,3 +148,52 @@ async def test_regex_fast_path_never_calls_the_llm_for_selection():
     assert out["agent_plan"].get("trigger") != "llm_selection"
     assert calls["selection"] is False
     assert calls["clarification"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_sql_only_closes_with_chart_and_insights():
+    """run_sql used to END after the table, so Auto returned column dumps with no
+    executive summary. After SQL, skill_executor must run the Analyze close-out
+    and must not clobber it with 'Result — **col**: val'."""
+
+    async def fake_run_sql(ctx):
+        rows = [{"month": "Jan", "customers": 10}]
+        return {
+            "success": True,
+            "skill": "run_sql",
+            "query_result": rows,
+            "sql_query": "SELECT 1",
+            "workflow_state": {
+                "query": ctx.get("query"),
+                "query_result": rows,
+                "sql_query": "SELECT 1",
+            },
+        }
+
+    async def fake_close(state, litellm_service=None):
+        state["insights"] = [{"title": "January customers", "what": "10 customers in January."}]
+        state["executive_summary"] = "Customer counts start at 10 in January."
+        state["message"] = state["executive_summary"]
+        state["echarts_config"] = {"type": "line"}
+        return state
+
+    original_handler = _REGISTRY["run_sql"].handler
+    _REGISTRY["run_sql"].handler = fake_run_sql
+    try:
+        with patch(
+            "ee.modules.ai.skills.skill_graph_handlers.close_sql_with_chart_and_insights",
+            new=fake_close,
+        ):
+            state = {
+                "query": "[Agent Skill: run_sql] customers per month",
+                "user_id": "u1",
+                "organization_id": None,
+            }
+            out = await skill_executor_node(state)
+    finally:
+        _REGISTRY["run_sql"].handler = original_handler
+
+    assert out["insights"][0]["title"] == "January customers"
+    assert "Result —" not in (out.get("executive_summary") or "")
+    assert "Customer counts start" in (out.get("executive_summary") or "")
+    assert out["echarts_config"]["type"] == "line"

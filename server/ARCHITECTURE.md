@@ -543,3 +543,60 @@ INFO: ✅ Credentials encrypted for postgresql connection
 - SQLAlchemy Docs: https://docs.sqlalchemy.org/
 - ClickHouse HTTP API: https://clickhouse.com/docs/en/interfaces/http/
 - Fernet Encryption: https://cryptography.io/en/latest/fernet/
+
+---
+
+## AI analytics execution path (chat / LangGraph)
+
+How natural-language analysis reaches data, with the guards that matter for trust and cost.
+
+### Source → engine (one NL2SQL façade, divergent engines)
+
+```
+User question
+    → supervisor / NL2SQL (SQL-shaped plan)
+    → validate_sql → execute_query
+         ├─ file / csv / parquet / excel  → DuckDB (load file → table "data")
+         ├─ API / single-table HTTP       → fetch → Pandas → DuckDB register("data") → SQL
+         ├─ warehouse DB                  → DirectSQL (native dialect)
+         └─ multi-source federation       → per-source extract (under identity)
+                                            → DuckDB register(alias, df) → federation SQL
+```
+
+**Honest claim:** we unify on SQL as the *query language*, not on one physical engine. Files and APIs are normalized into DuckDB-shaped relations before SQL runs. Remote warehouses stay on DirectSQL for correctness and pushdown. Federation is extract-then-DuckDB, not durable `ATTACH` of every warehouse.
+
+Capabilities live in `server/ee/modules/ai/data_source_capabilities.py` and routing in `MultiEngineQueryService._execute_query_unfiltered`.
+
+### Numeric grounding (layered — do not double-rewrite)
+
+```
+insight_synthesizer
+  → AUTHORITATIVE data_facts in prompt
+  → ground_prose_pack (scale/format inject from result rows)
+analytics_render (chart ∥ insights)
+  → response_finalizer / narration_grounding
+       verify claims vs facts (audit)
+       soft-correct summary rounding only (≤5%)
+       assign verification_tier: T1 | T2 | T0
+```
+
+Generation already grounds narration. Finalizer is the **auditor** (tiers + catch residual hallucinations), not a second inject pass.
+
+### Multi-query fan-out budgets
+
+`mode_query_planner` declares `budgets.max_queries` (default 6) and **trims** the plan via `_apply_query_budgets` (also shrinks N when little wall-clock remains).  
+`multi_query_execution` re-trims and runs optional queries under `asyncio.Semaphore(max_concurrency)` (default 3).  
+SQL correction loops remain separately capped in `DEFAULT_RETRY_LIMITS`.
+
+### Row security (RLS) enforcement point
+
+```
+execute_query / federated extract
+    → MultiEngineQueryService.execute_query(identity=QueryIdentity(...))
+         → _enforce_column_security
+         → _enforce_row_security → inject_predicates (app rewrite)
+         → engine
+```
+
+Enforcement is **caller-scoped SQL rewrite** from Aicser RLS policies (`data_source_rls_*`), not `SET ROLE` / session Postgres RLS. That covers DuckDB and API paths where database RLS cannot apply. Native warehouse `SET ROLE` is optional and additive only when a customer warehouse already relies on DB roles.
+

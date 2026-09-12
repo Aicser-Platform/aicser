@@ -1,6 +1,9 @@
 import { getBackendUrl } from './backendUrl';
 import { getCeBearerToken, setCeBearerToken } from '@/auth/ce/bearerToken';
-import { getEeApiAuthToken } from '@/ee';
+// Deep import — never `@/ee`. The EE barrel re-exports ChatPage and
+// useConversationStore; those modules import fetchApi, which would cycle
+// and leave ChatPanel undefined ("Something went wrong" on /chat).
+import { getEeApiAuthToken } from '@/ee/auth/authClient';
 
 /**
  * Structured API error with status code and parsed detail.

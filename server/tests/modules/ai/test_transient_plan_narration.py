@@ -13,7 +13,7 @@ actual answer, because executive_summary happened to be empty at that point
 (LLM failure with no data_facts to fall back to).
 """
 
-from ee.modules.ai.schemas.graph_state import is_transient_plan_narration
+from ee.modules.ai.schemas.graph_state import advance_plan_step, is_transient_plan_narration
 
 
 def test_matches_the_next_step_template_that_leaked_live():
@@ -65,3 +65,16 @@ def test_length_cap_prevents_rejecting_a_short_but_substantive_genuine_answer():
     )
     assert len(genuine_but_short_prefix_collision) > 80
     assert is_transient_plan_narration(genuine_but_short_prefix_collision) is False
+
+
+def test_advance_plan_step_uses_label_not_step_fraction():
+    state = {
+        "execution_plan": [
+            {"id": "execute", "label": "Retrieving data", "status": "active"},
+            {"id": "quality", "label": "Validating data for forecasting", "status": "pending"},
+        ]
+    }
+    advance_plan_step(state, "execute", status="complete")
+    msg = str(state.get("progress_message") or "")
+    assert "Step " not in msg
+    assert "Validating data for forecasting" in msg

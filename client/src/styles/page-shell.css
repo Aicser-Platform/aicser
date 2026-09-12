@@ -170,6 +170,14 @@
   color: var(--color-primary);
 }
 
+.header-shell-chip-icon--logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
 .header-shell-chip-chevron {
   font-size: 12px !important;
   opacity: 0.75;
@@ -389,6 +397,24 @@ div.page-container,
   padding: 0 !important;
   gap: 0 !important;
   overflow: hidden !important;
+}
+
+/* Header-to-body spacing comes only from .page-wrapper gap (24px / gutter).
+   aiser-unified-design-system sets margin-bottom: 48px on .page-header with
+   higher-specificity dashboard-content-override selectors, which stacked on
+   the flex gap and left a large empty band after title + subtitle on /data,
+   /knowledge, /alerts, /semantic-layer, and /data-platform. */
+.page-content > .page-wrapper > .page-header,
+.dashboard-content-override .page-content > .page-wrapper > .page-header,
+.dashboard-content-override .page-wrapper > .page-header,
+.page-wrapper > .page-header,
+.page-wrapper .page-header {
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.page-wrapper .page-body > :empty {
+  display: none !important;
 }
 
 .page-wrapper.page-wrapper--full-bleed::before,

@@ -11,16 +11,18 @@ export type AssetType = 'dashboard' | 'chart' | 'insight' | 'query' | 'post';
  * checked against the author at publish time, then re-checked per-VIEWER at
  * read time (see FeedAttachmentPayload's `restricted` flag). */
 export interface AttachmentRef {
-  asset_type: 'dashboard' | 'chart';
+  asset_type: 'dashboard' | 'chart' | 'insight';
   asset_id: string;
   /** Pre-captured at pick time (AttachmentPicker) so the resulting
    * publication renders from a stored snapshot instead of a live query on
    * every future view - see buildAttachmentSnapshot.ts for why. */
   snapshot_payload?: Record<string, unknown> | null;
+  /** Reuse an already-published feed post instead of auto-publishing a copy. */
+  publication_id?: string | null;
 }
 
 export interface FeedAttachmentPayload {
-  asset_type: 'dashboard' | 'chart';
+  asset_type: 'dashboard' | 'chart' | 'insight';
   asset_id: string;
   restricted: boolean;
   title?: string | null;

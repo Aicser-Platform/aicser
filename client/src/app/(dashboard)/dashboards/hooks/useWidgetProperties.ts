@@ -387,6 +387,9 @@ export const useWidgetProperties = ({
     selectedWidget?.chartQuery?.limit,
     selectedWidget?.chartQuery?.seriesLimit,
     JSON.stringify(selectedWidget?.chartQuery?.joins),
+    selectedWidget?.chartQuery?.xGrain,
+    selectedWidget?.chartQuery?.query_snapshot_id,
+    selectedWidget?.chartQuery?.compiled_semantic_sql,
     selectedWidget?.title, // DEBOUNCE TITLE CHANGES
   ]);
 

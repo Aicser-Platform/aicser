@@ -17,7 +17,7 @@ export function columnHeaderFromKey(key: string): string {
 
   if (!spaced) return key;
 
-  return spaced
+    return spaced
     .split(/\s+/)
     .map((word) => {
       // Preserve short acronyms (ID, URL, KPI) when already all-caps
@@ -29,4 +29,14 @@ export function columnHeaderFromKey(key: string): string {
       return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
     })
     .join(' ');
+}
+
+/** Prefer warehouse field names over engine aliases like `value` / `period`. */
+export function resolveColumnHeader(
+  key: string,
+  displayNames?: Record<string, string> | null,
+): string {
+  if (!key) return key;
+  const mapped = displayNames?.[key] ?? displayNames?.[key.toLowerCase()];
+  return columnHeaderFromKey(mapped || key);
 }

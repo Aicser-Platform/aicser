@@ -16,12 +16,21 @@ import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useTranslations } from 'next-intl';
 import { handlePlanLimitError, ApiError } from '@/utils/api';
 import dynamic from 'next/dynamic';
+import { asDynamicModule } from '@/utils/asDynamicModule';
 
 const ProjectSelectorModal = dynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.ProjectSelectorModal }))) as any,
-  { ssr: false }
-) as React.ComponentType<{ open?: boolean; onClose?: () => void; onProjectChange?: (projectId: string | number) => void; onCreateNew?: () => void;[key: string]: unknown }>;
+  () =>
+    import('@/ee').then((m) =>
+      asDynamicModule(m.ProjectSelectorModal, () => null),
+    ),
+  { ssr: false },
+) as React.ComponentType<{
+  open?: boolean;
+  onClose?: () => void;
+  onProjectChange?: (projectId: string | number) => void;
+  onCreateNew?: () => void;
+  [key: string]: unknown;
+}>;
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -29,6 +38,7 @@ import { useProjects, useCreateProject } from '@/hooks/useProjects';
 import { dataSourceKeys } from '@/hooks/dataSourceKeys';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { getOrganizationBranding } from '@/utils/orgBranding';
 import { useOrganizations, useCreateOrganization } from '@/hooks/useOrganizations';
 import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { useHeaderStore } from '@/stores/useHeaderStore';
@@ -37,10 +47,30 @@ import { useRouter } from 'next/navigation';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
-type IconableEntity = { icon_emoji?: string | null; color?: string | null };
+type IconableEntity = {
+  icon_emoji?: string | null;
+  color?: string | null;
+  logo_url?: string | null;
+  settings?: { branding?: { logo_url?: string | null } } | null;
+  name?: string | null;
+};
 
-/** Custom emoji when set (colored to match), falling back to the given default icon. */
+/** Prefer uploaded org logo, then custom emoji, then the given default icon. */
 function renderEntityIcon(entity: IconableEntity | null | undefined, fallback: React.ReactNode, className?: string) {
+  const { logoUrl, name } = getOrganizationBranding(entity as Parameters<typeof getOrganizationBranding>[0]);
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- org branding may be data-URI or signed URL
+      <img
+        src={logoUrl}
+        alt={name ? `${name} logo` : 'Organization logo'}
+        className={['header-shell-chip-icon', 'header-shell-chip-icon--logo', className].filter(Boolean).join(' ')}
+        width={20}
+        height={20}
+        draggable={false}
+      />
+    );
+  }
   if (entity?.icon_emoji) {
     return (
       <span className={className} style={{ fontSize: 14, lineHeight: 1, display: 'inline-flex', flexShrink: 0 }}>
@@ -80,8 +110,13 @@ export const LayoutHeader: React.FC<Props> = ({
   const [messageApi, contextHolder] = message.useMessage();
 
   const ThemeCustomizer = React.useMemo(
-    () => dynamic(() => import('@/ee').then((m) => ({ default: m.ThemeCustomizer })), { ssr: false }),
-    []
+    () =>
+      dynamic(
+        () =>
+          import('@/ee').then((m) => asDynamicModule(m.ThemeCustomizer, () => null)),
+        { ssr: false },
+      ),
+    [],
   );
   const [customizerOpen, setCustomizerOpen] = React.useState(false);
 
@@ -91,8 +126,13 @@ export const LayoutHeader: React.FC<Props> = ({
   // bell on /discover (DiscoverNotifications), which only covers social
   // events (follow/comment/reaction), not this broader activity inbox.
   const ActivityInboxBell = React.useMemo(
-    () => dynamic(() => import('@/ee').then((m) => ({ default: m.ActivityInboxBell })), { ssr: false }),
-    []
+    () =>
+      dynamic(
+        () =>
+          import('@/ee').then((m) => asDynamicModule(m.ActivityInboxBell, () => null)),
+        { ssr: false },
+      ),
+    [],
   );
 
   const { currentProject, selectProject } = useProjectStore();

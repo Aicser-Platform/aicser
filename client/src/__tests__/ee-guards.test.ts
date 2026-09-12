@@ -13,9 +13,12 @@ describe('EE page guard — isEE constant', () => {
     expect(process.env.NEXT_PUBLIC_EDITION === 'enterprise').toBe(false);
   });
 
-  it('isEE is true when NEXT_PUBLIC_EDITION is "enterprise"', () => {
-    vi.stubEnv('NEXT_PUBLIC_EDITION', 'enterprise');
-    expect(process.env.NEXT_PUBLIC_EDITION === 'enterprise').toBe(true);
+  it('isEE is true when NEXT_PUBLIC_EDITION is "ee"', () => {
+    vi.stubEnv('NEXT_PUBLIC_EDITION', 'ee');
+    const isEE = ['enterprise', 'ee'].includes(
+      (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
+    );
+    expect(isEE).toBe(true);
   });
 });
 

@@ -553,14 +553,6 @@ function EmbedChatContent() {
         {loading && <AppLoadingIndicator variant="minimal" className="ml-auto" />}
       </div>
 
-      {/* assistantConfig.hide_aicser_branding (the assistant's own flag,
-          Team+ gated in assistant_service.py) takes precedence when set --
-          theme.hide_aicser_branding only applies to the legacy generic-token
-          chat path, which doesn't populate assistantConfig at all. */}
-      <EmbedBrandingFooter
-        hidden={assistantConfig?.hide_aicser_branding ?? theme?.hide_aicser_branding}
-      />
-
       <div
         style={{
           flex: 1,
@@ -872,44 +864,53 @@ function EmbedChatContent() {
 
       <div
         style={{
-          padding: '10px 16px',
+          padding: '10px 16px 8px',
           borderTop: '1px solid var(--ant-color-border, #e8e8e8)',
           background: 'var(--ant-color-bg-container, #fff)',
           display: 'flex',
-          gap: 8,
-          alignItems: 'flex-end',
+          flexDirection: 'column',
+          gap: 6,
           flexShrink: 0,
         }}
       >
-        <TextArea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={tEmbed('input_placeholder')}
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          disabled={loading}
-          style={{ flex: 1, resize: 'none', borderRadius: 8, fontSize: 13 }}
-        />
-        {loading ? (
-          <Button
-            danger
-            icon={<StopOutlined />}
-            onClick={handleStop}
-            style={{ flexShrink: 0, borderRadius: 8 }}
-          >
-            Stop
-          </Button>
-        ) : (
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={() => void handleSend()}
-            disabled={!prompt.trim()}
-            style={{ flexShrink: 0, borderRadius: 8 }}
-          >
-            Send
-          </Button>
-        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <TextArea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={tEmbed('input_placeholder')}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            disabled={loading}
+            style={{ flex: 1, resize: 'none', borderRadius: 8, fontSize: 13 }}
+          />
+          {loading ? (
+            <Button
+              danger
+              icon={<StopOutlined />}
+              onClick={handleStop}
+              style={{ flexShrink: 0, borderRadius: 8 }}
+            >
+              Stop
+            </Button>
+          ) : (
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              onClick={() => void handleSend()}
+              disabled={!prompt.trim()}
+              style={{ flexShrink: 0, borderRadius: 8 }}
+            >
+              Send
+            </Button>
+          )}
+        </div>
+        {/* Inline under composer — never fixed over the Send button */}
+        <div style={{ display: 'flex', justifyContent: 'flex-start', minHeight: 18 }}>
+          <EmbedBrandingFooter
+            variant="inline"
+            hidden={assistantConfig?.hide_aicser_branding ?? theme?.hide_aicser_branding}
+          />
+        </div>
       </div>
 
       <style>{`

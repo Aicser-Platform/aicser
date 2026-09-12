@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, false, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
@@ -27,10 +27,10 @@ class DashboardLibraryService:
     ):
         if project_id is not None:
             return Dashboard.project_id == project_id
-        # CE: own dashboards + legacy unowned rows
+        # CE: only dashboards the caller owns. Unowned legacy rows are not world-readable.
         if user_id is not None:
-            return or_(Dashboard.created_by == user_id, Dashboard.created_by.is_(None))
-        return Dashboard.created_by.is_(None)
+            return Dashboard.created_by == user_id
+        return false()
 
     def _collection_scope(
         self,

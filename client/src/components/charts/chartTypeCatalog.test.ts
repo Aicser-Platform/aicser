@@ -6,6 +6,9 @@ import {
   SAFE_CHART_TYPE_SWITCH_TARGETS,
   SHARED_CHART_TYPE_ORDER,
   dashboardChartTypeSwitchTargets,
+  canClientPivotChartConfig,
+  inferSeriesChartType,
+  isForecastEchartsConfig,
   isSafeChartTypeSwitchTarget,
   listAvailableChartTypes,
   listDashboardVisualizeChartTypes,
@@ -34,6 +37,15 @@ describe('chartTypeCatalog alignment', () => {
     expect(types).toContain('pie');
     expect(types).toContain('donut');
     expect(types).toContain('table');
+  });
+
+  it('listAvailableChartTypes treats numeric strings as measures', () => {
+    const types = listAvailableChartTypes([
+      { category: 'A', value: '10' },
+      { category: 'B', value: '20' },
+    ]);
+    expect(types).toContain('pie');
+    expect(types).toContain('donut');
   });
 
   it('listDashboardVisualizeChartTypes appends dashboard extensions after chat core', () => {
@@ -106,5 +118,78 @@ describe('dashboardChartTypeSwitchTargets', () => {
     const targets = dashboardChartTypeSwitchTargets('GEO');
     expect(targets).toContain('geo');
     expect(targets).not.toContain('GEO');
+  });
+});
+
+describe('forecast echarts configs', () => {
+  const forecastCfg = {
+    series: [
+      { name: 'Historical', type: 'line', data: [1, 2, null] },
+      { name: 'Forecast', type: 'line', data: [null, 2, 3] },
+    ],
+  };
+
+  it('is not labeled Area just because a CI band used areaStyle', () => {
+    const withBand = {
+      series: [
+        { name: 'Historical', type: 'line', data: [1, 2] },
+        { name: 'Forecast', type: 'line', data: [null, 3] },
+        { name: '95% Confidence', type: 'line', areaStyle: { opacity: 0.3 }, data: [null, 1] },
+      ],
+    };
+    expect(isForecastEchartsConfig(withBand)).toBe(true);
+    expect(inferSeriesChartType(withBand, null)).toBe('line');
+  });
+
+  it('keeps decorative hairline fill as Line (not Area)', () => {
+    expect(
+      inferSeriesChartType(
+        { series: [{ type: 'line', data: [1, 2], areaStyle: { opacity: 0.1 } }] },
+        null,
+      ),
+    ).toBe('line');
+  });
+
+  it('prefers stamped aiserChartType over series heuristics', () => {
+    expect(
+      inferSeriesChartType(
+        {
+          aiserChartType: 'line',
+          series: [{ type: 'line', data: [1, 2], areaStyle: { opacity: 0.3 } }],
+        },
+        null,
+      ),
+    ).toBe('line');
+  });
+
+  it('labels real area fills as Area', () => {
+    expect(
+      inferSeriesChartType(
+        { series: [{ type: 'line', data: [1, 2], areaStyle: { opacity: 0.3 } }] },
+        null,
+      ),
+    ).toBe('area');
+  });
+
+  it('detects historical + forecast series', () => {
+    expect(isForecastEchartsConfig(forecastCfg)).toBe(true);
+    expect(inferSeriesChartType(forecastCfg, null)).toBe('line');
+  });
+});
+
+describe('canClientPivotChartConfig', () => {
+  it('allows normal bar/line options', () => {
+    expect(canClientPivotChartConfig({ series: [{ type: 'bar', data: [1, 2] }] })).toBe(true);
+  });
+
+  it('locks forecast configs so CI bands are not flattened', () => {
+    expect(
+      canClientPivotChartConfig({
+        series: [
+          { name: 'Historical', type: 'line', data: [1, 2] },
+          { name: 'Forecast', type: 'line', data: [null, 3] },
+        ],
+      }),
+    ).toBe(false);
   });
 });

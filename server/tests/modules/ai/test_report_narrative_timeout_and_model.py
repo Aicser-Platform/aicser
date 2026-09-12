@@ -64,6 +64,7 @@ async def test_narrative_call_delegates_timeout_and_passes_user_model():
 
     assert captured.get("timeout") is None
     assert captured.get("model_id") == "byok_ollama_qwen"
+    assert captured.get("reject_fallback_content") is True
     assert result.get("narrative")
 
 
@@ -116,6 +117,7 @@ async def test_sql_correction_call_delegates_timeout_and_passes_user_model():
 
     assert captured.get("timeout") is None
     assert captured.get("model_id") == "byok_ollama_qwen"
+    assert captured.get("reject_fallback_content") is True
     assert corrected == "SELECT score FROM grades"
     # See test_pii_gate_protected_terms.py: schema_line embeds real
     # schema-qualified identifiers, which a PII detector's URL/domain
@@ -153,6 +155,7 @@ async def test_report_plan_refinement_delegates_timeout_and_passes_user_model():
             model_id="byok_ollama_qwen",
         )
 
-    assert captured.get("timeout") is None
+    assert captured.get("timeout") == 20.0
+    assert captured.get("num_retries") == 0
     assert captured.get("model_id") == "byok_ollama_qwen"
     assert refined["title"] == "Student Performance Report"

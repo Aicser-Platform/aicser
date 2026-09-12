@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 if os.getenv("AISER_EDITION", "community").lower() in ("enterprise", "ee") or os.getenv("AISER_EDITION_LICENSE_KEY"):
     pytest.skip("CE-only text-to-sql", allow_module_level=True)
 
-from ee.modules.ai.services.text_to_sql_service import (
+from src.modules.ai.services.text_to_sql_service import (
     dialect_for_type,
     extract_sql,
     is_read_only_sql,
@@ -14,6 +14,7 @@ from ee.modules.ai.services.text_to_sql_service import (
     build_messages,
     TextToSqlService,
     NoProviderKeyError,
+    UnsafeSqlError,
 )
 
 
@@ -25,8 +26,9 @@ def test_dialect_for_type():
     assert dialect_for_type("postgres") == "postgres"
     assert dialect_for_type("mysql") == "mysql"
     assert dialect_for_type("snowflake") == "snowflake"
-    assert dialect_for_type(None) == "ansi"
-    assert dialect_for_type("weirddb") == "ansi"
+    assert dialect_for_type("clickhouse") == "clickhouse"
+    assert dialect_for_type("bigquery") == "bigquery"
+    assert dialect_for_type("mssql") == "tsql"
 
 
 def test_extract_sql_strips_fences_and_prose():
@@ -115,6 +117,7 @@ async def test_generate_returns_sql_and_metadata():
         data_service=_fake_data_service(),
         completion=_fake_completion_returning("```sql\nSELECT * FROM orders LIMIT 10\n```"),
         provider_keys_fn=AsyncMock(return_value={"openai": {"api_key": "sk-x"}}),
+        access_check_fn=AsyncMock(return_value=True),
     )
     out = await svc.generate(user_id="u1", question="show orders", data_source_id="d1", model="gpt-4o")
     assert out["success"] is True
@@ -132,6 +135,7 @@ async def test_generate_uses_ollama_endpoint_without_api_key():
         provider_keys_fn=AsyncMock(
             return_value={"ollama": {"endpoint": "http://ollama:11434", "model": "llama3.2:1b"}}
         ),
+        access_check_fn=AsyncMock(return_value=True),
     )
     out = await svc.generate(user_id="u1", question="show orders", data_source_id="d1", model="auto")
     assert out["provider"] == "ollama"
@@ -141,15 +145,27 @@ async def test_generate_uses_ollama_endpoint_without_api_key():
     assert "api_key" not in calls[0]
 
 
-async def test_generate_warns_on_non_select():
+async def test_generate_rejects_non_select():
     svc = TextToSqlService(
         data_service=_fake_data_service(),
         completion=_fake_completion_returning("DELETE FROM orders"),
         provider_keys_fn=AsyncMock(return_value={"openai": {"api_key": "sk-x"}}),
+        access_check_fn=AsyncMock(return_value=True),
     )
-    out = await svc.generate(user_id="u1", question="wipe", data_source_id="d1", model="gpt-4o")
-    assert out["sql"] == "DELETE FROM orders"
-    assert out["warning"] and "read-only" in out["warning"].lower()
+    with pytest.raises(UnsafeSqlError):
+        await svc.generate(user_id="u1", question="wipe", data_source_id="d1", model="gpt-4o")
+
+
+async def test_generate_denies_unauthorized_source():
+    svc = TextToSqlService(
+        data_service=_fake_data_service(),
+        completion=_fake_completion_returning("SELECT 1"),
+        provider_keys_fn=AsyncMock(return_value={"openai": {"api_key": "sk-x"}}),
+        access_check_fn=AsyncMock(return_value=False),
+    )
+    from src.modules.ai.services.text_to_sql_service import DataSourceAccessDeniedError
+    with pytest.raises(DataSourceAccessDeniedError):
+        await svc.generate(user_id="u1", question="show", data_source_id="d1", model="gpt-4o")
 
 
 async def test_generate_no_key_raises(monkeypatch):
@@ -162,6 +178,7 @@ async def test_generate_no_key_raises(monkeypatch):
         data_service=_fake_data_service(),
         completion=_fake_completion_returning("SELECT 1"),
         provider_keys_fn=AsyncMock(return_value={}),  # no saved keys
+        access_check_fn=AsyncMock(return_value=True),
     )
     with pytest.raises(NoProviderKeyError) as exc:
         await svc.generate(user_id="u1", question="x", data_source_id="d1", model="gpt-4o")

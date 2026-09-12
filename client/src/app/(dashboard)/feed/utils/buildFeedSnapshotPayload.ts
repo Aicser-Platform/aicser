@@ -240,5 +240,20 @@ export function snapshotLayoutFromPayload(
 ): LayoutItem[] {
   if (!payload || typeof payload !== 'object') return [];
   const visuals = (payload as FeedSnapshotPayload).visuals;
-  return (visuals?.layout || []) as LayoutItem[];
+  const fromVisuals = ((visuals?.layout || []) as LayoutItem[]).filter((item) => item?.i);
+  const byId = new Map(fromVisuals.map((item) => [item.i, item]));
+  for (const widget of visuals?.widgets || []) {
+    if (byId.has(widget.id)) continue;
+    const nested = widget.layout;
+    if (!nested) continue;
+    byId.set(widget.id, {
+      i: widget.id,
+      x: nested.x ?? 0,
+      y: nested.y ?? 0,
+      w: nested.w ?? 6,
+      h: nested.h ?? 4,
+      pageId: (nested as LayoutItem).pageId,
+    });
+  }
+  return [...byId.values()];
 }

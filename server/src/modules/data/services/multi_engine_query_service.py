@@ -124,7 +124,7 @@ def _table_ref_variants(schema_name: str, table_name: str) -> List[str]:
 # sources remain the real backstop.
 _SQL_DANGEROUS_KEYWORDS = [
     'DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE',
-    'GRANT', 'REVOKE', 'COPY', 'EXECUTE', 'EXEC', 'CALL', 'MERGE', 'SET',
+    'GRANT', 'REVOKE', 'COPY', 'EXECUTE', 'EXEC', 'CALL', 'MERGE',
     'LOAD_FILE', 'OUTFILE', 'DUMPFILE', 'PROGRAM', 'SLEEP', 'PG_SLEEP',
     'BENCHMARK', 'DBLINK', 'XP_CMDSHELL',
 ]
@@ -174,10 +174,79 @@ async def _execute_duckdb_with_timeout(conn: "duckdb.DuckDBPyConnection", query:
         raise TimeoutError(f"Query exceeded the {DUCKDB_STATEMENT_TIMEOUT_SECONDS}s execution limit")
 
 
-def check_sql_read_only_safety(query: str) -> Optional[str]:
-    """Return an error message if `query` trips the dangerous-operation blocklist, else None."""
-    if _SQL_DANGEROUS_PATTERN.search(query) or _SQL_DANGEROUS_PREFIX_PATTERN.search(query):
+def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Optional[str]:
+    """Return an error message if `query` is not a single read-only SELECT.
+
+    AST allowlist (SELECT / WITH / UNION / EXPLAIN SELECT) is the primary
+    gate. The keyword blocklist remains defense-in-depth for functions and
+    COPY/PROGRAM patterns that can still parse as a SELECT.
+    """
+    stripped = (query or "").strip()
+    if not stripped:
+        return "Read-only mode: empty SQL is not allowed."
+
+    try:
+        ast_error = _assert_read_only_select_ast(stripped, dialect=dialect)
+    except Exception:
+        ast_error = None
+    if ast_error:
+        return ast_error
+
+    if _SQL_DANGEROUS_PATTERN.search(stripped) or _SQL_DANGEROUS_PREFIX_PATTERN.search(stripped):
         return "Read-only mode: DDL/DML and system operations are not allowed. Only SELECT queries are permitted."
+    return None
+
+
+def _assert_read_only_select_ast(query: str, dialect: Optional[str] = None) -> Optional[str]:
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+
+    dialect_name = None
+    if dialect:
+        dialect_name = DB_TYPE_TO_SQLGLOT_DIALECT.get(str(dialect).strip().lower()) or str(dialect).strip().lower()
+
+    try:
+        statements = [stmt for stmt in sqlglot.parse(query, read=dialect_name) if stmt is not None]
+    except Exception:
+        return None
+
+    if not statements:
+        return None
+    if len(statements) != 1:
+        return "Read-only mode: only a single SELECT statement is allowed."
+
+    root = statements[0]
+    command_cls = getattr(exp, "Command", None)
+    if command_cls is not None and isinstance(root, command_cls):
+        cmd = str(root.this or "").strip().upper()
+        inner = root.args.get("expression") if hasattr(root, "args") else None
+        inner_sql = getattr(inner, "this", None) if inner is not None else None
+        if cmd == "EXPLAIN" and isinstance(inner_sql, str) and inner_sql.strip():
+            return _assert_read_only_select_ast(inner_sql, dialect=dialect)
+        return "Read-only mode: only SELECT queries are permitted."
+
+    allowed = [exp.Select, exp.Union, exp.Except, exp.Intersect, exp.With]
+    explain_cls = getattr(exp, "Explain", None)
+    if isinstance(explain_cls, type):
+        allowed.append(explain_cls)
+    if not isinstance(root, tuple(allowed)):
+        return "Read-only mode: only SELECT queries are permitted."
+
+    forbidden = []
+    for name in (
+        "Insert", "Update", "Delete", "Create", "Drop", "Alter", "AlterTable",
+        "Merge", "Copy", "Grant", "Set",
+    ):
+        cls = getattr(exp, name, None)
+        if isinstance(cls, type):
+            forbidden.append(cls)
+    for node in root.walk():
+        node_obj = node[0] if isinstance(node, tuple) else node
+        if isinstance(node_obj, tuple(forbidden)) and node_obj is not root:
+            return "Read-only mode: DDL/DML and system operations are not allowed. Only SELECT queries are permitted."
     return None
 
 

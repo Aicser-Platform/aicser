@@ -1,14 +1,7 @@
 """The agent kernel's checklist UI (AgentPlanPanel) only re-syncs its step
-list off events carrying agent_plan/execution_plan (see
-syncAgentPlanFromPartial.ts's agentFieldsFromPartial on the client) - those
-fields were only ever attached to the plan-creation and replan events, never
-to the per-step emit_step_started/emit_step_complete/emit_step_failed events
-fired as each step actually runs. Result: the checklist painted once when the
-plan was created and then looked frozen for the rest of a multi-step run,
-even though the backend was genuinely progressing through steps one at a
-time - it just never told the UI. This pins the fix: every step event must
-carry the full, current plan so the frontend's existing sync path (which
-already worked correctly for plan-creation/replan) picks it up for free."""
+list off events carrying agent_plan (see syncAgentPlanFromPartial.ts).
+execution_plan is the classic supervisor's plan — emitting both painted two
+checklists. Kernel step events must carry agent_plan only."""
 
 import asyncio
 
@@ -51,8 +44,8 @@ async def test_step_started_carries_full_plan():
         await emit_step_started(plan, plan.steps[0], 1, 2)
         _event_type, payload = await queue.get()
         assert payload["agent_plan"]["steps"][0]["id"] == "query"
-        assert len(payload["execution_plan"]) == 2
-        assert payload["execution_plan"][0]["status"] == "active"
+        assert payload["agent_plan"]["steps"][0]["status"] == "active"
+        assert "execution_plan" not in payload
     finally:
         set_stream_queue(None)
 
@@ -66,8 +59,9 @@ async def test_step_complete_carries_full_plan_with_updated_status():
         plan.steps[0].status = "complete"
         await emit_step_complete(plan, plan.steps[0], 1, 2)
         _event_type, payload = await queue.get()
-        assert payload["execution_plan"][0]["status"] == "complete"
-        assert payload["execution_plan"][1]["status"] == "pending"
+        assert payload["agent_plan"]["steps"][0]["status"] == "complete"
+        assert payload["agent_plan"]["steps"][1]["status"] == "pending"
+        assert "execution_plan" not in payload
     finally:
         set_stream_queue(None)
 
@@ -82,7 +76,8 @@ async def test_step_failed_carries_full_plan():
         plan.steps[0].error = "boom"
         await emit_step_failed(plan, plan.steps[0], 1, 2)
         _event_type, payload = await queue.get()
-        assert payload["execution_plan"][0]["status"] == "failed"
+        assert payload["agent_plan"]["steps"][0]["status"] == "failed"
         assert payload["error"] == "boom"
+        assert "execution_plan" not in payload
     finally:
         set_stream_queue(None)

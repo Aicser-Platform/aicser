@@ -130,6 +130,7 @@ services:
       AISER_PRIVATE_MODELS: ${AISER_PRIVATE_MODELS:-}
       # PII scrubbing of LLM prompts/output/row samples -- off by default,
       # see docker-compose.ee.yml for why.
+      AISER_PII_DETECTION: ${AISER_PII_DETECTION:-true}
       AISER_PII_GATE_ENABLED: ${AISER_PII_GATE_ENABLED:-false}
       # Primary (fast/default) and reasoning (strong) tier overrides -- make
       # any OpenAI-compatible gateway (e.g. TokenHarbor) the default/reasoning

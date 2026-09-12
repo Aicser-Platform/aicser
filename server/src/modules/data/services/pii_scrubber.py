@@ -743,10 +743,17 @@ class PiiScrubber:
             result.append(new_row)
         return result
 
-    def scrub_schema_samples(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+    def scrub_schema_samples(
+        self,
+        schema: Dict[str, Any],
+        sensitive_columns: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Scrub sample_data/sample_rows inside a schema dict before LLM ingestion.
         Returns a deep copy with values scrubbed.
+
+        When ``sensitive_columns`` is provided, only those columns are masked
+        (no Presidio value-discovery scan).
         """
         if not isinstance(schema, dict):
             return schema
@@ -758,7 +765,9 @@ class PiiScrubber:
             for key in ("sample_data", "sample_rows"):
                 raw = table.get(key)
                 if isinstance(raw, list) and raw:
-                    table[key] = self.scrub_rows(raw)
+                    table[key] = self.scrub_rows(
+                        raw, sensitive_columns=sensitive_columns
+                    )
         return schema
 
     def scrub_insight_text(self, text: str) -> str:

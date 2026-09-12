@@ -3,12 +3,11 @@
 import dynamic from 'next/dynamic';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { CeOnboardingModal } from './CeOnboardingModal';
+import { asDynamicModule } from '@/utils/asDynamicModule';
 
 const EEOnboardingBootstrap = dynamic(
   () =>
-    import('@/ee').then((m) => ({
-      default: m.OnboardingBootstrap,
-    })),
+    import('@/ee').then((m) => asDynamicModule(m.OnboardingBootstrap, () => null)),
   { ssr: false },
 );
 

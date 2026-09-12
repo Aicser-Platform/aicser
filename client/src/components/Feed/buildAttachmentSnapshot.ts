@@ -10,7 +10,7 @@ import {
  * this is a reference preview, not the full dashboard; matches the same
  * "first 6" convention buildDashboardSnapshotPayload's own featuredWidgetIds
  * ranking already uses for what a preview surfaces. */
-const MAX_SNAPSHOT_WIDGETS = 6;
+const MAX_SNAPSHOT_WIDGETS = 24;
 
 /**
  * Captures a real, static snapshot of a dashboard/chart at the moment it's

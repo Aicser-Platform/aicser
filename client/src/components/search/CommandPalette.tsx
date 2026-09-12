@@ -46,7 +46,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
-import { NAV_ROUTES, NAV_LABEL_KEYS } from '@/layouts/Navigation/navConfig';
+import { flattenNavLinks, buildEnterpriseSidebarItems, buildCommunitySidebarItems } from '@/layouts/Navigation/navConfig';
 import { isEnterpriseEdition as getIsEnterpriseEdition } from '@/utils/appPaths';
 import { isAiFrontendEnabled } from '@/utils/aiAvailability';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -179,15 +179,15 @@ export const CommandPalette: React.FC = () => {
   );
 
   const items = useMemo<PaletteItem[]>(() => {
-    const navItems: PaletteItem[] = Object.entries(NAV_ROUTES)
-      .filter(([key]) => key !== 'chat' || showAiNav)
-      .map(([key, href]) => ({
-        id: `nav-${key}`,
-        group: 'nav' as const,
-        label: tNav(NAV_LABEL_KEYS[key] ?? key),
-        icon: NAV_ICONS[key] ?? <ArrowRightOutlined />,
-        onSelect: () => router.push(href),
-      }));
+    const navItems: PaletteItem[] = flattenNavLinks(
+      isEnterpriseEdition ? buildEnterpriseSidebarItems(showAiNav) : buildCommunitySidebarItems()
+    ).map((item) => ({
+      id: `nav-${item.key}`,
+      group: 'nav' as const,
+      label: tNav(item.labelKey),
+      icon: NAV_ICONS[item.key] ?? <ArrowRightOutlined />,
+      onSelect: () => router.push(item.href),
+    }));
 
     const settingsItems: PaletteItem[] = SETTINGS_TABS.filter((tab) => !tab.eeOnly || isEnterpriseEdition).map(
       (tab) => ({

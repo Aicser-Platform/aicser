@@ -58,7 +58,9 @@ def test_generate_object_key_with_org_and_user():
         organization_id="org-1",
         user_id="user-1",
     )
-    assert key == "orgs/org-1/projects/proj-1/data-sources/src-1/compressed/user-1/data.parquet"
+    assert key.startswith("orgs/org-1/projects/proj-1/data-sources/src-1/compressed/user-1/")
+    assert key.endswith("data.parquet")
+    assert ".." not in key
 
 
 def test_generate_object_key_without_org():
@@ -71,7 +73,23 @@ def test_generate_object_key_without_org():
         organization_id=None,
         user_id="user-1",
     )
-    assert key == "projects/proj-1/data-sources/src-1/compressed/user-1/data.parquet"
+    assert key.startswith("projects/proj-1/data-sources/src-1/compressed/user-1/")
+    assert key.endswith("data.parquet")
+
+
+def test_generate_object_key_strips_path_traversal():
+    settings_mock = _make_settings()
+    svc, _ = _make_service(settings_mock)
+    key = svc.generate_object_key(
+        project_id="proj-1",
+        filename="../../etc/passwd",
+        source_id="src-1",
+        organization_id="org-1",
+        user_id="user-1",
+    )
+    assert ".." not in key
+    assert "/etc/" not in key
+    assert key.endswith("passwd")
 
 
 def test_generate_object_key_unknown_user_id_fallback():

@@ -20,6 +20,7 @@ import {
 import {
   chartTypeShortLabel,
   dashboardChartTypeSwitchTargets,
+  DASHBOARD_EXTENDED_CHART_TYPES,
 } from '@/components/charts/chartTypeCatalog';
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -48,20 +49,33 @@ export type DashboardChartTypeOption = {
   type: string;
   icon: React.ReactNode;
   label: string;
+  /** When true, switching TO this type is unsafe without remapping (extended visuals). */
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
+export const EXTENDED_CHART_TYPE_SWITCH_HINT =
+  'Needs its own data shape — add via Add Block or AI, then map fields. Switching here would blank the chart.';
+
 /**
- * Build-tab chart type switcher — safe switch targets only (core 8, same order as /chat pivot).
- * The extended 7 (heatmap/funnel/gauge/treemap/waterfall/bullet/geo) don't have a working
- * buildFromQueryResult transform, so switching TO them from this row would silently break the
- * widget's data — see SAFE_CHART_TYPE_SWITCH_TARGETS in chartTypeCatalog.ts. If the widget's own
- * current type is one of those 7 (e.g. an AI-authored Geo map), it's appended so its button still
- * appears (and shows active) instead of the row giving no indication of the widget's real type.
+ * Build-tab chart type switcher — safe core targets, plus disabled extended types
+ * for discoverability (except the widget's current extended type, which stays enabled).
  */
 export function buildDashboardChartTypeSwitcherOptions(currentType?: string): DashboardChartTypeOption[] {
-  return dashboardChartTypeSwitchTargets(currentType).map((type) => ({
+  const selectable = dashboardChartTypeSwitchTargets(currentType).map((type) => ({
     type,
     icon: getDashboardChartTypeIcon(type),
     label: chartTypeShortLabel(type),
   }));
+  const shown = new Set(selectable.map((o) => o.type));
+  const disabledExtended = DASHBOARD_EXTENDED_CHART_TYPES.filter((type) => !shown.has(type)).map(
+    (type) => ({
+      type,
+      icon: getDashboardChartTypeIcon(type),
+      label: chartTypeShortLabel(type),
+      disabled: true as const,
+      disabledReason: EXTENDED_CHART_TYPE_SWITCH_HINT,
+    }),
+  );
+  return [...selectable, ...disabledExtended];
 }

@@ -35,7 +35,8 @@ export function makeMessageUserFriendly(message: string): string {
 
     // Error messages - make them friendlier
     [/rate limit|rate_limit|429/gi, 'Request limit reached — please wait a moment and try again'],
-    [/timeout|timed out|deadline exceeded/gi, 'The request took too long — try again or a simpler question'],
+    [/statement timeout|canceling statement|query timeout|warehouse timeout|execution timeout/gi, 'This query took too long on your data warehouse — try a narrower date range or a simpler question'],
+    [/timeout|timed out|deadline exceeded/gi, 'The AI took too long — try again in a moment'],
     [/ClickHouse HTTP query failed/gi, 'Could not get data'],
     [/Syntax error/gi, 'Request format issue'],
     [/DB::Exception/gi, 'Data error'],
@@ -47,8 +48,12 @@ export function makeMessageUserFriendly(message: string): string {
     [/is not defined/gi, 'setup issue'],
     [/Workflow failed/gi, 'Something went wrong'],
     [/Node error/gi, 'Step error'],
-    [/No SQL query to validate/gi, 'Waiting for a query to validate'],
-    [/No query to validate/gi, 'Waiting for a query to validate'],
+    [/No SQL query to validate/gi, "I couldn't generate a query for this question"],
+    [/No query to validate/gi, "I couldn't generate a query for this question"],
+    [/SQL query contains invalid pattern/gi, "I couldn't generate a valid query"],
+    [/placeholder SQL/gi, 'query'],
+    [/The AI agent needs access/gi, 'The query needs'],
+    [/the AI agent could not/gi, "I couldn't"],
 
     // Progress messages - more conversational
     [/Initializing workflow/gi, 'Getting started'],
@@ -104,6 +109,13 @@ export function makeProgressMessageUserFriendly(
     'sql_validated': 'All good!',
     'execute_query': 'Fetching your data...',
     'query_executed': 'Data retrieved!',
+    'post_query_evaluation': 'Checking your results…',
+    'post_query_approved': 'Building your chart and insights…',
+    'analytics_render': 'Building your chart and insights…',
+    'chart_ready': 'Chart ready — writing insights…',
+    'query_result_ready': 'Data ready — building chart and insights…',
+    'chart_building': 'Drawing your chart…',
+    'insight_synthesis': 'Writing insights…',
     'validate_results': 'Reviewing results...',
     'results_validated': 'Results look great!',
     'generate_chart': 'Drawing your chart...',
@@ -145,20 +157,34 @@ export function makeProgressMessageUserFriendly(
   // bare line as soon as the supervisor's routing decision landed (the
   // "understand" plan step completing triggers this for the very next
   // step), well before the nl2sql stage had anything of its own to show.
+  // Plan-aware backend text used to be "Step {n}/{total}: {label}". Keep the
+  // label (that's the useful part) and drop the checklist prefix.
+  const unwrapPlanStepPrefix = (msg: string): string => {
+    const match = msg.trim().match(/^step\s+\d+\s*\/\s*\d+\s*:\s*(.+)$/i);
+    return match?.[1]?.trim() || msg;
+  };
+
   const isGenericStartMessage = (msg: string): boolean => {
     const lower = msg.trim().toLowerCase();
     return (
       lower === '' ||
       lower === 'start' ||
-      /^(starting|beginning)\b/.test(lower) ||
-      /^step\s+\d+\s*\/\s*\d+\s*:/.test(lower)
+      /^(starting|beginning)\b/.test(lower)
     );
   };
 
+  const isInternalQualityMessage = (msg: string): boolean =>
+    /data quality verified/i.test(msg);
+
   // If message is provided, not a duplicate of stage message, and not just a
   // generic "starting..." phrase, use it
-  if (message && message.trim() && !isGenericStartMessage(message)) {
-    const friendlyMessage = makeMessageUserFriendly(message);
+  if (
+    message &&
+    message.trim() &&
+    !isGenericStartMessage(unwrapPlanStepPrefix(message)) &&
+    !isInternalQualityMessage(message)
+  ) {
+    const friendlyMessage = makeMessageUserFriendly(unwrapPlanStepPrefix(message));
     // Avoid duplicate: if message is same as stage message, use stage message only
     if (friendlyMessage.toLowerCase() === stageMessage.toLowerCase()) {
       return stageMessage;
@@ -192,12 +218,28 @@ export function getErrorGuidance(
         'Ask "What data is available?" to explore'
       ]
     },
+    'LLM_SERVICE_UNAVAILABLE': {
+      message: "I couldn't reach the AI service just now.",
+      suggestions: [
+        'Wait a moment and try again',
+        'Try a simpler question',
+        'Your data is safe and unaffected'
+      ]
+    },
     'LLM_TIMEOUT': {
       message: "The AI took too long to respond.",
       suggestions: [
         'Try a simpler question first',
         'Break complex questions into smaller parts',
         'Try again in a moment'
+      ]
+    },
+    'QUERY_TIMEOUT': {
+      message: "This query took too long on your data warehouse.",
+      suggestions: [
+        'Try a narrower date range or fewer tables',
+        'Ask for a simpler aggregation first',
+        'Check with an admin if warehouse compute is constrained'
       ]
     },
     'LLM_PARSE_FAILURE': {
@@ -301,6 +343,14 @@ export function getErrorGuidance(
         'Try a simpler question first',
         'Break complex questions into smaller parts',
         'Try again in a moment'
+      ]
+    },
+    'query_timeout': {
+      message: "This query took too long on your data warehouse.",
+      suggestions: [
+        'Try a narrower date range or fewer tables',
+        'Ask for a simpler aggregation first',
+        'Check with an admin if warehouse compute is constrained'
       ]
     },
     'connection_timeout': {
@@ -672,6 +722,14 @@ const INSIGHT_TITLE_GENERIC = /^Insight\s+\d+$/i;
 const REC_TITLE_GENERIC = /^Recommendation\s+\d+$/i;
 /** Hardcoded non-answer titles to replace with a neutral summary label */
 const INSIGHT_TITLE_HARDCODED = /^(Data\s+Analysis\s+Complete|Analysis\s+Complete)$/i;
+const INSIGHT_TITLE_SNAKE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/;
+const INSIGHT_TITLE_TOTAL_ROWS = /^total rows$/i;
+
+function humanizeSnakeTitle(title: string): string {
+  if (!INSIGHT_TITLE_SNAKE.test(title)) return title;
+  const spaced = title.replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
 
 /** Fallback only: derive display label from description when backend sent generic title (e.g. "Insight 1"). */
 function deriveShortTitle(text: string, maxLen: number = 56): string {
@@ -717,6 +775,20 @@ function tryParseLooseObject(input: string): Record<string, unknown> | null {
   }
 }
 
+const LOOSE_OBJECT_STRING_KEYS = ['title', 'description', 'content', 'text', 'message'] as const;
+
+/** If a string field holds a loose object, merge it into the parent (insight/rec payloads). */
+function mergeParsedStringFields(o: Record<string, unknown>): Record<string, unknown> {
+  for (const key of LOOSE_OBJECT_STRING_KEYS) {
+    const val = o[key];
+    if (typeof val === 'string') {
+      const parsed = tryParseLooseObject(val);
+      if (parsed) return { ...o, ...parsed };
+    }
+  }
+  return o;
+}
+
 /** Normalize backend insight payloads (stringified dicts, snake_case, generic titles). */
 export function normalizeInsightInput(insight: unknown): Record<string, unknown> {
   if (insight == null) return {};
@@ -728,15 +800,7 @@ export function normalizeInsightInput(insight: unknown): Record<string, unknown>
   if (typeof insight !== 'object' || Array.isArray(insight)) {
     return { title: String(insight) };
   }
-  const o = { ...(insight as Record<string, unknown>) };
-  for (const key of ['title', 'description', 'content', 'text', 'message'] as const) {
-    const val = o[key];
-    if (typeof val === 'string') {
-      const parsed = tryParseLooseObject(val);
-      if (parsed) return { ...o, ...parsed };
-    }
-  }
-  return o;
+  return mergeParsedStringFields({ ...(insight as Record<string, unknown>) });
 }
 
 const INSIGHT_TITLE_ITEM = /^Item\s+\d+$/i;
@@ -795,11 +859,16 @@ export function makeInsightFriendly(insight: string | { title?: string; descript
   }
 
   let title = rawTitle || 'Key finding';
+  const wasSnakeOrDump = INSIGHT_TITLE_SNAKE.test(title) || INSIGHT_TITLE_TOTAL_ROWS.test(title);
+  title = humanizeSnakeTitle(title);
   if ((INSIGHT_TITLE_GENERIC.test(title) || INSIGHT_TITLE_ITEM.test(title)) && (what || desc)) {
     title = deriveShortTitle(what || desc) || title;
   }
   if (INSIGHT_TITLE_HARDCODED.test(title)) {
     title = (what || desc) ? deriveShortTitle(what || desc) || 'Results summary' : 'Results summary';
+  }
+  if (INSIGHT_TITLE_TOTAL_ROWS.test(title)) {
+    title = (what || desc) ? deriveShortTitle(what || desc) || 'Results' : 'Results';
   }
   if (title.startsWith('{') || title.includes("'type'")) {
     title = deriveShortTitle(what || soWhat || nowWhat || desc) || 'Key finding';
@@ -811,8 +880,29 @@ export function makeInsightFriendly(insight: string | { title?: string; descript
     soWhat,
     nowWhat,
     businessValue,
-    confidencePct
+    confidencePct: wasSnakeOrDump ? null : confidencePct
   };
+}
+
+/** Single-line text used for narrative dedup against insight cards. */
+export function combineInsightFriendlyText(friendly: {
+  title: string;
+  description: string | null;
+  what: string | null;
+  soWhat: string | null;
+  nowWhat: string | null;
+}): string {
+  return [friendly.title, friendly.what, friendly.soWhat, friendly.nowWhat, friendly.description]
+    .filter(Boolean)
+    .join(' ');
+}
+
+export function insightFriendlyCombinedText(
+  insight: string | Record<string, unknown>,
+): string {
+  return combineInsightFriendlyText(
+    makeInsightFriendly(insight as Parameters<typeof makeInsightFriendly>[0]),
+  );
 }
 
 /** Sort insights for display: highest confidence first; missing confidence last. */
@@ -919,15 +1009,7 @@ export function normalizeRecommendationInput(rec: unknown): Record<string, unkno
   if (typeof rec !== 'object' || Array.isArray(rec)) {
     return { title: String(rec) };
   }
-  const o = { ...(rec as Record<string, unknown>) };
-  for (const key of ['title', 'description', 'content', 'text', 'message'] as const) {
-    const val = o[key];
-    if (typeof val === 'string') {
-      const parsed = tryParseLooseObject(val);
-      if (parsed) return { ...o, ...parsed };
-    }
-  }
-  return o;
+  return mergeParsedStringFields({ ...(rec as Record<string, unknown>) });
 }
 
 const REC_TITLE_ITEM = /^Item\s+\d+$/i;
@@ -986,9 +1068,99 @@ export function sortRecommendationsByPriority<T extends Record<string, unknown>>
   return [...recs].sort((a, b) => rank(a) - rank(b));
 }
 
+const LLM_FALLBACK_STRONG = [
+  "i understand you're looking for data analysis",
+  'experiencing some technical difficulties',
+  'data analysis guidance',
+  'connect your data source using the "connect data" button',
+  'please try connecting a data source',
+];
+const LLM_FALLBACK_WEAK = [
+  'available tools:',
+  'what you can do right now',
+  'chart builder with echarts',
+  'sql query builder',
+];
+
+/** True when LiteLLM substituted its canned "Connect Data" help copy for a failed LLM call. */
+export function isLlmServiceFallbackText(text?: string | null): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  if (LLM_FALLBACK_STRONG.some((m) => lower.includes(m))) return true;
+  return LLM_FALLBACK_WEAK.filter((m) => lower.includes(m)).length >= 2;
+}
+
+/** Matches backend is_transient_plan_narration — progress text, not an answer.
+ * Also covers live-progress pulse phrases and classic execution-plan step labels
+ * so they never render as a second status line under the progress card
+ * ("Fetching historical data…", "Writing the story from your data…"). */
+export function isTransientPlanNarration(text?: string | null): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  if (!t) return false;
+  const lower = t.toLowerCase().replace(/[.…]+$/u, '');
+  if (
+    lower.startsWith('still working') ||
+    lower.startsWith('still composing') ||
+    lower.startsWith('still building') ||
+    lower.startsWith('still searching') ||
+    lower.startsWith('still writing') ||
+    lower.startsWith('still preparing') ||
+    lower === 'profiling your data' ||
+    lower === 'finding the shape of the result' ||
+    lower === 'drawing the chart' ||
+    lower === 'writing the story from your data' ||
+    lower === 'picking the clearest view' ||
+    lower === 'finding the takeaway' ||
+    lower === 'building your chart and insights' ||
+    lower === 'building the chart and insights' ||
+    lower === 'rendering visualization' ||
+    lower === 'fetching historical data' ||
+    lower === 'fetching breakdown data' ||
+    lower === 'fetching comparison data' ||
+    lower === 'fetching time-series data' ||
+    lower === 'fetching comprehensive data' ||
+    lower === 'preparing your data query' ||
+    lower === 'understanding your question' ||
+    lower === 'understanding the forecast question' ||
+    lower === 'understanding the optimization question' ||
+    lower === 'analyzing the root-cause question' ||
+    lower === 'validating data for forecasting' ||
+    lower === 'validating data for diagnosis' ||
+    lower === 'validating data for recommendations' ||
+    lower === 'validating animation data' ||
+    lower === 'verifying accuracy' ||
+    lower === 'retrieving data' ||
+    lower === 'checking data quality' ||
+    lower === 'building the forecast view' ||
+    lower === 'building the breakdown view' ||
+    lower === 'building the comparison view' ||
+    lower === 'projecting trends' ||
+    lower === 'diagnosing root causes' ||
+    lower === 'building recommendations' ||
+    lower === 'composing animation frames' ||
+    lower === 'writing the story' ||
+    lower === 'preparing your answer'
+  ) {
+    return true;
+  }
+  // Classic plan / progress labels are short imperatives; real answers are longer prose.
+  if (
+    t.length <= 72 &&
+    /^(fetching|preparing|understanding|analyzing|validating|verifying|retrieving|checking|building the |projecting |diagnosing |composing |writing the )/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (t.length > 80) return false;
+  return (t.startsWith('I am now ') && t.endsWith('...')) || (t.startsWith('Next, I am ') && t.endsWith('.'));
+}
+
 /** Make executive summary / narration more conversational and fix common LLM formatting issues. */
 export function makeExecutiveSummaryFriendly(text: string): string {
   if (!text || typeof text !== 'string') return '';
+  if (isLlmServiceFallbackText(text)) return '';
   let t = text.trim();
   // Fix number+unit concatenation: "15.3millionpermonth" -> "15.3 million per month"
   t = t.replace(/(\d+(?:\.\d+)?)(million)/gi, '$1 $2');
@@ -1000,16 +1172,262 @@ export function makeExecutiveSummaryFriendly(text: string): string {
   t = t.replace(/forecastaccuracy/gi, 'forecast accuracy');
   t = t.replace(/accuracyislow/gi, 'accuracy is low').replace(/accuracyishigh/gi, 'accuracy is high');
   t = t.replace(/forecastconfidence/gi, 'forecast confidence');
-  // Fix acronym+number: "MAPE38.54" -> "MAPE 38.54%"
-  t = t.replace(/\bMAPE(\d+(?:\.\d+)?)/g, (_, num) => `MAPE ${num}%`);
-  t = t.replace(/\bMAPE\s+(\d+(?:\.\d+)?)(?!%)/g, 'MAPE $1%');
-  // Fix malformed MAPE from formatting bug: "MAPE 1%3%.3%" -> "MAPE 13.3%"
-  t = t.replace(/\bMAPE\s+(\d)%(\d)%\.(\d)%/g, (_, a, b, c) => `MAPE ${a}${b}.${c}%`);
-  t = t.replace(/\bMAPE\s+(\d)%(\d)%\.(\d)(\d)%/g, (_, a, b, c, d) => `MAPE ${a}${b}.${c}${d}%`);
+  // Fix acronym+number: "MAPE38.54" -> plain reliability phrasing
+  t = t.replace(/\b(?:W?MAPE|sMAPE|SMAPE|MASE|RMSE|MAE)\s*(\d+(?:\.\d+)?)\s*%?/gi, (_m, num) => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return 'checked accuracy';
+    // Treat % error metrics as "about (100-n)% accurate" when in 0–100 band
+    if (n >= 0 && n <= 100) {
+      const acc = Math.max(0, Math.min(100, Math.round(100 - n)));
+      return `about ${acc}% accurate on recent periods`;
+    }
+    return 'checked accuracy on recent periods';
+  });
+  t = t.replace(/\b(?:W?MAPE|sMAPE|SMAPE|MASE|RMSE|MAE)\b/gi, 'forecast accuracy');
+  t = t.replace(/\bProphet\b/gi, 'trend and seasonality model');
+  t = t.replace(/\b(?:Auto-)?ARIMA\b/gi, 'trend model');
+  t = t.replace(/\bETS\b/g, 'smoothing model');
+  t = t.replace(/\bCroston(?:'?s)?\b/gi, 'sparse-demand model');
+  t = t.replace(/\bconformal(?:ly)?(?:[- ]calibrated)?\b/gi, 'checked against recent periods');
+  t = t.replace(/\bholdout\b/gi, 'recent periods');
+  t = t.replace(/\bz[- ]?score\b/gi, 'how unusual this is');
+  t = t.replace(/\belasticity\b/gi, 'how strongly this lever moves the metric');
   // Soften overly formal openings
   t = t.replace(/^In summary,?\s*/i, 'In short, ');
   t = t.replace(/^To summarize,?\s*/i, 'In short, ');
   t = t.replace(/^The (data|analysis|results?) (show|indicate|suggest)s?\s*/i, 'What we see: ');
   t = t.replace(/\b(metrics?|query|SQL|dataset)\b/gi, (m) => (m.toLowerCase() === 'sql' ? 'the query' : m.toLowerCase().startsWith('metric') ? 'the numbers' : m));
   return t;
+}
+
+const GFM_SEP_CELL = /^:?-{3,}:?$/;
+
+function isWellFormedGfmTableBlock(block: string): boolean {
+  const lines = block
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 3) return false;
+  if (!lines.every((l) => l.includes('|'))) return false;
+  if (!lines[1].split('|').some((c) => GFM_SEP_CELL.test(c.trim()))) return false;
+  // Shredded separators look like lone "|" / "--- |" lines — not well-formed.
+  if (lines.some((l) => l === '|' || /^---+\s*\|?\s*$/.test(l))) return false;
+  const widths = lines.map((l) => l.split('|').filter((_, i, a) => i > 0 && i < a.length - 1).length);
+  const width = widths[0];
+  return width >= 2 && widths.every((w) => w === width);
+}
+
+/** Rebuild a crushed / shredded pipe-table blob into valid GFM. */
+function rebuildPipeTableBlock(block: string): string | null {
+  const trimmed = block.trim();
+  if ((trimmed.match(/\|/g) || []).length < 6 || !/---/.test(trimmed)) return null;
+  if (isWellFormedGfmTableBlock(trimmed)) return null;
+
+  const tokens = trimmed
+    .replace(/\n+/g, ' ')
+    .split('|')
+    .map((t) => t.trim());
+  if (tokens[0] === '') tokens.shift();
+  if (tokens.length && tokens[tokens.length - 1] === '') tokens.pop();
+
+  const sepIdx = tokens.findIndex((t) => GFM_SEP_CELL.test(t));
+  if (sepIdx < 1) return null;
+
+  const header: string[] = [];
+  for (const t of tokens.slice(0, sepIdx)) {
+    if (t === '') {
+      if (header.length) break;
+      continue;
+    }
+    header.push(t);
+  }
+  if (header.length < 2) return null;
+  const width = header.length;
+
+  let i = sepIdx;
+  // Consume separator cells and the empty tokens that appear between shredded
+  // `--- |` lines (e.g. "--- |" / "--- |" / "--- |").
+  let seenSep = false;
+  while (i < tokens.length) {
+    if (GFM_SEP_CELL.test(tokens[i])) {
+      seenSep = true;
+      i += 1;
+      continue;
+    }
+    if (tokens[i] === '' && seenSep) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  for (; i < tokens.length; i += 1) {
+    const t = tokens[i];
+    if (t === '') {
+      if (row.length >= width) {
+        rows.push(row.slice(0, width));
+        row = row.slice(width);
+      } else if (row.length === width) {
+        rows.push(row);
+        row = [];
+      } else if (row.length > 0) {
+        row.push('');
+      }
+      continue;
+    }
+    row.push(t);
+    if (row.length === width) {
+      rows.push(row);
+      row = [];
+    }
+  }
+  if (row.length) {
+    while (row.length < width) row.push('');
+    rows.push(row.slice(0, width));
+  }
+  if (!rows.length) return null;
+
+  const fmt = (cells: string[]) => `| ${cells.join(' | ')} |`;
+  const sep = `| ${header.map(() => '---').join(' | ')} |`;
+  return `\n\n${[fmt(header), sep, ...rows.map(fmt)].join('\n')}\n\n`;
+}
+
+/**
+ * Normalize GFM pipe tables: start on their own line, reconstruct crushed or
+ * shredded separators (a prior HR heuristic used to turn `| --- |` into lone `---`).
+ */
+function normalizeGfmPipeTables(content: string): string {
+  let s = content;
+  // Prose immediately followed by a table: "volumes: | Metric | …"
+  // Do NOT match after `-` — that shreds `| --- | | row |` into `---\n\n| | row`.
+  s = s.replace(
+    /([A-Za-z0-9.:;!?)\]}'"…])([ \t]+)(\|(?:[^|\n]*\|){2,})/g,
+    '$1\n\n$3',
+  );
+
+  // Multi-line pipe blocks — include shredded separator lines (`--- |`) and
+  // allow blank lines between debris rows.
+  s = s.replace(
+    /(^|\n)([ \t]*\|[^\n]+\|[^\n]*(?:(?:\n[ \t]*)+(?:\||---)[^\n]*)*)/g,
+    (full, lead: string, block: string) => {
+      if ((block.match(/\|/g) || []).length < 4 || !/---/.test(block)) return full;
+      const rebuilt = rebuildPipeTableBlock(block);
+      return rebuilt ? `${lead}${rebuilt.trim()}` : full;
+    },
+  );
+
+  // Single-line collapsed tables still inline
+  s = s.replace(/((?:\|[^|\n]*){4,}\|)/g, (blob) => {
+    if (!/---/.test(blob) || isWellFormedGfmTableBlock(blob)) return blob;
+    const rebuilt = rebuildPipeTableBlock(blob);
+    return rebuilt ? rebuilt.trim() : blob;
+  });
+
+  return s;
+}
+
+/**
+ * Repair markdown that LLMs (or a lossy transport) collapsed into one line —
+ * raw `##` / `|` / `- ` mid-paragraph so ReactMarkdown+GFM cannot parse blocks.
+ * Safe on already-well-formed markdown: only inserts breaks when block markers
+ * appear after non-newline content.
+ */
+export function repairCollapsedMarkdown(content: string): string {
+  if (!content || typeof content !== 'string') return content || '';
+  let s = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Literal escaped newlines from JSON/stringified payloads
+  if (s.includes('\\n') && (s.match(/\n/g) || []).length < 2) {
+    s = s.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+  }
+
+  // Bare / bold / ATX section labels glued to the following sentence
+  // ("Executive Summary The widget…" → proper ## heading + body).
+  s = promoteBareSectionHeadings(s);
+
+  const newlineCount = (s.match(/\n/g) || []).length;
+  const pipeCount = (s.match(/\|/g) || []).length;
+  const looksCollapsed =
+    newlineCount < 3 &&
+    (/(?:^|\s)#{1,6}\s+\S/.test(s) ||
+      (pipeCount >= 6 && /\|\s*---/.test(s)) ||
+      /\s[-*]\s+\S/.test(s));
+  const hasBrokenTable =
+    pipeCount >= 6 &&
+    (/\|[ \t]*\n[ \t]*---/.test(s) ||
+      /\n[ \t]*\|[ \t]*\n/.test(s) ||
+      /\|[ \t]*\|[ \t]*[^|\n]/.test(s) ||
+      /([^\n|])[ \t]+\|(?:[^|\n]*\|){2,}/.test(s));
+
+  // Always fix mid-line headings; always normalize broken tables (even when the
+  // blob already has newlines — e.g. shredded `| --- |` separators).
+  if (/[^\n]\s+#{1,6}\s+\S/.test(s)) {
+    s = s.replace(/([^\n])[ \t]+(#{1,6}\s+\S)/g, '$1\n\n$2');
+  }
+  s = s.replace(/([^\n])\n(#{1,6}\s+)/g, '$1\n\n$2');
+
+  if (!looksCollapsed && newlineCount >= 3 && !hasBrokenTable) {
+    return normalizeGfmPipeTables(s).replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  // Unordered list items mid-line: "text. - Item"
+  s = s.replace(/([^\n])[ \t]+([-*]\s+\S)/g, '$1\n$2');
+  // Ordered list items: "text. 1. Step"
+  s = s.replace(/([^\n])[ \t]+(\d{1,3}\.\s+\S)/g, '$1\n$2');
+
+  s = normalizeGfmPipeTables(s);
+
+  // Horizontal rules stuck mid-line — never treat GFM table separators `| --- |`
+  // as HRs (that was shredding tables into lone `---` lines).
+  s = s.replace(/([^|\n])[ \t]+(---+)(?![ \t]*\|)(?=\s|$)/g, '$1\n\n$2');
+
+  return s.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Common LLM section titles that arrive without a newline before the body. */
+const BARE_SECTION_LABELS =
+  'Executive Summary|Key Takeaways?|Key Findings?|Findings|Recommendations?|Implications?|Next Steps|Conclusion|Overview|Key Insight';
+
+/**
+ * Promote glued section labels into ATX headings:
+ * - "Executive Summary The widget…" → "## Executive Summary\n\nThe widget…"
+ * - "## Executive Summary The widget…" → "## Executive Summary\n\nThe widget…"
+ * - "**Executive Summary** The widget…" → "## Executive Summary\n\nThe widget…"
+ *
+ * Only splits when the body is on the same line (spaces/tabs), never when a
+ * proper blank line already separates heading and prose.
+ */
+export function promoteBareSectionHeadings(content: string): string {
+  if (!content) return content;
+  let s = content;
+  // ATX heading with body still on the same line
+  s = s.replace(
+    new RegExp(`^(#{1,6}[ \\t]+)(${BARE_SECTION_LABELS})[ \\t]+(?=\\S)`, 'gim'),
+    '$1$2\n\n',
+  );
+  // Bare or bold label at line start (or document start), body on same line
+  s = s.replace(
+    new RegExp(
+      `(^|\\n)(?:\\*\\*)?(${BARE_SECTION_LABELS})(?:\\*\\*)?(?:[ \\t]*[:\\-–—])?[ \\t]+(?=[A-Z0-9“"'])`,
+      'g',
+    ),
+    '$1## $2\n\n',
+  );
+  return s;
+}
+
+/** Keep `$40` as currency so remark-math/KaTeX does not eat the following words. */
+export function escapeCurrencyDollarsForMarkdown(content: string): string {
+  if (!content || !content.includes('$')) return content;
+  const mathBlocks: string[] = [];
+  const withPlaceholders = content.replace(/\$\$[\s\S]+?\$\$/g, (block) => {
+    mathBlocks.push(block);
+    return `\u0000MATH${mathBlocks.length - 1}\u0000`;
+  });
+  const escaped = withPlaceholders
+    .replace(/\$\$(\d)/g, '\\$$$1')
+    .replace(/(^|[^\\])\$(?=\d)/g, '$1\\$');
+  return escaped.replace(/\u0000MATH(\d+)\u0000/g, (_, idx) => mathBlocks[Number(idx)] || '');
 }

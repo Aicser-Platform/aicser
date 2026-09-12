@@ -209,7 +209,7 @@ class FeedPostAttachment(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
     post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=False, index=True)
-    asset_type = Column(Enum("dashboard", "chart", name="feed_attachment_asset_type_enum"), nullable=False)
+    asset_type = Column(Enum("dashboard", "chart", "insight", name="feed_attachment_asset_type_enum"), nullable=False)
     asset_id = Column(UUID(as_uuid=True), nullable=False)
     # The real feed publication that represents this dashboard/chart - created
     # on the fly (same pipeline as "Publish to Feed") the first time it's

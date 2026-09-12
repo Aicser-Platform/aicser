@@ -68,6 +68,12 @@ def _base_state(query: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_llm_skill_selection_reachable_when_regex_finds_nothing():
+    """Auto composer questions must not be hijacked by the run_sql miss-fallback.
+
+    The LLM still claims run_sql as a 'clear fit' for almost any data question.
+    Auto/Analyze/Descriptive skip that miss-fallback so they reach nl2sql →
+    chart → insight_synthesizer. Export regex and [Agent Skill:] stay intact.
+    """
     async def fake_generate_completion_with_tools(self, prompt, system_context, tools, **kwargs):
         assert any(t["function"]["name"] == "run_sql" for t in tools)
         return {"success": True, "tool_calls": [{"name": "run_sql", "arguments": {}}], "content": ""}
@@ -79,9 +85,26 @@ async def test_llm_skill_selection_reachable_when_regex_finds_nothing():
         state = _base_state("can you dig into this for me")
         out = await supervisor_node(state, litellm_service=_unused_litellm_service())
 
-    assert out["current_stage"] == "routed_to_agent_skills"
-    assert out["agent_plan"]["trigger"] == "llm_selection"
-    assert out["agent_plan"]["steps"][0]["skill"] == "run_sql"
+    assert out["current_stage"] != "routed_to_agent_skills"
+    assert (out.get("agent_plan") or {}).get("trigger") != "llm_selection"
+
+
+@pytest.mark.asyncio
+async def test_auto_data_question_does_not_route_to_run_sql_skill():
+    async def fake_claims_run_sql(self, prompt, system_context, tools, **kwargs):
+        return {"success": True, "tool_calls": [{"name": "run_sql", "arguments": {}}], "content": ""}
+
+    with patch(
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion_with_tools",
+        new=fake_claims_run_sql,
+    ):
+        state = _base_state("how many customers per month over time")
+        out = await supervisor_node(state, litellm_service=_unused_litellm_service())
+
+    assert out["current_stage"] != "routed_to_agent_skills"
+    em = out.get("execution_metadata") or {}
+    assert em.get("needs_narrative") is True
+    assert em.get("needs_chart") is True
 
 
 @pytest.mark.asyncio

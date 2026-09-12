@@ -29,7 +29,7 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
 
       <FeedCardMedia
         item={item}
-        maxPreviews={compact ? 2 : 4}
+        maxPreviews={4}
         previewClickable={previewClickable}
         onPreviewClick={onPreviewClick}
         hideThumbnail={hidePreview}

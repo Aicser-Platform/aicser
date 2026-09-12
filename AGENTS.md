@@ -209,12 +209,13 @@ When implementing features, bug fixes, or refactors:
 
 1. **Respect CE/EE boundaries** — use shims and conditional loading, not cross-edition imports.
 2. **Async-first** — new service/repository methods must be `async def`.
-3. **Security** — Fernet-encrypt credentials; validate at API boundary with Pydantic; never log secrets.
+3. **Security** — Fernet-encrypt credentials; validate at API boundary with Pydantic; never log secrets. Chat SQL runs under `QueryIdentity` with app-level RLS rewrite (`inject_predicates`) — see `server/ARCHITECTURE.md` “AI analytics execution path”.
 4. **Module structure** — follow models / schemas / router / service layout for new backend modules.
 5. **Migrations** — any model change needs an Alembic migration.
 6. **Tests** — add pytest coverage for new business logic; mock external calls.
 7. **Minimal diffs** — match existing style; no unrelated refactors or new dependencies without reason.
 8. **i18n** — new UI strings go in `client/src/messages/en.json` (and other locales when applicable).
+9. **Narration grounding** — numeric claims in chat insights are verified in `response_finalizer` via `narration_grounding` (T1/T2/T0); do not invent numbers in prompts as a substitute.
 
 ---
 

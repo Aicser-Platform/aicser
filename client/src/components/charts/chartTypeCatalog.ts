@@ -125,18 +125,91 @@ export function chartTypeLabel(type: string): string {
   return CHART_TYPE_CONFIGS[type]?.label ?? type.charAt(0).toUpperCase() + type.slice(1);
 }
 
+export function isForecastEchartsConfig(config: unknown): boolean {
+  if (!config || typeof config !== 'object') return false;
+  const series = (config as { series?: Array<{ name?: string; stack?: string }> }).series;
+  if (!Array.isArray(series) || series.length < 2) return false;
+  const names = series.map((s) => String(s?.name || '').toLowerCase());
+  const hasHist = names.some((n) => n.includes('historical'));
+  const hasFc = names.some((n) => n === 'forecast' || n.includes('forecast'));
+  const hasBand = series.some((s) => {
+    const n = String(s?.name || '').toLowerCase();
+    return s?.stack === 'confidence-band' || n === 'lower bound' || n.includes('confidence');
+  });
+  return (hasHist && hasFc) || hasBand;
+}
+
+/**
+ * True when client-side type switching would destroy a native ECharts option
+ * (forecast CI bands, waterfall stacks, animate overlays). Those stay on the
+ * native renderer; only Table (raw bound rows) is a safe alternate view.
+ */
+export function canClientPivotChartConfig(config: unknown): boolean {
+  if (!config || typeof config !== 'object') return true;
+  if (isForecastEchartsConfig(config)) return false;
+  const cfg = config as {
+    __animate?: unknown;
+    series?: Array<{ markLine?: unknown; stack?: string }>;
+  };
+  if (cfg.__animate) return false;
+  const series = Array.isArray(cfg.series) ? cfg.series : [];
+  if (
+    series.some(
+      (s) =>
+        !!s?.markLine ||
+        s?.stack === 'waterfall' ||
+        s?.stack === 'confidence-band' ||
+        s?.stack === 'ci',
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function hasMeaningfulAreaFill(series: Array<{ type?: string; areaStyle?: unknown }> | undefined): boolean {
+  if (!Array.isArray(series)) return false;
+  return series.some((s) => {
+    if (!s?.areaStyle) return false;
+    const area = s.areaStyle as { opacity?: number } | boolean;
+    if (area === true) return true;
+    if (typeof area === 'object') {
+      const opacity = typeof area.opacity === 'number' ? area.opacity : 0.3;
+      // Ignore decorative hairline fills (legacy line charts used opacity 0.1).
+      return opacity >= 0.2;
+    }
+    return false;
+  });
+}
+
 export function inferSeriesChartType(
   config: unknown,
   override: string | null | undefined,
 ): string {
   if (override) return override.toLowerCase();
   if (!config || typeof config !== 'object') return 'bar';
-  const series = (config as { series?: Array<{ type?: string }> }).series;
+  const stamped = (config as { aiserChartType?: string }).aiserChartType;
+  if (typeof stamped === 'string' && stamped.trim()) {
+    return stamped.trim().toLowerCase();
+  }
+  const cq = (config as { _chart_query?: { chartType?: string } })._chart_query;
+  if (typeof cq?.chartType === 'string' && cq.chartType.trim()) {
+    return cq.chartType.trim().toLowerCase();
+  }
+  // Forecast templates use a CI area helper; they are still line charts.
+  if (isForecastEchartsConfig(config)) return 'line';
+  const series = (config as { series?: Array<{ type?: string; areaStyle?: unknown }> }).series;
   const t = Array.isArray(series) && series[0]?.type ? String(series[0].type).toLowerCase() : 'bar';
-  if (t === 'line' && Array.isArray(series) && series.some((s) => s && 'areaStyle' in s && s.areaStyle)) {
+  if (t === 'line' && hasMeaningfulAreaFill(series)) {
     return 'area';
   }
   return t;
+}
+
+function isNumericCellValue(val: unknown): boolean {
+  if (typeof val === 'number' && Number.isFinite(val)) return true;
+  if (typeof val === 'string' && val.trim() !== '' && !Number.isNaN(Number(val))) return true;
+  return false;
 }
 
 /**
@@ -150,8 +223,8 @@ export function listAvailableChartTypes(
 
   const first = rows[0] ?? {};
   const cols = Object.keys(first);
-  const numCols = cols.filter((k) => typeof first[k] === 'number').length;
-  const strCols = cols.filter((k) => typeof first[k] === 'string').length;
+  const numCols = cols.filter((k) => isNumericCellValue(first[k])).length;
+  const strCols = cols.filter((k) => typeof first[k] === 'string' && !isNumericCellValue(first[k])).length;
 
   const types: InteractiveChartType[] = ['bar', 'line', 'area'];
   if (numCols >= 1 && strCols >= 1) {

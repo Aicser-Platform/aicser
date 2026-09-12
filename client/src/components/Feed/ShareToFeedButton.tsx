@@ -77,7 +77,6 @@ const ShareToFeedButton: React.FC<ShareToFeedButtonProps> = ({
         projectId={projectId}
         modalTitle={t('heading')}
         onCancel={() => setOpen(false)}
-        onSuccess={() => setOpen(false)}
       />
     </>
   );

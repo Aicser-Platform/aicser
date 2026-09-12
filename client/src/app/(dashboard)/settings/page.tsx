@@ -46,6 +46,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { getOrganizationBranding } from '@/utils/orgBranding';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { usePermissions, Permission } from '@/hooks/usePermissions';
 import PricingModal from '@/components/PricingModal';
@@ -231,6 +232,7 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: LicenseTab,
         description: 'Enterprise license status',
+        requiredFeature: 'audit_logs',
       },
     ],
   },
@@ -296,7 +298,7 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <ThunderboltOutlined />,
         eeOnly: true,
         component: AgentSkillsTab,
-        description: 'Custom tool integrations',
+        description: 'Org SKILL.md instruction packs',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
         requiredFeature: 'agent_configuration',
       },
@@ -306,7 +308,7 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <ApartmentOutlined />,
         eeOnly: true,
         component: AgentWorkflowsTab,
-        description: 'Multi-step agent plans',
+        description: 'Trigger → multi-step capability pipelines',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
         requiredFeature: 'agent_configuration',
       },
@@ -316,7 +318,7 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <SafetyOutlined />,
         eeOnly: true,
         component: AgentCapabilitiesTab,
-        description: 'Enable or disable AI agent capabilities',
+        description: 'Govern which agent tools are allowed',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
         requiredFeature: 'agent_configuration',
       },
@@ -338,6 +340,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AIQualityTab,
         description: 'Grounding, goal completion, and feedback trends',
         requiredPermission: Permission.AUDIT_VIEW,
+        requiredFeature: 'audit_logs',
       },
       {
         key: 'ai-audit-log',
@@ -347,6 +350,7 @@ const NAV_GROUPS: NavGroup[] = [
         component: AIAuditLogTab,
         description: 'Every LLM call — who, when, which model, cost, outcome',
         requiredPermission: Permission.AUDIT_VIEW,
+        requiredFeature: 'audit_logs',
       },
       {
         key: 'briefings',
@@ -386,6 +390,18 @@ const SettingsPage: React.FC = () => {
   const searchParams = useSearchParams();
   const { currentProject } = useProjectStore();
   const { currentOrganization } = useOrganizationStore();
+  const orgBranding = getOrganizationBranding(currentOrganization);
+  const orgNavIcon = orgBranding.logoUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element -- branding may be data-URI or signed URL
+    <img
+      src={orgBranding.logoUrl}
+      alt=""
+      width={16}
+      height={16}
+      className="rounded object-contain"
+      draggable={false}
+    />
+  ) : null;
   const { hasPermission, hasAnyPermission } = usePermissions({
     organizationId: currentOrganization?.id,
   });
@@ -499,7 +515,9 @@ const SettingsPage: React.FC = () => {
                         : 'bg-transparent font-normal text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-fill-tertiary)] hover:text-[var(--ant-color-text)]',
                     ].join(' ')}
                   >
-                    <span className="shrink-0 text-sm">{item.icon}</span>
+                    <span className="shrink-0 text-sm leading-none">
+                      {item.key === 'organization' && orgNavIcon ? orgNavIcon : item.icon}
+                    </span>
                     <span className="leading-[1.3]">{item.label}</span>
                   </button>
                 </Tooltip>
@@ -570,7 +588,11 @@ const SettingsPage: React.FC = () => {
               <div className="flex items-center justify-between gap-3">
                 {/* Left: icon + title + description */}
                 <div className="flex min-w-0 items-start gap-2.5">
-                  <span className="mt-0.5 shrink-0 text-lg text-[var(--ant-color-primary)]">{activeItem.icon}</span>
+                  <span className="mt-0.5 shrink-0 text-lg text-[var(--ant-color-primary)]">
+                    {activeItem.key === 'organization' && orgNavIcon
+                      ? orgNavIcon
+                      : activeItem.icon}
+                  </span>
                   <div className="min-w-0">
                     <div className="text-base font-bold leading-[1.3] text-[var(--ant-color-text)]">
                       {activeItem.label}

@@ -606,8 +606,10 @@ class DataConnectivityService:
                         else:
                             logger.warning(f"⚠️ Credentials not encrypted (ENCRYPTION_KEY may not be set) for {connection_request.get('type')} connection")
                     except Exception as encrypt_error:
-                        logger.error(f"❌ Failed to encrypt credentials: {encrypt_error}")
-                        safe_config = connection_request
+                        logger.error("Failed to encrypt credentials: %s", encrypt_error)
+                        raise RuntimeError(
+                            "Cannot store data source: credential encryption failed"
+                        ) from encrypt_error
                     
                     # Convert project_id to UUID (nullable)
                     from uuid import UUID
@@ -1635,9 +1637,13 @@ class DataConnectivityService:
                 
         except Exception as error:
             logger.error(f"❌ File upload failed: {str(error)}")
+            from src.modules.data.services.upload_datasource_storage_service import (
+                public_storage_error_message,
+            )
+
             return {
-                'success': False,
-                'error': str(error)
+                "success": False,
+                "error": public_storage_error_message(error),
             }
         finally:
             # Clean up temp file
@@ -3633,6 +3639,14 @@ class DataConnectivityService:
                                 'schemas': schemas,
                                 'last_updated': datetime.now().isoformat()
                             }
+                            try:
+                                from src.modules.data.services.pii_policy import ensure_schema_pii_policy
+
+                                updated_schema, _cols, _ = ensure_schema_pii_policy(
+                                    updated_schema, force=True
+                                )
+                            except Exception as _pii_err:
+                                logger.debug("PII policy on schema refresh skipped: %s", _pii_err)
 
                             logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
 

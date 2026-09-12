@@ -2,14 +2,20 @@
 
 import React from 'react';
 import { Skeleton, Typography } from 'antd';
-import { DashboardOutlined, LockOutlined, LineChartOutlined } from '@ant-design/icons';
+import { DashboardOutlined, LockOutlined, LineChartOutlined, BulbOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { AssetType, FeedAttachmentPayload } from '@/services/socialFeedService';
-import { buildPreviewFeedItem, assetTypeLabelKey } from './feedPostDisplay';
+import {
+  assetTypeLabelKey,
+  buildPreviewFeedItem,
+  resolveFeedCardHeading,
+  showFeedAssetTypeBadge,
+} from './feedPostDisplay';
 import { FeedExpandableText } from '@/components/Feed/FeedExpandableText';
 import FeedPreviewVisual from '@/app/(dashboard)/feed/components/FeedPreviewVisual';
 import { useLazyVisible } from '@/hooks/useLazyVisible';
+import { isVideoMediaUrl, resolveBackendMediaUrl } from '@/utils/mediaUrl';
 
 const { Paragraph, Text } = Typography;
 
@@ -26,7 +32,12 @@ function AttachmentPreviewCard({ att }: { att: FeedAttachmentPayload }) {
 
   const title = att.title || (att.asset_type === 'chart' ? t('attachment_untitled_chart') : t('attachment_untitled'));
   const description = att.description?.trim();
-  const assetTypeLabel = tFeed(assetTypeLabelKey(att.asset_type as AssetType) as 'insights_type');
+  const showTypeBadge = showFeedAssetTypeBadge(att.asset_type as AssetType);
+  const assetTypeLabel = showTypeBadge
+    ? tFeed(assetTypeLabelKey(att.asset_type as AssetType) as 'insights_type')
+    : null;
+  const thumbnailUrl = resolveBackendMediaUrl(att.thumbnail_url);
+  const videoUrl = isVideoMediaUrl(thumbnailUrl) ? thumbnailUrl : undefined;
   const previewItem = buildPreviewFeedItem({
     assetType: att.asset_type,
     assetId: att.asset_id,
@@ -41,6 +52,10 @@ function AttachmentPreviewCard({ att }: { att: FeedAttachmentPayload }) {
       dashboardId: att.dashboardId,
     },
   });
+  const heading = resolveFeedCardHeading(
+    { title, asset: previewItem.asset, assetType: att.asset_type as AssetType },
+    previewItem,
+  );
   const openAttachment = () => router.push(`/feed/${att.referencedPostId}`);
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -49,45 +64,60 @@ function AttachmentPreviewCard({ att }: { att: FeedAttachmentPayload }) {
     }
   };
 
-  // Same title+description pairing (FeedPostContent) and same thumbnail
-  // treatment - rounded-lg aspect-video with the asset-type badge floating
-  // in the corner (FeedCardMedia) - a real "Publish to Feed" post renders
-  // with, so an attached chart/dashboard reads as the same kind of card
-  // instead of a smaller, differently-chromed one missing its own insight
-  // text. The rounded, softly-filled outer wrapper (no border/divider line)
-  // is the only addition, needed to visually group one attachment's title +
-  // thumbnail together when a post has several stacked in a row.
+  // Title sits on the same surface as the chart — no extra fill layer.
   return (
     <div
-      className="cursor-pointer rounded-lg p-2.5 transition-colors hover:bg-[var(--ant-color-fill-quaternary)]"
-      style={{ background: 'var(--ant-color-fill-quaternary)' }}
+      className="cursor-pointer rounded-lg py-1 transition-colors hover:bg-[var(--ant-color-fill-quaternary)]"
       role="button"
       tabIndex={0}
       onClick={openAttachment}
       onKeyDown={handleKeyDown}
     >
-      <Paragraph
-        className="mb-1 text-sm font-semibold leading-snug text-[var(--ant-color-text)]"
-        ellipsis={{ rows: 2 }}
-      >
-        {title}
-      </Paragraph>
+      {heading ? (
+        <Paragraph
+          className="mb-1 text-sm font-semibold leading-snug text-[var(--ant-color-text)]"
+          ellipsis={{ rows: 2 }}
+        >
+          {heading}
+        </Paragraph>
+      ) : null}
       {description ? (
         <FeedExpandableText text={description} maxRows={2} className="mb-2 text-sm leading-relaxed" />
       ) : null}
-      <div ref={ref} className="relative aspect-video w-full overflow-hidden rounded-lg bg-[var(--ant-color-bg-layout)]">
-        {visible ? (
-          <div className="pointer-events-none absolute inset-0">
-            <FeedPreviewVisual item={previewItem} maxPreviews={2} />
+      <div
+        ref={ref}
+        className={`relative w-full overflow-hidden bg-[var(--ant-color-bg-container)] ${
+          att.asset_type === 'dashboard' || videoUrl ? 'min-h-[280px]' : 'min-h-[200px]'
+        }`}
+      >
+        {videoUrl ? (
+          <video
+            src={videoUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            className="absolute inset-0 h-full w-full object-contain bg-[var(--ant-color-bg-container)]"
+          />
+        ) : visible ? (
+          <div
+            className={
+              att.asset_type === 'dashboard' ? 'w-full' : 'pointer-events-none absolute inset-0'
+            }
+          >
+            <FeedPreviewVisual item={previewItem} maxPreviews={4} />
           </div>
         ) : (
           <Skeleton.Node active style={{ width: '100%', height: '100%' }} />
         )}
-        <div className="absolute right-2 top-2 z-10">
-          <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
-            {assetTypeLabel}
-          </span>
-        </div>
+        {assetTypeLabel ? (
+          <div className="absolute right-2 top-2 z-10">
+            <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
+              {assetTypeLabel}
+            </span>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -123,7 +153,12 @@ export function FeedAttachmentList({ attachments }: { attachments?: FeedAttachme
   return (
     <div className="flex flex-col gap-3 px-4 pb-2">
       {attachments.map((att) => {
-        const Icon = att.asset_type === 'chart' ? LineChartOutlined : DashboardOutlined;
+        const Icon =
+          att.asset_type === 'chart'
+            ? LineChartOutlined
+            : att.asset_type === 'insight'
+              ? BulbOutlined
+              : DashboardOutlined;
 
         if (att.restricted) {
           return (

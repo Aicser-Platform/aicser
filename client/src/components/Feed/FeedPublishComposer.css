@@ -135,6 +135,15 @@
   margin-top: 6px;
 }
 
+.feed-publish-continue-post {
+  margin-top: 8px;
+}
+
+.feed-publish-continue-hint {
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
+
 /* ── Success state ── */
 .feed-publish-success {
   display: flex;
@@ -245,9 +254,7 @@
 .feed-post-preview-visual {
   height: 180px;
   overflow: hidden;
-  border-radius: 8px;
   background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
 }
 .feed-post-preview-visual--compact {
   height: 130px;

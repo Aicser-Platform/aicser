@@ -1,24 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Dropdown, Button, Modal, message, Spin, Tooltip } from 'antd';
+import { Dropdown, Button, Modal, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ShareAltOutlined,
   LinkOutlined,
   CodeOutlined,
-  ExportOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
   EyeOutlined,
   SendOutlined,
-  PaperClipOutlined,
   ClockCircleOutlined,
   UnorderedListOutlined,
   GlobalOutlined,
   LockOutlined,
   PrinterOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { fetchApi } from '@/utils/api';
 import { chartService } from '../services/chartService';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
@@ -39,16 +39,11 @@ type Props = {
   isEditMode?: boolean;
   isEnterprise?: boolean;
   onPublish?: () => void;
-  /** "Attach to a new post" - captures this dashboard's snapshot right here
-   * and hands it to the /feed composer, rather than publishing it as its own
-   * standalone post (onPublish). Same permission requirements as onPublish -
-   * this is strictly a lighter-weight variant of the same action, not a
-   * separate access path. */
-  onAttachToPost?: () => void;
   onScheduleDelivery?: () => void;
   onManageSchedules?: () => void;
   isPublic?: boolean;
   onPublicAccessChange?: (isPublic: boolean) => void;
+  exportBusy?: boolean;
 };
 
 export function DashboardShareMenu({
@@ -63,11 +58,11 @@ export function DashboardShareMenu({
   isEditMode = false,
   isEnterprise = false,
   onPublish,
-  onAttachToPost,
   onScheduleDelivery,
   onManageSchedules,
   isPublic = false,
   onPublicAccessChange,
+  exportBusy = false,
 }: Props) {
   const t = useTranslations('dashboards');
   const tt = useTranslations('dashboard_tabs');
@@ -97,6 +92,20 @@ export function DashboardShareMenu({
     });
     setEmbedUrl(result.embedUrl);
     setEmbedToken(result.token);
+  };
+
+  const runPrint = () => {
+    if (onPrint) {
+      onPrint();
+      return;
+    }
+    document.body.classList.add('dashboard-print-mode');
+    window.print();
+    const cleanup = () => {
+      document.body.classList.remove('dashboard-print-mode');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
   };
 
   const items: MenuProps['items'] = [
@@ -145,34 +154,33 @@ export function DashboardShareMenu({
       : []),
     { type: 'divider' as const },
     {
-      key: 'png',
-      icon: <ExportOutlined />,
-      label: t('export_png'),
-      onClick: () => onExport?.('png'),
-    },
-    {
-      key: 'pdf',
-      icon: <ExportOutlined />,
-      label: t('export_pdf'),
-      onClick: () => onExport?.('pdf'),
-    },
-    {
-      key: 'print',
-      icon: <PrinterOutlined />,
-      label: 'Print / Save as PDF',
-      onClick: () => {
-        if (onPrint) {
-          onPrint();
-          return;
-        }
-        document.body.classList.add('dashboard-print-mode');
-        window.print();
-        const cleanup = () => {
-          document.body.classList.remove('dashboard-print-mode');
-          window.removeEventListener('afterprint', cleanup);
-        };
-        window.addEventListener('afterprint', cleanup);
-      },
+      key: 'export',
+      icon: <DownloadOutlined />,
+      label: t('export_menu'),
+      disabled: exportBusy,
+      children: [
+        {
+          key: 'png',
+          icon: <FileImageOutlined />,
+          label: menuItemWithDescription(t('export_png'), t('export_png_desc')),
+          disabled: exportBusy,
+          onClick: () => onExport?.('png'),
+        },
+        {
+          key: 'pdf',
+          icon: <FilePdfOutlined />,
+          label: menuItemWithDescription(t('export_pdf'), t('export_pdf_desc')),
+          disabled: exportBusy,
+          onClick: () => onExport?.('pdf'),
+        },
+        {
+          key: 'print',
+          icon: <PrinterOutlined />,
+          label: menuItemWithDescription(t('export_print'), t('export_print_desc')),
+          disabled: exportBusy,
+          onClick: runPrint,
+        },
+      ],
     },
   ];
 
@@ -186,15 +194,6 @@ export function DashboardShareMenu({
         onClick: onPublish,
       }
     );
-  }
-
-  if (onAttachToPost) {
-    items.push({
-      key: 'attach-to-post',
-      icon: <PaperClipOutlined />,
-      label: menuItemWithDescription(tt('attach_to_new_post'), tt('attach_to_new_post_desc')),
-      onClick: onAttachToPost,
-    });
   }
 
   if (isEditMode && isEnterprise && onScheduleDelivery && onManageSchedules) {
@@ -219,7 +218,7 @@ export function DashboardShareMenu({
     <>
       <Dropdown menu={{ items }} trigger={['click']}>
         <Tooltip title={t('share_tooltip')}>
-          <Button icon={<ShareAltOutlined />} disabled={!dashboardId}>
+          <Button icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
             {t('share')}
           </Button>
         </Tooltip>

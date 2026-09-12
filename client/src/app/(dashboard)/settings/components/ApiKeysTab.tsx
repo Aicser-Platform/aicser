@@ -17,17 +17,28 @@ import {
   Alert,
   Select,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  RobotOutlined,
+  ReloadOutlined,
+  ClearOutlined,
+} from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import { fetchApi } from '@/utils/api';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { asDynamicComponent } from '@/utils/asDynamicModule';
 
+const ModelSelectorFallback = () => null;
 const ModelSelector = dynamic(
-  () => import('@/components/ai/ModelSelector/ModelSelector').then((m) => m.ModelSelector),
-  { ssr: false }
+  () =>
+    import('@/components/ai/ModelSelector/ModelSelector').then((m) =>
+      asDynamicComponent(m.ModelSelector ?? m.default, ModelSelectorFallback),
+    ),
+  { ssr: false },
 );
 
 const { Text } = Typography;
@@ -102,17 +113,38 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
     { value: 'qwen/qwen3.8-max', labelKey: 'ai_model_qwen3_8_max' },
     { value: 'meta/muse-glimmer-30b', labelKey: 'ai_model_muse_glimmer_30b' },
   ],
-  // Both confirmed as real, first-party publishes to Ollama's own library
-  // (ollama.com/library) under Apache 2.0 — genuinely runnable fully
-  // offline/self-hosted, not just the cloud-routed OpenRouter versions above.
-  // Tags must match exactly what `ollama pull` uses; anything else pulled
-  // locally goes through the custom-model field below.
+  // Suggested local tags only — never auto-enabled in chat until the user
+  // adds them (or discovers them from a running Ollama). Tags must match
+  // `ollama pull` / `ollama list` exactly.
   ollama: [
     { value: 'qwen3.8:27b', labelKey: 'ai_model_qwen3_8_27b' },
     { value: 'muse-glimmer:30b', labelKey: 'ai_model_muse_glimmer_30b' },
-    { value: 'llama3.2:1b', labelKey: 'ai_model_llama3_2_1b', suffix: 'default' },
+    { value: 'llama3.2:1b', labelKey: 'ai_model_llama3_2_1b' },
   ],
 };
+
+function modelsFromProviderKey(key: { model?: string; models?: string[] } | undefined): string[] {
+  if (!key) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const mid of key.models ?? []) {
+    const id = String(mid || '').trim();
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  const legacy = String(key.model || '').trim();
+  if (legacy && !seen.has(legacy)) {
+    out.unshift(legacy);
+  }
+  return out;
+}
+
+function defaultPresetForProvider(provider: string): string | undefined {
+  const defs = PROVIDER_MODEL_DEFS[provider] ?? [];
+  return defs.find((d) => d.suffix === 'default')?.value ?? defs[0]?.value;
+}
 
 function buildProviderModelLabel(translate: (key: string) => string, def: ProviderModelDef): string {
   const base = translate(def.labelKey);
@@ -168,12 +200,19 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     deleteApiKey,
     loadProviderApiKeys,
     saveProviderKey,
+    deleteProviderKey,
     availableModels,
   } = useSettingsStore();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   /** Bumps ModelSelector to refetch /api/ai/models after provider key save */
   const [aiModelsReloadNonce, setAiModelsReloadNonce] = useState(0);
+  /** Enabled model ids for the provider currently being edited */
+  const [enabledModels, setEnabledModels] = useState<string[]>([]);
+  const [customModelDraft, setCustomModelDraft] = useState('');
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [clearingProvider, setClearingProvider] = useState(false);
 
   useEffect(() => {
     loadApiKeys();
@@ -198,17 +237,20 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     ? t(PROVIDER_I18N_KEYS[editingProvider]?.nameKey ?? 'unknown')
     : '';
 
-  const providerModelSelectOptions = useMemo(() => {
+  const providerPresetDefs = useMemo(() => {
     if (!editingProvider) return [];
-    const defs = PROVIDER_MODEL_DEFS[editingProvider] ?? [];
-    return [
-      ...defs.map((def) => ({
-        value: def.value,
-        label: buildProviderModelLabel(t, def),
-      })),
-      { value: '__custom__', label: t('select_model_other_option') },
-    ];
-  }, [editingProvider, t]);
+    return PROVIDER_MODEL_DEFS[editingProvider] ?? [];
+  }, [editingProvider]);
+
+  const addEnabledModel = useCallback((raw: string) => {
+    const id = raw.trim();
+    if (!id) return;
+    setEnabledModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const removeEnabledModel = useCallback((id: string) => {
+    setEnabledModels((prev) => prev.filter((m) => m !== id));
+  }, []);
 
   const handleCreateApiKey = async (values: { name: string }) => {
     try {
@@ -238,72 +280,143 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const handleOpenProviderKeyModal = (provider: string) => {
     setEditingProvider(provider);
     setShowProviderKeyModal(true);
+    setCustomModelDraft('');
+    setDiscoveredModels([]);
     const existingKey = providerApiKeys[provider];
+    const existingModels = modelsFromProviderKey(existingKey);
+    setEnabledModels(existingModels);
     if (existingKey) {
-      const defs = PROVIDER_MODEL_DEFS[provider] ?? [];
-      const isPredefined = defs.some((d) => d.value === existingKey.model);
       providerKeyForm.setFieldsValue({
         api_key: existingKey.api_key ?? '',
-        model: isPredefined ? existingKey.model : existingKey.model ? '__custom__' : '',
-        model_custom: isPredefined ? undefined : (existingKey.model ?? ''),
         endpoint: existingKey.endpoint ?? '',
+<<<<<<< HEAD
         workspace_id: existingKey.workspace_id ?? '',
+=======
+        preferred_model: existingModels[0] ?? undefined,
+>>>>>>> da629f5 (update all refinements)
       });
     } else {
       providerKeyForm.resetFields();
       if (provider === 'ollama') {
         providerKeyForm.setFieldsValue({
           endpoint: 'http://ollama:11434',
-          // Preset dropdown selection now that ollama has real entries in
-          // PROVIDER_MODEL_DEFS — was forced into free-text '__custom__'
-          // before, requiring users to already know the exact Ollama tag
-          // syntax just to get started.
-          model: 'llama3.2:1b',
         });
+      } else {
+        const preset = defaultPresetForProvider(provider);
+        if (preset) {
+          setEnabledModels([preset]);
+          providerKeyForm.setFieldsValue({ preferred_model: preset });
+        }
       }
+    }
+  };
+
+  const handleDiscoverOllama = async () => {
+    const endpoint = String(providerKeyForm.getFieldValue('endpoint') || '').trim();
+    if (!endpoint) {
+      message.warning(t('ollama_endpoint_required_discover'));
+      return;
+    }
+    setDiscoverLoading(true);
+    try {
+      const qs = new URLSearchParams({ endpoint });
+      const data = await fetchApi<{ models?: { id?: string; name?: string }[] }>(
+        `users/ai-provider-keys/ollama/tags?${qs.toString()}`,
+      );
+      const ids = (data?.models ?? [])
+        .map((m) => String(m.id || m.name || '').trim())
+        .filter(Boolean);
+      setDiscoveredModels(ids);
+      if (!ids.length) {
+        message.info(t('ollama_discover_empty'));
+      } else {
+        message.success(t('ollama_discover_found', { count: ids.length }));
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('ollama_discover_failed');
+      message.error(msg);
+    } finally {
+      setDiscoverLoading(false);
+    }
+  };
+
+  const handleClearProviderKey = async () => {
+    if (!editingProvider) return;
+    setClearingProvider(true);
+    try {
+      await deleteProviderKey(editingProvider);
+      setAiModelsReloadNonce((n) => n + 1);
+      setShowProviderKeyModal(false);
+      setEditingProvider(null);
+      setEnabledModels([]);
+      setDiscoveredModels([]);
+      providerKeyForm.resetFields();
+      message.success(t('provider_config_cleared'));
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('provider_config_clear_failed');
+      message.error(msg);
+    } finally {
+      setClearingProvider(false);
     }
   };
 
   const handleSaveProviderKey = async (values: {
     api_key?: string;
-    model?: string;
-    model_custom?: string;
     endpoint?: string;
+<<<<<<< HEAD
     workspace_id?: string;
+=======
+    preferred_model?: string;
+>>>>>>> da629f5 (update all refinements)
   }) => {
     if (!editingProvider) return;
-    const modelToSave = (values.model === '__custom__' ? values.model_custom : values.model) ?? '';
+    const modelsToSave = [...enabledModels];
+    if (editingProvider === 'ollama' && modelsToSave.length === 0) {
+      message.warning(t('ollama_models_required'));
+      return;
+    }
+    let preferred = (values.preferred_model || '').trim();
+    if (preferred && !modelsToSave.includes(preferred)) {
+      modelsToSave.unshift(preferred);
+    }
+    if (!preferred && modelsToSave.length) {
+      preferred = modelsToSave[0];
+    }
+    // Prefer preferred first in the list for stable byok_{provider} id.
+    const ordered =
+      preferred && modelsToSave.includes(preferred)
+        ? [preferred, ...modelsToSave.filter((m) => m !== preferred)]
+        : modelsToSave;
+
     const savedProvider = editingProvider;
     try {
       await saveProviderKey(savedProvider, {
         api_key: values.api_key ?? '',
-        model: modelToSave,
+        model: preferred || ordered[0] || '',
+        models: ordered,
         endpoint: values.endpoint,
         workspace_id: values.workspace_id,
       });
       setAiModelsReloadNonce((n) => n + 1);
       setShowProviderKeyModal(false);
       setEditingProvider(null);
+      setEnabledModels([]);
+      setDiscoveredModels([]);
       providerKeyForm.resetFields();
 
-      // Previously this just showed "saved" regardless of whether the key actually
-      // works — the user only found out it was wrong the next time a real AI request
-      // failed. saveProviderKey() already refreshed availableModels; read it fresh
-      // from the store (not the destructured hook value, which is a stale closure
-      // from this render) and probe the new BYOK model's live connection status.
-      const savedModel = useSettingsStore
+      const byokModels = useSettingsStore
         .getState()
-        .availableModels.find((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
-      if (savedModel) {
+        .availableModels.filter((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
+      const probe = byokModels[0];
+      if (probe) {
         try {
-          const status = await fetchApi(`/ai/model-status?model_id=${savedModel.id}`);
+          const status = await fetchApi(`/ai/model-status?model_id=${probe.id}`);
           if (status?.success === false || status?.available === false) {
             message.warning(t('api_key_saved_but_invalid'));
           } else {
             message.success(t('api_key_provider_saved'));
           }
         } catch {
-          // Status probe itself failing isn't proof the key is bad — don't block save success on it.
           message.success(t('api_key_provider_saved'));
         }
       } else {
@@ -463,7 +576,12 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                           <Tag style={{ margin: 0, fontSize: 10 }}>{t('coming_soon')}</Tag>
                         ) : providerApiKeys[provider.key] ? (
                           <Tag color="green" style={{ margin: 0, fontSize: 10 }}>
-                            {t('configured')}
+                            {(() => {
+                              const n = modelsFromProviderKey(providerApiKeys[provider.key]).length;
+                              return n > 0
+                                ? t('configured_with_models', { count: n })
+                                : t('configured');
+                            })()}
                           </Tag>
                         ) : (
                           <Tag style={{ margin: 0, fontSize: 10 }}>{t('not_set')}</Tag>
@@ -580,9 +698,14 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         onCancel={() => {
           setShowProviderKeyModal(false);
           setEditingProvider(null);
+          setEnabledModels([]);
+          setDiscoveredModels([]);
+          setCustomModelDraft('');
           providerKeyForm.resetFields();
         }}
         footer={null}
+        destroyOnHidden
+        width={560}
       >
         <Form form={providerKeyForm} layout="vertical" onFinish={handleSaveProviderKey}>
           {editingProvider !== 'ollama' && (
@@ -602,17 +725,185 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               rules={[
                 {
                   required: true,
-                  message: editingProvider === 'ollama' ? t('endpoint_url') : t('azure_endpoint_required'),
+                  message:
+                    editingProvider === 'ollama'
+                      ? t('ollama_endpoint_required')
+                      : t('azure_endpoint_required'),
                 },
               ]}
+              extra={editingProvider === 'ollama' ? t('ollama_endpoint_help') : undefined}
             >
+              {editingProvider === 'ollama' ? (
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    placeholder="http://localhost:11434"
+                    type="url"
+                    autoComplete="off"
+                  />
+                  <Button
+                    icon={<ReloadOutlined />}
+                    loading={discoverLoading}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void handleDiscoverOllama();
+                    }}
+                  >
+                    {t('ollama_discover')}
+                  </Button>
+                </Space.Compact>
+              ) : (
+                <Input
+                  placeholder={t('azure_endpoint_placeholder')}
+                  type="url"
+                  autoComplete="off"
+                />
+              )}
+            </Form.Item>
+          )}
+
+          <Form.Item
+            label={t('enabled_models_label')}
+            required={editingProvider === 'ollama'}
+            extra={t('enabled_models_help')}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10, minHeight: 28 }}>
+              {enabledModels.length === 0 ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('enabled_models_empty')}
+                </Text>
+              ) : (
+                enabledModels.map((id) => (
+                  <Tag
+                    key={id}
+                    closable
+                    onClose={(e) => {
+                      e.preventDefault();
+                      removeEnabledModel(id);
+                      const preferred = providerKeyForm.getFieldValue('preferred_model');
+                      if (preferred === id) {
+                        const next = enabledModels.filter((m) => m !== id)[0];
+                        providerKeyForm.setFieldsValue({ preferred_model: next });
+                      }
+                    }}
+                    style={{ margin: 0 }}
+                  >
+                    {id}
+                  </Tag>
+                ))
+              )}
+            </div>
+
+            {providerPresetDefs.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                  {t('suggested_models')}
+                </Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {providerPresetDefs.map((def) => {
+                    const active = enabledModels.includes(def.value);
+                    return (
+                      <Tag.CheckableTag
+                        key={def.value}
+                        checked={active}
+                        onChange={(checked) => {
+                          if (checked) {
+                            addEnabledModel(def.value);
+                            if (!providerKeyForm.getFieldValue('preferred_model')) {
+                              providerKeyForm.setFieldsValue({ preferred_model: def.value });
+                            }
+                          } else {
+                            removeEnabledModel(def.value);
+                          }
+                        }}
+                      >
+                        {buildProviderModelLabel(t, def)}
+                      </Tag.CheckableTag>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {editingProvider === 'ollama' && discoveredModels.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                  {t('ollama_discovered_models')}
+                </Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {discoveredModels.map((id) => {
+                    const active = enabledModels.includes(id);
+                    return (
+                      <Tag.CheckableTag
+                        key={id}
+                        checked={active}
+                        onChange={(checked) => {
+                          if (checked) {
+                            addEnabledModel(id);
+                            if (!providerKeyForm.getFieldValue('preferred_model')) {
+                              providerKeyForm.setFieldsValue({ preferred_model: id });
+                            }
+                          } else {
+                            removeEnabledModel(id);
+                          }
+                        }}
+                      >
+                        {id}
+                      </Tag.CheckableTag>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <Space.Compact style={{ width: '100%' }}>
               <Input
-                placeholder={editingProvider === 'ollama' ? 'http://ollama:11434' : t('azure_endpoint_placeholder')}
-                type="url"
-                autoComplete="off"
+                value={customModelDraft}
+                onChange={(e) => setCustomModelDraft(e.target.value)}
+                placeholder={
+                  editingProvider === 'ollama'
+                    ? t('custom_model_id_placeholder_ollama')
+                    : t('custom_model_id_placeholder')
+                }
+                onPressEnter={(e) => {
+                  e.preventDefault();
+                  if (!customModelDraft.trim()) return;
+                  addEnabledModel(customModelDraft);
+                  if (!providerKeyForm.getFieldValue('preferred_model')) {
+                    providerKeyForm.setFieldsValue({ preferred_model: customModelDraft.trim() });
+                  }
+                  setCustomModelDraft('');
+                }}
+              />
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  if (!customModelDraft.trim()) return;
+                  addEnabledModel(customModelDraft);
+                  if (!providerKeyForm.getFieldValue('preferred_model')) {
+                    providerKeyForm.setFieldsValue({ preferred_model: customModelDraft.trim() });
+                  }
+                  setCustomModelDraft('');
+                }}
+              >
+                {t('add_model')}
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+
+          {enabledModels.length > 0 && (
+            <Form.Item
+              name="preferred_model"
+              label={t('preferred_model_label')}
+              extra={t('preferred_model_help')}
+            >
+              <Select
+                placeholder={t('preferred_model_placeholder')}
+                options={enabledModels.map((id) => ({ value: id, label: id }))}
+                allowClear
               />
             </Form.Item>
           )}
+<<<<<<< HEAD
           {editingProvider === 'anthropic' && (
             <Form.Item
               name="workspace_id"
@@ -652,6 +943,35 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                 {t('save_key')}
               </Button>
             </Space>
+=======
+
+          <Divider style={{ margin: '12px 0 16px' }} />
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              {editingProvider && providerApiKeys[editingProvider] ? (
+                <Popconfirm
+                  title={t('provider_clear_confirm_title')}
+                  description={t('provider_clear_confirm_desc')}
+                  onConfirm={() => void handleClearProviderKey()}
+                  okText={t('yes')}
+                  cancelText={t('no')}
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger icon={<ClearOutlined />} loading={clearingProvider}>
+                    {t('clear_provider_config')}
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <span />
+              )}
+              <Space>
+                <Button onClick={() => setShowProviderKeyModal(false)}>{t('cancel')}</Button>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  {t('save_key')}
+                </Button>
+              </Space>
+            </div>
+>>>>>>> da629f5 (update all refinements)
           </Form.Item>
         </Form>
       </Modal>

@@ -1,15 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { ShareAltOutlined, CodeOutlined, UndoOutlined, RedoOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { ShareAltOutlined, CodeOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
 import { formatFeedPublishError } from '@/components/Feed/feedPublishUtils';
-import { writePendingFeedAttachment } from '@/components/Feed/pendingFeedAttachment';
 import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -17,7 +15,6 @@ import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
-import { useCanUndo, useCanRedo, useUndo, useRedo } from '@/app/(dashboard)/dashboards/stores/useDashboardStore';
 
 interface ChartDesignerToolbarProps {
   selectedWidget: ChartDesignerWidget | null;
@@ -27,14 +24,8 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const t = useTranslations('chart_designer');
   const tf = useTranslations('feed_publish');
   const te = useTranslations('embed_modal');
-  const th = useTranslations('dashboard_tabs');
 
-  const canUndo = useCanUndo();
-  const canRedo = useCanRedo();
-  const undo = useUndo();
-  const redo = useRedo();
   const { user } = useAuth();
-  const router = useRouter();
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
   const organizationId =
@@ -43,7 +34,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     undefined;
 
   const saveChart = useChartDesignerStore((s) => s.saveChart);
-  const updateWidget = useChartDesignerStore((s) => s.updateWidget);
+  const updateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
   const { createEmbedCode, loading: embedLoading } = useEmbedCode();
 
@@ -67,9 +58,10 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     if (!selectedWidget) return;
     const next = titleDraft.trim() || t('untitled_chart');
     if (next !== (selectedWidget.title || '')) {
-      updateWidget(selectedWidget.id, { title: next });
+      // Persist title to library/dashboard chart — local-only update was lost on reload.
+      void updateChartAndFetchData(selectedWidget.id, { title: next });
     }
-  }, [selectedWidget, titleDraft, t, updateWidget]);
+  }, [selectedWidget, titleDraft, t, updateChartAndFetchData]);
 
   const ensureChartId = useCallback(async (): Promise<string | undefined> => {
     if (!selectedWidget) return undefined;
@@ -149,51 +141,6 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     }
   }, [ensureChartId, hasConfiguredData, selectedWidget, t, user?.id]);
 
-  // "Attach to a new post": same snapshot-build + saved-chartId logic as
-  // handleShareToFeed above, just handed to the /feed composer as a pending
-  // attachment instead of publishing this chart as its own standalone post.
-  // Same access requirements (ensureChartId already gates on a logged-in
-  // user; the server re-validates ownership/visibility regardless).
-  const handleAttachToPost = useCallback(async () => {
-    if (!selectedWidget) {
-      message.warning(t('share_select_chart'));
-      return;
-    }
-    if (!user?.id) {
-      message.warning(t('share_login_required'));
-      return;
-    }
-    if (!hasConfiguredData(selectedWidget)) {
-      message.warning(t('share_needs_data'));
-      return;
-    }
-
-    setPreparing(true);
-    try {
-      const chartId = await ensureChartId();
-      if (!chartId) return;
-      const title = selectedWidget.title?.trim() || t('untitled_chart');
-      const snapshot_payload = buildChartSnapshotPayload({
-        title,
-        chartWidget: {
-          chartType: selectedWidget.chartType,
-          chartData: selectedWidget.chartData,
-          chartOptions: selectedWidget.chartOptions,
-          chartQuery: selectedWidget.chartQuery,
-        },
-        sourcePath: '/chart-designer',
-        chartId,
-        dashboardId: selectedWidget.dashboardId ? String(selectedWidget.dashboardId) : undefined,
-      }) as unknown as Record<string, unknown>;
-      writePendingFeedAttachment({ asset_type: 'chart', asset_id: chartId, title, snapshot_payload });
-      router.push('/feed');
-    } catch (error) {
-      message.error(formatFeedPublishError(error, t('share_save_required')));
-    } finally {
-      setPreparing(false);
-    }
-  }, [ensureChartId, hasConfiguredData, router, selectedWidget, t, user?.id]);
-
   const handleShowEmbed = useCallback(async () => {
     if (!selectedWidget) {
       message.warning(t('share_select_chart'));
@@ -230,12 +177,6 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
       onClick: () => void handleShareToFeed(),
     },
     {
-      key: 'attach-to-post',
-      icon: <PaperClipOutlined />,
-      label: menuItemWithDescription(th('attach_to_new_post'), th('attach_to_new_post_desc')),
-      onClick: () => void handleAttachToPost(),
-    },
-    {
       key: 'embed',
       icon: <CodeOutlined />,
       label: te('embed_get_code'),
@@ -266,30 +207,6 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
             {t('toolbar_no_selection')}
           </span>
         )}
-        <div className="chart-designer-toolbar-history inline-flex items-center rounded-md border border-border-light overflow-hidden shrink-0">
-          <Tooltip title={th('undo_shortcut')}>
-            <button
-              type="button"
-              className="flex items-center justify-center w-8 h-8 text-text-secondary hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
-              disabled={!canUndo}
-              onClick={() => undo?.()}
-              aria-label={th('undo')}
-            >
-              <UndoOutlined />
-            </button>
-          </Tooltip>
-          <Tooltip title={th('redo_shortcut')}>
-            <button
-              type="button"
-              className="flex items-center justify-center w-8 h-8 text-text-secondary border-l border-border-light hover:bg-bg-elevated disabled:opacity-35 disabled:pointer-events-none"
-              disabled={!canRedo}
-              onClick={() => redo?.()}
-              aria-label={th('redo')}
-            >
-              <RedoOutlined />
-            </button>
-          </Tooltip>
-        </div>
         <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
           <Tooltip title={selectedWidget ? t('share_menu_tooltip') : t('share_select_chart')}>
             <Button
@@ -320,13 +237,6 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
           modalTitle={t('share_to_feed_modal_title')}
           captureSelector={publishCaptureSelector}
           onCancel={() => {
-            setPublishOpen(false);
-            setPublishChartId(undefined);
-            setPublishPreviewMetadata(undefined);
-            setPublishSnapshotPayload(undefined);
-            setPublishCaptureSelector(undefined);
-          }}
-          onSuccess={() => {
             setPublishOpen(false);
             setPublishChartId(undefined);
             setPublishPreviewMetadata(undefined);

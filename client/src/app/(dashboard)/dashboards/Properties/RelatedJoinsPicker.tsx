@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Select, Typography } from 'antd';
+import { Alert, Button, Select, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
 import { type DataModelRelationship } from '@/api/dataModel';
 import { useRelationships } from '@/hooks/useDataModelRelationships';
+import { useDataSourceSchema } from '@/hooks/useDataSources';
 
 export type JoinOnSpec = { left: string; right: string };
 
@@ -22,6 +23,8 @@ type Props = {
   baseTable?: string;
   joins?: JoinSpec[];
   onChange: (joins: JoinSpec[]) => void;
+  /** Open Studio Data Modeling so authors can link tables without leaving the story. */
+  onOpenDataModeling?: () => void;
 };
 
 function joinKey(join: JoinSpec): string {
@@ -72,11 +75,42 @@ function buildJoinForBase(r: DataModelRelationship, baseTable?: string): JoinSpe
   };
 }
 
-export function RelatedJoinsPicker({ dataSourceId, baseTable, joins = [], onChange }: Props) {
+export function RelatedJoinsPicker({
+  dataSourceId,
+  baseTable,
+  joins = [],
+  onChange,
+  onOpenDataModeling,
+}: Props) {
   const t = useTranslations('dashboards');
   const { data: relationships = [] } = useRelationships(dataSourceId);
+  const { schema } = useDataSourceSchema(dataSourceId ?? null);
+  const tableCount = Array.isArray(schema?.tables) ? schema.tables.length : 0;
+  const multiTable = tableCount > 1;
 
-  if (!dataSourceId || relationships.length === 0) return null;
+  if (!dataSourceId) return null;
+
+  if (relationships.length === 0) {
+    if (!multiTable) return null;
+    return (
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginTop: 8 }}
+        message={t('joins_need_model_title')}
+        description={
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>{t('joins_need_model_body')}</span>
+            {onOpenDataModeling ? (
+              <Button size="small" type="link" style={{ paddingInline: 0, alignSelf: 'flex-start' }} onClick={onOpenDataModeling}>
+                {t('joins_open_modeling')}
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    );
+  }
 
   const base = bareTableName(baseTable);
   const options = relationships
@@ -85,17 +119,23 @@ export function RelatedJoinsPicker({ dataSourceId, baseTable, joins = [], onChan
       return bareTableName(r.from_table) === base || bareTableName(r.to_table) === base;
     })
     .map((r) => {
-    const key = `${r.from_table}.${r.from_column}-${r.to_table}.${r.to_column}`;
-    const join = buildJoinForBase(r, baseTable);
-    const relatedTable = join.table;
-    return {
-      value: key,
-      label: `${relatedTable} (${r.from_column} → ${r.to_column})`,
-      join,
-    };
-  });
+      const key = `${r.from_table}.${r.from_column}-${r.to_table}.${r.to_column}`;
+      const join = buildJoinForBase(r, baseTable);
+      const relatedTable = join.table;
+      return {
+        value: key,
+        label: `${relatedTable} (${r.from_column} → ${r.to_column})`,
+        join,
+      };
+    });
 
-  if (options.length === 0) return null;
+  if (options.length === 0) {
+    return (
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+        {t('joins_none_for_table')}
+      </Typography.Text>
+    );
+  }
 
   const normalizedJoins = joins.map(normalizeJoin);
   const selectedKeys = normalizedJoins.map(joinKey);

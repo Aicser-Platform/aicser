@@ -20,11 +20,12 @@ import { useTranslations } from 'next-intl';
 import { socialFeedService, formatTimeAgo } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
-import { resolveFeedPostSummary, buildPreviewFeedItem } from '@/components/Feed/feedPostDisplay';
+import { resolveFeedPostSummary, buildPreviewFeedItem, resolveFeedCardHeading } from '@/components/Feed/feedPostDisplay';
 import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
 import ReactionBreakdownTooltip from './FeedCard/ReactionBreakdownTooltip';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { useFeedAuthorDisplay } from '@/components/Feed/useFeedAuthorDisplay';
 
 interface FeedGridCardProps {
   item: FeedItem;
@@ -75,6 +76,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const ta = useTranslations('feed_card_actions');
   const router = useRouter();
   const { user } = useAuth();
+  const { avatarUrl: authorAvatarUrl, name: authorName } = useFeedAuthorDisplay(item.author);
 
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
   const [isSharePopoverOpen, setIsSharePopoverOpen] = useState(false);
@@ -139,6 +141,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
     });
   }, [item.assetType, item.title, primaryAttachment]);
   const mediaItem = attachmentPreviewItem ?? item;
+  const heading = useMemo(() => resolveFeedCardHeading(item, mediaItem), [item, mediaItem]);
 
   const handleOpen = useCallback(() => router.push(detailPath), [router, detailPath]);
   const handlePrefetch = useCallback(() => router.prefetch(detailPath), [router, detailPath]);
@@ -197,6 +200,30 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
       const url = encodeURIComponent(getShareUrl());
       const text = encodeURIComponent(item.title);
       window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank', 'noopener,noreferrer');
+      void socialFeedService.shareItem(item.id);
+      setIsSharePopoverOpen(false);
+    },
+    [getShareUrl, item.id, item.title]
+  );
+
+  const handleShareToTelegram = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const url = encodeURIComponent(getShareUrl());
+      const text = encodeURIComponent(item.title);
+      window.open(`https://t.me/share/url?url=${url}&text=${text}`, '_blank', 'noopener,noreferrer');
+      void socialFeedService.shareItem(item.id);
+      setIsSharePopoverOpen(false);
+    },
+    [getShareUrl, item.id, item.title]
+  );
+
+  const handleShareToWhatsApp = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const shareUrl = getShareUrl();
+      const text = encodeURIComponent(`${item.title}\n${shareUrl}`);
+      window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
       void socialFeedService.shareItem(item.id);
       setIsSharePopoverOpen(false);
     },
@@ -318,6 +345,20 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
       >
         {ta('share_to_x')}
       </button>
+      <button
+        type="button"
+        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+        onClick={handleShareToTelegram}
+      >
+        {ta('share_to_telegram')}
+      </button>
+      <button
+        type="button"
+        className="px-4 py-3 text-left font-medium text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+        onClick={handleShareToWhatsApp}
+      >
+        {ta('share_to_whatsapp')}
+      </button>
     </div>
   );
 
@@ -335,31 +376,31 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
               <Link href={authorProfileHref} onClick={stopPropagation} className="shrink-0">
                 <Avatar
                   size={32}
-                  src={item.author.avatarUrl}
+                  src={authorAvatarUrl}
                   className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] font-medium cursor-pointer"
                 >
-                  {item.author.name.charAt(0).toUpperCase()}
+                  {authorName.charAt(0).toUpperCase()}
                 </Avatar>
               </Link>
             ) : (
               <Avatar
                 size={32}
-                src={item.author.avatarUrl}
+                src={authorAvatarUrl}
                 className="bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)] shrink-0 font-medium"
               >
-                {item.author.name.charAt(0).toUpperCase()}
+                {authorName.charAt(0).toUpperCase()}
               </Avatar>
             )}
             <div className="flex flex-col min-w-0">
               {authorProfileHref ? (
                 <Link href={authorProfileHref} onClick={stopPropagation} className="truncate">
                   <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
-                    {item.author.name}
+                    {authorName}
                   </span>
                 </Link>
               ) : (
                 <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight truncate">
-                  {item.author.name}
+                  {authorName}
                 </span>
               )}
               <span className="text-xs text-[var(--ant-color-text-tertiary)] truncate">
@@ -421,29 +462,30 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
         </div>
 
         {/* Flexible content: title/description + thumbnail + tags grow to fill the row's height */}
-        <div className="flex flex-1 flex-col">
-          {/* Title + description — fixed 2-line slots so cards line up regardless of actual length */}
-          <div className="flex flex-col gap-1 px-3 py-2">
-            <p className="m-0 line-clamp-2 min-h-[2.5rem] text-lg font-semibold leading-[1.25rem] text-[var(--ant-color-text)]">
-              {item.title}
-            </p>
-            {description && (
-              <p className="m-0 line-clamp-2 min-h-[2.5rem] text-sm leading-[1.25rem] text-[var(--ant-color-text-secondary)]">
+        {heading || description ? (
+          <div className="shrink-0 flex flex-col gap-1.5 px-3.5 pt-3 pb-1">
+            {heading ? (
+              <p className="m-0 line-clamp-2 text-base font-semibold leading-snug text-[var(--ant-color-text)]">
+                {heading}
+              </p>
+            ) : null}
+            {description ? (
+              <p className="m-0 line-clamp-2 text-sm leading-relaxed text-[var(--ant-color-text-secondary)]">
                 {description}
               </p>
-            )}
+            ) : null}
           </div>
+        ) : null}
 
-          {/* Thumbnail + tags — shared with FeedCardBody (the inline-comment card variant).
-              For a text post, `mediaItem` is a synthetic preview built from its first
-              attachment (see attachmentPreviewItem above) rather than the post itself. */}
+          <div className="min-h-[220px] min-w-0 flex-1 px-3.5 pb-2.5">
           <FeedCardMedia
             item={mediaItem}
-            maxPreviews={2}
+            maxPreviews={1}
+            fillHeight
             previewClickable
             onPreviewClick={handleOpen}
-            thumbnailWrapperClassName="px-3 pb-2.5"
-            tagsWrapperClassName="px-3 pb-1.5"
+            thumbnailWrapperClassName="h-full"
+            tagsWrapperClassName="px-0 pt-1.5 pb-0"
             cornerBadge={
               extraAttachmentCount > 0 ? (
                 <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">

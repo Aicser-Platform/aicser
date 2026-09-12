@@ -30,6 +30,26 @@ from src.modules.feed.schemas import (
 from src.modules.feed.service_utils import _enum_value, _normalize_asset_payload, _reaction_values, _to_iso
 
 
+def _humanize_job_role(raw: str) -> str:
+    """Turn slug-like job roles into readable labels.
+
+    Profile forms often store values like ``ceo_founder`` or ``data-scientist``.
+    Showing those raw under a display name with ``@`` looked like a second
+    username on feed cards.
+    """
+    text = raw.strip()
+    if not text:
+        return text
+    # Already human prose (spaces / mixed case) — leave alone.
+    if " " in text and not text.islower():
+        return text
+    parts = [p for p in text.replace("-", "_").split("_") if p]
+    if not parts:
+        return text
+    acronyms = {"ceo", "cto", "cfo", "coo", "cmo", "vp", "hr", "it", "ai", "bi", "ml"}
+    return " ".join(p.upper() if p.lower() in acronyms else p.capitalize() for p in parts)
+
+
 class FeedServiceSerializationMixin:
     db: AsyncSession
 
@@ -154,15 +174,15 @@ class FeedServiceSerializationMixin:
             avatar_url = generate_avatar_sas_url(avatar_url, expiry_hours=24)
 
         # "Company" alone (the old behavior) read as just a name with no
-        # context - Settings -> Profile also has a Job Role field, and
-        # "<role> @ <org>" is the standard way a byline actually reads
-        # (LinkedIn/Twitter bio convention). Real org membership
-        # (user_roles -> organizations) is preferred over the self-reported
-        # Company text when both exist - they can genuinely differ.
-        job_role = (getattr(user, "job_role", None) or "").strip() or None
-        org_or_company = org_name or getattr(user, "company", None)
+        # context - Settings -> Profile also has a Job Role field.
+        # Prefer a LinkedIn-style byline, but NEVER use "role @ org" when
+        # role looks like a handle/slug — that reads as a second user
+        # ("ceo_founder @ Aicser" under display name "demodfdf dfdf").
+        job_role_raw = (getattr(user, "job_role", None) or "").strip() or None
+        org_or_company = (org_name or getattr(user, "company", None) or "").strip() or None
+        job_role = _humanize_job_role(job_role_raw) if job_role_raw else None
         if job_role and org_or_company:
-            title = f"{job_role} @ {org_or_company}"
+            title = f"{job_role} · {org_or_company}"
         else:
             title = job_role or org_or_company
 
@@ -239,7 +259,7 @@ class FeedServiceSerializationMixin:
             if (getattr(user, "username", None) or "").strip():
                 score += 1
             if (getattr(user, "avatar_url", None) or "").strip():
-                score += 1
+                score += 4
             return score
 
         def put_user(key: Optional[UUID], user: User) -> None:

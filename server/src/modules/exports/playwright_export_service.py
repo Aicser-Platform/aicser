@@ -87,43 +87,43 @@ async def render_page_export(
                 viewport=viewport or DEFAULT_VIEWPORT,
                 device_scale_factor=device_scale_factor,
             )
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.goto(url, wait_until="load", timeout=45000)
             if content_selector:
                 try:
-                    await page.wait_for_selector(content_selector, timeout=15000)
-                except Exception:
-                    logger.warning(
-                        "render_page_export: content_selector %r never appeared for %s; "
-                        "capturing whatever loaded (likely an error/empty state)",
-                        content_selector, embed_path,
-                    )
-            await page.wait_for_timeout(2000)
+                    await page.wait_for_selector(content_selector, timeout=20000)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Export page did not finish loading ({content_selector!r} missing) "
+                        f"for {embed_path}"
+                    ) from exc
+            try:
+                await page.evaluate("() => document.fonts && document.fonts.ready")
+            except Exception:
+                pass
+            await page.wait_for_timeout(800)
 
             if export_format == "png":
                 file_bytes = await page.screenshot(full_page=True)
             elif export_format == "pdf":
-                # page.pdf() applies @media print CSS (via Chrome DevTools
-                # Protocol's Page.printToPDF), but — unlike an interactive
-                # print dialog reached through window.print() — it does NOT
-                # dispatch the page's own `beforeprint`/`afterprint` DOM
-                # events. ReportDocument.tsx's SectionChart listens for
-                # exactly that event to resize each ECharts canvas to its
-                # now print-constrained container (a ResizeObserver alone
-                # doesn't reliably fire for print-only layout changes); with
-                # no real print dialog in this headless path, that listener
-                # was live-reproduced as never firing, so every chart kept
-                # its full on-screen canvas width and just got clipped by
-                # its container's overflow:hidden — exactly the reported
-                # "each chart cut off, not within container" bug. Firing it
-                # here manually closes the gap without needing the frontend
-                # to special-case a non-interactive export.
-                await page.evaluate("window.dispatchEvent(new Event('beforeprint'))")
-                # ECharts' resize() call (triggered by that event) queues a
-                # re-render on the next animation frame rather than painting
-                # synchronously — give it a moment to actually redraw the
-                # canvas at its new dimensions before the PDF snapshot below.
-                await page.wait_for_timeout(300)
-                options: Dict[str, Any] = {"format": "A4", "print_background": True}
+                # page.pdf() applies @media print CSS but does NOT dispatch
+                # beforeprint, and dispatching beforeprint alone does not apply
+                # print media — so canvases stayed at on-screen size and got
+                # clipped by the print box. Emulate print first, then resize.
+                await page.emulate_media(media="print")
+                await page.evaluate(
+                    """() => {
+                        if (typeof window.__aiserResizeReportCharts === 'function') {
+                            window.__aiserResizeReportCharts();
+                        }
+                        window.dispatchEvent(new Event('beforeprint'));
+                    }"""
+                )
+                await page.wait_for_timeout(500)
+                options: Dict[str, Any] = {
+                    "format": "A4",
+                    "print_background": True,
+                    "prefer_css_page_size": True,
+                }
                 options.update(pdf_options or {})
                 file_bytes = await page.pdf(**options)
             else:  # html

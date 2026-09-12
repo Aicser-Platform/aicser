@@ -207,9 +207,10 @@ class DataSourceAccessService:
 
         if not is_ee_enabled():
             owner_id = getattr(data_source, "user_id", None)
-            if permission in {DATA_SOURCE_PERMISSION_VIEW, DATA_SOURCE_PERMISSION_QUERY}:
-                return owner_id is None or str(owner_id) == str(user_id)
-            return owner_id is not None and str(owner_id) == str(user_id)
+            if owner_id is None:
+                # Fail closed: unowned/legacy rows are not world-readable.
+                return False
+            return str(owner_id) == str(user_id)
 
         organization_id = str(data_source.organization_id) if data_source.organization_id else None
         if _is_source_owner(data_source, user_id):
@@ -401,9 +402,7 @@ class DataSourceAccessService:
 
         if not is_ee_enabled():
             result = await session.execute(
-                select(DataSource.id).where(
-                    or_(DataSource.user_id == _uuid_or_none(user_id), DataSource.user_id.is_(None))
-                )
+                select(DataSource.id).where(DataSource.user_id == _uuid_or_none(user_id))
             )
             return [str(source_id) for source_id in result.scalars().all()]
 

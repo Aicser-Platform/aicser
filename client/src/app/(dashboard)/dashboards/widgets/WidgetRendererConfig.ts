@@ -188,9 +188,26 @@ function shouldReplaceChartColor(color: unknown): boolean {
   return ECHARTS_DEFAULT_PALETTE.has(hex);
 }
 
+function isForecastCiHelperSeries(series: Record<string, unknown> | null | undefined): boolean {
+  if (!series || typeof series !== 'object') return false;
+  if (series._forecastCiHelper) return true;
+  const n = String(series.name || '').toLowerCase();
+  return (
+    n === '_ci_lower' ||
+    n === '95% interval' ||
+    n.includes('confidence') ||
+    n === 'lower bound' ||
+    series.stack === 'ci' ||
+    series.stack === 'confidence-band'
+  );
+}
+
 /**
  * Apply Aicser categorical palette to an ECharts option (chat + dashboard).
  * Sets top-level `color` and remaps locked ECharts-default series/bar colors.
+ * Forecast CI helper series keep their transparent / band colors — remapping
+ * them to brand hues collapses the stacked certainty band into an invisible
+ * or solid fill (legend still showed "95% interval").
  */
 export function applyAicserChartColors<T extends Record<string, any>>(
   config: T,
@@ -200,17 +217,35 @@ export function applyAicserChartColors<T extends Record<string, any>>(
   if (!config || typeof config !== 'object') return config;
   const need = Math.max(seriesCount || 0, 20);
   const colors = getColorsFromPalette(paletteName, need);
-  const next: Record<string, any> = { ...config, color: [...colors] };
+  const next: Record<string, any> = { ...config };
+
+  // Preserve explicit non-default palette slots (e.g. transparent + rgba CI band).
+  if (Array.isArray(config.color) && config.color.length > 0) {
+    next.color = config.color.map((c: unknown, i: number) => {
+      if (c == null || c === '') return colors[i % colors.length];
+      if (typeof c === 'string' && (c === 'transparent' || c.startsWith('rgba') || c.startsWith('rgb'))) {
+        return c;
+      }
+      return shouldReplaceChartColor(c) ? colors[i % colors.length] : c;
+    });
+    while (next.color.length < Math.min(need, 8)) {
+      next.color.push(colors[next.color.length % colors.length]);
+    }
+  } else {
+    next.color = [...colors];
+  }
 
   const remapItemStyle = (itemStyle: any, index: number) => {
     if (!itemStyle || typeof itemStyle !== 'object') return itemStyle;
     if (itemStyle.color && !shouldReplaceChartColor(itemStyle.color)) return itemStyle;
+    if (itemStyle.opacity === 0 || itemStyle.color === 'transparent') return itemStyle;
     return { ...itemStyle, color: colors[index % colors.length] };
   };
 
   if (Array.isArray(next.series)) {
     next.series = next.series.map((series: any, si: number) => {
       if (!series || typeof series !== 'object') return series;
+      if (isForecastCiHelperSeries(series)) return series;
       const s = { ...series };
       if (s.itemStyle) s.itemStyle = remapItemStyle(s.itemStyle, si);
       if (Array.isArray(s.data)) {
@@ -222,11 +257,6 @@ export function applyAicserChartColors<T extends Record<string, any>>(
       }
       return s;
     });
-  }
-
-  // Always apply brand categorical palette at the option root.
-  if (Array.isArray(config.color) && config.color.some((c: unknown) => shouldReplaceChartColor(c))) {
-    next.color = [...colors];
   }
 
   return next as T;
@@ -300,6 +330,8 @@ export const CHART_GRID_LINE_STYLE = {
   type: 'solid' as const,
   width: 1,
 };
+
+import type { ChartDesign } from './chartDesign';
 
 export interface ChartConfig {
   showLegend?: boolean;
@@ -398,6 +430,11 @@ export interface ChartConfig {
   borderColor?: string;
   /** Widget-level box shadow preset */
   boxShadow?: 'sm' | 'md' | 'lg';
+  /**
+   * Declarative presentation layer (axes scale, marks, ranked labels, templates).
+   * Compiled onto the ECharts option via compileDesignToEcharts — see chartDesign.ts.
+   */
+  design?: ChartDesign;
 }
 
 /**

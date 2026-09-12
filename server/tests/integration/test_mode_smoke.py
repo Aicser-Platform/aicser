@@ -170,3 +170,65 @@ async def test_explicit_executive_report_mode_completes_sections_with_real_conte
     # this is what "0.00 quality gate" looked like from the outside.
     for s in complete:
         assert s.get("narrative"), f"section '{s.get('title')}' completed with no narrative"
+
+
+def _assert_finished(final, *, allow_clarification: bool = True) -> None:
+    """Mode contract: complete with a payload, or a visible clarification — never a hang/error."""
+    assert final is not None, "no complete/error event received"
+    if allow_clarification and (
+        final.get("needs_clarification")
+        or final.get("clarification_type")
+        or (final.get("type") == "complete" and final.get("clarification_options"))
+    ):
+        return
+    assert final.get("type") != "error", final.get("error") or final
+
+
+@pytest.mark.integration
+async def test_forecast_mode_completes_or_asks_for_time():
+    final, _ = await _run(
+        "forecast this metric for the next 6 months",
+        data_source_id=_EDUCATION_DS_ID,
+        analysis_mode="predictive",
+    )
+    _assert_finished(final)
+
+
+@pytest.mark.integration
+async def test_diagnose_mode_completes_or_clarifies():
+    final, _ = await _run(
+        "why did scores drop",
+        data_source_id=_EDUCATION_DS_ID,
+        analysis_mode="diagnostic",
+    )
+    _assert_finished(final)
+
+
+@pytest.mark.integration
+async def test_optimise_mode_completes_or_clarifies():
+    final, _ = await _run(
+        "what actions would improve scores",
+        data_source_id=_EDUCATION_DS_ID,
+        analysis_mode="prescriptive",
+    )
+    _assert_finished(final)
+
+
+@pytest.mark.integration
+async def test_decide_mode_completes_or_clarifies():
+    final, _ = await _run(
+        "what should we decide next about student performance",
+        data_source_id=_EDUCATION_DS_ID,
+        analysis_mode="decision_intelligence",
+    )
+    _assert_finished(final)
+
+
+@pytest.mark.integration
+async def test_business_os_mode_completes_or_clarifies():
+    final, _ = await _run(
+        "assess the health of this education data",
+        data_source_id=_EDUCATION_DS_ID,
+        analysis_mode="business_journey",
+    )
+    _assert_finished(final)

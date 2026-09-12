@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { message, Button, Dropdown, Tooltip } from 'antd';
@@ -9,7 +9,11 @@ import {
   AppstoreOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
+  LoadingOutlined,
   MoonOutlined,
+  PrinterOutlined,
   ReloadOutlined,
   SunOutlined,
 } from '@ant-design/icons';
@@ -25,12 +29,13 @@ import { widgetInsightsFromWidgets } from '../../utils/dashboardExecutiveMeta';
 import '../AddDashboardDrawer.css';
 import type { LayoutItem, WidgetInstance } from '../../stores/useDashboardStore';
 import type { DashboardFilter } from '@/types/dashboard';
-import { exportDashboardCanvas } from '../../services/exportDashboardService';
+import { exportDashboardCanvas, printDashboardOnly } from '../../services/exportDashboardService';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { shouldApplyWatermark } from '@/utils/watermark';
 import { isEmbedChromeHidden } from '../../utils/isEmbedChromeHidden';
 import { navigateToStudio } from '../../utils/studioNavigation';
 import { AUTO_REFRESH_INTERVAL_OPTIONS } from '../../hooks/useDashboardRefresh';
+import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 
 export type DashboardViewerMeta = {
   id: string;
@@ -164,24 +169,68 @@ export function DashboardViewerShell({
     ? [`interval:${autoRefreshMinutes}`]
     : [];
 
+  const [exportBusy, setExportBusy] = useState(false);
+
   const handleExport = useCallback(
-    async (format: 'png' | 'pdf') => {
+    async (format: 'png' | 'pdf' | 'print') => {
+      if (exportBusy) return;
+      const preparingKey =
+        format === 'pdf'
+          ? 'export_preparing_pdf'
+          : format === 'print'
+            ? 'export_preparing_print'
+            : 'export_preparing_png';
+      const hide = message.loading(t(preparingKey), 0);
+      setExportBusy(true);
       try {
-        await exportDashboardCanvas(format, {
+        const common = {
           filename: meta.title,
           title: meta.title,
           subtitle: (meta.description || '').trim() || undefined,
           selector: '.dashboard-viewer-canvas',
           branding: exportBranding,
-          matchTheme: true,
-        });
-        message.success(format === 'pdf' ? t('export_pdf_ok') : t('export_png_ok'));
+          matchTheme: true as const,
+        };
+        if (format === 'print') {
+          await printDashboardOnly(common);
+          message.success(t('export_print_ok'));
+        } else {
+          await exportDashboardCanvas(format, common);
+          message.success(format === 'pdf' ? t('export_pdf_ok') : t('export_png_ok'));
+        }
       } catch (err) {
         message.error(err instanceof Error ? err.message : t('export_failed'));
+      } finally {
+        hide();
+        setExportBusy(false);
       }
     },
-    [meta.title, meta.description, t, exportBranding]
+    [meta.title, meta.description, t, exportBranding, exportBusy]
   );
+
+  const exportMenuItems: MenuProps['items'] = [
+    {
+      key: 'png',
+      icon: <FileImageOutlined />,
+      label: menuItemWithDescription(t('export_png'), t('export_png_desc')),
+      disabled: exportBusy,
+      onClick: () => void handleExport('png'),
+    },
+    {
+      key: 'pdf',
+      icon: <FilePdfOutlined />,
+      label: menuItemWithDescription(t('export_pdf'), t('export_pdf_desc')),
+      disabled: exportBusy,
+      onClick: () => void handleExport('pdf'),
+    },
+    {
+      key: 'print',
+      icon: <PrinterOutlined />,
+      label: menuItemWithDescription(t('export_print'), t('export_print_desc')),
+      disabled: exportBusy,
+      onClick: () => void handleExport('print'),
+    },
+  ];
 
   const goHome = useCallback(() => {
     if (isAuthenticated) {
@@ -239,15 +288,19 @@ export function DashboardViewerShell({
                 </Dropdown>
               </div>
             )}
-            <button
-              type="button"
-              className="shared-dashboard-theme-btn"
-              onClick={() => void handleExport('png')}
-              title={t('export_png')}
-              aria-label={t('export_png')}
-            >
-              <DownloadOutlined />
-            </button>
+            <Dropdown menu={{ items: exportMenuItems }} trigger={['click']} disabled={exportBusy}>
+              <Tooltip title={t('export_menu_tooltip')}>
+                <button
+                  type="button"
+                  className="shared-dashboard-theme-btn"
+                  disabled={exportBusy}
+                  aria-label={t('export_menu')}
+                  aria-haspopup="menu"
+                >
+                  {exportBusy ? <LoadingOutlined spin /> : <DownloadOutlined />}
+                </button>
+              </Tooltip>
+            </Dropdown>
             <button
               type="button"
               className="shared-dashboard-theme-btn"

@@ -36,9 +36,11 @@ def test_scrub_messages_for_llm():
     assert "alice@test.org" not in out[0]["content"]
 
 
-def test_scrub_data_payload_rows():
+def test_scrub_data_payload_rows(monkeypatch):
+    monkeypatch.setenv("AISER_PII_DETECTION", "true")
     rows = [{"email": "bob@corp.com", "revenue": 100}]
-    out = scrub_data_payload(rows, max_rows=5)
+    # Prefer explicit policy columns (Analyze path) — no value-discovery scan.
+    out = scrub_data_payload(rows, max_rows=5, sensitive_columns=["email"])
     assert out[0]["email"] != "bob@corp.com"
 
 
