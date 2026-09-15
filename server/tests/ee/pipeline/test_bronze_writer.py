@@ -16,6 +16,47 @@ def test_bronze_key_matches_the_spec_layout():
     assert key == f"orgs/{org}/bronze/asset-1/load_id={run}/part-0000.parquet"
 
 
+def test_bronze_key_scopes_by_table_when_a_multi_table_database_source_provides_one():
+    """A single data_source_id (e.g. one MySQL connection) can have many
+    DataPipelines, one per table. Without a table segment in the key, every
+    table's runs share one orgs/.../bronze/{asset_id}/load_id=*/ prefix, and
+    bronze_scan_sql's non-exact glob (used for every data_source-type pipeline
+    — see transform/stage.py) reads them all together via union_by_name=true,
+    silently merging unrelated tables' rows (null-padding the mismatched
+    columns) into whichever pipeline runs Transform next. Reproduces the
+    contaminated crm_employees Silver table seen in production (18 rows =
+    15 real employees + 3 departments rows pulled in from a different
+    pipeline's Bronze data under the same data source)."""
+    from src.modules.pipeline.ingest.bronze_writer import bronze_key
+
+    org, asset, run = uuid.uuid4(), "db_mysql_1", uuid.uuid4()
+
+    key = bronze_key(org, asset, run, 0, table="employees")
+
+    assert key == f"orgs/{org}/bronze/db_mysql_1/employees/load_id={run}/part-0000.parquet"
+    # No table given (lake_object / file-upload pipelines) keeps the original,
+    # backward-compatible layout exactly.
+    assert bronze_key(org, asset, run, 0) == f"orgs/{org}/bronze/db_mysql_1/load_id={run}/part-0000.parquet"
+
+
+def test_bronze_scan_sql_glob_isolates_by_table_once_the_key_is_table_scoped():
+    """The read side needs no changes: bronze_scan_sql's non-exact-partition
+    glob strips everything from /load_id= onward and re-globs under whatever
+    prefix remains, so inserting a table segment before /load_id= in the
+    write path automatically scopes the read path too."""
+    from src.modules.pipeline.ingest.duckdb_s3 import bronze_scan_sql
+
+    employees_uri = "s3://bucket/orgs/org-1/bronze/db_mysql_1/employees/load_id=run-a/part-0000.parquet"
+    departments_uri = "s3://bucket/orgs/org-1/bronze/db_mysql_1/departments/load_id=run-b/part-0000.parquet"
+
+    employees_sql = bronze_scan_sql(employees_uri)
+    departments_sql = bronze_scan_sql(departments_uri)
+
+    assert "bronze/db_mysql_1/employees/load_id=*/*.parquet" in employees_sql
+    assert "bronze/db_mysql_1/departments/load_id=*/*.parquet" in departments_sql
+    assert employees_sql != departments_sql
+
+
 async def test_write_bronze_uploads_parquet_and_reports_counts():
     from src.modules.pipeline.ingest.bronze_writer import write_bronze
 

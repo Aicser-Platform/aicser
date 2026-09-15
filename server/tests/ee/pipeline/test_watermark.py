@@ -50,6 +50,35 @@ def test_monotonic_primary_key_is_the_last_resort():
     assert resolve_watermark_column(schema) == "id"
 
 
+def test_monotonic_primary_key_fallback_recognizes_is_primary_key_flag():
+    """database_connector_service.py (the real MySQL/Postgres introspection path)
+    sets `is_primary_key`, never `primary_key` — see database_connector_service.py:901,1128.
+    Every other primary-key check in the codebase (nl2sql_node.py:1189,
+    schema_for_llm.py:222,256,835,1041) already checks both flags; this fallback
+    must too, or every real introspected table with no conventional watermark
+    column name silently has no usable fallback and incremental ingest is
+    impossible for it."""
+    from src.modules.pipeline.ingest.watermark_source import \
+        resolve_watermark_column
+
+    # Exact shape of the real `crm.customers` table as persisted by
+    # data_connectivity_service for a live MySQL connection (db_mysql_1789015141).
+    schema = {
+        "columns": [
+            {
+                "name": "id",
+                "type": "INTEGER",
+                "nullable": False,
+                "primary_key": False,
+                "is_primary_key": True,
+            },
+            {"name": "name", "type": "VARCHAR(150)", "nullable": False, "primary_key": False},
+            {"name": "revenue", "type": "DECIMAL(14, 2)", "nullable": False, "primary_key": False},
+        ]
+    }
+    assert resolve_watermark_column(schema) == "id"
+
+
 def test_refuses_rather_than_silently_full_loading():
     """A silent full refresh on a huge table is the failure mode this guards against."""
     from src.modules.pipeline.ingest.watermark_source import (

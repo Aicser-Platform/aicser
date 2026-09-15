@@ -122,6 +122,75 @@ def test_rerunning_the_whole_pipeline_is_idempotent(bronze_parquet, local_catalo
     assert out.num_rows == 2, "a second identical run must not duplicate rows"
 
 
+async def test_load_stage_records_the_pipeline_source_table(bronze_parquet, local_catalog, monkeypatch):
+    """A preview/catalog lookup for a specific table needs the Silver/Gold
+    row LoadStage writes to be tagged with the same source_table IngestStage
+    recorded for the Bronze row it read -- otherwise selecting a table in the
+    builder can find Bronze correctly but still show stale Silver data from a
+    different table (the exact production bug this closes)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.modules.pipeline.load.catalog import namespace_for
+    from src.modules.pipeline.runner import RunContext
+    from src.modules.pipeline.transform.compiler import compile_transform, parse_yaml
+    from src.modules.pipeline.transform.executor import execute_transform
+
+    compiled = compile_transform(
+        parse_yaml(YAML), source_sql=f"SELECT * FROM read_parquet('{bronze_parquet}')"
+    )
+    table = execute_transform(compiled, connection=duckdb.connect())
+
+    added = []
+    session = AsyncMock()
+    session.add = MagicMock(side_effect=added.append)
+
+    import uuid
+
+    org_id = uuid.uuid4()
+    local_catalog.create_namespace(namespace_for(org_id))
+    monkeypatch.setattr("src.modules.pipeline.load.catalog.get_catalog", lambda: local_catalog)
+    # LoadStage always builds a real s3:// location for catalog.create_table,
+    # which the other e2e tests in this file avoid by calling load_to_iceberg
+    # directly (no location kwarg -> falls back to the local warehouse). This
+    # test is only about source_table propagation through LoadStage, which
+    # Iceberg write mechanics the other two tests already cover -- so stub the
+    # write itself rather than requiring a real S3 bucket in the test run.
+    monkeypatch.setattr(
+        "src.modules.pipeline.load.iceberg_loader.load_to_iceberg",
+        lambda *a, **kw: {
+            "created": True,
+            "identifier": f"{namespace_for(org_id)}.sales_by_region",
+            "location": "s3://test-bucket/fake",
+            "rows_written": table.num_rows,
+        },
+    )
+
+    ctx = RunContext(
+        session=session,
+        run=type("R", (), {"id": uuid.uuid4()})(),
+        pipeline=type(
+            "P",
+            (),
+            {
+                "source_asset_id": "db_mysql_1",
+                "source_asset_type": "data_source",
+                "options": {"source_table": "orders"},
+            },
+        )(),
+        org_id=org_id,
+        arrow_table=table,
+        compiled=compiled,
+    )
+
+    from src.modules.pipeline.load.stage import LoadStage
+
+    await LoadStage().execute(ctx)
+
+    assert len(added) == 1
+    assert added[0].data_source_id == "db_mysql_1"
+    assert added[0].source_table == "orders"
+
+
 def test_lineage_is_captured_from_the_compiled_sql(bronze_parquet):
     from src.modules.pipeline.transform.compiler import (compile_transform,
                                                          parse_yaml)

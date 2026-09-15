@@ -298,6 +298,11 @@ class DataLakeObject(BaseModel):
         nullable=True,
         index=True,
     )
+    # A data source can back many pipelines, one per table — this is what lets
+    # a Bronze/Silver/Gold lookup for "this data source" be scoped to the one
+    # table the caller actually means, instead of an arbitrary "most recent"
+    # match across every table ever ingested from that source.
+    source_table = Column(String, nullable=True)
     layer = Column(
         Enum("staging", "bronze", "silver", "gold", name="data_lake_layer_enum"),
         nullable=False,
@@ -578,6 +583,36 @@ class DataPipeline(BaseModel):
     __table_args__ = (
         UniqueConstraint("organization_id", "slug", name="uq_data_pipeline_org_slug"),
         Index("ix_data_pipelines_due", "enabled", "next_run_at"),
+    )
+
+
+class DataPipelineSheet(BaseModel):
+    """One table within a multi-table pipeline -- the Excel-sheet-per-table
+    unit. A DataPipeline with rows here runs every sheet as part of one
+    triggered run; a DataPipeline with none keeps the original single-table
+    behavior unchanged."""
+
+    __tablename__ = "data_pipeline_sheets"
+
+    pipeline_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("data_pipelines.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_table = Column(String, nullable=False)
+    watermark_column = Column(String, nullable=True)
+    yaml_artifact_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("semantic_layer_artifacts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    sort_order = Column(Integer, nullable=False, server_default=text("0"))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "pipeline_id", "source_table", name="uq_data_pipeline_sheet_table"
+        ),
     )
 
 

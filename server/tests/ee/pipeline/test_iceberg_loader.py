@@ -230,3 +230,54 @@ def test_compatible_utc_timestamp_variance_is_accepted(local_catalog):
         primary_key=[],
     )
     assert result["rows_written"] == 1
+
+
+def test_appending_small_precision_decimal_rows_does_not_raise(local_catalog):
+    """PyArrow's Parquet writer always encodes decimal columns as
+    FIXED_LEN_BYTE_ARRAY (apache/iceberg-python#936), but pyiceberg 0.9.x's
+    stats collector still expects INT32 for precision<=9 / INT64 for <=18 and
+    raises `Unexpected physical type FIXED_LEN_BYTE_ARRAY ... expected INT32`
+    before it ever writes the file -- reproduced live against the real MySQL
+    crm database: a `customers` table with a `revenue decimal(9,2)` column
+    failed every append with this exact error, so no row of real customer
+    data ever reached Silver. Reproduces with real (non-null) values on a
+    *second* write into an already-existing table, which is what forces the
+    append path rather than create_table."""
+    import decimal
+
+    from src.modules.pipeline.load.iceberg_loader import load_to_iceberg
+
+    local_catalog.create_namespace("org_decimal")
+
+    def rows(values):
+        return pa.table(
+            {
+                "id": pa.array(range(len(values)), type=pa.int64()),
+                "revenue": pa.array(
+                    [decimal.Decimal(v) if v is not None else None for v in values],
+                    type=pa.decimal128(9, 2),
+                ),
+            }
+        )
+
+    load_to_iceberg(
+        local_catalog,
+        namespace="org_decimal",
+        table_name="customers_silver",
+        table=rows(["100.00"]),
+        write_mode="append",
+        primary_key=[],
+    )
+
+    result = load_to_iceberg(
+        local_catalog,
+        namespace="org_decimal",
+        table_name="customers_silver",
+        table=rows([f"{n}.56" for n in range(1, 80)]),
+        write_mode="append",
+        primary_key=[],
+    )
+
+    assert result["rows_written"] == 79
+    out = local_catalog.load_table("org_decimal.customers_silver").scan().to_arrow()
+    assert out.num_rows == 80

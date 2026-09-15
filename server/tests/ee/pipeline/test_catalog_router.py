@@ -414,3 +414,90 @@ def test_read_sample_falls_back_gracefully_when_iceberg_extension_unavailable(
 
     assert result.rows == []
     assert result.note == "iceberg_extension_unavailable"
+
+
+async def test_catalog_lineage_endpoint(monkeypatch):
+    from src.modules.pipeline.catalog import router as module
+
+    ds_obj = SimpleNamespace(
+        id="ds-crm",
+        name="crm",
+        type="s3",
+        db_type=None,
+    )
+
+    lake_bronze = SimpleNamespace(
+        id=uuid.uuid4(),
+        data_source_id="ds-crm",
+        layer="bronze",
+        table_name="deals",
+        sheet_name=None,
+        source_table="deals",
+        row_count=90,
+        format="delta",
+        status="active",
+        storage_uri="s3://test-s3/bronze/crm/deals",
+    )
+
+    pipeline_silver = SimpleNamespace(
+        id=uuid.uuid4(),
+        name="Test-crrmmm",
+        slug="test-crrmmm",
+        target_layer="silver",
+        source_asset_id="ds-crm",
+        source_table="deals",
+        yaml_artifact_id=None,
+    )
+
+    class FakeScalars:
+        def __init__(self, items):
+            self.items = items
+        def all(self):
+            return self.items
+
+    class FakeResult:
+        def __init__(self, scalar_val=None, items=None):
+            self.scalar_val = scalar_val
+            self.items = items or []
+        def scalar_one_or_none(self):
+            return self.scalar_val
+        def scalars(self):
+            return FakeScalars(self.items)
+
+    class FakeDB:
+        def __init__(self):
+            self.call_count = 0
+        async def execute(self, _statement):
+            self.call_count += 1
+            # 1: ds lookup
+            if self.call_count == 1:
+                return FakeResult(scalar_val=ds_obj)
+            # 2: lake objects query
+            if self.call_count == 2:
+                return FakeResult(items=[lake_bronze])
+            # 3: pipelines query
+            if self.call_count == 3:
+                return FakeResult(items=[pipeline_silver])
+            # 4: sheets query
+            return FakeResult(items=[])
+
+    monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
+
+    response = await module.get_catalog_lineage(
+        source_id="ds-crm",
+        lake_object_id=None,
+        db=FakeDB(),
+        payload={},
+    )
+
+    assert response.source_name == "crm"
+    assert response.source_type == "s3"
+    assert len(response.nodes) == 4
+    assert response.nodes[0].layer == "raw"
+    assert "crm" in response.nodes[0].name
+    assert response.nodes[1].layer == "bronze"
+    assert response.nodes[1].row_count == 90
+    assert response.nodes[2].layer == "silver"
+    assert response.nodes[2].pipeline_name == "Test-crrmmm"
+    assert len(response.edges) == 3
+
