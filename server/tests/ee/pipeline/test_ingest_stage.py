@@ -279,6 +279,63 @@ async def test_ingest_stage_first_run_snapshot_does_not_require_an_existing_bron
     assert len(added) == 1
 
 
+async def test_ingest_stage_bronze_object_records_the_data_source_id():
+    """The catalog API's LakeObjectResponse requires data_source_id as a
+    non-optional str (catalog/schemas.py) — a Bronze row written without it
+    500s GET /api/catalog/lake-objects for every row in the org, not just this
+    one. IngestStage only ever runs for source_asset_type="data_source"
+    pipelines (build_stages skips it for lake_object), so source_asset_id is
+    always the data source's own id here."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.modules.pipeline.ingest.stage import IngestStage
+    from src.modules.pipeline.runner import RunContext
+
+    added = []
+    session = AsyncMock()
+    session.add = MagicMock(side_effect=added.append)
+
+    org_id = uuid.uuid4()
+    ctx = RunContext(
+        session=session,
+        run=type("R", (), {"id": uuid.uuid4(), "checkpoint": {}, "status": "running"})(),
+        pipeline=type(
+            "P",
+            (),
+            {
+                "id": uuid.uuid4(),
+                "organization_id": org_id,
+                "source_asset_type": "data_source",
+                "source_asset_id": "db_mysql_1789015141",
+                "ingest_mode": "snapshot",
+                "target_layer": "silver",
+                "options": {"source_table": "departments"},
+            },
+        )(),
+        org_id=org_id,
+    )
+
+    class FakeSource:
+        async def snapshot(self, *, load_id):
+            yield pa.RecordBatch.from_pydict({"id": pa.array([1, 2, 3], type=pa.int64())})
+
+    class FakeS3:
+        async def store_file(self, file_content, object_key, **kwargs):
+            return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
+
+    with patch(
+        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+    ), patch(
+        "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
+        new=AsyncMock(return_value=FakeSource()),
+    ):
+        await IngestStage().execute(ctx)
+
+    assert len(added) == 1
+    assert added[0].data_source_id == "db_mysql_1789015141"
+    assert added[0].source_table == "departments"
+
+
 async def test_ingest_stage_reads_an_existing_bronze_object_for_a_file_upload_data_source():
     """A spreadsheet/file source onboarded with source_asset_type="data_source"
     (OnboardingWizard / IngestEmptyState) has no source_table. Its Bronze object
