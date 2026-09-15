@@ -580,7 +580,7 @@
 }
 
 .analysis-data-tabs.ant-tabs .ant-tabs-body-holder,
-.analysis-data-tabs.ant-tabs .ant-tabs-tabpane {
+.analysis-data-tabs.ant-tabs .ant-tabs-content {
   min-width: 0;
   max-width: 100%;
 }
@@ -616,15 +616,15 @@
 }
 
 
-.page-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden),
-.settings-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden) {
+.page-tabs.ant-tabs .ant-tabs-content:not(.ant-tabs-content-hidden),
+.settings-tabs.ant-tabs .ant-tabs-content:not(.ant-tabs-content-hidden) {
   height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
 }
 
-.ant-tabs-tabpane-hidden {
+.ant-tabs-content-hidden {
   display: none !important;
 }
 

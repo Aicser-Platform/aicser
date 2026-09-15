@@ -36,7 +36,7 @@ export default function SemanticStudioPage() {
         title={name || t('page_title')}
         description={t('page_subtitle')}
         extra={
-          <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/semantic-layer')}>
+          <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/data')}>
             {t('back_to_hub')}
           </Button>
         }

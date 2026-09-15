@@ -89,6 +89,15 @@ export function ResultsTabPane({
             columns={columns}
             size="small"
             scroll={{ x: 'max-content', y: tableScrollY }}
+            // antd v6's Spin no longer puts a stable class on the wrapper div
+            // it renders around Table's body (dropped `ant-spin-nested-loading`
+            // entirely unless told to via classNames.root) -- query-editor.css's
+            // flex-fill scroll chain targets that exact class, so without this
+            // the results table silently stopped scrolling after the v5->v6
+            // antd bump. Table is never actually shown while loading here (see
+            // the isExecuting/loading branch above), so spinning stays false;
+            // this is purely to keep the class name antd v5 used to emit.
+            loading={{ spinning: false, classNames: { root: 'ant-spin-nested-loading' } }}
             pagination={false}
             rowKey={(record) => `row-${paginatedResults.indexOf(record)}`}
             style={{ background: 'transparent' }}

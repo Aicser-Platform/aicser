@@ -355,6 +355,11 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
         size={size}
         bordered={bordered}
         sticky
+        // antd v6's Spin dropped the `ant-spin-nested-loading` class from its
+        // wrapper unless told to via classNames.root -- TableWidget.css's
+        // flex-fill scroll chain targets that exact class (see the matching
+        // fix + comment in ResultsTabPane.tsx).
+        loading={{ spinning: false, classNames: { root: 'ant-spin-nested-loading' } }}
         scroll={
           shouldVirtualize
             // antd's virtual mode requires a numeric scroll.x — 'max-content' (fine in

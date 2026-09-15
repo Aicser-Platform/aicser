@@ -620,19 +620,28 @@
   overflow: hidden !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-content {
+/* antd v6's @rc-component/tabs renamed the shared multi-pane wrapper from
+   .ant-tabs-content to .ant-tabs-body, and the old per-pane .ant-tabs-tabpane*
+   classes to .ant-tabs-content* (TabPanelList.js: bodyPrefixCls = `${prefixCls}-body`,
+   contentPrefixCls = `${prefixCls}-content`, applied per-pane not to the shared
+   wrapper anymore). Missing this rename broke the flex-height chain into the
+   results table: .ant-tabs-content matched the wrong element after the v5->v6
+   bump, so the active pane (and everything inside it, down to the results
+   table) fell back to content-sized instead of viewport-bounded, and its
+   scroll region collapsed. */
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-body {
   flex: 1 !important;
   min-height: 0 !important;
   height: 100% !important;
 }
 
-/* Do not force display:flex on all tabpanes — breaks Ant Design tab switching */
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane {
+/* Do not force display:flex on all tab panes — breaks Ant Design tab switching */
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content {
   height: 100% !important;
   overflow: hidden !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane-hidden {
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content-hidden {
   display: none !important;
 }
 
@@ -641,7 +650,7 @@
   font-size: 12px !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane-active {
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content-active {
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;

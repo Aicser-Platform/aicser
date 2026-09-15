@@ -70,7 +70,7 @@ export function DashboardDataModelButton({
             <Typography.Title level={5} style={{ marginTop: 20 }}>
               {t('data_model_relationships_table')}
             </Typography.Title>
-            <DataModelRelationships dataSourceId={modelSourceId} compact showPlatformLink />
+            <DataModelRelationships dataSourceId={modelSourceId} compact />
           </>
         ) : null}
       </Drawer>

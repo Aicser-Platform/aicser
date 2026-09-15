@@ -403,7 +403,7 @@ div.page-container,
    aiser-unified-design-system sets margin-bottom: 48px on .page-header with
    higher-specificity dashboard-content-override selectors, which stacked on
    the flex gap and left a large empty band after title + subtitle on /data,
-   /knowledge, /alerts, /semantic-layer, and /data-platform. */
+   /knowledge, /alerts, and /semantic-layer. */
 .page-content > .page-wrapper > .page-header,
 .dashboard-content-override .page-content > .page-wrapper > .page-header,
 .dashboard-content-override .page-wrapper > .page-header,

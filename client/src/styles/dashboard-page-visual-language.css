@@ -341,7 +341,7 @@
 }
 
 .page-wrapper .page-tabs .ant-tabs-body-holder,
-.page-wrapper .page-tabs .ant-tabs-tabpane {
+.page-wrapper .page-tabs .ant-tabs-content {
   padding: 0 !important;
 }
 
@@ -361,7 +361,6 @@
   display: none !important;
 }
 
-.page-wrapper.integrations-page .integrations-tabs.ant-tabs,
 .page-wrapper.alerts-page .page-tabs.ant-tabs {
   padding: 0 !important;
   background: transparent !important;

@@ -3,11 +3,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/dashboards': ['dashboard-studio'],
   '/chart-designer': ['dashboard-studio'],
   '/data': ['grp-data'],
-  '/semantic-layer': ['grp-data'],
-  '/model': ['grp-data'],
   '/knowledge': ['grp-data'],
   '/alerts': ['grp-operate'],
-  '/data-platform': ['grp-operate'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -17,10 +14,8 @@ export const NAV_ROUTES: Record<string, string> = {
   'chart-designer': '/chart-designer',
   'query-editor': '/query-editor',
   data: '/data',
-  'semantic-model': '/semantic-layer',
   knowledge: '/knowledge',
   alerts: '/alerts',
-  'platform-services': '/data-platform',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
 };
@@ -38,11 +33,9 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   'chart-designer': 'chart_designer',
   'grp-data': 'cat_data',
   data: 'data',
-  'semantic-model': 'semantic_layer',
   knowledge: 'knowledge_libraries',
   'grp-operate': 'cat_monitor',
   alerts: 'alerts',
-  'platform-services': 'integrations',
   settings: 'settings',
   billing: 'billing',
 };
@@ -53,10 +46,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
  */
 export const NAV_PARENT_GROUP: Record<string, string> = {
   data: 'grp-data',
-  'semantic-model': 'grp-data',
   knowledge: 'grp-data',
   alerts: 'grp-operate',
-  'platform-services': 'grp-operate',
 };
 
 export interface NavLinkDef {
@@ -109,7 +100,6 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
       labelKey: NAV_LABEL_KEYS['grp-data'],
       children: [
         { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-        { key: 'semantic-model', labelKey: NAV_LABEL_KEYS['semantic-model'], href: NAV_ROUTES['semantic-model'] },
         { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
       ],
     },
@@ -119,7 +109,6 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
       labelKey: NAV_LABEL_KEYS['grp-operate'],
       children: [
         { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
-        { key: 'platform-services', labelKey: NAV_LABEL_KEYS['platform-services'], href: NAV_ROUTES['platform-services'] },
       ],
     },
   ];
@@ -150,7 +139,6 @@ export function openKeysForPathname(pathname: string | null): string[] {
 export function selectedKeyForPathname(pathname: string | null, search?: string | null): string {
   if (!pathname) return '';
   if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
-  if (pathname === '/semantic-layer' || pathname === '/model' || pathname.includes('/semantic')) return 'semantic-model';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'knowledge';
   if (pathname.startsWith('/settings')) {
@@ -161,7 +149,6 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
-  if (pathname === '/data-platform') return 'platform-services';
   if (pathname === '/alerts') return 'alerts';
   return '';
 }

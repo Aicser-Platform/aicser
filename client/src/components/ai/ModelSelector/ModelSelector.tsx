@@ -350,7 +350,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   };
 
-  const allModels = useMemo(() => [AUTO_MODEL, ...models], [models]);
+  // Hide the platform's bundled default models (GLM primary, Azure/OpenAI
+  // fallbacks, DeepSeek, MiMo, ...) and show only "Best available" plus any
+  // model the user has personally configured via BYOK in Settings > API Keys —
+  // 'auto' still silently resolves to whichever platform default is configured
+  // server-side, it's just not offered as an explicit pick here. BYOK model ids
+  // always start with 'byok_' (see user_byok_models.py's BYOK_INTERNAL_ID /
+  // byok_internal_id()).
+  const visibleModels = useMemo(() => models.filter((m) => m.id.startsWith('byok_')), [models]);
+  const allModels = useMemo(() => [AUTO_MODEL, ...visibleModels], [visibleModels]);
   const selectedData = allModels.find((m) => m.id === selectedModel);
 
     // ── Compact mode (chat toolbar) ───────────────────────────────────────────
@@ -511,7 +519,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     // Tier order still groups models (fast models first, etc.) but without a
                     // visible section label — the label duplicated info already on the item
                     // (or was simply unnecessary chrome in this compact dropdown).
-                    const groups = groupModelsByTier(models);
+                    const groups = groupModelsByTier(visibleModels);
                     return (
                         <>
                             {renderModelOption(AUTO_MODEL)}
@@ -634,7 +642,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                                 </Option>
                             );
                         };
-                        const groups = groupModelsByTier(models);
+                        const groups = groupModelsByTier(visibleModels);
                         const tierLabelKey: Record<TierKey, string> = {
                             fast: 'tier_group_fast',
                             standard: 'tier_group_standard',
@@ -686,7 +694,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     />
                 )}
 
-                {models.some(m => !m.available) && (
+                {visibleModels.some(m => !m.available) && (
                     <Alert
                         message={t('some_models_unavailable')}
                         description={t('configure_api_keys_enable_models')}
