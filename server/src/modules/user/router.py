@@ -381,13 +381,10 @@ class ProviderKeyPayload(BaseModel):
     api_key: Optional[str] = None
     model: Optional[str] = None
     endpoint: Optional[str] = None
-<<<<<<< HEAD
     workspace_id: Optional[str] = None
-=======
     # Enabled model ids for the chat picker (multi-model BYOK). When omitted on
     # update, existing models are preserved; when [] the list is cleared.
     models: Optional[List[str]] = None
->>>>>>> da629f5 (update all refinements)
 
 
 class AiModelPreferenceRequest(BaseModel):
@@ -672,15 +669,6 @@ async def save_ai_provider_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="api_key is required for new provider key")
     if key_normalized == "ollama" and not (endpoint_val or existing.get("endpoint")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint is required for Ollama")
-<<<<<<< HEAD
-    store = {
-        "model": (payload.model or "").strip() or existing.get("model"),
-        "endpoint": endpoint_val or existing.get("endpoint"),
-        "workspace_id": workspace_id_val or existing.get("workspace_id"),
-    }
-    if api_key_val:
-        store["api_key"] = api_key_val
-=======
     from src.modules.ai.provider_key_store import normalize_store_for_save
 
     resolved_key = None
@@ -696,7 +684,9 @@ async def save_ai_provider_key(
         models=payload.models,
         existing=existing,
     )
->>>>>>> da629f5 (update all refinements)
+    workspace_id_resolved = workspace_id_val or existing.get("workspace_id")
+    if workspace_id_resolved:
+        store["workspace_id"] = workspace_id_resolved
     try:
         store = encrypt_credentials(store)
     except RuntimeError as exc:

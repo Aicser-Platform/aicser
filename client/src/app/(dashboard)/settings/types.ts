@@ -61,11 +61,8 @@ export interface ProviderApiKey {
   /** Enabled model ids for the chat picker (multi-model BYOK). */
   models?: string[];
   endpoint?: string;
-<<<<<<< HEAD
   workspace_id?: string;
-=======
   scope?: 'personal' | 'organization';
->>>>>>> da629f5 (update all refinements)
 }
 
 export interface ProviderApiKeys {
@@ -81,6 +78,8 @@ export interface ProviderKeyFormValues {
   model?: string;
   models?: string[];
   endpoint?: string;
+  workspace_id?: string;
+  preferred_model?: string;
 }
 
 export interface TeamMember {
@@ -159,16 +158,6 @@ export interface ApiKeyFormValues {
   expires_at?: string;
 }
 
-<<<<<<< HEAD
-export interface ProviderKeyFormValues {
-  api_key?: string;
-  model?: string;
-  endpoint?: string;
-  workspace_id?: string;
-}
-
-=======
->>>>>>> da629f5 (update all refinements)
 // Store types
 export interface OverviewStats {
   members: number;

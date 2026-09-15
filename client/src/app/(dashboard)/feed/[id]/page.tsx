@@ -1,7 +1,7 @@
 'use client';
 
 import './feed-detail.css';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Dropdown, Empty, Modal, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -40,7 +40,6 @@ const FeedDetailPage: React.FC = () => {
   const router = useRouter();
   const itemId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
   const { user } = useAuth();
-  const vizRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [item, setItem] = useState<FeedItem | null>(null);
@@ -122,20 +121,27 @@ const FeedDetailPage: React.FC = () => {
     };
   }, [itemId]);
 
+  // A plain CSS/state "fullscreen" (fixed overlay) instead of the native
+  // Fullscreen API: the browser-native mode promotes the element into the
+  // top layer, and mouse-wheel scrolling on the inner overflow:auto canvas
+  // was unreliable there across browsers. Staying in normal document flow
+  // keeps scrolling behavior identical to the non-fullscreen view.
   useEffect(() => {
-    const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', onFs);
-    return () => document.removeEventListener('fullscreenchange', onFs);
-  }, []);
+    if (!isFullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFullscreen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFullscreen]);
 
   const toggleFullscreen = useCallback(() => {
-    const node = vizRef.current;
-    if (!node) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-      return;
-    }
-    void node.requestFullscreen();
+    setIsFullscreen((prev) => !prev);
   }, []);
 
   if (loading) {
@@ -297,8 +303,9 @@ const FeedDetailPage: React.FC = () => {
 
         {item.assetType !== 'post' && (
           <div
-            ref={vizRef}
-            className="feed-detail-viz rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]"
+            className={`feed-detail-viz rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]${
+              isFullscreen ? ' feed-detail-viz--fullscreen' : ''
+            }`}
           >
             <div className="flex min-w-0 items-center justify-end gap-3 px-2 py-1 sm:px-3">
               {snapshotDate ? (

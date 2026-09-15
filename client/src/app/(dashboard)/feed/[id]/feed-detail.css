@@ -2,8 +2,15 @@
   overflow: visible;
 }
 
-.feed-detail-viz:fullscreen,
-.feed-detail-viz:-webkit-full-screen {
+/* Plain fixed-position overlay rather than the native Fullscreen API — the
+   browser-native mode promotes the element into the top layer, where
+   mouse-wheel scrolling on the inner overflow:auto canvas was unreliable
+   across browsers. Staying in normal document flow keeps scrolling
+   identical to the non-fullscreen view. */
+.feed-detail-viz--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
   width: 100vw;
   height: 100vh;
   border-radius: 0;
@@ -13,11 +20,11 @@
   overflow: hidden;
 }
 
-.feed-detail-viz:fullscreen .feed-detail-viz-canvas,
-.feed-detail-viz:-webkit-full-screen .feed-detail-viz-canvas {
+.feed-detail-viz--fullscreen .feed-detail-viz-canvas {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 16px;
 }
 

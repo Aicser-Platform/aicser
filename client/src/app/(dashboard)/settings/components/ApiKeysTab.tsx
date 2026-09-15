@@ -289,11 +289,8 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       providerKeyForm.setFieldsValue({
         api_key: existingKey.api_key ?? '',
         endpoint: existingKey.endpoint ?? '',
-<<<<<<< HEAD
         workspace_id: existingKey.workspace_id ?? '',
-=======
         preferred_model: existingModels[0] ?? undefined,
->>>>>>> da629f5 (update all refinements)
       });
     } else {
       providerKeyForm.resetFields();
@@ -363,11 +360,8 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const handleSaveProviderKey = async (values: {
     api_key?: string;
     endpoint?: string;
-<<<<<<< HEAD
     workspace_id?: string;
-=======
     preferred_model?: string;
->>>>>>> da629f5 (update all refinements)
   }) => {
     if (!editingProvider) return;
     const modelsToSave = [...enabledModels];
@@ -903,7 +897,6 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               />
             </Form.Item>
           )}
-<<<<<<< HEAD
           {editingProvider === 'anthropic' && (
             <Form.Item
               name="workspace_id"
@@ -913,37 +906,6 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               <Input placeholder="wrkspc_..." autoComplete="off" />
             </Form.Item>
           )}
-          <Form.Item name="model" label={t('default_model')} extra={t('default_model_help')}>
-            <Select
-              placeholder={t('select_model_or_custom')}
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={providerModelSelectOptions}
-              notFoundContent={t('enter_custom_model_below')}
-            />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prev, curr) => prev?.model === '__custom__' || curr?.model === '__custom__'}
-          >
-            {({ getFieldValue }) =>
-              getFieldValue('model') === '__custom__' ? (
-                <Form.Item name="model_custom" label={t('custom_model_id')}>
-                  <Input placeholder={t('custom_model_id_placeholder')} />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
-          <Divider />
-          <Form.Item>
-            <Space>
-              <Button onClick={() => setShowProviderKeyModal(false)}>{t('cancel')}</Button>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                {t('save_key')}
-              </Button>
-            </Space>
-=======
 
           <Divider style={{ margin: '12px 0 16px' }} />
           <Form.Item style={{ marginBottom: 0 }}>
@@ -971,7 +933,6 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                 </Button>
               </Space>
             </div>
->>>>>>> da629f5 (update all refinements)
           </Form.Item>
         </Form>
       </Modal>
