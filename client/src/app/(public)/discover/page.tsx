@@ -67,7 +67,7 @@ function DiscoverPageContent() {
   }, []);
 
   useEffect(() => {
-    const token = searchParams.get('unsubscribe');
+    const token = searchParams?.get('unsubscribe');
     if (!token) return;
     void socialFeedService
       .unsubscribeDigest(token)

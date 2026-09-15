@@ -1,4 +1,4 @@
-import { message } from 'antd';
+import { appMessage } from '@/utils/antdMessageBridge';
 
 export interface ChartDataSource {
     id: string;
@@ -61,7 +61,7 @@ export class ChartDataService {
             }
         } catch (error) {
             console.error('Error loading data sources:', error);
-            message.error('Failed to load data sources');
+            appMessage.error('Failed to load data sources');
             return [];
         }
     }

@@ -9,8 +9,8 @@ export type MobileTabDef = {
 
 /** Primary bottom tabs — max 4 + More (industry standard). */
 export const EE_MOBILE_TABS: MobileTabDef[] = [
-  { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
   { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+  { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
   { key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
   { key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
 ];
@@ -41,6 +41,8 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
   return [
     { kind: 'link', key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
     { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
+    { kind: 'link', key: 'knowledge', labelKey: 'knowledge_libraries', href: NAV_ROUTES.knowledge },
+    { kind: 'link', key: 'alerts', labelKey: 'alerts', href: NAV_ROUTES.alerts },
     { kind: 'divider' },
     { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
   ];
@@ -49,6 +51,7 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
 export function communityMoreNavItems(): NavItemDef[] {
   return [
     { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
+    { kind: 'link', key: 'knowledge', labelKey: 'knowledge_libraries', href: NAV_ROUTES.knowledge },
     { kind: 'divider' },
     { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
   ];

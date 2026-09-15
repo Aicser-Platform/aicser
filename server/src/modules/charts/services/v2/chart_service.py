@@ -331,7 +331,25 @@ class ChartService:
                     self._canonical_schema_table_name(table_part.strip(), schema_info),
                     schema_part.strip() or self._default_schema(),
                 )
-            return self._canonical_schema_table_name(raw, schema_info), self._default_schema()
+            # RELIABILITY: a bare tableName (no "schema.table" dot) used to
+            # resolve to self._default_schema() unconditionally, ignoring
+            # schema_info entirely -- wrong for any data source whose tables
+            # live in a named schema other than the default (e.g. the
+            # multi-domain sample DuckDB, where education's tables are under
+            # "education", not "main"). Dashboard widgets generated with a
+            # bare tableName ("grades") then queried a table that doesn't
+            # exist in the default schema, the query raised, and -- for
+            # sample_duckdb sources specifically -- that exception was
+            # silently swallowed into _sample_template_fallback_result's
+            # fabricated placeholder data ("Segment A/B/C/D") instead of a
+            # real error, so the widget looked like it worked while showing
+            # entirely made-up numbers. _base_table_schema_name already does
+            # exactly this per-table schema lookup correctly (used at 3 other
+            # call sites in this file) -- reuse it here instead of defaulting.
+            return (
+                self._canonical_schema_table_name(raw, schema_info),
+                self._base_table_schema_name(schema_info, raw),
+            )
         return self._resolve_table_and_schema(schema_info)
 
     def _is_valid_table_reference(self, ref: str) -> bool:
@@ -1197,7 +1215,16 @@ class ChartService:
 
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")
-        if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip():
+        has_structured = bool(chart_query.get("tableName")) and bool(
+            chart_query.get("x")
+            or chart_query.get("xField")
+            or chart_query.get("yMetrics")
+            or chart_query.get("yMetric")
+            or chart_query.get("aggregate")
+        )
+        # Prefer structured x/yMetrics so dashboard runtime filters bind. Frozen
+        # SQL only projects aliases (x/y) and silently drops date/dimension filters.
+        if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip() and not has_structured:
             result = await self._execute_with_sample_sql(
                 chart, compiled_sql, identity=identity
             )
@@ -1229,7 +1256,9 @@ class ChartService:
             )
 
         # Template charts store a pre-built JOIN query in chart_options.sample_sql.
-        # Use it directly so JOINed fields (e.g. status_name) render correctly.
+        # Prefer it only when there is no structured mapping — otherwise runtime
+        # filters on date/dimension columns are silently dropped (SQL projects
+        # aliases like x/y only). Same rule as compiled_semantic_sql above.
         chart_options = chart.chart_options or {}
         if isinstance(chart_options, str):
             try:
@@ -1237,7 +1266,12 @@ class ChartService:
             except Exception:
                 chart_options = {}
         sample_sql = chart_options.get("sample_sql") if isinstance(chart_options, dict) else None
-        if sample_sql and isinstance(sample_sql, str) and sample_sql.strip():
+        if (
+            sample_sql
+            and isinstance(sample_sql, str)
+            and sample_sql.strip()
+            and not has_structured
+        ):
             result = await self._execute_with_sample_sql(
                 chart, sample_sql, identity=identity
             )
@@ -1345,12 +1379,22 @@ class ChartService:
             if data_source.type == "file":
                 return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
             else:
-                try:
-                    return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
-                except Exception:
-                    if data_source.type == "sample_duckdb":
-                        return self._sample_template_fallback_result(chart)
-                    raise
+                # RELIABILITY: this used to swallow ANY execution exception
+                # for a sample_duckdb source into fabricated placeholder
+                # data, not just the "sample file genuinely absent" case the
+                # fallback exists for (that case already returned above, at
+                # the _sample_duckdb_file_available() check). A real bug
+                # (e.g. a widget referencing a table in a non-default schema
+                # -- see _resolve_table_from_chart's fix above) hit this
+                # except clause and got hidden behind plausible-looking but
+                # entirely made-up numbers instead of a real error, live-
+                # reproduced: a "Breakdown by Grade Letter" widget showed
+                # "Segment A/B/C/D" instead of the real A-F grade letters.
+                # The file-availability check already covers the legitimate
+                # use case; any exception past that point is a genuine
+                # failure and must surface as one, same as every other data
+                # source type.
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
 
         # -------------------------
         # 4. Execute Standard Charts
@@ -1427,21 +1471,23 @@ class ChartService:
                     series_limit=series_limit,
                 )
         else:
-            try:
-                result = await self._execute_db_source(
-                    data_source, x_field, aggregate, y_metric, y_metrics_list,
-                    has_y_metrics_defined, group_field, order_clause,
-                    n_primary=n_primary, x_grain=x_grain,
-                    filters=filters, metric_filters=metric_filters,
-                    limit=limit,
-                    series_limit=series_limit,
-                    chart_query=chart_query,
-                    identity=identity,
-                )
-            except Exception:
-                if data_source.type == "sample_duckdb":
-                    return self._sample_template_fallback_result(chart)
-                raise
+            # RELIABILITY: same fix as the scatter-chart path above -- this
+            # is the exact call site that was masking the live bug (a
+            # tableName without its schema prefix, fixed in
+            # _resolve_table_from_chart) behind fabricated "Segment A/B/C/D"
+            # placeholder data instead of a real error. The file-availability
+            # check above already covers the one legitimate reason to show
+            # placeholder content; any exception here is a genuine failure.
+            result = await self._execute_db_source(
+                data_source, x_field, aggregate, y_metric, y_metrics_list,
+                has_y_metrics_defined, group_field, order_clause,
+                n_primary=n_primary, x_grain=x_grain,
+                filters=filters, metric_filters=metric_filters,
+                limit=limit,
+                series_limit=series_limit,
+                chart_query=chart_query,
+                identity=identity,
+            )
 
         # Stat charts must return {"value": N}. Normalize if the execution path
         # returned the generic {"x": [...], "y": [...]} shape instead.
@@ -1777,8 +1823,11 @@ class ChartService:
         multi = get_multi_engine_query_service()
         exec_res = await multi.execute_query(sql, ds_dict, identity=identity)
         if not exec_res.get("success"):
-            if data_source.type == "sample_duckdb":
-                return self._sample_template_fallback_result(chart)
+            # RELIABILITY: same fix as the other _sample_template_fallback_result
+            # call sites -- a genuine query failure here must surface honestly,
+            # not get hidden behind fabricated placeholder data. The file-
+            # availability check elsewhere already covers the one legitimate
+            # reason to show placeholder content.
             raise Exception(f"Query execution failed: {exec_res.get('error')}")
 
         rows = exec_res.get("data", [])
@@ -1837,12 +1886,17 @@ class ChartService:
         group_field = chart_query.get("groupField")
         sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
         sort_order = self._normalize_sort_order(chart_query.get("sortOrder"))
-        limit = 5000
+        # Default cap for the re-aggregated result. When the chart wasn't given an
+        # explicit limit, prefer whatever LIMIT the saved SQL itself specified over
+        # the hardcoded fallback — otherwise a chart pinned from a "top 20" chat
+        # query silently re-aggregates over a 5000-row cap instead of the 20 rows
+        # the user actually saw, and the two surfaces disagree on scope.
+        limit = self._extract_sql_limit(sql) or 5000
         try:
             if chart_query.get("limit") is not None:
                 limit = max(1, int(chart_query.get("limit")))
         except Exception:
-            limit = 5000
+            pass
 
         y_metrics_list = list(y_metrics) + list(y_metrics_secondary)
         n_primary = len(y_metrics) if y_metrics is not None else 1
@@ -1940,7 +1994,19 @@ class ChartService:
                 return None
             if name in columns:
                 return name
-            return col_lower.get(str(name).lower())
+            found = col_lower.get(str(name).lower())
+            if found:
+                return found
+            key = re.sub(r"[^a-z0-9]", "", str(name).lower())
+            if not key:
+                return None
+            for col in columns:
+                if re.sub(r"[^a-z0-9]", "", str(col).lower()) == key:
+                    return col
+            bare = str(name).split(".")[-1]
+            if bare != name:
+                return resolve_col(bare)
+            return None
 
         x_col = resolve_col(x_field)
         g_col = resolve_col(group_field)
@@ -1977,7 +2043,26 @@ class ChartService:
                 y_vals = [row.get("y") for row in rows]
                 return {"value": y_vals[-1] if y_vals else None}
             primary = columns[0] if columns else None
-            return {"value": first_row.get(primary) if primary else None}
+            out: Dict[str, Any] = {"value": first_row.get(primary) if primary else None}
+            # AI-generated KPI tiles with a temporal column: _sql_kpi emits a
+            # sibling `comparison_<primary>` column (prior-period equivalent
+            # of the windowed primary metric) precisely so this raw-SQL path
+            # — which has no structured chart_query/filters for
+            # _apply_stat_period_comparison's WoW/MoM/QoQ/YoY re-execution to
+            # shift — can still show a trend badge. See report_templates.py's
+            # _sql_kpi docstring (time_col param) for the full rationale.
+            # No comparisonLabel here on purpose — StatWidget.tsx already
+            # falls back to an i18n'd t('prior_period') string for the
+            # label-less case (see its sparkline-trend branch); sending a
+            # hardcoded English label from this Python response would bypass
+            # that and always render in English regardless of the viewer's
+            # locale.
+            comparison_col = f"comparison_{primary}" if primary else None
+            if comparison_col and comparison_col in columns:
+                comp_val = first_row.get(comparison_col)
+                if comp_val is not None:
+                    out["comparisonValue"] = comp_val
+            return out
 
         if x_col and y_metrics:
             metric_series = []
@@ -2671,6 +2756,28 @@ class ChartService:
         parts = [part.strip() for part in str(identifier).split(".") if part.strip()]
         return ".".join(self._quote_raw_identifier(part) for part in parts)
 
+    @classmethod
+    def _sql_literal(cls, value: Any) -> str:
+        """Render `value` as a dialect-correct SQL string literal.
+
+        SECURITY: runtime filter values used to be escaped via
+        str(value).replace("'", "''") -- correct on PostgreSQL but not on
+        MySQL/MariaDB, where a trailing backslash escapes the closing quote
+        and hands the rest of the filter predicate to the caller (the same
+        class of bug rls_predicate_builder.py's docstring documents, and
+        _apply_filters_to_query in data/router.py was already fixed the same
+        way for the query-editor path). Filters reach this builder from
+        dashboard-level runtime filters at view time, not just chart-editor
+        input, so this is reachable by any dashboard viewer driving a filter
+        widget.
+        """
+        from sqlglot import exp
+
+        from src.modules.data.services.multi_engine_query_service import DB_TYPE_TO_SQLGLOT_DIALECT
+
+        dialect = DB_TYPE_TO_SQLGLOT_DIALECT.get(cls._current_dialect())
+        return exp.Literal.string(str(value)).sql(dialect=dialect) if dialect else exp.Literal.string(str(value)).sql()
+
     def _projected_sql_columns(self, sql: str) -> set[str]:
         """Best-effort output-column extraction for saved SQL filter safety."""
         text_sql = (sql or "").strip().rstrip(";")
@@ -2865,7 +2972,28 @@ class ChartService:
     def _normalize_sort_order(self, sort_order: Optional[str]) -> str:
         if not sort_order: return "desc"
         return "asc" if sort_order.lower() in ("asc", "ascending") else "desc"
-    
+
+    _TRAILING_LIMIT_RE = re.compile(r"\bLIMIT\s+(\d+)\s*(?:OFFSET\s+\d+\s*)?;?\s*$", re.IGNORECASE)
+
+    def _extract_sql_limit(self, sql: str) -> Optional[int]:
+        """Best-effort read of a trailing LIMIT literal from a single-statement SQL string.
+
+        Used only to align a wrapping re-aggregation's default row cap with whatever
+        cap the original SQL already specified — not a security boundary, so a query
+        with no trailing LIMIT (or a dialect that expresses it differently) simply
+        falls through to the caller's own default.
+        """
+        if not sql:
+            return None
+        match = self._TRAILING_LIMIT_RE.search(sql.strip())
+        if not match:
+            return None
+        try:
+            value = int(match.group(1))
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
     def _apply_filters_db(self, filters: List[Dict]) -> str:
         if not filters:
             return ""
@@ -2882,7 +3010,21 @@ class ChartService:
             field_sql = self._quote_identifier(field)
             
             if f_type == 'sql' and f.get('sql'):
-                clauses.append(f"({f.get('sql')})")
+                # SECURITY: this used to splice the client-supplied filter.sql
+                # string verbatim into the chart's generated WHERE clause.
+                # The resulting SQL still passes through
+                # multi_engine_service.execute_query()'s dangerous-keyword
+                # blocklist, but UNION is deliberately not on that list (it's
+                # a legitimate operator for the NL2SQL/query-editor surface),
+                # so a caller with only chart:edit permission -- not the
+                # elevated trust tier normally required for raw-SQL/data-
+                # source-manage access -- could UNION-SELECT arbitrary other
+                # tables the data source's DB credential can see, bypassing
+                # the table/column scoping the chart builder is meant to
+                # enforce. Saved-SQL charts already strip this filter type
+                # (see _filters_projected_by_saved_sql above); doing the same
+                # here so every chart execution path is consistent.
+                logger.info("Skipping raw SQL runtime filter for chart query (not a saved-SQL trust boundary)")
                 continue
 
             # Basic SQL injection protection for operator
@@ -2909,20 +3051,21 @@ class ChartService:
                     if isinstance(v, (int, float)):
                         formatted_vals.append(str(v))
                     else:
-                        safe_v = str(v).replace("'", "''")
-                        formatted_vals.append(f"'{safe_v}'")
-                
+                        formatted_vals.append(self._sql_literal(v))
+
                 op_sql = "IN" if operator == "in" else "NOT IN"
                 clauses.append(f"{field_sql} {op_sql} ({', '.join(formatted_vals)})")
             elif operator in ("like", "like_case"):
-                val_str = str(value).replace("'", "''")
-                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} '%{val_str}%'")
+                # %/_ are LIKE wildcards, not part of the literal's own quoting,
+                # so wrap them onto the already-escaped literal rather than
+                # folding them into the pre-escaped string.
+                escaped_literal = self._sql_literal(f"%{value}%")
+                clauses.append(f"{field_sql} {'ILIKE' if operator == 'like' else 'LIKE'} {escaped_literal}")
             else:
                 if isinstance(value, (int, float)):
                     clauses.append(f"{field_sql} {operator} {value}")
                 else:
-                    val_str = str(value).replace("'", "''")
-                    clauses.append(f"{field_sql} {operator} '{val_str}'")
+                    clauses.append(f"{field_sql} {operator} {self._sql_literal(value)}")
         
         if not clauses:
             return ""

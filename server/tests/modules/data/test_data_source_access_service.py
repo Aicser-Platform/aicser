@@ -122,7 +122,7 @@ class _SessionReturning:
 
 
 @pytest.mark.asyncio
-async def test_ce_shared_sources_are_readable_but_not_manageable(monkeypatch):
+async def test_ce_unowned_sources_are_not_readable(monkeypatch):
     async def get_source(*_args, **_kwargs):
         return SimpleNamespace(user_id=None)
 
@@ -133,8 +133,8 @@ async def test_ce_shared_sources_are_readable_but_not_manageable(monkeypatch):
         staticmethod(get_source),
     )
 
-    assert await DataSourceAccessService.can_view("user-1", "ds-1", session=_Session([]))
-    assert await DataSourceAccessService.can_query("user-1", "ds-1", session=_Session([]))
+    assert not await DataSourceAccessService.can_view("user-1", "ds-1", session=_Session([]))
+    assert not await DataSourceAccessService.can_query("user-1", "ds-1", session=_Session([]))
     assert not await DataSourceAccessService.can_edit("user-1", "ds-1", session=_Session([]))
     assert not await DataSourceAccessService.can_manage("user-1", "ds-1", session=_Session([]))
 
@@ -456,7 +456,16 @@ async def test_auto_project_grant_does_not_convey_unfiltered_reads(monkeypatch):
     deliberately through the Permissions tab.
     """
     monkeypatch.setattr(access_mod, "is_ee_enabled", lambda: True)
-    session = _Session([_ExecuteResult(scalar_one=None)])
+    # grant_project_access now checks _has_active_rls_policy() first (an
+    # extra session.execute() round-trip) before deciding whether to append
+    # the query permission - this is the exact check this test exists to
+    # verify, so it must simulate an active policy (truthy scalar_one) for
+    # "query" to be correctly withheld, then the pre-existing-grant lookup
+    # (scalar_one=None -> no existing grant, so a new one gets added).
+    session = _Session([
+        _ExecuteResult(scalar_one="policy-1"),
+        _ExecuteResult(scalar_one=None),
+    ])
     await DataSourceAccessService.grant_project_access(
         data_source_id="ds-1",
         organization_id="org-1",

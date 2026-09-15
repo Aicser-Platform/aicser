@@ -565,7 +565,7 @@ export function DashboardsSection() {
               newCollection: t('new_folder'),
               renameCollection: t('rename_folder'),
               deleteCollection: t('delete_folder'),
-              deleteConfirmTitle: t('delete_folder_title'),
+              deleteConfirmTitle: t.raw('delete_folder_title'),
               deleteConfirmBody: t('delete_folder_body'),
               create: t('create_collection'),
               save: t('save'),

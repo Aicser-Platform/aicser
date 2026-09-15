@@ -1,3 +1,4 @@
+import fnmatch
 import hashlib
 import json
 import logging
@@ -326,8 +327,19 @@ class RedisCache:
                 if keys:
                     cleared_count += self.redis_client.delete(*keys)
             
-            # Clear fallback cache
-            keys_to_remove = [k for k in self.fallback_cache.keys() if pattern in k]
+            # Clear fallback cache. Every caller passes a glob-style pattern
+            # (e.g. "query:{ds_id}:*", "schema:*") matching Redis SCAN's own
+            # MATCH semantics above -- this used to check `pattern in k`
+            # (plain substring containment), which never matches anything
+            # since the literal "*" in the pattern never appears in an actual
+            # stored key. Silent no-op: invalidation appeared to succeed
+            # (returned a truthy-looking call, logged nothing wrong) while
+            # every stale entry stayed cached indefinitely on any process
+            # running without a reachable Redis (this repo's local dev/test
+            # environment included) -- caught by
+            # test_query_and_schema_cache_redis.py's round-trip-and-invalidate
+            # test once Redis was confirmed down.
+            keys_to_remove = [k for k in self.fallback_cache.keys() if fnmatch.fnmatch(k, pattern)]
             for key in keys_to_remove:
                 del self.fallback_cache[key]
                 cleared_count += 1

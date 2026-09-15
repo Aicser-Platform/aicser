@@ -135,6 +135,15 @@
   margin-top: 6px;
 }
 
+.feed-publish-continue-post {
+  margin-top: 8px;
+}
+
+.feed-publish-continue-hint {
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
+
 /* ── Success state ── */
 .feed-publish-success {
   display: flex;
@@ -167,6 +176,17 @@
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   line-height: 1.6;
+}
+
+.feed-publish-success-project-note {
+  max-width: 42ch;
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .feed-publish-success-actions {
@@ -205,7 +225,7 @@
 .feed-publish-author-avatar {
   flex-shrink: 0;
   background: var(--ant-color-primary);
-  color: #fff;
+  color: var(--color-primary-text, #fff);
   font-weight: 600;
 }
 
@@ -234,9 +254,7 @@
 .feed-post-preview-visual {
   height: 180px;
   overflow: hidden;
-  border-radius: 8px;
   background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
 }
 .feed-post-preview-visual--compact {
   height: 130px;

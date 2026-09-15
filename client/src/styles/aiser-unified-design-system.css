@@ -1,22 +1,44 @@
 /**
  * Aiser Unified Design System
- * Single source of truth for all design tokens and component styles
- * World-class, consistent, easily configurable design system
- * 
- * IMPORTANT: This file loads LAST and has highest priority
- * It overrides all other design system files
- * 
- * Design Principles:
- * - Navigation: Brand blue (header/sidebar/menu)
- * - Content: Grey-ish (panels, cards, content areas)
- * - Clear visual hierarchy with consistent spacing
- * - Smooth transitions and modern aesthetics
- * - Full dark/light mode support
- * 
+ * Single source of truth for all design tokens and component styles.
+ *
+ * CONSOLIDATION HISTORY: this file used to coexist with a second file,
+ * aiser-aesthetic-enhancements.css, imported right after it in globals.css.
+ * Both defined rules for the same selectors (cards, buttons, panels, tabs,
+ * tags, dividers, scrollbars, page layout) with different, uncoordinated
+ * property values - two independent "design system" efforts stacked on top
+ * of each other, with plain import order silently deciding the winner
+ * property-by-property (both used equal-specificity `!important`).
+ *
+ * First pass (2026-09, same day) merged the two files byte-for-byte in their
+ * original cascade order - zero risk, but left every conflict unresolved as
+ * two competing declarations for the same selector.
+ *
+ * Second pass (this version) resolves those conflicts into one declaration
+ * per selector, using Ant Design's own official design spec as the
+ * tie-breaker instead of guessing:
+ * - Shadow spec (ant.design/docs/spec/shadow): a restrained three-layer
+ *   system, low opacity, single subtle shadow per state - not the heavier
+ *   multi-layer shadows the "aesthetic enhancements" pass had introduced.
+ * - Design values (ant.design/docs/spec/values): "keep restraint... use
+ *   minimal design elements."
+ * - Motion spec (ant.design/docs/spec/motion): "Concise... avoid dramatic
+ *   and complicated animations."
+ * Net effect: dropped gradient buttons/text, click-ripple effects,
+ * glassmorphism/backdrop-filter, radial-glow hover accents, and a custom
+ * per-tab underline that was silently duplicating Ant Design's own built-in
+ * `.ant-tabs-ink-bar` indicator (same class of bug as the focus-ring
+ * duplication this consolidation started from - a decorative layer that
+ * never checked whether the component already had its own indicator).
+ * Kept: the richer semantic additions that don't fight the framework -
+ * subtle hover lift on cards, slightly bolder primary-button text, tightened
+ * letter-spacing on large headings.
+ *
  * This file replaces:
  * - design-system.css (deprecated)
  * - aiser-modern-design-system.css (consolidated)
  * - background-consolidation.css (consolidated)
+ * - aiser-aesthetic-enhancements.css (merged in, then reconciled, 2026-09)
  */
 
 /* ========================================
@@ -32,7 +54,7 @@
   --spacing-xl: 32px;
   --spacing-2xl: 48px;
   --spacing-3xl: 64px;
-  
+
   /* Border Radius - Consistent rounded corners */
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -41,25 +63,26 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-full: 9999px;
-  
+
   /* Border Width - Subtle but clear */
   --border-thin: 1px;
   --border-medium: 1.5px;
   --border-thick: 2px;
-  
-  /* Shadows - Modern depth hierarchy */
+
+  /* Shadows - restrained, single-layer depth hierarchy (Ant Design shadow
+     spec: low opacity, one shadow per elevation state) */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.12);
   --shadow-2xl: 0 16px 32px rgba(0, 0, 0, 0.14);
-  
+
   /* Transitions - Smooth interactions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
-  
+
   /* Typography Scale */
   --font-size-xs: 12px;
   --font-size-sm: 14px;
@@ -68,7 +91,7 @@
   --font-size-xl: 20px;
   --font-size-2xl: 24px;
   --font-size-3xl: 32px;
-  
+
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -143,6 +166,8 @@
   font-size: var(--font-size-2xl) !important;
   font-weight: var(--font-weight-semibold) !important;
   line-height: 1.2 !important;
+  position: relative;
+  z-index: 1;
 }
 
 .stat-card .ant-statistic-content-prefix {
@@ -250,6 +275,7 @@
   background: var(--ant-color-primary) !important;
   border-color: var(--ant-color-primary) !important;
   color: #ffffff !important;
+  font-weight: var(--font-weight-semibold) !important;
   box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
 }
 
@@ -337,6 +363,16 @@
   background: transparent !important;
 }
 
+.icon-only-btn--danger.ant-btn,
+.icon-only-btn--danger.ant-btn .anticon {
+  color: var(--ant-color-error) !important;
+}
+
+.icon-only-btn--danger.ant-btn:hover:not(:disabled) {
+  color: var(--ant-color-error-hover, var(--ant-color-error)) !important;
+  background: var(--ant-color-error-bg, transparent) !important;
+}
+
 /* Toolbars: icon-only children inherit spec without per-button classes */
 .icon-toolbar .ant-btn.ant-btn-text,
 .icon-toolbar .ant-btn.ant-btn-default {
@@ -417,8 +453,36 @@
   background: var(--ant-color-bg-container) !important;
 }
 
+.ant-table {
+  border: var(--border-thin) solid var(--ant-color-border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.ant-table-tbody > tr {
+  transition: all var(--transition-fast) !important;
+}
+
+/* Number cells — tabular nums, same sans as body (widget overrides beat this) */
+.table-cell-number,
+.ant-table-cell-align-right {
+  font-variant-numeric: tabular-nums !important;
+}
+
+.table-widget-container .table-cell-number,
+.table-widget-container .ant-table-cell-align-right {
+  font-family: var(--font-sans, inherit) !important;
+}
+
 /* ========================================
    TABS - page-level only (not query editor / inline workspaces)
+   Indicator is Ant Design's own built-in .ant-tabs-ink-bar (styled in
+   dashboard-page-visual-language.css) - deliberately not re-implemented
+   with a per-tab pseudo-element here. An earlier pass added a second,
+   CSS-only sliding underline via `.ant-tabs-tab::before`, which rendered
+   alongside the real ink-bar (itself positioned by Ant Design's own
+   measured-width JS) as two uncoordinated indicator lines under the active
+   tab - the same class of bug as the focus-ring duplication that started
+   this cleanup, just on tabs instead of inputs.
    ======================================== */
 
 .page-tabs.ant-tabs,
@@ -458,8 +522,8 @@
   font-weight: var(--font-weight-semibold) !important;
 }
 
-.page-tabs.ant-tabs .ant-tabs-content-holder,
-.settings-tabs.ant-tabs .ant-tabs-content-holder {
+.page-tabs.ant-tabs .ant-tabs-body-holder,
+.settings-tabs.ant-tabs .ant-tabs-body-holder {
   padding: var(--spacing-md) 0 !important;
   flex: 1 !important;
   min-height: 0 !important;
@@ -515,13 +579,13 @@
   color: var(--ant-color-primary) !important;
 }
 
-.analysis-data-tabs.ant-tabs .ant-tabs-content-holder,
-.analysis-data-tabs.ant-tabs .ant-tabs-tabpane {
+.analysis-data-tabs.ant-tabs .ant-tabs-body-holder,
+.analysis-data-tabs.ant-tabs .ant-tabs-content {
   min-width: 0;
   max-width: 100%;
 }
 
-.analysis-data-tabs.ant-tabs .ant-tabs-content-holder {
+.analysis-data-tabs.ant-tabs .ant-tabs-body-holder {
   overflow-x: hidden;
 }
 
@@ -552,15 +616,15 @@
 }
 
 
-.page-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden),
-.settings-tabs.ant-tabs .ant-tabs-tabpane:not(.ant-tabs-tabpane-hidden) {
+.page-tabs.ant-tabs .ant-tabs-content:not(.ant-tabs-content-hidden),
+.settings-tabs.ant-tabs .ant-tabs-content:not(.ant-tabs-content-hidden) {
   height: 100% !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
 }
 
-.ant-tabs-tabpane-hidden {
+.ant-tabs-content-hidden {
   display: none !important;
 }
 
@@ -656,6 +720,33 @@
   padding: var(--spacing-xs) var(--spacing-sm) !important;
   border: none !important;
   font-size: var(--font-size-xs) !important;
+  line-height: 1.5 !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.ant-tag-green {
+  background: rgba(22, 163, 74, 0.1) !important;
+  color: var(--ant-color-success) !important;
+  border: 1px solid rgba(22, 163, 74, 0.2) !important;
+}
+
+.ant-tag-red {
+  background: rgba(220, 38, 38, 0.1) !important;
+  color: var(--ant-color-error) !important;
+  border: 1px solid rgba(220, 38, 38, 0.2) !important;
+}
+
+.ant-tag-blue {
+  background: rgba(37, 99, 235, 0.1) !important;
+  color: var(--ant-color-primary) !important;
+  border: 1px solid rgba(37, 99, 235, 0.2) !important;
+}
+
+.ant-tag-purple,
+.ant-tag-magenta {
+  background: rgba(147, 51, 234, 0.1) !important;
+  color: #a855f7 !important;
+  border: 1px solid rgba(147, 51, 234, 0.2) !important;
 }
 
 /* ========================================
@@ -756,6 +847,10 @@
   pointer-events: none !important;
 }
 
+.ant-spin-dot-item {
+  background-color: var(--ant-color-primary) !important;
+}
+
 /* ========================================
    TYPOGRAPHY - CLEAR HIERARCHY
    ======================================== */
@@ -766,6 +861,7 @@ h1, .h1 {
   line-height: 1.2 !important;
   color: var(--ant-color-text) !important;
   margin-bottom: var(--spacing-lg) !important;
+  letter-spacing: -0.02em !important;
 }
 
 h2, .h2 {
@@ -774,6 +870,7 @@ h2, .h2 {
   line-height: 1.3 !important;
   color: var(--ant-color-text) !important;
   margin-bottom: var(--spacing-md) !important;
+  letter-spacing: -0.01em !important;
 }
 
 h3, .h3 {
@@ -817,16 +914,6 @@ h4, .h4 {
 }
 
 /* ========================================
-   FOCUS STATES - ACCESSIBLE
-   ======================================== */
-
-*:focus-visible {
-  outline: 2px solid var(--ant-color-primary) !important;
-  outline-offset: 2px !important;
-  border-radius: var(--radius-sm) !important;
-}
-
-/* ========================================
    ANIMATIONS - SMOOTH
    ======================================== */
 
@@ -841,15 +928,87 @@ h4, .h4 {
   }
 }
 
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes aiser-assistant-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px rgba(24, 144, 255, 0.4));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 16px rgba(24, 144, 255, 0.7));
+  }
+}
+
+.aiser-assistant-icon {
+  animation: aiser-assistant-pulse 2s ease-in-out infinite !important;
+  filter: drop-shadow(0 0 8px rgba(24, 144, 255, 0.4)) !important;
+  will-change: transform, filter;
+}
+
 .fade-in {
   animation: fadeIn var(--transition-base) ease-out;
 }
 
+.fade-in-up {
+  animation: fadeInUp var(--transition-slow) ease-out;
+}
+
+.slide-in-right {
+  animation: slideInRight var(--transition-slow) ease-out;
+}
+
+.scale-in {
+  animation: scaleIn var(--transition-base) ease-out;
+}
+
 /* ========================================
    PAGE LAYOUT - CONSISTENT STRUCTURE
+   Padding/height — canonical rules in page-shell.css; only background/
+   spacing/entrance-motion owned here.
    ======================================== */
 
-/* Padding/height — canonical rules in page-shell.css; keep background only */
 .page-content > .page-wrapper,
 .dashboard-content-override .page-content > .page-wrapper,
 .dashboard-content-override .page-wrapper,
@@ -861,23 +1020,17 @@ h4, .h4 {
 .page-content > .page-wrapper > .page-header,
 .dashboard-content-override .page-content > .page-wrapper > .page-header,
 .page-header {
-  margin-bottom: var(--spacing-xl) !important;
+  margin-bottom: var(--spacing-2xl) !important;
   margin-left: 0 !important;
   padding-left: 24px !important; /* CRITICAL: Left padding ensures spacing from sidebar */
   padding-right: 24px !important;
-}
-
-.page-title {
-  color: var(--ant-color-text) !important;
-  font-size: var(--font-size-3xl) !important;
-  font-weight: var(--font-weight-bold) !important;
-  margin-bottom: var(--spacing-sm) !important;
-  line-height: 1.2 !important;
+  animation: fadeInUp var(--transition-slow) ease-out;
 }
 
 .page-description {
   color: var(--ant-color-text-secondary) !important;
   font-size: var(--font-size-base) !important;
+  line-height: 1.6 !important;
   display: block !important;
   margin-top: var(--spacing-sm) !important;
 }
@@ -891,8 +1044,9 @@ h4, .h4 {
   display: flex !important;
   justify-content: space-between !important;
   align-items: center !important;
-  margin-bottom: var(--spacing-lg) !important;
+  margin-bottom: var(--spacing-xl) !important;
   padding: var(--spacing-md) 0 !important;
+  animation: slideInRight var(--transition-slow) ease-out;
 }
 
 .toolbar-left,
@@ -959,44 +1113,6 @@ h4, .h4 {
 }
 
 /* ========================================
-   TAGS & BADGES - STATUS INDICATORS
-   ======================================== */
-
-.ant-tag {
-  border-radius: var(--radius-sm) !important;
-  font-weight: var(--font-weight-medium) !important;
-  padding: var(--spacing-xs) var(--spacing-sm) !important;
-  border: none !important;
-  font-size: var(--font-size-xs) !important;
-  line-height: 1.5 !important;
-}
-
-.ant-tag-green {
-  background: rgba(22, 163, 74, 0.1) !important;
-  color: var(--ant-color-success) !important;
-  border: 1px solid rgba(22, 163, 74, 0.2) !important;
-}
-
-.ant-tag-red {
-  background: rgba(220, 38, 38, 0.1) !important;
-  color: var(--ant-color-error) !important;
-  border: 1px solid rgba(220, 38, 38, 0.2) !important;
-}
-
-.ant-tag-blue {
-  background: rgba(37, 99, 235, 0.1) !important;
-  color: var(--ant-color-primary) !important;
-  border: 1px solid rgba(37, 99, 235, 0.2) !important;
-}
-
-.ant-tag-purple,
-.ant-tag-magenta {
-  background: rgba(147, 51, 234, 0.1) !important;
-  color: #a855f7 !important;
-  border: 1px solid rgba(147, 51, 234, 0.2) !important;
-}
-
-/* ========================================
    ROW & COL - CONSISTENT SPACING
    ======================================== */
 
@@ -1011,6 +1127,40 @@ h4, .h4 {
 }
 
 /* ========================================
+   NAVIGATION - POLISH
+   ======================================== */
+
+.ant-layout-header {
+  border-bottom: 1px solid var(--ant-color-border) !important;
+  /* Position owned by layout-system.css + page-shell.css — do not override here */
+}
+
+.layout-app-header.ant-layout-header {
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .ant-layout-header:not(.layout-app-header) {
+  box-shadow: none !important;
+}
+
+.ant-layout-header::after {
+  display: none;
+}
+
+.ant-layout-sider {
+  box-shadow: none !important;
+  border-right: none !important;
+}
+
+[data-theme="dark"] .ant-layout-sider {
+  box-shadow: none !important;
+}
+
+/* Menu item colors (background, selected state, hover) are owned by
+   Ant Design ConfigProvider component tokens in ThemeProvider.tsx
+   (components.Menu) — no CSS override here. */
+
+/* ========================================
    RESPONSIVE - MOBILE FIRST
    ======================================== */
 
@@ -1019,39 +1169,79 @@ h4, .h4 {
     padding: var(--spacing-md) !important;
     padding-left: 16px !important;
   }
-  
+
   .ant-card,
   .content-card,
   .panel-container {
     margin: var(--spacing-sm) !important;
     padding: var(--spacing-md) !important;
   }
-  
-  h1, .h1,
-  .page-title {
+
+  h1, .h1 {
     font-size: var(--font-size-2xl) !important;
   }
-  
+
   h2, .h2 {
     font-size: var(--font-size-xl) !important;
   }
-  
+
   .ant-btn {
     padding: var(--spacing-xs) var(--spacing-md) !important;
     min-height: 32px !important;
   }
-  
+
   .stat-card .ant-statistic-content {
     font-size: var(--font-size-xl) !important;
   }
 }
 
 /* ========================================
-   FINAL OVERRIDES - ENSURE CONSISTENCY
+   PERFORMANCE
    ======================================== */
 
-/* Override any conflicting styles from old design-system.css */
-/* This ensures our unified system takes precedence */
+.ant-card,
+.ant-btn,
+.ant-input,
+.ant-select,
+.stat-card {
+  backface-visibility: hidden !important;
+}
+
+/* ========================================
+   ACCESSIBILITY - FOCUS VISIBILITY
+   One ring, one mechanism: an outline. Ant Design's own form controls draw
+   their own focus ring via the `controlOutline`/`lineWidthFocus` theme
+   tokens (ThemeProvider.tsx) with their native outline already reset to
+   none (globals.css restores that reset at higher specificity than this
+   rule for the handful of AntD parts, like Mentions' inner textarea, that
+   would otherwise still catch this outline). This rule exists for
+   everything else - plain links, custom buttons, any element with
+   `tabindex` that has no ring of its own.
+   ======================================== */
+
+*:focus-visible {
+  outline: 2px solid var(--ant-color-primary) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+/* ========================================
+   ACCESSIBILITY - REDUCED MOTION
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ========================================
+   FINAL OVERRIDES - ENSURE CONSISTENCY
+   ======================================== */
 
 .ant-card-body .ant-statistic {
   padding: 0 !important;
@@ -1084,7 +1274,7 @@ textarea[class*="ant-input"] {
 }
 
 /* ========================================
-   SETTINGS PAGES - ENHANCED STYLING
+   SETTINGS PAGES - CARD VARIANTS
    ======================================== */
 
 /* Profile Card */
@@ -1123,22 +1313,6 @@ textarea[class*="ant-input"] {
 .usage-card:hover {
   box-shadow: var(--shadow-lg) !important;
   transform: translateY(-4px) !important;
-  border-color: var(--ant-color-primary) !important;
-}
-
-/* Stat Card */
-.stat-card {
-  background: var(--ant-color-bg-container) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
-  text-align: center !important;
-}
-
-.stat-card:hover {
-  box-shadow: var(--shadow-md) !important;
-  transform: translateY(-2px) !important;
   border-color: var(--ant-color-primary) !important;
 }
 

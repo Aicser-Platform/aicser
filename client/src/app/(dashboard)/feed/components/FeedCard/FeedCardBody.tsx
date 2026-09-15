@@ -1,6 +1,7 @@
 import React from 'react';
 import type { FeedItem } from '@/services/socialFeedService';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import { FeedAttachmentList } from '@/components/Feed/FeedAttachmentList';
 import FeedCardMedia from '../FeedCardMedia';
 
 interface FeedCardBodyProps {
@@ -24,9 +25,11 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
         <FeedPostContent item={item} compactTitle descriptionMaxRows={2} />
       </div>
 
+      <FeedAttachmentList attachments={item.attachments} />
+
       <FeedCardMedia
         item={item}
-        maxPreviews={compact ? 2 : 4}
+        maxPreviews={4}
         previewClickable={previewClickable}
         onPreviewClick={onPreviewClick}
         hideThumbnail={hidePreview}

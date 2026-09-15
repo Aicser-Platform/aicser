@@ -1,8 +1,8 @@
 import pytest
 
 pytest.importorskip("fastapi")
-from src.modules.ai.nodes.nl2sql_node import _repair_count_breakdown_sql_for_file_source
-from src.modules.ai.nodes.validation_node import _is_intent_sql_shape_mismatch
+from ee.modules.ai.nodes.nl2sql_node import _repair_count_breakdown_sql_for_file_source
+from ee.modules.ai.nodes.validation_node import _is_intent_sql_shape_mismatch
 
 
 @pytest.fixture

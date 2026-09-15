@@ -62,6 +62,14 @@ export interface Chart {
   title?: string;
   chartQuery?: ChartQuery;
   chartOptions?: Record<string, any>;
+  /** Grid position for standalone charts copied onto a dashboard page. */
+  layout?: {
+    x?: number | string;
+    y?: number | string;
+    w?: number | string;
+    h?: number | string;
+    page_id?: number | string;
+  };
 }
 
 export interface ChartData {
@@ -69,11 +77,17 @@ export interface ChartData {
   y: (string | number)[];
   series?: { name: string; data: any[] }[];
   secondarySeries?: { name: string; data: any[] }[];
+  /** Long-format legend/break-by column, pre-pivot — see chartDataProcessing.ts. */
+  group_field?: (string | number)[];
 }
 
 export interface ChartExecutionResponse {
   chart: Chart;
   data: ChartData;
+  /** Present when a submitted runtime filter was silently ignored server-side
+   * (e.g. a raw-SQL filter, rejected for security reasons) — surface to the user
+   * rather than letting the chart render as if the filter had been applied. */
+  filter_warnings?: string[];
 }
 
 export interface BatchChartRefreshItem {
@@ -93,6 +107,8 @@ export interface BatchChartRefreshResult {
   success: boolean;
   data?: ChartData;
   error?: string;
+  /** See ChartExecutionResponse.filter_warnings. */
+  filter_warnings?: string[];
 }
 
 export interface BatchChartRefreshResponse {
@@ -123,20 +139,43 @@ export interface DashboardTemplateWidget {
   sample_sql?: string;
 }
 
+/** "builtin" = one of the 5 static sample templates (banking/insurance/etc.,
+ * read-only). "saved" = an org's own saved template (dashboard_templates
+ * row) - editable/deletable by whoever can manage dashboards in that org. */
+export type DashboardTemplateSource = 'builtin' | 'saved';
+
 export interface DashboardTemplate {
   id: string;
+  source: DashboardTemplateSource;
   name: string;
-  description: string;
-  category: string;
-  domain: string;
-  default_dashboard_name: string;
-  widgets: DashboardTemplateWidget[];
+  description: string | null;
+  category: string | null;
+  /** builtin only. */
+  domain?: string;
+  default_dashboard_name?: string;
+  widgets?: DashboardTemplateWidget[];
+  /** saved only. */
+  preview_image_url?: string | null;
+  is_public?: boolean;
+  is_featured?: boolean;
+  usage_count?: number;
+  rating?: number;
+  required_plan?: string;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface CreateDashboardFromTemplatePayload {
   templateId: string;
   projectId?: string | number | null;
   dashboardName?: string;
+}
+
+export interface SaveDashboardAsTemplatePayload {
+  name: string;
+  description?: string;
+  category?: string;
 }
 
 export type DashboardAccessOptions = { embedToken?: string };
@@ -301,6 +340,31 @@ class ChartService {
         },
       }),
     });
+  }
+
+  /** Capture a dashboard's current widgets into a reusable, org-shared template. */
+  async saveDashboardAsTemplate(
+    dashboardId: string,
+    payload: SaveDashboardAsTemplatePayload,
+  ): Promise<DashboardTemplate> {
+    return await this.authenticatedFetch(`charts/dashboards/${dashboardId}/save-as-template`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async updateDashboardTemplate(
+    templateId: string,
+    patch: { name?: string; description?: string; category?: string },
+  ): Promise<DashboardTemplate> {
+    return await this.authenticatedFetch(`charts/dashboards/templates/${templateId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    });
+  }
+
+  async deleteDashboardTemplate(templateId: string): Promise<void> {
+    await this.authenticatedFetch(`charts/dashboards/templates/${templateId}`, { method: 'DELETE' });
   }
 
   /* =========================================================

@@ -15,6 +15,31 @@ def test_infer_diagnostic_from_query():
     assert _infer_analytics_type_from_query("Why did sales drop last quarter?") == "diagnostic"
 
 
+def test_infer_delegates_to_routing_utils_canonical_keywords():
+    """_infer_analytics_type_from_query no longer keeps its own diagnostic/
+    predictive/prescriptive/animate word lists - it delegates to
+    routing_utils.infer_analysis_mode_from_query. These phrases only matched
+    on ONE side before the merge (plan_templates had them, routing_utils
+    didn't); confirms the delegation actually picked them up rather than
+    silently falling back to a narrower list."""
+    assert _infer_analytics_type_from_query("What's driving the churn increase?") == "diagnostic"
+    assert _infer_analytics_type_from_query("Give me the revenue outlook") == "predictive"
+    assert _infer_analytics_type_from_query("Compare options for reducing costs") == "prescriptive"
+
+
+def test_infer_animate_bypasses_the_grouping_temporal_veto():
+    """'ranking over time' is simultaneously an animate signal AND
+    grouping/temporal phrasing (query_implies_grouping_or_temporal treats
+    'over time' as temporal) - animate must still win, not get swallowed
+    into plain descriptive by the forecast-vs-grouping principle check."""
+    assert _infer_analytics_type_from_query("Show ranking over time by region") == "animate"
+    assert _infer_analytics_type_from_query("Bar chart race of top products by year") == "animate"
+
+
+def test_infer_grouping_temporal_without_forecast_stays_descriptive():
+    assert _infer_analytics_type_from_query("Revenue by region last month") is None
+
+
 def test_dashboard_plan_has_pesd_steps():
     steps = _build_dashboard_plan()
     nodes = [s.get("node") for s in steps]
@@ -28,7 +53,7 @@ def test_data_analysis_plan_diagnostic_labels():
 
 
 def test_decision_intelligence_and_all_aliases_are_preserved():
-    from src.modules.ai.config.workflow_config import get_effective_analytics_type
+    from ee.modules.ai.config.workflow_config import get_effective_analytics_type
 
     assert get_effective_analytics_type("decision_intelligence", "standard") == "decision_intelligence"
     assert get_effective_analytics_type(None, "decision_intelligence") == "decision_intelligence"
@@ -37,7 +62,7 @@ def test_decision_intelligence_and_all_aliases_are_preserved():
 
 
 def test_initial_state_normalizes_all_alias():
-    from src.modules.ai.orchestrator.initial_state import build_initial_state
+    from ee.modules.ai.orchestrator.initial_state import build_initial_state
 
     state = build_initial_state(
         litellm_service=object(),

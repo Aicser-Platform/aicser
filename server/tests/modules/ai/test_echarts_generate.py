@@ -7,7 +7,7 @@ import pytest
 @pytest.fixture(scope="session")
 def app_ai_router():
     # Lightweight app using only the AI router to test auth + handler
-    from src.modules.ai.router import router as ai_router
+    from ee.modules.ai.router import router as ai_router
 
     app = FastAPI()
     app.include_router(ai_router, prefix="/ai")
@@ -26,10 +26,17 @@ def test_echarts_generate_requires_auth(client_ai_router):
     assert resp.status_code in (401, 403)
 
 
-def test_echarts_generate_success_with_auth(client_ai_router):
+def test_echarts_generate_success_with_auth(client_ai_router, monkeypatch):
+    # JWTCookieBearer.__call__'s "test-token" shortcut only fires when
+    # settings.ENVIRONMENT is dev/test/local - this suite runs against a live
+    # deploy env with ENVIRONMENT=production, which correctly refuses it
+    # (401), same as any real bearer token that fails validation.
+    from src.core.config import settings
+    monkeypatch.setattr(settings, "ENVIRONMENT", "test")
+
     # Patch LLM call to avoid external dependency
     with patch(
-        "app.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
         return_value={
             "success": True,
             "content": """Here is your chart\n```json\n{\n  \"title\": {\"text\": \"Sales by Month\"},\n  \"xAxis\": {\"type\": \"category\", \"data\":[\"Jan\",\"Feb\"]},\n  \"yAxis\": {\"type\": \"value\"},\n  \"series\": [{\"type\": \"bar\", \"data\": [10,20]}]\n}\n```""",
@@ -55,7 +62,7 @@ def test_ai_rate_limit_enforced():
 
     # Patch LLM to be fast and deterministic
     with patch(
-        "app.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
+        "ee.modules.ai.services.litellm_service.LiteLLMService.generate_completion",
         return_value={
             "success": True,
             "content": """```json\n{\n  \"series\":[{\"type\":\"bar\",\"data\":[]}]\n}\n```""",

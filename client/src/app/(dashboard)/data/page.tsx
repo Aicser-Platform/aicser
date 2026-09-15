@@ -48,6 +48,11 @@ import {
     RocketOutlined,
 } from '@ant-design/icons';
 
+// UniversalDataSourceModal now owns the full connector catalog itself,
+// including the 7 types (Databricks/REST/GraphQL/Kafka/Elasticsearch/
+// InfluxDB/OpenSearch) that used to need a second, separate "Enterprise
+// Data Connectors" modal here -- see that modal's own renderEnterpriseConnectorForm
+// for how it embeds EnterpriseConnectorTab directly instead.
 const UniversalDataSourceModal = nextDynamic(
     () => import('@/components/data/UniversalDataSourceModal/UniversalDataSourceModal').then((m) => m.default),
     { ssr: false }
@@ -70,6 +75,7 @@ import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { DataModelRelationships } from '@/components/data/DataModelRelationships';
+import { BypassIndicator } from './_components/BypassIndicator';
 
 const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -85,6 +91,16 @@ const { Title, Text } = Typography;
 const isSampleDataSource = (ds: { type?: string | null }) =>
     (ds.type || '').toLowerCase() === 'sample_duckdb';
 
+// DataSource.connection_status is only ever 'connected' | 'failed' | 'unknown' | null —
+// there's no 'disconnected'/'error' value in the data. Those are just the
+// user-facing labels for 'unknown' (never connected/tested) and 'failed'
+// (a connection attempt errored out) respectively. Normalizing here keeps
+// the filter's displayed labels intuitive while matching real values.
+type NormalizedConnectionStatus = 'connected' | 'unknown' | 'failed';
+const normalizeConnectionStatus = (
+    status: DataSource['connection_status'] | undefined,
+): NormalizedConnectionStatus => (status === 'connected' || status === 'failed' ? status : 'unknown');
+
 const DataSourcesPage: React.FC = () => {
     const canManageAccess = useCanManageDataAccess();
     const t = useTranslations('data_page');
@@ -96,7 +112,7 @@ const DataSourcesPage: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedDataSource, setSelectedDataSource] = useState<DataSource | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | DataSource['connection_status']>('all');
+    const [statusFilter, setStatusFilter] = useState<'all' | NormalizedConnectionStatus>('all');
     const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>('all');
     const [pricingModalVisible, setPricingModalVisible] = useState(false);
     const [modelDataSource, setModelDataSource] = useState<DataSource | null>(null);
@@ -104,6 +120,16 @@ const DataSourcesPage: React.FC = () => {
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
     const [profileLoading, setProfileLoading] = useState(false);
+    // NOTE: no backend data-profiling/PII-scan endpoint exists yet - this drawer's UI
+    // (quality score, per-column PII table below) was built ahead of that endpoint and
+    // nothing currently opens it. Wiring a real scan here is a separate feature, not a
+    // bug fix, so this reports the honest current state instead of fabricating results.
+    const handleProfileDataSource = async (ds: DataSource) => {
+        setProfileLoading(true);
+        setProfileResult(null);
+        message.info(t('profile_not_yet_available', { name: ds.name }));
+        setProfileLoading(false);
+    };
     const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 });
     const { dataSources, isLoading } = useDataSources();
     const { mutateAsync: deleteDataSource } = useDeleteDataSource();
@@ -201,15 +227,15 @@ const DataSourcesPage: React.FC = () => {
     };
 
     const getStatusColor = (status: string) => {
+        // Real connection_status values are 'connected' | 'failed' | 'unknown' | null —
+        // this used to switch on 'disconnected'/'error'/'testing', which never
+        // matched real data, so a failed connection silently rendered as a
+        // neutral grey tag instead of red. See normalizeConnectionStatus above.
         switch (status) {
             case 'connected':
                 return 'success';
-            case 'disconnected':
-                return 'default';
-            case 'error':
+            case 'failed':
                 return 'error';
-            case 'testing':
-                return 'processing';
             default:
                 return 'default';
         }
@@ -275,6 +301,16 @@ const DataSourcesPage: React.FC = () => {
             width: 120,
             render: (date: string) => date ? new Date(date).toLocaleDateString() : '-',
         },
+        ...(isEEEdition && canManageAccess
+            ? [
+                {
+                    title: t('col_row_access'),
+                    key: 'row_access',
+                    width: 140,
+                    render: (_: any, record: DataSource) => <BypassIndicator dataSourceId={record.id} />,
+                },
+            ]
+            : []),
         ...(canManageDataSettings
             ? [
                 {
@@ -283,28 +319,37 @@ const DataSourcesPage: React.FC = () => {
                     width: canManageAccess ? 200 : 160,
                     align: 'right' as const,
                     render: (_: any, record: DataSource) => (
-                        <Space>
+                        <Space size={0}>
                             {canManageAccess ? (
                                 <Tooltip title={t('manage_access')}>
                                     <Button
+                                        type="text"
                                         size="small"
+                                        className="icon-only-btn"
                                         icon={<SafetyCertificateOutlined />}
+                                        aria-label={t('manage_access')}
                                         onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
                                     />
                                 </Tooltip>
                             ) : null}
                             <Tooltip title={t('edit_connection')}>
                                 <Button
+                                    type="text"
                                     size="small"
+                                    className="icon-only-btn"
                                     icon={<EditOutlined />}
+                                    aria-label={t('edit_connection')}
                                     onClick={() => handleEditDataSource(record)}
                                 />
                             </Tooltip>
                             <Tooltip title={t('delete')}>
                                 <Button
+                                    type="text"
                                     size="small"
-                                    icon={<DeleteOutlined />}
                                     danger
+                                    className="icon-only-btn"
+                                    icon={<DeleteOutlined />}
+                                    aria-label={t('delete')}
                                     onClick={() => handleDeleteDataSource(record)}
                                 />
                             </Tooltip>
@@ -318,7 +363,7 @@ const DataSourcesPage: React.FC = () => {
     const filteredDataSources = useMemo(() => {
         return dataSources.filter((ds) => {
             const matchesSearch = ds.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesStatus = statusFilter === 'all' || ds.connection_status === statusFilter;
+            const matchesStatus = statusFilter === 'all' || normalizeConnectionStatus(ds.connection_status) === statusFilter;
             const matchesType = typeFilter === 'all' || ds.type === typeFilter;
             return matchesSearch && matchesStatus && matchesType;
         });
@@ -424,25 +469,25 @@ const DataSourcesPage: React.FC = () => {
             <Row gutter={[16, 16]} className="page-stat-grid">
 
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_total_sources')} value={stats.total} prefix={<DatabaseOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_in_project')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_connected')} value={stats.connected} prefix={<CheckCircleOutlined />} valueStyle={{ color: 'var(--ant-color-success)' }} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_healthy_connections')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_databases')} value={stats.databases} prefix={<CloudServerOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_sql_transactional')}</Text>
                     </Card>
                 </Col>
                 <Col xs={24} lg={6}>
-                    <Card className="page-stat-tile" size="small" bordered={false}>
+                    <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} prefix={<FileTextOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_flat_files_services')}</Text>
                     </Card>
@@ -479,8 +524,8 @@ const DataSourcesPage: React.FC = () => {
                             options={[
                                 { label: t('filter_all_statuses'), value: 'all' },
                                 { label: t('filter_connected'), value: 'connected' },
-                                { label: t('filter_disconnected'), value: 'disconnected' },
-                                { label: t('filter_error'), value: 'error' },
+                                { label: t('filter_disconnected'), value: 'unknown' },
+                                { label: t('filter_error'), value: 'failed' },
                             ]}
                         />
                         <Segmented
@@ -582,6 +627,7 @@ const DataSourcesPage: React.FC = () => {
                 }}
                 existingDataSource={selectedDataSource}
             />
+
             {wizardSource && isEEEdition && (
                 <ConnectModelVisualizeWizard
                     open={!!wizardSource}
@@ -594,7 +640,7 @@ const DataSourcesPage: React.FC = () => {
                 title={modelDataSource ? t('data_model_title', { name: modelDataSource.name }) : t('data_model')}
                 open={!!modelDataSource}
                 onClose={() => setModelDataSource(null)}
-                width={720}
+                size={720}
                 destroyOnHidden
             >
                 {modelDataSource && (
@@ -612,7 +658,7 @@ const DataSourcesPage: React.FC = () => {
                 }
                 open={!!profileDataSource}
                 onClose={() => { setProfileDataSource(null); setProfileResult(null); }}
-                width={700}
+                size={700}
                 destroyOnHidden
                 extra={
                     profileDataSource && (

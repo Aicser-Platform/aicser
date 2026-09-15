@@ -23,7 +23,6 @@ const COMPONENT_EXPORTS = [
   'AlertsPage',
   'ChatPage',
   'ProjectsPage',
-  'DataPlatformPage',
   'InviteAcceptPageEE',
   'InviteSetPasswordPageEE',
 ] as const;

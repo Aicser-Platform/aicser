@@ -29,7 +29,7 @@ export const NotificationForm: React.FC<NotificationFormProps> = ({
     >
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('notif_email_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('notif_email_desc')}
@@ -44,7 +44,7 @@ export const NotificationForm: React.FC<NotificationFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('notif_push_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('notif_push_desc')}

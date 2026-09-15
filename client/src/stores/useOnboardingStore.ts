@@ -1,1 +1,1 @@
-export { useOnboardingStore, useOnboarding } from '@/ee';
+export { useOnboardingStore, useOnboarding } from '@/ee/stores/useOnboardingStore';

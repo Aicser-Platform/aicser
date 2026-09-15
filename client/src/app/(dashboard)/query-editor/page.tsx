@@ -11,6 +11,7 @@ import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { Card, Typography, Alert, Space, Button, Tooltip, Tag, Popover, message } from 'antd';
 import { useTranslations } from 'next-intl';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { NarrowViewportNotice } from '@/components/layout/NarrowViewportNotice';
 import { AccessDenied } from '@/components/layout/AccessDenied';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/constants/permissions';
@@ -130,6 +131,7 @@ const generateQueryTemplates = (
 
 export default function QueryEditorPage() {
   const t = useTranslations('query_editor');
+  const tCommon = useTranslations('common');
   const { isAuthenticated, authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -382,6 +384,8 @@ export default function QueryEditorPage() {
           }
         />
 
+        <NarrowViewportNotice message={tCommon('desktop_recommended')} storageKey="query-editor" />
+
         {showWelcome && (
           <div style={{ padding: '8px 12px', margin: 0 }}>
             <Alert
@@ -481,12 +485,14 @@ export default function QueryEditorPage() {
                     background: 'var(--ant-color-bg-container)',
                     border: `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
                   }}
-                  bodyStyle={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '16px',
-                    overflow: 'hidden'
+                  styles={{
+                    body: {
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '16px',
+                      overflow: 'hidden',
+                    },
                   }}
                 >
                   <Alert
@@ -577,7 +583,6 @@ export default function QueryEditorPage() {
           projectId={projectId}
           organizationId={organizationId}
           onCancel={() => setPublishOpen(false)}
-          onSuccess={() => setPublishOpen(false)}
         />
       )}
     </DashboardPageShell>

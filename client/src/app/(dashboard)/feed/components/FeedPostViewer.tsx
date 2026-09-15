@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import type { FeedItem } from '@/services/socialFeedService';
 import { FeedDashboardViewer } from './FeedDashboardViewer';
 import { FeedSnapshotViewer } from './FeedSnapshotViewer';

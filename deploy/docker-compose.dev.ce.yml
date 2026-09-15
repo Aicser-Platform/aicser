@@ -136,6 +136,20 @@ services:
       - |
         set -e
         cd /app
+        if [ -z "$$ENCRYPTION_KEY" ]; then
+          case "$$(echo "$${ENVIRONMENT:-development}" | tr '[:upper:]' '[:lower:]')" in
+            development|dev|test|testing|local|"")
+              KEY_FILE="/app/.dev_encryption_key"
+              if [ ! -s "$$KEY_FILE" ]; then
+                /venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > "$$KEY_FILE"
+                chmod 600 "$$KEY_FILE"
+                echo "Generated a dev-only ENCRYPTION_KEY at $$KEY_FILE - do NOT commit this file or reuse it outside local dev."
+              fi
+              ENCRYPTION_KEY="$$(cat "$$KEY_FILE")"
+              export ENCRYPTION_KEY
+              ;;
+          esac
+        fi
         /venv/bin/python -m src.shared.sample_data.ensure
         echo "Running CE migrations..."
         /venv/bin/python -m alembic -c alembic.ini upgrade 2026_07_08_avatar_url_text
@@ -148,7 +162,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 90s
     restart: unless-stopped
 
   client:

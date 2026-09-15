@@ -93,6 +93,7 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+      - tempo
     restart: unless-stopped
 
   otel-collector:
@@ -105,6 +106,20 @@ services:
     volumes:
       - ./observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    profiles: [observability]
+    user: root
+    ports:
+      - "${DEV_TEMPO_HTTP_PORT:-3200}:3200"
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_dev_data:/var/tempo
+    command: ["-config.file=/etc/tempo.yaml"]
     restart: unless-stopped
 
   postgres-exporter:
@@ -131,3 +146,4 @@ volumes:
   clickhouse_dev_data:
   prometheus_dev_data:
   grafana_dev_data:
+  tempo_dev_data:

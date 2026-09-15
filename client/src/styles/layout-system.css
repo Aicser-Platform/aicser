@@ -244,31 +244,6 @@ div.page-container,
   padding-right: 0 !important;
 }
 
-/* Page Title - Consistent styling across all pages */
-.page-title {
-  margin: 0 !important;
-  margin-bottom: 0 !important; /* Removed 8px margin - use gap instead */
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-  margin-top: 0 !important;
-  color: var(--ant-color-text) !important;
-  font-size: 24px !important; /* Consistent font size (h2 equivalent) */
-  font-weight: 600 !important;
-  line-height: 1.2 !important;
-  display: flex !important;
-  align-items: center !important; /* Middle alignment */
-  gap: 12px !important;
-}
-
-/* Ensure all icons in page titles have consistent size */
-.page-title .anticon,
-.page-title svg {
-  font-size: 24px !important;
-  width: 24px !important;
-  height: 24px !important;
-  flex-shrink: 0 !important;
-}
-
 /* Page Toolbar - Consistent styling */
 .page-toolbar {
   display: flex !important;
@@ -310,6 +285,18 @@ div.page-container,
   box-sizing: border-box !important;
 }
 
+/* /data, /knowledge, /alerts, /semantic-layer: body grows with
+   content so .page-wrapper is the only scroller (same as /data). fill-height
+   and full-bleed workspaces keep the nested clip chain above. */
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) > .page-body,
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) .page-body {
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
 /* Content Cards - Respect left padding from page-wrapper */
 .content-card {
   background: var(--ant-color-bg-container) !important;
@@ -319,8 +306,8 @@ div.page-container,
   margin-left: 0 !important; /* No left margin - use page-wrapper padding */
   box-sizing: border-box !important;
   border-radius: var(--ant-border-radius, 6px) !important; /* Ant Design default */
-  /* .ant-card/.content-card get `overflow: hidden` elsewhere (aiser-aesthetic-enhancements.css,
-     aiser-unified-design-system.css) to clip the rounded-corner gradient overlay. As a flex
+  /* .ant-card/.content-card get `overflow: hidden` elsewhere (aiser-unified-design-system.css)
+     to clip the rounded-corner gradient overlay. As a flex
      child of .page-body, a non-"visible" overflow makes its automatic minimum size 0 instead of
      its content height (CSS Flexbox §4.5), so the flex algorithm was free to shrink it down to
      whatever space was left and silently clip the rest (e.g. a tall table) with no way to reach
@@ -392,15 +379,18 @@ div.page-container,
   min-height: 0 !important;
 }
 
-.page-tabs .ant-tabs-content-holder,
-.page-tabs .ant-tabs-content {
+/* antd v6's @rc-component/tabs renamed the shared multi-pane wrapper from
+   .ant-tabs-content to .ant-tabs-body, and the old per-pane .ant-tabs-tabpane*
+   classes to .ant-tabs-content* -- these selectors target the pre-v6 names. */
+.page-tabs .ant-tabs-body-holder,
+.page-tabs .ant-tabs-body {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
 }
 
-.page-tabs .ant-tabs-tabpane {
+.page-tabs .ant-tabs-content {
   flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -408,54 +398,21 @@ div.page-container,
   min-height: 0 !important;
 }
 
-.page-tabs .ant-tabs-tabpane > *:last-child {
+.page-tabs .ant-tabs-content > *:last-child {
   margin-bottom: 0 !important;
 }
 
-/* Integrations (/data-platform) — tab nav + panels align with page shell.
-   .page-wrapper is the scroll container (overflow-y:auto, see page-shell.css);
-   Tabs must be a proper shrinkable flex child (flex + min-height:0) all the way
-   down to the tabpane so its content isn't clipped instead of scrolling. */
-.page-wrapper.integrations-page .integrations-tabs.ant-tabs {
-  padding: 0 !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav {
-  margin: 0 0 16px 0 !important;
-  padding: 0 !important;
-  flex-shrink: 0;
-}
-
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-nav::before {
-  border-bottom-color: var(--ant-color-border-secondary) !important;
-}
-
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content-holder,
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-content,
-.page-wrapper.integrations-page .integrations-tabs .ant-tabs-tabpane {
-  padding: 0 !important;
-  min-height: 0;
-}
-
-.page-wrapper.integrations-page .page-tab-panel {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.page-wrapper.integrations-page .data-platform-scope-bar {
-  margin-bottom: 0 !important;
-}
-
-.page-wrapper.integrations-page .data-platform-access-banner {
-  margin: 0 !important;
+/* Standard scrolling pages (/data, /knowledge, /alerts, /semantic-layer):
+   tabs grow with content so .page-wrapper is the scroller.
+   fill-height / full-bleed workspaces keep the nested flex chain above. */
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) .page-tabs,
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) .page-tabs .ant-tabs-body-holder,
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) .page-tabs .ant-tabs-body,
+.page-wrapper:not(.page-wrapper--fill-height):not(.page-wrapper--full-bleed) .page-tabs .ant-tabs-content {
+  flex: none !important;
+  min-height: auto !important;
+  height: auto !important;
+  overflow: visible !important;
 }
 
 /* ========================================
@@ -603,12 +560,12 @@ div.page-container,
 }
 
 /* Settings tab content: prevent overflow — legacy settings-tabs only */
-.settings-page .settings-tabs .ant-tabs-content-holder,
-.settings-page .ant-tabs.settings-tabs .ant-tabs-content-holder {
+.settings-page .settings-tabs .ant-tabs-body-holder,
+.settings-page .ant-tabs.settings-tabs .ant-tabs-body-holder {
   overflow-x: hidden;
 }
-.settings-page .settings-tabs .ant-tabs-content,
-.settings-page .ant-tabs.settings-tabs .ant-tabs-content {
+.settings-page .settings-tabs .ant-tabs-body,
+.settings-page .ant-tabs.settings-tabs .ant-tabs-body {
   overflow-x: hidden;
 }
 

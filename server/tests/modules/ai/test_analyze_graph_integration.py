@@ -6,7 +6,7 @@ pytest.importorskip("langgraph")
 
 
 def test_build_graph_compiles():
-    from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+    from ee.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
 
     orch = LangGraphMultiAgentOrchestrator.__new__(LangGraphMultiAgentOrchestrator)
     graph = orch._build_graph()

@@ -1,8 +1,10 @@
 'use client';
 
+import './FeedExpandableText.css';
 import React, { useState } from 'react';
 import { Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import { renderTextWithMentions } from './MentionText';
 
 const { Paragraph } = Typography;
 
@@ -32,7 +34,7 @@ export function FeedExpandableText({
     return (
       <div className={`feed-expandable-text ${className}`.trim()}>
         <p className="feed-publish-excerpt-text m-0">
-          {expanded || !needsExpand ? text : `${text.slice(0, maxChars).trimEnd()}…`}
+          {renderTextWithMentions(expanded || !needsExpand ? text : `${text.slice(0, maxChars).trimEnd()}…`)}
         </p>
         {needsExpand && (
           <button type="button" className="feed-publish-excerpt-toggle" onClick={() => setExpanded((v) => !v)}>
@@ -56,7 +58,7 @@ export function FeedExpandableText({
               }
         }
       >
-        {text}
+        {renderTextWithMentions(text)}
       </Paragraph>
       {(truncated || expanded) && (
         <button type="button" className="feed-publish-excerpt-toggle mt-1" onClick={() => setExpanded((v) => !v)}>

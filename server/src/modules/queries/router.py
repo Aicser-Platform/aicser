@@ -10,6 +10,7 @@ import logging
 from src.db.session import get_async_session
 import json
 from src.core.config import settings
+from src.shared.api_errors import error_body
 
 logger = logging.getLogger(__name__)
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
@@ -17,6 +18,7 @@ from src.modules.authentication.helpers import extract_user_payload
 from src.modules.authentication.rbac.guard import require_permission, user_id_from_payload
 from src.modules.pricing.rate_limiter import RateLimiter
 from src.modules.pricing.plans import is_feature_available
+from src.modules.pricing.usage_tracker import resolve_organization_id
 from src.modules.data.services.query_identity import QueryIdentity
 from fastapi import status
 import inspect
@@ -192,11 +194,17 @@ async def save_query_tabs(
     tabs = payload.get("tabs", [])
     active_key = payload.get("active_key")
     if not isinstance(tabs, list):
-        raise HTTPException(status_code=400, detail="tabs must be an array")
+        raise HTTPException(
+            status_code=400,
+            detail=error_body("invalid_tabs", "tabs must be an array"),
+        )
     if len(tabs) > MAX_TABS_PER_SCOPE:
         raise HTTPException(
             status_code=400,
-            detail=f"Maximum {MAX_TABS_PER_SCOPE} tabs per project. Remove some tabs and save again.",
+            detail=error_body(
+                "tabs_limit_exceeded",
+                f"Maximum {MAX_TABS_PER_SCOPE} tabs per project. Remove some tabs and save again.",
+            ),
         )
     try:
         # Upsert: keep one row per scope (delete existing then insert)
@@ -221,7 +229,10 @@ async def save_query_tabs(
         if _is_missing_table_error(e):
             logger.debug("query_tabs table missing (run migration 20260310_query_tabs): %s", e)
             await db.rollback()
-            raise HTTPException(status_code=503, detail="Query tabs not available. Run database migrations.")
+            raise HTTPException(
+                status_code=503,
+                detail=error_body("tabs_unavailable", "Query tabs not available. Run database migrations."),
+            )
         await db.rollback()
         raise
     return {"success": True}
@@ -358,7 +369,10 @@ async def create_query_collection(
             {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or "", "name": name},
         )
         if dup.fetchone():
-            raise HTTPException(status_code=409, detail=f'A collection named "{name}" already exists')
+            raise HTTPException(
+                status_code=409,
+                detail=error_body("collection_name_conflict", f'A collection named "{name}" already exists'),
+            )
         result = await db.execute(
             text(
                 """
@@ -376,7 +390,10 @@ async def create_query_collection(
         raise
     except ProgrammingError as e:
         if _is_missing_table_error(e):
-            raise HTTPException(status_code=503, detail="Query collections not available. Run migrations.")
+            raise HTTPException(
+                status_code=503,
+                detail=error_body("collections_unavailable", "Query collections not available. Run migrations."),
+            )
         raise
 
 
@@ -395,7 +412,10 @@ async def rename_query_collection(
     user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
     name = str(payload.get("name") or "").strip()
     if not name:
-        raise HTTPException(status_code=400, detail="name required")
+        raise HTTPException(
+            status_code=400,
+            detail=error_body("missing_name", "name required"),
+        )
     owned = await db.execute(
         text(
             """
@@ -408,7 +428,10 @@ async def rename_query_collection(
         {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
     )
     if not owned.fetchone():
-        raise HTTPException(status_code=404, detail="Collection not found")
+        raise HTTPException(
+            status_code=404,
+            detail=error_body("collection_not_found", "Collection not found"),
+        )
     dup = await db.execute(
         text(
             """
@@ -430,7 +453,10 @@ async def rename_query_collection(
         },
     )
     if dup.fetchone():
-        raise HTTPException(status_code=409, detail=f'A collection named "{name}" already exists')
+        raise HTTPException(
+            status_code=409,
+            detail=error_body("collection_name_conflict", f'A collection named "{name}" already exists'),
+        )
     await db.execute(
         text("UPDATE query_collections SET name = :name, updated_at = NOW() WHERE id = :id"),
         {"name": name, "id": collection_id},
@@ -463,7 +489,10 @@ async def delete_query_collection(
         {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
     )
     if not owned.fetchone():
-        raise HTTPException(status_code=404, detail="Collection not found")
+        raise HTTPException(
+            status_code=404,
+            detail=error_body("collection_not_found", "Collection not found"),
+        )
     await db.execute(
         text("UPDATE saved_queries SET collection_id = NULL WHERE collection_id = :id"),
         {"id": collection_id},
@@ -989,7 +1018,14 @@ async def create_snapshot(
     user_id = str(
         user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or ""
     ).strip()
-    org_id_str = str(user_payload.get("organization_id") or "")
+    # organization_id is not a JWT claim in this auth system - membership is
+    # looked up from the DB (the same resolve_organization_id() every other
+    # org-scoped endpoint in this codebase uses). Trusting a nonexistent
+    # user_payload["organization_id"] claim meant org_id_str was always "",
+    # so any request that legitimately passed its caller's real
+    # organization_id 403'd unless the JWT happened to carry admin/org_admin
+    # roles - i.e. this rejected the normal, authorized case.
+    org_id_str = str(await resolve_organization_id(user_id, db) or "")
 
     # Enforce organization/project scope if provided
     user_roles = user_payload.get('roles', []) or []

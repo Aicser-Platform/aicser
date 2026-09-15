@@ -13,6 +13,7 @@ See KNOWLEDGE_BASE_CONTENT_COVERAGE.md in this package for full matrix.
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import re
@@ -35,6 +36,35 @@ CHUNK_MAX_TOKENS = 800
 CHUNK_OVERLAP_TOKENS = 100
 EMBEDDING_BATCH_SIZE = 20
 APPROX_CHARS_PER_TOKEN = 4  # rough heuristic for tiktoken-less estimation
+# Must match the fixed pgvector column width -- see migration
+# 2026_08_28_resize_embedding_vector_384 (originally 1536, OpenAI
+# text-embedding-3-small's dimension; resized to 384 to match
+# embedding_service.py's default local model, BAAI/bge-small-en-v1.5, since
+# that's what most deployments actually embed with now). An embedding of any
+# other width (e.g. a non-default local model or an API provider) is stored
+# in the JSONB column only -- correct, if slower, degraded behavior; see
+# EMBEDDING_LOCAL_MODEL in embedding_service.py if a deployment needs a
+# different width to get the fast ANN path back.
+PGVECTOR_EMBEDDING_DIMENSIONS = 384
+
+_TIKTOKEN_ENCODING = None
+_TIKTOKEN_LOAD_ATTEMPTED = False
+
+
+def _get_tiktoken_encoding():
+    global _TIKTOKEN_ENCODING, _TIKTOKEN_LOAD_ATTEMPTED
+    if _TIKTOKEN_LOAD_ATTEMPTED:
+        return _TIKTOKEN_ENCODING
+    _TIKTOKEN_LOAD_ATTEMPTED = True
+    try:
+        import tiktoken
+
+        _TIKTOKEN_ENCODING = tiktoken.get_encoding("cl100k_base")
+    except Exception:
+        logger.warning("tiktoken unavailable; falling back to chars/4 token estimation")
+        _TIKTOKEN_ENCODING = None
+    return _TIKTOKEN_ENCODING
+
 
 # Max pages to process per document (0 = no limit). Prevents OOM on huge PDFs.
 def _max_pages_per_document() -> int:
@@ -71,6 +101,52 @@ class DocumentIngestionService:
 
     def __init__(self, session: AsyncSession):
         self._session = session
+        self._pgvector_available: Optional[bool] = None
+
+    async def _pgvector_available_check(self) -> bool:
+        """Mirrors RAGRetrievalService's probe (same table/extension check) --
+        cached per-service-instance since ingestion of one document issues
+        this once, not once per chunk."""
+        if self._pgvector_available is not None:
+            return self._pgvector_available
+        try:
+            from sqlalchemy import text as _sa_text
+
+            ext = await self._session.execute(
+                _sa_text("SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1")
+            )
+            col = await self._session.execute(
+                _sa_text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = 'document_chunks' AND column_name = 'embedding_vector' LIMIT 1"
+                )
+            )
+            self._pgvector_available = ext.first() is not None and col.first() is not None
+        except Exception:
+            self._pgvector_available = False
+        return self._pgvector_available
+
+    async def _resolve_organization_id(self, user_id: Optional[str]) -> Optional[str]:
+        """Best-effort: resolve user_id's organization so an org BYOK
+        embedding key (EE-only feature -- see
+        ee/modules/ai/services/user_byok_embedding.py) can be used for this
+        document's chunks. Returns None (falls back to the platform-wide
+        EMBEDDING_PROVIDER config, exactly as before this existed) when EE
+        isn't enabled, user_id is missing, or resolution fails for any
+        reason -- must never block ingestion."""
+        if not user_id:
+            return None
+        try:
+            from src.core.edition import is_ee_enabled
+
+            if not is_ee_enabled():
+                return None
+            from src.modules.ai.services.user_byok_models import _resolve_user_organization_id
+
+            return await _resolve_user_organization_id(str(user_id), None)
+        except Exception as exc:
+            logger.debug("Organization resolution skipped for BYOK embeddings: %s", exc)
+            return None
 
     # ── Public API ───────────────────────────────────────────────────────
 
@@ -80,23 +156,105 @@ class DocumentIngestionService:
         data_source_id: str,
         user_id: str,
         filename: Optional[str] = None,
+        document_id: Optional[uuid.UUID] = None,
+        object_key: Optional[str] = None,
     ) -> KnowledgeDocument:
         """
         Ingest a single document end-to-end.
         Returns the KnowledgeDocument row (status will be 'ready' or 'failed').
+
+        document_id: when provided, reuse this pre-existing KnowledgeDocument
+        row (already created with status="processing") instead of creating a
+        new one -- used by the upload router, which creates the row up front
+        and enqueues this whole call as a background ARQ job (see
+        ingest_knowledge_document in src/shared/jobs/tasks.py) so the HTTP
+        response can return a real document id immediately instead of
+        blocking on parse+chunk+embed. Legacy callers that don't pass this
+        (e.g. ee/modules/knowledge_connectors/router.py's sync, which has no
+        pre-created row to hand in) get the original create-a-new-row
+        behavior, unchanged.
+        object_key: object-storage key (see UploadDatasourceStorageService)
+        the original file's bytes are durably stored under; persisted onto
+        the row so a later download endpoint can retrieve the original file.
+        Only meaningful when the caller actually stored the file there.
         """
         resolved_filename = filename or os.path.basename(file_path)
         file_type = self._detect_file_type(resolved_filename)
 
-        doc = KnowledgeDocument(
-            id=uuid.uuid4(),
-            data_source_id=data_source_id,
-            user_id=user_id,
-            filename=resolved_filename,
-            file_type=file_type,
-            status="processing",
-        )
-        self._session.add(doc)
+        content_hash = await asyncio.get_event_loop().run_in_executor(None, self._hash_file, file_path)
+
+        # DEDUP: an identical file already ingested (and successfully embedded)
+        # for this data source needs no new parse/chunk/embed work at all --
+        # without this, a re-upload (accidental double-click, "did that
+        # upload work?" retry) silently duplicated every chunk in retrieval
+        # results and re-spent real embedding cost (CPU for the local model,
+        # or a metered API call per chunk for an API-backed provider).
+        if content_hash:
+            dedup_stmt = select(KnowledgeDocument).where(
+                KnowledgeDocument.data_source_id == data_source_id,
+                KnowledgeDocument.content_hash == content_hash,
+                KnowledgeDocument.status == "ready",
+            )
+            if document_id is not None:
+                # Exclude the caller's own placeholder row -- it always has
+                # status="processing" at this point so it wouldn't match
+                # anyway, but excluding it explicitly makes the intent clear.
+                dedup_stmt = dedup_stmt.where(KnowledgeDocument.id != document_id)
+            existing = (await self._session.execute(dedup_stmt)).scalar_one_or_none()
+            if existing is not None:
+                logger.info(
+                    "Skipping ingest of %s: identical content already ingested as document %s",
+                    resolved_filename, existing.id,
+                )
+                if document_id is not None:
+                    # A placeholder row was already created and its id
+                    # already handed back in the HTTP response before this
+                    # background job ran -- fold it onto the existing ready
+                    # document's results instead of leaving it stuck at
+                    # status="processing" forever.
+                    await self._session.execute(
+                        update(KnowledgeDocument)
+                        .where(KnowledgeDocument.id == document_id)
+                        .values(
+                            status="ready",
+                            file_type=file_type,
+                            content_hash=content_hash,
+                            chunk_count=existing.chunk_count,
+                            doc_metadata=existing.doc_metadata,
+                        )
+                    )
+                    await self._session.commit()
+                    refreshed = await self._session.execute(
+                        select(KnowledgeDocument).where(KnowledgeDocument.id == document_id)
+                    )
+                    return refreshed.scalar_one()
+                return existing
+
+        if document_id is not None:
+            existing_row = await self._session.execute(
+                select(KnowledgeDocument).where(KnowledgeDocument.id == document_id)
+            )
+            doc = existing_row.scalar_one_or_none()
+            if doc is None:
+                raise ValueError(f"KnowledgeDocument {document_id} not found (expected pre-created row)")
+            doc.filename = resolved_filename
+            doc.file_type = file_type
+            doc.content_hash = content_hash
+            if object_key:
+                doc.object_key = object_key
+            doc.status = "processing"
+        else:
+            doc = KnowledgeDocument(
+                id=uuid.uuid4(),
+                data_source_id=data_source_id,
+                user_id=user_id,
+                filename=resolved_filename,
+                file_type=file_type,
+                content_hash=content_hash,
+                object_key=object_key,
+                status="processing",
+            )
+            self._session.add(doc)
         await self._session.commit()
         await self._session.refresh(doc)
         doc_id = doc.id
@@ -114,7 +272,8 @@ class DocumentIngestionService:
                 doc.status = "failed"
                 return doc
 
-            stored = await self._embed_and_store(doc_id, data_source_id, chunks)
+            stored = await self._embed_and_store(doc_id, data_source_id, chunks, user_id=user_id)
+            chunks_with_embedding = stored - getattr(self, "_last_failed_embeddings", 0)
 
             word_count = sum(len(s.text.split()) for s in sections)
             # For PDF: total_pages = file page count; pages_with_text = count of pages with extractable text
@@ -130,6 +289,17 @@ class DocumentIngestionService:
                 "page_count": int(total_pages),
                 "pages_with_text": int(pages_with_text),
                 "section_count": len(sections),
+                # RELIABILITY: a document used to be marked "ready" with a
+                # normal chunk_count even when every embedding call failed
+                # (commonly: no embedding API key configured, previously only
+                # logged at debug level) -- nothing in the document's own
+                # metadata distinguished it from a fully-searchable one,
+                # visible only via a separate, easy-to-miss deployment-wide
+                # health endpoint. Surfaced here so a document list/detail UI
+                # can show it.
+                "chunks_with_embedding": chunks_with_embedding,
+                "chunks_total": stored,
+                "has_embeddings": chunks_with_embedding > 0,
             }
 
             await self._session.execute(
@@ -540,23 +710,54 @@ class DocumentIngestionService:
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
+        # QUALITY: a chars/4 heuristic is weakest exactly where this module
+        # explicitly supports multilingual content (Khmer/Thai/CJK have a
+        # very different char-to-token ratio than English), risking mis-sized
+        # chunks and prompt-budget overruns for those languages specifically.
+        # tiktoken is already a hard dependency (used elsewhere for LLM
+        # calls); cl100k_base is a reasonable universal approximation for
+        # chunk-sizing purposes even against non-OpenAI models.
+        encoding = _get_tiktoken_encoding()
+        if encoding is not None:
+            try:
+                return max(1, len(encoding.encode(text)))
+            except Exception:
+                pass
         return max(1, len(text) // APPROX_CHARS_PER_TOKEN)
 
     # ── Embedding & Storage ──────────────────────────────────────────────
 
     async def _embed_and_store(
-        self, doc_id: uuid.UUID, data_source_id: str, chunks: List[ChunkData]
+        self, doc_id: uuid.UUID, data_source_id: str, chunks: List[ChunkData],
+        user_id: Optional[str] = None,
     ) -> int:
-        """Generate embeddings in batches and persist chunks to DB."""
+        """Generate embeddings in batches and persist chunks to DB.
+
+        user_id: resolved to the uploader's organization so an org BYOK
+        embedding key (see ee/modules/ai/services/user_byok_embedding.py) is
+        used for this document's chunks when the org has one configured --
+        otherwise falls back to the platform-wide EMBEDDING_PROVIDER config,
+        same as before. Resolved once per document (not per chunk/batch) so
+        every chunk of the same document lands in the same vector space.
+        """
         stored = 0
+        failed_embeddings = 0
+        pgvector_ok = await self._pgvector_available_check()
+        organization_id = await self._resolve_organization_id(user_id)
 
         for batch_start in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
             batch = chunks[batch_start : batch_start + EMBEDDING_BATCH_SIZE]
             embedding_service = get_embedding_service()
             embeddings = await asyncio.gather(
-                *(embedding_service.embed_text(c.content) for c in batch),
+                *(embedding_service.embed_text(c.content, organization_id=organization_id) for c in batch),
                 return_exceptions=True,
             )
+            embedding_model_id = await embedding_service.current_model_id_async(organization_id)
+
+            # (chunk_id, embedding) pairs needing the pgvector column set via
+            # raw SQL below -- the ORM model has no typed column for it (see
+            # the comment on the UPDATE below for why).
+            pgvector_writes: List[Tuple[uuid.UUID, List[float]]] = []
 
             for chunk, emb_result in zip(batch, embeddings):
                 embedding = None
@@ -564,22 +765,80 @@ class DocumentIngestionService:
                     embedding = emb_result
                 elif isinstance(emb_result, Exception):
                     logger.warning("Embedding failed for chunk %d: %s", chunk.chunk_index, emb_result)
-                # get_embedding returns None on failure; chunk stored without embedding (keyword-only retrieval)
+                    failed_embeddings += 1
+                else:
+                    # get_embedding returns None on failure; chunk stored without embedding (keyword-only retrieval)
+                    failed_embeddings += 1
 
+                chunk_id = uuid.uuid4()
                 row = DocumentChunk(
-                    id=uuid.uuid4(),
+                    id=chunk_id,
                     document_id=doc_id,
                     data_source_id=data_source_id,
                     chunk_index=chunk.chunk_index,
                     content=chunk.content,
                     token_count=chunk.token_count,
                     embedding=embedding,
+                    embedding_model=embedding_model_id if embedding is not None else None,
+                    embedding_dims=len(embedding) if embedding is not None else None,
                     chunk_metadata=chunk.metadata or None,
                 )
                 self._session.add(row)
                 stored += 1
+                # embedding_vector is a fixed-dimension pgvector column (see
+                # migration 2026_05_23_pgvector_embeddings); only write when
+                # the embedding actually matches that dimension, matching the
+                # same guard the migration's own backfill UPDATE uses.
+                if pgvector_ok and embedding and len(embedding) == PGVECTOR_EMBEDDING_DIMENSIONS:
+                    pgvector_writes.append((chunk_id, embedding))
 
             await self._session.commit()
+
+            if pgvector_writes:
+                # RELIABILITY: this column used to only ever be populated by a
+                # one-time migration-time backfill -- every chunk ingested
+                # since then had embedding_vector permanently NULL, silently
+                # collapsing retrieval to a full linear Python scan over
+                # every chunk's JSONB embedding (see
+                # RAGRetrievalService._retrieve_pgvector's NULL filter and
+                # its JSONB fallback). No ORM column type is declared for
+                # this on purpose: `pgvector` isn't an installed Python
+                # dependency in this image, and the column itself is optional
+                # (the migration skips it entirely when the Postgres `vector`
+                # extension isn't available) -- raw SQL with the same
+                # `::vector` cast the migration's own backfill uses avoids
+                # both problems.
+                from sqlalchemy import text as _sa_text
+
+                try:
+                    for chunk_id, embedding in pgvector_writes:
+                        vec_literal = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+                        await self._session.execute(
+                            _sa_text(
+                                "UPDATE document_chunks SET embedding_vector = CAST(:vec AS vector) WHERE id = :id"
+                            ),
+                            {"vec": vec_literal, "id": chunk_id},
+                        )
+                    await self._session.commit()
+                except Exception as exc:
+                    # `:vec::vector` (the Postgres `::` cast shorthand right
+                    # after a SQLAlchemy text() bind param) silently breaks
+                    # its parameter parsing -- a known gotcha, not specific to
+                    # this query. It threw PostgresSyntaxError on every write,
+                    # meaning embedding_vector has been going permanently
+                    # unpopulated (falling back to the JSONB linear-scan path
+                    # this comment already warns about) since whenever this
+                    # code started using the :: shorthand. CAST(:vec AS
+                    # vector) is the fix; verified directly against this DB.
+                    logger.warning("Failed to write embedding_vector for a batch, JSONB embedding still stored: %s", exc)
+                    await self._session.rollback()
+
+        if failed_embeddings:
+            logger.warning(
+                "%d/%d chunks stored without an embedding for document %s (keyword-only retrieval for those)",
+                failed_embeddings, stored, doc_id,
+            )
+        self._last_failed_embeddings = failed_embeddings
 
         return stored
 
@@ -595,6 +854,23 @@ class DocumentIngestionService:
             await self._session.commit()
         except Exception:
             logger.exception("Failed to mark document %s as failed", doc_id)
+
+    @staticmethod
+    def _hash_file(file_path: str) -> Optional[str]:
+        """SHA-256 of the raw file bytes, streamed so a large PDF doesn't
+        require loading the whole file into memory at once. Returns None
+        (dedup silently skipped, ingestion proceeds normally) on any read
+        failure -- this is a cost-saving optimization, never something
+        ingestion should fail over."""
+        try:
+            h = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                for block in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(block)
+            return h.hexdigest()
+        except Exception as e:
+            logger.debug("Content hash failed for %s (non-fatal): %s", file_path, e)
+            return None
 
     @staticmethod
     def _detect_file_type(filename: str) -> str:

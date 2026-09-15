@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { getDefaultAppPath } from '@/utils/appPaths';
 import { MARKETING_HOME_URL, PRIVACY_URL, TERMS_URL } from '@/constants/legalUrls';
+import { PasswordStrengthMeter } from '@/components/auth/PasswordStrengthMeter';
 import type { SupabaseOAuthProvider } from '@/ee';
 import './login.css';
 
@@ -64,6 +65,7 @@ export default function LoginPage() {
     searchParams?.get('mode') === 'signup' ||
     searchParams?.get('mode') === 'register';
   const [isSignUp, setIsSignUp] = useState(initialSignUp);
+  const [signupPassword, setSignupPassword] = useState('');
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotMessage, setForgotMessage] = useState<string | null>(null);
@@ -151,6 +153,7 @@ export default function LoginPage() {
       setIsSignUp(signUp);
       clearLoginError();
       setSignupMessage(null);
+      setSignupPassword('');
       const params = new URLSearchParams(window.location.search);
       if (signUp) {
         params.set('mode', 'signup');
@@ -258,7 +261,7 @@ export default function LoginPage() {
               <Alert
                 type="success"
                 showIcon
-                message={signupMessage}
+                title={signupMessage}
                 description="Once confirmed, you'll be signed in automatically."
                 className="login-error-alert"
                 closable
@@ -268,7 +271,7 @@ export default function LoginPage() {
               <Alert
                 type="error"
                 showIcon
-                message={loginError}
+                title={loginError}
                 className="login-error-alert"
                 closable
                 onClose={clearLoginError}
@@ -329,8 +332,11 @@ export default function LoginPage() {
                   prefix={<LockOutlined />}
                   placeholder={t('password')}
                   autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  onChange={(e) => isSignUp && setSignupPassword(e.target.value)}
                 />
               </Form.Item>
+
+              {isSignUp ? <PasswordStrengthMeter password={signupPassword} /> : null}
 
               {!isSignUp ? (
                 <div className="login-forgot-row">
@@ -371,50 +377,58 @@ export default function LoginPage() {
               </Form.Item>
             </Form>
 
-            {IS_EE && !isSignUp ? (
+            {IS_EE ? (
               <>
-                <Divider plain className="login-divider">
-                  {t('or_continue_with')}
-                </Divider>
                 {IS_SUPABASE_AUTH ? (
-                  <div className="login-oauth-buttons">
-                    {SUPABASE_OAUTH_PROVIDERS.map((provider) => (
-                      <Button
-                        key={provider}
-                        block
-                        size="large"
-                        type="default"
-                        className="login-sso-btn"
-                        icon={SUPABASE_OAUTH_PROVIDER_ICONS[provider]}
-                        loading={oauthLoadingProvider === provider}
-                        disabled={Boolean(oauthLoadingProvider)}
-                        onClick={() => onSupabaseOAuth(provider)}
-                      >
-                        {t('sign_in_with_provider', { provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider] })}
-                      </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <Button
-                    block
-                    size="large"
-                    type="default"
-                    className="login-sso-btn"
-                    loading={ssoLoading}
-                    disabled={!IS_KEYCLOAK_SSO}
-                    onClick={async () => {
-                      setSsoLoading(true);
-                      try {
-                        const mod = await import('@/ee');
-                        mod.loginWithKeycloak();
-                      } catch {
-                        setSsoLoading(false);
-                      }
-                    }}
-                  >
-                    {t('sign_in_with_org')}
-                  </Button>
-                )}
+                  <>
+                    <Divider plain className="login-divider">
+                      {t('or_continue_with')}
+                    </Divider>
+                    <div className="login-oauth-buttons">
+                      {SUPABASE_OAUTH_PROVIDERS.map((provider) => (
+                        <Button
+                          key={provider}
+                          block
+                          size="large"
+                          type="default"
+                          className="login-sso-btn"
+                          icon={SUPABASE_OAUTH_PROVIDER_ICONS[provider]}
+                          loading={oauthLoadingProvider === provider}
+                          disabled={Boolean(oauthLoadingProvider)}
+                          onClick={() => onSupabaseOAuth(provider)}
+                        >
+                          {t('continue_with_provider', {
+                            provider: SUPABASE_OAUTH_PROVIDER_LABELS[provider],
+                          })}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                ) : IS_KEYCLOAK_SSO ? (
+                  <>
+                    <Divider plain className="login-divider">
+                      {t('or_continue_with')}
+                    </Divider>
+                    <Button
+                      block
+                      size="large"
+                      type="default"
+                      className="login-sso-btn"
+                      loading={ssoLoading}
+                      onClick={async () => {
+                        setSsoLoading(true);
+                        try {
+                          const mod = await import('@/ee');
+                          mod.loginWithKeycloak();
+                        } catch {
+                          setSsoLoading(false);
+                        }
+                      }}
+                    >
+                      {t('continue_with_org')}
+                    </Button>
+                  </>
+                ) : null}
               </>
             ) : null}
 
@@ -458,12 +472,11 @@ export default function LoginPage() {
         footer={null}
         destroyOnHidden
         centered
-        width={400}
-        styles={{ content: { maxWidth: 'calc(100vw - 2rem)' } }}
+        width="min(400px, calc(100vw - 2rem))"
       >
         <p className="login-modal-text">{t('reset_instructions')}</p>
-        {forgotMessage ? <Alert type="success" showIcon message={forgotMessage} className="login-error-alert" /> : null}
-        {forgotError ? <Alert type="error" showIcon message={forgotError} className="login-error-alert" /> : null}
+        {forgotMessage ? <Alert type="success" showIcon title={forgotMessage} className="login-error-alert" /> : null}
+        {forgotError ? <Alert type="error" showIcon title={forgotError} className="login-error-alert" /> : null}
         {forgotMessage && !IS_SUPABASE_AUTH ? (
           <Button
             type="link"

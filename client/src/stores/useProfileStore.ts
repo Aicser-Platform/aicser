@@ -143,6 +143,13 @@ export const useProfileStore = create<ProfileStoreState>()(
             profile: state.profile ? { ...state.profile, avatar_url: updated.avatar_url } : null,
             updating: false,
           }));
+          // Feed cards cache author.avatarUrl — refresh so replaced photos show everywhere.
+          try {
+            const { queryClient } = await import('@/components/Providers/Providers');
+            await queryClient.invalidateQueries({ queryKey: ['feed'] });
+          } catch {
+            /* ignore if query client unavailable outside app tree */
+          }
           return updated.avatar_url;
         } catch (error) {
           const msg = error instanceof Error ? error.message : 'Failed to upload avatar';

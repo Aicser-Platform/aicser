@@ -54,12 +54,11 @@ export type {
 };
 export { scopedFiltersForWidget, isNonDataWidget };
 
-type ChartWithLayout = Chart & {
-  layout?: { x?: number; y?: number; w?: number; h?: number; page_id?: string | null };
-};
-
-/** Map backend chart records to studio widgets + grid layout (page assignment included). */
-function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
+/** Map backend chart records to studio widgets + grid layout (page assignment included).
+ * Exported so other callers (e.g. building a feed-attachment snapshot) reuse the exact
+ * same chart-record -> widget/layout mapping this store's own loadDashboardById uses,
+ * instead of a second, drifting implementation. */
+export function chartsToWidgetsAndLayout(charts: Chart[]): {
   widgets: WidgetInstance[];
   layout: LayoutItem[];
 } {
@@ -90,10 +89,10 @@ function chartsToWidgetsAndLayout(charts: ChartWithLayout[]): {
     const chartLayout = chart.layout || {};
     layout.push({
       i: widgetId,
-      x: chartLayout.x ?? 0,
-      y: chartLayout.y ?? 0,
-      w: chartLayout.w ?? 4,
-      h: chartLayout.h ?? 5,
+      x: Number(chartLayout.x) || 0,
+      y: Number(chartLayout.y) || 0,
+      w: Number(chartLayout.w) || 4,
+      h: Number(chartLayout.h) || 5,
       ...(chartLayout.page_id ? { pageId: String(chartLayout.page_id) } : {}),
     });
   });
@@ -204,7 +203,10 @@ interface DashboardState extends DashboardUiSlice, DashboardRuntimeSlice {
     id?: string;
     changes?: Record<string, unknown>;
     widget?: WidgetInstance;
-    layout?: LayoutItem[];
+    // 'layout:update' carries the full array; 'widget:add' carries just the
+    // one new tile's layout item -- see the two branches in the
+    // implementation below.
+    layout?: LayoutItem[] | LayoutItem;
     layoutTs?: number;
   }) => void;
   bulkDeleteWidgets: () => Promise<void>;
@@ -863,16 +865,37 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
   },
 
   updateDashboardTags: async (id, tags) => {
-    // Optimistic update
+    // Optimistic update — merge live globalFiltersConfig so a tags write
+    // cannot wipe filters saved since the last dashboard config fetch.
+    const liveFilters = get().globalFiltersConfig;
     set((state) => ({
       dashboards: state.dashboards.map((d) =>
-        d.id === id ? { ...d, tags } : d
+        d.id === id
+          ? {
+              ...d,
+              tags,
+              config: {
+                ...(d.config || {}),
+                ...(liveFilters?.length || String(state.activeDashboardId) === String(id)
+                  ? { global_filters: liveFilters }
+                  : {}),
+                tags,
+              },
+            }
+          : d,
       ),
     }));
     try {
+      const dash = get().dashboards.find((d) => d.id === id);
       await chartService.updateDashboard(id, {
         tags,
-        config: { ...get().dashboards.find((d) => d.id === id)?.config, tags },
+        config: {
+          ...(dash?.config || {}),
+          ...(String(get().activeDashboardId) === String(id)
+            ? { global_filters: get().globalFiltersConfig }
+            : {}),
+          tags,
+        },
       } as any);
     } catch {
       console.error('[updateDashboardTags] failed to persist');
@@ -1130,7 +1153,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       try {
         const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-        const { chartData } = await fetchWidgetChartData({
+        const { chartData, filterWarnings } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: { ...widget, chartId: chart.id },
           runtimeFilters: get().runtimeFilters,
@@ -1140,7 +1163,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         set((state) => {
           const nextWidgets = state.widgets.map((w) =>
             w.id === widget.id
-              ? { ...w, chartData, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
+              ? { ...w, chartData, filterWarnings, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
               : w
           );
           const dashboards = state.dashboards.map((d) =>
@@ -1263,7 +1286,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         });
       } else {
         const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
-        const { chartData } = await fetchWidgetChartData({
+        const { chartData, filterWarnings } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: {
             ...widget,
@@ -1293,6 +1316,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
                   chartQuery,
                   chartOptions: liveOptions,
                   chartData,
+                  filterWarnings,
                   isLoading: false,
                   error: null,
                 }
@@ -1380,7 +1404,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       });
 
       const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-      const { chartData } = await fetchWidgetChartData({
+      const { chartData, filterWarnings } = await fetchWidgetChartData({
         dashboardId: activeDashboardId,
         widget,
         runtimeFilters: get().runtimeFilters,
@@ -1390,7 +1414,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       set((state) => {
         const nextWidgets = state.widgets.map((w) =>
-          w.id === widgetId ? { ...w, chartData, isLoading: false } : w
+          w.id === widgetId ? { ...w, chartData, filterWarnings, isLoading: false } : w
         );
         const dashboards = state.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d

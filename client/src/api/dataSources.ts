@@ -274,6 +274,25 @@ export const getDataSourceSchema = (id: string): Promise<{ schema: SchemaInfo }>
     schema: normalizeSchema(res?.schema ?? res?.data_source?.schema),
   }));
 
+/**
+ * Update business metadata (column descriptions, measures, dimensions,
+ * ontology_mapping) for a data source. The backend merges by TOP-LEVEL key
+ * but each key you DO pass fully REPLACES the existing value for that key
+ * (see PATCH /data/sources/{id}/business-metadata) - so column_descriptions
+ * must be sent as the complete map (existing + the one edit), not a
+ * single-key patch, or the other columns' descriptions are wiped.
+ */
+export const updateDataSourceBusinessMetadata = (
+  id: string,
+  data: {
+    column_descriptions?: Record<string, string>;
+    measures?: Array<Record<string, unknown>>;
+    dimensions?: Array<Record<string, unknown>>;
+    ontology_mapping?: Record<string, unknown>;
+  },
+): Promise<{ data_source: DataSource }> =>
+  fetchApi(`/data/sources/${id}/business-metadata`, { method: 'PATCH', body: JSON.stringify(data) });
+
 export const listDataSourceAccessGrants = (id: string): Promise<{ grants: DataSourceAccessGrant[]; count: number }> =>
   fetchApi(`/data/sources/${id}/access-grants`).then((res) => ({
     ...res,

@@ -3,13 +3,13 @@
 import React, { useEffect } from 'react';
 import { Badge, Button, Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { FilterOutlined, SettingOutlined, ReloadOutlined, FullscreenExitOutlined } from '@ant-design/icons';
+import { FilterOutlined, SettingOutlined, ReloadOutlined, FullscreenExitOutlined, ClearOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { DashboardFilter } from '@/types/dashboard';
 import { DashboardPageTabs, type DashboardPageItem } from './DashboardPageTabs';
 import type { RuntimeFilter } from '../utils/filterOperators';
 import { countActiveFilterFields } from '../utils/filterOperators';
-import { DashboardFiltersManageModal } from './DashboardFiltersManageModal';
+import { DashboardFiltersManageModal, type DataSourceSchema } from './DashboardFiltersManageModal';
 import type { FilterFieldConflict } from '../utils/filterConflicts';
 import type { LayoutPreset } from './LayoutPresetsMenu';
 import { DashboardStyleMenu } from './DashboardStyleMenu';
@@ -42,7 +42,7 @@ type Props = {
   tableOptionsBySource?: Record<string, { value: string; label: string }[]>;
   widgetScopeOptions?: { value: string; label: string }[];
   filterFieldConflicts?: FilterFieldConflict[];
-  dataSourcesForFilters?: Array<{ id: string | number; schema?: { tables?: unknown[] } }>;
+  dataSourcesForFilters?: DataSourceSchema[];
   dashboardId?: string;
   studioWidgets?: import('../stores/useDashboardStore').WidgetInstance[];
   onSaveGlobalFilters: (filters: DashboardFilter[]) => Promise<void>;
@@ -53,6 +53,11 @@ type Props = {
   hideLayout?: boolean;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** Clears active runtime filter values (distinct from onResetLayout, which
+   * resets widget positions) -- rendered right beside the filter toggle so
+   * both filter-related actions live together instead of the clear button
+   * sitting in a separate filter-values toolbar elsewhere on the page. */
+  onClearFilters?: () => void;
   lastRefreshedLabel?: string;
   autoRefreshMinutes?: number;
   onAutoRefreshIntervalChange?: (minutes: number) => void;
@@ -100,6 +105,7 @@ export function StudioContextBar({
   hideLayout = false,
   onRefresh,
   refreshing = false,
+  onClearFilters,
   lastRefreshedLabel,
   autoRefreshMinutes = 0,
   onAutoRefreshIntervalChange,
@@ -271,8 +277,9 @@ export function StudioContextBar({
                   }
                 >
                   <Button
+                    type="text"
                     size="small"
-                    className="studio-context-btn studio-refresh-dropdown-trigger !w-8 !h-8 !p-0"
+                    className="icon-only-btn"
                     icon={<ReloadOutlined spin={refreshing} />}
                     disabled={refreshing}
                     aria-haspopup="menu"
@@ -288,9 +295,8 @@ export function StudioContextBar({
               <Tooltip title={t('filter_verb')}>
                 <Button
                   size="small"
-                  type={filtersPanelOpen && hasConfiguredFilters ? 'primary' : 'default'}
-                  ghost={filtersPanelOpen && hasConfiguredFilters}
-                  className="studio-filter-btn studio-context-btn !w-8 !h-8 !p-0 !inline-flex !items-center !justify-center"
+                  type="text"
+                  className={`icon-only-btn${filtersPanelOpen && hasConfiguredFilters ? ' icon-only-btn--primary' : ''}`}
                   aria-label={t('filter_verb')}
                 >
                   <Badge count={activeFilterCount} size="small" offset={[4, -2]}>
@@ -301,12 +307,27 @@ export function StudioContextBar({
             </Dropdown>
           )}
 
+          {onClearFilters && !presentationMode && (hasConfiguredFilters || !readOnly) && (
+            <Tooltip title={t('clear_filters')}>
+              <Button
+                type="text"
+                size="small"
+                className="icon-only-btn"
+                icon={<ClearOutlined />}
+                disabled={activeFilterCount === 0}
+                onClick={onClearFilters}
+                aria-label={t('clear_filters')}
+              />
+            </Tooltip>
+          )}
+
           <>
             {!presentationMode && onDashboardColorPaletteChange ? (
               <DashboardStyleMenu
                 currentPalette={dashboardColorPalette}
                 hideLayout={hideLayout}
                 widgetCount={widgetCount}
+                widgets={studioWidgets}
                 onApplyLayoutPreset={onApplyLayoutPreset}
                 onResetLayout={onResetLayout}
                 onPaletteChange={onDashboardColorPaletteChange}
@@ -319,7 +340,7 @@ export function StudioContextBar({
               <Button
                 size="small"
                 type="text"
-                className="!w-8 !h-8 !p-0 !rounded-md shrink-0 text-text-secondary hover:!text-text hover:!bg-bg-elevated"
+                className="icon-only-btn"
                 icon={<FullscreenExitOutlined />}
                 onClick={onExitPresentation}
                 aria-label={t('exit_fullscreen')}

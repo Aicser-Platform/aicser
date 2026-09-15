@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-client
+  labels:
+    {{- include "aicser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: client
+spec:
+  replicas: {{ .Values.client.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: client
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: client
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: client
+          image: {{ .Values.client.image | quote }}
+          ports:
+            - containerPort: {{ .Values.client.port }}
+          env:
+            - name: API_TARGET
+              value: "http://{{ .Release.Name }}-server:{{ .Values.server.port }}"
+            {{- range $key, $value := .Values.client.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            {{- if .Values.client.existingSecret }}
+            - secretRef:
+                name: {{ .Values.client.existingSecret }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.client.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.client.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.client.livenessProbe | nindent 12 }}

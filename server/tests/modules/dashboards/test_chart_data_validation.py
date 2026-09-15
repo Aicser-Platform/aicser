@@ -16,14 +16,16 @@ def test_validate_bar_requires_matching_categories_and_values():
     assert "different lengths" in invalid.reason
 
 
-def test_validate_stat_requires_value_or_series_data():
+def test_validate_stat_accepts_empty_after_filters():
     assert validate_chart_data("stat", {"value": 42}).valid is True
     assert validate_chart_data("stat", {"y": [1, 2]}).valid is True
+    empty = validate_chart_data("stat", {"x": ["Total"], "y": []})
+    assert empty.valid is True
 
-    invalid = validate_chart_data("stat", {"x": ["Total"], "y": []})
 
-    assert invalid.valid is False
-    assert invalid.reason == "KPI returned no value"
+def test_validate_bar_empty_payload_is_no_data_not_broken():
+    empty = validate_chart_data("bar", {"x": [], "y": [], "series": []})
+    assert empty.valid is True
 
 
 def test_validate_scatter_requires_xy_points():

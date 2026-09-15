@@ -17,6 +17,10 @@ export interface PricingPlan {
   popular?: boolean;
   min_seats?: number;
   price_per_seat?: number;
+  /** Read-only (org_viewer / project_viewer) seat add-on price — deliberately
+   * far below price_per_seat: industry practice (Tableau Viewer $15 vs
+   * Creator $75/mo) prices read-only access well below build/edit access. */
+  price_per_viewer_seat?: number;
 }
 
 export type UsageLimit = number | -1;
@@ -107,7 +111,7 @@ export const pricingPlans: PricingPlan[] = [
       '2 data sources',
       'Charts & Dashboard (with watermark)',
       'Community support',
-      'Standard AI modes only (Chat, Descriptive, Predictive, Animate)',
+      'Standard AI modes (Chat, Forecast, Animate)',
       'Export to PNG only',
     ],
     watermark: true,
@@ -126,7 +130,7 @@ export const pricingPlans: PricingPlan[] = [
     features: [
       'Multiple projects & data sources',
       'No watermarks',
-      'All AI modes (Chat, Descriptive, Predictive, Diagnostic, Prescriptive, Animate, Executive Report)',
+      'All AI modes (Chat, Forecast, Diagnose, Optimise, Animate, Report, Dashboard)',
       'Cross-source analytics',
       'Telegram Bot Integration',
       'Theme & brand customization',
@@ -150,12 +154,13 @@ export const pricingPlans: PricingPlan[] = [
     ],
     min_seats: 5,
     price_per_seat: 25,
+    price_per_viewer_seat: 6,
     features: [
       'Everything in Pro',
       'Team collaboration & comments',
       'Role-based permissions',
       'Scheduled reports',
-      'Webhooks & integrations',
+      'Integrations',
       'API access',
       'Dedicated support',
       '$25/seat for additional users',
@@ -179,7 +184,7 @@ export const pricingPlans: PricingPlan[] = [
       'Own branding',
       'On-premise deployment',
       'SSO & SAML',
-      'Compliance certifications',
+      'Sovereignty & Compliance',
       '99.9% SLA',
       'Dedicated success manager',
       'Custom AI model',

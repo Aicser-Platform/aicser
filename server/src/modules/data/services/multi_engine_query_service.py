@@ -9,6 +9,7 @@ import os
 import re
 import json
 import time
+from collections import OrderedDict
 from typing import Dict, List, Any, Optional, Tuple, Iterable
 from datetime import datetime
 from enum import Enum
@@ -103,6 +104,213 @@ def _table_ref_variants(schema_name: str, table_name: str) -> List[str]:
         f'{_quote_ident_part(schema_name)}.{table_name}',
         f'{_quote_ident_part(schema_name)}.{_quote_ident_part(table_name)}',
     ]
+
+
+# AI-generated SQL text is executed against real customer databases with no
+# parameterization (there's nothing to parameterize — the whole feature is
+# "write and run arbitrary analytical SQL"), so this blocklist is the only
+# thing standing between a crafted natural-language question and DDL/DML,
+# file/network-capable functions, or a stored-procedure call. It used to only
+# cover DROP/DELETE/UPDATE/INSERT/ALTER/CREATE/TRUNCATE/GRANT/REVOKE — missing
+# COPY ... TO PROGRAM (Postgres RCE via shell command), LOAD_FILE/INTO
+# OUTFILE/DUMPFILE (MySQL arbitrary file read/write), EXECUTE/CALL/EXEC
+# (stored procedure invocation), MERGE (upsert = implicit write), SLEEP/
+# PG_SLEEP/BENCHMARK (trivial DoS, unrelated to the statement_timeout added in
+# direct_sql_pool.py since a function call isn't a "slow query" the DB
+# planner can time out the same way), xp_/sp_ prefixed SQL Server system
+# procedures, and DBLINK (Postgres SSRF/cross-server pivot). This is a
+# blocklist, not an allowlist, so treat it as defense-in-depth, not a
+# guarantee — least-privilege (read-only) DB credentials for connected data
+# sources remain the real backstop.
+_SQL_DANGEROUS_KEYWORDS = [
+    'DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE',
+    'GRANT', 'REVOKE', 'COPY', 'EXECUTE', 'EXEC', 'CALL', 'MERGE',
+    'LOAD_FILE', 'OUTFILE', 'DUMPFILE', 'PROGRAM', 'SLEEP', 'PG_SLEEP',
+    'BENCHMARK', 'DBLINK', 'XP_CMDSHELL',
+]
+_SQL_DANGEROUS_PATTERN = re.compile(
+    r'(?:^|[\s,;(])(' + '|'.join(re.escape(k) for k in _SQL_DANGEROUS_KEYWORDS) + r')(?:\s|[;(),]|$)',
+    re.IGNORECASE,
+)
+# xp_/sp_ are SQL Server system/extended stored procedure prefixes (xp_cmdshell,
+# sp_configure, ...) — matched separately since they're prefixes, not whole words.
+_SQL_DANGEROUS_PREFIX_PATTERN = re.compile(r'(?:^|[\s,;(])(XP_|SP_)\w+', re.IGNORECASE)
+
+# RELIABILITY: unlike direct_sql_pool.py's DEFAULT_STATEMENT_TIMEOUT_SECONDS
+# (enforced server-side via connect_args for real customer DB connections),
+# DuckDB queries — the engine behind every sample_duckdb data source AND
+# every uploaded CSV/Excel file — ran with no timeout at all: a single
+# expensive aggregation or accidental cross join could block the event loop
+# indefinitely, with nothing to cut it off. DuckDB itself has no SQL-level
+# statement_timeout, so this is enforced from the Python side instead (see
+# _execute_duckdb_with_timeout): the blocking conn.execute() call runs in a
+# worker thread under asyncio.wait_for, and conn.interrupt() actually
+# cancels the in-flight query on timeout rather than merely giving up on
+# waiting for it (DuckDB's own documented cancellation API).
+DUCKDB_STATEMENT_TIMEOUT_SECONDS = int(os.getenv("DUCKDB_STATEMENT_TIMEOUT_SECONDS", "30"))
+
+
+async def _execute_duckdb_with_timeout(conn: "duckdb.DuckDBPyConnection", query: str) -> list:
+    """Run conn.execute(query).fetchall() in a worker thread under a real
+    async timeout, instead of blocking the event loop for the query's full
+    duration. On timeout, calls conn.interrupt() to actually cancel the
+    running query (DuckDB's documented cancellation API) rather than merely
+    abandoning the wait — the query would otherwise keep consuming CPU/memory
+    in its worker thread regardless of whether anything is still waiting on it.
+    conn.description remains readable on `conn` afterward exactly as before,
+    since this is still the same single-threaded-at-a-time connection object.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: conn.execute(query).fetchall()),
+            timeout=DUCKDB_STATEMENT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        try:
+            conn.interrupt()
+        except Exception:
+            pass
+        raise TimeoutError(f"Query exceeded the {DUCKDB_STATEMENT_TIMEOUT_SECONDS}s execution limit")
+
+
+def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Optional[str]:
+    """Return an error message if `query` is not a single read-only SELECT.
+
+    AST allowlist (SELECT / WITH / UNION / EXPLAIN SELECT) is the primary
+    gate. The keyword blocklist remains defense-in-depth for functions and
+    COPY/PROGRAM patterns that can still parse as a SELECT.
+    """
+    stripped = (query or "").strip()
+    if not stripped:
+        return "Read-only mode: empty SQL is not allowed."
+
+    try:
+        ast_error = _assert_read_only_select_ast(stripped, dialect=dialect)
+    except Exception:
+        ast_error = None
+    if ast_error:
+        return ast_error
+
+    if _SQL_DANGEROUS_PATTERN.search(stripped) or _SQL_DANGEROUS_PREFIX_PATTERN.search(stripped):
+        return "Read-only mode: DDL/DML and system operations are not allowed. Only SELECT queries are permitted."
+    return None
+
+
+def _assert_read_only_select_ast(query: str, dialect: Optional[str] = None) -> Optional[str]:
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+
+    dialect_name = None
+    if dialect:
+        dialect_name = DB_TYPE_TO_SQLGLOT_DIALECT.get(str(dialect).strip().lower()) or str(dialect).strip().lower()
+
+    try:
+        statements = [stmt for stmt in sqlglot.parse(query, read=dialect_name) if stmt is not None]
+    except Exception:
+        return None
+
+    if not statements:
+        return None
+    if len(statements) != 1:
+        return "Read-only mode: only a single SELECT statement is allowed."
+
+    root = statements[0]
+    command_cls = getattr(exp, "Command", None)
+    if command_cls is not None and isinstance(root, command_cls):
+        cmd = str(root.this or "").strip().upper()
+        inner = root.args.get("expression") if hasattr(root, "args") else None
+        inner_sql = getattr(inner, "this", None) if inner is not None else None
+        if cmd == "EXPLAIN" and isinstance(inner_sql, str) and inner_sql.strip():
+            return _assert_read_only_select_ast(inner_sql, dialect=dialect)
+        return "Read-only mode: only SELECT queries are permitted."
+
+    allowed = [exp.Select, exp.Union, exp.Except, exp.Intersect, exp.With]
+    explain_cls = getattr(exp, "Explain", None)
+    if isinstance(explain_cls, type):
+        allowed.append(explain_cls)
+    if not isinstance(root, tuple(allowed)):
+        return "Read-only mode: only SELECT queries are permitted."
+
+    forbidden = []
+    for name in (
+        "Insert", "Update", "Delete", "Create", "Drop", "Alter", "AlterTable",
+        "Merge", "Copy", "Grant", "Set",
+    ):
+        cls = getattr(exp, name, None)
+        if isinstance(cls, type):
+            forbidden.append(cls)
+    for node in root.walk():
+        node_obj = node[0] if isinstance(node, tuple) else node
+        if isinstance(node_obj, tuple(forbidden)) and node_obj is not root:
+            return "Read-only mode: DDL/DML and system operations are not allowed. Only SELECT queries are permitted."
+    return None
+
+
+# db_type (as stored on a DataSource / returned by _data_source_db_type) -> sqlglot dialect name.
+DB_TYPE_TO_SQLGLOT_DIALECT: Dict[str, str] = {
+    "postgresql": "postgres", "postgres": "postgres", "pg": "postgres",
+    "redshift": "redshift", "mysql": "mysql", "mariadb": "mysql",
+    "bigquery": "bigquery", "snowflake": "snowflake", "duckdb": "duckdb",
+    "sqlite": "sqlite", "clickhouse": "clickhouse",
+    "mssql": "tsql", "sqlserver": "tsql", "tsql": "tsql",
+}
+
+# Hard ceiling applied to every query that reaches an execution engine, regardless of
+# caller. Individual callers (NL2SQL, the query-editor UI) apply their own, usually
+# tighter, defaults upstream -- this is the backstop for the ones that don't (a
+# hand-typed `SELECT *` in the SQL editor) and for anyone whose own LIMIT is larger
+# than is reasonable to materialize in one response.
+HARD_ROW_LIMIT_CAP = 10_000
+
+
+def cap_query_row_limit(query: str, db_type: str, cap: int = HARD_ROW_LIMIT_CAP) -> str:
+    """Clamp `query`'s result set to at most `cap` rows, dialect-aware.
+
+    SECURITY/RELIABILITY: execute_query used to hand every engine (DirectSQLEngine,
+    DuckDBEngine, the ClickHouse HTTP path) a query with no enforced upper bound on
+    rows returned -- a hand-typed `SELECT * FROM big_table` in the SQL editor, or any
+    caller that forgot its own LIMIT, would fetch the entire result set into process
+    memory. This also fixes the SQL Server-specific half of the same problem: T-SQL
+    has no LIMIT clause at all, and the engine's own cleanup step used to just delete
+    a trailing `LIMIT N` rather than converting it, silently turning a bounded query
+    unbounded. Building this on sqlglot (already relied on elsewhere in this codebase
+    for exactly this class of dialect-correctness problem) means a query's own,
+    tighter LIMIT/TOP is preserved as-is; only a missing or too-large one is replaced.
+    Non-SQL query text (PromQL, etc.) fails to parse and is returned unchanged --
+    this is a safety net, not a query-language validator.
+    """
+    dialect = DB_TYPE_TO_SQLGLOT_DIALECT.get(str(db_type or "").strip().lower())
+    try:
+        import sqlglot
+        from sqlglot import exp
+
+        parsed = sqlglot.parse_one(query)
+        if not isinstance(parsed, (exp.Select, exp.Union, exp.With)):
+            return query
+        existing = parsed.args.get("limit") if hasattr(parsed, "args") else None
+        existing_n = None
+        if existing is not None:
+            try:
+                existing_n = int(existing.expression.this)
+            except Exception:
+                existing_n = None
+        # T-SQL has no LIMIT clause at all -- always re-emit through sqlglot so an
+        # existing LIMIT becomes TOP, not just the over-cap case. Every other
+        # dialect supports LIMIT natively, so only rewrite when the cap actually
+        # needs enforcing (minimizes incidental re-serialization of untouched SQL).
+        needs_rewrite = dialect == "tsql" or existing_n is None or existing_n > cap
+        if not needs_rewrite:
+            return query
+        if existing_n is None or existing_n > cap:
+            parsed = parsed.limit(cap, copy=False)
+        return parsed.sql(dialect=dialect) if dialect else parsed.sql()
+    except Exception:
+        logger.debug("cap_query_row_limit: could not parse/cap query; leaving unchanged", exc_info=True)
+        return query
 
 
 def quote_known_table_refs_for_sql(
@@ -355,7 +563,6 @@ class QueryEngine(Enum):
     """Supported query engines"""
 
     DUCKDB = "duckdb"
-    CUBE = "cube"
     SPARK = "spark"
     DIRECT_SQL = "direct_sql"
     PANDAS = "pandas"
@@ -382,12 +589,11 @@ class QueryOptimizer:
         if ds < 1_000_000:
             return QueryEngine.DUCKDB
 
-        # Medium datasets (1M - 100M rows) - use DuckDB or Cube.js
+        # Medium datasets (1M - 100M rows) - DuckDB handles aggregation fine;
+        # Cube.js was removed from this deployment (see ARCHITECTURE.md) so
+        # this bucket must not route there.
         elif ds < 100_000_000:
-            if "aggregation" in query.lower() or "group by" in query.lower():
-                return QueryEngine.CUBE
-            else:
-                return QueryEngine.DUCKDB
+            return QueryEngine.DUCKDB
 
         # Large datasets (> 100M rows) - use Spark
         else:
@@ -401,13 +607,33 @@ class MultiEngineQueryService:
         # Instantiate lightweight engines eagerly; delay Spark engine until needed
         self.engines = {
             QueryEngine.DUCKDB: DuckDBEngine(),
-            QueryEngine.CUBE: CubeEngine(),
             QueryEngine.DIRECT_SQL: DirectSQLEngine(),
             QueryEngine.PANDAS: PandasEngine(),
         }
 
-        self.query_cache = {}
+        # RELIABILITY: this was a plain dict with TTL only checked lazily on
+        # read -- an expired entry was never actively evicted, just ignored
+        # until the same cache key happened to come up again. Since AI-
+        # generated SQL text rarely repeats verbatim, this had a high write
+        # rate and effectively no eviction over a long-running process, a
+        # real memory-growth risk (each entry holds a full result payload).
+        # Bounded + real LRU eviction now via _query_cache_set/_get below.
+        self.query_cache: "OrderedDict[str, dict]" = OrderedDict()
+        self._query_cache_max_entries = 500
         self.cache_ttl = 1800  # 30 minutes — aggressive reuse for same query+source
+
+    def _query_cache_get(self, cache_key: str) -> Optional[dict]:
+        entry = self.query_cache.get(cache_key)
+        if entry is None:
+            return None
+        self.query_cache.move_to_end(cache_key)
+        return entry
+
+    def _query_cache_set(self, cache_key: str, entry: dict) -> None:
+        self.query_cache[cache_key] = entry
+        self.query_cache.move_to_end(cache_key)
+        while len(self.query_cache) > self._query_cache_max_entries:
+            self.query_cache.popitem(last=False)
 
     def _is_spark_available(self) -> bool:
         """Detect whether Spark (pyspark) and a Java runtime are available.
@@ -711,6 +937,12 @@ class MultiEngineQueryService:
                 "row_count": 0,
             }
 
+        # Hard safety-net row cap -- applied unconditionally (not gated on
+        # `optimization`), since it's a resource-protection backstop, not a
+        # performance rewrite, and RLS/CLS-filtered queries need it just as
+        # much as any other. See cap_query_row_limit's docstring.
+        query = cap_query_row_limit(query, self._data_source_db_type(data_source))
+
         result = await self._execute_query_unfiltered(
             query,
             data_source,
@@ -963,13 +1195,10 @@ class MultiEngineQueryService:
                 if engine == QueryEngine.DIRECT_SQL:
                     logger.info("DuckDB-backed source (%s) detected; switching from Direct SQL to DuckDB engine", _ds_type)
                     engine = QueryEngine.DUCKDB
-                elif engine == QueryEngine.CUBE:
-                    logger.info("DuckDB-backed source (%s) detected; switching from Cube.js to DuckDB engine", _ds_type)
-                    engine = QueryEngine.DUCKDB
 
             # Route API sources to Pandas: API data is fetched via HTTP, not in a DuckDB catalog
             elif _is_api_source:
-                if engine in (QueryEngine.DIRECT_SQL, QueryEngine.CUBE, QueryEngine.DUCKDB):
+                if engine in (QueryEngine.DIRECT_SQL, QueryEngine.DUCKDB):
                     logger.info("API data source detected; using Pandas engine (fetch from API then run SQL)")
                     engine = QueryEngine.PANDAS
 
@@ -1001,8 +1230,8 @@ class MultiEngineQueryService:
                 engine,
                 cache_context=cache_context,
             )
-            if optimization and cache_key in self.query_cache:
-                cached_result = self.query_cache[cache_key]
+            cached_result = self._query_cache_get(cache_key) if optimization else None
+            if cached_result is not None:
                 try:
                     ts = cached_result.get("timestamp")
                     if ts is not None and isinstance(ts, (int, float)):
@@ -1039,10 +1268,10 @@ class MultiEngineQueryService:
 
             # Cache result if optimization is enabled
             if optimization and result["success"]:
-                self.query_cache[cache_key] = {
+                self._query_cache_set(cache_key, {
                     "data": result["data"],
                     "timestamp": datetime.now().timestamp(),
-                }
+                })
                 # Persist to Redis-scoped cache with TTL
                 try:
                     if cache_key_scoped and cache:
@@ -1145,19 +1374,6 @@ class MultiEngineQueryService:
                 logger.warning(f"execute_batch query {i} failed: {e}")
                 results.append({"success": False, "error": str(e), "query_index": i})
         return results
-
-    async def execute_cube_query(
-        self,
-        cube_query: Dict[str, Any],
-        data_source: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute a Cube.js JSON query payload through the Cube engine."""
-        engine = self.engines.get(QueryEngine.CUBE)
-        if not engine:
-            return {"success": False, "error": "Cube.js engine not initialized"}
-        if not hasattr(engine, "execute_cube_query"):
-            return {"success": False, "error": "Cube.js engine does not support JSON queries"}
-        return await engine.execute_cube_query(cube_query, data_source)
 
     def _analyze_query(self, query: str, data_source: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze query characteristics for optimization"""
@@ -1457,18 +1673,11 @@ class DuckDBEngine(BaseQueryEngine):
             elif data_source["type"] == "database":
                 await self._load_database_data(conn, data_source)
 
-            # CRITICAL: Validate query for read-only safety (prevent DDL/DML operations)
-            # Only block when keyword is in command position (preceded by ^ or non-identifier), not inside identifiers like last_updated, created_at
-            query_upper = query.upper().strip()
-            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE']
-            # Command position: keyword must be preceded by start/whitespace/comma/semicolon/open-paren (not letter/digit/underscore)
-            cmd_pos_pattern = r'(?:^|[\s,;(])(' + '|'.join(re.escape(k) for k in dangerous_keywords) + r')(?:\s|[;(),]|$)'
-            if re.search(cmd_pos_pattern, query_upper):
+            # CRITICAL: Validate query for read-only safety (prevent DDL/DML/system operations)
+            _safety_error = check_sql_read_only_safety(query)
+            if _safety_error:
                 logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
-                return {
-                    "success": False,
-                    "error": "Read-only mode: DDL/DML operations are not allowed. Only SELECT queries are permitted."
-                }
+                return {"success": False, "error": _safety_error}
             
             # CRITICAL: Fix truncated date_trunc before execution (e.g. date_trunc('MONTH) missing quote + second arg)
             try:
@@ -1545,7 +1754,7 @@ class DuckDBEngine(BaseQueryEngine):
             
             # Execute query
             try:
-                result = conn.execute(duckdb_query).fetchall()
+                result = await _execute_duckdb_with_timeout(conn, duckdb_query)
                 # Get column names from the result description
                 columns = []
                 if conn.description:
@@ -1791,147 +2000,6 @@ class DuckDBEngine(BaseQueryEngine):
         pass
 
 
-class CubeEngine(BaseQueryEngine):
-    """Cube.js engine for OLAP queries"""
-
-    def __init__(self):
-        # Cube.js configuration - use environment variable or default
-        import os
-        cube_host = os.getenv('CUBE_API_URL', 'http://localhost:4000')
-        # Remove /cubejs-api/v1 if present in env var, we'll add it
-        if '/cubejs-api' in cube_host:
-            self.cube_api_url = cube_host
-        else:
-            self.cube_api_url = f"{cube_host}/cubejs-api/v1"
-        self.cube_api_secret = os.getenv('CUBE_API_SECRET', 'dev-cube-secret-key')
-
-    async def execute(
-        self, query: str, data_source: Dict[str, Any], analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute query using Cube.js"""
-        try:
-            # CRITICAL: Only use Cube.js for database/warehouse sources, not DuckDB-backed uploads
-            if uses_duckdb_for_execution(data_source.get("type"), data_source.get("format")):
-                logger.warning(
-                    "⚠️ Cube.js engine selected for DuckDB-backed data source — use DuckDB engine instead."
-                )
-                return {
-                    "success": False,
-                    "error": "Cube.js is not suitable for this data source. Use DuckDB engine instead.",
-                }
-
-            logger.info("📊 Executing query with Cube.js")
-            
-            # Check if Cube.js is available (only for database/warehouse sources)
-            try:
-                cube_base_url = self.cube_api_url.replace('/cubejs-api/v1', '')
-                async with aiohttp.ClientSession() as test_session:
-                    async with test_session.get(f"{cube_base_url}/ready", timeout=aiohttp.ClientTimeout(total=2)) as test_resp:
-                        if test_resp.status != 200:
-                            return {"success": False, "error": "Cube.js server is not available"}
-            except Exception as cube_check_error:
-                # Don't log as error if Cube.js is simply not configured - this is expected for many deployments
-                logger.debug(f"Cube.js server not available (this is OK if not using Cube.js): {cube_check_error}")
-                return {"success": False, "error": f"Cube.js server is not available: {str(cube_check_error)}"}
-
-            # Convert SQL query to Cube.js query format
-            cube_query = self._convert_sql_to_cube_query(query, analysis)
-            return await self._execute_cube_query_payload(cube_query)
-
-        except Exception as e:
-            logger.error(f"❌ Cube.js query execution failed: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    async def execute_cube_query(
-        self, cube_query: Dict[str, Any], data_source: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute a pre-built Cube.js query JSON payload."""
-        try:
-            if uses_duckdb_for_execution(data_source.get("type"), data_source.get("format")):
-                logger.warning(
-                    "⚠️ Cube.js engine selected for DuckDB-backed data source — use DuckDB engine instead."
-                )
-                return {
-                    "success": False,
-                    "error": "Cube.js is not suitable for this data source. Use DuckDB engine instead.",
-                }
-
-            # Check if Cube.js is available (only for database/warehouse sources)
-            try:
-                cube_base_url = self.cube_api_url.replace('/cubejs-api/v1', '')
-                async with aiohttp.ClientSession() as test_session:
-                    async with test_session.get(f"{cube_base_url}/ready", timeout=aiohttp.ClientTimeout(total=2)) as test_resp:
-                        if test_resp.status != 200:
-                            return {"success": False, "error": "Cube.js server is not available"}
-            except Exception as cube_check_error:
-                logger.debug(f"Cube.js server not available (this is OK if not using Cube.js): {cube_check_error}")
-                return {"success": False, "error": f"Cube.js server is not available: {str(cube_check_error)}"}
-
-            return await self._execute_cube_query_payload(cube_query)
-        except Exception as e:
-            logger.error(f"❌ Cube.js query execution failed: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    async def _execute_cube_query_payload(self, cube_query: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a Cube.js query payload via API."""
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "Authorization": f"Bearer {self.cube_api_secret}",
-                "Content-Type": "application/json",
-            }
-
-            async with session.post(
-                f"{self.cube_api_url}/load", headers=headers, json=cube_query
-            ) as response:
-                if response.status == 200:
-                    result = await response.json()
-
-                    return {
-                        "success": True,
-                        "data": result.get("data", []),
-                        "columns": list(result.get("annotation", {}).keys())
-                        if result.get("annotation")
-                        else [],
-                        "row_count": len(result.get("data", [])),
-                        "cube_metadata": result.get("annotation", {}),
-                    }
-                else:
-                    error_text = await response.text()
-                    return {
-                        "success": False,
-                        "error": f"Cube.js query failed: HTTP {response.status} - {error_text}",
-                    }
-
-    def _convert_sql_to_cube_query(
-        self, sql_query: str, analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Convert SQL query to Cube.js query format"""
-        # This is a simplified conversion - in production, you'd use a proper SQL parser
-
-        cube_query = {
-            "measures": [],
-            "dimensions": [],
-            "timeDimensions": [],
-            "filters": [],
-            "order": [],
-            "limit": None,
-        }
-
-        # Extract measures (aggregations)
-        if analysis["has_aggregations"]:
-            if "sum(" in sql_query.lower():
-                cube_query["measures"].append("*")
-            if "count(" in sql_query.lower():
-                cube_query["measures"].append("count")
-
-        # Extract dimensions
-        if "group by" in sql_query.lower():
-            # Simple extraction - in production, use proper SQL parsing
-            cube_query["dimensions"] = ["*"]
-
-        return cube_query
-
-
 class SparkEngine(BaseQueryEngine):
     """Apache Spark engine for big data processing.
 
@@ -2116,15 +2184,10 @@ class DirectSQLEngine(BaseQueryEngine):
                         pass
 
             # CRITICAL: Validate query for read-only safety (command-position only: not inside identifiers like last_updated, created_at)
-            query_upper = query.upper().strip()
-            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE']
-            cmd_pos_pattern = r'(?:^|[\s,;(])(' + '|'.join(re.escape(k) for k in dangerous_keywords) + r')(?:\s|[;(),]|$)'
-            if re.search(cmd_pos_pattern, query_upper):
+            _safety_error = check_sql_read_only_safety(query)
+            if _safety_error:
                 logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
-                return {
-                    "success": False,
-                    "error": "Read-only mode: DDL/DML operations are not allowed. Only SELECT queries are permitted."
-                }
+                return {"success": False, "error": _safety_error}
             
             # Prefer a full connection URI if provided
             conn_uri = conn_info.get('uri') or conn_info.get('connection_string') or conn_info.get('connection_string_uri')
@@ -2356,11 +2419,20 @@ class DirectSQLEngine(BaseQueryEngine):
                 _orig = query
                 query = re.sub(r"\bSELECT\s+TOP\s+(\d+)\s+DISTINCT\b", r"SELECT DISTINCT TOP \1", query, flags=re.IGNORECASE)
                 query = re.sub(r"\bSELECT\s+TOP\s+(\(\d+\))\s+DISTINCT\b", r"SELECT DISTINCT TOP \1", query, flags=re.IGNORECASE)
-                # Remove trailing LIMIT N (SQL Server uses TOP N in SELECT, not LIMIT)
-                query = re.sub(r"\s+LIMIT\s+\d+\s*;?\s*$", "", query, flags=re.IGNORECASE)
-                query = re.sub(r"\s+LIMIT\s+\(\s*\d+\s*\)\s*;?\s*$", "", query, flags=re.IGNORECASE)
+                # SECURITY/CORRECTNESS: this used to just delete a trailing
+                # LIMIT N via regex ("SQL Server uses TOP N, not LIMIT") --
+                # silently turning a bounded query unbounded rather than
+                # converting the bound. cap_query_row_limit does the same job
+                # `execute_query` already applies upstream, but calling it
+                # again here is defense-in-depth for callers that reach this
+                # engine directly (confirmed: streaming_ingestion_service.py
+                # instantiates DirectSQLEngine without going through the
+                # guarded execute_query entry point) -- it's a no-op if the
+                # query was already capped/TOP-ified upstream.
+                if re.search(r"\bLIMIT\s+\(?\s*\d+\s*\)?\s*;?\s*$", query, flags=re.IGNORECASE):
+                    query = cap_query_row_limit(query, db_type)
                 if query != _orig:
-                    logger.debug("SQL Server: applied T-SQL rewrites (TOP/DISTINCT and LIMIT removal)")
+                    logger.debug("SQL Server: applied T-SQL rewrites (TOP/DISTINCT normalization, LIMIT->TOP)")
 
             if db_type.startswith("postgres"):
                 postgres_schema_aliases = []
@@ -2410,7 +2482,20 @@ class DirectSQLEngine(BaseQueryEngine):
                 except Exception as e:
                     return {"success": False, "error": str(e)}
 
-            result = await asyncio.to_thread(run_sync_query, data_source, conn_uri, query)
+            # Belt-and-braces alongside direct_sql_pool's server-side statement_timeout
+            # (Postgres/MySQL only) — this bound applies to every dialect, and stops
+            # the request itself from hanging forever even for dialects with no
+            # clean connect-time timeout knob (e.g. SQL Server/pyodbc).
+            from src.modules.data.services.direct_sql_pool import DEFAULT_STATEMENT_TIMEOUT_SECONDS
+
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(run_sync_query, data_source, conn_uri, query),
+                    timeout=DEFAULT_STATEMENT_TIMEOUT_SECONDS + 5,
+                )
+            except asyncio.TimeoutError:
+                logger.error("❌ Direct SQL query exceeded %ss timeout", DEFAULT_STATEMENT_TIMEOUT_SECONDS)
+                return {"success": False, "error": f"Query exceeded the {DEFAULT_STATEMENT_TIMEOUT_SECONDS}s execution limit"}
 
             if result.get('success'):
                 return {

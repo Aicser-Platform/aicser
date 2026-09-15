@@ -67,7 +67,7 @@
   min-height: 0;
 }
 
-.properties-panel-tabs .ant-tabs-content-holder {
+.properties-panel-tabs .ant-tabs-body-holder {
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
@@ -487,6 +487,18 @@
   border-color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
+}
+
+.pp-chart-type-btn.is-disabled,
+.pp-chart-type-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.pp-chart-type-btn.is-disabled:hover,
+.pp-chart-type-btn:disabled:hover {
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
 }
 
 .pp-palette-row {

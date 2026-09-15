@@ -606,8 +606,10 @@ class DataConnectivityService:
                         else:
                             logger.warning(f"⚠️ Credentials not encrypted (ENCRYPTION_KEY may not be set) for {connection_request.get('type')} connection")
                     except Exception as encrypt_error:
-                        logger.error(f"❌ Failed to encrypt credentials: {encrypt_error}")
-                        safe_config = connection_request
+                        logger.error("Failed to encrypt credentials: %s", encrypt_error)
+                        raise RuntimeError(
+                            "Cannot store data source: credential encryption failed"
+                        ) from encrypt_error
                     
                     # Convert project_id to UUID (nullable)
                     from uuid import UUID
@@ -1635,9 +1637,13 @@ class DataConnectivityService:
                 
         except Exception as error:
             logger.error(f"❌ File upload failed: {str(error)}")
+            from src.modules.data.services.upload_datasource_storage_service import (
+                public_storage_error_message,
+            )
+
             return {
-                'success': False,
-                'error': str(error)
+                "success": False,
+                "error": public_storage_error_message(error),
             }
         finally:
             # Clean up temp file
@@ -3025,24 +3031,29 @@ class DataConnectivityService:
             logger.error(f"Failed to delete data source {data_source_id}: {e}")
             return {'success': False, 'error': str(e)}
 
-    async def generate_data_insights(self, data_source_id: str) -> Dict[str, Any]:
+    async def generate_data_insights(
+        self,
+        data_source_id: str,
+        user_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Generate AI insights for a data source"""
         try:
             logger.info(f"🔍 Generating AI insights for data source: {data_source_id}")
-            
+
             # Get the data source
             data_source = self.data_sources.get(data_source_id)
             if not data_source:
                 return {'success': False, 'error': 'Data source not found'}
-            
+
             # Get data and schema
             data = data_source.get('data', [])
             schema = data_source.get('schema', {})
             name = data_source.get('name', 'Unknown')
-            
+
             # Generate insights using AI
             insights_result = await self.ai_schema_service.generate_data_insights(
-                data, schema, name
+                data, schema, name, user_id=user_id, organization_id=organization_id
             )
             
             return insights_result
@@ -3628,6 +3639,14 @@ class DataConnectivityService:
                                 'schemas': schemas,
                                 'last_updated': datetime.now().isoformat()
                             }
+                            try:
+                                from src.modules.data.services.pii_policy import ensure_schema_pii_policy
+
+                                updated_schema, _cols, _ = ensure_schema_pii_policy(
+                                    updated_schema, force=True
+                                )
+                            except Exception as _pii_err:
+                                logger.debug("PII policy on schema refresh skipped: %s", _pii_err)
 
                             logger.info(f"✅ Schema fetched successfully: {len(tables)} tables, {len(schemas)} schemas")
 

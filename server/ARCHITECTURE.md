@@ -307,7 +307,11 @@ engine = create_async_engine(
 
 ## Removed Components
 
-The following Cube.js-related components were removed:
+The following Cube.js-related components were removed. An earlier version of
+this document claimed this removal was already complete; it wasn't — a full
+parallel Cube.js query-execution pipeline was still live end-to-end. That
+pipeline (not just the services/directories below) has now actually been
+deleted:
 
 ### Deleted Services (~3500 lines)
 - `cube_connector_service.py` (662 lines)
@@ -320,10 +324,47 @@ The following Cube.js-related components were removed:
 - `cube_helpers/` - Placeholder Cube.js directory
 - `cube_schemas/` - YAML schema files
 
-### Deprecated Endpoints
-All Cube.js endpoints now return 501 Not Implemented:
-- `/api/data/cube/*`
-- `/api/data/cube-modeling/*`
+### Deleted query-execution pipeline (this pass)
+- `CubeEngine` class, the `QueryEngine.CUBE` enum member, and
+  `MultiEngineQueryService.execute_cube_query()` in
+  `src/modules/data/services/multi_engine_query_service.py` — this made live
+  HTTP calls to `CUBE_API_URL`, a service with no entry in any Docker Compose
+  file in this repo.
+- The LangGraph `cube_query` → `execute_cube_query` node pair and the
+  supervisor routing branch into it (`ee/modules/ai/nodes/cube_node.py`,
+  `ee/modules/ai/nodes/cube_execution_node.py` — both deleted — plus the
+  wiring in `ee/modules/ai/orchestrator/graph_builder.py`,
+  `supervisor_routing.py`, `supervisor_node.py`, and
+  `nodes/supervisor/plan_templates.py`).
+- `AIOrchestrator._execute_cube_query()` and the Cube.js branch of
+  `_execute_cube_analysis()` in `ee/modules/ai/services/ai_orchestrator.py`
+  (this branch was already unreachable in practice — the strategy selector
+  never actually returned the literal string it was gated on — and now fails
+  fast instead of calling the removed HTTP client).
+- The `/api/data/cube/*` execution endpoints in `src/modules/data/router.py`:
+  `status`, `connect`, `metadata`, `query`, `suggestions`, `{cube_name}/preview`,
+  `initialize`, `connections`, `connections/{id}/query`,
+  `connections/{id}/schema` — all made live `CUBE_API_URL` HTTP calls with no
+  backing service. `_require_external_cube()` and the `CubeQueryRequest`
+  model (only used by these endpoints) were removed alongside them.
+
+### Endpoints that still exist as routes but are non-functional
+- `/api/data/cube-modeling/*` (`analyze`, `deploy`, `connect-warehouse`,
+  `types`) depend on `cube_modeling_service`, a module that does not exist
+  anywhere in this codebase — the import is wrapped in a try/except that
+  falls back to `None`, so these return 503 "Cube.js modeling service is not
+  available" rather than doing anything.
+- `/api/data/cube-deploy` and `/api/data/cube-cubes` already explicitly
+  return 501 in code ("Cube.js deployment/integration has been removed").
+
+### Optional feature intentionally out of scope for this removal
+- `ee/modules/ai/semantic_router.py`'s `/cube/export` and `/cube/import`
+  endpoints let a user export this platform's semantic layer to Cube.js YAML
+  format, or import metadata from their own externally-hosted Cube.js
+  instance. This is gated behind `AICSER_EXTERNAL_CUBE_ENABLED`
+  (`src/modules/data/cube_feature.py`) and is a distinct, opt-in
+  interchange feature — not the query-execution pipeline described above —
+  so it was left in place.
 
 ### Removed Models
 - `DataConnection` - Duplicate of DataSource
@@ -360,9 +401,13 @@ schema = await database_connector.get_schema(config)
 | POST | `/api/data/upload` | Upload file |
 | DELETE | `/api/data/sources/{id}` | Delete data source |
 
-### Deprecated Endpoints (501 Not Implemented)
+### Deprecated Endpoints
 
-All `/api/data/cube/*` and `/api/data/cube-modeling/*` endpoints
+`/api/data/cube/*` no longer exists (see "Removed Components" above — those
+routes were deleted, not stubbed). `/api/data/cube-modeling/*` still exists
+as a route but returns 503, since the service it depends on isn't present in
+this codebase. `/api/data/cube-deploy` and `/api/data/cube-cubes` remain as
+routes that explicitly return 501.
 
 ## Environment Variables
 
@@ -498,3 +543,60 @@ INFO: ✅ Credentials encrypted for postgresql connection
 - SQLAlchemy Docs: https://docs.sqlalchemy.org/
 - ClickHouse HTTP API: https://clickhouse.com/docs/en/interfaces/http/
 - Fernet Encryption: https://cryptography.io/en/latest/fernet/
+
+---
+
+## AI analytics execution path (chat / LangGraph)
+
+How natural-language analysis reaches data, with the guards that matter for trust and cost.
+
+### Source → engine (one NL2SQL façade, divergent engines)
+
+```
+User question
+    → supervisor / NL2SQL (SQL-shaped plan)
+    → validate_sql → execute_query
+         ├─ file / csv / parquet / excel  → DuckDB (load file → table "data")
+         ├─ API / single-table HTTP       → fetch → Pandas → DuckDB register("data") → SQL
+         ├─ warehouse DB                  → DirectSQL (native dialect)
+         └─ multi-source federation       → per-source extract (under identity)
+                                            → DuckDB register(alias, df) → federation SQL
+```
+
+**Honest claim:** we unify on SQL as the *query language*, not on one physical engine. Files and APIs are normalized into DuckDB-shaped relations before SQL runs. Remote warehouses stay on DirectSQL for correctness and pushdown. Federation is extract-then-DuckDB, not durable `ATTACH` of every warehouse.
+
+Capabilities live in `server/ee/modules/ai/data_source_capabilities.py` and routing in `MultiEngineQueryService._execute_query_unfiltered`.
+
+### Numeric grounding (layered — do not double-rewrite)
+
+```
+insight_synthesizer
+  → AUTHORITATIVE data_facts in prompt
+  → ground_prose_pack (scale/format inject from result rows)
+analytics_render (chart ∥ insights)
+  → response_finalizer / narration_grounding
+       verify claims vs facts (audit)
+       soft-correct summary rounding only (≤5%)
+       assign verification_tier: T1 | T2 | T0
+```
+
+Generation already grounds narration. Finalizer is the **auditor** (tiers + catch residual hallucinations), not a second inject pass.
+
+### Multi-query fan-out budgets
+
+`mode_query_planner` declares `budgets.max_queries` (default 6) and **trims** the plan via `_apply_query_budgets` (also shrinks N when little wall-clock remains).  
+`multi_query_execution` re-trims and runs optional queries under `asyncio.Semaphore(max_concurrency)` (default 3).  
+SQL correction loops remain separately capped in `DEFAULT_RETRY_LIMITS`.
+
+### Row security (RLS) enforcement point
+
+```
+execute_query / federated extract
+    → MultiEngineQueryService.execute_query(identity=QueryIdentity(...))
+         → _enforce_column_security
+         → _enforce_row_security → inject_predicates (app rewrite)
+         → engine
+```
+
+Enforcement is **caller-scoped SQL rewrite** from Aicser RLS policies (`data_source_rls_*`), not `SET ROLE` / session Postgres RLS. That covers DuckDB and API paths where database RLS cannot apply. Native warehouse `SET ROLE` is optional and additive only when a customer warehouse already relies on DB roles.
+

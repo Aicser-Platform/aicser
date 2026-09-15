@@ -28,3 +28,24 @@ async def test_update_score_by_nl_query_decrements_on_negative_feedback():
         )
     assert ok is True
     mock_session.commit.assert_awaited()
+
+
+def test_retrieve_similar_has_no_broken_embedding_vector_ann():
+    """query_patterns has no embedding_vector column at all (unlike
+    document_chunks) -- an ANN branch querying it always raised
+    UndefinedColumnError, and before that even parsed, `:qvec::vector` broke
+    SQLAlchemy's text() parameter binding outright (a known gotcha, same bug
+    as rag_retrieval_service.py's _retrieve_pgvector). Both were caught
+    without a rollback, poisoning the session so the JSONB fallback query
+    right after failed too -- returning zero few-shot NL2SQL examples for
+    every request. Removed rather than patched: the column doesn't exist to
+    query in the first place. Guard against reintroducing either shape."""
+    import inspect
+    from ee.modules.ai.services.query_pattern_service import QueryPatternService
+
+    source = "\n".join(
+        line for line in inspect.getsource(QueryPatternService.retrieve_similar).splitlines()
+        if not line.strip().startswith("#")
+    )
+    assert "::vector" not in source
+    assert "embedding_vector" not in source

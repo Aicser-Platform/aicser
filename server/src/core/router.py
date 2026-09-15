@@ -78,8 +78,14 @@ async def get_data_source_proxy(
     from src.modules.data.router import get_data_source
     try:
         return await get_data_source(data_source_id, current_token)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("get_data_source_proxy failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "internal_error", "message": "Failed to load data source"},
+        )
 
 
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
@@ -116,6 +122,22 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("AI router not loaded: %s", _err)
+
+    try:
+        from ee.modules.ai.reports.router import router as reports_router
+        # require_valid_license checks this server instance's own license
+        # state (src/core/licensing/state.py), not the caller's session - it
+        # applies just as well to the unauthenticated /embed endpoint (used
+        # by the chrome-free /embed/report/[id] route and the Playwright
+        # export service) as to the authenticated /export endpoint. Access
+        # *to a specific report* is separately gated by the embed token
+        # itself (verify_report_read_access).
+        api_router.include_router(
+            reports_router, prefix="/reports", tags=["reports"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Reports router not loaded: %s", _err)
 
     try:
         from ee.modules.alerts.router import router as alerts_router
@@ -187,6 +209,15 @@ if is_ee_enabled():
         logger.warning("Platform intelligence router not loaded: %s", _err)
 
     try:
+        from ee.modules.data.router import router as oauth_connectors_router
+        api_router.include_router(
+            oauth_connectors_router, prefix="/api", tags=["oauth-connectors"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("OAuth connectors router not loaded: %s", _err)
+
+    try:
         from ee.modules.schedule_email.router import router as schedule_email_router
         api_router.include_router(
             schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"],
@@ -223,6 +254,19 @@ if is_ee_enabled():
         logger.warning("Embed assistants router not loaded: %s", _err)
 
     try:
+        # Anonymous/embed_jwt embed-chat surface — token-gated (chat_auth.py),
+        # NOT session-gated. require_valid_license here checks this server
+        # instance's own license state, same as the analogous unauthenticated
+        # report-embed endpoint above; it applies fine to anonymous visitors.
+        from ee.modules.embed.chat_router import router as embed_chat_router
+        api_router.include_router(
+            embed_chat_router, prefix="/ai/embed", tags=["embed-chat"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Embed chat router not loaded: %s", _err)
+
+    try:
         from ee.modules.knowledge.library_router import router as knowledge_library_router
         api_router.include_router(
             knowledge_library_router, prefix="/knowledge/libraries", tags=["knowledge-libraries"],
@@ -230,6 +274,17 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Knowledge libraries router not loaded: %s", _err)
+
+    try:
+        # Router already prefixes /knowledge/connectors — mount at root like oauth connectors.
+        from ee.modules.knowledge_connectors.router import router as knowledge_connectors_router
+        api_router.include_router(
+            knowledge_connectors_router,
+            tags=["knowledge-connectors"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Knowledge connectors router not loaded: %s", _err)
 
     try:
         from ee.modules.telegram.router import router as telegram_router

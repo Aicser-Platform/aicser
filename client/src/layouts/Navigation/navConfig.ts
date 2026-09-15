@@ -3,11 +3,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/dashboards': ['dashboard-studio'],
   '/chart-designer': ['dashboard-studio'],
   '/data': ['grp-data'],
-  '/semantic-layer': ['grp-data'],
-  '/model': ['grp-data'],
   '/knowledge': ['grp-data'],
   '/alerts': ['grp-operate'],
-  '/data-platform': ['grp-operate'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -17,10 +14,8 @@ export const NAV_ROUTES: Record<string, string> = {
   'chart-designer': '/chart-designer',
   'query-editor': '/query-editor',
   data: '/data',
-  'semantic-model': '/semantic-layer',
   knowledge: '/knowledge',
   alerts: '/alerts',
-  'platform-services': '/data-platform',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
 };
@@ -38,11 +33,9 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   'chart-designer': 'chart_designer',
   'grp-data': 'cat_data',
   data: 'data',
-  'semantic-model': 'semantic_layer',
   knowledge: 'knowledge_libraries',
   'grp-operate': 'cat_monitor',
   alerts: 'alerts',
-  'platform-services': 'integrations',
   settings: 'settings',
   billing: 'billing',
 };
@@ -53,10 +46,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
  */
 export const NAV_PARENT_GROUP: Record<string, string> = {
   data: 'grp-data',
-  'semantic-model': 'grp-data',
   knowledge: 'grp-data',
   alerts: 'grp-operate',
-  'platform-services': 'grp-operate',
 };
 
 export interface NavLinkDef {
@@ -76,6 +67,64 @@ export type NavItemDef =
   | { kind: 'group'; key: string; labelKey: string; children: NavLinkDef[] }
   | { kind: 'divider' };
 
+export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
+  const links: NavLinkDef[] = [];
+  for (const item of items) {
+    if (item.kind === 'link') {
+      links.push({ key: item.key, labelKey: item.labelKey, href: item.href });
+    } else if (item.kind === 'group') {
+      links.push(...item.children);
+    }
+  }
+  return links;
+}
+
+export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
+  return [
+    { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
+    ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
+    { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
+    {
+      kind: 'group',
+      key: 'dashboard-studio',
+      labelKey: NAV_LABEL_KEYS['dashboard-studio'],
+      children: [
+        { key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
+        { key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
+      ],
+    },
+    { kind: 'divider' },
+    {
+      kind: 'group',
+      key: 'grp-data',
+      labelKey: NAV_LABEL_KEYS['grp-data'],
+      children: [
+        { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+        { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
+      ],
+    },
+    {
+      kind: 'group',
+      key: 'grp-operate',
+      labelKey: NAV_LABEL_KEYS['grp-operate'],
+      children: [
+        { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
+      ],
+    },
+  ];
+}
+
+export function buildCommunitySidebarItems(): NavItemDef[] {
+  return [
+    { kind: 'link', key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
+    { kind: 'link', key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
+    { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
+    { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
+    { kind: 'link', key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
+    { kind: 'link', key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
+  ];
+}
+
 export function openKeysForPathname(pathname: string | null): string[] {
   if (!pathname) return [];
   for (const [prefix, keys] of Object.entries(ROUTE_OPEN_KEYS)) {
@@ -89,8 +138,7 @@ export function openKeysForPathname(pathname: string | null): string[] {
 
 export function selectedKeyForPathname(pathname: string | null, search?: string | null): string {
   if (!pathname) return '';
-  if (pathname === '/chat' || pathname === '/ai-search') return 'chat';
-  if (pathname === '/semantic-layer' || pathname === '/model' || pathname.includes('/semantic')) return 'semantic-model';
+  if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'knowledge';
   if (pathname.startsWith('/settings')) {
@@ -101,7 +149,6 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
-  if (pathname === '/data-platform') return 'platform-services';
   if (pathname === '/alerts') return 'alerts';
   return '';
 }

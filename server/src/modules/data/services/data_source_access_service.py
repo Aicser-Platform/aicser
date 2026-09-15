@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Sequence
 from uuid import UUID, uuid4
 
@@ -207,9 +207,10 @@ class DataSourceAccessService:
 
         if not is_ee_enabled():
             owner_id = getattr(data_source, "user_id", None)
-            if permission in {DATA_SOURCE_PERMISSION_VIEW, DATA_SOURCE_PERMISSION_QUERY}:
-                return owner_id is None or str(owner_id) == str(user_id)
-            return owner_id is not None and str(owner_id) == str(user_id)
+            if owner_id is None:
+                # Fail closed: unowned/legacy rows are not world-readable.
+                return False
+            return str(owner_id) == str(user_id)
 
         organization_id = str(data_source.organization_id) if data_source.organization_id else None
         if _is_source_owner(data_source, user_id):
@@ -401,9 +402,7 @@ class DataSourceAccessService:
 
         if not is_ee_enabled():
             result = await session.execute(
-                select(DataSource.id).where(
-                    or_(DataSource.user_id == _uuid_or_none(user_id), DataSource.user_id.is_(None))
-                )
+                select(DataSource.id).where(DataSource.user_id == _uuid_or_none(user_id))
             )
             return [str(source_id) for source_id in result.scalars().all()]
 
@@ -499,6 +498,27 @@ class DataSourceAccessService:
         return sorted(accessible_ids)
 
     @staticmethod
+    async def _has_active_rls_policy(
+        data_source_id: str,
+        *,
+        session: AsyncSession,
+    ) -> bool:
+        """Whether *data_source_id* has any active, enabled row-level-security policy."""
+        from src.modules.data.models import DataSourceRLSPolicy
+
+        result = await session.execute(
+            select(DataSourceRLSPolicy.id)
+            .where(
+                DataSourceRLSPolicy.data_source_id == data_source_id,
+                DataSourceRLSPolicy.enabled == True,
+                DataSourceRLSPolicy.is_active == True,
+                DataSourceRLSPolicy.is_deleted == False,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    @staticmethod
     async def grant_project_access(
         *,
         data_source_id: str,
@@ -527,18 +547,26 @@ class DataSourceAccessService:
                 await scoped.commit()
             return
 
-        grant_permissions = list(
-            permissions
-            or [
+        if permissions:
+            grant_permissions = list(permissions)
+        else:
+            grant_permissions = [
                 DATA_SOURCE_PERMISSION_VIEW,
-                # Deliberately no `query`. A grant with no rls_policy_id means
-                # "all rows", so auto-granting query here would hand every
-                # project member a standing bypass of any policy added later.
-                # Row access is granted explicitly on the Permissions tab.
                 DATA_SOURCE_PERMISSION_EDIT,
                 DATA_SOURCE_PERMISSION_MANAGE,
             ]
-        )
+            # `query` is withheld by default ONLY when an active RLS policy already
+            # exists for this data source — a grant with no rls_policy_id means "all
+            # rows", so auto-granting query here would hand every project member a
+            # standing bypass of that policy (row access for policy-governed sources
+            # is granted explicitly, per-grant, on the Permissions tab instead).
+            # When no policy exists yet (the common case for a fresh connection),
+            # there's nothing to bypass, so project members can query it like they
+            # can already view/edit/manage it.
+            if not await DataSourceAccessService._has_active_rls_policy(
+                data_source_id, session=session
+            ):
+                grant_permissions.append(DATA_SOURCE_PERMISSION_QUERY)
         result = await session.execute(
             select(DataSourceAccessGrant).where(
                 DataSourceAccessGrant.data_source_id == data_source_id,
@@ -805,7 +833,11 @@ class DataSourceAccessService:
 
         grant.is_active = False
         grant.is_deleted = True
-        grant.deleted_at = datetime.now(timezone.utc)
+        # DataSourceAccessGrant inherits BaseModel's naive DateTime columns
+        # (onupdate=datetime.utcnow) — a tz-aware value here makes asyncpg
+        # fail to bind alongside the naive updated_at: "can't subtract
+        # offset-naive and offset-aware datetimes".
+        grant.deleted_at = datetime.utcnow()
         return True
 
     @staticmethod

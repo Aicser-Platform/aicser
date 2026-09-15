@@ -85,3 +85,73 @@ def test_sample_duckdb_missing_file_uses_demo_fallback(monkeypatch):
     assert result["x"]
     assert result["y"]
     assert result["series"][0]["data"] == result["y"]
+
+
+def test_resolve_table_from_chart_looks_up_real_schema_for_bare_table_name():
+    """Regression: a live user's dashboard against the multi-domain sample
+    DuckDB (education.grades, education.enrollments, ...) showed fabricated
+    "Segment A/B/C/D" placeholder data instead of real grade letters (A-F).
+    Root cause: chart_query.tableName is stored bare ("grades", no schema
+    prefix) by the dashboard widget builders, but _resolve_table_from_chart's
+    bare-name branch defaulted to _default_schema() unconditionally instead
+    of looking up the table's real schema in schema_info -- so the query ran
+    against "grades" in the default schema (which doesn't exist there; the
+    real table is "education"."grades"), raised, and for a sample_duckdb
+    source that exception used to be silently swallowed into fabricated
+    data. _base_table_schema_name already does this exact per-table lookup
+    correctly elsewhere in this class (3 other call sites) -- this test
+    pins the bare-tableName path to use it too."""
+    from src.modules.charts.services.v2.chart_service import ChartService
+
+    schema_info = {
+        "tables": [
+            {"name": "grades", "schema": "education", "columns": [{"name": "grade_letter"}]},
+            {"name": "enrollments", "schema": "education", "columns": [{"name": "enrolled_at"}]},
+        ]
+    }
+    service = ChartService(None)
+
+    table, schema = service._resolve_table_from_chart({"tableName": "grades"}, schema_info)
+    assert table == "grades"
+    assert schema == "education"
+
+    table2, schema2 = service._resolve_table_from_chart({"tableName": "enrollments"}, schema_info)
+    assert table2 == "enrollments"
+    assert schema2 == "education"
+
+
+def test_resolve_table_from_chart_still_honors_explicit_schema_prefix():
+    """Control case: a tableName that already includes "schema.table" must
+    keep using the explicit schema, unaffected by the bare-name fix above."""
+    from src.modules.charts.services.v2.chart_service import ChartService
+
+    schema_info = {"tables": [{"name": "grades", "schema": "education"}]}
+    service = ChartService(None)
+
+    table, schema = service._resolve_table_from_chart({"tableName": "public.grades"}, schema_info)
+    assert schema == "public"
+
+
+def test_sample_fallback_only_reachable_from_file_availability_checks():
+    """Regression: _sample_template_fallback_result's fabricated placeholder
+    data used to be reachable from generic "except Exception" / query-failure
+    branches too -- meaning ANY bug in query execution against a sample_duckdb
+    source (not just the intended "sample file genuinely absent" case) got
+    silently hidden behind plausible-looking made-up numbers instead of a
+    real error. Pins the source-level fix: the fallback call is now only
+    reachable from the explicit _sample_duckdb_file_available() checks."""
+    import inspect
+
+    from src.modules.charts.services.v2 import chart_service as mod
+
+    source = inspect.getsource(mod.ChartService.execute)
+    # Two legitimate call sites remain, each immediately preceded by the
+    # file-availability guard on the same or prior line.
+    assert source.count("_sample_template_fallback_result") == 2
+    for guarded in (
+        'if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():\n'
+        '                return self._sample_template_fallback_result(chart)',
+        'if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():\n'
+        '            return self._sample_template_fallback_result(chart)',
+    ):
+        assert guarded in source, guarded

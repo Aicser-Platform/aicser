@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import ReportPageClient from './ReportPageClient';
-
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
 export default function ReportPage() {
-  if (!isEE) redirect('/dashboards');
+  if (!isEnterpriseEdition()) redirect('/dashboards');
   return <ReportPageClient />;
 }

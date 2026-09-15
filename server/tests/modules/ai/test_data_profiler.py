@@ -10,7 +10,7 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from src.modules.ai.utils.data_profiler import (
+from ee.modules.ai.utils.data_profiler import (
     DataProfile,
     profile_dataframe,
     detect_frequency,

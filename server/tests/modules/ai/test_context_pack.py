@@ -1,6 +1,6 @@
 """Golden-style checks for context pack shape (trust / eval replay)."""
 
-from src.modules.ai.services.context_pack import (
+from ee.modules.ai.services.context_pack import (
     CONTEXT_PACK_VERSION,
     build_context_pack_conversational,
     build_context_pack_from_final_state,
@@ -37,10 +37,11 @@ def test_build_context_pack_from_final_state_minimal():
     assert pack["sql"]["fingerprint"] is not None
     assert pack["sql"]["executed"] is True
     assert pack["model"]["id"] == "gpt-test"
+    assert pack["schema_snapshot"]["tables_used"] == []
 
 
 def test_build_context_pack_includes_decision_evidence():
-    from src.modules.ai.services.context_pack import build_context_pack_from_final_state
+    from ee.modules.ai.services.context_pack import build_context_pack_from_final_state
 
     state = {
         "decision_brief": {
@@ -67,3 +68,15 @@ def test_build_context_pack_conversational():
     assert pack["data_source"] is None
     assert pack["semantic_layer"]["hint_injected"] is False
     assert pack["workflow"]["mode"] == "Conversational"
+
+
+def test_tables_used_extracted_from_sql():
+    state = {
+        "sql_query": 'SELECT id FROM orders o JOIN customers c ON o.cid = c.id',
+        "query_result": [{}],
+        "query_result_row_count": 1,
+        "data_source_schema": {"tables": []},
+        "execution_metadata": {},
+    }
+    pack = build_context_pack_from_final_state(state, query="orders")
+    assert pack["schema_snapshot"]["tables_used"] == ["orders", "customers"]

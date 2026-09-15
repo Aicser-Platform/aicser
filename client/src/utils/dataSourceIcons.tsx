@@ -31,6 +31,16 @@ export const DATA_SOURCE_BRAND_COLORS: Record<string, string> = {
   file: '#52c41a',
   google_sheets: '#0F9D58',
   api: '#fa8c16',
+  mongodb: '#47A248',
+  cassandra: '#1287B1',
+  dynamodb: '#4053D6',
+  databricks: '#FF3621',
+  kafka: '#231F20',
+  elasticsearch: '#005571',
+  opensearch: '#005EB8',
+  influxdb: '#22ADF6',
+  graphql_api: '#E10098',
+  rest_api: '#61AFFE',
 };
 
 export function getDatabaseLogoUrl(dbType: string): string {
@@ -52,62 +62,80 @@ export interface DataSourceIconProps {
  * Otherwise uses a generic icon by type (file, api, knowledge_base, etc.).
  */
 export function DataSourceIcon({ type, dbType, size = 16, style }: DataSourceIconProps): React.ReactElement {
-  const baseStyle: React.CSSProperties = { fontSize: size, flexShrink: 0, ...style };
+  const baseStyle: React.CSSProperties = { fontSize: size };
 
-  if ((type === 'database' || type === 'warehouse') && dbType) {
-    return (
-      <DataSourceLogoImage
-        appType={dbType}
-        size={size}
-        style={style}
-      />
-    );
+  // Prefer the real per-vendor logo whenever a specific dbType is known,
+  // regardless of the broad category -- enterprise_connector sources (Kafka,
+  // Elasticsearch, etc, from ee/modules/data/services/enterprise_connectors_service.py)
+  // carry a real dbType but a category that isn't 'database'/'warehouse', so
+  // gating on category alone left them falling through to the generic
+  // InfoCircleOutlined default below.
+  if (dbType && getIntegrationLogo(dbType)) {
+    // DataSourceLogoImage already carries its own full-size centering
+    // wrapper (see below) -- return it directly rather than double-wrapping.
+    return <DataSourceLogoImage appType={dbType} size={size} style={style} />;
   }
 
-  if (type === 'file') {
-    const logo = getIntegrationLogo('file');
-    if (logo) {
-      return <DataSourceLogoImage appType="file" size={size} style={style} />;
+  let inner: React.ReactElement;
+  if (type === 'file' && getIntegrationLogo('file')) {
+    return <DataSourceLogoImage appType="file" size={size} style={style} />;
+  } else if (type === 'file') {
+    inner = <FileTextOutlined style={{ ...baseStyle, color: '#52c41a' }} />;
+  } else if (type === 'api' && getIntegrationLogo('api')) {
+    return <DataSourceLogoImage appType="api" size={size} style={style} />;
+  } else if (type === 'api') {
+    inner = <ApiOutlined style={{ ...baseStyle, color: '#fa8c16' }} />;
+  } else if (type === 'sample_duckdb' && getIntegrationLogo('duckdb')) {
+    return <DataSourceLogoImage appType="duckdb" size={size} style={style} />;
+  } else if (type === 'sample_duckdb') {
+    inner = <DatabaseOutlined style={{ ...baseStyle, color: '#29B5E8' }} />;
+  } else if (type === 'google_sheets' && getIntegrationLogo('google_sheets')) {
+    return <DataSourceLogoImage appType="google_sheets" size={size} style={style} />;
+  } else if (type === 'google_sheets') {
+    inner = <FileTextOutlined style={{ ...baseStyle, color: '#0F9D58' }} />;
+  } else {
+    switch (type) {
+      case 'database':
+        inner = <DatabaseOutlined style={{ ...baseStyle, color: '#1677ff' }} />;
+        break;
+      case 'warehouse':
+        inner = <CloudOutlined style={{ ...baseStyle, color: '#722ed1' }} />;
+        break;
+      case 'cube':
+        inner = <CloudOutlined style={{ ...baseStyle, color: '#13c2c2' }} />;
+        break;
+      case 'knowledge_base':
+        inner = <BookOutlined style={{ ...baseStyle, color: '#eb2f96' }} />;
+        break;
+      default:
+        inner = <InfoCircleOutlined style={baseStyle} />;
     }
-    return <FileTextOutlined style={{ ...baseStyle, color: '#52c41a' }} />;
   }
 
-  if (type === 'api') {
-    const logo = getIntegrationLogo('api');
-    if (logo) {
-      return <DataSourceLogoImage appType="api" size={size} style={style} />;
-    }
-    return <ApiOutlined style={{ ...baseStyle, color: '#fa8c16' }} />;
-  }
-
-  if (type === 'sample_duckdb') {
-    const logo = getIntegrationLogo('duckdb');
-    if (logo) {
-      return <DataSourceLogoImage appType="duckdb" size={size} style={style} />;
-    }
-    return <DatabaseOutlined style={{ ...baseStyle, color: '#29B5E8' }} />;
-  }
-
-  if (type === 'google_sheets') {
-    const logo = getIntegrationLogo('google_sheets');
-    if (logo) {
-      return <DataSourceLogoImage appType="google_sheets" size={size} style={style} />;
-    }
-    return <FileTextOutlined style={{ ...baseStyle, color: '#0F9D58' }} />;
-  }
-
-  switch (type) {
-    case 'database':
-      return <DatabaseOutlined style={{ ...baseStyle, color: '#1677ff' }} />;
-    case 'warehouse':
-      return <CloudOutlined style={{ ...baseStyle, color: '#722ed1' }} />;
-    case 'cube':
-      return <CloudOutlined style={{ ...baseStyle, color: '#13c2c2' }} />;
-    case 'knowledge_base':
-      return <BookOutlined style={{ ...baseStyle, color: '#eb2f96' }} />;
-    default:
-      return <InfoCircleOutlined style={baseStyle} />;
-  }
+  // RELIABILITY: every branch above used to return its <XOutlined> glyph
+  // directly, with no size/centering wrapper -- unlike DataSourceLogoImage's
+  // own span (display:inline-flex, alignItems/justifyContent:center, fixed
+  // width/height:size), so a plain antd icon's own default inline SVG
+  // vertical-align (not baseline-neutral) made it sit visibly off-center
+  // next to text in any flex row that centers this component as a whole
+  // item, e.g. the Sources panel's data-source picker. Wrapping every
+  // fallback-icon branch in the identical span DataSourceLogoImage already
+  // uses makes every DataSourceIcon result -- real logo or generic glyph --
+  // occupy the exact same size x size centered box, regardless of branch.
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: size,
+        height: size,
+        flexShrink: 0,
+      }}
+    >
+      {inner}
+    </span>
+  );
 }
 
 function useIsDarkMode(): boolean {

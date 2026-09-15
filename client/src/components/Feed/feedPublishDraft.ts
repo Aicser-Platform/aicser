@@ -24,6 +24,10 @@ export interface FeedPublishDraft {
   existingPublicationTitle?: string;
   /** CSS selector for the live element to screenshot for the feed card thumbnail. */
   captureSelector?: string;
+  /** Caps the thumbnail capture to this many px from the element's top — see
+   * captureElementScreenshot.ts's maxHeightPx doc for why a tall scrolling
+   * document (a report) needs this and a dashboard/chart doesn't. */
+  captureMaxHeightPx?: number;
 }
 
 export function chatDraftToPublishDraft(draft: ChatFeedDraft, captureSelector?: string): FeedPublishDraft {
@@ -33,7 +37,7 @@ export function chatDraftToPublishDraft(draft: ChatFeedDraft, captureSelector?: 
     title: draft.title,
     questionTitle: draft.questionTitle,
     excerpt: draft.excerpt,
-    defaultDescription: draft.description,
+    defaultDescription: draft.excerpt || draft.description,
     hasChart: draft.hasChart,
     hasSql: draft.hasSql,
     chartPreview: draft.chartPreview,
@@ -59,6 +63,7 @@ export function assetPublishDraft(params: {
   existingPublicationId?: string;
   existingPublicationTitle?: string;
   captureSelector?: string;
+  captureMaxHeightPx?: number;
 }): FeedPublishDraft {
   if (params.chatPublish) {
     return {
@@ -76,6 +81,7 @@ export function assetPublishDraft(params: {
       snapshotPayload: params.snapshotPayload,
       renderMode: params.renderMode ?? 'snapshot',
       captureSelector: params.captureSelector,
+      captureMaxHeightPx: params.captureMaxHeightPx,
     };
   }
 
@@ -99,5 +105,6 @@ export function assetPublishDraft(params: {
     existingPublicationId: params.existingPublicationId,
     existingPublicationTitle: params.existingPublicationTitle,
     captureSelector: params.captureSelector,
+    captureMaxHeightPx: params.captureMaxHeightPx,
   };
 }

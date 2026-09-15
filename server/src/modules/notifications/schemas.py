@@ -18,7 +18,17 @@ class NotificationAction(BaseModel):
 
 class NotificationItem(BaseModel):
     id: str
-    kind: Literal["alert", "invitation", "ai", "activity"]
+    # "feed" was missing here even though feed_notifications() (inbox_service.py)
+    # always constructed items with kind="feed" and the frontend
+    # (ActivityInboxBell.tsx's kindAccent/KindIcon/kindLabel) already fully
+    # supports it - the mismatch meant NotificationItem(kind="feed", ...)
+    # raised a pydantic ValidationError the moment a user had any real feed
+    # notification (mention/comment/reaction/share/follow/approval), which
+    # propagated out of feed_notifications() uncaught and made build_inbox()
+    # fail entirely - the router's outer try/except then swallowed it and
+    # returned an EMPTY inbox, silently hiding every other notification
+    # (including firing alerts) too, with no error shown to the user.
+    kind: Literal["alert", "invitation", "ai", "activity", "feed"]
     title: str
     message: str
     severity: str = "info"

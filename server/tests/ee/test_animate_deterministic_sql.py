@@ -126,8 +126,8 @@ def test_category_missing_everywhere_substitutes_fact_table_dimension():
     assert "region" in sql.lower()
 
 
-def test_missing_time_or_metric_returns_none():
-    """Never guess SQL when the fact table cannot bind time + metric."""
+def test_missing_time_or_metric_falls_back_to_schema():
+    """Hallucinated hints are dropped; the connected schema still compiles."""
     from ee.modules.ai.nodes.nl2sql_node import _build_animate_deterministic_sql
 
     sql = _build_animate_deterministic_sql(
@@ -140,7 +140,65 @@ def test_missing_time_or_metric_returns_none():
         db_type="postgresql",
         data_source_type="database",
     )
+    assert sql is not None
+    assert "no_such_time" not in sql
+    assert "no_such_metric" not in sql
+    assert "order_date" in sql.lower()
+    assert "revenue" in sql.lower()
+
+
+def test_schema_with_no_time_or_metric_returns_none():
+    from ee.modules.ai.nodes.nl2sql_node import _build_animate_deterministic_sql
+
+    schema = {
+        "tables": [
+            {
+                "name": "ids_only",
+                "columns": [{"name": "id", "type": "INT"}],
+            }
+        ]
+    }
+    sql = _build_animate_deterministic_sql(
+        schema_info=schema,
+        delegation_context={},
+        db_type="postgresql",
+        data_source_type="database",
+    )
     assert sql is None
+
+
+def test_animate_infers_from_schema_without_hints():
+    """Animate must compile from the connected schema, not wait for LLM hints."""
+    from ee.modules.ai.nodes.nl2sql_node import _build_animate_deterministic_sql
+
+    sql = _build_animate_deterministic_sql(
+        schema_info=_single_table_schema(),
+        delegation_context={},
+        db_type="postgresql",
+        data_source_type="database",
+    )
+    assert sql is not None
+    lowered = sql.lower()
+    assert "order_date" in lowered
+    assert "revenue" in lowered
+    assert "region" in lowered
+    assert "join" not in lowered
+
+
+def test_hospitality_infers_join_without_hints():
+    from ee.modules.ai.nodes.nl2sql_node import _build_animate_deterministic_sql
+
+    sql = _build_animate_deterministic_sql(
+        schema_info=_hospitality_schema(),
+        delegation_context={},
+        db_type="duckdb",
+        data_source_type="sample_duckdb",
+    )
+    assert sql is not None
+    lowered = sql.lower()
+    assert "join" in lowered
+    assert "reviewed_at" in lowered
+    assert "rating" in lowered
 
 
 def test_metric_aggregation_matches_semantics():

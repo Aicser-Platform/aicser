@@ -23,6 +23,20 @@ class KnowledgeDocument(Base):
     user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     filename = Column(String, nullable=False)
     file_type = Column(String(10), nullable=True)  # pdf, md, txt, docx
+    # SHA-256 of the raw uploaded file bytes, scoped per data_source_id (see
+    # the (data_source_id, content_hash) index) -- lets ingest_document()
+    # detect "this exact file is already ingested here" before spending any
+    # parse/chunk/embed work on a byte-identical re-upload.
+    content_hash = Column(String(64), nullable=True, index=False)
+    # Object-storage key (see UploadDatasourceStorageService -- same
+    # S3/Azure Blob/PostgreSQL-backed storage CSV/datasource uploads use) the
+    # original uploaded file's bytes are durably stored under. NULL for
+    # documents ingested before this column existed (their originals were
+    # never durably stored, only used once via a local-disk path that was
+    # never cleaned up -- not backfillable) and for documents ingested via a
+    # path that doesn't persist an original (e.g. knowledge_connectors sync,
+    # which ingests a synthesized page body, not an uploaded file).
+    object_key = Column(Text, nullable=True)
     chunk_count = Column(Integer, nullable=True, server_default=text("0"))
     status = Column(String(20), nullable=True, server_default=text("'processing'"))  # processing, ready, failed
     error_message = Column(Text, nullable=True)
@@ -47,6 +61,11 @@ class DocumentChunk(Base):
     content = Column(Text, nullable=False)
     token_count = Column(Integer, nullable=True)
     embedding = Column(JSONB, nullable=True)  # JSONB list of floats (pgvector migration optional)
+    # Which model produced `embedding`/`embedding_vector`, and its width -- lets a
+    # config-vs-stored-data mismatch (e.g. EMBEDDING_MODEL changed) be detected
+    # instead of silently degrading retrieval. See current_embedding_model_id().
+    embedding_model = Column(String, nullable=True)
+    embedding_dims = Column(Integer, nullable=True)
     chunk_metadata = Column("metadata", JSONB, nullable=True)  # page_number, section_title, heading, etc.
 
     created_at = Column(DateTime(timezone=True), nullable=True, server_default=func.now())

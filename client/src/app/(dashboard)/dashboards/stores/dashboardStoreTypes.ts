@@ -49,13 +49,19 @@ export type WidgetInstance = {
   chartType: WidgetType;
   chartQuery?: {
     x?: string;
+    /** Date bucketing for X: year | quarter | month | week | day | hour */
+    xGrain?: string;
     aggregate?: boolean;
-    yMetric?: 'count' | 'sum' | 'none' | 'distinct_count' | 'avg' | 'min' | 'max';
+    yMetric?: 'count' | 'sum' | 'none' | 'distinct_count' | 'avg' | 'min' | 'max' | 'mean';
     xMetrics?: { field: string; aggregation: string }[];
     yMetrics?: { field: string; aggregation: string }[];
     yMetricsSecondary?: { field: string; aggregation: string }[];
     y?: string;
     legend?: string;
+    groupBy?: boolean;
+    groupField?: string;
+    groupSortBy?: 'field' | 'order';
+    groupOrder?: 'asc' | 'desc';
     sortBy?: string;
     filters?: {
       field: string;
@@ -101,6 +107,10 @@ export type WidgetInstance = {
   chartData?: ChartData;
   isLoading?: boolean;
   error?: string | null;
+  /** Non-fatal, e.g. "a dashboard filter replaced this widget's own saved
+   * filter on the same field" — surfaced as a small indicator, not an error
+   * state (chartData is still valid and rendered). */
+  filterWarnings?: string[] | null;
   lastFetchedQueryHash?: string;
   isLocked?: boolean;
   /** Client-only LWW timestamp for collaborative edits */

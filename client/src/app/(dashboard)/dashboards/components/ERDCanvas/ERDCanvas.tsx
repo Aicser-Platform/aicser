@@ -16,10 +16,11 @@ import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { useTranslations } from 'next-intl';
 import { Button, Input, Segmented } from 'antd';
-import { ApartmentOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, RadarChartOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
 import { TableNode, type TableNodeData } from './TableNode';
 import { RelationshipEdge, type RelationshipEdgeData } from './RelationshipEdge';
 import type { DataModelRelationship } from '@/api/dataModel';
+import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import './ERDCanvas.css';
 
 // Must be defined at module level — not inside render — to avoid React Flow re-registration
@@ -27,7 +28,23 @@ const NODE_TYPES = { tableNode: TableNode };
 const EDGE_TYPES = { relationshipEdge: RelationshipEdge };
 
 const NODE_WIDTH = 310;
-const NODE_HEIGHT = 310;
+// Mirrors the fixed chrome in ERDCanvas.css: 40px header + ~20px column-count
+// subtitle + 10px body padding, plus 30px per row up to the body's own
+// max-height:280px scroll cap. Real ERD tools (dbdiagram.io, Power BI's
+// model view) size layout nodes off actual row count instead of a flat
+// guess — a table with 3 columns and one with 30 shouldn't claim the same
+// vertical slot, or dagre either overlaps the tall one or wastes space
+// around the short one.
+const HEADER_HEIGHT = 40;
+const SUBTITLE_HEIGHT = 20;
+const ROW_HEIGHT = 30;
+const BODY_PADDING = 10;
+const BODY_MAX_HEIGHT = 280;
+
+function estimateNodeHeight(columnCount: number): number {
+  const bodyHeight = Math.min(Math.max(columnCount, 1) * ROW_HEIGHT, BODY_MAX_HEIGHT) + BODY_PADDING;
+  return HEADER_HEIGHT + SUBTITLE_HEIGHT + bodyHeight;
+}
 
 type PendingColumnConnection = {
   nodeId: string;
@@ -49,16 +66,58 @@ function columnFromHandle(nodeId: string, handleId: string | null | undefined): 
   return parts.join('__') || 'id';
 }
 
+// Grid fallback for a schema with no relationships at all (nothing detected,
+// nothing manually joined yet) — a single dagre rank would stack every table
+// in one tall column, which is what produced the "just a list, no modeling"
+// complaint. A grid at least reads as a deliberate overview instead of a
+// side-effect of an empty edge list.
+function gridLayout(nodes: Node[]): Node[] {
+  const perRow = Math.max(1, Math.round(Math.sqrt(nodes.length)));
+  const colGap = 70;
+  const rowGap = 70;
+  let x = 0;
+  let y = 0;
+  let col = 0;
+  let rowMaxHeight = 0;
+  return nodes.map((n) => {
+    const columnCount = (n.data as unknown as TableNodeData)?.columns?.length ?? 0;
+    const height = estimateNodeHeight(columnCount);
+    const position = { x, y };
+    rowMaxHeight = Math.max(rowMaxHeight, height);
+    col += 1;
+    x += NODE_WIDTH + colGap;
+    if (col >= perRow) {
+      col = 0;
+      x = 0;
+      y += rowMaxHeight + rowGap;
+      rowMaxHeight = 0;
+    }
+    return { ...n, position };
+  });
+}
+
 function autoLayout(nodes: Node[], edges: Edge[]): Node[] {
+  if (edges.length === 0) return gridLayout(nodes);
+
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 100 });
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT }));
+  // tight-tree (vs. dagre's default network-simplex) favors pulling
+  // connected nodes toward their neighbors' rank instead of spreading them
+  // to minimize total edge length globally — for a star schema that keeps
+  // dimension tables hugging the fact table they reference instead of
+  // drifting apart when the graph also has an unrelated snowflake chain.
+  g.setGraph({ rankdir: 'LR', nodesep: 70, ranksep: 110, ranker: 'tight-tree' });
+  nodes.forEach((n) => {
+    const columnCount = (n.data as unknown as TableNodeData)?.columns?.length ?? 0;
+    g.setNode(n.id, { width: NODE_WIDTH, height: estimateNodeHeight(columnCount) });
+  });
   edges.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
   return nodes.map((n) => {
     const pos = g.node(n.id);
-    return { ...n, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 } };
+    const columnCount = (n.data as unknown as TableNodeData)?.columns?.length ?? 0;
+    const height = estimateNodeHeight(columnCount);
+    return { ...n, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - height / 2 } };
   });
 }
 
@@ -87,6 +146,8 @@ export interface ERDCanvasProps {
     toSourceId: string;
   }) => void;
   selectedRelationshipId: string | null;
+  onDetectRelationships?: () => void;
+  isDetectingRelationships?: boolean;
 }
 
 export function ERDCanvas({
@@ -96,8 +157,11 @@ export function ERDCanvas({
   onRelationshipSelect,
   onConnectionCreate,
   selectedRelationshipId,
+  onDetectRelationships,
+  isDetectingRelationships,
 }: ERDCanvasProps) {
   const t = useTranslations('dashboards_page');
+  const { isDarkMode } = useThemeMode();
   const [search, setSearch] = useState('');
   const [pendingColumn, setPendingColumn] = useState<PendingColumnConnection | null>(null);
   const normalizedSearch = search.trim().toLowerCase();
@@ -347,9 +411,25 @@ export function ERDCanvas({
               { value: 'details', label: t('erd_details') },
             ]}
           />
-          <Button size="small" icon={<ApartmentOutlined />} onClick={handleAutoLayout}>
+          <Button
+            className="erd-auto-layout-btn"
+            size="small"
+            icon={<ApartmentOutlined />}
+            onClick={handleAutoLayout}
+          >
             {t('erd_auto_layout')}
           </Button>
+          {onDetectRelationships ? (
+            <Button
+              className="erd-auto-layout-btn"
+              size="small"
+              icon={<RadarChartOutlined />}
+              loading={isDetectingRelationships}
+              onClick={onDetectRelationships}
+            >
+              {t('modeling_detect_relationships')}
+            </Button>
+          ) : null}
         </div>
         <Input
           size="small"
@@ -381,6 +461,7 @@ export function ERDCanvas({
         minZoom={0.3}
         maxZoom={1}
         proOptions={{ hideAttribution: true }}
+        colorMode={isDarkMode ? 'dark' : 'light'}
       >
         <Background />
         <Controls />

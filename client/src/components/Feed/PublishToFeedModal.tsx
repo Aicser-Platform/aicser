@@ -25,6 +25,8 @@ export interface PublishToFeedModalProps {
   modalTitle?: string;
   /** CSS selector for the live element to screenshot for the feed card thumbnail. */
   captureSelector?: string;
+  /** Caps the thumbnail capture height — see feedPublishDraft.ts's doc comment. */
+  captureMaxHeightPx?: number;
   onCancel: () => void;
   onSuccess?: (result: PublishAssetResponse) => void;
 }
@@ -45,6 +47,7 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
   chatPublish,
   modalTitle,
   captureSelector,
+  captureMaxHeightPx,
   onCancel,
   onSuccess,
 }) => {
@@ -74,8 +77,9 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
         renderMode,
         chatPublish,
         captureSelector,
+        captureMaxHeightPx,
       }),
-    [assetType, assetId, sourceQueryId, defaultTitle, defaultDescription, defaultTags, previewMetadata, snapshotPayload, renderMode, chatPublish, captureSelector],
+    [assetType, assetId, sourceQueryId, defaultTitle, defaultDescription, defaultTags, previewMetadata, snapshotPayload, renderMode, chatPublish, captureSelector, captureMaxHeightPx],
   );
 
   const titleKey =
@@ -107,7 +111,7 @@ const PublishToFeedModal: React.FC<PublishToFeedModalProps> = ({
       <Drawer
         title={heading}
         placement="bottom"
-        height="92vh"
+        size="92vh"
         open={open}
         onClose={onCancel}
         destroyOnHidden

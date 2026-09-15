@@ -213,7 +213,7 @@ export function QueryVisualizeModal({
     <Modal
       open={open}
       title="Visualize query"
-      okText={target === 'dashboard' ? 'Add to dashboard' : 'Open in Chart Designer'}
+      okText={target === 'dashboard' ? 'Add to dashboard' : 'Open in Chart library'}
       okButtonProps={{ disabled: !canSubmit, loading: confirming }}
       onCancel={onCancel}
       onOk={() =>
@@ -242,7 +242,7 @@ export function QueryVisualizeModal({
           alignItems: 'start',
         }}
       >
-        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={14} style={{ width: '100%' }}>
           <div>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
               Destination
@@ -255,10 +255,10 @@ export function QueryVisualizeModal({
               style={{ width: '100%', display: 'flex' }}
             >
               <Radio.Button value="dashboard" style={{ flex: 1, textAlign: 'center' }}>
-                <DashboardOutlined /> Dashboard
+                <DashboardOutlined /> Studio
               </Radio.Button>
               <Radio.Button value="chart-designer" style={{ flex: 1, textAlign: 'center' }}>
-                <LineChartOutlined /> Designer
+                <LineChartOutlined /> Chart library
               </Radio.Button>
             </Radio.Group>
           </div>
@@ -413,7 +413,7 @@ export function QueryVisualizeModal({
               Data mode
             </Text>
             <Radio.Group value={dataMode} onChange={(e) => setDataMode(e.target.value)}>
-              <Space direction="vertical" size={4}>
+              <Space orientation="vertical" size={4}>
                 <Radio value="live">
                   <ThunderboltOutlined /> Live — refresh re-runs SQL
                 </Radio>

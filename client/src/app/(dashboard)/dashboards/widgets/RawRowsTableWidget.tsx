@@ -187,7 +187,7 @@ export const RawRowsTableWidget: React.FC<RawRowsTableWidgetProps> = ({
                 pageSize,
                 size: 'small',
                 showSizeChanger: false,
-                position: ['bottomRight'],
+                placement: ['bottomEnd'],
                 hideOnSinglePage: false,
                 showTotal: (total, range) => (
                   <span style={{ fontSize: '12px', color: 'var(--ant-color-text-description)', marginRight: 'auto', fontWeight: 500 }}>
@@ -200,6 +200,11 @@ export const RawRowsTableWidget: React.FC<RawRowsTableWidgetProps> = ({
         size={size}
         bordered={bordered}
         sticky
+        // antd v6's Spin dropped the `ant-spin-nested-loading` class from its
+        // wrapper unless told to via classNames.root -- TableWidget.css's
+        // flex-fill scroll chain targets that exact class (see the matching
+        // fix + comment in ResultsTabPane.tsx).
+        loading={{ spinning: false, classNames: { root: 'ant-spin-nested-loading' } }}
         scroll={{ x: 'max-content' }}
         rowClassName={(record: any) => {
           if (record.key === 'total') return 'table-row-total';

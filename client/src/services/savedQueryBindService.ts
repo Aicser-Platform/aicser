@@ -82,9 +82,15 @@ export async function createSavedQuery(opts: {
 }
 
 type PinLike = {
+  chartType?: string;
   title: string;
-  chartQuery?: Record<string, unknown> | null;
-  chartOptions?: Record<string, unknown> | null;
+  // Callers' concrete chartQuery/chartOptions types are often named
+  // interfaces (e.g. ChartQuery) with no index signature, which isn't
+  // structurally assignable to Record<string, unknown> even though every
+  // property is unknown-compatible -- `unknown` avoids that TS quirk. The
+  // function body below casts these internally regardless.
+  chartQuery?: unknown;
+  chartOptions?: unknown;
   dataSourceId?: string | null;
 };
 
@@ -103,11 +109,10 @@ export async function attachSavedQueryToPinPayload<T extends PinLike>(
     return payload;
   }
 
+  const prevOptions = (payload.chartOptions || {}) as Record<string, unknown>;
   const sqlText = (
     sql ||
-    (typeof payload.chartOptions?.sample_sql === 'string'
-      ? payload.chartOptions.sample_sql
-      : '') ||
+    (typeof prevOptions.sample_sql === 'string' ? prevOptions.sample_sql : '') ||
     ''
   ).trim();
   if (!sqlText) return payload;
@@ -126,7 +131,7 @@ export async function attachSavedQueryToPinPayload<T extends PinLike>(
   });
   if (!id) return payload;
 
-  const nextOptions = { ...(payload.chartOptions || {}) };
+  const nextOptions: Record<string, unknown> = { ...prevOptions };
   delete nextOptions.sample_sql;
 
   const nextQuery: Record<string, unknown> = {
@@ -141,5 +146,5 @@ export async function attachSavedQueryToPinPayload<T extends PinLike>(
     ...payload,
     chartOptions: nextOptions,
     chartQuery: nextQuery,
-  };
+  } as T;
 }

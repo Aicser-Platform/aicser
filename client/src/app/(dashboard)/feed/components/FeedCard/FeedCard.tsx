@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Card, message } from 'antd';
 import { useRouter } from 'next/navigation';
 import { socialFeedService } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
+import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
+import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
+import { useProjectStore } from '@/stores/useProjectStore';
 import FeedCardActions, { FeedCardActionsHandle } from './FeedCardActions';
 import FeedCardBody from './FeedCardBody';
 import FeedCardComments from './FeedCardComments';
 import FeedCardHeader from './FeedCardHeader';
+import FeedPostEditBox from './FeedPostEditBox';
 import useFeedCardComments from './useFeedCardComments';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
@@ -17,9 +21,10 @@ interface FeedCardProps {
   item: FeedItem;
   onReact?: (itemId: string, reaction: ReactionType) => Promise<void> | void;
   onSave?: (itemId: string) => Promise<void> | void;
-  onAddComment?: (itemId: string, content: string, parentCommentId?: string) => Promise<void> | void;
+  onAddComment?: (itemId: string, content: string, parentCommentId?: string, mentionedUsers?: string[]) => Promise<void> | void;
   onToggleFollow?: (itemId: string, authorId: string) => Promise<void> | void;
   onDeleteItem?: (itemId: string) => Promise<void> | void;
+  onUpdatePost?: (itemId: string, description: string, mentionedUsers?: string[]) => Promise<boolean> | boolean;
   onCommentDeleted?: (itemId: string, commentCount: number) => void;
   interactionState?: {
     reacting?: boolean;
@@ -27,6 +32,7 @@ interface FeedCardProps {
     commenting?: boolean;
     following?: boolean;
     deleting?: boolean;
+    updatingPost?: boolean;
   };
   compact?: boolean;
   hidePreview?: boolean;
@@ -45,6 +51,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
   onAddComment,
   onToggleFollow,
   onDeleteItem,
+  onUpdatePost,
   onCommentDeleted,
   interactionState,
   compact = false,
@@ -63,7 +70,21 @@ const FeedCard: React.FC<FeedCardProps> = ({
   const commenting = Boolean(interactionState?.commenting);
   const following = Boolean(interactionState?.following);
   const deleting = Boolean(interactionState?.deleting);
+  const updatingPost = Boolean(interactionState?.updatingPost);
   const detailPath = `${detailBasePath}/${item.id}`;
+
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [editPostValue, setEditPostValue] = useState('');
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const organizationId =
+    currentProject?.organization_id || (currentProject as { organizationId?: string } | null)?.organizationId;
+  // Org-scoped regardless of this post's own visibility, same reasoning as
+  // useFeedCardComments: mentioning never bypasses the post's own access gate.
+  const { members: mentionMembers, options: editMentionOptions } = useMentionableMembers(
+    'organization',
+    organizationId,
+    user?.id
+  );
   // Compare by username too: author.id can come from a different identity source
   // than the session user.id for legacy/seeded posts, which otherwise leaks a
   // "Follow" button onto the viewer's own posts.
@@ -75,9 +96,9 @@ const FeedCard: React.FC<FeedCardProps> = ({
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
   const safeAddComment = useCallback(
-    (itemId: string, content: string, parentCommentId?: string) => {
+    (itemId: string, content: string, parentCommentId?: string, mentionedUsers?: string[]) => {
       if (!onAddComment) return;
-      return onAddComment(itemId, content, parentCommentId);
+      return onAddComment(itemId, content, parentCommentId, mentionedUsers);
     },
     [onAddComment]
   );
@@ -107,6 +128,21 @@ const FeedCard: React.FC<FeedCardProps> = ({
     if (!onDeleteItem) return;
     onDeleteItem(item.id);
   }, [item.id, onDeleteItem]);
+  const handleStartEditPost = useCallback(() => {
+    setEditPostValue(item.description);
+    setIsEditingPost(true);
+  }, [item.description]);
+  const handleCancelEditPost = useCallback(() => {
+    setIsEditingPost(false);
+  }, []);
+  const handleSaveEditPost = useCallback(async () => {
+    if (!onUpdatePost) return;
+    const body = editPostValue.trim();
+    if (!body) return;
+    const mentionedUsers = resolveMentionedUserIds(body, mentionMembers);
+    const success = await onUpdatePost(item.id, body, mentionedUsers);
+    if (success) setIsEditingPost(false);
+  }, [editPostValue, item.id, mentionMembers, onUpdatePost]);
   const handleCopyLink = useCallback(async () => {
     const url = typeof window !== 'undefined' ? new URL(detailPath, window.location.origin).toString() : detailPath;
     try {
@@ -117,7 +153,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
       void socialFeedService.shareItem(item.id);
       message.success(t('link_copied'));
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t('unable_copy_link'));
+      message.error(errorMessage(error, t('unable_copy_link')));
     }
   }, [detailPath, item.id, t]);
 
@@ -160,7 +196,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
       className={`bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-all duration-300 ${
         compact ? '' : 'mb-4'
       } ${highlighted ? 'ring-2 ring-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
-      bodyStyle={{ padding: 0 }}
+      styles={{ body: { padding: 0 } }}
     >
       <FeedCardHeader
         item={item}
@@ -174,16 +210,33 @@ const FeedCard: React.FC<FeedCardProps> = ({
         onOpenPost={handleOpen}
         onCopyLink={handleCopyLink}
         onDeletePost={isPostOwner ? handleDeleteItem : undefined}
-        authorProfileBasePath={detailBasePath === '/discover' ? '/discover/author' : undefined}
+        onEditPost={item.canEdit && onUpdatePost ? handleStartEditPost : undefined}
+        // See FeedGridCard's matching comment: this used to only link the author
+        // on /discover, leaving the name a dead label everywhere else this card
+        // renders (including /feed itself) — /discover/author/[username] already
+        // works for any author regardless of which page led here.
+        authorProfileBasePath="/discover/author"
       />
 
-      <FeedCardBody
-        item={item}
-        compact={compact}
-        hidePreview={hidePreview}
-        previewClickable
-        onPreviewClick={handleOpen}
-      />
+      {isEditingPost ? (
+        <FeedPostEditBox
+          compact={compact}
+          value={editPostValue}
+          onChange={setEditPostValue}
+          mentionOptions={editMentionOptions}
+          saving={updatingPost}
+          onSave={handleSaveEditPost}
+          onCancel={handleCancelEditPost}
+        />
+      ) : (
+        <FeedCardBody
+          item={item}
+          compact={compact}
+          hidePreview={hidePreview}
+          previewClickable
+          onPreviewClick={handleOpen}
+        />
+      )}
 
       {!hideInteractions && (
         <>
@@ -209,6 +262,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
             item={item}
             compact={compact}
             commentValue={commentApi.commentValue}
+            mentionOptions={commentApi.mentionOptions}
             showCommentBox={commentApi.showCommentBox}
             showCommentsList={commentApi.showCommentsList}
             commentTree={commentApi.commentTree}

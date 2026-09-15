@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Button, Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
-import { BgColorsOutlined, DownOutlined } from '@ant-design/icons';
+import { BgColorsOutlined, DownOutlined, StarFilled } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { LAYOUT_PRESETS, type LayoutPreset } from './LayoutPresetsMenu';
+import { suggestLayoutPreset } from '../utils/layoutScaffolds';
+import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 import {
   CHART_PALETTE_CATALOG,
   DEFAULT_CHART_PALETTE_ID,
@@ -18,6 +20,7 @@ type Props = {
   onResetLayout?: () => void;
   hideLayout?: boolean;
   widgetCount?: number;
+  widgets?: WidgetInstance[];
   onPaletteChange?: (paletteId: ChartPaletteId) => void;
 };
 
@@ -46,9 +49,16 @@ export function DashboardStyleMenu({
   onResetLayout,
   hideLayout = false,
   widgetCount = 0,
+  widgets = [],
   onPaletteChange,
 }: Props) {
   const t = useTranslations('dashboards');
+
+  // Auto-detected best fit for the current widget mix — same scorer as the
+  // Layouts tab in Add Block, surfaced here too so whichever entry point a
+  // user reaches for gets the same recommendation instead of two silently
+  // divergent notions of "best layout".
+  const recommendedId = useMemo(() => suggestLayoutPreset(widgets)?.id ?? null, [widgets]);
 
   const paletteItems: MenuProps['items'] = CHART_PALETTE_CATALOG.map((palette) => ({
     key: `palette-${palette.id}`,
@@ -67,7 +77,15 @@ export function DashboardStyleMenu({
       : [
           ...LAYOUT_PRESETS.map((preset) => ({
             key: `layout-${preset.id}`,
-            label: t(preset.nameKey as 'preset_executive'),
+            label:
+              preset.id === recommendedId ? (
+                <span className="inline-flex items-center gap-1.5">
+                  {t(preset.nameKey as 'preset_executive')}
+                  <StarFilled className="text-brand text-[10px]" aria-label={t('layout_preset_recommended')} />
+                </span>
+              ) : (
+                t(preset.nameKey as 'preset_executive')
+              ),
             onClick: () => onApplyLayoutPreset(preset),
           })),
           ...(onResetLayout && widgetCount > 0
@@ -105,7 +123,7 @@ export function DashboardStyleMenu({
         size="small"
         type="text"
         icon={<BgColorsOutlined />}
-        className="studio-context-btn studio-style-menu-btn !inline-flex !items-center !gap-1 !px-2 !h-8 shrink-0 text-text-secondary"
+        className="!inline-flex !items-center !gap-1 !px-2 !h-8 shrink-0 text-text-secondary"
         aria-label={t('style_menu_label')}
       >
         <PaletteSwatch colors={activePalette.colors.slice(0, 4)} />

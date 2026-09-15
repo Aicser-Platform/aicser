@@ -12,17 +12,17 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import type { FeedItem } from '@/services/socialFeedService';
 import { chartService } from '../../dashboards/services/chartService';
-import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
 import { FeedPreviewEmpty } from './FeedPreviewEmpty';
+import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
+import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
 
 type Props = {
   item: FeedItem;
   maxWidgets?: number;
 };
 
-const DEFAULT_MAX = 4;
-const TILE_MIN_HEIGHT = 150;
+const DEFAULT_MAX = FEED_DASHBOARD_PREVIEW_MAX;
 
 export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props) {
   const t = useTranslations('feed');
@@ -74,13 +74,14 @@ export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props
   }, [dashboardId, item.id, maxWidgets]);
 
   if (loading) {
+    const skeletonCount = Math.min(Math.max(maxWidgets, 1), DEFAULT_MAX);
     return (
-      <div className="grid grid-cols-2 gap-2 w-full">
-        {Array.from({ length: Math.min(maxWidgets, 4) }).map((_, i) => (
+      <div className={`grid gap-2 w-full ${skeletonCount === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        {Array.from({ length: skeletonCount }).map((_, i) => (
           <div
             key={i}
             className="rounded-lg bg-[var(--ant-color-fill-secondary)] animate-pulse"
-            style={{ height: TILE_MIN_HEIGHT }}
+            style={{ height: skeletonCount === 1 ? 220 : 160 }}
           />
         ))}
       </div>
@@ -88,33 +89,17 @@ export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props
   }
 
   if (!widgets || widgets.length === 0) {
-    return <FeedPreviewEmpty label={t('detail_no_charts')} hint={t('view_full_dashboard')} />;
+    return <FeedPreviewEmpty label={t('detail_no_charts')} hint={t('open_to_see_more')} />;
   }
 
-  // Single chart → full width; multiple → responsive 2-col grid.
-  const cols = widgets.length === 1 ? 'grid-cols-1' : 'grid-cols-2';
   const totalWidgets = item.asset.widgetCount ?? widgets.length;
-  const overflow = Math.max(0, totalWidgets - widgets.length);
 
   return (
-    <div className="feed-dashboard-chart-grid">
-      <div className={`grid ${cols} gap-2 w-full`}>
-        {widgets.map((w) => (
-          <div
-            key={w.id}
-            className="rounded-lg overflow-hidden border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]"
-            style={{ minHeight: TILE_MIN_HEIGHT }}
-          >
-            <WidgetPreview widget={w} readOnly minHeight={TILE_MIN_HEIGHT} />
-          </div>
-        ))}
-      </div>
-      {overflow > 0 && (
-        <div className="mt-2 text-xs font-medium text-[var(--ant-color-text-secondary)]">
-          +{overflow} more {overflow === 1 ? 'widget' : 'widgets'} · open to view the full dashboard
-        </div>
-      )}
-    </div>
+    <FeedDashboardPreviewGrid
+      widgets={widgets}
+      maxWidgets={maxWidgets}
+      totalWidgetCount={totalWidgets}
+    />
   );
 }
 

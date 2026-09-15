@@ -78,14 +78,14 @@ export function useChartImportFromChat() {
     try {
       let payload = buildChatChartPinPayload(importPayload);
       const projectId = useProjectStore.getState().currentProjectId;
-      payload = await attachSavedQueryToPinPayload(
+      payload = (await attachSavedQueryToPinPayload(
         payload,
         importPayload.sqlQuery ||
           (typeof payload.chartOptions?.sample_sql === 'string'
             ? payload.chartOptions.sample_sql
             : null),
         { projectId, source: 'ai_chat_import' },
-      );
+      )) as typeof payload;
       const existingChartId =
         importPayload.libraryChartId ||
         peekChatLibraryChart(importPayload.messageId) ||

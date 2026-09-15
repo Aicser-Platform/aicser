@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Select, Spin, Empty, message, Typography } from 'antd';
+import { Select, Spin, Empty, message, Typography, Button } from 'antd';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
-import { useRelationships } from '@/hooks/useDataModelRelationships';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import { useRelationships, useAutoDetectRelationships } from '@/hooks/useDataModelRelationships';
 import { createRelationship } from '@/api/dataModel';
 import { ERDCanvas } from '../../ERDCanvas/ERDCanvas';
 import type { DataModelRelationship } from '@/api/dataModel';
@@ -123,10 +124,33 @@ export function DataModelingSection({
   const t = useTranslations('dashboards_page');
   const queryClient = useQueryClient();
   const { dataSources, isLoading: dsLoading } = useDataSources();
-  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
+  // Shared with the Data tab (DataSection.tsx) via the same global store,
+  // instead of its own disconnected local selection - previously switching
+  // the source here had no effect on Data and vice versa, despite both
+  // being "about my data" one click apart in the same sidebar.
+  const globalSelectedId = useDataSourceStore((s) => s.selectedId);
+  const selectGlobalDataSource = useDataSourceStore((s) => s.select);
+  const [activeSourceId, setActiveSourceIdState] = useState<string | null>(globalSelectedId);
+  const setActiveSourceId = (id: string | null) => {
+    setActiveSourceIdState(id);
+    selectGlobalDataSource(id);
+  };
   // Keys of creates currently in flight — prevents the ERD firing the same
   // connection twice (drag + click) from issuing two POSTs.
   const pendingKeys = React.useRef<Set<string>>(new Set());
+  const autoDetectMutation = useAutoDetectRelationships(activeSourceId ?? '');
+  // Sources we've already auto-run detection for — so the background pass
+  // fires once per source per session, not on every relationships refetch.
+  const autoDetectAttempted = React.useRef<Set<string>>(new Set());
+
+  // Pick up a source selected elsewhere (e.g. the Data tab) when this tab
+  // becomes active, as long as it's still a valid source.
+  useEffect(() => {
+    if (globalSelectedId && globalSelectedId !== activeSourceId && dataSources.some((s) => s.id === globalSelectedId)) {
+      setActiveSourceIdState(globalSelectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalSelectedId, dataSources]);
 
   useEffect(() => {
     if (!dataSources.length) {
@@ -136,6 +160,7 @@ export function DataModelingSection({
     if (!activeSourceId || !dataSources.some((source) => source.id === activeSourceId)) {
       setActiveSourceId(dataSources[0].id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSourceId, dataSources]);
 
   const selectedSource = useMemo(
@@ -196,6 +221,37 @@ export function DataModelingSection({
   }, [activeSourceId, loadedData]);
 
   const isLoading = dsLoading || Boolean(activeSourceId && !loadedData.has(activeSourceId));
+
+  // First time a source's model has real tables but no relationships yet
+  // (a fresh connection, or one nobody has modeled before), silently run FK
+  // + shared-key detection once so the canvas doesn't open to a wall of
+  // disconnected tables. Manual "Detect relationships" (below) covers
+  // re-running it later, or a schema that genuinely has no relationships.
+  useEffect(() => {
+    if (!activeSourceId || isLoading) return;
+    if (autoDetectAttempted.current.has(activeSourceId)) return;
+    if (allTables.length === 0 || allRelationships.length > 0) return;
+    autoDetectAttempted.current.add(activeSourceId);
+    autoDetectMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSourceId, isLoading, allTables.length, allRelationships.length]);
+
+  const handleDetectRelationships = useCallback(() => {
+    if (!activeSourceId) return;
+    autoDetectAttempted.current.add(activeSourceId);
+    autoDetectMutation.mutate(undefined, {
+      onSuccess: (rels) => {
+        if (rels.length > 0) {
+          message.success(t('modeling_relationships_detected', { count: rels.length }));
+        } else {
+          message.info(t('modeling_no_relationships_detected'));
+        }
+      },
+      onError: () => {
+        message.error(t('modeling_detect_failed'));
+      },
+    });
+  }, [activeSourceId, autoDetectMutation, t]);
 
   const columnType = useCallback(
     (sourceId: string, tableName: string, columnName: string): string | undefined => {
@@ -282,6 +338,10 @@ export function DataModelingSection({
         if (newRel?.id) {
           onRelationshipSelect(newRel);
         }
+        // The only other feedback on a successful connect is the edge itself
+        // appearing on the canvas — easy to miss on a busy diagram, so say
+        // it out loud too.
+        message.success(t('modeling_connection_created'));
       } finally {
         pendingKeys.current.delete(key);
       }
@@ -303,7 +363,15 @@ export function DataModelingSection({
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={t('modeling_no_sources')}
         style={{ padding: '24px 16px' }}
-      />
+      >
+        <Button
+          type="primary"
+          size="small"
+          onClick={() => window.dispatchEvent(new CustomEvent('aiser-open-data-source-modal'))}
+        >
+          {t('data_connect_source_cta')}
+        </Button>
+      </Empty>
     );
   }
 
@@ -352,6 +420,8 @@ export function DataModelingSection({
             onRelationshipSelect={onRelationshipSelect}
             onConnectionCreate={handleConnectionCreate}
             selectedRelationshipId={selectedRelationshipId}
+            onDetectRelationships={handleDetectRelationships}
+            isDetectingRelationships={autoDetectMutation.isPending}
           />
         )}
       </div>

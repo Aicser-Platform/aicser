@@ -14,6 +14,14 @@ interface ShareToFeedButtonProps {
   disabled?: boolean;
   organizationId?: string;
   projectId?: string;
+  /** CSS selector for the live element to screenshot for the feed card thumbnail —
+   * e.g. ".dashboard-container" (DashboardTabs.tsx), ".executive-report" (the
+   * report page). Without this, PublishToFeedModal has nothing to capture and the
+   * post gets no thumbnail at all — falling back to a bare placeholder instead of
+   * the actual visual other asset types show in the feed. */
+  captureSelector?: string;
+  /** Caps the thumbnail capture height — see feedPublishDraft.ts's doc comment. */
+  captureMaxHeightPx?: number;
 }
 
 const ShareToFeedButton: React.FC<ShareToFeedButtonProps> = ({
@@ -21,6 +29,8 @@ const ShareToFeedButton: React.FC<ShareToFeedButtonProps> = ({
   disabled,
   organizationId,
   projectId,
+  captureSelector,
+  captureMaxHeightPx,
 }) => {
   const t = useTranslations('feed_publish_page');
   const [open, setOpen] = useState(false);
@@ -60,12 +70,13 @@ const ShareToFeedButton: React.FC<ShareToFeedButtonProps> = ({
         previewMetadata={draft.previewMetadata}
         snapshotPayload={draft.snapshotPayload}
         renderMode="snapshot"
+        captureSelector={captureSelector}
+        captureMaxHeightPx={captureMaxHeightPx}
         chatPublish={{ conversationId: draft.conversationId, messageId: draft.messageId }}
         organizationId={organizationId}
         projectId={projectId}
         modalTitle={t('heading')}
         onCancel={() => setOpen(false)}
-        onSuccess={() => setOpen(false)}
       />
     </>
   );

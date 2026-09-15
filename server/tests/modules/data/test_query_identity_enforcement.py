@@ -201,9 +201,17 @@ async def test_result_reports_that_a_filter_was_applied(monkeypatch):
     async def fake_apply(query, **_kwargs):
         return f"SELECT * FROM ({query}) AS rls_q WHERE 1 = 1", True
 
+    async def fake_cls(query, **_kwargs):
+        return query, []
+
     async def fake_exec(*_args, **_kwargs):
         return {"success": True, "data": [], "columns": []}
 
+    # _enforce_column_security (real, DB-backed _apply_sql_cls) runs before
+    # _enforce_row_security for any non-None, non-SystemQuery identity - see
+    # test_filtered_queries_skip_the_optimizer's comment for why this must be
+    # mocked too, not just _apply_sql_rls.
+    monkeypatch.setattr(service, "_apply_sql_cls", fake_cls)
     monkeypatch.setattr(service, "_apply_sql_rls", fake_apply)
     monkeypatch.setattr(service, "_execute_query_unfiltered", fake_exec)
 
@@ -226,10 +234,23 @@ async def test_filtered_queries_skip_the_optimizer(monkeypatch):
     async def fake_apply(query, **_kwargs):
         return query, True
 
+    async def fake_cls(query, **_kwargs):
+        return query, []
+
     async def fake_exec(*_args, **kwargs):
         seen.update(kwargs)
         return {"success": True}
 
+    # _enforce_column_security runs (and calls the real, DB-backed
+    # _apply_sql_cls) before _enforce_row_security for any non-None,
+    # non-SystemQuery identity - left unmocked, it depends on a real engine
+    # that degrades after enough sequential real touches across this file's
+    # other tests, gets reported as RowSecurityIdentityRequired, and makes
+    # execute_query return early (success=False) before _apply_sql_rls or
+    # _execute_query_unfiltered ever run. Mock it the same way as
+    # _apply_sql_rls to keep this a real unit test of the optimization-skip
+    # behavior, not an incidental integration test of CLS enforcement.
+    monkeypatch.setattr(service, "_apply_sql_cls", fake_cls)
     monkeypatch.setattr(service, "_apply_sql_rls", fake_apply)
     monkeypatch.setattr(service, "_execute_query_unfiltered", fake_exec)
 
@@ -348,6 +369,15 @@ async def test_execute_query_reports_a_deny_with_its_own_message(service, monkey
             table="dim_customer",
         )
 
+    async def fake_cls(query, **_kwargs):
+        return query, []
+
+    # _enforce_column_security (real, DB-backed _apply_sql_cls) runs before
+    # _enforce_row_security - see test_filtered_queries_skip_the_optimizer's
+    # comment. Left unmocked it can fail closed on a degraded connection
+    # before _enforce_row_security's mock (the thing actually under test
+    # here) ever runs.
+    monkeypatch.setattr(service, "_apply_sql_cls", fake_cls)
     monkeypatch.setattr(service, "_enforce_row_security", _denies)
 
     result = await service.execute_query(

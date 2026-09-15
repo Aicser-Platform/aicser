@@ -168,11 +168,20 @@ async def update_dashboard_collection(
     current_user: dict = Depends(JWTCookieBearer()),
 ):
     uid = user_id_from_payload(extract_user_payload(current_user))
-    await require_permission(uid, "dashboard:edit", project_id=str(project_id) if project_id else None)
     lib = DashboardLibraryService(db)
     row = await lib.get_collection(collection_id)
     if not row:
         raise HTTPException(status_code=404, detail="Collection not found")
+    # SECURITY: the permission check used to run against the client-supplied
+    # `project_id` query param instead of the collection's own project (or,
+    # if omitted, RBAC's "no context" branch checks permission in ANY org) --
+    # letting any authenticated caller who satisfies dashboard:edit for SOME
+    # project of their own edit any other org's collection. Now checked
+    # against the collection's real scope.
+    if row.project_id is not None:
+        await require_permission(uid, "dashboard:edit", project_id=str(row.project_id))
+    elif str(row.user_id) != str(uid):
+        raise HTTPException(status_code=403, detail="Not authorized")
     clear_parent = payload.get("parentId", "__omit__") is None or payload.get("parent_id", "__omit__") is None
     parent = None
     if "parentId" in payload or "parent_id" in payload:
@@ -196,11 +205,16 @@ async def delete_dashboard_collection(
     current_user: dict = Depends(JWTCookieBearer()),
 ):
     uid = user_id_from_payload(extract_user_payload(current_user))
-    await require_permission(uid, "dashboard:delete", project_id=str(project_id) if project_id else None)
     lib = DashboardLibraryService(db)
     row = await lib.get_collection(collection_id)
     if not row:
         raise HTTPException(status_code=404, detail="Collection not found")
+    # SECURITY: see update_dashboard_collection above -- check against the
+    # collection's real scope, not the client-supplied project_id param.
+    if row.project_id is not None:
+        await require_permission(uid, "dashboard:delete", project_id=str(row.project_id))
+    elif str(row.user_id) != str(uid):
+        raise HTTPException(status_code=403, detail="Not authorized")
     await lib.delete_collection(row)
 
 
@@ -492,7 +506,7 @@ async def get_dashboard_build_progress(
     )
     from src.modules.dashboards.build_session import get_build_session
 
-    session = get_build_session(str(dashboard_id))
+    session = await get_build_session(str(dashboard_id))
     if not session:
         return {"active": False, "dashboard_id": str(dashboard_id)}
     return {"active": session.get("status") == "building", **session}

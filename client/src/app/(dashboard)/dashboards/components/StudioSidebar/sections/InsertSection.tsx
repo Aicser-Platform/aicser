@@ -7,21 +7,30 @@ import {
   TableOutlined,
   FontSizeOutlined,
   FilterOutlined,
-  ControlOutlined,
   GlobalOutlined,
 } from '@ant-design/icons';
-import { useDashboardStore, isNonDataWidget, type WidgetType, type WidgetInstance, type LayoutItem } from '../../../stores/useDashboardStore';
+import { Typography } from 'antd';
+import { useTranslations } from 'next-intl';
+import {
+  useDashboardStore,
+  isNonDataWidget,
+  type WidgetType,
+  type WidgetInstance,
+  type LayoutItem,
+} from '../../../stores/useDashboardStore';
 import { findWidgetTemplate, generateWidgetId } from '../../../utils/buildDashboardWidget';
 import { maxLayoutY } from '../../../utils/layoutSanitize';
 
-const WIDGET_ITEMS: { type: WidgetType; label: string; icon: React.ReactNode }[] = [
-  { type: 'bar', label: 'Chart', icon: <BarChartOutlined /> },
-  { type: 'stat', label: 'KPI Card', icon: <NumberOutlined /> },
-  { type: 'table', label: 'Table', icon: <TableOutlined /> },
-  { type: 'text', label: 'Text', icon: <FontSizeOutlined /> },
-  { type: 'slicer', label: 'Slicer', icon: <FilterOutlined /> },
-  { type: 'filter', label: 'Filter', icon: <ControlOutlined /> },
-  { type: 'embed', label: 'Embed', icon: <GlobalOutlined /> },
+const { Text } = Typography;
+
+/** Primary insert palette — one filter control (not Slicer + Filter duplicates). */
+const WIDGET_ITEMS: { type: WidgetType; labelKey: string; icon: React.ReactNode }[] = [
+  { type: 'bar', labelKey: 'insert_chart', icon: <BarChartOutlined /> },
+  { type: 'stat', labelKey: 'insert_kpi', icon: <NumberOutlined /> },
+  { type: 'table', labelKey: 'insert_table', icon: <TableOutlined /> },
+  { type: 'text', labelKey: 'insert_text', icon: <FontSizeOutlined /> },
+  { type: 'slicer', labelKey: 'insert_filter_control', icon: <FilterOutlined /> },
+  { type: 'embed', labelKey: 'insert_embed', icon: <GlobalOutlined /> },
 ];
 
 function buildChartOptionsForType(type: WidgetType, templateName: string): Record<string, unknown> {
@@ -57,7 +66,6 @@ function buildChartQueryForType(type: WidgetType): WidgetInstance['chartQuery'] 
     case 'slicer':
       return { mode: 'single' as const };
     case 'filter':
-      // Filter widget defaults to a multi-select dashboard-wide control.
       return { mode: 'multi' as const };
     case 'stat':
       return { yMetric: 'count', yMetrics: [], sortBy: 'x' };
@@ -67,6 +75,7 @@ function buildChartQueryForType(type: WidgetType): WidgetInstance['chartQuery'] 
 }
 
 export function InsertSection() {
+  const t = useTranslations('dashboards');
   const layout = useDashboardStore((s) => s.layout);
   const addWidget = useDashboardStore((s) => s.addWidget);
   const createChartAndFetchData = useDashboardStore((s) => s.createChartAndFetchData);
@@ -104,49 +113,57 @@ export function InsertSection() {
   };
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 8,
-        padding: 12,
-      }}
-    >
-      {WIDGET_ITEMS.map(({ type, label, icon }) => (
-        <button
-          key={type}
-          onClick={() => handleAdd(type)}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 6,
-            padding: '12px 8px',
-            border: '1px solid var(--ant-color-border)',
-            borderRadius: 8,
-            background: 'var(--ant-color-bg-container)',
-            cursor: 'pointer',
-            fontSize: 12,
-            color: 'var(--ant-color-text)',
-            transition: 'border-color 0.15s, background 0.15s',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor =
-              'var(--ant-color-primary)';
-            (e.currentTarget as HTMLButtonElement).style.background =
-              'var(--ant-color-primary-bg)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor =
-              'var(--ant-color-border)';
-            (e.currentTarget as HTMLButtonElement).style.background =
-              'var(--ant-color-bg-container)';
-          }}
-        >
-          <span style={{ fontSize: 20, color: 'var(--ant-color-primary)' }}>{icon}</span>
-          <span>{label}</span>
-        </button>
-      ))}
+    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.45 }}>
+        {t('insert_hint')}
+      </Text>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+        }}
+      >
+        {WIDGET_ITEMS.map(({ type, labelKey, icon }) => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => handleAdd(type)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 6,
+              padding: '12px 8px',
+              border: '1px solid var(--ant-color-border)',
+              borderRadius: 8,
+              background: 'var(--ant-color-bg-container)',
+              cursor: 'pointer',
+              fontSize: 12,
+              color: 'var(--ant-color-text)',
+              transition: 'border-color 0.15s, background 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                'var(--ant-color-primary)';
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'var(--ant-color-primary-bg)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.borderColor =
+                'var(--ant-color-border)';
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'var(--ant-color-bg-container)';
+            }}
+          >
+            <span style={{ fontSize: 20, color: 'var(--ant-color-primary)' }}>{icon}</span>
+            <span>{t(labelKey)}</span>
+          </button>
+        ))}
+      </div>
+      <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.4 }}>
+        {t('insert_filter_tip')}
+      </Text>
     </div>
   );
 }

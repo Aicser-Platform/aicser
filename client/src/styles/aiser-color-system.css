@@ -37,16 +37,29 @@
   /* Header tone */
   --color-bg-navigation-header-glow: #dfe4ec;
   /* Header gradient accent */
-  --color-border: #e1e4e8;
-  /* 5. Borders, dividers */
+  --color-border: #7a7f85;
+  /* 5. Borders, dividers - WCAG 1.4.11 (>=3:1 non-text); prior #e1e4e8 measured
+     ~1.2:1 against the container bg, well under the minimum */
+  --color-fill-quaternary: var(--ant-color-fill-quaternary);
+  /* Subtle translucent overlay tint (~4-6% white/black) used by settings-page
+     Cards (ProfileTab, ApiKeysTab, BillingSubscriptionTab, IntegrationTab)
+     and ~60 other call sites. Was never defined under this app-level name —
+     only the AntD-bridge name --ant-color-fill-quaternary existed (set in
+     globals.css) — so every var(--color-fill-quaternary) reference across
+     the codebase silently resolved to nothing (background: transparent),
+     letting the page's base color show through the "card" while form
+     controls inside it kept their own opaque default surface. Aliasing here
+     is the single choke point that fixes every existing call site at once. */
 
   /* Text Colors - Derived from backgrounds */
   --color-text-primary: #24292f;
   /* Primary text on light */
   --color-text-secondary: #57606a;
   /* Secondary text */
-  --color-text-tertiary: #8b949e;
-  /* Tertiary text */
+  --color-text-tertiary: #697280;
+  /* Tertiary text - WCAG AA (4.5:1+ on both container/base bg); kept in sync
+     with ThemeProvider.tsx's runtime value, which wins post-hydration - this
+     static fallback is what SSR/first-paint shows before that JS effect runs */
 
   /* Accent Colors - Minimal */
   --color-primary: #00c2cb;
@@ -74,8 +87,11 @@ html[data-theme="dark"],
   /* Header tone */
   --color-bg-navigation-header-glow: #1c2432;
   /* Header gradient accent */
-  --color-border: #30363d;
-  /* 5. Borders, dividers */
+  --color-border: #67717d;
+  /* 5. Borders, dividers - WCAG 1.4.11 (>=3:1 non-text); prior #30363d measured
+     ~1.4:1 against the container bg, well under the minimum */
+  --color-fill-quaternary: var(--ant-color-fill-quaternary);
+  /* See :root — same alias, dark-mode value. */
 
   /* Text Colors - Derived from backgrounds */
   --color-text-primary: #e6edf3;
@@ -191,9 +207,19 @@ textarea.ant-input {
 
 /* Button colors — base layout in unified-design-system; hover in interaction-system */
 
-/* Tabs - Container Color (page-level tabs only) */
-.ant-tabs:not(.workspace-inline-tabs):not(.analysis-data-tabs) {
-  background: var(--color-bg-container) !important;
+/* Tabs - Elevated Color (page-level tabs only) — matches the elevated
+   surface used by the popovers/dropdowns tabs typically sit inside (e.g.
+   AddBlockPopover), so a tabs panel doesn't read as a second, slightly
+   different grey against its own floating container.
+   .settings-inline-tabs is excluded for the opposite reason: those Tabs
+   (ApiKeysTab, BillingSubscriptionTab, IntegrationTab) are deliberately
+   bg-transparent so they blend into their own parent Card's
+   --color-fill-quaternary background — this !important rule was painting
+   them --color-bg-elevated instead, fighting that transparency and
+   producing the exact same "two greys in one panel" bug this rule exists
+   to prevent, just with different colors. */
+.ant-tabs:not(.workspace-inline-tabs):not(.analysis-data-tabs):not(.settings-inline-tabs) {
+  background: var(--color-bg-elevated) !important;
 }
 
 .ant-tabs-tab {

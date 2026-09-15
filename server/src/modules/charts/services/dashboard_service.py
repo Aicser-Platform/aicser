@@ -4,6 +4,7 @@ Replaces mock data with actual database queries
 """
 
 import logging
+import os
 from typing import Dict, List, Any, Optional
 import asyncio
 from datetime import datetime
@@ -400,7 +401,13 @@ class DashboardService:
             allowed = await has_dashboard_access(user_id_for_check, str(db_dash.id))
             if not allowed:
                 # Fallbacks similar to previous logic
-                if db_dash.created_by is None and isinstance(user_id, dict) and user_id.get('email'):
+                # SECURITY: previously ANY authenticated caller with an email
+                # claim could claim ownership of ANY dashboard whose
+                # created_by was NULL (a provisioning-race artifact) --
+                # unconditionally, in production too. Restricted to actual
+                # pytest runs, matching the test-only convenience pattern
+                # used elsewhere in this file.
+                if db_dash.created_by is None and isinstance(user_id, dict) and user_id.get('email') and os.getenv('PYTEST_CURRENT_TEST'):
                     allowed = True
                 if not allowed and isinstance(user_id, dict) and user_id.get('email') and db_dash.created_by is not None:
                     try:
@@ -525,13 +532,15 @@ class DashboardService:
             if not dashboard:
                 raise HTTPException(status_code=404, detail="Dashboard not found")
 
-            # Development unconditional bypass: if running in development,
-            # allow immediate deletion to avoid flaky provisioning/visibility
-            # races during integration tests (do not require user_id).
+            # SECURITY: this used to unconditionally delete ANY dashboard for
+            # ANY caller (no user_id required at all) whenever ENVIRONMENT was
+            # dev-like -- the default when the var is unset, so this was the
+            # out-of-the-box behavior for any misconfigured deployment.
+            # Narrowed to an explicit pytest-run signal, which no external
+            # request can ever set.
             try:
-                from src.core.config import settings as _settings
-                if getattr(_settings, 'ENVIRONMENT', 'development') == 'development':
-                    logger.info("delete_dashboard: development unconditional bypass - deleting dashboard (no user_id required)")
+                if os.getenv('PYTEST_CURRENT_TEST'):
+                    logger.info("delete_dashboard: pytest-only unconditional bypass - deleting dashboard")
                     await self.db.delete(dashboard)
                     await self.db.commit()
                     return True
@@ -539,17 +548,12 @@ class DashboardService:
                 pass
 
             # If created_by is not yet set (provisioning/race), allow a conservative
-            # deletion path for the creating caller: if the JWT contains an email
-            # (typical for upgrade-demo/signup flows) or the dashboard was created
-            # very recently, permit deletion rather than denying immediately. This
-            # helps CI/dev flows where provisioning visibility lags slightly.
-            # If the dashboard has no creator (provisioning race), permit deletion
-            # by any authenticated caller. This is intentionally permissive only
-            # to support dev/CI flows where provisioning visibility lags; in
-            # production environments this should be tightened.
+            # deletion path for the creating caller during tests only -- see
+            # note above; in production this would otherwise let ANY
+            # authenticated caller delete any orphaned dashboard.
             try:
-                if dashboard.created_by is None and user_id:
-                    logger.info("delete_dashboard: allowing deletion because created_by is None and caller is authenticated")
+                if dashboard.created_by is None and user_id and os.getenv('PYTEST_CURRENT_TEST'):
+                    logger.info("delete_dashboard: allowing deletion because created_by is None and caller is authenticated (pytest only)")
                     await self.db.delete(dashboard)
                     await self.db.commit()
                     return True
@@ -610,11 +614,15 @@ class DashboardService:
                         except Exception:
                             pass
 
-                    # Fallback 3: development convenience - allow deletion if dashboard created very recently
+                    # Fallback 3: development convenience - allow deletion if dashboard created very recently.
+                    # SECURITY: gated on ENVIRONMENT alone this let anyone
+                    # delete someone else's dashboard within a 2-minute window
+                    # after creation, in any dev-like (default) deployment.
+                    # Narrowed to actual pytest runs.
                     if not allowed:
                         try:
                             from src.core.config import settings
-                            if getattr(settings, 'ENVIRONMENT', 'development') == 'development' and dashboard.created_at:
+                            if getattr(settings, 'ENVIRONMENT', 'development') == 'development' and os.getenv('PYTEST_CURRENT_TEST') and dashboard.created_at:
                                 import datetime as _dt
                                 age = (_dt.datetime.utcnow() - dashboard.created_at).total_seconds()
                                 if age <= 120:

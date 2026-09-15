@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Table, Typography, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { formatTableValue } from '../utils/numberFormatter';
@@ -11,6 +11,34 @@ import type { ConditionalFormattingRule } from '../Properties/ConditionalFormatt
 import { getCellStyle, getRowStyle } from './utils/conditionalFormatting';
 
 const { Text } = Typography;
+
+// Below this, antd's plain flex-and-scroll rendering is already fine — virtualization
+// only earns its complexity (a measured, fixed scroll.y) once a large *unpaginated*
+// result set would otherwise mount every row's DOM at once. Paginated tables (the
+// default) already cap rendered rows via pageSize and never need this at all.
+const VIRTUALIZE_ROW_THRESHOLD = 100;
+const FALLBACK_VIRTUAL_HEIGHT = 420;
+
+/** Measures the table's actual rendered height so antd's virtual scroll (which needs a
+ * fixed scroll.y, not '100%') tracks the dashboard grid cell instead of a guessed constant. */
+function useMeasuredHeight(active: boolean): [React.RefObject<HTMLDivElement | null>, number] {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect?.height;
+      if (next) setHeight(Math.floor(next));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [active]);
+
+  return [ref, height];
+}
 
 interface TableWidgetProps {
   data: {
@@ -25,6 +53,8 @@ interface TableWidgetProps {
     bordered?: boolean;
     size?: 'small' | 'middle' | 'large';
     conditionalFormatting?: ConditionalFormattingRule[];
+    /** Per-metric value format, keyed by series/field/label name — see WidgetRenderer's buildMetricFormats. */
+    metricFormats?: Record<string, 'auto' | 'compact' | 'currency' | 'percent' | 'full'>;
   };
   query?: {
     x?: string;
@@ -34,6 +64,18 @@ interface TableWidgetProps {
   crossFilterField?: string;
   activeCrossFilterValues?: string[];
   onCrossFilter?: (value: unknown) => void;
+}
+
+/** Same currency/percent formatting a chart tooltip or Stat KPI would use for this metric,
+ * instead of always rendering a plain number regardless of the metric's configured format. */
+export function tableValueFormat(
+  fieldName: string,
+  metricFormats?: TableWidgetProps['config']['metricFormats'],
+): 'currency' | 'percent' | 'number' {
+  const format = metricFormats?.[fieldName];
+  if (format === 'currency') return 'currency';
+  if (format === 'percent') return 'percent';
+  return 'number';
 }
 
 function measureColumnTitle(
@@ -83,6 +125,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     title,
     conditionalFormatting: cfRules = [],
     tableColumnKeys,
+    metricFormats,
   } = config as typeof config & { tableColumnKeys?: string[] };
 
   const columnOrder = Array.isArray(tableColumnKeys) && tableColumnKeys.length > 0 ? tableColumnKeys : null;
@@ -90,6 +133,14 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     if (!columnOrder) return true;
     return columnOrder.includes(fieldName);
   };
+
+  // Even with pagination controls hidden (showPagination=false), antd still paginates
+  // internally at `pageSize` when there are more rows than that (see the `pagination`
+  // prop below) — so a large per-page row count, not "pagination is off", is what
+  // actually determines how many rows land in the DOM at once. Hooks must run before
+  // the early return below.
+  const shouldVirtualize = pageSize > VIRTUALIZE_ROW_THRESHOLD;
+  const [measuredHeightRef, measuredHeight] = useMeasuredHeight(shouldVirtualize);
 
   if (!data || !data.x || (data.x.length === 0 && (!data.series || data.series.length === 0))) {
     return (
@@ -194,7 +245,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
                 borderRadius: cfStyle.backgroundColor ? 4 : undefined,
                 display: 'inline-block',
               }}>
-                {formatTableValue(val, 'number')}
+                {formatTableValue(val, tableValueFormat(s.name, metricFormats))}
               </Text>
             );
           },
@@ -248,7 +299,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
                 borderRadius: cfStyle.backgroundColor ? 4 : undefined,
                 display: 'inline-block',
               }}>
-                {formatTableValue(val, 'number')}
+                {formatTableValue(val, tableValueFormat(yField, metricFormats))}
               </Text>
             );
           },
@@ -284,26 +335,39 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
   }
 
   return (
-    <div className="table-widget-container">
+    <div className="table-widget-container" ref={shouldVirtualize ? measuredHeightRef : undefined}>
       <Table
         dataSource={dataSource}
         columns={columns}
-        pagination={showPagination ? { 
-          pageSize, 
+        virtual={shouldVirtualize}
+        pagination={showPagination ? {
+          pageSize,
           size: 'small',
           showSizeChanger: false,
-          position: ['bottomRight'],
+          placement: ['bottomEnd'],
           hideOnSinglePage: false,
           showTotal: (total, range) => (
             <span style={{ fontSize: '12px', color: 'var(--ant-color-text-description)', marginRight: 'auto', fontWeight: 500 }}>
               {total > 0 ? t('showing_range', { start: range[0], end: range[1], total }) : t('no_records')}
             </span>
           ),
-        } : (dataSource.length > pageSize ? { pageSize, position: ['none' as any] } : false)}
+        } : (dataSource.length > pageSize ? { pageSize, placement: ['none'] } : false)}
         size={size}
         bordered={bordered}
         sticky
-        scroll={{ x: 'max-content' }}
+        // antd v6's Spin dropped the `ant-spin-nested-loading` class from its
+        // wrapper unless told to via classNames.root -- TableWidget.css's
+        // flex-fill scroll chain targets that exact class (see the matching
+        // fix + comment in ResultsTabPane.tsx).
+        loading={{ spinning: false, classNames: { root: 'ant-spin-nested-loading' } }}
+        scroll={
+          shouldVirtualize
+            // antd's virtual mode requires a numeric scroll.x — 'max-content' (fine in
+            // normal mode) throws a runtime warning and is silently ignored here.
+            // Columns have no explicit width, so approximate from column count.
+            ? { x: Math.max(600, columns.length * 160), y: measuredHeight || FALLBACK_VIRTUAL_HEIGHT }
+            : { x: 'max-content' }
+        }
         rowClassName={(record) => {
           if (record.key === 'total') return 'table-row-total';
           if (activeSet.has(String(record.x))) return 'table-row-cross-filter-active';

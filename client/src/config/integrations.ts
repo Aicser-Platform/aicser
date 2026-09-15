@@ -63,7 +63,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: 'Snowflake',
     category: 'warehouse',
-    logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/snowflake/snowflake-original.svg',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/snowflake.svg',
     description: 'Cloud data platform built for the cloud with instant elasticity and secure data sharing.',
     officialUrl: 'https://www.snowflake.com',
     docsUrl: 'https://docs.snowflake.com',
@@ -81,7 +81,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: 'Redshift',
     category: 'warehouse',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Amazon-Redshift-Logo.svg/1862px-Amazon-Redshift-Logo.svg.png',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/amazonredshift.svg',
     description: "AWS's fully managed, petabyte-scale data warehouse service.",
     officialUrl: 'https://aws.amazon.com/redshift',
     docsUrl: 'https://docs.aws.amazon.com/redshift',
@@ -106,7 +106,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: 'DuckDB',
     category: 'warehouse',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/DuckDB_logo.svg/1200px-DuckDB_logo.svg.png',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/duckdb.svg',
     description: 'In-process analytical database optimized for analytical queries.',
     officialUrl: 'https://duckdb.org',
     status: 'available',
@@ -141,14 +141,14 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: 'CSV',
     category: 'file',
-    logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/file/file-original.svg',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/files.svg',
     description: 'Import and analyze data from CSV files directly.',
     status: 'available',
   },
   {
     name: 'Excel',
     category: 'file',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Microsoft_Office_Excel_%282019%E2%80%932025%29.svg/1200px-Microsoft_Office_Excel_%282019%E2%80%932025%29.svg.png',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/microsoftexcel.svg',
     description: 'Connect to Excel files (.xlsx, .xls) for instant analysis.',
     officialUrl: 'https://www.microsoft.com/excel',
     status: 'available',
@@ -156,7 +156,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: 'Parquet',
     category: 'file',
-    logo: 'https://parquet.apache.org/images/logo.png',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/apacheparquet.svg',
     description: 'Columnar storage format optimized for analytics workloads.',
     officialUrl: 'https://parquet.apache.org',
     status: 'available',
@@ -194,6 +194,79 @@ export const INTEGRATIONS: Integration[] = [
     officialUrl: 'https://iceberg.apache.org',
     status: 'available',
   },
+  // NoSQL
+  {
+    name: 'MongoDB',
+    category: 'database',
+    logo: 'https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/mongodb/mongodb-original-wordmark.svg',
+    description: 'Document-oriented NoSQL database for flexible, JSON-like data.',
+    officialUrl: 'https://www.mongodb.com',
+    status: 'available',
+  },
+  {
+    name: 'Cassandra',
+    category: 'database',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/apachecassandra.svg',
+    description: 'Wide-column NoSQL database built for high availability at scale.',
+    officialUrl: 'https://cassandra.apache.org',
+    status: 'available',
+  },
+  {
+    name: 'DynamoDB',
+    category: 'database',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/amazondynamodb.svg',
+    description: "AWS's fully managed key-value and document NoSQL database.",
+    officialUrl: 'https://aws.amazon.com/dynamodb',
+    status: 'available',
+  },
+  // Enterprise connectors (ee/modules/data/services/enterprise_connectors_service.py)
+  {
+    name: 'Databricks',
+    category: 'warehouse',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/databricks.svg',
+    description: 'Unified analytics platform for data engineering and machine learning.',
+    officialUrl: 'https://www.databricks.com',
+    status: 'available',
+  },
+  {
+    name: 'Kafka',
+    category: 'api',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/apachekafka.svg',
+    description: 'Distributed event streaming platform for real-time data pipelines.',
+    officialUrl: 'https://kafka.apache.org',
+    status: 'available',
+  },
+  {
+    name: 'Elasticsearch',
+    category: 'api',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/elasticsearch.svg',
+    description: 'Distributed search and analytics engine.',
+    officialUrl: 'https://www.elastic.co/elasticsearch',
+    status: 'available',
+  },
+  {
+    name: 'OpenSearch',
+    category: 'api',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/opensearch.svg',
+    description: 'Open-source search and analytics suite.',
+    officialUrl: 'https://opensearch.org',
+    status: 'available',
+  },
+  {
+    name: 'InfluxDB',
+    category: 'warehouse',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/influxdb.svg',
+    description: 'Purpose-built time-series database for metrics and events.',
+    officialUrl: 'https://www.influxdata.com',
+    status: 'available',
+  },
+  {
+    name: 'GraphQL API',
+    category: 'api',
+    logo: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/graphql.svg',
+    description: 'Connect to any GraphQL API endpoint.',
+    status: 'available',
+  },
 ];
 
 /** Map app db_type / type values to integration name key (integrationKey(name)). */
@@ -218,6 +291,16 @@ const APP_TYPE_TO_INTEGRATION_NAME: Record<string, string> = {
   iceberg: 'apache_iceberg',
   file: 'csv',
   api: 'rest_api',
+  mongodb: 'mongodb',
+  cassandra: 'cassandra',
+  dynamodb: 'dynamodb',
+  databricks: 'databricks',
+  kafka: 'kafka',
+  elasticsearch: 'elasticsearch',
+  opensearch: 'opensearch',
+  influxdb: 'influxdb',
+  graphql_api: 'graphql_api',
+  rest_api: 'rest_api',
 };
 
 /** Build lookup: integrationKey(name) -> Integration */

@@ -28,7 +28,7 @@ class FeedServicePreviewMixin:
         }
         payload: Dict[str, Any] = {
             "summary": post.description or meta.get("excerpt") or f"{post.title or 'Insight'} — {asset_type}",
-            "previewLabel": meta.get("previewLabel") or preview_label_map.get(asset_type, "Analytics"),
+            "previewLabel": meta.get("previewLabel") or preview_label_map.get(asset_type, post.title or "Insight"),
             "previewType": meta.get("previewType") or ("dashboard" if asset_type == AssetType.dashboard.value else "bar"),
             "previewData": meta.get("previewData") or [],
             "previews": meta.get("previews") or [],

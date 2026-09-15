@@ -6,12 +6,12 @@ export type SchemaColumnOption = {
   type?: string;
 };
 
-type SchemaTable = {
+export type SchemaTable = {
   name?: string;
   columns?: Array<{ name?: string; type?: string } | string>;
 };
 
-type DataSourceWithSchema = {
+export type DataSourceWithSchema = {
   id: string | number;
   schema?: { tables?: SchemaTable[] };
 };

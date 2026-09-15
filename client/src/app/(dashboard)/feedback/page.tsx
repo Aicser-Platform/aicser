@@ -1,9 +1,8 @@
 import { redirect } from 'next/navigation';
 import FeedbackPageClient from './FeedbackPageClient';
-
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
 export default function FeedbackPage() {
-  if (!isEE) redirect('/dashboards');
+  if (!isEnterpriseEdition()) redirect('/dashboards');
   return <FeedbackPageClient />;
 }

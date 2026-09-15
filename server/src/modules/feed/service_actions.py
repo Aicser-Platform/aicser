@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
-from uuid import NAMESPACE_DNS, UUID, uuid5
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select, update
@@ -15,9 +15,9 @@ except ImportError:
     Role = None  # type: ignore
     UserRole = None  # type: ignore
 from src.modules.charts.models import Chart
-from src.modules.dashboards.models import Dashboard
+from src.modules.dashboards.models import Dashboard, DashboardChart
 from src.modules.data.models import DataQuery
-from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedShare, FeedSnapshot, FeedView, FeedDigestSubscription
+from src.modules.feed.models import FeedAuthorFollow, FeedCollection, FeedCollectionItem as FeedCollectionItemModel, FeedComment as FeedCommentModel, FeedCommentReaction, FeedEvent, FeedInteraction, FeedNotification, FeedPost, FeedPostAttachment, FeedShare, FeedSnapshot, FeedView, FeedDigestSubscription
 from src.modules.user.models import User
 from src.modules.feed.schemas import (
     AddCommentRequest,
@@ -26,6 +26,8 @@ from src.modules.feed.schemas import (
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
     AssetType,
+    AttachmentRef,
+    MAX_POST_ATTACHMENTS,
     CreateCollectionRequest,
     DeleteItemResponse,
     DeleteCollectionResponse,
@@ -58,9 +60,12 @@ from src.modules.feed.schemas import (
     UpdateCommentResponse,
     UpdateCollectionItemRequest,
     UpdateCollectionRequest,
+    UpdatePostRequest,
+    UpdatePostResponse,
 )
 from src.modules.feed.service_utils import _enum_value, _reaction_values, _sanitize_preview_metadata, _to_iso, _utcnow
 from src.modules.feed.snapshot_utils import (
+    build_snapshot_payload_from_live_asset,
     build_snapshot_payload_from_preview,
     create_feed_snapshot,
     normalize_snapshot_payload,
@@ -375,18 +380,89 @@ class FeedServiceActionMixin:
         asset_type: AssetType,
         asset_id: UUID,
         user_id: UUID,
-    ) -> None:
+        user_payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[UUID]:
+        """Verify the row exists AND the publishing user actually has view
+        access to it - returns the asset's real project_id.
+
+        This used to only check the row existed, globally, with no ownership
+        or view-access check at all: any authenticated user could publish
+        any dashboard/chart from any other org onto the feed just by
+        supplying its UUID. The returned project_id is authoritative (read
+        from the asset itself) so publish_asset() doesn't have to trust the
+        client-supplied organization_id/project_id for the role/approval
+        checks that follow - trusting those was the second half of the same
+        bug (omitting them there skipped the role check entirely and
+        auto-approved public/organization visibility).
+        """
         asset_value = asset_type.value
         if asset_value == AssetType.dashboard.value:
-            row = await self.db.scalar(select(Dashboard.id).where(Dashboard.id == asset_id))
-            if not row:
+            row = await self.db.execute(
+                select(Dashboard.project_id, Dashboard.created_by).where(Dashboard.id == asset_id)
+            )
+            record = row.first()
+            if not record:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dashboard not found")
-            return
+            project_id, created_by = record
+            if created_by and str(created_by) == str(user_id):
+                return project_id
+            from src.modules.authentication.rbac_service import has_dashboard_access
+
+            if not await has_dashboard_access(user_payload or {"id": str(user_id)}, str(asset_id)):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to publish this dashboard",
+                )
+            return project_id
         if asset_value == AssetType.chart.value:
-            row = await self.db.scalar(select(Chart.id).where(Chart.id == asset_id))
-            if not row:
+            row = await self.db.execute(
+                select(Chart.project_id, Chart.user_id).where(Chart.id == asset_id)
+            )
+            record = row.first()
+            if not record:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chart not found")
-            return
+            project_id, chart_owner_id = record
+            if chart_owner_id and str(chart_owner_id) == str(user_id):
+                return project_id
+            if not project_id:
+                # See the matching fallback in _can_view_dashboard_or_chart:
+                # a chart with no user_id/project_id of its own is still
+                # reachable and viewable through whichever dashboard(s) it's
+                # placed on via dashboard_charts - deny only if NONE of those
+                # grant access either, rather than denying outright just
+                # because the chart row itself never recorded an owner/project.
+                dash_rows = await self.db.execute(
+                    select(Dashboard.id, Dashboard.project_id, Dashboard.created_by)
+                    .join(DashboardChart, DashboardChart.dashboard_id == Dashboard.id)
+                    .where(DashboardChart.chart_id == asset_id)
+                )
+                resolved_project_id = None
+                for _dash_id, dash_project_id, dash_created_by in dash_rows.all():
+                    if dash_created_by and str(dash_created_by) == str(user_id):
+                        return dash_project_id
+                    from src.modules.authentication.rbac_service import has_dashboard_access
+
+                    if await has_dashboard_access(user_payload or {"id": str(user_id)}, str(_dash_id)):
+                        return dash_project_id
+                    if dash_project_id:
+                        resolved_project_id = dash_project_id
+                project_id = resolved_project_id
+            if not is_ee_enabled() or not project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not authorized to publish this chart",
+                )
+            from types import SimpleNamespace
+
+            from src.modules.charts.router import _enforce_standalone_chart_access
+
+            await _enforce_standalone_chart_access(
+                SimpleNamespace(user_id=chart_owner_id, project_id=project_id),
+                user_id,
+                self.db,
+                "chart:view",
+            )
+            return project_id
         if asset_value == AssetType.query.value:
             result = await self.db.execute(
                 select(DataQuery.id).where(DataQuery.user_id == str(user_id))
@@ -395,8 +471,217 @@ class FeedServiceActionMixin:
             matching = any(uuid5(NAMESPACE_DNS, f"query:{qid}") == asset_id for qid in query_ids)
             if not matching:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Query not found")
-            return
-        # insight assets are snapshots — no backing row required
+            return None
+        # insight/post assets are snapshots — no backing row required
+        return None
+
+    async def _can_view_dashboard_or_chart(
+        self,
+        attachment_asset_type: str,
+        asset_id: UUID,
+        user_id: UUID,
+        user_payload: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Bool-returning "can this user view this dashboard/chart" check for
+        post ATTACHMENTS - same access rules _validate_publish_asset already
+        enforces for a post's own primary asset (owner bypass, then
+        has_dashboard_access / _enforce_standalone_chart_access), factored out
+        here so it can be reused for (a) the author validating an attachment
+        at creation time and (b) each VIEWER's own access re-checked at
+        render time (service_serialization.py) - unlike
+        _validate_publish_asset, this never raises: a missing/inaccessible
+        attachment should hide it, not blow up the whole post request.
+        """
+        try:
+            if attachment_asset_type == "dashboard":
+                row = await self.db.execute(
+                    select(Dashboard.project_id, Dashboard.created_by).where(Dashboard.id == asset_id)
+                )
+                record = row.first()
+                if not record:
+                    return False
+                _project_id, created_by = record
+                if created_by and str(created_by) == str(user_id):
+                    return True
+                from src.modules.authentication.rbac_service import has_dashboard_access
+
+                return await has_dashboard_access(user_payload or {"id": str(user_id)}, str(asset_id))
+            if attachment_asset_type == "chart":
+                row = await self.db.execute(
+                    select(Chart.project_id, Chart.user_id).where(Chart.id == asset_id)
+                )
+                record = row.first()
+                if not record:
+                    return False
+                project_id, chart_owner_id = record
+                if chart_owner_id and str(chart_owner_id) == str(user_id):
+                    return True
+                if not project_id:
+                    # Many real charts carry neither user_id nor project_id on
+                    # their own row - a chart's actual ownership/placement
+                    # lives on the DASHBOARD it's attached to, via the
+                    # dashboard_charts join table (the standalone `charts`
+                    # table's own project_id/user_id are legacy fields that
+                    # dashboard-created charts never populate - see the
+                    # "3-way dashboard/chart data model" note). Falling back
+                    # to "can this user view any dashboard this chart belongs
+                    # to" instead of hard-denying is what a viewer who opened
+                    # this exact chart from that dashboard a moment ago
+                    # actually has - confirmed live: a real attach-from-
+                    # dashboard attempt 403'd here even though the same
+                    # request had just successfully fetched and executed this
+                    # very chart through the dashboard's own charts endpoint.
+                    dash_rows = await self.db.execute(
+                        select(Dashboard.id, Dashboard.project_id, Dashboard.created_by)
+                        .join(DashboardChart, DashboardChart.dashboard_id == Dashboard.id)
+                        .where(DashboardChart.chart_id == asset_id)
+                    )
+                    for _dash_id, dash_project_id, dash_created_by in dash_rows.all():
+                        if dash_created_by and str(dash_created_by) == str(user_id):
+                            return True
+                        from src.modules.authentication.rbac_service import has_dashboard_access
+
+                        if await has_dashboard_access(user_payload or {"id": str(user_id)}, str(_dash_id)):
+                            return True
+                        if dash_project_id:
+                            project_id = dash_project_id
+                    if not project_id:
+                        return False
+                if not is_ee_enabled():
+                    return False
+                from types import SimpleNamespace
+
+                from src.modules.charts.router import _enforce_standalone_chart_access
+
+                try:
+                    await _enforce_standalone_chart_access(
+                        SimpleNamespace(user_id=chart_owner_id, project_id=project_id),
+                        user_id,
+                        self.db,
+                        "chart:view",
+                    )
+                    return True
+                except HTTPException:
+                    return False
+        except Exception:
+            return False
+        return False
+
+    _VISIBILITY_RANK = {"private": 0, "project": 1, "organization": 2, "public": 3}
+
+    async def _resolve_attachment_title(self, asset_type: str, asset_id: UUID) -> Optional[str]:
+        if asset_type == "dashboard":
+            return await self.db.scalar(select(Dashboard.name).where(Dashboard.id == asset_id))
+        if asset_type == "chart":
+            return await self.db.scalar(select(Chart.title).where(Chart.id == asset_id))
+        return None
+
+    async def _get_or_create_attachment_publication(
+        self,
+        *,
+        asset_type: str,
+        asset_id: UUID,
+        author_id: UUID,
+        user_payload: Optional[Dict[str, Any]],
+        min_visibility: str,
+        containing_post_project_id: Optional[UUID] = None,
+        snapshot_payload: Optional[Dict[str, Any]] = None,
+    ) -> FeedPost:
+        """Get - or create, via the exact same pipeline as "Publish to Feed"
+        (publish_asset) - the real feed publication behind an attached
+        dashboard/chart. Attachments used to reference the raw dashboard/
+        chart id directly and try to deep-link straight into the live
+        dashboards app, which depended on that app's own routing/project-
+        context state and had no real preview to show. A publication always
+        renders correctly at /feed/{id} with its own real preview/snapshot,
+        exactly like publishing it from the Dashboards builder, Chart
+        Designer, or an AI chart in chat already would.
+
+        Reuses an existing publication for this exact (asset, author) pair
+        when one is already visible at least as widely as `min_visibility`
+        (the containing post's own visibility) - never silently widens an
+        existing narrower one, since that would surprise the author by
+        exposing something they'd deliberately kept private. If none
+        qualifies, publishes a new one at exactly `min_visibility`, which can
+        raise the same 403 publish_asset itself would if the author lacks
+        the org/project role to publish at that scope - attaching something
+        can't grant more reach than actually publishing it would.
+        """
+        # A dashboard/chart publication's `project_id` is always the ASSET's
+        # own project (publish_asset trusts the asset, not the caller, for
+        # this - see _validate_publish_asset) - so "project" visibility only
+        # makes sense when the attached asset actually belongs to the SAME
+        # project as the containing post. A post scoped to Project B
+        # attaching a dashboard that lives in Project A can't be represented
+        # as a Project-A-scoped publication without leaving Project-B
+        # viewers of the containing post unable to see it - escalate to
+        # organization instead, the narrowest scope that can actually cover
+        # both.
+        effective_min_visibility = min_visibility
+        if min_visibility == "project":
+            asset_project_id = await self._validate_publish_asset(
+                AssetType(asset_type), asset_id, author_id, user_payload
+            )
+            if asset_project_id != containing_post_project_id:
+                effective_min_visibility = "organization"
+
+        min_rank = self._VISIBILITY_RANK.get(effective_min_visibility, 0)
+        rows = await self.db.execute(
+            select(FeedPost)
+            .where(
+                FeedPost.asset_type == asset_type,
+                FeedPost.asset_id == asset_id,
+                FeedPost.author_id == author_id,
+                FeedPost.status == PublicationStatus.approved.value,
+            )
+            .order_by(FeedPost.created_at.asc())
+        )
+        best: Optional[FeedPost] = None
+        best_rank: Optional[int] = None
+        for candidate in rows.scalars().all():
+            candidate_rank = self._VISIBILITY_RANK.get(_enum_value(candidate.visibility), 0)
+            if candidate_rank >= min_rank and (best_rank is None or candidate_rank < best_rank):
+                best = candidate
+                best_rank = candidate_rank
+        if best:
+            # Re-attaching after the author edits the dashboard/chart must refresh
+            # the frozen snapshot on the reused publication. Returning `best`
+            # unchanged discarded the newly captured payload and left feed cards
+            # showing a stale preview forever.
+            if snapshot_payload:
+                title = (
+                    await self._resolve_attachment_title(asset_type, asset_id)
+                    or best.title
+                    or asset_type.capitalize()
+                )
+                await self._apply_publication_snapshot(
+                    best,
+                    user_id=author_id,
+                    render_mode=FeedRenderMode.snapshot,
+                    snapshot_payload=snapshot_payload,
+                    preview_metadata=dict(best.preview_metadata or {}),
+                    asset_type=asset_type,
+                    title=title,
+                    description=best.description,
+                )
+                await self.db.flush()
+            return best
+
+        title = await self._resolve_attachment_title(asset_type, asset_id)
+        response = await self.publish_asset(
+            PublishAssetRequest(
+                asset_type=AssetType(asset_type),
+                asset_id=asset_id,
+                title=(title or asset_type.capitalize()),
+                visibility=FeedVisibility(effective_min_visibility),
+                snapshot_payload=snapshot_payload,
+            ),
+            user_payload,
+        )
+        created = await self.db.scalar(select(FeedPost).where(FeedPost.id == UUID(response.publication_id)))
+        if not created:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to publish attachment")
+        return created
 
     async def _apply_publication_snapshot(
         self,
@@ -421,6 +706,22 @@ class FeedServiceActionMixin:
             payload = build_snapshot_payload_from_preview(
                 asset_type,
                 preview_metadata,
+                title=title,
+                description=description,
+            ) or {}
+
+        # Neither the caller's own snapshot_payload nor legacy preview_metadata
+        # produced anything usable. Rather than give up here (the only option
+        # before this existed), fetch the dashboard/chart's current data
+        # server-side and build one directly - this is the real backstop that
+        # keeps "no publish/attach call can end up live" true regardless of
+        # what any given frontend call site does or doesn't send.
+        if not payload and asset_type in ("dashboard", "chart"):
+            payload = await build_snapshot_payload_from_live_asset(
+                self.db,
+                asset_type,
+                post.asset_id,
+                user_id,
                 title=title,
                 description=description,
             ) or {}
@@ -454,10 +755,24 @@ class FeedServiceActionMixin:
         asset_id = request.asset_id
         if request.asset_type == AssetType.query and request.source_query_id:
             asset_id = uuid5(NAMESPACE_DNS, f"query:{request.source_query_id}")
+        elif request.asset_type == AssetType.post and not asset_id:
+            # A pure-text post has no real backing row to derive an id from
+            # (unlike query/insight, which synthesize a deterministic uuid5
+            # from a real conversation/query id) - a fresh random id is fine
+            # since nothing else needs to re-derive it.
+            asset_id = uuid4()
         if not asset_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_id is required")
 
-        await self._validate_publish_asset(request.asset_type, asset_id, user_id)
+        if request.asset_type == AssetType.post:
+            if not (request.description or "").strip():
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Post text is required")
+        elif not (request.title or "").strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title is required")
+
+        asset_project_id = await self._validate_publish_asset(
+            request.asset_type, asset_id, user_id, user_payload
+        )
 
         preview_metadata = _sanitize_preview_metadata(request.preview_metadata or {})
         if request.asset_type == AssetType.query and request.source_query_id:
@@ -465,8 +780,15 @@ class FeedServiceActionMixin:
         if request.thumbnail_url:
             preview_metadata["thumbnailUrl"] = request.thumbnail_url
 
-        organization_id = request.organization_id
-        project_id = request.project_id
+        # Use the asset's own project_id, not the client-supplied one, for
+        # dashboard/chart assets - trusting the request body here is what let
+        # a caller omit/mismatch organization_id/project_id to skip the role
+        # check below entirely and get auto-approved public visibility.
+        if asset_project_id is not None:
+            project_id = asset_project_id
+        else:
+            project_id = request.project_id
+        organization_id = request.organization_id if asset_project_id is None else None
 
         if project_id and not organization_id:
             from src.modules.project.models import Project
@@ -489,6 +811,16 @@ class FeedServiceActionMixin:
         is_project_editor = "project_editor" in project_roles
 
         visibility_value = request.visibility.value
+
+        if request.asset_type == AssetType.post and visibility_value == "public":
+            # Text posts are an internal collaboration tool, not public-facing
+            # content like a published chart/dashboard - never expose org
+            # discussion externally. Composer UI should already omit this
+            # option for posts; this is the authoritative backend guard.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Posts cannot be public",
+            )
 
         if visibility_value == "organization":
             if organization_id and not (is_org_owner or is_org_admin or is_org_member):
@@ -540,6 +872,11 @@ class FeedServiceActionMixin:
             if not (is_org_owner or is_org_admin):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Approval privilege required")
             status_value = PublicationStatus.rejected.value
+        elif request.asset_type == AssetType.post:
+            # Text posts publish immediately, same friction level as a chat
+            # message - the approval gate below exists for publishing charts/
+            # dashboards to a wider audience, not for org-internal discussion.
+            status_value = PublicationStatus.approved.value
         else:
             if visibility_value == "public":
                 if not organization_id or is_org_owner:
@@ -584,6 +921,7 @@ class FeedServiceActionMixin:
                 title=request.title,
                 description=request.description,
                 tags=request.tags,
+                mentions=request.mentioned_users or None,
                 approved_by=approved_by,
                 approved_at=approved_at,
                 published_at=published_at,
@@ -608,6 +946,7 @@ class FeedServiceActionMixin:
             post.title = request.title
             post.description = request.description
             post.tags = request.tags
+            post.mentions = request.mentioned_users or None
             post.approved_by = approved_by
             post.approved_at = approved_at
             post.published_at = published_at
@@ -624,6 +963,89 @@ class FeedServiceActionMixin:
                 post.preview_metadata = preview_metadata
 
         await self.db.flush()
+
+        if request.attachments is not None:
+            # Author-side validation only - each VIEWER's own access is
+            # re-checked independently at read time (service_serialization.py),
+            # since a post's visibility doesn't imply every viewer can also
+            # see every asset it references. Replace-on-update: an edited
+            # post's attachment list is exactly what was just submitted, not
+            # merged with whatever existed before.
+            await self.db.execute(delete(FeedPostAttachment).where(FeedPostAttachment.post_id == post.id))
+            for position, attachment in enumerate(request.attachments[:MAX_POST_ATTACHMENTS]):
+                if attachment.publication_id:
+                    publication = await self.db.get(FeedPost, attachment.publication_id)
+                    if publication is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Publication not found",
+                        )
+                    if not await self._can_view_post(publication, user_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Not authorized to attach this publication",
+                        )
+                    pub_type = _enum_value(publication.asset_type)
+                    if pub_type not in ("dashboard", "chart", "insight"):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This post cannot be attached",
+                        )
+                    if attachment.snapshot_payload:
+                        await self._apply_publication_snapshot(
+                            publication,
+                            user_id=user_id,
+                            render_mode=FeedRenderMode.snapshot,
+                            snapshot_payload=attachment.snapshot_payload,
+                            preview_metadata=dict(publication.preview_metadata or {}),
+                            asset_type=pub_type,
+                            title=publication.title or pub_type.capitalize(),
+                            description=publication.description,
+                        )
+                    self.db.add(
+                        FeedPostAttachment(
+                            post_id=post.id,
+                            asset_type=pub_type,
+                            asset_id=publication.asset_id,
+                            referenced_post_id=publication.id,
+                            position=position,
+                        )
+                    )
+                    continue
+                if attachment.asset_type == "insight":
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Insights must be attached from an existing publication",
+                    )
+                if not await self._can_view_dashboard_or_chart(
+                    attachment.asset_type, attachment.asset_id, user_id, user_payload
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Not authorized to attach this {attachment.asset_type}",
+                    )
+                publication = await self._get_or_create_attachment_publication(
+                    asset_type=attachment.asset_type,
+                    asset_id=attachment.asset_id,
+                    author_id=user_id,
+                    user_payload=user_payload,
+                    min_visibility=visibility_value,
+                    containing_post_project_id=post.project_id,
+                    snapshot_payload=attachment.snapshot_payload,
+                )
+                self.db.add(
+                    FeedPostAttachment(
+                        post_id=post.id,
+                        asset_type=attachment.asset_type,
+                        asset_id=attachment.asset_id,
+                        referenced_post_id=publication.id,
+                        position=position,
+                    )
+                )
+            await self.db.flush()
+
+        await self._notify_mentions(post=post, mentioned_user_ids=request.mentioned_users, actor_id=user_id)
+
         snapshot_row = await self._apply_publication_snapshot(
             post,
             user_id=user_id,
@@ -687,6 +1109,7 @@ class FeedServiceActionMixin:
             status=PublicationStatus(status_value),
             snapshot_version=int(post.snapshot_version or 0),
             render_mode=FeedRenderMode(_enum_value(post.render_mode) or FeedRenderMode.live.value),
+            project_id=str(post.project_id) if post.project_id else None,
         )
 
     async def update_publication_snapshot(
@@ -731,6 +1154,7 @@ class FeedServiceActionMixin:
             status=PublicationStatus(_enum_value(post.status)),
             snapshot_version=int(post.snapshot_version or 0),
             render_mode=FeedRenderMode.snapshot,
+            project_id=str(post.project_id) if post.project_id else None,
         )
 
     async def save_chat_feed_draft(
@@ -1321,6 +1745,48 @@ class FeedServiceActionMixin:
         await self.db.commit()
         return DeleteItemResponse(success=True)
 
+    async def update_post(
+        self,
+        item_id: UUID,
+        request: UpdatePostRequest,
+        user_payload: Optional[Dict[str, Any]],
+    ) -> UpdatePostResponse:
+        """Edit a pure-text post's own content - mirrors update_comment.
+        Scoped to asset_type == "post": a dashboard/chart/insight/query post's
+        content is the underlying asset, re-published via publish_asset, not
+        editable here. Mentions are replaced outright (same as comment edits)
+        without re-firing notifications for newly-added ones."""
+        await self._seed_mock_data_if_empty()
+
+        user_id = self.resolve_user_id(user_payload)
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
+        await self._set_rls_context(user_id)
+        await self._ensure_user_row(user_id, user_payload)
+        post = await self._get_post_or_404(item_id)
+
+        if post.author_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the post author can edit this item")
+
+        if _enum_value(post.asset_type) != AssetType.post.value:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only text posts can be edited here - re-publish to update a dashboard/chart/insight/query post",
+            )
+
+        updated_description = request.description.strip()
+        if not updated_description:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Post content is required")
+
+        post.description = updated_description
+        post.mentions = request.mentioned_users or None
+        post.edited_at = _utcnow()
+        await self.db.commit()
+
+        item = await self.get_item_by_id(post.id, user_payload)
+        return UpdatePostResponse(success=True, item=item)
+
     async def react_to_item(
         self,
         item_id: UUID,
@@ -1518,6 +1984,35 @@ class FeedServiceActionMixin:
             share_link=share_link,
         )
 
+    async def _notify_mentions(
+        self,
+        *,
+        post: FeedPost,
+        mentioned_user_ids: Optional[List[UUID]],
+        actor_id: UUID,
+        comment_id: Optional[UUID] = None,
+    ) -> None:
+        """Fire a "mention" notification + feed event per mentioned user.
+        Shared by add_comment (mentions inside a comment) and publish_asset
+        (mentions inside a new text post's body) - same fan-out either way.
+        _create_notification already no-ops on self-mentions and on a
+        recipient row that doesn't exist, so callers don't need to filter."""
+        for mentioned_id in mentioned_user_ids or []:
+            await self._create_notification(
+                recipient_id=mentioned_id,
+                actor_id=actor_id,
+                notification_type="mention",
+                post_id=post.id,
+                comment_id=comment_id,
+            )
+            await self._log_event(
+                actor_id=actor_id,
+                event_type="mention",
+                post=post,
+                target_user_id=mentioned_id,
+                metadata={"comment_id": str(comment_id)} if comment_id else None,
+            )
+
     async def add_comment(
         self,
         item_id: UUID,
@@ -1604,23 +2099,12 @@ class FeedServiceActionMixin:
                 },
             )
 
-        for mentioned_id in request.mentioned_users or []:
-            await self._create_notification(
-                recipient_id=mentioned_id,
-                actor_id=user_id,
-                notification_type="mention",
-                post_id=post.id,
-                comment_id=comment.id,
-            )
-            await self._log_event(
-                actor_id=user_id,
-                event_type="mention",
-                post=post,
-                target_user_id=mentioned_id,
-                metadata={
-                    "comment_id": str(comment.id),
-                },
-            )
+        await self._notify_mentions(
+            post=post,
+            mentioned_user_ids=request.mentioned_users,
+            actor_id=user_id,
+            comment_id=comment.id,
+        )
 
         await self.db.commit()
 

@@ -11,6 +11,7 @@ from typing import TypedDict
 from src.modules.data.services.data_connectivity_service import DataConnectivityService
 from src.modules.data.services.multi_engine_query_service import (
     QueryEngine,
+    _quote_ident_part,
     get_multi_engine_query_service,
 )
 from src.modules.data.services.query_identity import SystemQuery
@@ -60,9 +61,10 @@ async def refresh_all_materialized_views(data_source_id: str) -> MaterializedVie
     refreshed = 0
     failed = 0
     for schema, name in views:
+        qualified = f"{_quote_ident_part(schema)}.{_quote_ident_part(name)}"
         try:
             await _multi_engine_service.execute_query(
-                query=f"REFRESH MATERIALIZED VIEW CONCURRENTLY {schema}.{name}",
+                query=f"REFRESH MATERIALIZED VIEW CONCURRENTLY {qualified}",
                 data_source=data_source,
                 engine=QueryEngine.DIRECT_SQL,
                 optimization=False,
@@ -70,6 +72,29 @@ async def refresh_all_materialized_views(data_source_id: str) -> MaterializedVie
             )
             refreshed += 1
         except Exception as exc:
+            # CONCURRENTLY requires a unique index on the view; views without
+            # one used to just land in the failed bucket with no distinguishing
+            # error. Fall back to a plain (locking) refresh -- still better
+            # than never refreshing a view an admin explicitly asked to have
+            # kept current.
+            if "concurrent" in str(exc).lower() or "unique index" in str(exc).lower():
+                try:
+                    await _multi_engine_service.execute_query(
+                        query=f"REFRESH MATERIALIZED VIEW {qualified}",
+                        data_source=data_source,
+                        engine=QueryEngine.DIRECT_SQL,
+                        optimization=False,
+                        identity=SystemQuery(reason="materialized view refresh (non-concurrent fallback)"),
+                    )
+                    refreshed += 1
+                    logger.info(
+                        "refresh_all_materialized_views: %s.%s has no unique index for CONCURRENTLY, "
+                        "refreshed with a plain (locking) REFRESH instead",
+                        schema, name,
+                    )
+                    continue
+                except Exception as fallback_exc:
+                    exc = fallback_exc
             failed += 1
             logger.warning(
                 "refresh_all_materialized_views: failed to refresh %s.%s on %s: %s",

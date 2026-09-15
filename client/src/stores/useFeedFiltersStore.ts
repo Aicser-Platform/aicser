@@ -35,6 +35,7 @@ export const useFeedFiltersStore = create<FeedFiltersState>()(
         sort: 'recommended',
         tags: [],
         search: '',
+        privateProjectOnly: false,
       },
       sidebarControls: {
         timeRange: 'week',

@@ -183,6 +183,14 @@
   color: var(--ant-color-text-secondary);
 }
 
+.discover-author-bio {
+  margin: 4px 0 0;
+  max-width: 60ch;
+  color: var(--ant-color-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .discover-author-stats {
   display: flex;
   flex-wrap: wrap;

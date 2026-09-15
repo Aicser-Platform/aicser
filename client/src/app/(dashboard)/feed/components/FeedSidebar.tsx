@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Button, Card, Empty, Input, List, Modal, Select, Space, Typography, Avatar, message, Tooltip, Dropdown } from 'antd';
+import Link from 'next/link';
+import { Button, Card, Empty, Input, List, Modal, Select, Space, Typography, message, Tooltip, Dropdown } from 'antd';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
@@ -23,8 +24,19 @@ import { socialFeedService } from '@/services/socialFeedService';
 import { useTranslations } from 'next-intl';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { useQueryClient } from '@tanstack/react-query';
+import { FeedAuthorAvatar } from '@/components/Feed/FeedAuthorAvatar';
+import { useFeedAuthorDisplay } from '@/components/Feed/useFeedAuthorDisplay';
 
 const { Text } = Typography;
+
+function SidebarAuthorLabel({ author }: { author: { id?: string; name: string; username?: string | null; avatarUrl?: string | null } }) {
+  const { name } = useFeedAuthorDisplay(author);
+  return (
+    <span className="text-sm font-semibold text-[var(--ant-color-text)] truncate hover:text-[var(--ant-color-primary)]">
+      {name}
+    </span>
+  );
+}
 
 const SYNTHETIC_COLLECTION_IDS = new Set(['saved-items', 'commented-items']);
 
@@ -337,20 +349,30 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
           locale={{
             emptyText: <div className="p-4 text-[var(--ant-color-text-description)]">{t('no_contributor_data')}</div>,
           }}
-          renderItem={(entry, index) => (
-            <div className="flex items-center gap-3 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors">
-              <Avatar
+          renderItem={(entry, index) => {
+            const authorProfileHref = entry.author.username
+              ? `/discover/author/${encodeURIComponent(entry.author.username.replace(/^@/, ''))}`
+              : null;
+            const avatar = (
+              <FeedAuthorAvatar
+                author={entry.author}
                 size={32}
-                src={entry.author.avatarUrl}
-                className="bg-blue-100 text-[var(--ant-color-primary)] shrink-0"
-              >
-                {entry.author.name.charAt(0)}
-              </Avatar>
+                className={`bg-blue-100 text-[var(--ant-color-primary)] shrink-0 ${authorProfileHref ? 'cursor-pointer' : ''}`}
+              />
+            );
+            const name = authorProfileHref ? (
+              <Link href={authorProfileHref}>
+                <SidebarAuthorLabel author={entry.author} />
+              </Link>
+            ) : (
+              <SidebarAuthorLabel author={entry.author} />
+            );
+            return (
+            <div className="flex items-center gap-3 p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors">
+              {authorProfileHref ? <Link href={authorProfileHref}>{avatar}</Link> : avatar}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="text-sm font-semibold text-[var(--ant-color-text)] truncate">
-                    {entry.author.name}
-                  </span>
+                  {name}
                   {index < 3 && (
                     <TrophyOutlined
                       className={`text-xs ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-[var(--ant-color-text-description)]' : 'text-orange-400'}`}
@@ -362,7 +384,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 </div>
               </div>
             </div>
-          )}
+            );
+          }}
         />
       </Card>
 
@@ -487,7 +510,18 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
       >
         <List
           dataSource={(data.activity ?? []).slice(0, 6)}
-          renderItem={(activity) => (
+          renderItem={(activity) => {
+            const actorProfileHref = activity.actor.username
+              ? `/discover/author/${encodeURIComponent(activity.actor.username.replace(/^@/, ''))}`
+              : null;
+            const actorAvatar = (
+              <FeedAuthorAvatar
+                author={activity.actor}
+                size={28}
+                className={`bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)] shrink-0 mt-0.5 ${actorProfileHref ? 'cursor-pointer' : ''}`}
+              />
+            );
+            return (
             <div
               className="p-4 border-b border-[var(--ant-color-border-secondary)] last:border-0 hover:bg-[var(--ant-color-bg-layout)] transition-colors flex gap-3 items-start cursor-pointer"
               role="button"
@@ -500,13 +534,16 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 }
               }}
             >
-              <Avatar
-                size={28}
-                src={activity.actor.avatarUrl}
-                className="bg-[var(--ant-color-border-secondary)] text-[var(--ant-color-text-secondary)] shrink-0 mt-0.5"
-              >
-                {activity.actor.name.charAt(0)}
-              </Avatar>
+              {/* Avatar links to the actor's profile independently of the row's
+                  own click-to-open-post behavior — stopPropagation keeps the two
+                  targets from fighting over the same click. */}
+              {actorProfileHref ? (
+                <Link href={actorProfileHref} onClick={(e) => e.stopPropagation()}>
+                  {actorAvatar}
+                </Link>
+              ) : (
+                actorAvatar
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-[var(--ant-color-text-secondary)] leading-snug line-clamp-2 m-0">
                   <span className="font-medium text-[var(--ant-color-text)]">{activity.actor.name}</span>{' '}
@@ -519,7 +556,8 @@ const FeedSidebar: React.FC<FeedSidebarProps> = ({
                 </div>
               </div>
             </div>
-          )}
+            );
+          }}
         />
       </Card>
 

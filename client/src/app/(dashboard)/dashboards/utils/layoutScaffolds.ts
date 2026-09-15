@@ -1,6 +1,6 @@
 import shortid from 'shortid';
 import type { LayoutItem } from '../stores/useDashboardStore';
-import type { LayoutPreset } from '../components/LayoutPresetsMenu';
+import { LAYOUT_PRESETS, type LayoutPreset } from '../components/LayoutPresetsMenu';
 import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 
 export type LayoutSlotKind = 'kpi' | 'chart' | 'table' | 'header' | 'any';
@@ -192,4 +192,50 @@ export function applyPresetWithScaffolds(
 
 export function isLayoutSlotWidget(widget: WidgetInstance): boolean {
   return Boolean((widget.chartOptions as { _layoutSlot?: boolean })?._layoutSlot);
+}
+
+/**
+ * Auto-detect the best-fitting layout preset for the dashboard's actual
+ * widget mix, instead of leaving preset choice entirely manual. Reuses
+ * applyPresetWithScaffolds itself as the scorer (rather than a second,
+ * divergent notion of "fit") — for each candidate preset, run the same
+ * slot-assignment it uses when a preset is applied for real, then penalize
+ * two outcomes that mean the preset didn't actually fit this dashboard:
+ * empty slots padded with "drop something here" scaffolds (preset has more
+ * structure than the dashboard has content), and overflow widgets stacked
+ * below the preset footprint (preset has less structure than the dashboard
+ * has content). Lower total score = better fit; ties keep the earlier
+ * (denser, more common) preset in LAYOUT_PRESETS.
+ */
+export function suggestLayoutPreset(
+  widgets: WidgetInstance[],
+  presets: readonly LayoutPreset[] = LAYOUT_PRESETS,
+): LayoutPreset | null {
+  const realWidgets = widgets.filter((w) => !isLayoutSlotWidget(w));
+  if (realWidgets.length === 0) return null;
+
+  const orderedLayout: LayoutItem[] = realWidgets.map((w, idx) => ({ i: w.id, x: 0, y: idx, w: 1, h: 1 }));
+
+  let best: LayoutPreset | null = null;
+  let bestScore = Infinity;
+  for (const preset of presets) {
+    const { newWidgets } = applyPresetWithScaffolds(preset, orderedLayout, realWidgets);
+    // Each widget's best available slot kind in this preset (order-independent,
+    // so it isn't thrown off by which slot the greedy assignment above
+    // actually gave it — that assignment is a placement detail, not a
+    // fitness signal).
+    const kinds = preset.layout.map((slot, idx) => inferSlotKind(preset.id, idx, slot));
+    const fitScore = realWidgets.reduce(
+      (sum, w) => sum + Math.min(...kinds.map((kind) => rankWidgetForSlot(w, kind))),
+      0,
+    );
+    const emptySlotPenalty = newWidgets.length * 3;
+    const overflowPenalty = Math.max(0, realWidgets.length - preset.layout.length) * 3;
+    const score = fitScore + emptySlotPenalty + overflowPenalty;
+    if (score < bestScore) {
+      bestScore = score;
+      best = preset;
+    }
+  }
+  return best;
 }

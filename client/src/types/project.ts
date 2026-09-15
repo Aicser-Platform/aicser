@@ -10,6 +10,8 @@ export interface Project {
     is_private?: boolean;
     owner_name?: string;
     is_shared?: boolean;
+    /** Caller's effective project role (project_owner/project_editor/project_viewer), for UI gating. */
+    my_role?: string | null;
     created_at: string;
     updated_at: string;
     settings?: Record<string, any>;

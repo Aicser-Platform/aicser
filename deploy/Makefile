@@ -59,6 +59,11 @@ dev-ce-warehouse:
 dev-ee-warehouse:
 	$(DEV_EE_EXTRAS) --profile warehouse up -d clickhouse
 
+# Optional, opt-in self-hosted model server (CPU-only Ollama). Off unless
+# asked for -- see docker-compose.dev.ee.yml / .env.ee.example for wiring.
+dev-ee-ollama:
+	$(DEV_EE) --profile ollama up -d ollama
+
 dev-ce-worker:
 	$(DEV_CE_EXTRAS) --profile worker up -d worker
 
@@ -123,6 +128,10 @@ ee-down:
 	$(EE) down
 ee-logs:
 	$(EE) logs -f
+# Optional, opt-in self-hosted model server (CPU-only Ollama). Off unless
+# asked for -- see docker-compose.ee.yml / .env.ee.example for wiring.
+ee-ollama:
+	$(EE) --profile ollama up -d ollama
 ee-restart:
 	$(EE) restart server
 ee-restart-client:
@@ -167,10 +176,10 @@ seed-rbac-dev:
 	$(DEV_EE) exec server python -m ee.scripts.seed_rbac
 
 .PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
-        dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse \
+        dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
-        ee ee-down ee-logs ee-client-light ee-restart ee-restart-client \
+        ee ee-down ee-logs ee-ollama ee-client-light ee-restart ee-restart-client \
         ee-recreate ee-reset ee-self-host-build ee-self-host-up \
         ee-self-host-pull ee-self-host-logs ee-self-host-down \
         ee-self-host-local-up ee-self-host-local-logs ee-self-host-local-down \

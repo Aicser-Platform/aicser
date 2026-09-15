@@ -25,7 +25,7 @@ for _azure_mod in (
 
 pytest.importorskip("ee.modules.organizations.service")
 
-from src.modules.organizations.service import _collapse_member_rows
+from ee.modules.organizations.service import _collapse_member_rows
 
 
 async def _collapse(rows):

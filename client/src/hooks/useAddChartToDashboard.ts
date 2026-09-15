@@ -169,14 +169,14 @@ export function useAddChartToDashboard() {
       const projectId = useProjectStore.getState().currentProjectId;
 
       // Same durable bind as Query Editor Visualize: save SQL → saved_query_id
-      payload = await attachSavedQueryToPinPayload(
+      payload = (await attachSavedQueryToPinPayload(
         payload,
         pendingSource.source.sqlQuery ||
           (typeof payload.chartOptions?.sample_sql === 'string'
             ? payload.chartOptions.sample_sql
             : null),
         { projectId, source: 'ai_chat_pin' },
-      );
+      )) as typeof payload;
 
       // Library chart first, then link placement (reuse prior materialization for this message)
       const pinned = await ensureLibraryChartAndPinToDashboard({

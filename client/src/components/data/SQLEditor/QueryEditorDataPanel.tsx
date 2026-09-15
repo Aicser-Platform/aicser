@@ -17,6 +17,7 @@ import {
   type SchemaInfo,
   useDataSources,
 } from '@/stores/useDataSourceStore';
+import { useTranslations } from 'next-intl';
 
 const { Text } = Typography;
 
@@ -165,6 +166,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
   onColumnClick,
   compact = false,
 }) => {
+  const t = useTranslations('query_editor');
   const {
     dataSources,
     selectedDataSourceId,
@@ -263,14 +265,14 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
       >
         <Space size={8} style={{ minWidth: 0 }}>
           <DatabaseOutlined style={{ color: 'var(--ant-color-primary)' }} />
-          <Text strong style={{ whiteSpace: 'nowrap' }}>Data Sources</Text>
+          <Text strong style={{ whiteSpace: 'nowrap' }}>{t('data_sources')}</Text>
           {dataSources.length ? <Tag style={{ marginInlineEnd: 0 }}>{dataSources.length}</Tag> : null}
         </Space>
         <Space size={2}>
-          <Tooltip title="Add data source">
+          <Tooltip title={t('add_data_source')}>
             <Button type="text" size="small" icon={<PlusOutlined />} onClick={openConnectDataModal} />
           </Tooltip>
-          <Tooltip title="Refresh">
+          <Tooltip title={t('refresh')}>
             <Button
               type="text"
               size="small"
@@ -280,7 +282,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
             />
           </Tooltip>
           {onCollapse ? (
-            <Tooltip title="Collapse">
+            <Tooltip title={t('collapse')}>
               <Button type="text" size="small" icon={<CompressOutlined />} onClick={onCollapse} />
             </Tooltip>
           ) : null}
@@ -304,15 +306,15 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
             <Spin />
           </div>
         ) : dataSources.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No data sources connected">
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('no_data_sources')}>
             <Button type="primary" icon={<PlusOutlined />} onClick={openConnectDataModal}>
-              Connect Data Source
+              {t('connect_data_source')}
             </Button>
           </Empty>
         ) : (
           <>
             <div>
-              <Text strong style={{ fontSize: 13 }}>Data source</Text>
+              <Text strong style={{ fontSize: 13 }}>{t('data_source')}</Text>
               <Select
                 value={selectedDataSource?.id}
                 style={{ width: '100%', marginTop: 8 }}
@@ -350,7 +352,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
                     {selectedDataSource.name}
                   </Text>
                 </Space>
-                <Tooltip title="Refresh schema">
+                <Tooltip title={t('refresh_schema')}>
                   <Button
                     type="text"
                     size="small"
@@ -370,7 +372,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
               <div style={{ padding: 24, textAlign: 'center' }}>
                 <Spin size="small" />
                 <div style={{ marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Loading schema</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t('loading_schema')}</Text>
                 </div>
               </div>
             ) : selectedSchema ? (
@@ -379,7 +381,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
                   size="small"
                   allowClear
                   prefix={<SearchOutlined style={{ color: 'var(--ant-color-text-tertiary)' }} />}
-                  placeholder="Filter tables and columns…"
+                  placeholder={t('filter_tables')}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />

@@ -610,63 +610,49 @@ class EnhancedDataService {
     }
 
     /**
-     * Get supported enterprise connectors
+     * Get supported enterprise connectors -- the connector types
+     * EnterpriseConnectorsService uniquely still owns (Snowflake/Postgres/
+     * BigQuery/Redshift/S3/etc are now created through UniversalDataSourceModal's
+     * own primary paths instead -- see that service's own comment on why).
+     * Real logos are rendered by type via the shared DataSourceLogo
+     * component, not the `icon` emoji this used to carry.
      */
-    getSupportedEnterpriseConnectors(): Array<{ type: string; name: string; description: string; icon: string }> {
+    getSupportedEnterpriseConnectors(): Array<{ type: string; name: string; description: string }> {
         return [
-            {
-                type: 'snowflake',
-                name: 'Snowflake',
-                description: 'Cloud data warehouse for analytics',
-                icon: '❄️',
-            },
-            {
-                type: 'bigquery',
-                name: 'Google BigQuery',
-                description: 'Serverless data warehouse',
-                icon: '🔍',
-            },
-            {
-                type: 'redshift',
-                name: 'Amazon Redshift',
-                description: 'Cloud data warehouse',
-                icon: '🔴',
-            },
             {
                 type: 'databricks',
                 name: 'Databricks',
                 description: 'Unified analytics platform',
-                icon: '🔷',
-            },
-            {
-                type: 'postgresql',
-                name: 'PostgreSQL',
-                description: 'Open source relational database',
-                icon: '🐘',
-            },
-            {
-                type: 'mysql',
-                name: 'MySQL',
-                description: 'Popular relational database',
-                icon: '🐬',
-            },
-            {
-                type: 'sqlserver',
-                name: 'SQL Server',
-                description: 'Microsoft relational database',
-                icon: '🪟',
             },
             {
                 type: 'rest_api',
                 name: 'REST API',
-                description: 'Connect to REST APIs',
-                icon: '🌐',
+                description: 'Connect to any REST API',
             },
             {
                 type: 'graphql_api',
                 name: 'GraphQL API',
                 description: 'Connect to GraphQL APIs',
-                icon: '📊',
+            },
+            {
+                type: 'kafka',
+                name: 'Apache Kafka',
+                description: 'Streaming event data',
+            },
+            {
+                type: 'elasticsearch',
+                name: 'Elasticsearch',
+                description: 'Search and analytics engine',
+            },
+            {
+                type: 'opensearch',
+                name: 'OpenSearch',
+                description: 'Search and analytics engine',
+            },
+            {
+                type: 'influxdb',
+                name: 'InfluxDB',
+                description: 'Time-series database',
             },
         ];
     }

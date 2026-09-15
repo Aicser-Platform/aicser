@@ -88,7 +88,10 @@ export function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
     <div className={`erd-table${selected ? ' selected' : ''}`}>
       {/* Header */}
       <div className="erd-table-header">
-        <span className="text-black dark:text-white font-semibold" title={tableName}>
+        {/* Text color is inherited from .erd-table-header (ERDCanvas.css) -
+            deliberately not repeated here as its own Tailwind arbitrary
+            class, so there's exactly one declaration to keep correct. */}
+        <span className="font-semibold" title={tableName}>
           {tableName}
         </span>
         <button className="erd-table-menu nodrag" aria-label={t('modeling_table_options')}>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Button, Typography, Dropdown, message, Input, Tooltip, Modal, Table } from 'antd';
+import { Button, Typography, Dropdown, message, Input, Tooltip, Modal, Table, Divider } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import {
@@ -20,9 +20,14 @@ import {
   LockOutlined,
   UnlockOutlined,
   TableOutlined,
+  AlignLeftOutlined,
+  VerticalAlignTopOutlined,
+  ColumnWidthOutlined,
+  ColumnHeightOutlined,
 } from '@ant-design/icons';
 import { ExplainChartDrawer } from '../components/ExplainChartDrawer';
 import { DashboardWidgetCell } from '../components/DashboardWidgetCell';
+import { LazyWidgetMount } from '../components/LazyWidgetMount';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { getCrossFilterValues } from '../utils/filterOperators';
 import { shouldShowWidgetHeader } from '../utils/widgetCardHelpers';
@@ -39,6 +44,7 @@ import { useTranslations } from 'next-intl';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
 import { formatNumber } from '../utils/numberFormatter';
 import { resolveLayoutCollisions, hasLayoutOverlaps } from '../utils/layoutSanitize';
+import { isSafeChartTypeSwitchTarget } from '@/components/charts/chartTypeCatalog';
 
 const { Text } = Typography;
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -61,6 +67,7 @@ export default function DashboardCanvas({
   duplicateWidget,
   onAddWidget,
   onDropWidget,
+  onApplyStoryStarter,
   setPropertiesCollapsed,
   onUpdateWidget,
   onLayoutSync,
@@ -84,6 +91,7 @@ export default function DashboardCanvas({
   duplicateWidget?: (id: string) => void;
   onAddWidget: (template?: any) => void;
   onDropWidget?: (template: any, position?: { x: number; y: number }) => void;
+  onApplyStoryStarter?: (id: import('../utils/storyStarters').StoryStarterId) => void;
   setPropertiesCollapsed: (collapsed: boolean) => void;
   onUpdateWidget?: (id: string, updates: any) => void;
   onLayoutSync?: (l: any[]) => void;
@@ -273,6 +281,53 @@ export default function DashboardCanvas({
   const toggleWidgetInSelection = useDashboardStore((s) => s.toggleWidgetInSelection);
   const clearMultiSelection = useDashboardStore((s) => s.clearMultiSelection);
   const bulkDeleteWidgets = useDashboardStore((s) => s.bulkDeleteWidgets);
+
+  /** Align every selected widget's left (x) or top (y) edge to the leftmost/topmost of the group. */
+  const alignSelectedWidgets = useCallback(
+    (edge: 'left' | 'top') => {
+      const ids = Array.from(selectedWidgetIds);
+      if (ids.length < 2) return;
+      const selected = layout.filter((item) => ids.includes(item.i));
+      if (selected.length < 2) return;
+      const target = edge === 'left' ? Math.min(...selected.map((item) => item.x)) : Math.min(...selected.map((item) => item.y));
+      const nextLayout = layout.map((item) =>
+        ids.includes(item.i) ? { ...item, [edge === 'left' ? 'x' : 'y']: target } : item,
+      );
+      commitLayout(nextLayout, { sync: true, skipResolve: true });
+    },
+    [selectedWidgetIds, layout, commitLayout],
+  );
+
+  /** Spread selected widgets with equal gaps between them along one axis, keeping the outermost two in place. */
+  const distributeSelectedWidgets = useCallback(
+    (axis: 'horizontal' | 'vertical') => {
+      const ids = Array.from(selectedWidgetIds);
+      if (ids.length < 3) return;
+      const selected = layout.filter((item) => ids.includes(item.i));
+      if (selected.length < 3) return;
+
+      const posKey = axis === 'horizontal' ? 'x' : 'y';
+      const sizeKey = axis === 'horizontal' ? 'w' : 'h';
+      const sorted = [...selected].sort((a, b) => a[posKey] - b[posKey]);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const totalSize = sorted.reduce((sum, item) => sum + item[sizeKey], 0);
+      const gap = (last[posKey] + last[sizeKey] - first[posKey] - totalSize) / (sorted.length - 1);
+
+      const nextPositions = new Map<string, number>();
+      let cursor = first[posKey];
+      sorted.forEach((item) => {
+        nextPositions.set(item.i, Math.round(cursor));
+        cursor += item[sizeKey] + gap;
+      });
+
+      const nextLayout = layout.map((item) =>
+        nextPositions.has(item.i) ? { ...item, [posKey]: nextPositions.get(item.i)! } : item,
+      );
+      commitLayout(nextLayout, { sync: true, skipResolve: true });
+    },
+    [selectedWidgetIds, layout, commitLayout],
+  );
 
   // Undo / redo
   const undo = useUndo();
@@ -622,10 +677,10 @@ export default function DashboardCanvas({
       });
     }
 
-    if (!isNonChart) {
+    if (!isNonChart && isEnterpriseEdition()) {
       items.push({
         key: 'explain',
-        label: 'Explain with AI',
+        label: td('explain_with_ai'),
         icon: <RobotOutlined />,
       });
     }
@@ -774,6 +829,40 @@ export default function DashboardCanvas({
           <Typography.Text style={{ fontSize: 13, fontWeight: 600 }}>
             {selectedWidgetIds.size} widget{selectedWidgetIds.size !== 1 ? 's' : ''} selected
           </Typography.Text>
+          <Divider type="vertical" style={{ margin: 0 }} />
+          <Tooltip title={td('multi_select_align_left')}>
+            <Button
+              size="small"
+              icon={<AlignLeftOutlined />}
+              disabled={selectedWidgetIds.size < 2}
+              onClick={() => alignSelectedWidgets('left')}
+            />
+          </Tooltip>
+          <Tooltip title={td('multi_select_align_top')}>
+            <Button
+              size="small"
+              icon={<VerticalAlignTopOutlined />}
+              disabled={selectedWidgetIds.size < 2}
+              onClick={() => alignSelectedWidgets('top')}
+            />
+          </Tooltip>
+          <Tooltip title={td('multi_select_distribute_horizontal')}>
+            <Button
+              size="small"
+              icon={<ColumnWidthOutlined />}
+              disabled={selectedWidgetIds.size < 3}
+              onClick={() => distributeSelectedWidgets('horizontal')}
+            />
+          </Tooltip>
+          <Tooltip title={td('multi_select_distribute_vertical')}>
+            <Button
+              size="small"
+              icon={<ColumnHeightOutlined />}
+              disabled={selectedWidgetIds.size < 3}
+              onClick={() => distributeSelectedWidgets('vertical')}
+            />
+          </Tooltip>
+          <Divider type="vertical" style={{ margin: 0 }} />
           <Button
             size="small"
             onClick={clearMultiSelection}
@@ -967,7 +1056,7 @@ export default function DashboardCanvas({
                     <Dropdown
                       trigger={['click']}
                       placement="bottomRight"
-                      overlayClassName="widget-overflow-dropdown"
+                      classNames={{ root: "widget-overflow-dropdown" }}
                       getPopupContainer={() => document.body}
                       menu={{
                         items: isEditing
@@ -1004,7 +1093,7 @@ export default function DashboardCanvas({
                     <Dropdown
                       trigger={['click']}
                       placement="bottomRight"
-                      overlayClassName="widget-overflow-dropdown"
+                      classNames={{ root: "widget-overflow-dropdown" }}
                       getPopupContainer={() => document.body}
                       menu={{
                         items: isEditing
@@ -1030,31 +1119,33 @@ export default function DashboardCanvas({
                 )}
 
               <div className="widget-card-body no-drag">
-                <DashboardWidgetCell
-                  widget={w}
-                  dashboardId={dashboardId}
-                  runtimeFilters={runtimeFilters}
-                  readOnly={readOnly}
-                  onCrossFilter={onCrossFilter}
-                  onWidgetChartClick={onWidgetChartClick}
-                  onUpdateConfig={
-                    readOnly
-                      ? undefined
-                      : (updates) => {
-                          if (updates && typeof updates === 'object' && '__widgetTitle' in updates) {
+                <LazyWidgetMount>
+                  <DashboardWidgetCell
+                    widget={w}
+                    dashboardId={dashboardId}
+                    runtimeFilters={runtimeFilters}
+                    readOnly={readOnly}
+                    onCrossFilter={onCrossFilter}
+                    onWidgetChartClick={onWidgetChartClick}
+                    onUpdateConfig={
+                      readOnly
+                        ? undefined
+                        : (updates) => {
+                            if (updates && typeof updates === 'object' && '__widgetTitle' in updates) {
+                              onUpdateWidget?.(w.id, {
+                                title: String((updates as { __widgetTitle?: unknown }).__widgetTitle ?? ''),
+                              });
+                              return;
+                            }
                             onUpdateWidget?.(w.id, {
-                              title: String((updates as { __widgetTitle?: unknown }).__widgetTitle ?? ''),
+                              chartOptions: { ...(w.chartOptions || {}), ...updates },
                             });
-                            return;
                           }
-                          onUpdateWidget?.(w.id, {
-                            chartOptions: { ...(w.chartOptions || {}), ...updates },
-                          });
-                        }
-                  }
-                  isDesigner={isDesigner}
-                  isSelected={selectedWidgetId === w.id}
-                />
+                    }
+                    isDesigner={isDesigner}
+                    isSelected={selectedWidgetId === w.id}
+                  />
+                </LazyWidgetMount>
               </div>
               </div>
             </div>
@@ -1065,7 +1156,11 @@ export default function DashboardCanvas({
       {widgets.length === 0 && isEditing && (
         <div className="canvas-empty">
           <div className="canvas-empty-content">
-            <WidgetBlockPicker variant="canvas" onSelect={(template) => onAddWidget(template)} />
+            <WidgetBlockPicker
+              variant="canvas"
+              onSelect={(template) => onAddWidget(template)}
+              onApplyStoryStarter={onApplyStoryStarter}
+            />
           </div>
         </div>
       )}
@@ -1076,6 +1171,11 @@ export default function DashboardCanvas({
         open={!!explainWidgetId}
         onClose={() => setExplainWidgetId(null)}
         widget={explainWidgetId ? (widgets.find((w) => w.id === explainWidgetId) ?? null) : null}
+        onChangeChartType={(chartType) => {
+          if (!explainWidgetId || !onUpdateWidget) return;
+          if (!isSafeChartTypeSwitchTarget(chartType)) return;
+          onUpdateWidget(explainWidgetId, { chartType });
+        }}
       />
       )}
 

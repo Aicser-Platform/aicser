@@ -86,7 +86,8 @@ def validate_chart_data(
             return ChartDataValidationResult(True)
         if _series_has_points(_series_items(data)):
             return ChartDataValidationResult(True)
-        return ChartDataValidationResult(False, "KPI returned no value")
+        # Empty after a successful query (filters, sparse grain) — not a broken KPI.
+        return ChartDataValidationResult(True)
 
     if ctype == "table":
         rows = data.get("rows") or data.get("data")
@@ -129,6 +130,15 @@ def validate_chart_data(
         return ChartDataValidationResult(False, f"{ctype.title()} chart returned no category/value pairs")
 
     if ctype in SERIES_CHART_TYPES:
+        empty_payload = (
+            not _non_empty_list(x_values)
+            and not _non_empty_list(y_values)
+            and not _series_has_points(series)
+            and not _is_present(data.get("value"))
+        )
+        if empty_payload:
+            # Successful query, zero rows (filters, sparse grain) — not a broken chart.
+            return ChartDataValidationResult(True)
         if _non_empty_list(x_values) and _series_has_points(series):
             first_len = _first_series_len(data)
             if first_len == len(x_values):

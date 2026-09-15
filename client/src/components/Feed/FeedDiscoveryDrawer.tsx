@@ -51,7 +51,7 @@ const FeedDiscoveryDrawer: React.FC<FeedDiscoveryDrawerProps> = ({
         </span>
       }
       placement="bottom"
-      height="85vh"
+      size="85vh"
       open={open}
       onClose={onClose}
       destroyOnHidden={false}

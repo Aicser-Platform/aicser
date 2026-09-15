@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation';
 import ChatPageClient from './ChatPageClient';
 import { isAiFrontendEnabled } from '@/utils/aiAvailability';
 
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+import { isEnterpriseEdition } from '@/utils/appPaths';
+
+const isEE = isEnterpriseEdition();
 
 export default function ChatPage() {
   if (!isEE) redirect('/dashboards');

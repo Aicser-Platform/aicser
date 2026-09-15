@@ -4,6 +4,8 @@ import {
   Button,
   Card,
   Checkbox,
+  Collapse,
+  ColorPicker,
   Form,
   Input,
   Modal,
@@ -16,35 +18,37 @@ import {
   message,
 } from 'antd';
 import {
+  BgColorsOutlined,
   CodeOutlined,
   DeleteOutlined,
+  EditOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { fetchApi } from '@/utils/api';
+import { fetchApi, handleUpgradeRequiredError } from '@/utils/api';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useKnowledgeLibraries } from '@/hooks/useKnowledgeLibraries';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
+import { EmbedAssistantModal } from './embed/EmbedAssistantModal';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import { buildEmbedChatUrl, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
+import type { EmbedAssistantRecord } from '../types';
 import type { TabComponentProps } from '../page';
 
 const { Paragraph } = Typography;
 
-type EmbedCapability = 'rag_only' | 'full_engine';
-
-export interface EmbedAssistantRecord {
-  id: string;
-  name: string;
-  capabilities: string;
-  library_ids?: string[];
-  allowed_modes?: string[];
-  allowed_domains?: string[];
-}
-
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
+
+export interface EmbedTheme {
+  primary_color?: string | null;
+  logo_url?: string | null;
+  font_family?: string | null;
+  mode?: 'light' | 'dark' | 'auto' | null;
+  hide_aicser_branding?: boolean;
+}
 
 export interface EmbedTokenRecord {
   id: string;
@@ -56,6 +60,7 @@ export interface EmbedTokenRecord {
   expires_at: string;
   status: string;
   token_preview?: string;
+  theme?: EmbedTheme | null;
 }
 
 interface EmbedTokenCreated extends EmbedTokenRecord {
@@ -63,10 +68,27 @@ interface EmbedTokenCreated extends EmbedTokenRecord {
   embed_urls?: Record<string, string>;
 }
 
-const SCOPE_OPTIONS: { label: string; value: EmbedScope }[] = [
+// Chart scope now works end-to-end: GET /charts/embed/{id} previously
+// queried a `widgets` table with `config`/`settings` columns that don't
+// exist (real charts live in the `charts` table, `chart_query`/
+// `chart_options`) and checked a `widget.settings.embed_token` that nothing
+// ever wrote — it 500'd on every single request. Rewritten to query the
+// real table and verify through this same JWT embed-token system (the one
+// this form mints), so re-enabled here.
+//
+// Chat scope on *this* generic token is genuinely dead: the chat-embed page
+// requires a full authenticated session (a different JWT secret than embed
+// tokens use), so a token minted with this scope silently does nothing when
+// used. It used to be listed here as "Chat (coming soon)", which read as
+// "chat embedding doesn't exist yet" — misleading, since it does: the Embed
+// Assistants card below this form is the real, working chat-embed path (its
+// own embed_jwt/anonymous token system, unrelated to this one). Rather than
+// keep a perpetually-disabled option pointing at a mechanism that was never
+// going to be finished, "chat" is dropped from this checklist entirely so
+// there's one obvious way to embed chat, not two — one broken, one not.
+const SCOPE_OPTIONS: { label: string; value: EmbedScope; disabled?: boolean }[] = [
   { label: 'Dashboard', value: 'dashboard' },
   { label: 'Chart', value: 'chart' },
-  { label: 'Chat (EE)', value: 'chat' },
 ];
 
 export const EmbedTab: React.FC<TabComponentProps> = () => {
@@ -74,15 +96,18 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const tEmbed = useTranslations('embed_modal');
   const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const [form] = Form.useForm();
-  const [assistantForm] = Form.useForm();
-  const [assistants, setAssistants] = useState<EmbedAssistantRecord[]>([]);
+  const [editThemeForm] = Form.useForm();
+  const { embedAssistants, embedAssistantsLoading, loadEmbedAssistants } = useSettingsStore();
   const [tokens, setTokens] = useState<EmbedTokenRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [creatingAssistant, setCreatingAssistant] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showAssistantModal, setShowAssistantModal] = useState(false);
+  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
+  const [assistantModalMode, setAssistantModalMode] = useState<'create' | 'edit'>('create');
+  const [editingAssistant, setEditingAssistant] = useState<EmbedAssistantRecord | null>(null);
   const [createdToken, setCreatedToken] = useState<EmbedTokenCreated | null>(null);
+  const [editingThemeToken, setEditingThemeToken] = useState<EmbedTokenRecord | null>(null);
+  const [savingTheme, setSavingTheme] = useState(false);
   const [assistantEmbed, setAssistantEmbed] = useState<{
     name: string;
     embedUrl: string;
@@ -92,7 +117,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const [selectedEmbedScope, setSelectedEmbedScope] = useState<string>('dashboard');
   const { createEmbedCode } = useEmbedCode();
 
-  const { libraries, isLoading: librariesLoading } = useKnowledgeLibraries(orgId);
+  const { libraries } = useKnowledgeLibraries(orgId);
 
   const loadTokens = useCallback(async () => {
     setLoading(true);
@@ -110,56 +135,20 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     void loadTokens();
   }, [loadTokens]);
 
-  const loadAssistants = useCallback(async () => {
-    if (!orgId) return;
-    try {
-      const res = await fetchApi(
-        `/api/embed/assistants?organization_id=${encodeURIComponent(String(orgId))}`,
-      );
-      setAssistants(res.assistants || []);
-    } catch {
-      setAssistants([]);
-    }
-  }, [orgId]);
-
   useEffect(() => {
-    void loadAssistants();
-  }, [loadAssistants]);
+    if (orgId) void loadEmbedAssistants(orgId);
+  }, [orgId, loadEmbedAssistants]);
 
-  const handleCreateAssistant = async (values: {
-    name: string;
-    capabilities: EmbedCapability;
-    library_ids?: string[];
-    allowed_modes?: string[];
-    allowed_domains?: string;
-  }) => {
-    if (!orgId) return;
-    setCreatingAssistant(true);
-    try {
-      const domains = (values.allowed_domains || '')
-        .split(',')
-        .map((d) => d.trim())
-        .filter(Boolean);
-      await fetchApi('/api/embed/assistants', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: values.name,
-          organization_id: orgId,
-          capabilities: values.capabilities,
-          library_ids: values.library_ids || [],
-          allowed_modes: values.allowed_modes?.length ? values.allowed_modes : ['ai_search'],
-          allowed_domains: domains,
-        }),
-      });
-      message.success(t('embed_assistant_created'));
-      setShowAssistantModal(false);
-      assistantForm.resetFields();
-      void loadAssistants();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : t('embed_assistant_create_failed'));
-    } finally {
-      setCreatingAssistant(false);
-    }
+  const openCreateAssistant = () => {
+    setEditingAssistant(null);
+    setAssistantModalMode('create');
+    setAssistantModalOpen(true);
+  };
+
+  const openEditAssistant = (assistant: EmbedAssistantRecord) => {
+    setEditingAssistant(assistant);
+    setAssistantModalMode('edit');
+    setAssistantModalOpen(true);
   };
 
   const handleCreate = async (values: {
@@ -168,6 +157,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     resource_id?: string;
     allowed_domains?: string;
     expires_in_hours?: number;
+    theme_primary_color?: { toHexString: () => string } | string;
+    theme_logo_url?: string;
+    theme_font_family?: string;
+    theme_mode?: 'light' | 'dark' | 'auto';
+    theme_hide_branding?: boolean;
   }) => {
     setCreating(true);
     try {
@@ -175,6 +169,20 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         .split(',')
         .map((d) => d.trim())
         .filter(Boolean);
+      const primaryColor =
+        typeof values.theme_primary_color === 'object' && values.theme_primary_color
+          ? values.theme_primary_color.toHexString()
+          : values.theme_primary_color;
+      const theme: EmbedTheme | undefined =
+        primaryColor || values.theme_logo_url || values.theme_font_family || values.theme_mode || values.theme_hide_branding
+          ? {
+              primary_color: primaryColor || undefined,
+              logo_url: values.theme_logo_url || undefined,
+              font_family: values.theme_font_family || undefined,
+              mode: values.theme_mode || undefined,
+              hide_aicser_branding: values.theme_hide_branding || false,
+            }
+          : undefined;
       const created = await fetchApi('/api/embed/tokens', {
         method: 'POST',
         body: JSON.stringify({
@@ -183,6 +191,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           resource_id: values.resource_id || undefined,
           allowed_domains: domains,
           expires_in_hours: values.expires_in_hours || 720,
+          theme,
         }),
       });
       setShowCreateModal(false);
@@ -190,7 +199,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       setCreatedToken(created);
       void loadTokens();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : t('embed_create_failed'));
+      if (!handleUpgradeRequiredError(err)) {
+        message.error(err instanceof Error ? err.message : t('embed_create_failed'));
+      }
     } finally {
       setCreating(false);
     }
@@ -203,6 +214,44 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       void loadTokens();
     } catch {
       message.error(tEmbed('failed_revoke_embed'));
+    }
+  };
+
+  const handleUpdateTheme = async (values: {
+    theme_primary_color?: { toHexString: () => string } | string;
+    theme_logo_url?: string;
+    theme_font_family?: string;
+    theme_mode?: 'light' | 'dark' | 'auto';
+    theme_hide_branding?: boolean;
+  }) => {
+    if (!editingThemeToken) return;
+    setSavingTheme(true);
+    try {
+      const primaryColor =
+        typeof values.theme_primary_color === 'object' && values.theme_primary_color
+          ? values.theme_primary_color.toHexString()
+          : values.theme_primary_color;
+      const theme: EmbedTheme = {
+        primary_color: primaryColor || undefined,
+        logo_url: values.theme_logo_url || undefined,
+        font_family: values.theme_font_family || undefined,
+        mode: values.theme_mode || undefined,
+        hide_aicser_branding: values.theme_hide_branding || false,
+      };
+      await fetchApi(`/api/embed/tokens/${editingThemeToken.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ theme }),
+      });
+      message.success(t('embed_theme_updated'));
+      setEditingThemeToken(null);
+      editThemeForm.resetFields();
+      void loadTokens();
+    } catch (err) {
+      if (!handleUpgradeRequiredError(err)) {
+        message.error(err instanceof Error ? err.message : t('embed_theme_update_failed'));
+      }
+    } finally {
+      setSavingTheme(false);
     }
   };
 
@@ -289,14 +338,42 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       title: t('col_actions'),
       key: 'actions',
       render: (_: unknown, record: EmbedTokenRecord) => (
-        <Popconfirm
-          title={t('embed_revoke_confirm')}
-          onConfirm={() => void handleRevoke(record.id)}
-          okText={t('yes')}
-          cancelText={t('no')}
-        >
-          <Button type="text" danger icon={<DeleteOutlined />} disabled={record.status !== 'active'} />
-        </Popconfirm>
+        <Space size={0}>
+          <Button
+            type="text"
+            className="icon-only-btn"
+            icon={<BgColorsOutlined />}
+            title={t('embed_edit_theme')}
+            aria-label={t('embed_edit_theme')}
+            disabled={record.status !== 'active'}
+            onClick={() => {
+              setEditingThemeToken(record);
+              editThemeForm.setFieldsValue({
+                theme_primary_color: record.theme?.primary_color || undefined,
+                theme_logo_url: record.theme?.logo_url || undefined,
+                theme_font_family: record.theme?.font_family || undefined,
+                theme_mode: record.theme?.mode || undefined,
+                theme_hide_branding: record.theme?.hide_aicser_branding || false,
+              });
+            }}
+          />
+          <Popconfirm
+            title={t('embed_revoke_confirm')}
+            onConfirm={() => void handleRevoke(record.id)}
+            okText={t('yes')}
+            cancelText={t('no')}
+          >
+            <Button
+              type="text"
+              danger
+              className="icon-only-btn"
+              icon={<DeleteOutlined />}
+              title={t('embed_revoke')}
+              aria-label={t('embed_revoke')}
+              disabled={record.status !== 'active'}
+            />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -313,14 +390,15 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         />
       }
     >
-      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+      <div className="flex flex-col gap-5">
+      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
         {t('embed_tab_desc')}
       </Paragraph>
 
       <Card
         size="small"
         title={t('embed_tokens_title')}
-        bordered={false}
+        variant="borderless"
         style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
         extra={
           <PermissionGuard permission={Permission.EMBED_CREATE}>
@@ -343,10 +421,9 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       <Card
         size="small"
         title={t('embed_assistants_title')}
-        style={{ marginTop: 16 }}
         extra={
           <PermissionGuard permission={Permission.EMBED_CREATE}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setShowAssistantModal(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateAssistant}>
               {t('embed_create_assistant')}
             </Button>
           </PermissionGuard>
@@ -356,7 +433,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         <Table
           rowKey="id"
           size="small"
-          dataSource={assistants}
+          loading={embedAssistantsLoading}
+          dataSource={embedAssistants}
           pagination={false}
           locale={{ emptyText: t('embed_assistants_empty') }}
           columns={[
@@ -386,77 +464,32 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
                 </Button>
               ),
             },
+            {
+              title: t('col_actions'),
+              key: 'actions',
+              render: (_, row) => (
+                <Button
+                  type="text"
+                  className="icon-only-btn"
+                  icon={<EditOutlined />}
+                  title={t('embed_edit_assistant')}
+                  aria-label={t('embed_edit_assistant')}
+                  onClick={() => openEditAssistant(row)}
+                />
+              ),
+            },
           ]}
         />
       </Card>
+      </div>
 
-      <Modal
-        title={t('embed_create_assistant')}
-        open={showAssistantModal}
-        onCancel={() => {
-          setShowAssistantModal(false);
-          assistantForm.resetFields();
-        }}
-        footer={null}
-        destroyOnHidden
-      >
-        <Form
-          form={assistantForm}
-          layout="vertical"
-          initialValues={{ capabilities: 'rag_only', allowed_modes: ['ai_search'] }}
-          onFinish={(values) => void handleCreateAssistant(values)}
-        >
-          <Form.Item name="name" label={t('embed_assistant_name')} rules={[{ required: true, message: t('embed_name_required') }]}>
-            <Input placeholder={t('embed_assistant_name')} />
-          </Form.Item>
-          <Form.Item name="capabilities" label={t('embed_assistant_capabilities')} rules={[{ required: true }]}>
-            <Select
-              options={[
-                { value: 'rag_only', label: t('embed_assistant_cap_rag') },
-                { value: 'full_engine', label: t('embed_assistant_cap_full') },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="library_ids"
-            label={t('embed_assistant_libraries')}
-            extra={t('embed_assistant_libraries_help')}
-          >
-            <Select
-              mode="multiple"
-              loading={librariesLoading}
-              placeholder={t('embed_assistant_libraries')}
-              options={libraries.map((lib) => ({ value: lib.id, label: lib.name }))}
-              allowClear
-            />
-          </Form.Item>
-          <Form.Item name="allowed_modes" label={t('embed_assistant_modes')}>
-            <Select
-              mode="multiple"
-              options={[
-                { value: 'ai_search', label: 'AI Search' },
-                { value: 'standard', label: 'Standard' },
-                { value: 'deep', label: 'Deep analysis' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item
-            name="allowed_domains"
-            label={t('embed_assistant_domains')}
-            extra={t('embed_assistant_domains_help')}
-          >
-            <Input placeholder="intranet.example.com, teams.microsoft.com" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button onClick={() => setShowAssistantModal(false)}>{t('cancel')}</Button>
-              <Button type="primary" htmlType="submit" loading={creatingAssistant}>
-                {t('create_key')}
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+      <EmbedAssistantModal
+        open={assistantModalOpen}
+        mode={assistantModalMode}
+        organizationId={orgId}
+        assistant={editingAssistant}
+        onClose={() => setAssistantModalOpen(false)}
+      />
 
       <Modal
         title={t('embed_create_token')}
@@ -480,7 +513,23 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           <Form.Item name="scopes" label={t('embed_scopes')} rules={[{ required: true, message: t('embed_scopes_required') }]}>
             <Checkbox.Group options={SCOPE_OPTIONS} />
           </Form.Item>
-          <Form.Item name="resource_id" label={t('embed_resource')} extra={t('embed_resource_help')}>
+          <Form.Item
+            name="resource_id"
+            label={t('embed_resource')}
+            extra={t('embed_resource_help')}
+            dependencies={['scopes']}
+            rules={[
+              {
+                validator: async (_rule, value) => {
+                  const scopes: string[] = form.getFieldValue('scopes') || [];
+                  const needsResource = scopes.some((s) => ['dashboard', 'chart', 'report'].includes(s));
+                  if (needsResource && !value) {
+                    throw new Error(t('embed_resource_required'));
+                  }
+                },
+              },
+            ]}
+          >
             <Input placeholder={t('embed_resource_placeholder')} />
           </Form.Item>
           <Form.Item name="allowed_domains" label={t('embed_allowed_domains')} extra={t('embed_allowed_domains_help')}>
@@ -496,11 +545,108 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               ]}
             />
           </Form.Item>
+          <Collapse
+            ghost
+            style={{ marginBottom: 16 }}
+            items={[
+              {
+                key: 'branding',
+                label: t('embed_branding_section'),
+                children: (
+                  <>
+                    <Form.Item
+                      name="theme_primary_color"
+                      label={t('embed_theme_primary_color')}
+                      extra={t('embed_theme_primary_color_help')}
+                    >
+                      <ColorPicker format="hex" />
+                    </Form.Item>
+                    <Form.Item name="theme_logo_url" label={t('embed_theme_logo_url')}>
+                      <Input placeholder="https://yourcompany.com/logo.png" />
+                    </Form.Item>
+                    <Form.Item name="theme_font_family" label={t('embed_theme_font_family')}>
+                      <Input placeholder="'Inter', sans-serif" />
+                    </Form.Item>
+                    <Form.Item name="theme_mode" label={t('embed_theme_mode')}>
+                      <Select
+                        allowClear
+                        placeholder={t('embed_theme_mode_auto_placeholder')}
+                        options={[
+                          { value: 'light', label: t('embed_theme_mode_light') },
+                          { value: 'dark', label: t('embed_theme_mode_dark') },
+                          { value: 'auto', label: t('embed_theme_mode_auto') },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name="theme_hide_branding" valuePropName="checked">
+                      <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
           <Form.Item>
             <Space>
               <Button onClick={() => setShowCreateModal(false)}>{t('cancel')}</Button>
               <Button type="primary" htmlType="submit" loading={creating}>
                 {t('create_key')}
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`${t('embed_edit_theme')}: ${editingThemeToken?.name || ''}`}
+        open={!!editingThemeToken}
+        onCancel={() => {
+          setEditingThemeToken(null);
+          editThemeForm.resetFields();
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form form={editThemeForm} layout="vertical" onFinish={(values) => void handleUpdateTheme(values)}>
+          <Form.Item
+            name="theme_primary_color"
+            label={t('embed_theme_primary_color')}
+            extra={t('embed_theme_primary_color_help')}
+          >
+            <ColorPicker format="hex" />
+          </Form.Item>
+          <Form.Item name="theme_logo_url" label={t('embed_theme_logo_url')}>
+            <Input placeholder="https://yourcompany.com/logo.png" />
+          </Form.Item>
+          <Form.Item name="theme_font_family" label={t('embed_theme_font_family')}>
+            <Input placeholder="'Inter', sans-serif" />
+          </Form.Item>
+          <Form.Item name="theme_mode" label={t('embed_theme_mode')}>
+            <Select
+              allowClear
+              placeholder={t('embed_theme_mode_auto_placeholder')}
+              options={[
+                { value: 'light', label: t('embed_theme_mode_light') },
+                { value: 'dark', label: t('embed_theme_mode_dark') },
+                { value: 'auto', label: t('embed_theme_mode_auto') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="theme_hide_branding" valuePropName="checked">
+            <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button
+                onClick={() => {
+                  setEditingThemeToken(null);
+                  editThemeForm.resetFields();
+                }}
+              >
+                {t('cancel')}
+              </Button>
+              <Button type="primary" htmlType="submit" loading={savingTheme}>
+                {t('save')}
               </Button>
             </Space>
           </Form.Item>

@@ -1,6 +1,6 @@
 import type { AuthActions } from '@/auth/types';
 import { ceAuthActions } from '@/auth/ce/authActions';
-import { eeAuthActions } from '@/ee';
+import { eeAuthActions } from '@/ee/auth/authActions';
 
 // CE only decides CE vs. EE. Which sub-provider EE itself uses (local vs.
 // Supabase, via NEXT_PUBLIC_AUTH_PROVIDER) is EE's own decision — see

@@ -1,18 +1,6 @@
 import type { WidgetInstance } from '../stores/dashboardStoreTypes';
 import { CHART_TYPE_CONFIGS } from '../Properties/PropertiesPanelConfig';
 
-/**
- * Compatible mapping families — aligned with chat pivot (bar/line/area/pie/donut/scatter/table/stat)
- * plus dashboard extensions that share category + measure shelves.
- */
-const COMPATIBLE_GROUPS: string[][] = [
-  ['bar', 'line', 'area', 'heatmap', 'funnel', 'treemap', 'waterfall', 'geo', 'table'],
-  ['pie', 'donut'],
-  ['scatter'],
-  ['stat', 'gauge'],
-  ['bullet'],
-];
-
 const SINGLE_METRIC_TYPES = new Set([
   'stat',
   'gauge',
@@ -23,10 +11,6 @@ const SINGLE_METRIC_TYPES = new Set([
   'geo',
   'heatmap',
 ]);
-
-function compatibleGroup(chartType: string): string[] | null {
-  return COMPATIBLE_GROUPS.find((g) => g.includes(chartType)) || null;
-}
 
 function metricListMaxCount(chartType: string, fieldKey: string): number | undefined {
   const fields = CHART_TYPE_CONFIGS[chartType]?.fields || [];
@@ -45,17 +29,6 @@ export function preserveChartQueryOnTypeChange(
   const prevType = widget.chartType;
   const q: Record<string, unknown> = { ...(widget.chartQuery || {}) };
   if (prevType === nextType) return q;
-
-  const prevGroup = compatibleGroup(prevType);
-  const nextGroup = compatibleGroup(nextType);
-
-  // pie/donut from bar family — keep category as slice field
-  if (
-    (nextType === 'pie' || nextType === 'donut') &&
-    ['bar', 'line', 'area', 'table', 'heatmap', 'funnel'].includes(prevType)
-  ) {
-    if (q.x && !q.groupBy) q.groupBy = q.x;
-  }
 
   // Drop secondary axis when leaving bar/line/area (and combo)
   if (!['bar', 'line', 'area', 'bullet'].includes(nextType)) {
@@ -93,10 +66,6 @@ export function preserveChartQueryOnTypeChange(
     delete q.groupField;
     delete q.legend;
     delete q.group;
-  }
-
-  if (prevGroup && nextGroup && prevGroup === nextGroup) {
-    return q;
   }
 
   return q;

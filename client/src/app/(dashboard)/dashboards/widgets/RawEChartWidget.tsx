@@ -52,11 +52,16 @@ export function RawEChartWidget({ option, onChartReady, minHeight }: Props) {
 
     const handleResize = () => scheduleResize();
     window.addEventListener('resize', handleResize);
+    // See EChartWidget.tsx for why this is needed alongside 'resize' — a
+    // print-triggered layout change fires neither a 'resize' event nor this
+    // ResizeObserver reliably.
+    window.addEventListener('beforeprint', handleResize);
     const ro = new ResizeObserver(() => scheduleResize());
     ro.observe(chartRef.current);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('beforeprint', handleResize);
       ro.disconnect();
     };
   }, [enhancedOption]);

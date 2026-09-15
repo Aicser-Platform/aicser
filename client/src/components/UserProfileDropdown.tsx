@@ -238,7 +238,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 {isTrial && trialDaysRemaining !== null && (
                   <div style={{ marginBottom: '10px' }}>
                     <span className="text-xs" style={{ color: '#fa8c16' }}>
-                      {trialDaysRemaining} day{trialDaysRemaining !== 1 ? 's' : ''} remaining in trial
+                      {t('trial_days_remaining', { count: trialDaysRemaining })}
                     </span>
                   </div>
                 )}
@@ -246,7 +246,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 <div style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? 'AI Credits Per User' : 'AI Credits'}
+                      {showPerUserLabel ? t('ai_credits_per_user') : t('ai_credits')}
                     </span>
                     <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
                       {aiCreditsLimit === Infinity ? `${aiCreditsUsed} / ∞` : `${aiCreditsUsed} / ${aiCreditsLimit}`}
@@ -265,7 +265,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 <div style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? 'Data Sources Per User' : 'Data Sources'}
+                      {showPerUserLabel ? t('data_sources_per_user') : t('data_sources')}
                     </span>
                     <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
                       {useTeamStyleUsage
@@ -288,7 +288,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                 <div style={{ marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? 'Projects Per User' : 'Projects'}
+                      {showPerUserLabel ? t('projects_per_user') : t('projects')}
                     </span>
                     <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
                       {useTeamStyleUsage
@@ -445,8 +445,8 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
         }}
         trigger={['click']}
         placement="bottomRight"
-        overlayClassName="user-profile-dropdown"
-        overlayStyle={{ minWidth: 300, padding: '8px 0' }}
+        classNames={{ root: 'user-profile-dropdown' }}
+        styles={{ root: { minWidth: 300, padding: '8px 0' } }}
         onOpenChange={handleDropdownVisibleChange}
       >
         <div
@@ -457,9 +457,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
             <Avatar
               size={showText ? 'default' : 24}
               src={profile?.avatar_url || undefined}
-              icon={!profile?.avatar_url ? <UserOutlined /> : undefined}
+              icon={!displayName ? <UserOutlined /> : undefined}
               style={!profile?.avatar_url ? { backgroundColor: 'var(--ant-color-primary)' } : undefined}
-            />
+            >
+              {displayName?.trim()?.charAt(0)?.toUpperCase()}
+            </Avatar>
           </div>
           {/* always show username on desktop and tablet, collapse only on very small screens */}
           {showText && (

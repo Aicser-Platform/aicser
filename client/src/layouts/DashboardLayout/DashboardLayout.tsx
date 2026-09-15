@@ -1,7 +1,8 @@
 import { Grid, Layout, theme, message } from 'antd';
 import React, { useState, useCallback } from 'react';
 import { LayoutHeader } from '../Header/Header';
-import Navigation from '../Navigation/Navigation';
+import Navigation, { EXPANDED_WIDTH } from '../Navigation/Navigation';
+import { RAIL_WIDTH } from '../Navigation/SidebarNav';
 import MobileBottomNav from '../Navigation/MobileBottomNav';
 import { PageBreadcrumb } from '../Navigation/PageBreadcrumb';
 import '@/layouts/Navigation/MobileBottomNav.css';
@@ -55,6 +56,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
   const [collapsed, setCollapsed] = useState(() => getStoredLayoutSidebarCollapsed());
   const [isBreakpoint, setIsBreakpoint] = useState(false);
   const [showDataSourceModal, setShowDataSourceModal] = useState(false);
+  const [dataSourceModalInitialType, setDataSourceModalInitialType] = useState<'sample_duckdb' | undefined>(undefined);
   const { dataSources, isLoading: dataSourcesLoading } = useDataSources();
   const failedDataSourcesCount = React.useMemo(
     () => dataSources.filter((ds) => ds.connection_status === 'failed').length,
@@ -78,6 +80,20 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
     } catch {}
   }, [dataSourcesLoading, dataSources.length]);
 
+  // Global open-data-source-modal event: this layout is the only place that
+  // actually owns the modal (Header's own "Add Data Source" icon just calls
+  // onOpenDataSourceModal, wired below) — a deeply nested component (e.g.
+  // Studio's Data/Data Modeling empty states) would otherwise need this prop
+  // drilled through several layers with no existing path to do so. Query
+  // Editor already has its own page-local version of this same pattern
+  // (window event 'query-editor-open-connect-data'); this is the
+  // layout-wide equivalent so any page under this layout can trigger it.
+  React.useEffect(() => {
+    const handler = () => setShowDataSourceModal(true);
+    window.addEventListener('aiser-open-data-source-modal', handler);
+    return () => window.removeEventListener('aiser-open-data-source-modal', handler);
+  }, []);
+
   React.useEffect(() => {
     setIsBreakpoint(!screens.lg);
     if (!screens.lg) {
@@ -93,7 +109,10 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
     }
   }, [collapsed, isBreakpoint]);
 
-  const sidebarOffset = React.useMemo(() => (isBreakpoint ? 0 : collapsed ? 80 : 256), [collapsed, isBreakpoint]);
+  const sidebarOffset = React.useMemo(
+    () => (isBreakpoint ? 0 : collapsed ? RAIL_WIDTH : EXPANDED_WIDTH),
+    [collapsed, isBreakpoint]
+  );
 
   React.useEffect(() => {
     document.documentElement.style.setProperty('--sidebar-width', `${sidebarOffset}px`);
@@ -215,9 +234,14 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
 
       <UniversalDataSourceModal
         isOpen={showDataSourceModal}
-        onClose={() => setShowDataSourceModal(false)}
+        initialDataSourceType={dataSourceModalInitialType}
+        onClose={() => {
+          setShowDataSourceModal(false);
+          setDataSourceModalInitialType(undefined);
+        }}
         onDataSourceCreated={async (dataSource: any) => {
           setShowDataSourceModal(false);
+          setDataSourceModalInitialType(undefined);
           try {
             await refreshDataSources();
             if (dataSource?.id) {
@@ -239,7 +263,12 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
         }}
         isChatIntegration={false}
       />
-      <OnboardingBootstrap onConnectData={() => setShowDataSourceModal(true)} />
+      <OnboardingBootstrap
+        onConnectData={(initialType) => {
+          setDataSourceModalInitialType(initialType);
+          setShowDataSourceModal(true);
+        }}
+      />
     </Layout>
   );
 });

@@ -360,6 +360,74 @@ class DataCDCState(BaseModel):
     )
 
 
+class OAuthConnectorConnection(BaseModel):
+    """A user-delegated OAuth2 (authorization-code + refresh-token) connection
+    to an external business system (CRM/ERP/ITSM), e.g. Salesforce or HubSpot.
+
+    Distinct from the client-credentials OAuth2 already used for SharePoint/
+    Confluence/PowerBI (oauth2_client_credentials.py) and from the generic
+    REST_API connector's ad-hoc oauth2_* connection_config fields
+    (enterprise_connectors_service.py) -- those are service-to-service, no
+    per-user consent screen. CRM/ERP vendors require a real authorization-code
+    flow: a human clicks "Connect", approves scopes on the vendor's own login
+    page, and the vendor issues a long-lived refresh_token this app exchanges
+    for short-lived access_tokens going forward.
+
+    client_id/client_secret are the ORG'S OWN registered app credentials
+    (Salesforce Connected App / HubSpot Developer App), not a shared Aiser-
+    wide app -- deliberate: avoids Aiser needing Salesforce ISV security
+    review to ship this, and keeps the customer's CRM access fully within
+    their own vendor-side app registration (no shared third-party app in the
+    trust chain), consistent with the self-hosted/no-lock-in positioning.
+
+    One connection = one named link to one vendor org (e.g. "Salesforce
+    Production", "Salesforce Sandbox") -- organization_id + vendor + name is
+    unique, but an org may hold multiple connections per vendor (prod +
+    sandbox is a common real case). project_id is nullable: unset means the
+    connection is available org-wide; set scopes it to one project.
+    """
+
+    __tablename__ = "oauth_connector_connections"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=False, index=True)
+    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
+    vendor = Column(String(50), nullable=False, index=True)  # 'salesforce', 'hubspot', ...
+    name = Column(String(200), nullable=False)
+    connected_by_user_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Org's own registered app credentials (client_secret Fernet-encrypted at rest).
+    client_id = Column(Text, nullable=False)
+    client_secret = Column(Text, nullable=False)
+    redirect_uri = Column(Text, nullable=False)
+
+    # Tokens (Fernet-encrypted at rest). Both nullable: a connection starts
+    # 'pending' (app registered, consent not yet completed) before either exists.
+    access_token = Column(Text, nullable=True)
+    refresh_token = Column(Text, nullable=True)
+    token_expires_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Vendor-specific API base once known post-consent (e.g. Salesforce's
+    # per-org instance URL, returned alongside the token response -- it is
+    # NOT the same as the login/authorize host).
+    instance_url = Column(Text, nullable=True)
+    scopes = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    is_sandbox = Column(Boolean, nullable=False, server_default=text("false"))
+
+    status = Column(
+        Enum("pending", "active", "error", "revoked", name="oauth_connector_status_enum"),
+        nullable=False,
+        server_default=text("'pending'"),
+        index=True,
+    )
+    last_error = Column(Text, nullable=True)
+    extra_metadata = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "vendor", "name", name="uq_oauth_connector_org_vendor_name"),
+        Index("ix_oauth_connector_connections_org_vendor", "organization_id", "vendor"),
+    )
+
+
 class SemanticLayerArtifact(BaseModel):
     """Versioned semantic model artifact stored in object storage."""
     __tablename__ = "semantic_layer_artifacts"

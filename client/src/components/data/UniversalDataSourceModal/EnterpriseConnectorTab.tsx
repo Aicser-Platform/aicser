@@ -28,6 +28,7 @@ import {
     DatabaseOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService, EnterpriseConnectionConfig } from '@/services/enhancedDataService';
+import { DataSourceIcon } from '@/utils/dataSourceIcons';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -35,10 +36,15 @@ const { Panel } = Collapse;
 
 interface EnterpriseConnectorTabProps {
     onConnectionCreated: (dataSource: any) => void;
+    /** When set, the type picker (cards + dropdown) is hidden and the form
+     * is locked to this connector type -- used when UniversalDataSourceModal
+     * embeds this component and already provides its own type selector. */
+    lockedType?: string;
 }
 
 const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
     onConnectionCreated,
+    lockedType,
 }) => {
     const t = useTranslations('data_source_modal');
     const [form] = Form.useForm();
@@ -50,6 +56,14 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
     useEffect(() => {
         loadSupportedConnectors();
     }, []);
+
+    useEffect(() => {
+        if (lockedType) {
+            form.setFieldsValue({ type: lockedType });
+            setTestResult(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lockedType]);
 
     const loadSupportedConnectors = async () => {
         try {
@@ -159,37 +173,43 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
 
     return (
         <div>
-            <Alert
-                message={t('enterprise_data_connectors')}
-                description={t('enterprise_data_connectors_desc')}
-                type="info"
-                showIcon
-                style={{ marginBottom: 24 }}
-            />
+            {!lockedType && (
+                <>
+                    <Alert
+                        message={t('enterprise_data_connectors')}
+                        description={t('enterprise_data_connectors_desc')}
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 24 }}
+                    />
 
-            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                {supportedConnectors.map((connector) => (
-                    <Col xs={24} sm={12} md={8} key={connector.type}>
-                        <Card
-                            hoverable
-                            size="small"
-                            style={{
-                                border: form.getFieldValue('type') === connector.type ? '2px solid #1890ff' : '1px solid #d9d9d9',
-                                cursor: 'pointer',
-                            }}
-                            onClick={() => form.setFieldsValue({ type: connector.type })}
-                        >
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '24px', marginBottom: 8 }}>{connector.icon}</div>
-                                <Title level={5} style={{ margin: 0 }}>{connector.name}</Title>
-                                <Text type="secondary" style={{ fontSize: '12px' }}>
-                                    {connector.description}
-                                </Text>
-                            </div>
-                        </Card>
-                    </Col>
-                ))}
-            </Row>
+                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                        {supportedConnectors.map((connector) => (
+                            <Col xs={24} sm={12} md={8} key={connector.type}>
+                                <Card
+                                    hoverable
+                                    size="small"
+                                    style={{
+                                        border: form.getFieldValue('type') === connector.type ? '2px solid #1890ff' : '1px solid #d9d9d9',
+                                        cursor: 'pointer',
+                                    }}
+                                    onClick={() => form.setFieldsValue({ type: connector.type })}
+                                >
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                                            <DataSourceIcon type="warehouse" dbType={connector.type} size={28} />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0 }}>{connector.name}</Title>
+                                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                                            {connector.description}
+                                        </Text>
+                                    </div>
+                                </Card>
+                            </Col>
+                        ))}
+                    </Row>
+                </>
+            )}
 
             <Form
                 form={form}
@@ -197,28 +217,31 @@ const EnterpriseConnectorTab: React.FC<EnterpriseConnectorTabProps> = ({
                 initialValues={{
                     ssl_enabled: true,
                     timeout: 30,
+                    ...(lockedType ? { type: lockedType } : {}),
                 }}
             >
                 <Row gutter={16}>
-                    <Col span={12}>
-                        <Form.Item
-                            name="type"
-                            label={t('connector_type')}
-                            rules={[{ required: true, message: t('select_connector_type') }]}
-                        >
-                            <Select placeholder={t('select_connector_type')} size="large">
-                                {supportedConnectors.map((connector) => (
-                                    <Option key={connector.type} value={connector.type}>
-                                        <Space>
-                                            <span>{connector.icon}</span>
-                                            <span>{connector.name}</span>
-                                        </Space>
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-                    </Col>
-                    <Col span={12}>
+                    {!lockedType && (
+                        <Col span={12}>
+                            <Form.Item
+                                name="type"
+                                label={t('connector_type')}
+                                rules={[{ required: true, message: t('select_connector_type') }]}
+                            >
+                                <Select placeholder={t('select_connector_type')} size="large">
+                                    {supportedConnectors.map((connector) => (
+                                        <Option key={connector.type} value={connector.type}>
+                                            <Space>
+                                                <DataSourceIcon type="warehouse" dbType={connector.type} size={16} />
+                                                <span>{connector.name}</span>
+                                            </Space>
+                                        </Option>
+                                    ))}
+                                </Select>
+                            </Form.Item>
+                        </Col>
+                    )}
+                    <Col span={lockedType ? 24 : 12}>
                         <Form.Item
                             name="name"
                             label={t('connection_name')}

@@ -38,14 +38,18 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
     container_name: aiser-keycloak-ee-prod
-    command: start-dev --import-realm
+    # Deliberately does NOT import deploy/keycloak/aiser-realm.json here: that
+    # file is a local-dev fixture with a publicly-known client secret and demo
+    # user (see deploy/keycloak/README.md). Configure the "aiser" realm for a
+    # real deployment via the Keycloak Admin Console after first boot, or
+    # mount your own realm export at /opt/keycloak/data/import and add
+    # `--import-realm` back yourself.
+    command: start-dev
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
       KC_HEALTH_ENABLED: "true"
       KC_HTTP_PORT: "8080"
-    volumes:
-      - ./keycloak/aiser-realm.json:/opt/keycloak/data/import/aiser-realm.json:ro
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -72,7 +76,7 @@ services:
       JWT_EXPIRY_SECONDS: "604800"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}

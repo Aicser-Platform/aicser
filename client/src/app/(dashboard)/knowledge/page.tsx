@@ -19,7 +19,9 @@ import {
   Input,
   Select,
   Alert,
+  Segmented,
 } from 'antd';
+import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import {
   DeleteOutlined,
   ReloadOutlined,
@@ -39,6 +41,7 @@ import { AccessDenied } from '@/components/layout/AccessDenied';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { KnowledgeCitationDrawer } from '@/components/knowledge/KnowledgeCitationDrawer';
 import { KnowledgeSearchPanel } from '@/components/knowledge/KnowledgeSearchPanel';
+import { TableRowsSkeleton } from '@/components/ui/TableRowsSkeleton';
 import {
   useKnowledgeDocuments,
   useDeleteKnowledgeDocument,
@@ -51,6 +54,7 @@ import {
   useCreateKnowledgeLibrary,
   useDeleteKnowledgeLibrary,
   useUpdateKnowledgeLibrary,
+  useBackfillKnowledgeLibraries,
 } from '@/hooks/useKnowledgeLibraries';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -59,6 +63,141 @@ import { Permission, usePermissions } from '@/hooks/usePermissions';
 import type { KnowledgeDocument, KnowledgeLibrary } from '@/api/knowledge';
 
 const { Text } = Typography;
+
+// External connector sync (SharePoint/Confluence) — lives here, not in the chat
+// data-source panel, since it's a per-library management action like upload/
+// reindex, not something you'd reach for mid-conversation.
+const ConnectorSyncPanel: React.FC<{ dataSourceId: string | null; canManage: boolean }> = ({
+  dataSourceId,
+  canManage,
+}) => {
+  const t = useTranslations('knowledge');
+  const authenticatedFetch = useAuthenticatedFetch();
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [connectorType, setConnectorType] = useState<'sharepoint' | 'confluence'>('sharepoint');
+  const [siteId, setSiteId] = useState('');
+  const [spaceKey, setSpaceKey] = useState('');
+  const [configured, setConfigured] = useState<{ sharepoint: boolean; confluence: boolean }>({
+    sharepoint: false,
+    confluence: false,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatusLoading(true);
+    void authenticatedFetch('/knowledge/connectors/status')
+      .then((data: { sharepoint?: { configured?: boolean }; confluence?: { configured?: boolean } }) => {
+        if (cancelled) return;
+        setConfigured({
+          sharepoint: Boolean(data?.sharepoint?.configured),
+          confluence: Boolean(data?.confluence?.configured),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setConfigured({ sharepoint: false, confluence: false });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStatusLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticatedFetch]);
+
+  if (!dataSourceId) {
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('documents_need_library')} />;
+  }
+
+  const ready = connectorType === 'sharepoint' ? configured.sharepoint : configured.confluence;
+  const canSync =
+    canManage &&
+    ready &&
+    (connectorType === 'sharepoint' ? Boolean(siteId.trim()) : Boolean(spaceKey.trim()));
+
+  const syncExternal = async () => {
+    if (!canSync) return;
+    setSyncLoading(true);
+    try {
+      const data = await authenticatedFetch('/knowledge/connectors/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connector_type: connectorType,
+          data_source_id: dataSourceId,
+          site_id: connectorType === 'sharepoint' ? siteId.trim() : undefined,
+          space_key: connectorType === 'confluence' ? spaceKey.trim() : undefined,
+          limit: 10,
+        }),
+      });
+      const count = typeof data?.ingested_count === 'number' ? data.ingested_count : undefined;
+      message.success(
+        count != null ? t('connector_sync_done', { count }) : t('connector_sync_started')
+      );
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : t('connector_sync_failed'));
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <Text strong style={{ display: 'block', marginBottom: 12 }}>
+        {t('connector_sync_title')}
+      </Text>
+      {!canManage ? (
+        <Alert type="info" showIcon message={t('access_denied_desc')} />
+      ) : (
+        <Space orientation="vertical" style={{ width: '100%' }} size={8}>
+          <Select
+            value={connectorType}
+            onChange={setConnectorType}
+            style={{ width: '100%' }}
+            options={[
+              {
+                value: 'sharepoint',
+                label: configured.sharepoint
+                  ? t('connector_sharepoint_ready')
+                  : t('connector_sharepoint_not_ready'),
+              },
+              {
+                value: 'confluence',
+                label: configured.confluence
+                  ? t('connector_confluence_ready')
+                  : t('connector_confluence_not_ready'),
+              },
+            ]}
+            loading={statusLoading}
+          />
+          {!statusLoading && !ready ? (
+            <Alert type="warning" showIcon message={t('connector_not_configured')} />
+          ) : null}
+          {connectorType === 'sharepoint' ? (
+            <Input
+              placeholder={t('sharepoint_site_placeholder')}
+              value={siteId}
+              onChange={(e) => setSiteId(e.target.value)}
+              disabled={!ready}
+            />
+          ) : (
+            <Input
+              placeholder={t('confluence_space_placeholder')}
+              value={spaceKey}
+              onChange={(e) => setSpaceKey(e.target.value)}
+              disabled={!ready}
+            />
+          )}
+          <Button type="primary" loading={syncLoading} disabled={!canSync} onClick={() => void syncExternal()}>
+            {t('sync_now')}
+          </Button>
+        </Space>
+      )}
+    </div>
+  );
+};
 
 const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const t = useTranslations('knowledge');
@@ -75,10 +214,30 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   );
   const createLibrary = useCreateKnowledgeLibrary();
   const deleteLibrary = useDeleteKnowledgeLibrary();
+  const backfillLibraries = useBackfillKnowledgeLibraries();
+
+  // One-time migration: knowledge_base data sources created before the Library
+  // concept existed (e.g. via direct upload elsewhere) have no KnowledgeLibrary
+  // row, so they never appear here even though their documents are real and
+  // queryable — this page would look empty/broken despite working data existing.
+  // Runs once per org per page load; idempotent server-side (skips sources that
+  // already have a library), so a stale-closure re-run just no-ops.
+  const backfillAttempted = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!orgIdStr || libsLoading || libraries.length > 0) return;
+    if (backfillAttempted.current === orgIdStr) return;
+    backfillAttempted.current = orgIdStr;
+    backfillLibraries.mutate(orgIdStr, {
+      onSuccess: (result) => {
+        if (result.created > 0) void refetchLibs();
+      },
+    });
+  }, [orgIdStr, libsLoading, libraries.length, backfillLibraries, refetchLibs]);
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('libraries');
+  const [advancedSubTab, setAdvancedSubTab] = useState<'connectors' | 'retrieval'>('connectors');
   const [citationDrawerOpen, setCitationDrawerOpen] = useState(false);
   const [highlightDocumentId, setHighlightDocumentId] = useState<string | null>(null);
   const [form] = Form.useForm();
@@ -109,7 +268,17 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   useEffect(() => {
     if (!urlTab) return;
     if (urlTab === 'search' || urlTab === 'retrieval') {
-      setActiveTab('retrieval');
+      setActiveTab('advanced');
+      setAdvancedSubTab('retrieval');
+      return;
+    }
+    if (urlTab === 'connectors') {
+      setActiveTab('advanced');
+      setAdvancedSubTab('connectors');
+      return;
+    }
+    if (urlTab === 'advanced') {
+      setActiveTab('advanced');
       return;
     }
     if (['libraries', 'documents'].includes(urlTab)) {
@@ -153,6 +322,29 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         ? getChatHref({ mode: 'ai_search', library_id: libraryId })
         : getChatHref({ mode: 'ai_search' }),
     );
+  };
+
+  const triggerUpload = () => {
+    if (!activeDataSourceId || !canManage) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.txt,.md,.docx,.csv';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file || !activeDataSourceId) return;
+      try {
+        await uploadDoc.mutateAsync({
+          file,
+          dataSourceId: activeDataSourceId,
+        });
+        message.success(t('upload_success'));
+        void refetch();
+        void refetchLibs();
+      } catch (err) {
+        message.error(formatApiValidationError(err));
+      }
+    };
+    input.click();
   };
 
   const scopeTag = (lib: KnowledgeLibrary) =>
@@ -397,7 +589,11 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     {
       key: 'libraries',
       label: t('tab_libraries'),
-      children: (
+      children: libsLoading && libraries.length === 0 ? (
+        <div style={{ padding: '8px 0' }}>
+          <TableRowsSkeleton columns={libraryColumns.length} rows={5} />
+        </div>
+      ) : (
         <Table
           className="page-data-table"
           rowKey="id"
@@ -410,7 +606,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     <Text strong>{t('empty_libraries_title')}</Text>
                     <Text type="secondary">{t('empty_libraries_desc')}</Text>
                   </Space>
@@ -433,8 +629,23 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       children: !library ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={t('documents_need_library')}
-        />
+          description={
+            <Space orientation="vertical" size={4}>
+              <Text strong>{t('documents_need_library')}</Text>
+              <Text type="secondary">{t('empty_libraries_desc')}</Text>
+            </Space>
+          }
+        >
+          {canManage ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              {t('create_library')}
+            </Button>
+          ) : null}
+        </Empty>
+      ) : docsLoading && documents.length === 0 ? (
+        <div style={{ padding: '8px 0' }}>
+          <TableRowsSkeleton columns={docColumns.length} rows={6} />
+        </div>
       ) : (
         <Table
           className="page-data-table"
@@ -443,7 +654,30 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
           dataSource={documents}
           loading={docsLoading}
           pagination={{ pageSize: 20 }}
-          locale={{ emptyText: t('no_documents_yet') }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <Space orientation="vertical" size={4}>
+                    <Text strong>{t('empty_documents_title')}</Text>
+                    <Text type="secondary">{t('empty_documents_desc')}</Text>
+                  </Space>
+                }
+              >
+                {canManage ? (
+                  <Button
+                    type="primary"
+                    icon={<UploadOutlined />}
+                    loading={uploadDoc.isPending}
+                    onClick={triggerUpload}
+                  >
+                    {t('upload_document')}
+                  </Button>
+                ) : null}
+              </Empty>
+            ),
+          }}
           onRow={(record) => ({
             id: `knowledge-doc-${record.id}`,
             style:
@@ -457,55 +691,65 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       ),
     },
     {
-      key: 'retrieval',
-      label: t('tab_retrieval'),
+      key: 'advanced',
+      label: t('tab_advanced'),
       children: (
-        <div style={{ maxWidth: 880 }}>
-          {!library ? (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('retrieval_empty_library')}
-            />
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+          <Segmented
+            value={advancedSubTab}
+            onChange={(v) => setAdvancedSubTab(v as 'connectors' | 'retrieval')}
+            options={[
+              { label: t('advanced_connectors'), value: 'connectors' },
+              { label: t('advanced_retrieval'), value: 'retrieval' },
+            ]}
+          />
+          {advancedSubTab === 'connectors' ? (
+            <ConnectorSyncPanel dataSourceId={activeDataSourceId} canManage={canManage} />
           ) : (
-            <>
-              <Alert
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-                message={t('tab_search_hint')}
-                action={
-                  <Button size="small" icon={<MessageOutlined />} onClick={() => openAiSearch(library.id)}>
-                    {t('open_ai_search_cta')}
-                  </Button>
-                }
-              />
-              <KnowledgeSearchPanel
-                dataSourceId={activeDataSourceId}
-                dataSourceOptions={retrievalDataSourceOptions}
-                showDataSourceSelector={retrievalDataSourceOptions.length > 1}
-                onDataSourceChange={(id) => {
-                  const match = libraries.find((l) => l.data_source_id === id);
-                  if (match) setSelectedLibraryId(match.id);
-                }}
-                showRetrievalHint={false}
-                defaultTopK={8}
-              />
-            </>
+            <div style={{ maxWidth: 880 }}>
+              {!library ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={t('retrieval_empty_library')}
+                />
+              ) : (
+                <KnowledgeSearchPanel
+                  dataSourceId={activeDataSourceId}
+                  dataSourceOptions={retrievalDataSourceOptions}
+                  showDataSourceSelector={retrievalDataSourceOptions.length > 1}
+                  onDataSourceChange={(id) => {
+                    const match = libraries.find((l) => l.data_source_id === id);
+                    if (match) setSelectedLibraryId(match.id);
+                  }}
+                  showRetrievalHint={false}
+                  defaultTopK={8}
+                />
+              )}
+            </div>
           )}
-        </div>
+        </Space>
       ),
     },
   ];
 
   return (
-    <DashboardPageShell maxWidth={1400}>
+    <DashboardPageShell>
       <DashboardPageHeader
         icon={<BookOutlined />}
         title={t('title_libraries')}
         description={t('subtitle')}
         extra={
           <Space wrap>
-            {canManage ? (
+            {canManage && library ? (
+              <Button
+                type="primary"
+                icon={<UploadOutlined />}
+                loading={uploadDoc.isPending}
+                onClick={triggerUpload}
+              >
+                {t('upload_document')}
+              </Button>
+            ) : canManage ? (
               <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateOpen(true)}>
                 {t('create_library')}
               </Button>
@@ -513,24 +757,36 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
             <Button icon={<MessageOutlined />} onClick={() => openAiSearch(library?.id)}>
               {t('open_ai_search_mode')}
             </Button>
-            {library ? (
-              <>
-                <Select
-                  style={{ minWidth: 200 }}
-                  value={library.id}
-                  onChange={setSelectedLibraryId}
-                  options={librarySelectOptions}
-                  placeholder={t('select_library')}
-                />
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={() => {
-                    void refetch();
-                    void refetchLibs();
-                  }}
-                />
-                {canManage ? (
-                  <>
+            {canManage && library ? (
+              <Button icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+                {t('create_library')}
+              </Button>
+            ) : null}
+          </Space>
+        }
+      />
+
+      <div className="page-body">
+        <Card className="page-section-card content-card">
+          {library ? (
+            <div className="page-panel-toolbar" style={{ marginBottom: 12 }}>
+              <div className="page-panel-toolbar__row">
+                <div className="page-panel-toolbar__filters">
+                  <Select
+                    style={{ minWidth: 200 }}
+                    value={library.id}
+                    onChange={setSelectedLibraryId}
+                    options={librarySelectOptions}
+                    placeholder={t('select_library')}
+                  />
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      void refetch();
+                      void refetchLibs();
+                    }}
+                  />
+                  {canManage ? (
                     <Button
                       loading={reindexKb.isPending}
                       onClick={async () => {
@@ -545,43 +801,12 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
                     >
                       {t('reindex')}
                     </Button>
-                    <Button
-                      icon={<UploadOutlined />}
-                      loading={uploadDoc.isPending}
-                      onClick={() => {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = '.pdf,.txt,.md,.docx,.csv';
-                        input.onchange = async () => {
-                          const file = input.files?.[0];
-                          if (!file || !activeDataSourceId) return;
-                          try {
-                            await uploadDoc.mutateAsync({
-                              file,
-                              dataSourceId: activeDataSourceId,
-                            });
-                            message.success(t('upload_success'));
-                            void refetch();
-                            void refetchLibs();
-                          } catch (err) {
-                            message.error(formatApiValidationError(err));
-                          }
-                        };
-                        input.click();
-                      }}
-                    >
-                      {t('upload_document')}
-                    </Button>
-                  </>
-                ) : null}
-              </>
-            ) : null}
-          </Space>
-        }
-      />
-
-      <div className="page-body">
-        <Card className="page-section-card content-card">
+                  ) : null}
+                </div>
+                <Text type="secondary">{t('upload_trust')}</Text>
+              </div>
+            </div>
+          ) : null}
           <Tabs className="page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
         </Card>
       </div>

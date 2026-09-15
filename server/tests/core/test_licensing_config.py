@@ -21,7 +21,7 @@ def test_license_server_url_default(monkeypatch):
 
 def test_license_grace_period_default(monkeypatch):
     monkeypatch.delenv("LICENSE_GRACE_PERIOD_DAYS", raising=False)
-    assert Settings().LICENSE_GRACE_PERIOD_DAYS == 3
+    assert Settings().LICENSE_GRACE_PERIOD_DAYS == 30
 
 
 def test_license_refresh_interval_default(monkeypatch):

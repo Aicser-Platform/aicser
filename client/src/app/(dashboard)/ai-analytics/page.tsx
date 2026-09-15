@@ -1,33 +1,16 @@
 'use client';
 
-import { useEffect } from 'react';
-import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { Spin } from 'antd';
-import { PermissionGuard } from '@/components/PermissionGuard';
-import { Permission } from '@/constants/permissions';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
-
-const EEAIAnalyticsPage = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.AIAnalyticsPage })),
-  { ssr: false }
-);
-
+/** Legacy QA/debug surface — all NL analysis lives in AI Engine. */
 export default function AIAnalyticsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!isEE) router.replace('/dashboards');
+    router.replace('/chat');
   }, [router]);
 
-  if (!isEE) {
-    return <Spin style={{ margin: 48 }} />;
-  }
-
-  return (
-    <PermissionGuard permission={Permission.AI_USE} fallback={<Spin style={{ margin: 48 }} />}>
-      <EEAIAnalyticsPage />
-    </PermissionGuard>
-  );
+  return <Spin style={{ margin: 48 }} />;
 }

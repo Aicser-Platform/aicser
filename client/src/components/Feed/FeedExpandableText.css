@@ -1,0 +1,29 @@
+/*
+ * Was previously unstyled everywhere except pages that happened to also load
+ * FeedPublishComposer.css for unrelated reasons (this component's own
+ * "see more / see less" toggle button had never had CSS of its own) - moved
+ * here so it always renders correctly wherever FeedExpandableText is used.
+ */
+.feed-publish-excerpt-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ant-color-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.feed-publish-excerpt-toggle:hover {
+  text-decoration: underline;
+}
+
+/* @mention highlighting inside post/comment text - not a link (resolving a
+ * token back to a profile needs the mentionable-members list for whichever
+ * org/project scope the content was posted in, not available to every
+ * viewer rendering it), but styled so it reads as a real tag rather than
+ * getting lost as plain "@name" text. */
+.feed-mention {
+  color: var(--ant-color-primary);
+  font-weight: 600;
+}

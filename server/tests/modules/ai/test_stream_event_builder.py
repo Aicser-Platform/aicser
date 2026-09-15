@@ -1,6 +1,6 @@
 """Tests for stream_event_builder partial_results contract."""
 
-from src.modules.ai.services.stream_event_builder import (
+from ee.modules.ai.services.stream_event_builder import (
     build_partial_results,
     enrich_partial_results_quality,
     is_final_state_update,
@@ -39,3 +39,16 @@ def test_enrich_partial_results_skill_results():
 def test_resolve_sql_hides_non_milestone():
     state = {"sql_query": "SELECT 1", "current_stage": "nl2sql"}
     assert resolve_sql_for_stream(state, {}) is None
+
+
+def test_build_partial_results_scrubs_transient_plan_narration():
+    pr = build_partial_results(
+        {
+            "message": "I am now planning kpi scope & tier...",
+            "narration": "I am now planning kpi scope & tier...",
+            "current_stage": "dashboard_lifecycle_create",
+        }
+    )
+    assert pr.get("answer") in (None, "")
+    assert pr.get("narration") in (None, "")
+    assert pr.get("message") in (None, "")

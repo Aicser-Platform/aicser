@@ -4,6 +4,7 @@
  */
 
 import { formatAxisLabel, formatNumber } from '../utils/numberFormatter';
+import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
 
 /** Format a value for axis labels/tooltips based on the widget's valueFormat setting. */
 export function formatByValueFormat(value: unknown, valueFormat?: string): string {
@@ -12,7 +13,10 @@ export function formatByValueFormat(value: unknown, valueFormat?: string): strin
   switch (valueFormat) {
     case 'compact': return formatNumber(num, { compact: true, decimals: 1 });
     case 'currency': return formatNumber(num, { currency: true, compact: true, decimals: 0 });
-    case 'percent': return `${num.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+    // Delegate to the shared formatter (same as Stat/tooltip formatting) so a percent
+    // metric stored as a unit-interval ratio (e.g. 0.15) is scaled to 15% consistently
+    // everywhere, instead of this axis/label path alone rendering it as "0.15%".
+    case 'percent': return formatNumber(num, { percent: true, decimals: 1, compact: false });
     case 'full': return num.toLocaleString();
     default: return formatAxisLabel(num); // auto-compact
   }
@@ -62,7 +66,7 @@ export const COLOR_PALETTES = {
   ],
   cool: [
     '#00c2cb', '#3498db', '#5dade2', '#2980b9', '#1abc9c',
-    '#48c9b0', '#5dade2', '#2471a3', '#76d7c4', '#5499c7',
+    '#48c9b0', '#7fb3d5', '#2471a3', '#76d7c4', '#5499c7',
     '#1f618d', '#17a2b8', '#5d6d7e', '#85c1e9', '#148f77',
     '#2e86ab', '#aed6f1', '#1a5276', '#73c6b6', '#2874a6',
   ],
@@ -101,6 +105,31 @@ export const COLOR_PALETTES = {
     '#ff5b5b', '#e02020', '#fa6400', '#f7b500', '#0091ff',
     '#6236ff', '#b620e0', '#6dd400', '#32c5ff', '#44d7b6',
     '#f7b500', '#fa6400', '#e02020', '#6b52ff', '#00c2cb',
+  ],
+  // Okabe & Ito (2008) / "Wong 2011" — the categorical set recommended by
+  // Nature Methods and widely treated as the accessibility baseline (also
+  // Tableau's own "Color Blind Safe" preset draws from it). Reliable
+  // distinction under all three common CVD types tops out around 8 hues —
+  // an inherent limit of color-only encoding, not a gap in this set — so it
+  // repeats as tint/shade pairs of the same 8 hues to reach 20 rather than
+  // introducing new hues that would erode that guarantee.
+  colorblindSafe: [
+    '#E69F00', '#56B4E9', '#009E73', '#F0E442',
+    '#0072B2', '#D55E00', '#CC79A7', '#000000',
+    '#F2C36B', '#8ECDEF', '#4DBE9D', '#F5EC7A',
+    '#4D96C2', '#E08A4D', '#D9A0BF', '#595959',
+    '#B37A00', '#2E86AB', '#00654A', '#B5A800',
+  ],
+  // Single-hue sequential (brand teal, light -> dark) — for series that are
+  // ranked/ordinal (e.g. a ranked bar chart, a single-metric heatmap-style
+  // breakdown) rather than categorical, where distinct hues would falsely
+  // imply the categories are unrelated. Standard ColorBrewer sequential
+  // construction: constant hue, monotonic lightness ramp.
+  monochrome: [
+    '#e6fbfc', '#d0f6f8', '#b9f0f3', '#a3ebee', '#8ce5e9',
+    '#76e0e4', '#5fdadf', '#49d5da', '#32cfd5', '#1ccad0',
+    '#00c2cb', '#00b0b8', '#009ea5', '#008c93', '#007a80',
+    '#00686d', '#00565a', '#004447', '#003234', '#002021',
   ],
 };
 
@@ -159,9 +188,26 @@ function shouldReplaceChartColor(color: unknown): boolean {
   return ECHARTS_DEFAULT_PALETTE.has(hex);
 }
 
+function isForecastCiHelperSeries(series: Record<string, unknown> | null | undefined): boolean {
+  if (!series || typeof series !== 'object') return false;
+  if (series._forecastCiHelper) return true;
+  const n = String(series.name || '').toLowerCase();
+  return (
+    n === '_ci_lower' ||
+    n === '95% interval' ||
+    n.includes('confidence') ||
+    n === 'lower bound' ||
+    series.stack === 'ci' ||
+    series.stack === 'confidence-band'
+  );
+}
+
 /**
  * Apply Aicser categorical palette to an ECharts option (chat + dashboard).
  * Sets top-level `color` and remaps locked ECharts-default series/bar colors.
+ * Forecast CI helper series keep their transparent / band colors — remapping
+ * them to brand hues collapses the stacked certainty band into an invisible
+ * or solid fill (legend still showed "95% interval").
  */
 export function applyAicserChartColors<T extends Record<string, any>>(
   config: T,
@@ -171,17 +217,35 @@ export function applyAicserChartColors<T extends Record<string, any>>(
   if (!config || typeof config !== 'object') return config;
   const need = Math.max(seriesCount || 0, 20);
   const colors = getColorsFromPalette(paletteName, need);
-  const next: Record<string, any> = { ...config, color: [...colors] };
+  const next: Record<string, any> = { ...config };
+
+  // Preserve explicit non-default palette slots (e.g. transparent + rgba CI band).
+  if (Array.isArray(config.color) && config.color.length > 0) {
+    next.color = config.color.map((c: unknown, i: number) => {
+      if (c == null || c === '') return colors[i % colors.length];
+      if (typeof c === 'string' && (c === 'transparent' || c.startsWith('rgba') || c.startsWith('rgb'))) {
+        return c;
+      }
+      return shouldReplaceChartColor(c) ? colors[i % colors.length] : c;
+    });
+    while (next.color.length < Math.min(need, 8)) {
+      next.color.push(colors[next.color.length % colors.length]);
+    }
+  } else {
+    next.color = [...colors];
+  }
 
   const remapItemStyle = (itemStyle: any, index: number) => {
     if (!itemStyle || typeof itemStyle !== 'object') return itemStyle;
     if (itemStyle.color && !shouldReplaceChartColor(itemStyle.color)) return itemStyle;
+    if (itemStyle.opacity === 0 || itemStyle.color === 'transparent') return itemStyle;
     return { ...itemStyle, color: colors[index % colors.length] };
   };
 
   if (Array.isArray(next.series)) {
     next.series = next.series.map((series: any, si: number) => {
       if (!series || typeof series !== 'object') return series;
+      if (isForecastCiHelperSeries(series)) return series;
       const s = { ...series };
       if (s.itemStyle) s.itemStyle = remapItemStyle(s.itemStyle, si);
       if (Array.isArray(s.data)) {
@@ -193,11 +257,6 @@ export function applyAicserChartColors<T extends Record<string, any>>(
       }
       return s;
     });
-  }
-
-  // Always apply brand categorical palette at the option root.
-  if (Array.isArray(config.color) && config.color.some((c: unknown) => shouldReplaceChartColor(c))) {
-    next.color = [...colors];
   }
 
   return next as T;
@@ -272,11 +331,24 @@ export const CHART_GRID_LINE_STYLE = {
   width: 1,
 };
 
+import type { ChartDesign } from './chartDesign';
+
 export interface ChartConfig {
   showLegend?: boolean;
   showDataLabel?: boolean;
   showGridline?: boolean;
+  /** @deprecated Legacy X/Y axis toggle, read as a fallback by resolveAxisVisibility(). Write `axis` instead. */
   showAxis?: boolean;
+  /**
+   * Canonical per-axis visibility — replaces the fragile showAxis /
+   * showHAxisLabels / showHAxisLine precedence chain. New writes should only
+   * set this; resolveAxisVisibility() migrates older saved widgets that only
+   * have the legacy flags below.
+   */
+  axis?: {
+    x?: { visible?: boolean };
+    y?: { visible?: boolean };
+  };
   showTrendLine?: boolean;
   showAverageLine?: boolean;
   showAnomalies?: boolean;
@@ -324,6 +396,11 @@ export interface ChartConfig {
   hAxisLabelSlant?: 'none' | 'right-diagonal' | 'left-diagonal' | 'up' | 'down';
   hAxisFontSize?: number;
   hAxisColor?: string;
+  /** Override ECharts' own auto-hide-on-overlap heuristic for x-axis category labels
+   * (default 'auto' for vertical bars/lines can decide a label doesn't fit and silently
+   * drop it, even with just one category, if its width estimate is off) — pass 0 to
+   * force every label to render regardless. Undefined preserves today's default. */
+  hAxisLabelInterval?: number | 'auto';
   hAxisBold?: boolean;
   hAxisItalic?: boolean;
   hAxisStrikethrough?: boolean;
@@ -344,12 +421,45 @@ export interface ChartConfig {
   valueFormat?: ChartValueFormat;
   /** Optional per-series display formats, keyed by metric field/label/series name. */
   metricFormats?: Record<string, ChartValueFormat>;
+  /** Same rule engine as Table/Stat conditional formatting, applied per bar — a bar that
+   * breaches a rule's threshold renders in that rule's color. Matched by series name. */
+  conditionalFormatting?: ConditionalFormattingRule[];
   /** Widget-level border width in pixels (0 = none) */
   borderWidth?: number;
   /** Widget-level border color */
   borderColor?: string;
   /** Widget-level box shadow preset */
   boxShadow?: 'sm' | 'md' | 'lg';
+  /**
+   * Declarative presentation layer (axes scale, marks, ranked labels, templates).
+   * Compiled onto the ECharts option via compileDesignToEcharts — see chartDesign.ts.
+   */
+  design?: ChartDesign;
+}
+
+/**
+ * Single source of truth for whether the X/Y axis (line + labels) renders.
+ *
+ * Historically three flags fought over this per axis — `showHAxisLabels`,
+ * `showHAxisLine`, and a legacy `showAxis` covering both axes — each
+ * consumer re-deriving its own fallback chain. Reads now go through here:
+ * the new canonical `axis.x.visible` / `axis.y.visible` wins when set,
+ * otherwise the legacy flags are migrated on the fly so widgets saved
+ * before this change keep rendering exactly as before. `showVAxisLine` is
+ * intentionally left out — it was never part of this precedence chain (no
+ * UI ever wrote it) and defaults to hidden independent of this toggle.
+ */
+export function resolveAxisVisibility(config: ChartConfig): { x: boolean; y: boolean } {
+  if (config.axis?.x?.visible !== undefined || config.axis?.y?.visible !== undefined) {
+    return {
+      x: config.axis?.x?.visible ?? true,
+      y: config.axis?.y?.visible ?? true,
+    };
+  }
+  return {
+    x: (config.showHAxisLabels ?? config.showHAxisLine ?? config.showAxis) !== false,
+    y: (config.showVAxisLabels ?? config.showAxis) !== false,
+  };
 }
 
 export interface ChartData {
@@ -481,7 +591,10 @@ export const getCartesianEmphasis = (
 };
 
 export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: ChartConfig) => {
-  const position = config?.legendPosition || (showLegend ? 'top' : 'hide');
+  // showLegend=false must always win — a leftover/explicit legendPosition
+  // shouldn't resurrect a legend the user just turned off (previously
+  // `legendPosition || (...)` let a truthy position override showLegend=false).
+  const position = showLegend === false ? 'hide' : (config?.legendPosition || 'top');
   const feedPreview = config?.isFeedPreview === true;
 
   if (position === 'hide') {
@@ -523,9 +636,10 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
 export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
   const feedPreview = config.isFeedPreview === true;
-  const legendPos = config.legendPosition || (config.showLegend !== false ? 'top' : 'hide');
-  const showXAxisLabels = (config.showHAxisLabels ?? config.showAxis) !== false;
-  const showYAxisLabels = (config.showVAxisLabels ?? config.showAxis) !== false;
+  const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
+  const axisVisibility = resolveAxisVisibility(config);
+  const showXAxisLabels = axisVisibility.x;
+  const showYAxisLabels = axisVisibility.y;
   const yAxisFontSize = config.vAxisFontSize ?? config.axisLabelFontSize ?? 11;
   const hasSecondary = data?.secondarySeries && data.secondarySeries.length > 0;
   const secondaryName = config.yAxisSecondaryLabel !== undefined ? config.yAxisSecondaryLabel : (hasSecondary ? data.secondarySeries?.[0]?.name : '');
@@ -576,6 +690,7 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
   const isPercentStacked = config.barStackMode === 'stacked-100' || config.lineStackMode === 'stacked-100';
   const isScatter = chartType === 'scatter';
   const hasXAxisTextDecoration = !!(config.hAxisUnderline || config.hAxisStrikethrough);
+  const xAxisVisible = resolveAxisVisibility(config).x;
 
   return {
     type: isHorizontalBar || isScatter ? 'value' : 'category',
@@ -593,11 +708,11 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
     min: isHorizontalBar && isPercentStacked ? 0 : undefined,
     max: isHorizontalBar && isPercentStacked ? 100 : undefined,
     axisLine: {
-      show: config.showHAxisLine ?? config.showAxis,
+      show: xAxisVisible,
       lineStyle: { color: CHART_COLORS.border.light },
     },
     axisLabel: {
-      show: config.showHAxisLabels ?? config.showAxis,
+      show: xAxisVisible,
       color:
         config.hAxisColor ??
         (config.axisLabelColor === 'default'
@@ -617,8 +732,8 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
                 ? -45
                 : 0,
       margin: compact ? 6 : 12,
-      interval: isHorizontalBar ? undefined : 'auto', // Auto-hide labels if they don't fit
-      hideOverlap: !isHorizontalBar, // explicit hide overlap
+      interval: config.hAxisLabelInterval ?? (isHorizontalBar ? undefined : 'auto'), // Auto-hide labels if they don't fit
+      hideOverlap: config.hAxisLabelInterval !== undefined ? false : !isHorizontalBar, // explicit hide overlap
       overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : 'break',
       width: isHorizontalBar ? undefined : hasXAxisTextDecoration ? undefined : compact ? undefined : 80,
       formatter: (value: any) => {

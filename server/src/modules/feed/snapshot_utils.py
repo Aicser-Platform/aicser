@@ -108,6 +108,164 @@ def build_snapshot_payload_from_preview(
     return None
 
 
+MAX_LIVE_SNAPSHOT_WIDGETS = 24
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively coerce datetime/date/Decimal/etc. into JSON-serializable
+    values. Chart execution results can carry raw date/datetime column values
+    straight from the DB driver - fine for an in-process dict, but the JSONB
+    column's own serializer has no `default=str` fallback (unlike this
+    module's own hashing/size helpers, which already use one), so a chart
+    touching a date/timestamp column failed the snapshot INSERT outright
+    until sanitized here, once discovered while backfilling live attachments
+    created before this function existed."""
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if hasattr(value, "isoformat"):  # datetime.date / datetime.datetime / Decimal-adjacent time types
+        return value.isoformat()
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
+async def build_snapshot_payload_from_live_asset(
+    db: AsyncSession,
+    asset_type: str,
+    asset_id: UUID,
+    user_id: UUID,
+    *,
+    title: str,
+    description: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Last-resort snapshot builder: fetches the dashboard/chart's OWN current
+    config directly and executes its queries server-side, right here, so a
+    publish/attach call that supplied neither a client-built snapshot_payload
+    nor preview_metadata rich enough for build_snapshot_payload_from_preview
+    still lands in render_mode=snapshot instead of silently degrading to
+    render_mode=live. Without this, staying on the snapshot architecture
+    depended on every single frontend call site remembering to build and pass
+    a payload - miss one (as several already had, before being fixed one by
+    one) and that publication was live forever, with no server-side backstop.
+    This makes "no new one falls through to live" true regardless of what any
+    given caller sends, for the two asset types that actually have queryable
+    data to snapshot.
+
+    Reuses the exact services the live dashboard viewer itself uses
+    (DashboardChartService for the dashboard_charts join + layout,
+    ChartService.execute for real query execution) rather than a second,
+    parallel data-fetching path. Best-effort: returns None (never raises) so
+    a broken/slow chart can't block the publish itself - the caller's own
+    fallback chain (render_mode=live) still applies if this also comes up
+    empty, exactly as before this existed.
+    """
+    from src.modules.charts.models import Chart
+    from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
+    from src.modules.dashboards.models import Dashboard
+    from src.modules.data.services.query_identity import QueryIdentity
+
+    try:
+        if asset_type == "dashboard":
+            dashboard = await db.get(Dashboard, asset_id)
+            if not dashboard:
+                return None
+            svc = DashboardChartService(db)
+            rows = await svc.list_charts_with_layout(asset_id)
+            if not rows:
+                return None
+            identity = QueryIdentity(
+                user_id=str(user_id),
+                organization_id=None,
+                project_id=str(dashboard.project_id) if dashboard.project_id else None,
+                token_payload={},
+            )
+            widgets: list[Dict[str, Any]] = []
+            layout: list[Dict[str, Any]] = []
+            for chart, chart_layout in rows[:MAX_LIVE_SNAPSHOT_WIDGETS]:
+                try:
+                    chart_data = _json_safe(await svc.chart_service.execute(chart, identity=identity))
+                except Exception:
+                    # One widget's query failing shouldn't drop the whole
+                    # snapshot - it just renders without data for that widget,
+                    # same as a live view where a single chart's fetch fails.
+                    chart_data = None
+                widgets.append(
+                    {
+                        "id": str(chart.id),
+                        "title": chart.title,
+                        "chartType": chart.chart_type,
+                        "chartOptions": chart.chart_options,
+                        "chartData": chart_data,
+                        "chartQuery": chart.chart_query,
+                    }
+                )
+                pos = chart_layout or {}
+                layout.append(
+                    {
+                        "i": str(chart.id),
+                        "x": pos.get("x", 0),
+                        "y": pos.get("y", 0),
+                        "w": pos.get("w", 6),
+                        "h": pos.get("h", 4),
+                    }
+                )
+            if not widgets:
+                return None
+            return {
+                "schemaVersion": 1,
+                "assetType": "dashboard",
+                "narrative": {
+                    "title": title,
+                    "description": description or dashboard.description or "",
+                },
+                "visuals": {"widgets": widgets, "layout": layout},
+                "provenance": {"sourcePath": "/dashboards", "dashboardId": str(asset_id)},
+            }
+
+        if asset_type == "chart":
+            chart = await db.get(Chart, asset_id)
+            if not chart:
+                return None
+            svc = DashboardChartService(db)
+            identity = QueryIdentity(
+                user_id=str(user_id),
+                organization_id=None,
+                project_id=str(chart.project_id) if chart.project_id else None,
+                token_payload={},
+            )
+            try:
+                chart_data = _json_safe(await svc.chart_service.execute(chart, identity=identity))
+            except Exception:
+                chart_data = None
+            return {
+                "schemaVersion": 1,
+                "assetType": "chart",
+                "narrative": {"title": title, "description": description or ""},
+                "visuals": {
+                    "widgets": [
+                        {
+                            "id": str(chart.id),
+                            "title": chart.title,
+                            "chartType": chart.chart_type,
+                            "chartOptions": chart.chart_options,
+                            "chartData": chart_data,
+                            "chartQuery": chart.chart_query,
+                        }
+                    ],
+                    "layout": [{"i": str(chart.id), "x": 0, "y": 0, "w": 12, "h": 8}],
+                },
+                "provenance": {"sourcePath": "/chart-designer", "chartId": str(asset_id)},
+            }
+    except Exception:
+        return None
+
+    return None
+
+
 async def create_feed_snapshot(
     db: AsyncSession,
     *,

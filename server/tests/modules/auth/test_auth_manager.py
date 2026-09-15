@@ -15,13 +15,53 @@ class _FakeUser:
         self.is_verified = False
 
 
+class _FakeScalars:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+
+class _FakeDbSession:
+    """register_user() now does its case-insensitive, multi-provider duplicate
+    check via a raw self.repo.db.execute(select(User).where(...)) rather than
+    repo.get_by_email() (case-sensitive, single-provider) - this fake session
+    answers that same query shape directly against the repository's in-memory
+    store instead of parsing the real SQLAlchemy Select object, since this
+    test double only ever serves this one call site."""
+
+    def __init__(self, store: dict[str, _FakeUser]):
+        self._store = store
+
+    async def execute(self, query):
+        import re
+
+        # Render the query with its bound value embedded, then pull the
+        # target email out of it - simpler and more robust here than trying
+        # to walk the SQLAlchemy expression tree for one specific literal.
+        compiled = str(query.compile(compile_kwargs={"literal_binds": True}))
+        match = re.search(r"lower\(.*?\)\s*=\s*'([^']+)'", compiled, re.IGNORECASE)
+        target = match.group(1).lower() if match else None
+        matched = self._store.get(target) if target else None
+        return _FakeExecuteResult([matched] if matched else [])
+
+
+class _FakeExecuteResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return _FakeScalars(self._rows)
+
+
 class _FakeUserRepository:
     """Stand-in for UserRepository backed by an in-memory dict, keyed by email."""
 
     _store: dict[str, _FakeUser] = {}
 
     def __init__(self, db):
-        self.db = db
+        self.db = _FakeDbSession(self._store)
 
     async def get_by_email(self, email: str):
         return self._store.get(email.lower())

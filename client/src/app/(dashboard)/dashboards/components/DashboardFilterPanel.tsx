@@ -27,6 +27,7 @@ type Props = {
   onClearAll?: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  showToolbarActions?: boolean;
   onClose?: () => void;
   showHeader?: boolean;
   open?: boolean;
@@ -47,6 +48,7 @@ export function DashboardFilterPanel({
   onClearAll,
   onRefresh,
   refreshing = false,
+  showToolbarActions = true,
   onClose,
   showHeader = true,
   open = true,
@@ -79,6 +81,7 @@ export function DashboardFilterPanel({
             <Button
               type="text"
               size="small"
+              className="icon-only-btn"
               icon={<CloseOutlined />}
               aria-label={t('hide_filters')}
               onClick={onClose}
@@ -103,6 +106,7 @@ export function DashboardFilterPanel({
           onClearAll={onClearAll}
           onRefresh={onRefresh}
           refreshing={refreshing}
+          showToolbarActions={showToolbarActions}
         />
       </div>
     </aside>

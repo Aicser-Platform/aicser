@@ -150,6 +150,25 @@ export function isNumericBindColumn(col: BindColumn): boolean {
   return false;
 }
 
+/**
+ * Column-level "is this safe to sum as a measure" check shared across every surface
+ * that infers x/measure/dimension mappings from raw result rows (chat pins, Query
+ * Editor Visualize, Chart Designer Build) — the single source of truth for excluding
+ * id/key-named and date-named columns from being auto-selected as a metric, even when
+ * their sampled values happen to look numeric (e.g. a numeric `customer_id`).
+ * Keeping this in one place is deliberate: two independent value-only numeric checks
+ * previously classified the same result set differently depending on which surface a
+ * chart was pinned from, showing different measures/aggregations for "the same" chart.
+ */
+export function isMeasureColumn(
+  name: string,
+  rows?: Array<Record<string, unknown>> | null,
+  declaredType?: string,
+): boolean {
+  const type = inferBindColumnTypeFromSamples(name, rows || undefined, declaredType);
+  return isNumericBindColumn({ name, type });
+}
+
 export type InferChartMappingOptions = {
   /** Sample rows — used to refine unknown column types */
   sampleRows?: Array<Record<string, unknown>>;

@@ -71,7 +71,10 @@
 .modern-message.user-message .message-bubble {
   background: linear-gradient(135deg, var(--ant-color-primary) 0%, var(--ant-color-primary-hover, #40a9ff) 100%) !important;
   background-color: var(--ant-color-primary) !important;
-  color: #ffffff !important;
+  /* White fails ~2.2:1 against the default teal (WCAG AA needs 4.5:1) -
+     --color-primary-text is computed per the actual resolved brand color
+     (ThemeProvider.tsx), falling back to the old white when unset. */
+  color: var(--color-primary-text, #ffffff) !important;
   border: none !important;
 }
 

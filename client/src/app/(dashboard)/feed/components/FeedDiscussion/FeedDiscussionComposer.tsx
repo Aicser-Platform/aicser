@@ -1,6 +1,7 @@
 import React from 'react';
-import { Button, Input } from 'antd';
+import { Button, Mentions } from 'antd';
 import { SendOutlined } from '@ant-design/icons';
+import { useTranslations } from 'next-intl';
 import { COMMENT_CHAR_LIMIT } from '../FeedCard/constants';
 
 interface FeedDiscussionComposerProps {
@@ -8,6 +9,7 @@ interface FeedDiscussionComposerProps {
   onCommentValueChange: (value: string) => void;
   onCommentSubmit: () => void;
   commenting: boolean;
+  mentionOptions?: { value: string; label: string }[];
 }
 
 /** Always-visible comment composer for the Discussion panel. */
@@ -16,16 +18,19 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
   onCommentValueChange,
   onCommentSubmit,
   commenting,
+  mentionOptions,
 }) => {
+  const t = useTranslations('feed');
   const trimmedLength = commentValue.trim().length;
   const canSubmit = trimmedLength > 0 && trimmedLength <= COMMENT_CHAR_LIMIT && !commenting;
 
   return (
     <div className="rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-3">
-      <Input.TextArea
+      <Mentions
         value={commentValue}
-        onChange={(event) => onCommentValueChange(event.target.value)}
-        placeholder="Write a comment..."
+        onChange={onCommentValueChange}
+        options={mentionOptions}
+        placeholder={t('discussion_placeholder')}
         maxLength={COMMENT_CHAR_LIMIT}
         autoSize={{ minRows: 2, maxRows: 6 }}
         className="rounded-lg border-[var(--ant-color-border)] focus:border-[var(--ant-color-primary)] !shadow-none"
@@ -48,7 +53,7 @@ const FeedDiscussionComposer: React.FC<FeedDiscussionComposerProps> = ({
           onClick={onCommentSubmit}
           className="rounded-md font-medium"
         >
-          Send Comment
+          {t('discussion_send')}
         </Button>
       </div>
     </div>

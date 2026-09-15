@@ -67,7 +67,7 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
       {showRetrievalHint ? (
         <Alert type="info" showIcon message={t('tab_search_hint')} style={{ marginBottom: 16 }} />
       ) : null}
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         {showDataSourceSelector && dataSourceOptions.length > 0 && (
           <Select
             style={{ width: '100%' }}

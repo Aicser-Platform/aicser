@@ -38,7 +38,7 @@ export const AppearanceForm: React.FC<AppearanceFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('appearance_compact_mode')}</Text>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {t('appearance_compact_mode_desc')}
@@ -53,7 +53,7 @@ export const AppearanceForm: React.FC<AppearanceFormProps> = ({
 
       <Form.Item
         label={
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Text strong>{t('appearance_number_format')}</Text>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {t('appearance_number_format_desc')}

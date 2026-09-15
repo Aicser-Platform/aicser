@@ -1,8 +1,9 @@
 'use client';
 
-import { ConfigProvider, theme } from 'antd';
+import { App as AntdApp, ConfigProvider, theme } from 'antd';
 import { MULTILINGUAL_FONT_STACK } from '@/config/typography';
 import { ThemeModeContext } from './ThemeModeContext';
+import AntdMessageBridgeConnector from './AntdMessageBridgeConnector';
 import { ReactNode, useLayoutEffect, useState, useEffect, useMemo } from 'react';
 
 const BRAND_THEME_STORAGE_KEY = 'aiser_brand_theme_vars';
@@ -24,6 +25,81 @@ function readEffectiveDarkFromStorage(): boolean {
     } catch {
         return false;
     }
+}
+
+function hexToRgb(bgHex: string): [number, number, number] | null {
+    const hex = bgHex.replace('#', '');
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+    return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+    return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/** WCAG relative luminance for 0-255 channel values. */
+function relativeLuminance(r: number, g: number, b: number): number {
+    const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    const [rl, gl, bl] = [r, g, b].map((v) => lin(v / 255));
+    return 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+}
+
+/** WCAG contrast ratio between two relative luminances. */
+function contrastRatio(l1: number, l2: number): number {
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * White text on the default brand teal (#00c2cb) measures ~2.2:1, well under
+ * WCAG AA's 4.5:1 - and a static dark-text swap would break the same way for
+ * an org with a dark custom brand color (ThemeCustomizer). Picks whichever of
+ * the two candidates has the higher contrast against the actual resolved
+ * background, so it adapts to brand overrides instead of assuming teal.
+ */
+function pickReadableTextColor(bgHex: string, darkText: string, lightText: string): string {
+    const rgb = hexToRgb(bgHex);
+    if (!rgb) return lightText;
+    const bgLuminance = relativeLuminance(...rgb);
+    return contrastRatio(bgLuminance, 0) >= contrastRatio(bgLuminance, 1) ? darkText : lightText;
+}
+
+/**
+ * Darkens bgHex just enough that fixed white text reaches WCAG AA (4.5:1)
+ * against it, scaling all three channels toward black together so hue and
+ * saturation are preserved (this is what "darken the teal" means visually,
+ * as opposed to desaturating or hue-shifting it). Returns bgHex unchanged
+ * when white already passes, so an already-dark brand color (custom org
+ * theme, or a color already adjusted for dark mode upstream) is never
+ * needlessly altered - this makes the result automatically correct in both
+ * light and dark mode, since it reacts to whatever primaryColor resolves to
+ * per-mode rather than hardcoding either.
+ */
+function darkenForWhiteText(bgHex: string, targetRatio = 4.6): string {
+    const rgb = hexToRgb(bgHex);
+    if (!rgb) return bgHex;
+    const [r, g, b] = rgb;
+    if (contrastRatio(relativeLuminance(r, g, b), 1) >= targetRatio) {
+        return bgHex;
+    }
+    // Binary search the largest scale factor t in [0, 1] (t=1 is the
+    // original color, t=0 is black) for which contrast still passes -
+    // contrast-with-white is monotonically non-increasing as t grows, so
+    // this converges on the least amount of darkening that still meets AA.
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        const luminance = relativeLuminance(r * mid, g * mid, b * mid);
+        if (contrastRatio(luminance, 1) >= targetRatio) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    return rgbToHex(r * lo, g * lo, b * lo);
 }
 
 /** Reads the brand color overrides set by the (EE) ThemeCustomizer, if any. */
@@ -92,6 +168,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const primaryColorOutline =
         brandTokens['--ant-primary-color-outline'] ||
         (isDarkMode ? 'rgba(0, 194, 203, 0.22)' : 'rgba(0, 194, 203, 0.14)');
+    // Readable label color for anything filled with primaryColor (buttons,
+    // selected menu item, tags) - adapts to brand overrides instead of
+    // assuming white always works (the default teal fails white at ~2.2:1).
+    const primaryColorText = useMemo(
+        () => pickReadableTextColor(primaryColor, '#0d1117', '#ffffff'),
+        [primaryColor]
+    );
+    // Guaranteed-readable-for-white-text versions of the primary gradient
+    // stops, for surfaces (e.g. the chat user-message bubble) that always
+    // want white text rather than switching to dark text on light brand
+    // colors - darkening the background instead keeps both legible.
+    const primaryBubbleBg = useMemo(() => darkenForWhiteText(primaryColor), [primaryColor]);
+    const primaryBubbleBgHover = useMemo(
+        () => darkenForWhiteText(primaryColorHover),
+        [primaryColorHover]
+    );
 
     const navigationSiderBg = useMemo(
         () => resolveCSSVar('--color-bg-navigation-sider', isDarkMode ? '#030712' : '#eef1f5'),
@@ -170,19 +262,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             '--color-bg-navigation-header-glow': brandTokens['--color-bg-navigation-header-glow'] || themeDefaultHeaderGlow,
             '--ant-color-bg-navigation-hover': isDarkMode ? '#0b162e' : '#f0f0f0',
             
-            // 5. Border/Divider - Single consistent color
-            '--ant-color-border': isDarkMode ? '#30363d' : '#e1e4e8',
-            '--color-border': isDarkMode ? '#30363d' : '#e1e4e8',
-            '--ant-color-border-secondary': isDarkMode ? '#30363d' : '#e1e4e8',
-            
+            // 5. Border/Divider - Single consistent color. WCAG 1.4.11
+            // non-text contrast minimum is 3:1; the prior #30363d/#e1e4e8
+            // measured ~1.4:1/1.2:1 against the container background in each
+            // mode - card, table, and divider edges were effectively invisible.
+            '--ant-color-border': isDarkMode ? '#67717d' : '#7a7f85',
+            '--color-border': isDarkMode ? '#67717d' : '#7a7f85',
+            '--ant-color-border-secondary': isDarkMode ? '#67717d' : '#7a7f85',
+
             // Text Colors - Clear hierarchy (synchronized)
             '--ant-color-text': isDarkMode ? '#e6edf3' : '#24292f',
             '--color-text-primary': isDarkMode ? '#e6edf3' : '#24292f',
             '--ant-color-text-secondary': isDarkMode ? '#8b949e' : '#57606a',
             '--color-text-secondary': isDarkMode ? '#8b949e' : '#57606a',
-            '--ant-color-text-tertiary': isDarkMode ? '#6e7681' : '#8b949e',
-            '--color-text-tertiary': isDarkMode ? '#6e7681' : '#8b949e',
-            '--ant-color-text-quaternary': isDarkMode ? '#6b7280' : '#bfbfbf',
+            // Light-mode values are WCAG 2.1 AA-verified (>=4.5:1 tertiary,
+            // >=3:1 quaternary) against both container (#f8f9fa) and layout
+            // (#ffffff) backgrounds - the prior #8b949e/#bfbfbf measured only
+            // 2.9:1/1.7:1, failing even the large-text/UI-component minimum.
+            '--ant-color-text-tertiary': isDarkMode ? '#6e7681' : '#697280',
+            '--color-text-tertiary': isDarkMode ? '#6e7681' : '#697280',
+            '--ant-color-text-quaternary': isDarkMode ? '#6b7280' : '#7c8590',
             
             // Primary Color - Consistent (all variants synchronized), driven by brand overrides
             '--ant-color-primary': primaryColor,
@@ -196,7 +295,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             '--ant-primary-color-active': primaryColorActive, // Ant Design alias
             '--ant-color-primary-bg': primaryColorOutline,
             '--ant-primary-color-outline': primaryColorOutline,
-            
+            // Readable label color for anything filled with primaryColor - for
+            // CSS files that can't do antd's colorTextLightSolid token merge
+            // (e.g. `color: var(--color-primary-text, #fff)` in place of a
+            // hardcoded `color: #fff` on a primaryColor background).
+            '--color-primary-text': primaryColorText,
+            // Darkened gradient stops guaranteeing AA contrast for fixed white
+            // text (e.g. chat user-message bubble) - see darkenForWhiteText().
+            '--color-primary-bubble-bg': primaryBubbleBg,
+            '--color-primary-bubble-bg-hover': primaryBubbleBgHover,
+
             // Functional Colors - Minimal usage
             '--ant-color-success': '#16a34a',
             '--ant-color-warning': '#f97316',
@@ -224,7 +332,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         deprecatedVars.forEach(key => {
             root.style.removeProperty(key);
         });
-    }, [isDarkMode, brandTokens, primaryColor, primaryColorHover, primaryColorActive, primaryColorOutline]);
+    }, [isDarkMode, brandTokens, primaryColor, primaryColorHover, primaryColorActive, primaryColorOutline, primaryColorText, primaryBubbleBg, primaryBubbleBgHover]);
 
     // Wrapper to ensure persistence on every change
     const setDarkModeWithPersistence = (value: boolean | ((prev: boolean) => boolean)) => {
@@ -251,6 +359,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         colorPrimaryHover: primaryColorHover,
                         colorPrimaryActive: primaryColorActive,
                         controlOutline: primaryColorOutline,
+                        // Text color for anything filled with colorPrimary (Button
+                        // type="primary", Tag, Badge, ...) - white on the default
+                        // teal measured ~2.2:1, failing WCAG AA; adapts per the
+                        // actual resolved primary color instead of assuming white.
+                        colorTextLightSolid: primaryColorText,
                         colorSuccess: '#16a34a',
                         colorWarning: '#f97316',
                         colorError: '#dc2626',
@@ -260,16 +373,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         colorBgLayout: isDarkMode ? '#0d1117' : '#ffffff', // 1. Base (page background)
                         colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container (cards, panels, tables, forms)
                         colorBgElevated: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated (modals, dropdowns, hover, table headers)
-                        
+                        // antd's own default (colorFillTertiary: 8%/4% white/black overlay) measures
+                        // ~1.1-1.3:1 against colorBgElevated above - barely perceptible as a hover
+                        // cue on a plain <Dropdown menu={...}> popup (Select/Menu get their own
+                        // component-level overrides below for the same reason). A brand tint keeps
+                        // a visible hue shift regardless of how dark/light the popup surface is.
+                        controlItemBgHover: primaryColorOutline,
+
                         // Text tokens - Clear hierarchy (synchronized with CSS variables)
                         colorText: isDarkMode ? '#e6edf3' : '#24292f',
                         colorTextSecondary: isDarkMode ? '#8b949e' : '#57606a',
-                        colorTextTertiary: isDarkMode ? '#6e7681' : '#8b949e',
-                        colorTextQuaternary: isDarkMode ? '#6b7280' : '#bfbfbf',
+                        colorTextTertiary: isDarkMode ? '#6e7681' : '#697280',
+                        colorTextQuaternary: isDarkMode ? '#6b7280' : '#7c8590',
                         
                         // Border tokens - Single consistent color (synchronized)
-                        colorBorder: isDarkMode ? '#30363d' : '#e1e4e8',
-                        colorBorderSecondary: isDarkMode ? '#30363d' : '#e1e4e8',
+                        colorBorder: isDarkMode ? '#67717d' : '#7a7f85',
+                        colorBorderSecondary: isDarkMode ? '#67717d' : '#7a7f85',
                         
                         // Typography - Enhanced for premium feel
                         fontSize: 14,
@@ -316,23 +435,59 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             // Menu uses navigation color (matches sidebar/header)
                             itemBg: navigationSiderBg, // 4. Navigation (uses custom value if set)
                             itemSelectedBg: primaryColor, // Primary color (follows brand override)
-                            itemSelectedColor: '#ffffff',
-                            itemHoverBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
+                            itemSelectedColor: primaryColorText,
+                            // Popup background is navigationSiderBg below (popupBg) - this used to
+                            // be a fixed Elevated-tier gray, which measures ~1:1-1.24:1 against
+                            // that background (imperceptible, and worse against a custom brand
+                            // navigation color). A brand-tinted overlay keeps a visible hue shift
+                            // regardless of how light/dark the popup background actually is.
+                            itemHoverBg: primaryColorOutline,
+                            itemHoverColor: isDarkMode ? '#e6edf3' : '#24292f', // Hover changes bg only, not text
                             itemColor: isDarkMode ? '#e6edf3' : '#24292f', // Text primary
                             popupBg: navigationSiderBg, // 4. Navigation (matches sidebar, uses custom value if set)
                             colorText: isDarkMode ? '#e6edf3' : '#24292f',
                             colorTextSecondary: isDarkMode ? '#8b949e' : '#57606a',
+                            // SidebarNav.tsx passes theme={isDarkMode ? 'dark' : 'light'} to antd's
+                            // <Menu> - that per-instance prop switches which token family antd's
+                            // Menu style generator reads (menuDarkToken overrides itemColor with
+                            // darkItemColor, itemHoverColor with darkItemHoverColor, etc. - see
+                            // antd/es/menu/style/index.js), completely bypassing every itemXxx
+                            // override above. Without these, the dark-mode sidebar silently used
+                            // antd's own generic dark-menu defaults - including darkItemHoverColor,
+                            // which defaults to colorTextLightSolid (repurposed above for
+                            // brand-color-adaptive button text, so it can resolve to a DARK navy)
+                            // rendered against antd's own dark hover background: dark-on-dark,
+                            // near-invisible hover text on every non-selected sidebar item.
+                            darkItemBg: navigationSiderBg,
+                            darkItemColor: '#e6edf3',
+                            darkItemHoverBg: primaryColorOutline, // see itemHoverBg above - same fix, dark-Menu token family
+                            darkItemHoverColor: '#e6edf3',
+                            darkItemSelectedBg: primaryColor,
+                            darkItemSelectedColor: primaryColorText,
+                            darkPopupBg: navigationSiderBg,
+                            darkSubMenuItemBg: navigationSiderBg,
                         },
                         Card: {
                             // Cards use container color
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
-                            colorBorderSecondary: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            colorBorderSecondary: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
+                        },
+                        Tooltip: {
+                            // Tooltip's background (colorBgSpotlight) is a near-black solid
+                            // regardless of light/dark theme, so its text token must stay a
+                            // fixed light color - it must NOT default to colorTextLightSolid
+                            // above, which is deliberately repurposed for readability against
+                            // the (possibly light/mid-toned) brand primary color and can
+                            // resolve to a dark navy there (see the Menu comment below for the
+                            // same class of bug) - rendered against a near-black tooltip, that
+                            // measured well under WCAG AA, reading as barely-legible dim text.
+                            colorTextLightSolid: '#ffffff',
                         },
                         Table: {
                             // Tables use container color
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
                             headerBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated (header)
-                            borderColor: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            borderColor: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
                         },
                         Form: {
                             // Forms use container color
@@ -350,19 +505,28 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             dangerShadow: 'none',
                             defaultColor: isDarkMode ? '#e6edf3' : '#24292f', // Text primary
                             defaultBg: isDarkMode ? '#161b22' : '#ffffff',
-                            defaultBorderColor: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            defaultBorderColor: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
                             defaultHoverColor: isDarkMode ? '#e6edf3' : '#24292f',
                             defaultHoverBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            defaultHoverBorderColor: isDarkMode ? '#30363d' : '#e1e4e8',
+                            defaultHoverBorderColor: isDarkMode ? '#67717d' : '#7a7f85',
                             defaultActiveBg: isDarkMode ? '#0d1117' : '#e1e4e8',
-                            defaultActiveBorderColor: isDarkMode ? '#30363d' : '#e1e4e8',
+                            defaultActiveBorderColor: isDarkMode ? '#67717d' : '#7a7f85',
                         },
                         Input: {
                             controlHeight: 32,
                             controlHeightLG: 40,
                             controlHeightSM: 24,
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
-                            colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            // Deliberately stronger than the sitewide colorBorder
+                            // (~1.2:1/1.4:1 against this same container color in
+                            // each mode - well under WCAG 1.4.11's 3:1 non-text
+                            // minimum). Inputs sit ON that container color, so a
+                            // field the user needs to locate and type into can't
+                            // rely on it as the only edge cue - scoped to just
+                            // form controls rather than the global border token,
+                            // which would visibly darken every card/table/divider
+                            // site-wide.
+                            colorBorder: isDarkMode ? '#67717d' : '#7a7f85',
                             borderRadius: 6,
                             activeShadow: 'none',
                             hoverBorderColor: primaryColor,
@@ -373,9 +537,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                             controlHeightLG: 40,
                             controlHeightSM: 24,
                             colorBgContainer: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
+                            colorBorder: isDarkMode ? '#67717d' : '#7a7f85', // see Input above
                             borderRadius: 6,
-                            optionSelectedBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            optionActiveBg: isDarkMode ? '#161b22' : '#f8f9fa', // 2. Container
+                            // Input (above) sets these explicitly so hover/focus reads as the
+                            // brand color rather than antd's derived default - Select lacked
+                            // the same pair, so a Select sitting next to an Input in the same
+                            // form (e.g. Settings → Profile) looked inconsistent the moment a
+                            // user interacted with either field, even though both look
+                            // identical at rest.
+                            hoverBorderColor: primaryColor,
+                            activeBorderColor: primaryColor,
+                            // The popup itself renders on colorBgElevated ('#1c2128'/'#f1f3f5') -
+                            // these used to reuse that same Elevated tier (or the adjacent
+                            // Container tier, one step away) for hover/selected, which measures
+                            // ~1.06:1 against the popup background - essentially invisible.
+                            // primaryColorOutline is a brand-aware tint (hue, not just a gray
+                            // step), so it stays visually distinct regardless of how dark/light
+                            // colorBgElevated is.
+                            optionSelectedBg: primaryColorOutline,
+                            optionActiveBg: primaryColorOutline,
                             optionSelectedFontWeight: 500,
                         },
                         Progress: {
@@ -393,7 +573,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         },
                         Slider: {
                             trackBg: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            trackHoverBg: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            trackHoverBg: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border (fill, not a boundary - WCAG 1.4.11 doesn't apply)
                             handleSize: 18,
                             handleSizeHover: 20,
                             railSize: 6,
@@ -404,12 +584,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         Dropdown: {
                             // Dropdowns use elevated color
                             colorBgElevated: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            colorBorder: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
                         },
                         Modal: {
                             // Modals use elevated color
                             colorBgElevated: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            colorBorder: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
                             borderRadiusLG: 12,
                         },
                         Alert: {
@@ -418,12 +598,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
                         Drawer: {
                             // Drawers use elevated color
                             colorBgElevated: isDarkMode ? '#1c2128' : '#f1f3f5', // 3. Elevated
-                            colorBorder: isDarkMode ? '#30363d' : '#e1e4e8', // 5. Border
+                            colorBorder: isDarkMode ? '#67717d' : '#7a7f85', // 5. Border
                         },
                     },
                 }}
             >
-                {children}
+                {/* component={false}: no wrapper DOM node, just App context (message/notification/
+                    Modal static-function calls can consume the dynamic theme via App.useApp()) */}
+                <AntdApp component={false}>
+                    <AntdMessageBridgeConnector />
+                    {children}
+                </AntdApp>
             </ConfigProvider>
         </ThemeModeContext.Provider>
     );

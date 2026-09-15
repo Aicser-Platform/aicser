@@ -174,6 +174,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -203,6 +210,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -245,6 +259,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -287,6 +308,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -322,6 +350,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -357,6 +392,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -394,6 +436,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -424,6 +473,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
       {
         key: 'metricFilters',
@@ -460,6 +516,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ]),
   },
@@ -478,6 +541,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },
@@ -523,6 +593,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },
@@ -547,6 +624,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },
@@ -571,6 +655,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },
@@ -602,6 +693,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },
@@ -636,6 +734,13 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         type: 'filter-list',
         label: 'Filters',
         required: false,
+        // AI-generated widgets built from raw SQL (chart_query.compiled_semantic_sql,
+        // e.g. the dashboard planner's KPI fallback) don't have a yMetrics/x shape a
+        // runtime filter can bind to — the query engine silently drops or mis-applies
+        // filters against them (see chart_service._filters_projected_by_saved_sql).
+        // Showing an editable Filters UI that quietly does nothing is worse than not
+        // showing it, so this hides the field for exactly those widgets.
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
       },
     ],
   },

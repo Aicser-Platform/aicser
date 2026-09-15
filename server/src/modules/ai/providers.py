@@ -37,6 +37,8 @@ PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
     # still nominally alive (shutdown Oct 16 2026) but has been intermittently
     # 404ing since Jul 9 2026, so the 3.x family is the safe default now.
     "google": [
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
+        {"id": "gemini-3.7-flash", "name": "Gemini 3.7 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash Lite", "tier": "fast", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.6-flash", "name": "Gemini 3.6 Flash", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)", "tier": "reasoning", "cost_per_1k_tokens": 0},
@@ -85,16 +87,25 @@ def provider_for_model(model_id: str, keys: dict[str, dict[str, Any]] | None = N
     OpenRouter model ids are arbitrary "vendor/model" slugs (e.g. "z-ai/glm-4.6")
     that can't be told apart from a native provider name by string shape alone —
     so when the caller has the user's saved BYOK configs handy, check those first:
-    if some provider's saved `model` matches exactly, that's authoritative.
+    if some provider's saved `model` / `models` matches exactly, that's authoritative.
     """
+    from src.modules.ai.provider_key_store import enabled_models_from_store
+
     model_id = (model_id or "").strip()
     if keys:
         for provider, cfg in keys.items():
+            enabled = enabled_models_from_store(cfg)
+            if model_id in enabled:
+                return provider
             configured_model = (cfg.get("model") or "").strip()
             if configured_model == model_id:
                 return provider
             if provider == "ollama" and configured_model:
                 if configured_model.removeprefix("ollama/") == model_id.removeprefix("ollama/"):
+                    return provider
+            if provider == "ollama":
+                bare = model_id.removeprefix("ollama/")
+                if bare in {m.removeprefix("ollama/") for m in enabled}:
                     return provider
 
         ollama_cfg = keys.get("ollama") or {}

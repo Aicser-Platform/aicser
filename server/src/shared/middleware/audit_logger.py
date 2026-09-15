@@ -1,5 +1,4 @@
 # AISER EE-ONLY — requires AISER_EDITION=enterprise
-# Canonical EE boundary file: audit_logger.ee.py
 """
 Global Audit Logging Middleware.
 
@@ -38,6 +37,12 @@ _AUDIT_PATTERNS = [
     ("POST", "/data/sources"),
     ("GET", "/charts/dashboards"),
     ("POST", "/charts/dashboards"),
+    ("GET", "/api/dashboards"),
+    ("POST", "/api/dashboards"),
+    ("GET", "/knowledge"),
+    ("POST", "/knowledge"),
+    ("GET", "/api/embed"),
+    ("POST", "/api/embed"),
     ("POST", "/echarts"),
     ("POST", "/api/users"),
     ("POST", "/auth"),
@@ -78,7 +83,17 @@ async def _write_audit_db(event: Dict[str, Any]) -> None:
                 "resource_id": event.get("resource_id"),
                 "action": event.get("action"),
                 "ip": event.get("ip_address"),
-                "ua": event.get("user_agent", "")[:255],
+                # RELIABILITY: event.get("user_agent", "") only falls back to ""
+                # when the key is ABSENT -- every caller so far always sets it
+                # (AuditLoggingMiddleware extracts a real header string, "" at
+                # worst), so this never crashed in practice. circuit_breaker.py's
+                # own log_audit_event() call is the first caller that leaves
+                # user_agent as its default None (an explicit key with value
+                # None, not a missing one), and None[:255] raised
+                # "'NoneType' object is not subscriptable" -- caught by this
+                # function's own try/except, so the write silently never
+                # happened at all instead of erroring loudly.
+                "ua": (event.get("user_agent") or "")[:255],
                 "req_id": event.get("request_id"),
                 "status": event.get("status_code"),
                 "duration": event.get("duration_ms"),
@@ -108,6 +123,24 @@ async def log_audit_event(
     """Log an audit event. Non-blocking and non-fatal."""
     if not AUDIT_ENABLED:
         return
+
+    # The auth token that reaches the middleware rarely carries an explicit
+    # organization_id claim — org membership is resolved from the DB
+    # (UserRole) everywhere else in the app, e.g. get_user_organization_id()
+    # used by the actual data/chart/chat endpoints. Without the same fallback
+    # here, every audit row reads org=None even for a user who very much has
+    # an org, defeating the point of an org-scoped audit trail. This function
+    # already only runs inside a background asyncio task (see dispatch()
+    # below), so the extra DB lookup never adds latency to the real response.
+    if user_id and not org_id:
+        try:
+            from src.db.session import async_session
+            from src.modules.pricing.feature_gate import get_user_organization_id
+
+            async with async_session() as audit_db:
+                org_id = await get_user_organization_id(user_id, audit_db)
+        except Exception:
+            pass
 
     event = {
         "event_type": event_type,
@@ -177,20 +210,57 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
         if not self._should_audit(method, path, status):
             return response
 
-        # Extract user from auth state (set by JWTCookieBearer)
+        # Extract user from auth state (set by JWTCookieBearer). Mirrors
+        # JWTCookieBearer.__call__'s own token-source AND decode precedence
+        # exactly (auth_bearer.py), both of which used to diverge here:
+        #
+        # 1. Source: Authorization header first, falling back to the
+        #    auth_token cookie. Header-only used to be checked here — any
+        #    request the actual endpoint authenticated via the cookie alone
+        #    (no Authorization header, e.g. a plain browser navigation/fetch)
+        #    still passed auth and returned 200, but was logged user=None.
+        #
+        # 2. Decode: the app's default JWT format (create_access_token/
+        #    decode_access_token — HS256 + SECRET_KEY, sub/email/exp/iat/jti)
+        #    is NOT what extract_user_id_from_token decodes — that function
+        #    is the Supabase-JWKS / dev-unverified-fallback path, a different
+        #    token shape entirely. It silently returns {} for a standard CE
+        #    token (confirmed live), which is falsy, so user_id stayed None
+        #    even when a token WAS present and the endpoint's own auth
+        #    (which tries decode_access_token FIRST) accepted it just fine.
+        #    Trying decode_access_token first, then falling back to
+        #    extract_user_id_from_token for Supabase/Keycloak/dev tokens,
+        #    matches what the endpoint itself actually does.
         user_id = None
         org_id = None
         try:
-            # Try to peek at the token if present
+            token = None
             auth = request.headers.get("Authorization", "")
             if auth.lower().startswith("bearer "):
-                token = auth.split(None, 1)[1].strip()
-                if len(token) > 10 and token not in ("test-token",):
+                header_token = auth.split(None, 1)[1].strip()
+                if len(header_token) > 10 and header_token not in ("test-token",):
+                    token = header_token
+            if not token:
+                cookie_token = request.cookies.get("auth_token")
+                if cookie_token and cookie_token.strip() not in ("", "null"):
+                    token = cookie_token.strip()
+            if token:
+                payload = None
+                try:
+                    from src.modules.authentication.service import decode_access_token
+
+                    ce_payload = decode_access_token(token)
+                    if ce_payload.get("sub"):
+                        payload = ce_payload
+                except Exception:
+                    payload = None
+                if not payload:
                     from src.modules.authentication.deps.auth_bearer import extract_user_id_from_token
+
                     payload = extract_user_id_from_token(token)
-                    if payload:
-                        user_id = payload.get("id") or payload.get("user_id") or payload.get("sub")
-                        org_id = payload.get("organization_id")
+                if payload:
+                    user_id = payload.get("id") or payload.get("user_id") or payload.get("sub")
+                    org_id = payload.get("organization_id")
         except Exception:
             pass
 
@@ -208,7 +278,9 @@ class AuditLoggingMiddleware(BaseHTTPMiddleware):
             category = "admin"
         elif "/billing" in path or "/subscriptions" in path:
             category = "billing"
-        elif "/semantic" in path or "/governance" in path:
+        elif "/semantic" in path or "/governance" in path or "/knowledge" in path:
+            category = "governance"
+        elif "/embed" in path:
             category = "governance"
 
         try:

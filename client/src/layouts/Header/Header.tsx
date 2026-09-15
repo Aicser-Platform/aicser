@@ -14,14 +14,23 @@ const { Text } = Typography;
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useTranslations } from 'next-intl';
-import { handlePlanLimitError } from '@/utils/api';
+import { handlePlanLimitError, ApiError } from '@/utils/api';
 import dynamic from 'next/dynamic';
+import { asDynamicModule } from '@/utils/asDynamicModule';
 
 const ProjectSelectorModal = dynamic(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.ProjectSelectorModal }))) as any,
-  { ssr: false }
-) as React.ComponentType<{ open?: boolean; onClose?: () => void; onProjectChange?: (projectId: string | number) => void; onCreateNew?: () => void;[key: string]: unknown }>;
+  () =>
+    import('@/ee').then((m) =>
+      asDynamicModule(m.ProjectSelectorModal, () => null),
+    ),
+  { ssr: false },
+) as React.ComponentType<{
+  open?: boolean;
+  onClose?: () => void;
+  onProjectChange?: (projectId: string | number) => void;
+  onCreateNew?: () => void;
+  [key: string]: unknown;
+}>;
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -29,6 +38,7 @@ import { useProjects, useCreateProject } from '@/hooks/useProjects';
 import { dataSourceKeys } from '@/hooks/dataSourceKeys';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { getOrganizationBranding } from '@/utils/orgBranding';
 import { useOrganizations, useCreateOrganization } from '@/hooks/useOrganizations';
 import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { useHeaderStore } from '@/stores/useHeaderStore';
@@ -37,10 +47,30 @@ import { useRouter } from 'next/navigation';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
-type IconableEntity = { icon_emoji?: string | null; color?: string | null };
+type IconableEntity = {
+  icon_emoji?: string | null;
+  color?: string | null;
+  logo_url?: string | null;
+  settings?: { branding?: { logo_url?: string | null } } | null;
+  name?: string | null;
+};
 
-/** Custom emoji when set (colored to match), falling back to the given default icon. */
+/** Prefer uploaded org logo, then custom emoji, then the given default icon. */
 function renderEntityIcon(entity: IconableEntity | null | undefined, fallback: React.ReactNode, className?: string) {
+  const { logoUrl, name } = getOrganizationBranding(entity as Parameters<typeof getOrganizationBranding>[0]);
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- org branding may be data-URI or signed URL
+      <img
+        src={logoUrl}
+        alt={name ? `${name} logo` : 'Organization logo'}
+        className={['header-shell-chip-icon', 'header-shell-chip-icon--logo', className].filter(Boolean).join(' ')}
+        width={20}
+        height={20}
+        draggable={false}
+      />
+    );
+  }
   if (entity?.icon_emoji) {
     return (
       <span className={className} style={{ fontSize: 14, lineHeight: 1, display: 'inline-flex', flexShrink: 0 }}>
@@ -77,12 +107,33 @@ export const LayoutHeader: React.FC<Props> = ({
 }) => {
   const router = useRouter();
   const t = useTranslations('header');
+  const [messageApi, contextHolder] = message.useMessage();
 
   const ThemeCustomizer = React.useMemo(
-    () => dynamic(() => import('@/ee').then((m) => ({ default: m.ThemeCustomizer })), { ssr: false }),
-    []
+    () =>
+      dynamic(
+        () =>
+          import('@/ee').then((m) => asDynamicModule(m.ThemeCustomizer, () => null)),
+        { ssr: false },
+      ),
+    [],
   );
   const [customizerOpen, setCustomizerOpen] = React.useState(false);
+
+  // Fully built (invitations/alerts/AI tips/activity, mark-read, dismiss,
+  // ack actions) but never actually mounted anywhere in the app — the only
+  // place a user could see a notification was the separate, feed-specific
+  // bell on /discover (DiscoverNotifications), which only covers social
+  // events (follow/comment/reaction), not this broader activity inbox.
+  const ActivityInboxBell = React.useMemo(
+    () =>
+      dynamic(
+        () =>
+          import('@/ee').then((m) => asDynamicModule(m.ActivityInboxBell, () => null)),
+        { ssr: false },
+      ),
+    [],
+  );
 
   const { currentProject, selectProject } = useProjectStore();
   const queryClient = useQueryClient();
@@ -173,31 +224,31 @@ export const LayoutHeader: React.FC<Props> = ({
   const handleProjectChange = (projectId: number | string) => {
     const project = projects.find((p) => p.id == projectId);
     if (project) {
-      message.loading({ content: t('switching_project'), key: 'project-switch' });
+      messageApi.loading({ content: t('switching_project'), key: 'project-switch' });
       selectProject(project);
       resetProjectScopedData();
       void useConversationStore.getState().loadConversations(String(project.id));
-      message.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
+      messageApi.success({ content: t('switched_to', { name: project.name }), key: 'project-switch', duration: 2 });
     } else {
-      message.error({ content: t('switch_failed'), key: 'project-switch', duration: 2 });
+      messageApi.error({ content: t('switch_failed'), key: 'project-switch', duration: 2 });
     }
   };
 
   const handleOrganizationChange = (organizationId: string) => {
     const org = organizations.find((item) => String(item.id) === String(organizationId));
     if (!org) {
-      message.error({ content: t('organization_switch_failed'), key: 'organization-switch', duration: 2 });
+      messageApi.error({ content: t('organization_switch_failed'), key: 'organization-switch', duration: 2 });
       return;
     }
     if (String(currentOrganization?.id) === String(org.id)) return;
 
-    message.loading({ content: t('switching_organization'), key: 'organization-switch' });
+    messageApi.loading({ content: t('switching_organization'), key: 'organization-switch' });
     setCurrentOrganization(org);
     clearProject();
     resetProjectScopedData();
     void queryClient.invalidateQueries({ queryKey: ['projects'] });
     void queryClient.invalidateQueries({ queryKey: ['conversations'] });
-    message.success({
+    messageApi.success({
       content: t('switched_organization', { name: org.name }),
       key: 'organization-switch',
       duration: 2,
@@ -217,7 +268,7 @@ export const LayoutHeader: React.FC<Props> = ({
         resetProjectScopedData();
         setCreateProjectModalOpen(false);
         createForm.resetFields();
-        message.success({ content: t('project_created'), key: 'project-create', duration: 2 });
+        messageApi.success({ content: t('project_created'), key: 'project-create', duration: 2 });
 
         const conversation = await createConversation({
           project_id: newProject.id,
@@ -233,7 +284,15 @@ export const LayoutHeader: React.FC<Props> = ({
         // Handled — upgrade modal shown
       } else {
         console.error('Failed to create project:', error);
-        message.error(t('failed_create_project'));
+        // Surface the backend's actual reason (e.g. a permission error) when
+        // available, rather than always showing the same generic string --
+        // a bare "Failed to create project" gives the user (and anyone
+        // debugging their report afterward) nothing to go on for anything
+        // other than the quota case handled above.
+        const detail = error instanceof ApiError && error.message ? error.message : null;
+        messageApi.error(
+          detail ? `${t('failed_create_project')}: ${detail}` : t('failed_create_project')
+        );
       }
     } finally {
       setCreateLoading(false);
@@ -249,10 +308,16 @@ export const LayoutHeader: React.FC<Props> = ({
         void queryClient.invalidateQueries({ queryKey: ['workspace-config'] });
         setCreateOrgModalOpen(false);
         orgForm.resetFields();
-        message.success(t('organization_created'));
+        messageApi.success(t('organization_created'));
       }
     } catch (error) {
       console.error('Failed to create organization:', error);
+      // Previously silent on failure -- the modal just sat there with the
+      // loading spinner stopped and no explanation, e.g. on the real 409
+      // "you already belong to an organization" case self-serve multi-org
+      // creation returns.
+      const detail = error instanceof ApiError && error.message ? error.message : null;
+      messageApi.error(detail || t('failed_create_organization'));
     } finally {
       setCreateOrgLoading(false);
     }
@@ -262,7 +327,9 @@ export const LayoutHeader: React.FC<Props> = ({
     'linear-gradient(135deg, var(--color-bg-navigation-header, var(--color-bg-navigation)) 0%, var(--color-bg-navigation-header-glow, rgba(255,255,255,0.25)) 100%)';
 
   return (
-    <Layout.Header
+    <>
+      {contextHolder}
+      <Layout.Header
       className="layout-app-header"
       style={{
         lineHeight: '64px',
@@ -400,6 +467,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 icon={<WarningOutlined />}
                 onClick={() => router.push('/settings?tab=data-sources')}
                 className="header-shell-icon-btn icon-only-btn"
+                aria-label={t('data_sources_failing', { count: failedDataSourcesCount })}
               />
             </Tooltip>
           )}
@@ -414,6 +482,7 @@ export const LayoutHeader: React.FC<Props> = ({
                   icon={<PlusOutlined />}
                   onClick={onOpenDataSourceModal}
                   className="header-shell-icon-btn icon-only-btn header-shell-icon-btn--primary icon-only-btn--primary"
+                  aria-label={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
                 />
               </Badge>
             </Tooltip>
@@ -425,9 +494,12 @@ export const LayoutHeader: React.FC<Props> = ({
                 icon={<BgColorsOutlined />}
                 onClick={() => setCustomizerOpen(true)}
                 className="header-shell-icon-btn icon-only-btn"
+                aria-label={t('customize_theme')}
               />
             </Tooltip>
           )}
+
+          {isEnterpriseEdition && <ActivityInboxBell />}
 
           <UserProfileDropdown showText={false} className="header-profile-trigger" />
         </div>
@@ -546,5 +618,6 @@ export const LayoutHeader: React.FC<Props> = ({
         </Modal>
       )}
     </Layout.Header>
+    </>
   );
 };

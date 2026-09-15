@@ -94,7 +94,7 @@ export function GlobalFiltersEditor({
         confirmLoading={saving}
         width={720}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <Space orientation="vertical" style={{ width: '100%' }} size={12}>
           {draft.map((f, idx) => {
             const tables = f.dataSourceId ? tableOptionsBySource[f.dataSourceId] || [] : [];
             return (

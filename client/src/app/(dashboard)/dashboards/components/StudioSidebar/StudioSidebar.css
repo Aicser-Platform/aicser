@@ -477,7 +477,11 @@
   min-width: 0;
   background: var(--ant-color-bg-container);
   border-right: 1px solid var(--ant-color-border);
-  overflow: hidden;
+  /* Was overflow:hidden - clipped the table list / field properties panel
+     with no way to reach anything past the pane's height (e.g. a source with
+     many tables, or a field with a long description) instead of scrolling. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .data-workbench-properties {

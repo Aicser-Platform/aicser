@@ -6,7 +6,7 @@ import { RocketOutlined, RobotOutlined, ReloadOutlined, CloseOutlined, SendOutli
 import { getChatHref } from '@/utils/appPaths';
 import { useRouter } from 'next/navigation';
 import { ChartTypeSelect } from '@/components/charts/ChartTypeSelect';
-import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
+import { dashboardChartTypeSwitchTargets } from '@/components/charts/chartTypeCatalog';
 import { fetchApi } from '@/utils/api';
 import { useProjectStore } from '@/stores/useProjectStore';
 
@@ -102,7 +102,7 @@ function buildExplainQuery(title: string, summary: string, followUp?: string): s
   if (followUp?.trim()) {
     return `Regarding the dashboard widget "${title}":\n${summary}\n\n${followUp.trim()}`;
   }
-  return `Explain the insights from the dashboard widget "${title}" in clear business language. Focus on trends, outliers, and actionable takeaways (3–5 short paragraphs).\n\nWidget data context:\n${summary || 'No summary available.'}`;
+  return `Explain the insights from the dashboard widget "${title}" in clear business language. Focus on trends, outliers, and actionable takeaways (3–5 short paragraphs). If a different chart type or field mapping would tell the story better, say so briefly at the end.\n\nWidget data context:\n${summary || 'No summary available.'}`;
 }
 
 async function ensureExplainConversation(opts: {
@@ -213,7 +213,8 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
     router.push(
       getChatHref({
         prompt: buildExplainQuery(title, summary),
-        dataSourceId: widget?.dataSourceId,
+        // Chat's deep-link reader only checks the snake_case key — see chat/page.tsx.
+        data_source_id: widget?.dataSourceId,
       }),
     );
     onClose();
@@ -294,7 +295,7 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
         </div>
       }
       placement="right"
-      width={420}
+      size={420}
       open={open}
       onClose={handleClose}
       closeIcon={<CloseOutlined />}
@@ -375,7 +376,11 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
           <ChartTypeSelect
             className="chart-type-select"
             value={(widget.chartType || 'bar').toLowerCase()}
-            availableTypes={DASHBOARD_SWITCHABLE_CHART_TYPES}
+            // Safe switch targets only (core 8), plus the widget's own current type if it's
+            // one of the extended 7 (e.g. AI-authored Geo/Heatmap) — see
+            // dashboardChartTypeSwitchTargets in chartTypeCatalog.ts for why the extended
+            // types aren't offered as switch targets.
+            availableTypes={dashboardChartTypeSwitchTargets(widget.chartType)}
             onChange={(type) => {
               if (type !== (widget.chartType || '').toLowerCase()) onChangeChartType(type);
             }}
@@ -391,7 +396,7 @@ export const ExplainChartDrawer: React.FC<ExplainChartDrawerProps> = ({
           <Space.Compact style={{ width: '100%' }}>
             <Input
               size="small"
-              placeholder="e.g. What's driving the spike in March?"
+              placeholder="e.g. What's driving March? Or: suggest a better chart type"
               value={followUp}
               onChange={(e) => setFollowUp(e.target.value)}
               onPressEnter={askFollowUp}

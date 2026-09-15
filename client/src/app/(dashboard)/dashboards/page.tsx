@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal, Drawer, Spin } from 'antd';
 import { DashboardLibrarySelect } from './components/DashboardLibrarySelect';
@@ -17,6 +17,8 @@ import './DashboardStudio.css';
 import { PropertiesPanel } from './Properties/PropertiesPanel';
 import DashboardCanvas from './Canvas/DashboardCanvas';
 import { DashboardViewerGrid } from './components/viewer/DashboardViewerGrid';
+import { DashboardExecutiveBanner } from './components/viewer/DashboardExecutiveBanner';
+import { executiveMetaFromConfig, widgetInsightsFromWidgets } from './utils/dashboardExecutiveMeta';
 import { useDashboardStore, type WidgetInstance, type LayoutItem, type RuntimeFilter, WidgetType, pushUndoSnapshot } from './stores/useDashboardStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { DashboardTabs } from './components/DashboardTabs';
@@ -41,6 +43,7 @@ import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/constants/permissions';
 import { applyPresetWithScaffolds } from './utils/layoutScaffolds';
+import { buildStoryStarterLayout, type StoryStarterId } from './utils/storyStarters';
 import { inferPrimaryDataSourceId } from './utils/filterFieldUsage';
 import type { DashboardFilter } from '@/types/dashboard';
 import shortid from 'shortid';
@@ -51,6 +54,7 @@ import { WIDGET_TEMPLATES } from './widgetTemplates';
 import { exitDocumentFullscreen } from './utils/studioNavigation';
 import { shouldPersistLayoutSync } from './utils/layoutSyncGuard';
 import { useChartImportFromChat } from './hooks/useChartImportFromChat';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { StudioSidebarRail, type SidebarSection } from './components/StudioSidebar/StudioSidebarRail';
 import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
 import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
@@ -87,6 +91,8 @@ export default function NewDashboardStudio() {
   const requestedStudioMode = searchParams?.get('mode');
   const fromChatMessageId = searchParams?.get('from_chat');
   const liveBuildParam = searchParams?.get('live') === '1';
+  const requestedStudioSection = searchParams?.get('studio_section');
+  const requestedStudioSource = searchParams?.get('studio_source');
   const appliedDashboardIdRef = useRef<string | null>(null);
   const dashboards = useDashboardStore((s) => s.dashboards);
   const isLoadingDashboards = useDashboardStore((s) => s.isLoadingDashboards);
@@ -300,6 +306,16 @@ export default function NewDashboardStudio() {
   const [collabCommentsOpen, setCollabCommentsOpen] = useState(false);
 
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const router = useRouter();
+  const [projectWaitTimedOut, setProjectWaitTimedOut] = useState(false);
+  useEffect(() => {
+    if (!(isEnterpriseEdition && !currentProjectId)) {
+      setProjectWaitTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setProjectWaitTimedOut(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [currentProjectId]);
   const td = useTranslations('dashboards');
   const filterCtx = useDashboardFilterContext(currentProjectId);
   const { handleRuntimeFiltersChange, runRefresh } = filterCtx;
@@ -318,6 +334,16 @@ export default function NewDashboardStudio() {
 
   const activeDashboard = useDashboardStore((s) =>
     s.dashboards.find((d) => d.id === s.activeDashboardId),
+  );
+  // AI-generated dashboards can carry a key_insight/story_arc on their config
+  // plus per-widget insight subtitles -- previously only ever rendered in
+  // DashboardViewerShell (shared link / embed / publish), never here, so a
+  // dashboard built or normally viewed in-app never showed this and it only
+  // ever appeared as a surprise once shared or exported. Same data, same
+  // component, just also wired into the studio's own read-only view mode.
+  const executiveMeta = useMemo(
+    () => executiveMetaFromConfig(activeDashboard?.config as Record<string, unknown> | undefined),
+    [activeDashboard?.config],
   );
   const linkedFeedPostId = feedPostIdFromDashboardConfig(
     activeDashboard?.config as Record<string, unknown> | undefined,
@@ -447,6 +473,11 @@ export default function NewDashboardStudio() {
     [filterCtx.pageWidgets, filterCtx.combinedFiltersConfig],
   );
 
+  const widgetInsights = useMemo(
+    () => widgetInsightsFromWidgets(studioView.visibleWidgets),
+    [studioView.visibleWidgets],
+  );
+
   useEffect(() => {
     if (!isEditMode && filterCtx.combinedFiltersConfig.length > 0) {
       filterCtx.setFiltersPanelOpen(true);
@@ -482,6 +513,20 @@ export default function NewDashboardStudio() {
     }
   }, []);
   const [selectedRelationship, setSelectedRelationship] = useState<DataModelRelationship | null>(null);
+
+  // Deep link into a specific sidebar section + data source, e.g. Semantic
+  // Studio's Entity Graph tab links here (?studio_section=modeling&studio_source=<id>)
+  // instead of duplicating the relationship canvas on its own page.
+  const selectDataSourceForDeepLink = useDataSourceStore((s) => s.select);
+  useEffect(() => {
+    if (requestedStudioSection === 'modeling' || requestedStudioSection === 'data') {
+      handleSidebarSectionChange(requestedStudioSection);
+    }
+    if (requestedStudioSource) {
+      selectDataSourceForDeepLink(requestedStudioSource);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedStudioSection, requestedStudioSource]);
 
   const [sampleTemplates, setSampleTemplates] = useState<DashboardTemplate[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
@@ -869,6 +914,28 @@ export default function NewDashboardStudio() {
     [filterCtx, layout, widgets, t],
   );
 
+  const applyStoryStarter = useCallback(
+    (starterId: StoryStarterId) => {
+      const built = buildStoryStarterLayout(starterId, (key) => t(key));
+      if (!built) return;
+      pushUndoSnapshot();
+      const defaultPage = filterCtx.defaultPageIdRef.current || filterCtx.pages[0]?.id || null;
+      const scopedItems = filterCtx.pageLayout.length ? filterCtx.pageLayout : layout;
+      filterCtx.updatePageLayout(
+        filterCtx.activePageId,
+        [...scopedItems, ...built.layout],
+        defaultPage,
+      );
+      const prevWidgets = useDashboardStore.getState().widgets;
+      useDashboardStore.getState().setWidgets([...prevWidgets, ...built.widgets]);
+      built.widgets.forEach((w) => {
+        void createChartAndFetchData(w);
+      });
+      message.success(t('story_starter_added', { count: built.widgets.length }));
+    },
+    [createChartAndFetchData, filterCtx, layout, t],
+  );
+
   const handleAddFilterPreset = useCallback(
     async (partial: Partial<DashboardFilter>) => {
       const primaryDs = inferPrimaryDataSourceId(widgets);
@@ -979,9 +1046,20 @@ export default function NewDashboardStudio() {
                 {isEnterpriseEdition && !currentProjectId ? t('waiting_project') : t('loading_dashboards')}
               </Text>
               {isEnterpriseEdition && !currentProjectId && (
-                <Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
-                  {t('waiting_project_hint')}
-                </Text>
+                <>
+                  <Text type="secondary" style={{ display: 'block', fontSize: 13 }}>
+                    {projectWaitTimedOut ? t('waiting_project_timeout') : t('waiting_project_hint')}
+                  </Text>
+                  {projectWaitTimedOut && (
+                    <Button
+                      type="primary"
+                      style={{ marginTop: 12 }}
+                      onClick={() => router.push('/settings?tab=project')}
+                    >
+                      {t('waiting_project_cta')}
+                    </Button>
+                  )}
+                </>
               )}
             </>
           }
@@ -1233,6 +1311,7 @@ export default function NewDashboardStudio() {
                 hideLayout={isFullscreen || !isEditMode}
                 onRefresh={!isFullscreen ? filterCtx.handleManualRefresh : undefined}
                 refreshing={filterCtx.refreshing}
+                onClearFilters={!isFullscreen ? handleToolbarClearFilters : undefined}
                 lastRefreshedLabel={!isFullscreen ? filterCtx.lastRefreshedLabel : undefined}
                 autoRefreshMinutes={filterCtx.autoRefreshMinutes}
                 onAutoRefreshIntervalChange={
@@ -1303,6 +1382,13 @@ export default function NewDashboardStudio() {
                   onClearAll={handleToolbarClearFilters}
                   onRefresh={filterCtx.handleManualRefresh}
                   refreshing={filterCtx.refreshing}
+                  // Normal view mode already has these on the main studio
+                  // toolbar (StudioContextBar) - showing them here too was a
+                  // duplicate refresh button and a stranded-from-the-filter-
+                  // icon reset button. Presentation/fullscreen mode hides its
+                  // own toolbar controls, so this remains the only place for
+                  // them there.
+                  showToolbarActions={isFullscreen}
                 />
               ) : null}
             </div>
@@ -1334,16 +1420,24 @@ export default function NewDashboardStudio() {
                 />
               ) : null}
               {!isEditMode && activeDashboardId ? (
-                <DashboardViewerGrid
-                  widgets={studioView.visibleWidgets}
-                  layout={studioView.visibleLayout}
-                  dashboardId={activeDashboardId}
-                  runtimeFilters={filterCtx.runtimeFilters}
-                  onCrossFilter={filterCtx.handleCrossFilter}
-                  onWidgetChartClick={filterCtx.handleWidgetChartClick}
-                  onRetryWidget={studioView.handleRetryWidget}
-                  refreshing={filterCtx.refreshing}
-                />
+                <>
+                  <DashboardExecutiveBanner
+                    keyInsight={executiveMeta.keyInsight}
+                    storyArc={executiveMeta.storyArc}
+                    widgetInsights={widgetInsights}
+                    dashboardId={activeDashboardId}
+                  />
+                  <DashboardViewerGrid
+                    widgets={studioView.visibleWidgets}
+                    layout={studioView.visibleLayout}
+                    dashboardId={activeDashboardId}
+                    runtimeFilters={filterCtx.runtimeFilters}
+                    onCrossFilter={filterCtx.handleCrossFilter}
+                    onWidgetChartClick={filterCtx.handleWidgetChartClick}
+                    onRetryWidget={studioView.handleRetryWidget}
+                    refreshing={filterCtx.refreshing}
+                  />
+                </>
               ) : (
               <DashboardCanvas
                 widgets={filterCtx.pageWidgets}
@@ -1369,6 +1463,7 @@ export default function NewDashboardStudio() {
                 onAddWidget={(template) => {
                   if (template) addWidget(template);
                 }}
+                onApplyStoryStarter={applyStoryStarter}
                 onDropWidget={(template, position) => addWidget(template, position)}
                 setPropertiesCollapsed={setPropertiesCollapsed}
                 onUpdateWidget={onUpdateWidget}
@@ -1437,6 +1532,7 @@ export default function NewDashboardStudio() {
               runtimeFilters={filterCtx.runtimeFilters}
               onRuntimeFiltersChange={filterCtx.handleRuntimeFiltersChange}
               onOpenManageFilters={() => filterCtx.setPageFiltersEditorOpen(true)}
+              onOpenDataModeling={() => handleSidebarSectionChange('modeling')}
             />
           ) : null}
         </div>

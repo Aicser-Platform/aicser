@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Select,
-    Card,
     Space,
     Tag,
     Button,
@@ -157,7 +156,7 @@ function modelMatchesSearch(model: ModelInfo, input: string): boolean {
 }
 
 const FALLBACK_DESC: Record<string, string> = {
-  auto: 'Automatically picks the best model for each task — recommended for most users.',
+  auto: 'Picks the best available LLM — click to choose a specific model',
   azure_gpt41_mini:
     'Fast, cost-effective model for everyday analysis — great for SQL generation, summaries, and quick insights.',
   openai_gpt4o_mini: 'Reliable general-purpose model with good quality and low latency — ideal for daily use.',
@@ -169,12 +168,12 @@ const FALLBACK_DESC: Record<string, string> = {
 // glance. This one is specifically about which LLM answers, so it says so.
 const AUTO_MODEL: ModelInfo = {
   id: 'auto',
-  name: 'Auto model',
+  name: 'Best available',
   provider: 'auto',
   cost_per_1k_tokens: 0,
   available: true,
   category: 'auto',
-  description: FALLBACK_DESC.auto,
+  description: 'Picks the best available LLM — click to choose a specific model',
 };
 
 /** Composer toolbar: show friendly label; full id stays in tooltip (e.g. "Gemini (gemini-…)" → "Gemini"). */
@@ -351,7 +350,15 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   };
 
-  const allModels = useMemo(() => [AUTO_MODEL, ...models], [models]);
+  // Hide the platform's bundled default models (GLM primary, Azure/OpenAI
+  // fallbacks, DeepSeek, MiMo, ...) and show only "Best available" plus any
+  // model the user has personally configured via BYOK in Settings > API Keys —
+  // 'auto' still silently resolves to whichever platform default is configured
+  // server-side, it's just not offered as an explicit pick here. BYOK model ids
+  // always start with 'byok_' (see user_byok_models.py's BYOK_INTERNAL_ID /
+  // byok_internal_id()).
+  const visibleModels = useMemo(() => models.filter((m) => m.id.startsWith('byok_')), [models]);
+  const allModels = useMemo(() => [AUTO_MODEL, ...visibleModels], [visibleModels]);
   const selectedData = allModels.find((m) => m.id === selectedModel);
 
     // ── Compact mode (chat toolbar) ───────────────────────────────────────────
@@ -512,7 +519,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     // Tier order still groups models (fast models first, etc.) but without a
                     // visible section label — the label duplicated info already on the item
                     // (or was simply unnecessary chrome in this compact dropdown).
-                    const groups = groupModelsByTier(models);
+                    const groups = groupModelsByTier(visibleModels);
                     return (
                         <>
                             {renderModelOption(AUTO_MODEL)}
@@ -526,18 +533,29 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
 
     // ── Full (settings) mode ──────────────────────────────────────────────────
+    // Deliberately no self-titled Card here: every real caller (Settings → API
+    // Keys → Providers, EmbedAssistantModal's "Preferred Model" Form.Item)
+    // already sits inside its own Card/Form.Item framing, so this used to
+    // render as a bordered, titled card nested inside another one - visibly
+    // inconsistent with the flat provider-list rows right above it in
+    // ApiKeysTab, and a redundant second "title" stacked under the Form.Item
+    // label in EmbedAssistantModal. The refresh affordance moves to a small
+    // inline link next to the select instead of a Card corner slot.
     return (
-        <Card
-            title={<Space><ExperimentOutlined /> {t('ai_model_selection')}</Space>}
-            size="small"
-            className={className}
-            extra={
-                <Button size="small" onClick={loadModels} loading={loading} icon={<ThunderboltOutlined />}>
-                    {t('refresh')}
-                </Button>
-            }
-        >
-            <Space direction="vertical" style={{ width: '100%' }}>
+        <div className={className}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={loadModels}
+                        loading={loading}
+                        icon={<ThunderboltOutlined />}
+                        style={{ paddingInline: 0, height: 'auto' }}
+                    >
+                        {t('refresh')}
+                    </Button>
+                </div>
                 <Select
                     value={selectedModel}
                     onChange={onSelect}
@@ -624,7 +642,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                                 </Option>
                             );
                         };
-                        const groups = groupModelsByTier(models);
+                        const groups = groupModelsByTier(visibleModels);
                         const tierLabelKey: Record<TierKey, string> = {
                             fast: 'tier_group_fast',
                             standard: 'tier_group_standard',
@@ -676,7 +694,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     />
                 )}
 
-                {models.some(m => !m.available) && (
+                {visibleModels.some(m => !m.available) && (
                     <Alert
                         message={t('some_models_unavailable')}
                         description={t('configure_api_keys_enable_models')}
@@ -691,7 +709,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
                     </Text>
                 )}
             </Space>
-        </Card>
+        </div>
     );
 };
 

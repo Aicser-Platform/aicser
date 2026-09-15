@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { proxyEePricingRequest } from '@/ee';
+import { proxyEePricingRequest } from '@/ee/api/pricingProxy';
 
 type RouteContext = { params?: Promise<Record<string, unknown>> | Record<string, unknown> };
 

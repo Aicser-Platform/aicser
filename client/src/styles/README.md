@@ -16,14 +16,15 @@
 @import '../styles/aiser-navigation-unified.css';
 @import '../styles/aiser-component-separation.css';
 @import '../styles/aiser-unified-design-system.css';
-@import '../styles/aiser-aesthetic-enhancements.css';
 @import '../styles/dashboard-page-visual-language.css';
 @import '../styles/page-shell.css';
 @import '../styles/aiser-interaction-system.css';
 @import '../styles/workspace-chrome.css';  /* LAST — workspace flat chrome, nested card fixes */
 ```
 
-**Why this order?** Layout first, then color tokens, navigation, component overrides, unified tokens, aesthetic polish, page visual language, page-shell scroll/height, **aiser-interaction-system.css** for one hover/overlay language, then **workspace-chrome.css** for flat layout workspaces.
+**Why this order?** Layout first, then color tokens, navigation, component overrides, unified design system, page visual language, page-shell scroll/height, **aiser-interaction-system.css** for one hover/overlay language, then **workspace-chrome.css** for flat layout workspaces.
+
+**2026-09 consolidation:** `aiser-aesthetic-enhancements.css` used to load right after `aiser-unified-design-system.css` and independently redefined many of the same selectors (cards, buttons, panels, tabs, tags, dividers, scrollbars, page layout) with different values — a second, uncoordinated "base look" file, contradicting the one-owner-per-control rule below. Merged into `aiser-unified-design-system.css` (see that file's header comment) preserving the exact cascade order the two files used to have, so it changed no rendered pixel. The merge is flagged internally as PART 1 (former unified) / PART 2 (former aesthetic-enhancements, still winning conflicts) — reconciling those into single declarations is a deliberate follow-up that needs visual review, not a blind next step.
 
 ---
 
@@ -37,8 +38,7 @@
 | `aiser-color-system.css` | Base color tokens (light/dark), component color mapping |
 | `aiser-navigation-unified.css` | Header, sidebar, menu backgrounds |
 | `aiser-component-separation.css` | Component-specific overrides |
-| `aiser-unified-design-system.css` | Spacing, radius, shadows, card/button/input styles + interaction tokens |
-| `aiser-aesthetic-enhancements.css` | Premium polish (tabs, modals, depth) |
+| `aiser-unified-design-system.css` | Spacing, radius, shadows, card/button/input styles + interaction tokens + premium polish (tabs, modals, depth) — merged with the former `aiser-aesthetic-enhancements.css`, 2026-09 |
 | `aiser-interaction-system.css` | **Canonical** hover, focus, overlay single-border |
 | `workspace-chrome.css` | Flat layout workspaces; nested card fixes (imported last) |
 
@@ -84,7 +84,7 @@ Use `DashboardPageShell fillHeight` for query editor and other full-viewport wor
 2. **Shell scroll/height conflict?** → `page-shell.css` only
 3. **Base colors?** → `aiser-color-system.css`
 4. **Navigation?** → `aiser-navigation-unified.css`
-5. **Component visuals?** → `aiser-unified-design-system.css` or `aiser-aesthetic-enhancements.css`
+5. **Component visuals?** → `aiser-unified-design-system.css`
 6. **Page headers/tables/tabs?** → `dashboard-page-visual-language.css`
 7. **Token alias?** → `app/globals.css` (Legacy Token Aliases section)
 

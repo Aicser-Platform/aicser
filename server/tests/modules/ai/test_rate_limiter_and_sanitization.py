@@ -1,15 +1,18 @@
+import pytest
+
 from src.shared.middleware.rate_limiter import RateLimiter
-from src.modules.ai.utils.input_sanitization import sanitize_user_query
+from ee.modules.ai.utils.input_sanitization import sanitize_user_query
 
 
-def test_rate_limiter_blocks_after_threshold():
+@pytest.mark.asyncio
+async def test_rate_limiter_blocks_after_threshold():
     limiter = RateLimiter(requests_per_minute=2, tokens_per_minute=1000, cost_weight=1.0)
     user_id = "u1"
     org_id = "o1"
 
-    allowed1, _ = limiter.check_rate_limit(user_id, org_id)
-    allowed2, _ = limiter.check_rate_limit(user_id, org_id)
-    allowed3, reason3 = limiter.check_rate_limit(user_id, org_id)
+    allowed1, _ = await limiter.check_rate_limit(user_id, org_id)
+    allowed2, _ = await limiter.check_rate_limit(user_id, org_id)
+    allowed3, reason3 = await limiter.check_rate_limit(user_id, org_id)
 
     assert allowed1 is True
     assert allowed2 is True

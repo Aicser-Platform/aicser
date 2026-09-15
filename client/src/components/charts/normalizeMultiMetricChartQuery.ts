@@ -7,6 +7,7 @@
  */
 
 import type { ChartQuery } from '@/app/(dashboard)/dashboards/services/chartService';
+import { isMeasureColumn } from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
 
 const AGG_MODES = new Set([
   'count',
@@ -23,12 +24,6 @@ const MAX_METRICS = 5;
 
 function isAggMode(value: unknown): boolean {
   return typeof value === 'string' && AGG_MODES.has(value.trim().toLowerCase());
-}
-
-function isNumericCell(val: unknown): boolean {
-  if (typeof val === 'number' && Number.isFinite(val)) return true;
-  if (typeof val === 'string' && val.trim() !== '' && !Number.isNaN(Number(val))) return true;
-  return false;
 }
 
 function caseMatch(columns: string[], name: string): string | undefined {
@@ -90,9 +85,7 @@ export function promoteChartQueryToMultiMetrics(
   if (!x && rows && columns.length) {
     const nonNumeric = columns.find((col) => {
       if (groupField && col.toLowerCase() === groupField.toLowerCase()) return false;
-      const vals = rows.map((r) => r[col]).filter((v) => v != null && v !== '');
-      if (!vals.length) return true;
-      return !vals.every((v) => isNumericCell(v));
+      return !isMeasureColumn(col, rows);
     });
     x = nonNumeric || columns[0];
   }
@@ -152,7 +145,7 @@ export function promoteChartQueryToMultiMetrics(
         if (x && col.toLowerCase() === x.toLowerCase()) continue;
         if (groupField && col.toLowerCase() === groupField.toLowerCase()) continue;
         if (col.toLowerCase() === seed.toLowerCase()) continue;
-        if (rows.some((r) => isNumericCell(r[col]))) extra.push(col);
+        if (isMeasureColumn(col, rows)) extra.push(col);
       }
     }
     const expanded = uniqueFields([seed, ...extra]);
@@ -174,7 +167,7 @@ export function promoteChartQueryToMultiMetrics(
       const numericCols = columns.filter((col) => {
         if (x && col.toLowerCase() === x.toLowerCase()) return false;
         if (groupField && col.toLowerCase() === groupField.toLowerCase()) return false;
-        return rows.some((r) => isNumericCell(r[col]));
+        return isMeasureColumn(col, rows);
       });
       // Prefer hint order, then any remaining numeric columns from the result set
       fields = uniqueFields([...resolvedHints, ...numericCols]);
@@ -191,7 +184,7 @@ export function promoteChartQueryToMultiMetrics(
     const dims = columns.filter((col) => {
       if (x && col.toLowerCase() === x.toLowerCase()) return false;
       if (measureSet.has(col.toLowerCase())) return false;
-      return !rows.every((r) => r[col] == null || isNumericCell(r[col]));
+      return !isMeasureColumn(col, rows);
     });
     if (dims.length >= 1) {
       groupField = dims[0];
@@ -208,7 +201,7 @@ export function promoteChartQueryToMultiMetrics(
         columns.filter((col) => {
           if (x && col.toLowerCase() === x.toLowerCase()) return false;
           if (groupField && col.toLowerCase() === groupField.toLowerCase()) return false;
-          return rows.some((r) => isNumericCell(r[col]));
+          return isMeasureColumn(col, rows);
         }).length > 1);
     if (preferMulti) {
       groupField = undefined;
@@ -274,7 +267,7 @@ export function promoteChartQueryToMultiMetrics(
       if (used.has(col.toLowerCase())) return false;
       const vals = rows.map((r) => r[col]).filter((v) => v != null && v !== '');
       if (!vals.length) return false;
-      return !vals.every((v) => isNumericCell(v));
+      return !isMeasureColumn(col, rows);
     });
     let drillPath = existingDrill.filter((d) => !used.has(d.toLowerCase()));
     // Auto-fill remaining dims only when a multi-level hierarchy is obvious (3+ cats total)

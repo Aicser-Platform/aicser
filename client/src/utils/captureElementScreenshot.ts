@@ -4,6 +4,12 @@ export interface CaptureElementScreenshotOptions {
   ignoreClassNames?: string[];
   /** Class toggled on the element for the duration of capture (e.g. forces light theme). */
   toggleClassName?: string;
+  /** Caps the captured height to this many CSS px from the element's top — for a tall
+   * scrolling document (e.g. a report), the feed card's aspect-video/object-cover crop
+   * otherwise shows a near-random slice from the vertical middle instead of the title
+   * and first exhibit. Omit for elements that are already roughly card-shaped
+   * (dashboards, single charts). */
+  maxHeightPx?: number;
 }
 
 function supportsWebpToBlob(canvas: HTMLCanvasElement): boolean {
@@ -33,6 +39,9 @@ export async function captureElementScreenshot(
     if (typeof html2canvas !== 'function') return null;
 
     const ignoreClassNames = options.ignoreClassNames ?? [];
+    const capHeight = options.maxHeightPx
+      ? Math.min(options.maxHeightPx, element.scrollHeight)
+      : undefined;
     const canvas = await html2canvas(element, {
       backgroundColor: options.backgroundColor ?? '#ffffff',
       scale: 1.5,
@@ -41,6 +50,7 @@ export async function captureElementScreenshot(
       ignoreElements: ignoreClassNames.length
         ? (el) => ignoreClassNames.some((name) => el.classList?.contains(name))
         : undefined,
+      ...(capHeight ? { height: capHeight, windowHeight: capHeight } : {}),
     });
 
     const mimeType = supportsWebpToBlob(canvas) ? 'image/webp' : 'image/png';

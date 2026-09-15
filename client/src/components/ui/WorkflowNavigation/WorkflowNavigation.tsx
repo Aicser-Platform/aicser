@@ -230,26 +230,26 @@ const WorkflowNavigation: React.FC<WorkflowNavigationProps> = ({
             </div>
             
             {/* Current Step Info */}
-            <div style={{ 
-                padding: '12px 16px', 
-                backgroundColor: '#1f1f1f', 
+            <div style={{
+                padding: '12px 16px',
+                backgroundColor: 'var(--ant-color-bg-elevated)',
                 borderRadius: '6px',
                 marginTop: '16px',
-                border: '1px solid #434343'
+                border: '1px solid var(--ant-color-border)'
             }}>
-                <div style={{ fontWeight: 500, marginBottom: '4px', color: '#ffffff' }}>
+                <div style={{ fontWeight: 500, marginBottom: '4px', color: 'var(--ant-color-text)' }}>
                     {currentStepData?.title}
                 </div>
                 {currentStepData?.description && (
-                    <div style={{ color: '#d9d9d9', fontSize: '14px' }}>
+                    <div style={{ color: 'var(--ant-color-text-secondary)', fontSize: '14px' }}>
                         {currentStepData.description}
                     </div>
                 )}
                 {currentStepData?.isRequired && (
-                    <Badge 
-                        status="warning" 
-                        text="Required step" 
-                        style={{ marginTop: '8px', color: '#ffffff' }}
+                    <Badge
+                        status="warning"
+                        text="Required step"
+                        style={{ marginTop: '8px', color: 'var(--ant-color-text)' }}
                     />
                 )}
             </div>

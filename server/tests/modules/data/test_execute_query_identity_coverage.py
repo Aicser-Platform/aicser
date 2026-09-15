@@ -41,7 +41,24 @@ def _calls_missing_identity(path: Path) -> list[int]:
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if not isinstance(func, ast.Attribute) or func.attr != "execute_query":
+        if not isinstance(func, ast.Attribute):
+            continue
+        is_execute_query = func.attr == "execute_query"
+        # ChartService.execute() enforces the same row/column security as
+        # execute_query() and fails closed the same way on identity=None -
+        # live-reproduced: dashboard_generation_service.py's widget-preview
+        # prefetch called `chart_svc.chart_service.execute(chart)` with no
+        # identity, silently refusing every widget on a column-secured
+        # source. execute_query's own name check above can't cover this (a
+        # bare .execute() is far too generic - every SQLAlchemy session has
+        # one), so this only matches the specific `<x>.chart_service.execute(...)`
+        # two-level shape actually used for chart data reads.
+        is_chart_service_execute = (
+            func.attr == "execute"
+            and isinstance(func.value, ast.Attribute)
+            and func.value.attr == "chart_service"
+        )
+        if not (is_execute_query or is_chart_service_execute):
             continue
         if _attribute_name(func.value) in EXEMPT_RECEIVERS:
             continue
@@ -63,9 +80,10 @@ def test_every_execute_query_call_states_an_identity():
                 offenders.append(f"{relative}:{line}")
 
     assert not offenders, (
-        "These execute_query calls pass no identity, so they will be denied on any "
-        "data source with a row filter policy. Pass QueryIdentity for a user-triggered "
-        "read, or SystemQuery(reason=...) for a background job:\n  "
+        "These execute_query()/chart_service.execute() calls pass no identity, so "
+        "they will be denied on any data source with a row/column filter policy. "
+        "Pass QueryIdentity for a user-triggered read, or SystemQuery(reason=...) "
+        "for a background job:\n  "
         + "\n  ".join(sorted(offenders))
     )
 

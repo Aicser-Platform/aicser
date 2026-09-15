@@ -6,18 +6,22 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
 import dynamic from 'next/dynamic';
+import { asDynamicModule } from '@/utils/asDynamicModule';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
+import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
+import { CommandPalette } from '@/components/search/CommandPalette';
+import GlobalPricingModal from '@/components/GlobalPricingModal';
 import '@/app/globals.css';
 
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 const BillingSuccessHandler = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.BillingSuccessHandler })),
-  { ssr: false, loading: () => null }
+  () => import('@/ee').then((m) => asDynamicModule(m.BillingSuccessHandler, () => null)),
+  { ssr: false, loading: () => null },
 );
 const TrialExpiryBanner = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.TrialExpiryBanner })),
-  { ssr: false, loading: () => null }
+  () => import('@/ee').then((m) => asDynamicModule(m.TrialExpiryBanner, () => null)),
+  { ssr: false, loading: () => null },
 );
 
 /**
@@ -92,8 +96,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ children }) => {
   return (
     <ProtectedRoute>
+      <SkipToContentLink />
       <SubscriptionInitializer />
       <TrialExpiryBanner />
+      <CommandPalette />
+      <GlobalPricingModal />
       <CustomLayout>
         {children}
       </CustomLayout>

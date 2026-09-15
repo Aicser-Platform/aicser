@@ -1,8 +1,12 @@
 """Conversation access and user-scoped listing helpers."""
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+from uuid import uuid4
+
 import pytest
 
-from src.modules.chats.conversations.service import ConversationService
+from ee.modules.chats.conversations.service import ConversationService
 
 
 def test_conversation_visible_to_owner():
@@ -34,7 +38,7 @@ def test_parse_metadata_merges_preserves_owner():
 
 
 def test_response_builder_dashboard_success():
-    from src.modules.ai.services.response_builder import build_workflow_response
+    from ee.modules.ai.services.response_builder import build_workflow_response
 
     state = {
         "current_stage": "dashboard_generation_complete",
@@ -50,7 +54,7 @@ def test_response_builder_dashboard_success():
 
 def test_conversation_visibility_sql_uses_text_cast_for_user_id():
     """asyncpg may bind UUID-shaped user ids as uuid; json_metadata is TEXT in DB."""
-    from src.modules.chats.conversations.service import _CONVERSATION_USER_VISIBILITY_SQL
+    from ee.modules.chats.conversations.service import _CONVERSATION_USER_VISIBILITY_SQL
 
     assert _CONVERSATION_USER_VISIBILITY_SQL.count("CAST(:user_id AS TEXT)") >= 2
     assert "json_metadata::jsonb" in _CONVERSATION_USER_VISIBILITY_SQL
@@ -63,10 +67,175 @@ def test_required_steps_subset_uses_set():
     assert set(REQUIRED_STEP_IDS).issubset(done)
 
 
+def _async_session_returning(project):
+    """Mimics `async with async_session() as session: await session.get(...)`."""
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=project)
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=session)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return lambda: cm
+
+
+@pytest.mark.asyncio
+async def test_project_access_denied_without_chat_view_permission():
+    """The exact gap this closes: previously ANY role at all (viewer
+    included) granted access - now it must be an actual chat:view holder."""
+    project_id = uuid4()
+    org_id = uuid4()
+    project = SimpleNamespace(organization_id=org_id)
+
+    with patch(
+        "ee.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=False),
+    ) as mock_check:
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(project_id))
+
+    assert result is False
+    mock_check.assert_awaited_once()
+    args = mock_check.await_args.args
+    assert args[1] == "chat:view"
+
+
+@pytest.mark.asyncio
+async def test_project_access_allowed_with_chat_view_permission():
+    project_id = uuid4()
+    project = SimpleNamespace(organization_id=uuid4())
+
+    with patch(
+        "ee.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=True),
+    ):
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(project_id))
+
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_project_access_false_when_project_missing():
+    with patch(
+        "ee.modules.chats.conversations.service.async_session",
+        new=_async_session_returning(None),
+    ):
+        result = await ConversationService._user_has_project_access(str(uuid4()), str(uuid4()))
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_check_project_access_router_rejects_without_permission():
+    from fastapi import HTTPException
+
+    from ee.modules.chats.conversations.router import _check_project_access
+
+    project = SimpleNamespace(organization_id=uuid4())
+    with patch(
+        "src.db.session.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=False),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await _check_project_access(str(uuid4()), str(uuid4()))
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_check_project_access_router_allows_with_permission():
+    from ee.modules.chats.conversations.router import _check_project_access
+
+    project = SimpleNamespace(organization_id=uuid4())
+    with patch(
+        "src.db.session.async_session",
+        new=_async_session_returning(project),
+    ), patch(
+        "src.modules.authentication.rbac.rbac_service.RBACService.check_permission",
+        new=AsyncMock(return_value=True),
+    ):
+        await _check_project_access(str(uuid4()), str(uuid4()))  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_require_conversation_access_missing_raises_404_not_403():
+    """The bug this closes: rerun-sql/add-message/feedback/goal all called
+    _verify_conversation_access directly, which returns False identically
+    whether the conversation doesn't exist or exists-but-denied - so a
+    stale/deleted conversation link (routine after e.g. a DB reset, or any
+    deleted conversation) surfaced as "Access denied" (403) instead of the
+    correct, less misleading 404. One router endpoint (get_conversation_goal)
+    even had its own 404 check as dead code, since the 403 from
+    _verify_conversation_access always fired first."""
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with patch.object(service, "get", new=AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc:
+            await service._require_conversation_access(str(uuid4()), "user-a")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_require_conversation_access_denied_raises_403():
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    conversation = SimpleNamespace(json_metadata=None, project_id=None)
+    with patch.object(service, "get", new=AsyncMock(return_value=conversation)), patch.object(
+        service, "_verify_conversation_access", new=AsyncMock(return_value=False)
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await service._require_conversation_access(str(uuid4()), "user-a")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_require_conversation_access_allowed_returns_conversation():
+    service = ConversationService()
+    conversation = SimpleNamespace(json_metadata=None, project_id=None)
+    with patch.object(service, "get", new=AsyncMock(return_value=conversation)), patch.object(
+        service, "_verify_conversation_access", new=AsyncMock(return_value=True)
+    ):
+        result = await service._require_conversation_access(str(uuid4()), "user-a")
+    assert result is conversation
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_missing_raises_404_not_500():
+    """A stale/deleted conversation link is a routine, expected condition -
+    get_conversation used to raise a bare Exception for this, which the
+    router's `except Exception -> HTTPException(500)` catch-all flattened
+    into a 500 "Internal Server Error", surfacing to the user as a real
+    backend fault instead of the clean 404 every other not-found path in
+    this router already returns."""
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with patch.object(service, "get", new=AsyncMock(return_value=None)):
+        with pytest.raises(HTTPException) as exc:
+            await service.get_conversation(str(uuid4()), offset=0, limit=100)
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_conversation_invalid_uuid_raises_400_not_500():
+    from fastapi import HTTPException
+
+    service = ConversationService()
+    with pytest.raises(HTTPException) as exc:
+        await service.get_conversation("not-a-uuid", offset=0, limit=100)
+    assert exc.value.status_code == 400
+
+
 def test_conversation_response_schema_coerces_jsonb_metadata():
     from uuid import uuid4
     from datetime import datetime, timezone
-    from src.modules.chats.conversations.schemas import ConversationResponseSchema
+    from ee.modules.chats.conversations.schemas import ConversationResponseSchema
 
     row = ConversationResponseSchema(
         id=uuid4(),

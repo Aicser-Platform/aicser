@@ -1,1 +1,1 @@
-export { useConversationStore } from '@/ee';
+export { useConversationStore } from '@/ee/stores/useConversationStore';

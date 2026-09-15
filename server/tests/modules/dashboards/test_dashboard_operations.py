@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, get_plan_limits
+from src.modules.dashboards.operations import (
+    merge_runtime_filters,
+    apply_drill_context,
+    detect_unsupported_runtime_filters,
+    detect_filter_overrides,
+    get_plan_limits,
+)
 
 
 def test_resolve_table_for_field_from_schema():
@@ -59,6 +65,66 @@ def test_merge_runtime_filters_appends_new_field():
     runtime = [{"field": "year", "operator": "eq", "value": 2024}]
     merged = merge_runtime_filters(base, runtime)
     assert len(merged["filters"]) == 2
+
+
+def test_detect_unsupported_runtime_filters_flags_sql_type():
+    """Regression: type='sql' runtime filters are correctly (and deliberately)
+    dropped by ChartService._apply_filters_db as a security control (a raw
+    client-supplied SQL clause is never spliced into the generated query) --
+    but that drop was completely silent, so a user configuring one got no
+    signal their filter was ignored. This is the API-boundary warning that
+    surfaces it; the actual enforcement is untouched and stays in
+    chart_service.py."""
+    runtime = [
+        {"field": "region", "operator": "eq", "value": "US"},
+        {"field": "custom", "type": "sql", "sql": "1=1 OR TRUE"},
+    ]
+    warnings = detect_unsupported_runtime_filters(runtime)
+    assert len(warnings) == 1
+    assert "custom" in warnings[0]
+    assert "not applied" in warnings[0].lower()
+
+
+def test_detect_unsupported_runtime_filters_empty_for_normal_filters():
+    runtime = [{"field": "region", "operator": "eq", "value": "US"}]
+    assert detect_unsupported_runtime_filters(runtime) == []
+    assert detect_unsupported_runtime_filters(None) == []
+    assert detect_unsupported_runtime_filters([]) == []
+
+
+def test_detect_filter_overrides_flags_same_field_replacement():
+    """Regression: merge_runtime_filters deliberately *replaces* (not
+    AND-combines) a widget's own saved filter on the same field a dashboard
+    filter targets — see its own docstring for why AND-combining same-field
+    filters is the worse footgun (region='US' AND region='EU' silently
+    returns nothing). Replace is correct, but was silent; this is the
+    API-boundary warning, same pattern as detect_unsupported_runtime_filters."""
+    base_query = {"filters": [{"field": "region", "operator": "eq", "value": "US"}]}
+    runtime = [{"field": "region", "operator": "eq", "value": "EU"}]
+    warnings = detect_filter_overrides(base_query, runtime)
+    assert len(warnings) == 1
+    assert "region" in warnings[0]
+
+
+def test_detect_filter_overrides_empty_for_different_fields():
+    base_query = {"filters": [{"field": "region", "operator": "eq", "value": "US"}]}
+    runtime = [{"field": "year", "operator": "eq", "value": 2024}]
+    assert detect_filter_overrides(base_query, runtime) == []
+
+
+def test_detect_filter_overrides_empty_without_saved_filters():
+    assert detect_filter_overrides({}, [{"field": "region", "operator": "eq", "value": "US"}]) == []
+    assert detect_filter_overrides({"filters": []}, [{"field": "region", "operator": "eq", "value": "US"}]) == []
+
+
+def test_detect_filter_overrides_dedupes_repeated_field():
+    base_query = {"filters": [{"field": "region", "operator": "eq", "value": "US"}]}
+    runtime = [
+        {"field": "region", "operator": "eq", "value": "EU"},
+        {"field": "region", "operator": "in", "value": ["EU", "APAC"]},
+    ]
+    warnings = detect_filter_overrides(base_query, runtime)
+    assert len(warnings) == 1
 
 
 def test_get_plan_limits_free():

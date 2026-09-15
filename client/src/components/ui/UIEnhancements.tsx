@@ -149,7 +149,7 @@ const UIEnhancements: React.FC<UIEnhancementsProps> = ({
         </Tooltip>
       )) : undefined}
     >
-      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+      <Space orientation="vertical" style={{ width: '100%' }} size="middle">
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <Space size="middle">

@@ -12,7 +12,13 @@ from src.modules.authentication.rbac.guard import require_permission, user_id_fr
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.charts.permissions import enforce_publish_owner_chart_edit
 from src.modules.dashboards.chart_data_validation import validate_chart_data
-from src.modules.dashboards.operations import merge_runtime_filters, apply_drill_context, verify_dashboard_read_access
+from src.modules.dashboards.operations import (
+    merge_runtime_filters,
+    apply_drill_context,
+    verify_dashboard_read_access,
+    detect_unsupported_runtime_filters,
+    detect_filter_overrides,
+)
 from src.modules.data.services.query_identity import QueryIdentity
 
 router = APIRouter()
@@ -33,8 +39,12 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
         "chart_type": chart_type,
         "title": payload.get("title"),
         "chart_query": {} if is_text else {
+            # Keep unknown AI / Studio keys (xGrain, compiled_semantic_sql, …)
+            # so a round-trip save does not strip re-executable bindings.
+            **{k: v for k, v in chart_query.items() if v is not None},
             "tableName": chart_query.get("tableName"),
             "x": chart_query.get("x") or chart_query.get("xField"),
+            "xGrain": chart_query.get("xGrain"),
             "aggregate": chart_query.get("aggregate", "count"),
             "yMetric": chart_query.get("yMetric"),
             "xMetrics": chart_query.get("xMetrics", []),
@@ -51,6 +61,7 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "joins": chart_query.get("joins") or [],
             "saved_query_id": chart_query.get("saved_query_id"),
             "query_snapshot_id": chart_query.get("query_snapshot_id") or chart_query.get("snapshot_id"),
+            "compiled_semantic_sql": chart_query.get("compiled_semantic_sql"),
             "groupField": chart_query.get("groupField") or chart_query.get("legend"),
             "semantic_metric_id": chart_query.get("semantic_metric_id"),
             "semantic_dimension_ids": chart_query.get("semantic_dimension_ids") or [],
@@ -335,13 +346,19 @@ async def _execute_chart_data(
             token_payload=identity.token_payload,
         )
 
+    filter_warnings: List[str] = []
     exec_chart = chart
     if runtime_filters or drill_context:
         exec_chart = copy.deepcopy(chart)
         base_query = copy.deepcopy(chart.chart_query or {})
         if runtime_filters:
+            filter_warnings.extend(detect_unsupported_runtime_filters(runtime_filters))
+            filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
             base_query = merge_runtime_filters(base_query, runtime_filters)
         if drill_context:
+            filter_warnings.extend(
+                detect_unsupported_runtime_filters(drill_context.get("drill_filters"))
+            )
             base_query = apply_drill_context(base_query, drill_context)
         exec_chart.chart_query = base_query
 
@@ -363,10 +380,13 @@ async def _execute_chart_data(
     if not validation.valid:
         raise HTTPException(status_code=400, detail=validation.reason or "Chart returned invalid data")
 
-    return {
+    result: Dict[str, Any] = {
         "chart": serialize_chart(chart),
         "data": data,
     }
+    if filter_warnings:
+        result["filter_warnings"] = filter_warnings
+    return result
 
 
 @router.get("/{chart_id}/data")

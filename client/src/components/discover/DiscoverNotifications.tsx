@@ -69,7 +69,7 @@ export function DiscoverNotifications() {
         setOpen(next);
         if (next) void load();
       }}
-      overlayClassName="discover-notif-dropdown"
+      classNames={{ root: "discover-notif-dropdown" }}
     >
       <Badge count={unread} size="small" offset={[-2, 2]}>
         <Button type="text" icon={<BellOutlined />} aria-label={t('notifications')} />

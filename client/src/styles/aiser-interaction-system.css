@@ -130,6 +130,59 @@
   transition: var(--interaction-hover-transition) !important;
 }
 
+/* Sidebar SubMenu (a collapsible nav section like "Dashboard Studio" or
+   "Data & Model") in inline mode: both the SubMenu's own title text AND
+   its expanded children's container repeatedly resolve through antd's own
+   Menu-theme defaults rather than the itemColor/itemBg tokens
+   ThemeProvider.tsx sets, landing dim-on-dim in dark mode and low-
+   contrast in light mode -- same class of "antd's own menu-theme default
+   silently wins over our token override" issue already documented and
+   fixed here once before for hover text. Match this app's actual
+   itemColor/itemBg pair directly (see ThemeProvider.tsx's Menu component
+   tokens) rather than depending on antd's token resolution for these
+   elements specifically. */
+.ant-menu-dark .ant-menu-submenu-title,
+.ant-menu-dark .ant-menu-submenu-title .ant-menu-submenu-arrow,
+.ant-menu-dark .ant-menu-submenu-title .ant-menu-title-content {
+  color: #e6edf3 !important;
+}
+/* NOT --ant-menu-item-selected-color: that token is dark navy (#0d1117),
+   meant for text sitting on the filled teal --ant-menu-item-selected-bg a
+   selected *leaf* item gets (see the .ant-menu-item-selected rule below,
+   where dark-on-teal is correct). A submenu title never gets that fill --
+   even when `-selected` (a descendant route is active), its background
+   stays transparent, so the earlier version of this rule was pasting
+   near-black text onto the dark sidebar itself. Fall back to the same
+   light base color used for the unselected state. */
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-title-content {
+  color: #e6edf3 !important;
+}
+.ant-menu-dark .ant-menu-sub.ant-menu-inline {
+  background: var(--color-bg-navigation-sider, #030712) !important;
+}
+.ant-menu-dark .ant-menu-sub.ant-menu-inline .ant-menu-item,
+.ant-menu-dark .ant-menu-sub.ant-menu-inline .ant-menu-item .ant-menu-title-content {
+  color: #e6edf3 !important;
+}
+.ant-menu-dark .ant-menu-sub.ant-menu-inline .ant-menu-item-selected,
+.ant-menu-dark .ant-menu-sub.ant-menu-inline .ant-menu-item-selected .ant-menu-title-content {
+  color: var(--ant-menu-item-selected-color, #ffffff) !important;
+}
+
+.ant-menu-light .ant-menu-submenu-title,
+.ant-menu-light .ant-menu-submenu-title .ant-menu-submenu-arrow,
+.ant-menu-light .ant-menu-submenu-title .ant-menu-title-content {
+  color: #24292f !important;
+}
+.ant-menu-light .ant-menu-sub.ant-menu-inline {
+  background: var(--color-bg-navigation-sider, #eef1f5) !important;
+}
+.ant-menu-light .ant-menu-sub.ant-menu-inline .ant-menu-item,
+.ant-menu-light .ant-menu-sub.ant-menu-inline .ant-menu-item .ant-menu-title-content {
+  color: #24292f !important;
+}
+
 .ant-menu-item:hover,
 .ant-menu-submenu-title:hover {
   transform: none !important;

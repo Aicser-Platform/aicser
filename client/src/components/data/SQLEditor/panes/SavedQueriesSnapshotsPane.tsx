@@ -345,7 +345,7 @@ export function SavedQueriesSnapshotsPane({
         render: (_: unknown, record) => (
           <SavedQueryActions
             record={record}
-            t={t}
+            t={(key, values) => t(key as Parameters<typeof t>[0], values as Record<string, string | number | Date> | undefined)}
             collections={collections}
             onLoadToNewTab={onLoadToNewTab}
             onLoadHere={onLoadHere}
@@ -413,7 +413,7 @@ export function SavedQueriesSnapshotsPane({
         render: (_: unknown, record) => (
           <SnapshotActions
             record={record}
-            t={t}
+            t={(key, values) => t(key as Parameters<typeof t>[0], values as Record<string, string | number | Date> | undefined)}
             onLoadSnapshotToTab={onLoadSnapshotToTab}
             onLoadSnapshotResults={onLoadSnapshotResults}
             onDeleteSnapshot={onDeleteSnapshot}
@@ -472,7 +472,7 @@ export function SavedQueriesSnapshotsPane({
                     newCollection: t('new_collection'),
                     renameCollection: t('rename_collection'),
                     deleteCollection: t('delete_collection'),
-                    deleteConfirmTitle: t('delete_collection_title'),
+                    deleteConfirmTitle: t.raw('delete_collection_title'),
                     deleteConfirmBody: t('delete_collection_body'),
                     create: t('create'),
                     save: t('save'),

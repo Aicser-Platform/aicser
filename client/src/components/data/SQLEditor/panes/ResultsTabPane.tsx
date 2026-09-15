@@ -6,6 +6,7 @@ import { TableOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { ColumnsType } from 'antd/es/table';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
+import { TableRowsSkeleton } from '@/components/ui/TableRowsSkeleton';
 
 const { Text } = Typography;
 const TABLE_PAGINATION_RESERVE = 0;
@@ -63,12 +64,24 @@ export function ResultsTabPane({
     <div className="qe-results-tab-body">
       <div ref={tableHostRef} className="qe-results-table-host data-content">
         {isExecuting || loading ? (
-          <div className="qe-results-loading">
-            <AppLoadingIndicator variant="inline" tip={executionStatus || t('executing_query')} />
-            <p className="qe-results-loading-copy" style={{ margin: 0, fontSize: 12 }}>
-              {t('please_wait_processing')}
-            </p>
-          </div>
+          results && results.length > 0 ? (
+            // Re-running a query that already has results — keep the previous
+            // rows' shape visible via a skeleton instead of blanking the pane.
+            <div className="qe-results-loading qe-results-loading--skeleton">
+              <div className="qe-results-loading-status">
+                <AppLoadingIndicator variant="minimal" tip={executionStatus || t('executing_query')} />
+              </div>
+              <TableRowsSkeleton columns={columns.length || 6} rows={8} />
+            </div>
+          ) : (
+            <div className="qe-results-loading qe-results-loading--skeleton">
+              <div className="qe-results-loading-status">
+                <AppLoadingIndicator variant="minimal" tip={executionStatus || t('executing_query')} />
+                <span>{t('please_wait_processing')}</span>
+              </div>
+              <TableRowsSkeleton columns={6} rows={8} />
+            </div>
+          )
         ) : results && results.length > 0 ? (
           <Table
             className="qe-results-table"
@@ -76,8 +89,17 @@ export function ResultsTabPane({
             columns={columns}
             size="small"
             scroll={{ x: 'max-content', y: tableScrollY }}
+            // antd v6's Spin no longer puts a stable class on the wrapper div
+            // it renders around Table's body (dropped `ant-spin-nested-loading`
+            // entirely unless told to via classNames.root) -- query-editor.css's
+            // flex-fill scroll chain targets that exact class, so without this
+            // the results table silently stopped scrolling after the v5->v6
+            // antd bump. Table is never actually shown while loading here (see
+            // the isExecuting/loading branch above), so spinning stays false;
+            // this is purely to keep the class name antd v5 used to emit.
+            loading={{ spinning: false, classNames: { root: 'ant-spin-nested-loading' } }}
             pagination={false}
-            rowKey={(_record, index) => `row-${index}`}
+            rowKey={(record) => `row-${paginatedResults.indexOf(record)}`}
             style={{ background: 'transparent' }}
           />
         ) : (

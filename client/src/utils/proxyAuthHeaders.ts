@@ -46,18 +46,42 @@ export function buildProxyAuthHeadersFromRaw(
 }
 
 /**
+ * Forward workspace/context headers the browser already set via fetchApi
+ * (org scope + client timezone). Query-editor AI proxies historically dropped
+ * X-Organization-Id, causing backend 400 "Organization context is required".
+ */
+export function forwardWorkspaceContextHeaders(
+  request: NextRequest,
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  const organizationId =
+    request.headers.get('X-Organization-Id') || request.headers.get('x-organization-id');
+  if (organizationId) {
+    headers['X-Organization-Id'] = organizationId;
+  }
+  const timezone =
+    request.headers.get('X-Client-Timezone') || request.headers.get('x-client-timezone');
+  if (timezone) {
+    headers['X-Client-Timezone'] = timezone;
+  }
+  return headers;
+}
+
+/**
  * BFF proxy auth: forward browser cookies and promote auth_token → Authorization
  * so FastAPI JWTCookieBearer receives the session on server-side upstream calls.
+ * Also forwards X-Organization-Id / X-Client-Timezone when present.
  */
 export function buildProxyAuthHeaders(
   request: NextRequest,
   extra: Record<string, string> = {},
 ): Record<string, string> {
-  return buildProxyAuthHeadersFromRaw(
+  const headers = buildProxyAuthHeadersFromRaw(
     request.headers.get('cookie'),
     request.headers.get('authorization') ?? request.headers.get('Authorization'),
     extra,
   );
+  return forwardWorkspaceContextHeaders(request, headers);
 }
 
 /** Copy Set-Cookie from upstream fetch (Node 18+ getSetCookie when available). */

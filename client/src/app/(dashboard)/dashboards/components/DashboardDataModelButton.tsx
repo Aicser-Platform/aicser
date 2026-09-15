@@ -46,7 +46,7 @@ export function DashboardDataModelButton({
         title={t('data_model_drawer_title')}
         open={open}
         onClose={() => setOpen(false)}
-        width={Math.min(640, typeof window !== 'undefined' ? window.innerWidth - 32 : 640)}
+        size={Math.min(640, typeof window !== 'undefined' ? window.innerWidth - 32 : 640)}
         destroyOnHidden
       >
         {dataSourceIds.length > 1 && (
@@ -70,7 +70,7 @@ export function DashboardDataModelButton({
             <Typography.Title level={5} style={{ marginTop: 20 }}>
               {t('data_model_relationships_table')}
             </Typography.Title>
-            <DataModelRelationships dataSourceId={modelSourceId} compact showPlatformLink />
+            <DataModelRelationships dataSourceId={modelSourceId} compact />
           </>
         ) : null}
       </Drawer>

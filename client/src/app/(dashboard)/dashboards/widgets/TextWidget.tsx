@@ -328,7 +328,7 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
                 applyCommand(dummyEvent, 'fontSize', val);
               }}
               options={FONT_SIZES.map((s) => ({ label: `${s}px`, value: s }))}
-              dropdownStyle={{ zIndex: 2000 }}
+              styles={{ popup: { root: { zIndex: 2000 } } }}
               popupMatchSelectWidth={false}
             />
           </div>

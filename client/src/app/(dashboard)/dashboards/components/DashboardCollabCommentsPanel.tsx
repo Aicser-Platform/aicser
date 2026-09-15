@@ -69,7 +69,7 @@ export function DashboardCollabCommentsPanel({
       <Drawer
         title={t('collab_comments_title')}
         placement="right"
-        width={320}
+        size={320}
         open={open}
         onClose={() => onOpenChange(false)}
         className="dashboard-collab-comments-drawer no-print"

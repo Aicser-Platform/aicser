@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
 import { formatFeedPublishError } from '@/components/Feed/feedPublishUtils';
+import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
@@ -23,6 +24,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const t = useTranslations('chart_designer');
   const tf = useTranslations('feed_publish');
   const te = useTranslations('embed_modal');
+
   const { user } = useAuth();
   const currentProject = useProjectStore((s) => s.currentProject);
   const projectId = currentProject?.id != null ? String(currentProject.id) : undefined;
@@ -32,7 +34,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     undefined;
 
   const saveChart = useChartDesignerStore((s) => s.saveChart);
-  const updateWidget = useChartDesignerStore((s) => s.updateWidget);
+  const updateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
   const { createEmbedCode, loading: embedLoading } = useEmbedCode();
 
@@ -56,9 +58,10 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     if (!selectedWidget) return;
     const next = titleDraft.trim() || t('untitled_chart');
     if (next !== (selectedWidget.title || '')) {
-      updateWidget(selectedWidget.id, { title: next });
+      // Persist title to library/dashboard chart — local-only update was lost on reload.
+      void updateChartAndFetchData(selectedWidget.id, { title: next });
     }
-  }, [selectedWidget, titleDraft, t, updateWidget]);
+  }, [selectedWidget, titleDraft, t, updateChartAndFetchData]);
 
   const ensureChartId = useCallback(async (): Promise<string | undefined> => {
     if (!selectedWidget) return undefined;
@@ -75,6 +78,16 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     return savedId;
   }, [saveChart, selectedWidget, t, user?.id]);
 
+  // Publishing/attaching a chart that's never been pointed at any data at
+  // all just spreads its own empty "No data available. Configure the widget
+  // in properties." placeholder into the feed - not meaningful content for
+  // anyone else, regardless of what title it has. A chart mid-setup (some
+  // query fields filled in, still refining) is left alone; this only catches
+  // the "brand new widget, nothing touched yet" case.
+  const hasConfiguredData = useCallback((widget: ChartDesignerWidget | null) => {
+    return Boolean(widget?.chartQuery && Object.keys(widget.chartQuery).length > 0);
+  }, []);
+
   const handleShareToFeed = useCallback(async () => {
     if (!selectedWidget) {
       message.warning(t('share_select_chart'));
@@ -82,6 +95,10 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     }
     if (!user?.id) {
       message.warning(t('share_login_required'));
+      return;
+    }
+    if (!hasConfiguredData(selectedWidget)) {
+      message.warning(t('share_needs_data'));
       return;
     }
 
@@ -122,7 +139,7 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
     } finally {
       setPreparing(false);
     }
-  }, [ensureChartId, selectedWidget, t, user?.id]);
+  }, [ensureChartId, hasConfiguredData, selectedWidget, t, user?.id]);
 
   const handleShowEmbed = useCallback(async () => {
     if (!selectedWidget) {
@@ -155,7 +172,8 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
   const shareMenuItems: MenuProps['items'] = [
     {
       key: 'feed',
-      label: tf('share_to_feed'),
+      icon: <ShareAltOutlined />,
+      label: menuItemWithDescription(tf('share_to_feed'), tf('share_to_feed_desc')),
       onClick: () => void handleShareToFeed(),
     },
     {
@@ -219,13 +237,6 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
           modalTitle={t('share_to_feed_modal_title')}
           captureSelector={publishCaptureSelector}
           onCancel={() => {
-            setPublishOpen(false);
-            setPublishChartId(undefined);
-            setPublishPreviewMetadata(undefined);
-            setPublishSnapshotPayload(undefined);
-            setPublishCaptureSelector(undefined);
-          }}
-          onSuccess={() => {
             setPublishOpen(false);
             setPublishChartId(undefined);
             setPublishPreviewMetadata(undefined);

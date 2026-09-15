@@ -73,3 +73,50 @@ export function getRowStyle(
   }
   return {};
 }
+
+/**
+ * Same rule engine as the table, applied to a single headline value — lets a Stat/KPI
+ * widget use the full rule set (any operator, multiple rules, custom colors) instead of
+ * the old fixed "warn/critical, above/below" two-severity model. Match by the synthetic
+ * 'value' column, or '*' for a rule meant to apply regardless of column naming.
+ */
+export function getStatValueStyle(
+  rules: ConditionalFormattingRule[] | undefined,
+  value: unknown,
+): React.CSSProperties {
+  if (!rules?.length) return {};
+  for (const rule of rules) {
+    if (rule.column !== 'value' && rule.column !== '*') continue;
+    if (!testRule(rule, value)) continue;
+    const style: React.CSSProperties = {};
+    if (rule.bgColor)   style.backgroundColor = rule.bgColor;
+    if (rule.textColor) style.color = rule.textColor;
+    if (rule.bold)      style.fontWeight = 'bold';
+    return style;
+  }
+  return {};
+}
+
+/**
+ * Same rule engine, applied per data point on a chart series — e.g. a bar that breaches
+ * a critical threshold renders in that rule's color, the industry-standard "highlight
+ * abnormal values" pattern for bar/column charts. Matches rules by series/metric name
+ * (the chart equivalent of a table "column"), or '*' for any series. Returns one color
+ * per point (undefined = no override, use the series' normal color).
+ */
+export function getSeriesPointColors(
+  rules: ConditionalFormattingRule[] | undefined,
+  seriesName: string,
+  values: unknown[],
+): (string | undefined)[] {
+  if (!Array.isArray(values)) return [];
+  if (!rules?.length) return values.map(() => undefined);
+  const applicable = rules.filter((r) => r.column === seriesName || r.column === '*');
+  if (!applicable.length) return values.map(() => undefined);
+  return values.map((value) => {
+    for (const rule of applicable) {
+      if (testRule(rule, value)) return rule.bgColor;
+    }
+    return undefined;
+  });
+}

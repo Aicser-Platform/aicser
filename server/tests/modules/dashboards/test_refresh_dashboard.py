@@ -23,8 +23,10 @@ async def test_refresh_dashboard_charts_success_and_failure():
 
     service = MagicMock()
     service.get_chart = AsyncMock(side_effect=lambda _dash, cid: chart_ok if str(cid).endswith("1") else chart_fail)
+    # operations.py now passes identity=... (row-level-security scoping) to
+    # every chart_service.execute() call - the mock must accept it too.
     service.chart_service.execute = AsyncMock(
-        side_effect=lambda chart: {"x": [1]} if chart is chart_ok else (_ for _ in ()).throw(RuntimeError("boom"))
+        side_effect=lambda chart, identity=None: {"x": [1]} if chart is chart_ok else (_ for _ in ()).throw(RuntimeError("boom"))
     )
 
     cid_ok = "00000000-0000-0000-0000-000000000001"

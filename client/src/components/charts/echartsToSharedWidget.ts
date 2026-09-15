@@ -6,9 +6,9 @@ import {
   measureHintsFromEchartsConfig,
   promoteChartQueryToMultiMetrics,
 } from '@/components/charts/normalizeMultiMetricChartQuery';
-import { columnHeaderFromKey } from '@/utils/columnLabels';
+import { columnHeaderFromKey, resolveColumnHeader } from '@/utils/columnLabels';
 
-import { DASHBOARD_SWITCHABLE_CHART_TYPES } from '@/components/charts/chartTypeCatalog';
+import { DASHBOARD_SWITCHABLE_CHART_TYPES, isForecastEchartsConfig } from '@/components/charts/chartTypeCatalog';
 
 export type SharedChartProps = {
   chartType: string;
@@ -28,6 +28,18 @@ const CHART_ANIMATION_DEFAULTS = {
   animationDuration: 800,
   animationEasing: 'cubicOut',
 } as const;
+
+/** Presentation overrides stamped by the AI chart builder (aiserChartOptions). */
+function extractAiserChartOptions(cfg: Record<string, unknown>): Record<string, unknown> {
+  const stamped = cfg.aiserChartOptions;
+  if (!stamped || typeof stamped !== 'object' || Array.isArray(stamped)) return {};
+  const src = stamped as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of ['barChartType', 'showDataLabel', 'showLegend', 'design', 'legendPosition'] as const) {
+    if (src[key] !== undefined) out[key] = src[key];
+  }
+  return out;
+}
 
 function tagChatSource(props: SharedChartProps): SharedChartProps {
   return {
@@ -69,36 +81,110 @@ function buildStatFromConfig(cfg: Record<string, unknown>): SharedChartProps | n
   const meta = (cfg._chart_query as Record<string, unknown>) || {};
   return {
     chartType: 'stat',
-    chartData: { value },
+    chartData: { x: [], y: [], value },
     chartOptions: {
       title: title || 'KPI',
+      // The chat message wrapper (ChartMessage.tsx) always renders its own
+      // chart-title header above this — StatWidget's 'tile' layout renders
+      // title text unconditionally, so without this it showed twice.
+      hideTitle: true,
       format: 'number',
-      showTrend: false,
-      layout: 'default',
+      // 'tile' gives the card its own bordered, palette-tinted background — the
+      // same layout StatWidget offers on a dashboard, but self-contained rather
+      // than relying on outer grid-cell chrome the chat message bubble doesn't
+      // provide (that's what made the plain 'default' layout read as bare text
+      // floating in space instead of a KPI card).
+      layout: 'tile',
+      // No explicit showTrend here — StatWidget only renders a trend badge when
+      // it can actually compute one (comparisonValue/sparklineValues), neither
+      // of which chartData above provides, so this doesn't fabricate a trend;
+      // it just stops pre-emptively hiding one if a future response adds them.
       ...CHART_ANIMATION_DEFAULTS,
     },
     chartQuery: meta,
   };
 }
 
+function toPlotNumber(d: unknown): number | null {
+  if (d == null || d === '') return null;
+  if (typeof d === 'object' && !Array.isArray(d) && d !== null && 'value' in d) {
+    const v = (d as { value: unknown }).value;
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (Array.isArray(d)) {
+    const n = Number(d[1] ?? d[0]);
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(d);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isHelperForecastSeries(s: Record<string, unknown>): boolean {
+  const n = String(s.name || '').toLowerCase();
+  return (
+    s._forecastCiHelper === true ||
+    n === 'lower bound' ||
+    n === '_ci_lower' ||
+    n === '95% interval' ||
+    n.includes('confidence') ||
+    s.stack === 'confidence-band' ||
+    s.stack === 'ci'
+  );
+}
+
 function inferChartType(cfg: Record<string, unknown>): string | null {
   if (cfg.aiserWidgetType === 'stat') return 'stat';
+  const stamped = cfg.aiserChartType;
+  if (typeof stamped === 'string' && stamped.trim()) return stamped.trim().toLowerCase();
+  const cq = cfg._chart_query as { chartType?: string } | undefined;
+  if (typeof cq?.chartType === 'string' && cq.chartType.trim()) {
+    return cq.chartType.trim().toLowerCase();
+  }
+  if (isForecastEchartsConfig(cfg)) return 'line';
   const series = cfg.series as Array<Record<string, unknown>> | undefined;
   const first = series?.[0];
   if (!first?.type) return null;
   let chartType = String(first.type);
-  if (chartType === 'line' && series?.some((s) => s.areaStyle)) chartType = 'area';
+  if (chartType === 'line' && series?.some((s) => {
+    const area = s.areaStyle as { opacity?: number } | boolean | undefined;
+    if (!area) return false;
+    if (area === true) return true;
+    const opacity = typeof area === 'object' && typeof area.opacity === 'number' ? area.opacity : 0.3;
+    return opacity >= 0.2;
+  })) chartType = 'area';
   if (chartType === 'pie') {
     const radius = first.radius;
     if (Array.isArray(radius) && parseFloat(String(radius[0])) > 0) chartType = 'donut';
   }
   if (chartType === 'heatmap') return 'heatmap';
   if (cfg.visualMap && chartType === 'scatter') return 'heatmap';
-  if (chartType === 'gauge' || chartType === 'stat') return 'stat';
+  // 'gauge' used to be folded into 'stat' here, so an AI-authored gauge chart always
+  // rendered as a plain KPI tile with no indication anything different happened.
+  // Gauge has a real, working renderer (ChartOptionsBuilder's `type === 'gauge'`
+  // branch → an actual ECharts dial via EChartWidget) that only needs the same
+  // single-scalar value stat needs — it reads chartData.value, then falls back to
+  // chartData.y[0] / chartData.series[0].data[0], all of which the generic
+  // buildFromEchartsConfig/buildFromQueryResult paths below already populate. So
+  // letting 'gauge' fall through to `SUPPORTED.has(chartType)` (true — it's part of
+  // DASHBOARD_SWITCHABLE_CHART_TYPES) now renders it as a real gauge instead of a
+  // mislabeled stat card. This only affects charts the AI authored directly as
+  // 'gauge' via resolveSharedChartProps — buildSharedChartPropsForType (the
+  // in-place chart-type *switcher* path) never calls this function, and 'gauge'
+  // is intentionally excluded from SAFE_CHART_TYPE_SWITCH_TARGETS, so switching an
+  // arbitrary existing widget to Gauge is still not offered anywhere.
+  if (chartType === 'stat') return 'stat';
   return SUPPORTED.has(chartType) ? chartType : null;
 }
 
 function isComplexEcharts(cfg: Record<string, unknown>): boolean {
+  if (isForecastEchartsConfig(cfg)) return true;
+  if (cfg.__animate) return true;
+  const series = (cfg.series as Array<Record<string, unknown>> | undefined) || [];
+  if (series.some((s) => s.markLine || s.stack === 'waterfall' || s.stack === 'confidence-band' || s.stack === 'ci')) {
+    return true;
+  }
   const graphic = cfg.graphic;
   if (!graphic) return false;
   // Only skip shared path for animation overlay graphics, not static heatmap labels.
@@ -165,7 +251,12 @@ function buildScatterFromQueryResult(
     return [Number.isFinite(x) ? x : 0, Number.isFinite(y) ? y : 0] as [number, number];
   });
 
-  const formatLabel = columnHeaderFromKey;
+  const formatLabel = (field: string) =>
+    resolveColumnHeader(
+      field,
+      (message as { analyticsMetadata?: { column_display_names?: Record<string, string> } })?.analyticsMetadata
+        ?.column_display_names,
+    );
 
   return {
     chartType: 'scatter',
@@ -194,6 +285,9 @@ function buildFromQueryResult(
   if (chartType === 'scatter') {
     return buildScatterFromQueryResult(rows, message);
   }
+  const displayNames = (message as { analyticsMetadata?: { column_display_names?: Record<string, string> } })
+    ?.analyticsMetadata?.column_display_names;
+  const labelOf = (field: string) => resolveColumnHeader(field, displayNames);
   const keys = Object.keys(rows[0]);
   const meta =
     (message as { executionMetadata?: { chart_query?: Record<string, unknown> } })?.executionMetadata
@@ -273,7 +367,7 @@ function buildFromQueryResult(
       return {
         chartType,
         chartData: { x: xOrder, y: series[0]?.data ?? [], series },
-        chartOptions: {},
+        chartOptions: { yAxisLabel: labelOf(yKey) },
         chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: groupKey },
       };
     }
@@ -291,8 +385,8 @@ function buildFromQueryResult(
     });
     return {
       chartType,
-      chartData: { x: xOrder, y: collapsed, series: [{ name: String(yKey), data: collapsed }] },
-      chartOptions: {},
+      chartData: { x: xOrder, y: collapsed, series: [{ name: labelOf(yKey), data: collapsed }] },
+      chartOptions: { yAxisLabel: labelOf(yKey) },
       chartQuery: { ...chartQuery, yMetrics: [{ field: yKey, aggregation: 'none' }], groupField: undefined },
     };
   }
@@ -310,7 +404,7 @@ function buildFromQueryResult(
 
   const x = rows.map((r) => String(r[xKey] ?? ''));
   const series = fieldsForType.map((field) => ({
-    name: String(field),
+    name: labelOf(field),
     data: rows.map((r) => Number(r[field]) || 0),
   }));
 
@@ -321,7 +415,7 @@ function buildFromQueryResult(
       y: series[0]?.data || [],
       series,
     },
-    chartOptions: {},
+    chartOptions: { yAxisLabel: labelOf(yKey) },
     chartQuery: {
       ...chartQuery,
       yMetrics: fieldsForType.map((field) => ({ field, aggregation: 'none' })),
@@ -368,7 +462,7 @@ function buildScatterFromEchartsConfig(cfg: Record<string, unknown>): SharedChar
       y: mappedSeries[0].data.map((p) => (Array.isArray(p) ? p[1] : 0)),
       series: mappedSeries,
     },
-    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true },
+    chartOptions: { ...CHART_ANIMATION_DEFAULTS, animation: cfg.animation ?? true, ...extractAiserChartOptions(cfg) },
     chartQuery: {},
   };
 }
@@ -511,6 +605,7 @@ function buildFromDatasetEncode(cfg: Record<string, unknown>, chartType: string)
       ...CHART_ANIMATION_DEFAULTS,
       animation: cfg.animation ?? true,
       ...extractBarOrientationOptions(cfg),
+      ...extractAiserChartOptions(cfg),
     },
     chartQuery: chartQuery as Record<string, unknown>,
   };
@@ -556,16 +651,10 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
   const x = xRaw.map((v) => String(v ?? ''));
 
   const mappedSeries = series
-    .filter((s) => SUPPORTED.has(String(s.type || chartType)))
+    .filter((s) => !isHelperForecastSeries(s) && SUPPORTED.has(String(s.type || chartType)))
     .map((s, i) => {
       const raw = (s.data as unknown[]) || [];
-      const data = raw.map((d) => {
-        if (d && typeof d === 'object' && 'value' in (d as object)) {
-          return Number((d as { value: unknown }).value) || 0;
-        }
-        if (Array.isArray(d)) return Number(d[1]) || Number(d[0]) || 0;
-        return Number(d) || 0;
-      });
+      const data = raw.map((d) => toPlotNumber(d));
       return { name: String(s.name || `Series ${i + 1}`), data };
     });
 
@@ -592,6 +681,7 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
       ...CHART_ANIMATION_DEFAULTS,
       animation: cfg.animation ?? true,
       ...extractBarOrientationOptions(cfg),
+      ...extractAiserChartOptions(cfg),
     },
     chartQuery: chartQuery as Record<string, unknown>,
   };
@@ -614,7 +704,8 @@ export function resolveSharedChartProps(
   if (chartType === 'stat') {
     const fromStat = buildStatFromConfig(cfg);
     if (fromStat) return tagChatSource(fromStat);
-    // Fall through to query rows if gauge/stat series empty
+    // Fall through to query rows if the stat series is empty. ('gauge' no longer
+    // reaches this branch — inferChartType above stopped coercing it to 'stat'.)
   }
 
   // Prefer populated ECharts option over re-inferring columns from query rows
@@ -647,8 +738,16 @@ export function resolveSharedChartProps(
       if (yKey && row[yKey] != null) {
         return tagChatSource({
           chartType: 'stat',
-          chartData: { value: Number(row[yKey]) },
-          chartOptions: { title: yKey, format: 'number', showTrend: false, layout: 'default' },
+          chartData: { x: [], y: [], value: Number(row[yKey]) },
+          // Same layout choice as buildStatFromConfig above — keep both stat-building
+          // paths in this file rendering identically rather than drifting apart.
+          // title: switching chart type to KPI used to show the raw column key
+          // (e.g. "avg_order_value") instead of a formatted label — the same
+          // columnHeaderFromKey helper already used for table column headers
+          // below fixes that. hideTitle: true for the same reason as
+          // buildStatFromConfig above — ChartMessage.tsx's own header already
+          // shows this title.
+          chartOptions: { title: columnHeaderFromKey(yKey), hideTitle: true, format: 'number', layout: 'tile' },
           chartQuery: { yMetric: yKey },
         });
       }
@@ -683,6 +782,15 @@ export function buildSharedChartPropsForType(
     ...props.chartOptions,
     ...CHART_ANIMATION_DEFAULTS,
     showLegend: chartType === 'pie' || chartType === 'donut' ? true : props.chartOptions?.showLegend,
+    // Same tile treatment as the AI's own stat responses — manually switching an
+    // existing chart to "Stat" via the chart-type menu shouldn't look different.
+    // buildFromQueryResult above never sets a title (chartOptions: {} for every
+    // chart type — the outer ChartMessage.tsx header owns the title and stays
+    // stable across type switches), so without hideTitle here StatWidget fell
+    // back to its generic "Key Metric" placeholder every time a chart was
+    // switched to Stat — read as "the title changed" even though the real
+    // title (in the header) never moved.
+    ...(chartType === 'stat' ? { layout: props.chartOptions?.layout || 'tile', hideTitle: true } : {}),
   };
   if (chartType === 'donut') {
     chartOptions.innerRadius = 40;

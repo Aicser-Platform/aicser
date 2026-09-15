@@ -37,6 +37,13 @@ export const ProjectSelectorModal    = (_props: ProjectSelectorModalProps): null
 export const PricingModalEE          = (): null => null;
 export const AnimatedAIAvatar        = (): null => null;
 export const ActivityInboxBell       = (): null => null;
+// CE has no billing/plan tiers — every gated feature is available, so this
+// renders children directly rather than the EE version's null-when-a
+// null-when-gated behavior (which would otherwise hide every tab wrapped in
+// <FeatureGate> under a CE build).
+export function FeatureGate({ children }: ProviderProps & { feature?: string }) {
+  return children;
+}
 export const OrganizationSettingsTab = (): null => null;
 export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
@@ -45,7 +52,10 @@ export const LicenseSettingsTab      = (): null => null;
 export const RolesTab                = (): null => null;
 export const AgentSkillsTab          = (): null => null;
 export const AgentWorkflowsTab       = (): null => null;
+export const AgentCapabilitiesTab    = (): null => null;
+export const KpiDefinitionsTab       = (): null => null;
 export const BriefingsTab            = (): null => null;
+export const ReviewQueueWidget       = (_props: AnyComponentProps): null => null;
 export const SemanticStudio          = (_props: AnyComponentProps): null => null;
 export const ConnectModelVisualizeWizard = (_props: AnyComponentProps): null => null;
 export const CitationSourcesStrip    = (_props: AnyComponentProps): null => null;
@@ -63,7 +73,6 @@ export function BrandThemeProvider({ children }: ProviderProps) {
 export const AlertsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
-export const DataPlatformPage        = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;
 export const InviteSetPasswordPageEE = (): null => null;
 

@@ -82,7 +82,7 @@ export function SemanticMetricFields({
   const dimensionIds = (chartQuery?.semantic_dimension_ids as string[]) || [];
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={8}>
       <Space>
         <Switch
           checked={useSemantic}

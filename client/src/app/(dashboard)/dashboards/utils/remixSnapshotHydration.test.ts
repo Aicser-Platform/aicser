@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { hydrateRemixWidget, isRemixSnapshotWidget } from '@/app/(dashboard)/dashboards/utils/remixSnapshotHydration';
 import type { WidgetInstance } from '@/app/(dashboard)/dashboards/stores/dashboardStoreTypes';
 

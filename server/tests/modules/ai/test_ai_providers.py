@@ -4,7 +4,7 @@ import pytest
 if os.getenv("AISER_EDITION", "community").lower() in ("enterprise", "ee") or os.getenv("AISER_EDITION_LICENSE_KEY"):
     pytest.skip("CE-only text-to-sql providers", allow_module_level=True)
 
-from src.modules.ai.providers import provider_for_model, litellm_model_string, PROVIDER_MODELS
+from ee.modules.ai.providers import provider_for_model, litellm_model_string, PROVIDER_MODELS
 
 
 def test_provider_for_model_by_catalog():

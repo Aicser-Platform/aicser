@@ -11,6 +11,14 @@ import {
 
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
 
+export type EmbedTheme = {
+  primary_color?: string;
+  logo_url?: string;
+  font_family?: string;
+  mode?: 'light' | 'dark' | 'auto';
+  hide_aicser_branding?: boolean;
+};
+
 type EmbedTokenCreated = {
   token?: string;
   embed_urls?: Record<string, string>;
@@ -24,6 +32,7 @@ type CreateEmbedCodeOptions = {
   filters?: unknown;
   assistantId?: string;
   expiresInHours?: number;
+  theme?: EmbedTheme;
 };
 
 type EmbedCodeResult = {
@@ -48,6 +57,7 @@ export function useEmbedCode() {
             scopes: [options.scope],
             resource_id: options.resourceId || undefined,
             expires_in_hours: options.expiresInHours ?? 720,
+            theme: options.theme || undefined,
           }),
         });
         token = created.token;

@@ -1,6 +1,6 @@
 """Unit tests for narrative_intent inference (supervisor → insight_synthesizer)."""
 
-from src.modules.ai.utils.narrative_intent import infer_narrative_intent
+from ee.modules.ai.utils.narrative_intent import infer_narrative_intent
 
 
 def test_infer_narrative_intent_chart_explain_precedence():

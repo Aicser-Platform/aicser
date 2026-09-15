@@ -5,7 +5,7 @@ import { getAuthActions } from '@/auth/authProvider';
 import type { SignupResult } from '@/auth/types';
 import { setCeBearerToken, getCeBearerToken, clearCeBearerToken } from '@/auth/ce/bearerToken';
 import { resetWorkspaceScope } from '@/utils/resetWorkspaceScope';
-import { getEeApiAuthToken } from '@/ee';
+import { getEeApiAuthToken } from '@/ee/auth/authClient';
 import {
   beginLogout,
   endLogout,

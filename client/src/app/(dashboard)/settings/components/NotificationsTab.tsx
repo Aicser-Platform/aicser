@@ -44,7 +44,7 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
   return (
     <Card
       size="small"
-      bordered={false}
+      variant="borderless"
       style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
     >
       <div style={{ marginBottom: 20 }}>

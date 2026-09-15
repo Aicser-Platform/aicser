@@ -24,6 +24,9 @@ import {
   AppearanceFormValues,
   ApiKeyFormValues,
   ProviderKeyFormValues,
+  EmbedAssistantRecord,
+  EmbedAssistantPayload,
+  EmbedAssistantShare,
 } from '@/app/(dashboard)/settings/types';
 
 interface SettingsState {
@@ -50,6 +53,10 @@ interface SettingsState {
   teamMembers: TeamMember[];
   availableRoles: RBACRole[];
   dataSources: DataSource[];
+  embedAssistants: EmbedAssistantRecord[];
+  embedAssistantsLoading: boolean;
+  embedAssistantShares: EmbedAssistantShare[];
+  embedAssistantSharesLoading: boolean;
 
   // Filter States
   memberSearch: string;
@@ -83,6 +90,7 @@ interface SettingsState {
   deleteApiKey: (keyId: string) => Promise<void>;
   loadProviderApiKeys: () => Promise<void>;
   saveProviderKey: (provider: string, data: ProviderKeyFormValues) => Promise<void>;
+  deleteProviderKey: (provider: string) => Promise<void>;
   loadAiModelPreference: () => Promise<void>;
   updateAiModelPreference: (model: string) => Promise<void>;
   loadAvailableModels: () => Promise<void>;
@@ -90,9 +98,22 @@ interface SettingsState {
   loadAvailableRoles: (scope?: string) => Promise<void>;
   updateTeamMemberRole: (orgId: string, userId: string, roleId: string) => Promise<void>;
   removeTeamMember: (orgId: string, userId: string) => Promise<void>;
-  inviteTeamMember: (orgId: string, payload: { email: string; role_id: string }) => Promise<void>;
+  inviteTeamMember: (
+    orgId: string,
+    payload: { email: string; role_id: string; project_id?: string | null; project_role_id?: string | null }
+  ) => Promise<void>;
   cancelInvitation: (orgId: string, invitationId: string) => Promise<void>;
   loadDataSources: (projectId?: string) => Promise<void>;
+  loadEmbedAssistants: (orgId?: string) => Promise<void>;
+  createEmbedAssistant: (data: EmbedAssistantPayload) => Promise<EmbedAssistantRecord | null>;
+  updateEmbedAssistant: (id: string, data: EmbedAssistantPayload) => Promise<EmbedAssistantRecord | null>;
+  deleteEmbedAssistant: (id: string) => Promise<void>;
+  loadEmbedAssistantShares: (assistantId: string) => Promise<void>;
+  addEmbedAssistantShare: (
+    assistantId: string,
+    data: { shared_with?: string; project_id?: string; expires_at?: string }
+  ) => Promise<void>;
+  revokeEmbedAssistantShare: (assistantId: string, shareId: string) => Promise<void>;
 
   // Reset
   reset: () => void;
@@ -117,6 +138,10 @@ const initialState = {
   teamMembers: [],
   availableRoles: [],
   dataSources: [],
+  embedAssistants: [],
+  embedAssistantsLoading: false,
+  embedAssistantShares: [],
+  embedAssistantSharesLoading: false,
   memberSearch: '',
   memberStatusFilter: 'all' as const,
   dataSourceSearch: '',
@@ -430,6 +455,28 @@ export const useSettingsStore = create<SettingsState>()(
         }
       },
 
+      deleteProviderKey: async (provider) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          await fetchApi(`users/ai-provider-keys/${provider}`, { method: 'DELETE' });
+          await get().loadProviderApiKeys();
+          await get().loadAvailableModels();
+          set((state) => {
+            state.showProviderKeyModal = false;
+            state.editingProvider = null;
+          });
+        } catch (error) {
+          console.error('Failed to delete provider key:', error);
+          throw error;
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
       loadAiModelPreference: async () => {
         try {
           const data = await fetchApi('users/preferences/ai-model', { method: 'GET' });
@@ -683,6 +730,148 @@ export const useSettingsStore = create<SettingsState>()(
           console.error('Failed to load data sources:', error);
           set((state) => {
             state.dataSources = [];
+          });
+        }
+      },
+
+      loadEmbedAssistants: async (orgId?: string) => {
+        if (!orgId) return;
+        set((state) => {
+          state.embedAssistantsLoading = true;
+        });
+        try {
+          const data = await fetchApi(
+            `/api/embed/assistants?organization_id=${encodeURIComponent(orgId)}`
+          );
+          set((state) => {
+            state.embedAssistants = data?.assistants || [];
+          });
+        } catch (error) {
+          console.error('Failed to load embed assistants:', error);
+          set((state) => {
+            state.embedAssistants = [];
+          });
+        } finally {
+          set((state) => {
+            state.embedAssistantsLoading = false;
+          });
+        }
+      },
+
+      createEmbedAssistant: async (data) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          const created = await fetchApi('/api/embed/assistants', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          });
+          set((state) => {
+            if (created?.id) state.embedAssistants = [...state.embedAssistants, created];
+          });
+          return (created as EmbedAssistantRecord) ?? null;
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
+      updateEmbedAssistant: async (id, data) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          const updated = await fetchApi(`/api/embed/assistants/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+          });
+          set((state) => {
+            state.embedAssistants = state.embedAssistants.map((a) =>
+              a.id === id ? { ...a, ...updated } : a
+            );
+          });
+          return (updated as EmbedAssistantRecord) ?? null;
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
+      deleteEmbedAssistant: async (id) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          await fetchApi(`/api/embed/assistants/${id}`, { method: 'DELETE' });
+          set((state) => {
+            state.embedAssistants = state.embedAssistants.filter((a) => a.id !== id);
+          });
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
+      // Sharing endpoints (visibility="shared") — confirmed live against
+      // server/ee/modules/embed/assistant_router.py: POST/GET
+      // /api/embed/assistants/{id}/shares and DELETE .../shares/{shareId}.
+      loadEmbedAssistantShares: async (assistantId) => {
+        set((state) => {
+          state.embedAssistantSharesLoading = true;
+        });
+        try {
+          const data = await fetchApi(`/api/embed/assistants/${assistantId}/shares`);
+          const list = Array.isArray(data) ? data : (data?.shares ?? []);
+          set((state) => {
+            state.embedAssistantShares = list;
+          });
+        } catch (error) {
+          console.error('Failed to load assistant shares:', error);
+          set((state) => {
+            state.embedAssistantShares = [];
+          });
+        } finally {
+          set((state) => {
+            state.embedAssistantSharesLoading = false;
+          });
+        }
+      },
+
+      addEmbedAssistantShare: async (assistantId, data) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          await fetchApi(`/api/embed/assistants/${assistantId}/shares`, {
+            method: 'POST',
+            body: JSON.stringify(data),
+          });
+          await get().loadEmbedAssistantShares(assistantId);
+        } finally {
+          set((state) => {
+            state.loading = false;
+          });
+        }
+      },
+
+      revokeEmbedAssistantShare: async (assistantId, shareId) => {
+        set((state) => {
+          state.loading = true;
+        });
+        try {
+          await fetchApi(`/api/embed/assistants/${assistantId}/shares/${shareId}`, {
+            method: 'DELETE',
+          });
+          set((state) => {
+            state.embedAssistantShares = state.embedAssistantShares.filter((s) => s.id !== shareId);
+          });
+        } finally {
+          set((state) => {
+            state.loading = false;
           });
         }
       },

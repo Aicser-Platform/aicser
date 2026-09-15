@@ -14,6 +14,68 @@ from src.core.licensing import service as licensing_service
 logger = logging.getLogger(__name__)
 
 
+_SINGLETON_LEASE_TTL_SECONDS = 120
+_SINGLETON_LEASE_RENEW_SECONDS = 40
+
+
+def _try_acquire_singleton_lease(name: str) -> bool:
+    """First-writer-wins Redis lock so a perpetual startup task (Telegram bot
+    polling, trial-lifecycle loops, the scheduled-email dispatcher) runs in
+    only one of this container's uvicorn worker processes.
+
+    Horizontal scale-out (SERVER_WORKERS > 1, see docker-compose.ee.yml)
+    means N sibling processes all run this same lifespan startup code, and
+    each `asyncio.create_task(...)` below was firing once per worker before
+    this guard existed -- live-confirmed duplicate "Telegram bot initialized"
+    / "Trial lifecycle background jobs started" log lines after enabling
+    --workers 2. Harmless for idempotent work, but Telegram's Bot API allows
+    only one active getUpdates poller per bot token (a second one errors with
+    "Conflict: terminated by other getUpdates request"), and duplicate
+    trial-expiry/scheduled-report sends are a real user-facing quality bug,
+    not just wasted compute.
+
+    Short TTL + heartbeat (_singleton_lease_heartbeat), not a long-lived
+    lock: an earlier version used a single non-renewed 7-day SET NX EX and
+    live-tested fine within one container's lifetime -- but a redeploy kills
+    the old container (and its lease-holding process) while the *key*
+    survives in Redis for days, so the new container's workers all see the
+    lease as "already owned" by a PID that no longer exists and the task
+    doesn't run anywhere until that stale lease finally expires. A short TTL
+    that the winning worker actively renews means a crashed/replaced holder's
+    lease goes stale within _SINGLETON_LEASE_TTL_SECONDS, not days. Fails
+    OPEN (returns True, i.e. "run it") when Redis is unreachable, so
+    single-process/no-redis deployments keep behaving exactly as before this
+    guard existed.
+    """
+    try:
+        if not cache or not getattr(cache, "redis_client", None):
+            return True
+        return bool(
+            cache.redis_client.set(
+                f"singleton_lease:{name}", os.getpid(), nx=True, ex=_SINGLETON_LEASE_TTL_SECONDS
+            )
+        )
+    except Exception as e:
+        logger.debug("Singleton lease check for '%s' failed (%s); running task in this process", name, e)
+        return True
+
+
+async def _singleton_lease_heartbeat(name: str) -> None:
+    """Keep a lease held by _try_acquire_singleton_lease() alive for as long
+    as this process runs, so it doesn't go stale (and get reclaimed by a
+    sibling worker while this one is still the legitimate, live owner)
+    before this process actually exits."""
+    while True:
+        await asyncio.sleep(_SINGLETON_LEASE_RENEW_SECONDS)
+        try:
+            if cache and getattr(cache, "redis_client", None):
+                cache.redis_client.set(
+                    f"singleton_lease:{name}", os.getpid(), ex=_SINGLETON_LEASE_TTL_SECONDS
+                )
+        except Exception as e:
+            logger.debug("Singleton lease renewal for '%s' failed (non-fatal): %s", name, e)
+
+
 def _import_module_quiet(name: str) -> None:
     """Import optional heavy deps without noisy optional-dependency warnings (e.g. Prophet→plotly)."""
     import io
@@ -154,25 +216,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as e:
                 logger.warning("Failed to register EE auth provider: %s", e)
 
-            # Auto-seed RBAC roles/permissions if table is empty
+            # Auto-seed RBAC roles/permissions on every startup, not just when the
+            # table is empty. seed_permissions()/seed_roles() are themselves fully
+            # idempotent (each permission/role/role-permission mapping is checked
+            # for existence before insert), so this is safe to re-run unconditionally.
+            # BUG FIXED: the old `if count == 0` gate meant an environment whose
+            # roles table was seeded before a new role was added to seed_rbac.py
+            # (e.g. project_owner/project_editor/project_viewer) would NEVER get
+            # backfilled on later deploys -- reproduced live: a project's creator
+            # got no UserRole at all (create_project's "Role 'project_owner' not
+            # found" warning path), so they saw "Access denied: You are not a
+            # member of this project" on their own brand-new project, while
+            # org-level roles (seeded earlier) kept working fine.
             try:
                 from sqlalchemy import select, func
                 from src.db.session import async_session
                 from src.modules.authentication.rbac.models import Role
                 async with async_session() as _db:
                     count = (await _db.execute(select(func.count()).select_from(Role))).scalar() or 0
-                if count == 0:
-                    logger.info("RBAC roles table is empty — running seed_rbac...")
-                    from ee.scripts.seed_rbac import seed_permissions, seed_roles
-                    await seed_permissions()
-                    await seed_roles()
-                    logger.info("RBAC seed complete")
-                else:
-                    logger.info("RBAC roles already seeded (%d roles)", count)
+                logger.info("RBAC roles table has %d role(s) — running seed_rbac to backfill any missing ones...", count)
+                from ee.scripts.seed_rbac import seed_permissions, seed_roles
+                await seed_permissions()
+                await seed_roles()
+                logger.info("RBAC seed complete")
             except Exception as e:
                 logger.warning("RBAC auto-seed failed: %s", e)
 
-            # Auto-seed subscription plans if table is empty
+            # Auto-seed (and reconcile) subscription plans on every startup.
+            # BUG FIXED: seed_plans() only writes an existing plan row's
+            # features/limits when force=True (CLI: --force) -- otherwise it
+            # no-ops on a non-empty table. SubscriptionPlan.features is a DB
+            # snapshot of PLAN_CONFIGS taken at first seed, and
+            # get_merged_plan_features_for_org() ANDs the live PLAN_CONFIGS
+            # value with that stored snapshot -- so without force=True here,
+            # editing PLAN_CONFIGS (e.g. enabling free.api_access) would
+            # never actually reach an already-seeded database. force=True is
+            # safe to run unconditionally: it only overwrites plan
+            # name/description/limits/features from PLAN_CONFIGS, never
+            # touches per-org OrganizationSubscription rows.
             try:
                 from sqlalchemy import select, func
                 from src.db.session import async_session
@@ -183,14 +264,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                         await _db.execute(select(func.count()).select_from(SubscriptionPlan))
                     ).scalar() or 0
 
-                if plan_count == 0:
-                    logger.info("Subscription plans table is empty — running seed_subscription_plans...")
-                    from ee.scripts.seed_subscription_plans import seed_plans
+                logger.info("Subscription plans table has %d plan(s) — reconciling with PLAN_CONFIGS...", plan_count)
+                from ee.scripts.seed_subscription_plans import seed_plans
 
-                    await seed_plans()
-                    logger.info("Subscription plans seed complete")
-                else:
-                    logger.info("Subscription plans already seeded (%d plans)", plan_count)
+                await seed_plans(force=True)
+                logger.info("Subscription plans seed complete")
             except Exception as e:
                 logger.warning("Subscription plans auto-seed failed: %s", e)
 
@@ -207,30 +285,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as e:
                 logger.warning("Organization subscription auto-seed failed: %s", e)
 
-            # Trial lifecycle jobs (EE)
-            try:
-                from src.shared.tasks.trial_jobs import revert_expired_trials, notify_expiring_trials
-                asyncio.create_task(revert_expired_trials())
-                asyncio.create_task(notify_expiring_trials())
-                logger.info("Trial lifecycle background jobs started")
-            except Exception as e:
-                logger.warning("Failed to start trial jobs: %s", e)
+            # Trial lifecycle jobs (EE) — one container-wide instance; see
+            # _try_acquire_singleton_lease's docstring for why this needs a lease.
+            if _try_acquire_singleton_lease("trial_jobs"):
+                try:
+                    from src.shared.tasks.trial_jobs import revert_expired_trials, notify_expiring_trials
+                    asyncio.create_task(revert_expired_trials())
+                    asyncio.create_task(notify_expiring_trials())
+                    asyncio.create_task(_singleton_lease_heartbeat("trial_jobs"))
+                    logger.info("Trial lifecycle background jobs started")
+                except Exception as e:
+                    logger.warning("Failed to start trial jobs: %s", e)
+            else:
+                logger.info("Trial lifecycle background jobs already owned by another worker process")
 
-            # Scheduled email dispatcher (EE)
-            try:
-                from src.shared.tasks.background import schedule_email_dispatcher
-                asyncio.create_task(schedule_email_dispatcher())
-                logger.info("Background scheduled-email dispatcher started")
-            except Exception as e:
-                logger.warning("Failed to start scheduled-email dispatcher: %s", e)
+            # Scheduled email dispatcher (EE) — one container-wide instance.
+            if _try_acquire_singleton_lease("scheduled_email_dispatcher"):
+                try:
+                    from src.shared.tasks.background import schedule_email_dispatcher
+                    asyncio.create_task(schedule_email_dispatcher())
+                    asyncio.create_task(_singleton_lease_heartbeat("scheduled_email_dispatcher"))
+                    logger.info("Background scheduled-email dispatcher started")
+                except Exception as e:
+                    logger.warning("Failed to start scheduled-email dispatcher: %s", e)
+            else:
+                logger.info("Scheduled-email dispatcher already owned by another worker process")
 
-            # Telegram bot (EE)
-            try:
-                from src.modules.telegram.bot import setup_bot
-                await setup_bot()
-                logger.info("Telegram bot initialized")
-            except Exception as e:
-                logger.warning("Failed to initialize Telegram bot: %s", e)
+            # Telegram bot (EE) — Bot API allows only one active getUpdates
+            # poller per token, so this must be a single container-wide instance.
+            if _try_acquire_singleton_lease("telegram_bot"):
+                try:
+                    from src.modules.telegram.bot import setup_bot
+                    await setup_bot()
+                    asyncio.create_task(_singleton_lease_heartbeat("telegram_bot"))
+                    logger.info("Telegram bot initialized")
+                except Exception as e:
+                    logger.warning("Failed to initialize Telegram bot: %s", e)
+            else:
+                logger.info("Telegram bot already owned by another worker process")
 
         logger.info(
             "Startup complete. To seed initial data run: python -m app.scripts.seed"

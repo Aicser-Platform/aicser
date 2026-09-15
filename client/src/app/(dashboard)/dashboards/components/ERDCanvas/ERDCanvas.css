@@ -50,8 +50,26 @@
   min-width: 0;
 }
 
+/* min-width:0 above lets this row shrink below its content's natural width
+   (needed so .erd-search can flex) - without flex-shrink:0/nowrap on these
+   two controls specifically, a narrow viewport squeezes the Segmented and
+   Auto Layout button's label into wrapped/compressed text instead. */
+.erd-toolbar-left .ant-segmented,
+.erd-auto-layout-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .erd-search {
-  width: min(320px, 32vw);
+  /* Inputs default to min-width:auto (sized to their content) in a flex
+     row, not 0 - combined with flex-shrink:0 on the toolbar-left controls
+     above, that left no room for this to shrink when the row got tight,
+     so it rendered past its allotted space and visually overlapped the
+     Auto Layout button instead of shrinking. flex + min-width:0 makes it
+     a genuinely flexible item that yields first. */
+  flex: 1 1 auto;
+  min-width: 80px;
+  max-width: min(320px, 32vw);
 }
 
 .erd-empty-state {
@@ -89,7 +107,16 @@
     0 14px 32px rgba(0, 108, 160, 0.18);
 }
 
-/* Colored header — like DBdiagram purple header but using brand color */
+/* Header — a neutral elevated strip using the same text/background tokens
+   the column rows below already render correctly with (--ant-color-text on
+   an elevated surface), instead of the brand-primary-adaptive pairing this
+   used previously (background: var(--ant-color-primary), text:
+   var(--color-primary-text)). That pairing depends on primaryColor and its
+   computed readable-text counterpart both reaching this subtree and staying
+   in sync; a plain neutral header can't go dark-on-dark since it reuses the
+   exact tokens already proven legible by every other line of text in this
+   card. The left edge keeps a brand-colored accent bar instead, so the
+   card still reads as "branded" without betting legibility on it. */
 .erd-table-header {
   display: flex;
   align-items: center;
@@ -97,13 +124,16 @@
   gap: 6px;
   padding: 0 10px 0 14px;
   height: 40px;
-  background: var(--ant-color-primary);
+  background: var(--ant-color-fill-quaternary, #1c2128);
+  border-bottom: 1px solid var(--ant-color-border);
   border-radius: 6px 6px 0 0;
-  color: #fff;
+  color: var(--ant-color-text, #e6edf3);
+  border-left: 3px solid var(--ant-color-primary, #00c2cb);
 }
 
 .erd-table.selected .erd-table-header {
-  background: color-mix(in srgb, var(--ant-color-primary) 85%, #001529 15%);
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 55%, var(--ant-color-fill-quaternary));
+  border-left-color: var(--ant-color-primary);
 }
 
 .erd-table-name {
@@ -115,7 +145,7 @@
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #fff;
+  color: var(--ant-color-text, #e6edf3);
 }
 
 .erd-table-menu {
@@ -128,15 +158,15 @@
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--ant-color-text-tertiary, #6e7681);
   cursor: pointer;
   transition: background 120ms;
   padding: 0;
 }
 
 .erd-table-menu:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
+  background: var(--ant-color-fill-secondary, rgba(255, 255, 255, 0.1));
+  color: var(--ant-color-text, #e6edf3);
 }
 
 /* Column count subtitle strip */
@@ -259,7 +289,10 @@
 }
 
 .erd-col-role-pk {
-  background: #fffbe6;
+  /* color-mixed with the theme surface (not a flat light hex) so this reads
+     as an intentional dark-mode chip instead of a stray light-mode leftover
+     sitting on a dark row — same treatment as .erd-col-role-fk below. */
+  background: color-mix(in srgb, #fffbe6 70%, var(--ant-color-bg-container));
   border: 1px solid #ffe58f;
   color: #d48806;
 }
@@ -414,7 +447,7 @@
     var(--ant-color-primary),
     color-mix(in srgb, var(--ant-color-primary) 82%, #001529 18%)
   );
-  color: #fff;
+  color: var(--color-primary-text, #fff);
 }
 
 .table-node-title-row {

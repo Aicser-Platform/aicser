@@ -6,6 +6,7 @@
 import * as echarts from 'echarts';
 import { ChartConfig, ChartData, ChartValueFormat, CHART_COLORS, formatByValueFormat, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
 import { getPieLayout, getChartSliceBorderColor } from './chartLayoutUtils';
+import { getSeriesPointColors } from './utils/conditionalFormatting';
 
 function resolveLabelFormat(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
   const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
@@ -68,6 +69,42 @@ const getLineStyleConfig = (config: ChartConfig) => {
   }
 };
 
+/**
+ * Same conditional-formatting rule engine as Table/Stat, applied per bar — a bar that
+ * breaches a rule's threshold renders in that rule's color (the industry-standard
+ * "highlight abnormal values" pattern for bar/column charts), overriding the series'
+ * normal palette color for just that point. Colors are resolved against the series'
+ * real values, not a display transform (e.g. 100%-stacked percentages), since rules
+ * are authored against the metric's real scale.
+ */
+function applySeriesConditionalColors(
+  displayValues: unknown[],
+  rawValues: unknown[],
+  seriesName: string,
+  config: ChartConfig,
+): unknown[] {
+  const colors = getSeriesPointColors(config.conditionalFormatting, seriesName, rawValues);
+  if (!colors.some(Boolean)) return displayValues;
+  return displayValues.map((value, i) =>
+    colors[i] ? { value, itemStyle: { color: colors[i] } } : value,
+  );
+}
+
+/** Same rule-matching as applySeriesConditionalColors, for pie/donut slices —
+ * data items are already `{value, name}` objects (not bare numbers), so the
+ * override merges into `itemStyle` on the existing object instead of wrapping
+ * a raw value. */
+function applyPieConditionalColors<T extends { value: number }>(
+  pieData: T[],
+  seriesName: string,
+  config: ChartConfig,
+): T[] {
+  const rawValues = pieData.map((d) => d.value);
+  const colors = getSeriesPointColors(config.conditionalFormatting, seriesName, rawValues);
+  if (!colors.some(Boolean)) return pieData;
+  return pieData.map((item, i) => (colors[i] ? { ...item, itemStyle: { color: colors[i] } } : item));
+}
+
 export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
   // If primary series is empty but secondary has data, treat secondary as primary.
   // This handles stale yMetricsSecondary DB state after General-tab Apply Changes.
@@ -123,7 +160,12 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
       },
       emphasis: getCartesianEmphasis('bar'),
       blur: getCartesianBlur(),
-      data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+      data: applySeriesConditionalColors(
+        isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+        s.data,
+        s.name,
+        config,
+      ),
       yAxisIndex: 0,
     }));
 
@@ -217,53 +259,66 @@ export const buildLineSeries = (data: ChartData, config: ChartConfig, colors?: s
   if ((effectiveData.series && effectiveData.series.length > 0) || (effectiveData.secondarySeries && effectiveData.secondarySeries.length > 0)) {
     const allSeries = [...(effectiveData.series || []), ...(effectiveData.secondarySeries || [])];
 
-    const primarySeries = (effectiveData.series || []).map((s) => ({
-      name: s.name,
-      type: 'line',
-      smooth: lineConfig.smooth,
-      step: lineConfig.step,
-      showSymbol: config.showPoints,
-      symbolSize: config.symbolSize ?? 8,
-      lineStyle: { width: config.lineWidth ?? 3 },
-      stack: isStackedLine ? 'total' : undefined,
-      label: {
-        show: config.showDataLabel,
-        position: 'top',
-        color:
-          config.axisLabelColor === 'default'
-            ? CHART_COLORS.text.primary
-            : (config.axisLabelColor ?? CHART_COLORS.text.primary),
-        fontSize: config.axisLabelFontSize ?? 11,
-        formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
-      },
-      data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
-      yAxisIndex: 0,
-      emphasis: getCartesianEmphasis('line', config.lineWidth ?? 3),
-      blur: getCartesianBlur(),
-    }));
+    const primarySeries = (effectiveData.series || []).map((s) => {
+      const displayValues = isPercentStacked ? convertToPercent(s.data, allSeries) : s.data;
+      const coloredData = applySeriesConditionalColors(displayValues, s.data, s.name, config);
+      // A conditionally-colored point is invisible if no symbol renders there
+      // at all — force symbols on for this series when a rule actually
+      // highlighted something, even if "show points" is off globally.
+      const hasHighlight = coloredData.some((v) => v !== null && typeof v === 'object');
+      return {
+        name: s.name,
+        type: 'line',
+        smooth: lineConfig.smooth,
+        step: lineConfig.step,
+        showSymbol: config.showPoints || hasHighlight,
+        symbolSize: config.symbolSize ?? 8,
+        lineStyle: { width: config.lineWidth ?? 3 },
+        stack: isStackedLine ? 'total' : undefined,
+        label: {
+          show: config.showDataLabel,
+          position: 'top',
+          color:
+            config.axisLabelColor === 'default'
+              ? CHART_COLORS.text.primary
+              : (config.axisLabelColor ?? CHART_COLORS.text.primary),
+          fontSize: config.axisLabelFontSize ?? 11,
+          formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
+        },
+        data: coloredData,
+        yAxisIndex: 0,
+        emphasis: getCartesianEmphasis('line', config.lineWidth ?? 3),
+        blur: getCartesianBlur(),
+      };
+    });
 
-    const secondarySeries = (effectiveData.secondarySeries || []).map((s) => ({
-      name: s.name,
-      type: 'line',
-      smooth: lineConfig.smooth,
-      step: lineConfig.step,
-      showSymbol: config.showPoints,
-      symbolSize: config.symbolSize ?? 8,
-      lineStyle: { width: config.lineWidth ?? 3 },
-      stack: isStackedLine ? 'secondary' : undefined,
-      label: {
-        show: config.showDataLabel,
-        position: 'top',
-        color:
-          config.axisLabelColor === 'default'
-            ? CHART_COLORS.text.primary
-            : (config.axisLabelColor ?? CHART_COLORS.text.primary),
-        fontSize: config.axisLabelFontSize ?? 11,
-        formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
-      },
-      data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
-      yAxisIndex: 1,
-    }));
+    const secondarySeries = (effectiveData.secondarySeries || []).map((s) => {
+      const displayValues = isPercentStacked ? convertToPercent(s.data, allSeries) : s.data;
+      const coloredData = applySeriesConditionalColors(displayValues, s.data, s.name, config);
+      const hasHighlight = coloredData.some((v) => v !== null && typeof v === 'object');
+      return {
+        name: s.name,
+        type: 'line',
+        smooth: lineConfig.smooth,
+        step: lineConfig.step,
+        showSymbol: config.showPoints || hasHighlight,
+        symbolSize: config.symbolSize ?? 8,
+        lineStyle: { width: config.lineWidth ?? 3 },
+        stack: isStackedLine ? 'secondary' : undefined,
+        label: {
+          show: config.showDataLabel,
+          position: 'top',
+          color:
+            config.axisLabelColor === 'default'
+              ? CHART_COLORS.text.primary
+              : (config.axisLabelColor ?? CHART_COLORS.text.primary),
+          fontSize: config.axisLabelFontSize ?? 11,
+          formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
+        },
+        data: coloredData,
+        yAxisIndex: 1,
+      };
+    });
 
     return [...primarySeries, ...secondarySeries];
   }
@@ -328,12 +383,15 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
 
     const primarySeries = (effectiveData.series || []).map((s, index) => {
       const seriesColor = seriesColors[index % seriesColors.length];
+      const displayValues = isPercentStacked ? convertToPercent(s.data, allSeries) : s.data;
+      const coloredData = applySeriesConditionalColors(displayValues, s.data, s.name, config);
+      const hasHighlight = coloredData.some((v) => v !== null && typeof v === 'object');
       return {
         name: s.name,
         type: 'line',
         smooth: lineConfig.smooth,
         step: lineConfig.step,
-        showSymbol: config.showPoints,
+        showSymbol: config.showPoints || hasHighlight,
         symbolSize: config.symbolSize ?? 8,
         lineStyle: { width: config.lineWidth ?? 3 },
         stack: isStackedArea ? 'total' : undefined,
@@ -347,7 +405,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
           fontSize: config.axisLabelFontSize ?? 11,
           formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
         },
-        data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+        data: coloredData,
         areaStyle: {
           opacity: 0.4,
           // Use palette color for gradient
@@ -370,12 +428,15 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
     // Secondary series should also have area fills for area charts
     const secondarySeries = (effectiveData.secondarySeries || []).map((s, index) => {
       const seriesColor = seriesColors[(effectiveData.series?.length || 0) + index] || seriesColors[index % seriesColors.length];
+      const displayValues = isPercentStacked ? convertToPercent(s.data, allSeries) : s.data;
+      const coloredData = applySeriesConditionalColors(displayValues, s.data, s.name, config);
+      const hasHighlight = coloredData.some((v) => v !== null && typeof v === 'object');
       return {
         name: s.name,
         type: 'line',
         smooth: lineConfig.smooth,
         step: lineConfig.step,
-        showSymbol: config.showPoints,
+        showSymbol: config.showPoints || hasHighlight,
         symbolSize: config.symbolSize ?? 8,
         lineStyle: { width: config.lineWidth ?? 3 },
         stack: isStackedArea ? 'secondary' : undefined,
@@ -389,7 +450,7 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
           fontSize: config.axisLabelFontSize ?? 11,
           formatter: dataLabelFormatter(config, s?.name, isPercentStacked),
         },
-        data: isPercentStacked ? convertToPercent(s.data, allSeries) : s.data,
+        data: coloredData,
         areaStyle: {
           opacity: 0.3,
           // Use palette color for secondary series
@@ -482,7 +543,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
       const total = pieData.reduce((sum, item) => sum + (item.value || 0), 0);
       const isZeroSum = total === 0;
 
-      const legendPos = config.legendPosition || (config.showLegend ? 'top' : 'hide');
+      const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
       const { center } = getPieLayout(legendPos, compact);
 
       return {
@@ -529,7 +590,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
             shadowColor: 'rgba(0, 0, 0, 0.35)',
           },
         },
-        data: pieData,
+        data: applyPieConditionalColors(pieData, s.name, config),
       };
     });
   }
@@ -546,11 +607,15 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
   const total = pieData.reduce((sum, item) => sum + (item.value || 0), 0);
   const isZeroSum = total === 0;
 
-  const legendPos = config.legendPosition || (config.showLegend ? 'top' : 'hide');
+  const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
   const { center, outerRadius } = getPieLayout(legendPos, compact);
+  // The real metric name lives on data.series[0].name — using it (not the
+  // generic 'Distribution' placeholder) as this series' identity is what lets
+  // a conditional-formatting rule authored against that column actually match.
+  const seriesName = data.series?.[0]?.name || 'Distribution';
 
   return {
-    name: 'Distribution',
+    name: seriesName,
     type: 'pie',
     radius: isZeroSum ? [0, 0] : [config.innerRadius + '%', outerRadius],
     center,
@@ -594,7 +659,7 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
     },
     stillShowZeroSum: false,
     silent: isZeroSum,
-    data: pieData,
+    data: applyPieConditionalColors(pieData, seriesName, config),
   };
 };
 

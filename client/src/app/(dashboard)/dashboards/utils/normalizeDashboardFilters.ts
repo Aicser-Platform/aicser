@@ -8,10 +8,47 @@ type RawDashboardFilter = Partial<DashboardFilter> & {
   type?: unknown;
 };
 
+type FilterContextWidget = {
+  dataSourceId?: string;
+  chartQuery?: Record<string, unknown>;
+};
+
 type FilterDataContext = {
   dataSourceId?: string;
   tableName?: string;
+  /**
+   * All dashboard widgets, used to resolve each filter's own data source by
+   * which widget's chartQuery actually references its field - a dashboard
+   * spanning more than one table can't correctly bind every filter to
+   * whichever widget happens to be first (the flat dataSourceId/tableName
+   * fallback above). Falls back to that flat context when no widget
+   * references the field (e.g. a brand-new filter not yet used anywhere).
+   */
+  widgets?: FilterContextWidget[];
 };
+
+function metricListHasField(list: unknown, field: string): boolean {
+  return Array.isArray(list) && list.some((m) => m && typeof m === 'object' && (m as { field?: unknown }).field === field);
+}
+
+function widgetReferencesField(widget: FilterContextWidget, field: string): boolean {
+  const cq = widget.chartQuery;
+  if (!cq) return false;
+  if (cq.x === field || cq.groupField === field) return true;
+  return (
+    metricListHasField(cq.yMetrics, field) ||
+    metricListHasField(cq.yMetricsSecondary, field) ||
+    metricListHasField(cq.xMetrics, field)
+  );
+}
+
+function resolveFieldContext(field: string, context: FilterDataContext): { dataSourceId?: string; tableName?: string } {
+  const match = context.widgets?.find((w) => w.dataSourceId && widgetReferencesField(w, field));
+  if (match) {
+    return { dataSourceId: match.dataSourceId, tableName: match.chartQuery?.tableName as string | undefined };
+  }
+  return { dataSourceId: context.dataSourceId, tableName: context.tableName };
+}
 
 const DATE_PRESET_ALIASES: Record<string, DatePresetKey> = {
   today: 'today',
@@ -76,6 +113,7 @@ export function normalizeDashboardFilters(raw: unknown, context: FilterDataConte
       (typeof filter.label === 'string' && filter.label.trim()) ||
       field.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
     const defaultValue = filter.defaultValue ?? filter.default;
+    const fieldContext = resolveFieldContext(field, context);
 
     return [
       {
@@ -86,8 +124,8 @@ export function normalizeDashboardFilters(raw: unknown, context: FilterDataConte
         type,
         defaultValue: normalizeDefault(type, defaultValue),
         isGlobal: filter.isGlobal ?? true,
-        dataSourceId: filter.dataSourceId || context.dataSourceId,
-        tableName: filter.tableName || context.tableName,
+        dataSourceId: filter.dataSourceId || fieldContext.dataSourceId,
+        tableName: filter.tableName || fieldContext.tableName,
       } as DashboardFilter,
     ];
   });

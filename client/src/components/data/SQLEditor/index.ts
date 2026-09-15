@@ -1,1 +1,1 @@
-export { default } from './SQLEditor';
+export { default } from './MonacoSQLEditor';

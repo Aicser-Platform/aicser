@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Dropdown, Button, Modal, message, Spin, Tooltip } from 'antd';
+import { Dropdown, Button, Modal, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ShareAltOutlined,
   LinkOutlined,
   CodeOutlined,
-  ExportOutlined,
+  FileImageOutlined,
+  FilePdfOutlined,
   EyeOutlined,
   SendOutlined,
   ClockCircleOutlined,
@@ -15,13 +16,14 @@ import {
   GlobalOutlined,
   LockOutlined,
   PrinterOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
-import { fetchApi } from '@/utils/api';
 import { chartService } from '../services/chartService';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
+import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 
 type Props = {
   dashboardId: string | null;
@@ -41,6 +43,7 @@ type Props = {
   onManageSchedules?: () => void;
   isPublic?: boolean;
   onPublicAccessChange?: (isPublic: boolean) => void;
+  exportBusy?: boolean;
 };
 
 export function DashboardShareMenu({
@@ -59,6 +62,7 @@ export function DashboardShareMenu({
   onManageSchedules,
   isPublic = false,
   onPublicAccessChange,
+  exportBusy = false,
 }: Props) {
   const t = useTranslations('dashboards');
   const tt = useTranslations('dashboard_tabs');
@@ -88,6 +92,20 @@ export function DashboardShareMenu({
     });
     setEmbedUrl(result.embedUrl);
     setEmbedToken(result.token);
+  };
+
+  const runPrint = () => {
+    if (onPrint) {
+      onPrint();
+      return;
+    }
+    document.body.classList.add('dashboard-print-mode');
+    window.print();
+    const cleanup = () => {
+      document.body.classList.remove('dashboard-print-mode');
+      window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
   };
 
   const items: MenuProps['items'] = [
@@ -136,44 +154,43 @@ export function DashboardShareMenu({
       : []),
     { type: 'divider' as const },
     {
-      key: 'png',
-      icon: <ExportOutlined />,
-      label: t('export_png'),
-      onClick: () => onExport?.('png'),
-    },
-    {
-      key: 'pdf',
-      icon: <ExportOutlined />,
-      label: t('export_pdf'),
-      onClick: () => onExport?.('pdf'),
-    },
-    {
-      key: 'print',
-      icon: <PrinterOutlined />,
-      label: 'Print / Save as PDF',
-      onClick: () => {
-        if (onPrint) {
-          onPrint();
-          return;
-        }
-        document.body.classList.add('dashboard-print-mode');
-        window.print();
-        const cleanup = () => {
-          document.body.classList.remove('dashboard-print-mode');
-          window.removeEventListener('afterprint', cleanup);
-        };
-        window.addEventListener('afterprint', cleanup);
-      },
+      key: 'export',
+      icon: <DownloadOutlined />,
+      label: t('export_menu'),
+      disabled: exportBusy,
+      children: [
+        {
+          key: 'png',
+          icon: <FileImageOutlined />,
+          label: menuItemWithDescription(t('export_png'), t('export_png_desc')),
+          disabled: exportBusy,
+          onClick: () => onExport?.('png'),
+        },
+        {
+          key: 'pdf',
+          icon: <FilePdfOutlined />,
+          label: menuItemWithDescription(t('export_pdf'), t('export_pdf_desc')),
+          disabled: exportBusy,
+          onClick: () => onExport?.('pdf'),
+        },
+        {
+          key: 'print',
+          icon: <PrinterOutlined />,
+          label: menuItemWithDescription(t('export_print'), t('export_print_desc')),
+          disabled: exportBusy,
+          onClick: runPrint,
+        },
+      ],
     },
   ];
 
-  if (isEditMode && onPublish) {
+  if (onPublish) {
     items.push(
       { type: 'divider' as const },
       {
         key: 'publish',
         icon: <SendOutlined />,
-        label: tt('publish'),
+        label: menuItemWithDescription(tt('publish'), tt('publish_desc')),
         onClick: onPublish,
       }
     );
@@ -201,7 +218,7 @@ export function DashboardShareMenu({
     <>
       <Dropdown menu={{ items }} trigger={['click']}>
         <Tooltip title={t('share_tooltip')}>
-          <Button icon={<ShareAltOutlined />} disabled={!dashboardId}>
+          <Button icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
             {t('share')}
           </Button>
         </Tooltip>

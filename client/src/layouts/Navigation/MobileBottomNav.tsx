@@ -50,8 +50,10 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   const selectedKey = React.useMemo(() => selectedKeyForPathname(pathname), [pathname]);
   const [moreOpen, setMoreOpen] = React.useState(false);
-  const aiAvailability = useAiAvailability(true, isEnterpriseEdition);
-  const showAiNav = isEnterpriseEdition && aiAvailability.available;
+  // validate=false: only "configured" is read below, which doesn't need a live
+  // test-completion call — Settings already validates keys live at save time.
+  const aiAvailability = useAiAvailability(false, isEnterpriseEdition);
+  const showAiNav = isEnterpriseEdition && aiAvailability.configured;
 
   const tabs = isEnterpriseEdition && showAiNav
     ? EE_MOBILE_TABS
@@ -108,7 +110,7 @@ export function MobileBottomNav() {
         placement="bottom"
         open={moreOpen}
         onClose={() => setMoreOpen(false)}
-        height="auto"
+        size="auto"
         className="mobile-more-drawer"
         styles={{
           body: { padding: '8px 0 16px', maxHeight: 'min(70vh, 520px)', overflowY: 'auto' },

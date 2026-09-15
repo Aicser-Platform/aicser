@@ -1,8 +1,11 @@
 import React from 'react';
-import { Avatar, Button, Input, Modal, Typography } from 'antd';
+import Link from 'next/link';
+import { Button, Input, Modal, Typography } from 'antd';
 import { CheckCircleOutlined, CheckCircleFilled, LikeOutlined } from '@ant-design/icons';
 import type { FeedComment, ReactionType } from '@/services/socialFeedService';
 import { formatTimeAgo } from '@/services/socialFeedService';
+import { renderTextWithMentions } from '@/components/Feed/MentionText';
+import { FeedAuthorAvatar } from '@/components/Feed/FeedAuthorAvatar';
 import { COMMENT_CHAR_LIMIT, reactionOptions } from '../FeedCard/constants';
 
 const { Text } = Typography;
@@ -108,6 +111,11 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
   const isResolved = resolvedCommentIds.has(comment.id);
   const authorLabel = isOwnComment ? 'You' : comment.author.name;
   const authorTitle = comment.author.title?.trim();
+  // Same fix as FeedGridCard/FeedCardHeader: comment authors had no click-through
+  // to their profile at all (not even gated by page, just never wired).
+  const authorProfileHref = comment.author.username
+    ? `/discover/author/${encodeURIComponent(comment.author.username.replace(/^@/, ''))}`
+    : null;
 
   const confirmDelete = () => {
     Modal.confirm({
@@ -119,28 +127,62 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
     });
   };
 
-  const threadClassName = depth > 0 ? 'mt-3 ml-10 border-l-2 border-[var(--ant-color-border-secondary)] pl-4' : 'mt-4';
+  // Indent only once — a reply-to-a-reply-to-a-reply nested via depth+1 recursion
+  // would otherwise compound its parent's already-shifted position with its own
+  // ml-10 every level down, marching the thread further right with each reply
+  // until the actual comment text was squeezed into a sliver (see screenshot:
+  // 4+ levels deep). Twitter/Reddit-style flat threading: depth 1 gets the one
+  // visual indent + rail, every deeper depth renders at that same indent.
+  const threadClassName =
+    depth === 0
+      ? 'mt-4'
+      : depth === 1
+        ? 'mt-3 ml-10 border-l-2 border-[var(--ant-color-border-secondary)] pl-4'
+        : 'mt-3 pl-4 border-l-2 border-[var(--ant-color-border-secondary)]';
   const rowClassName = `flex gap-3 relative group ${isDeleting ? 'opacity-50 pointer-events-none' : ''} ${isResolved ? 'opacity-70' : ''}`;
 
   return (
     <div className={threadClassName}>
       <div className={rowClassName}>
-        <Avatar
-          size={32}
-          src={comment.author.avatarUrl}
-          className="shrink-0 mt-1 shadow-sm border border-[var(--ant-color-border-secondary)]"
-        >
-          {comment.author.name.charAt(0)}
-        </Avatar>
+        {authorProfileHref ? (
+          <Link href={authorProfileHref} onClick={(e) => e.stopPropagation()} className="shrink-0">
+            <FeedAuthorAvatar
+              author={comment.author}
+              size={32}
+              className="mt-1 shadow-sm border border-[var(--ant-color-border-secondary)] cursor-pointer"
+              initial={authorLabel}
+            />
+          </Link>
+        ) : (
+          <FeedAuthorAvatar
+            author={comment.author}
+            size={32}
+            className="shrink-0 mt-1 shadow-sm border border-[var(--ant-color-border-secondary)]"
+            initial={authorLabel}
+          />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <Text strong className="text-sm text-[var(--ant-color-text)] leading-none">
-                {authorLabel}
-              </Text>
+              {authorProfileHref ? (
+                <Link href={authorProfileHref} onClick={(e) => e.stopPropagation()}>
+                  <Text strong className="text-sm text-[var(--ant-color-text)] leading-none hover:text-[var(--ant-color-primary)]">
+                    {authorLabel}
+                  </Text>
+                </Link>
+              ) : (
+                <Text strong className="text-sm text-[var(--ant-color-text)] leading-none">
+                  {authorLabel}
+                </Text>
+              )}
               {authorTitle ? (
+                // Bare adjacent text read as part of the name ("You Aiser"
+                // in a comment from the demo account — see screenshot). A
+                // leading bullet matches this row's own convention for the
+                // timestamp segment below, so it reads as its own field
+                // (affiliation) rather than a second name/username.
                 <Text type="secondary" className="text-xs text-[var(--ant-color-text-tertiary)] leading-none">
-                  {authorTitle}
+                  &bull; {authorTitle}
                 </Text>
               ) : null}
               {comment.isPostAuthor && !isOwnComment ? (
@@ -204,7 +246,7 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
             </div>
           ) : (
             <div className="text-sm text-[var(--ant-color-text)] leading-relaxed mt-1 break-words">
-              {comment.content}
+              {renderTextWithMentions(comment.content)}
             </div>
           )}
 

@@ -24,7 +24,7 @@ def _make_mock_db():
 
 
 @pytest.mark.asyncio
-async def test_list_by_user_filters_to_owner_or_legacy_null():
+async def test_list_by_user_filters_to_owner_only():
     db = _make_mock_db()
     user_id = uuid4()
 
@@ -33,8 +33,7 @@ async def test_list_by_user_filters_to_owner_or_legacy_null():
     stmt = db.execute.call_args.args[0]
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
     assert "dashboards.created_by" in compiled
-    assert "OR" in compiled.upper()
-    assert "IS NULL" in compiled.upper()
+    assert "IS NULL" not in compiled.upper()
 
 
 @pytest.mark.asyncio

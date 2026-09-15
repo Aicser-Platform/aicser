@@ -7,10 +7,19 @@ import type { LayoutItem, WidgetInstance } from '../../../stores/useDashboardSto
 // Capture whatever props DashboardViewerGrid hands to react-grid-layout's
 // Responsive component so we can assert on `cols`/`layouts` without needing
 // jsdom to perform real pixel layout (offsetWidth is always 0 there).
-let capturedProps: { cols: Record<string, number>; layouts: Record<string, LayoutItem[]> } | null = null;
+let capturedProps: {
+  cols: Record<string, number>;
+  layouts: Record<string, LayoutItem[]>;
+  compactType?: string | null;
+} | null = null;
 
 vi.mock('react-grid-layout', () => ({
-  Responsive: (props: { cols: Record<string, number>; layouts: Record<string, LayoutItem[]>; children: React.ReactNode }) => {
+  Responsive: (props: {
+    cols: Record<string, number>;
+    layouts: Record<string, LayoutItem[]>;
+    compactType?: string | null;
+    children: React.ReactNode;
+  }) => {
     capturedProps = props;
     return <div data-testid="grid">{props.children}</div>;
   },
@@ -52,6 +61,7 @@ describe('DashboardViewerGrid (preserve mode)', () => {
     );
 
     expect(capturedProps).not.toBeNull();
+    expect(capturedProps!.compactType).toBeNull();
     const { cols, layouts } = capturedProps!;
 
     for (const bp of ['lg', 'md', 'sm', 'xs', 'xxs']) {

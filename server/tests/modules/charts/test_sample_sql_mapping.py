@@ -88,3 +88,15 @@ def test_saved_sql_runtime_filters_only_use_projected_columns():
     ]
 
     assert svc._filters_projected_by_saved_sql(filters, sql) == [filters[1]]
+
+
+def test_map_sql_rows_fuzzy_matches_spaced_metric_names():
+    svc = _svc()
+    rows = [{"customer_name": "A", "principal_amount": 10}, {"customer_name": "B", "principal_amount": 20}]
+    out = svc._map_sql_rows_to_chart_data(
+        rows,
+        chart_type="bar",
+        chart_query={"x": "customer_name", "yMetrics": [{"field": "Principal Amount", "aggregation": "sum"}]},
+    )
+    assert out["x"] == ["A", "B"]
+    assert out["series"][0]["data"] == [10, 20]

@@ -60,4 +60,33 @@ describe('normalizeDashboardFilters', () => {
       defaultValue: 'Phnom Penh',
     });
   });
+
+  it('binds a filter to the widget that actually references its field, not just the first widget with any dataSourceId', () => {
+    // AI-generated multi-table dashboards defaulted every filter's
+    // dataSourceId/tableName to whichever widget happened to be first in the
+    // store, regardless of whether that widget's table actually has the
+    // field - silently mis-binding the filter for every other table.
+    const widgets = [
+      { dataSourceId: 'ds-customers', chartQuery: { tableName: 'customers', x: 'signup_month' } },
+      { dataSourceId: 'ds-sales', chartQuery: { tableName: 'sales', x: 'region', yMetrics: [{ field: 'revenue' }] } },
+    ];
+
+    const [filter] = normalizeDashboardFilters(
+      [{ type: 'select', field: 'region', label: 'Region' }],
+      { dataSourceId: 'ds-customers', tableName: 'customers', widgets },
+    );
+
+    expect(filter).toMatchObject({ dataSourceId: 'ds-sales', tableName: 'sales' });
+  });
+
+  it('falls back to the flat context when no widget references the filter field', () => {
+    const widgets = [{ dataSourceId: 'ds-customers', chartQuery: { tableName: 'customers', x: 'signup_month' } }];
+
+    const [filter] = normalizeDashboardFilters(
+      [{ type: 'select', field: 'brand_new_field', label: 'Brand New Field' }],
+      { dataSourceId: 'ds-customers', tableName: 'customers', widgets },
+    );
+
+    expect(filter).toMatchObject({ dataSourceId: 'ds-customers', tableName: 'customers' });
+  });
 });

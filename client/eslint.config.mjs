@@ -2,6 +2,7 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,10 +40,30 @@ const reactCompilerMigrationRules = {
   'react-hooks/fbt': 'warn',
 };
 
+/**
+ * Next's bundled jsx-a11y subset (via nextVitals) only covers a handful of rules
+ * (alt-text, aria-props, aria-proptypes, aria-unsupported-elements, role-has-required-
+ * aria-props, role-supports-aria-props) — real coverage gaps like click-events-have-
+ * key-events, label-has-associated-control, and anchor-is-valid go uncaught. Layering
+ * the plugin's full "recommended" set closes that. Kept at 'warn' for this first pass
+ * (an accessibility foundation, not a completed audit) so existing violations surface
+ * without red-lining every build; tighten to 'error' once the current findings are
+ * worked through.
+ */
+const a11yRecommendedAsWarnings = Object.fromEntries(
+  Object.entries(jsxA11y.flatConfigs.recommended.rules).map(([rule, _severity]) => [rule, 'warn']),
+);
+
 /** @type {import('eslint').Linter.Config[]} */
 const eslintConfig = [
   ...nextVitals,
   ...nextTs,
+  {
+    // nextVitals already registers the jsx-a11y plugin object itself (under this same
+    // key) — redeclaring it here throws "Cannot redefine plugin", so only the rule
+    // severities are added, layered on the plugin instance Next.js already wired in.
+    rules: a11yRecommendedAsWarnings,
+  },
   {
     rules: {
       'no-console': 'warn',

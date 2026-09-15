@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LayoutItem, WidgetInstance } from '@/app/(dashboard)/dashboards/stores/dashboardStoreTypes';
 import {
   buildDashboardSnapshotPayload,
+  snapshotLayoutFromPayload,
   snapshotWidgetsFromPayload,
 } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
 
@@ -39,5 +40,26 @@ describe('buildDashboardSnapshotPayload', () => {
       colorPalette: 'ocean',
       dashboardDefaultPalette: 'ocean',
     });
+  });
+
+  it('hydrates layout from per-widget positions when visuals.layout is incomplete', () => {
+    const layout = snapshotLayoutFromPayload({
+      schemaVersion: 1,
+      assetType: 'dashboard',
+      narrative: { title: 'Test' },
+      visuals: {
+        widgets: [
+          { id: 'kpi', title: 'KPI', chartType: 'stat', layout: { x: 0, y: 3, w: 3, h: 4 } },
+          { id: 'trend', title: 'Trend', chartType: 'line', layout: { x: 0, y: 7, w: 12, h: 5 } },
+        ],
+        layout: [],
+      },
+      provenance: { sourcePath: '/dashboards' },
+      capturedAt: new Date().toISOString(),
+    });
+    expect(layout).toEqual([
+      { i: 'kpi', x: 0, y: 3, w: 3, h: 4, pageId: undefined },
+      { i: 'trend', x: 0, y: 7, w: 12, h: 5, pageId: undefined },
+    ]);
   });
 });

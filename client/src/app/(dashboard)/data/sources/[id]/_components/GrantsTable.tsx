@@ -84,7 +84,7 @@ export const GrantsTable: React.FC<{
             ? columnPolicies.find((item) => item.id === grant.cls_policy_id)
             : null;
           return (
-            <Space direction="vertical" size={6} style={{ padding: '4px 0 8px' }}>
+            <Space orientation="vertical" size={6} style={{ padding: '4px 0 8px' }}>
               <Space size={8}>
                 <Tag color={EFFECT_TONE[effect.kind].color}>{t(EFFECT_TONE[effect.kind].key)}</Tag>
                 {effect.policyName ? <Text type="secondary">{effect.policyName}</Text> : null}
@@ -131,7 +131,7 @@ export const GrantsTable: React.FC<{
           title: t('data_source_access_grantee'),
           key: 'grantee',
           render: (_, grant) => (
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <span>{granteeLabel(grant)}</span>
               <Tag>{t(`data_source_access_grantee_${grant.grantee_type}`)}</Tag>
             </Space>

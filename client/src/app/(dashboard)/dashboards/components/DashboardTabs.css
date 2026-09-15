@@ -92,7 +92,7 @@
   z-index: 40;
 }
 
-.auto-send-modal .ant-modal-content {
+.auto-send-modal {
   border-radius: 14px;
   border: 1px solid var(--ant-color-border);
   overflow: hidden;
@@ -297,7 +297,7 @@
   color: var(--ant-color-text-tertiary);
 }
 
-.edit-automation-modal .ant-modal-content {
+.edit-automation-modal {
   border-radius: 14px;
   border: 1px solid var(--ant-color-border);
   overflow: hidden;

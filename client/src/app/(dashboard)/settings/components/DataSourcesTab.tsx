@@ -194,13 +194,15 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
             key: 'actions',
             width: canManageAccess ? 160 : 120,
             render: (_: unknown, record: SettingsDataSource) => (
-              <Space>
+              <Space size={0}>
                 {canManageAccess ? (
                   <Tooltip title={t('data_source_access_manage')}>
                     <Button
                       type="text"
                       size="small"
+                      className="icon-only-btn"
                       icon={<SafetyCertificateOutlined />}
+                      aria-label={t('data_source_access_manage')}
                       onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
                       disabled={!!deletingId}
                     />
@@ -210,7 +212,9 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
                   <Button
                     type="text"
                     size="small"
+                    className="icon-only-btn"
                     icon={<EditOutlined />}
+                    aria-label={t('edit_connection')}
                     onClick={() => handleEdit(record)}
                     disabled={!!deletingId}
                   />
@@ -220,7 +224,9 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
                     type="text"
                     size="small"
                     danger
+                    className="icon-only-btn"
                     icon={<DeleteOutlined />}
+                    aria-label={t('delete')}
                     loading={deletingId === record.id}
                     onClick={() => handleDelete(record)}
                     disabled={!!deletingId}
@@ -260,8 +266,8 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
         {/* Add button is in the page header via onSetAction */}
       </div>
 
-      <Card size="small" bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+        <Space orientation="vertical" size="large" style={{ width: '100%' }}>
           {dataSources.length === 0 ? (
             <Empty description={t('no_data_sources_configured')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
               {canManageDataSettings ? (

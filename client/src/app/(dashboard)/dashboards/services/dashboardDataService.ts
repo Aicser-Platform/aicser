@@ -51,6 +51,10 @@ export async function fetchWidgetChartData(params: {
   return {
     chartData: partitionSeriesData(response.data, widget),
     chartOptions: response.chart?.chartOptions as Record<string, unknown> | undefined,
+    // Present when a runtime filter this widget was scoped to got silently
+    // dropped server-side (e.g. an unsupported raw-SQL filter) rather than
+    // applied — the caller decides how to surface this (toast, banner).
+    filterWarnings: response.filter_warnings,
   };
 }
 

@@ -34,6 +34,7 @@ export const OverflowMenuButton: React.FC<OverflowMenuButtonProps> = ({ children
     >
       <Button
         type="text"
+        className="icon-only-btn"
         icon={<MoreOutlined />}
         aria-label={ariaLabel}
         title={title ?? ariaLabel}

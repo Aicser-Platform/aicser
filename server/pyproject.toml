@@ -15,72 +15,75 @@ alembic = "^1.13.0"
 asyncpg = "^0.30.0"
 psycopg2-binary = "^2.9.9"
 sqlalchemy = "^2.0.23"
-cryptography = "^46.0.5"
+cryptography = "^50.0.0"
 passlib = "^1.7.4"
 python-jose = "^3.3.0"
+# TOTP (RFC 6238) codes + otpauth:// provisioning URIs for two-factor auth
+# (src/modules/authentication/totp_service.py) -- well-audited, standard choice.
+pyotp = "^2.10.0"
 email-validator = "^2.2.0"
 pydantic = "^2.10.4"
 pydantic-settings = "^2.7.0"
 openai = "^2.44.0"
-litellm = "^1.93.0"
+litellm = "^1.97.0"
 supabase = "^2.10.0"
-langchain = "^0.3.30"
-langgraph = "^0.6.11"
-langchain-azure-ai = "^0.1.0"
-langchain-google-genai = "^0.0.1"
-google-generativeai = "^0.3.1"
+langchain = "^1.0"
+langchain-openai = "^1.0"
+langgraph = "^1.0"
 boto3 = "^1.26.137"
-colorama = "^0.4.6"
 pandas = "^2.2.3"
 numpy = "^1.24.0"
 pillow = "^12.3.0"
 redis = "^5.0.0"
+# Background job queue for src/shared/jobs/worker.py (alert rule evaluation, scheduled
+# reports, BI sync, retention cleanup). Was referenced (`from arq.cron import cron`) but
+# never actually declared as a dependency, so the worker container couldn't import at all.
+arq = "^0.28.0"
+# Middleware/endpoint for this already existed (src/core/middleware.py,
+# GET /metrics) but silently no-op'd -- the import always failed since this
+# dependency was never actually declared.
+prometheus-client = "^0.26.0"
 python-dotenv = "^1.0.0"
 python-multipart = "^0.0.32"
 openpyxl = "^3.1.2"
-xlrd = "^2.0.1"
-tabula-py = "^2.8.2"
 pyarrow = "^14.0.2"
-fastparquet = "^2024.2.0"
-python-snappy = "^0.6.1"
 chardet = "^5.2.0"
 python-telegram-bot = "^22.0.0"
 # Database Drivers
 pymysql = "^1.1.0"
-mysql-connector-python = "^9.7.0"
 pyodbc = "^5.0.1"
-oracledb = "^2.5.0"
 pymongo = "^4.6.0"
 elasticsearch = "^8.11.0"
-influxdb-client = "^1.38.0"
-neo4j = "^5.15.0"
 # Data Warehouse Drivers
 snowflake-connector-python = "^4.4.0"
 google-cloud-bigquery = "^3.13.0"
+# Directly imported by ee/modules/data/services/{cloud_storage_service,azure_blob_storage_service}.py,
+# ee/modules/data/services/enterprise_connectors_service.py, src/modules/user/avatar_storage_service.py,
+# and src/core/real_data_sources.py. Previously undeclared - satisfied only as an incidental transitive
+# pull from langchain-community's optional Azure integrations, which no longer applies after the
+# langchain 1.x upgrade dropped that dependency chain.
+azure-storage-blob = "^12.30.0"
+azure-identity = "^1.25.0"
+azure-core = "^1.41.0"
 redshift-connector = "^2.1.15"
 databricks-sql-connector = "^3.0.0"
 databricks-connect = "^14.0.0"
-clickhouse-connect = "^0.7.0"
-clickhouse-driver = "^0.2.6"
 # Statistical & ML Libraries (Advanced Analytics Modes)
 prophet = ">=1.1.5"
 statsmodels = ">=0.14.1"
 pmdarima = ">=2.0.4"
 scikit-learn = ">=1.4.0"
 scipy = ">=1.12.0"
-mapie = ">=0.9.0"
 # Document parsing for RAG knowledge base
 pymupdf = ">=1.24.0"
 python-docx = ">=1.1.0"
 # Optional: native vector operations (graceful fallback to JSONB cosine similarity)
 pgvector = {version = ">=0.3.0", optional = true}
 # Additional utilities
-sqlalchemy-utils = "^0.41.1"
 PyYAML = "^6.0.1"
-psutil = "^5.9.8"
 python-socketio = "^5.16.3"
 python-engineio = "^4.13.3"
-sqlparse = "^0.5.5"
+sqlparse = "^0.6.0"
 sqlglot = "^24.0.0"
 aiohttp = "^3.14.3"
 urllib3 = "^2.7.0"
@@ -92,20 +95,36 @@ duckdb = "^1.5"
 aiomysql = "^0.3.2"
 aiosqlite = "^0.21.0"
 aioodbc = "^0.5.0"
-debugpy = "^1.8.0"
 stripe = "^11.6.0"
 # Chart/dashboard PNG export (also installed explicitly in Dockerfiles)
 playwright = ">=1.40.0"
 # Optional: persistent checkpointer for production (set LANGGRAPH_CHECKPOINT_POSTGRES_URI)
 langgraph-checkpoint-postgres = {version = "^3.0.0", optional = true}
+# Observability: src/shared/observability/{setup,tracer}.py already calls all of
+# these behind try/except ImportError guards and wires them into app startup
+# (OTEL_ENABLED/OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN) - without the packages
+# themselves, every span/instrumentation call silently no-ops regardless of config.
+# Exact pins, not caret ranges: opentelemetry-api/sdk/exporter-* (1.38.0 series)
+# and opentelemetry-instrumentation-* (0.59b0 series) version in lockstep as two
+# separate but coupled families - mixing series (e.g. sdk 1.44.0 with
+# instrumentation-* 0.59b0) breaks on opentelemetry-semantic-conventions.
+opentelemetry-api = "1.38.0"
+opentelemetry-sdk = "1.38.0"
+opentelemetry-semantic-conventions = "0.59b0"
+opentelemetry-exporter-otlp-proto-http = "1.38.0"
+opentelemetry-instrumentation-fastapi = "0.59b0"
+opentelemetry-instrumentation-redis = "0.59b0"
+opentelemetry-instrumentation-httpx = "0.59b0"
+opentelemetry-instrumentation-sqlalchemy = "0.59b0"
+sentry-sdk = "^2.68.0"
 
 [tool.poetry.extras]
 checkpoint-postgres = ["langgraph-checkpoint-postgres"]
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-pytest-asyncio = "^0.21.0"
-black = "^23.0.0"
+pytest = "^9.1.1"
+pytest-asyncio = "^1.4.0"
+black = "^24.0.0"
 isort = "^5.12.0"
 flake8 = "^6.0.0"
 mypy = "^1.5.0"
@@ -128,6 +147,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "legacy_orchestrator: tests for deprecated RobustMultiAgentOrchestrator/EnhancedWorkflowPipeline (run explicitly or in legacy CI; will be migrated to LangGraph).",
+    "integration: exercises the real orchestrator/DB/model against a running stack, no mocks. Skipped by default; set RUN_INTEGRATION_TESTS=1 and run inside a container with service access (see tests/integration/test_mode_smoke.py).",
 ]
 
 [tool.mypy]

@@ -122,7 +122,14 @@ export function extractDesignerOptionsFromConfig(config: unknown): Record<string
       designerOptions.barStackMode = 'stacked';
     }
   } else if (seriesType === 'line') {
-    if (series.some((s) => s.areaStyle)) {
+    const hasArea = series.some((s) => {
+      const area = s.areaStyle as { opacity?: number } | boolean | undefined;
+      if (!area) return false;
+      if (area === true) return true;
+      const opacity = typeof area === 'object' && typeof area.opacity === 'number' ? area.opacity : 0.3;
+      return opacity >= 0.2;
+    });
+    if (hasArea) {
       designerOptions.lineChartType = 'area';
     } else if (series[0]?.smooth) {
       designerOptions.lineChartType = 'smooth';

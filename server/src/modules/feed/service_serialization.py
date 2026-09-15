@@ -8,11 +8,14 @@ from uuid import NAMESPACE_DNS, UUID, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.modules.feed.models import FeedAuthorFollow, FeedComment as FeedCommentModel, FeedCommentReaction, FeedInteraction, FeedPost
+from src.modules.charts.models import Chart
+from src.modules.dashboards.models import Dashboard, DashboardChart
+from src.modules.feed.models import FeedAuthorFollow, FeedComment as FeedCommentModel, FeedCommentReaction, FeedInteraction, FeedPost, FeedPostAttachment
 from src.modules.user.models import User
 from src.modules.user.avatar_storage_service import generate_avatar_sas_url
 from src.modules.feed.schemas import (
     AssetType,
+    FeedAttachmentPayload,
     FeedAuthor,
     FeedComment,
     FeedItemResponse,
@@ -25,6 +28,26 @@ from src.modules.feed.schemas import (
     ReactionType,
 )
 from src.modules.feed.service_utils import _enum_value, _normalize_asset_payload, _reaction_values, _to_iso
+
+
+def _humanize_job_role(raw: str) -> str:
+    """Turn slug-like job roles into readable labels.
+
+    Profile forms often store values like ``ceo_founder`` or ``data-scientist``.
+    Showing those raw under a display name with ``@`` looked like a second
+    username on feed cards.
+    """
+    text = raw.strip()
+    if not text:
+        return text
+    # Already human prose (spaces / mixed case) — leave alone.
+    if " " in text and not text.islower():
+        return text
+    parts = [p for p in text.replace("-", "_").split("_") if p]
+    if not parts:
+        return text
+    acronyms = {"ceo", "cto", "cfo", "coo", "cmo", "vp", "hr", "it", "ai", "bi", "ml"}
+    return " ".join(p.upper() if p.lower() in acronyms else p.capitalize() for p in parts)
 
 
 class FeedServiceSerializationMixin:
@@ -101,29 +124,116 @@ class FeedServiceSerializationMixin:
             return email
         return fallback
 
-    def _to_author(self, user: Optional[User], fallback_user_id: Optional[UUID]) -> FeedAuthor:
+    def _to_author(
+        self,
+        user: Optional[User],
+        fallback_user_id: Optional[UUID],
+        org_name: Optional[str] = None,
+        include_bio: bool = False,
+    ) -> FeedAuthor:
         fallback_id = str(fallback_user_id or uuid5(NAMESPACE_DNS, "unknown-feed-user"))
         fallback_name = f"User {fallback_id[:8]}"
         name = self._build_name(user, fallback_name)
         email = str(getattr(user, "email", "") or "")
         username = (getattr(user, "username", None) or "").strip()
         if not username:
+            # Not persisted anywhere - recomputed fresh every serialization,
+            # so it must be deterministic AND collision-proof on its own.
+            # The plain email-local-part (or slugified name) used here before
+            # was neither: two real accounts in this DB share the email
+            # "demo@dataticon.com" under different auth providers (a
+            # legitimate, supported case - uq_users_email_provider is unique
+            # on (email, provider), not email alone) and both landed on the
+            # identical fallback username "demod" - get_public_author_profile's
+            # lookup then non-deterministically resolved to whichever row
+            # Postgres happened to return first, silently showing one
+            # account's profile/posts under the other's link, or a "not
+            # found" 404 for accounts with neither email nor name to derive
+            # anything from at all. Suffixing with a fragment of the real
+            # (always unique) user id fixes both: no two accounts can ever
+            # produce the same fallback slug, and even a fully bare account
+            # gets one that's guaranteed to exist and resolve. The lookup
+            # side (get_public_author_profile) parses this same suffix back
+            # out to find the exact account it names.
+            id_suffix = fallback_id.replace("-", "")[:8]
             if email and "@" in email:
-                username = email.split("@", 1)[0]
+                username = f"{email.split('@', 1)[0]}-{id_suffix}"
             else:
-                username = name.lower().replace(" ", ".")
+                username = f"user-{id_suffix}"
 
         avatar_url = getattr(user, "avatar_url", None)
         if avatar_url:
-            avatar_url = generate_avatar_sas_url(avatar_url)
+            # The default 1h expiry (fine for a profile page that re-fetches
+            # on load) is too short here: a feed item can sit rendered in
+            # infinite-scroll/React Query cache for much longer than an hour
+            # without a natural refetch, so the signed URL silently expires
+            # underneath an already-displayed post and the avatar falls back
+            # to the initial letter with no error surfaced anywhere. A day is
+            # a reasonable session-length window for what's just a
+            # broadly org-visible profile photo, not sensitive data.
+            avatar_url = generate_avatar_sas_url(avatar_url, expiry_hours=24)
+
+        # "Company" alone (the old behavior) read as just a name with no
+        # context - Settings -> Profile also has a Job Role field.
+        # Prefer a LinkedIn-style byline, but NEVER use "role @ org" when
+        # role looks like a handle/slug — that reads as a second user
+        # ("ceo_founder @ Aicser" under display name "demodfdf dfdf").
+        job_role_raw = (getattr(user, "job_role", None) or "").strip() or None
+        org_or_company = (org_name or getattr(user, "company", None) or "").strip() or None
+        job_role = _humanize_job_role(job_role_raw) if job_role_raw else None
+        if job_role and org_or_company:
+            title = f"{job_role} · {org_or_company}"
+        else:
+            title = job_role or org_or_company
 
         return FeedAuthor(
             id=str(getattr(user, "id", fallback_id)),
             name=name,
             username=username,
             avatarUrl=avatar_url,
-            title=getattr(user, "company", None),
+            title=title,
+            bio=(getattr(user, "bio", None) or None) if include_bio else None,
         )
+
+    async def _load_primary_organizations(self, user_ids: Iterable[UUID]) -> Dict[UUID, str]:
+        """Bulk-resolve each user's primary organization name via user_roles.
+
+        EE-only (RBAC/org-membership doesn't exist in CE) - fails open to an
+        empty map so callers fall back to the self-reported company field.
+        A user can hold multiple org-scoped roles (e.g. owner of one org,
+        member of another via a project); org_owner rows are preferred as
+        the clearest "this is their org" signal, otherwise the first
+        organization-scoped role found wins.
+        """
+        unique_ids = [user_id for user_id in set(user_ids) if user_id]
+        if not unique_ids:
+            return {}
+
+        try:
+            from src.modules.authentication.rbac.models import Role, UserRole
+            from src.modules.organizations.models import Organization
+        except ImportError:
+            return {}
+
+        stmt = (
+            select(UserRole.user_id, Organization.name, Role.name)
+            .join(Organization, Organization.id == UserRole.organization_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                UserRole.user_id.in_(unique_ids),
+                UserRole.organization_id.isnot(None),
+                UserRole.is_deleted.is_(False),
+            )
+        )
+        result = await self.db.execute(stmt)
+
+        org_by_user: Dict[UUID, str] = {}
+        for user_id, org_name, role_name in result.all():
+            if not org_name:
+                continue
+            if user_id not in org_by_user or role_name == "org_owner":
+                org_by_user[user_id] = org_name
+        return org_by_user
 
     async def _load_users(self, user_ids: Iterable[UUID]) -> Dict[UUID, User]:
         unique_ids = [user_id for user_id in set(user_ids) if user_id]
@@ -149,7 +259,7 @@ class FeedServiceSerializationMixin:
             if (getattr(user, "username", None) or "").strip():
                 score += 1
             if (getattr(user, "avatar_url", None) or "").strip():
-                score += 1
+                score += 4
             return score
 
         def put_user(key: Optional[UUID], user: User) -> None:
@@ -188,6 +298,34 @@ class FeedServiceSerializationMixin:
         for reaction in result.scalars().all():
             mapped[reaction.post_id] = _enum_value(reaction.type)
         return mapped
+
+    async def _load_post_reaction_breakdown(
+        self,
+        posts: Sequence[FeedPost],
+    ) -> Dict[UUID, Dict[ReactionType, int]]:
+        """Per-type reaction counts for each post (e.g. {like: 3, love: 1}) -
+        mirrors _load_comment_reactions, which comments already have; posts
+        only exposed a flat total until now."""
+        post_ids = [post.id for post in posts]
+        if not post_ids:
+            return {}
+
+        reaction_types = _reaction_values()
+        stmt = select(FeedInteraction.post_id, FeedInteraction.type).where(
+            FeedInteraction.post_id.in_(post_ids),
+            FeedInteraction.type.in_(reaction_types),
+        )
+        result = await self.db.execute(stmt)
+
+        breakdown: Dict[UUID, Dict[ReactionType, int]] = defaultdict(dict)
+        for post_id, raw_type in result.all():
+            try:
+                typed_reaction = ReactionType(_enum_value(raw_type))
+            except ValueError:
+                continue
+            per_post = breakdown[post_id]
+            per_post[typed_reaction] = per_post.get(typed_reaction, 0) + 1
+        return breakdown
 
     async def _load_user_bookmarks(
         self,
@@ -262,6 +400,132 @@ class FeedServiceSerializationMixin:
 
         return reaction_counts, user_reactions
 
+    async def _load_post_attachments(
+        self,
+        posts: Sequence[FeedPost],
+        *,
+        viewer_id: Optional[UUID],
+    ) -> Dict[UUID, List[FeedAttachmentPayload]]:
+        """Batched, per-VIEWER attachment loader. Each attachment is backed by
+        a real feed publication (`referenced_post_id`, auto-published on
+        attach - see publish_asset's attachment loop / _get_or_create_
+        attachment_publication) - so visibility is just that publication's
+        own existing visibility check (_can_view_post) and the preview is
+        that publication's own already-computed preview payload, the same
+        one a normal feed post renders with. A post's own visibility doesn't
+        imply every viewer can also see every publication it references, so
+        this is re-checked per VIEWER here, independent of whatever the
+        author could see at attach time. A viewer who can't see it gets
+        restricted=True with no title/preview leaked, so the card shows
+        "Restricted" instead of the post silently looking incomplete. A
+        referenced_post_id that no longer resolves (publication deleted, or
+        a pre-migration row that predates this field) renders as "no longer
+        available" the same way.
+        """
+        post_ids = [post.id for post in posts]
+        if not post_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(FeedPostAttachment)
+            .where(FeedPostAttachment.post_id.in_(post_ids))
+            .order_by(FeedPostAttachment.post_id, FeedPostAttachment.position)
+        )
+        attachments = result.scalars().all()
+        if not attachments:
+            return {}
+
+        referenced_ids = {a.referenced_post_id for a in attachments if a.referenced_post_id}
+        referenced_posts: Dict[UUID, FeedPost] = {}
+        if referenced_ids:
+            rows = await self.db.execute(select(FeedPost).where(FeedPost.id.in_(referenced_ids)))
+            referenced_posts = {p.id: p for p in rows.scalars().all()}
+
+        previews = (
+            await self._load_preview_payloads(list(referenced_posts.values()))
+            if referenced_posts
+            else {}
+        )
+
+        # A chart attachment's live preview needs its PARENT dashboard's id
+        # (chartService.getChart(dashboardId, chartId) - see FeedPreviewVisual's
+        # ChartLivePreview) - not stored in preview_metadata for auto-published
+        # attachment publications (they're published with no metadata at all),
+        # so look it up the same way the deep-link fix earlier did: via the
+        # dashboard_charts placement table, the one the live dashboards app
+        # itself actually uses (not the standalone charts table's own
+        # dashboard_id column, unpopulated in practice).
+        chart_asset_ids = {
+            a.asset_id
+            for a in attachments
+            if _enum_value(a.asset_type) == "chart" and a.referenced_post_id in referenced_posts
+        }
+        chart_dashboard_ids: Dict[UUID, UUID] = {}
+        if chart_asset_ids:
+            placement_rows = await self.db.execute(
+                select(DashboardChart.chart_id, DashboardChart.dashboard_id).where(
+                    DashboardChart.chart_id.in_(chart_asset_ids)
+                )
+            )
+            for chart_id, dashboard_id in placement_rows.all():
+                chart_dashboard_ids.setdefault(chart_id, dashboard_id)
+
+        # The same publication can be attached to multiple posts on one page
+        # (e.g. a popular dashboard referenced by several discussion posts) -
+        # cache the per-viewer visibility check instead of re-running it once
+        # per attachment row.
+        access_cache: Dict[UUID, bool] = {}
+
+        async def _viewer_can_see(referenced_post: FeedPost) -> bool:
+            if not viewer_id:
+                return False
+            if referenced_post.id not in access_cache:
+                access_cache[referenced_post.id] = await self._can_view_post(referenced_post, viewer_id)
+            return access_cache[referenced_post.id]
+
+        by_post: Dict[UUID, List[FeedAttachmentPayload]] = defaultdict(list)
+        for attachment in attachments:
+            asset_type = _enum_value(attachment.asset_type)
+            referenced_post = referenced_posts.get(attachment.referenced_post_id) if attachment.referenced_post_id else None
+
+            if not referenced_post:
+                by_post[attachment.post_id].append(
+                    FeedAttachmentPayload(asset_type=asset_type, asset_id=str(attachment.asset_id), restricted=True)
+                )
+                continue
+
+            if not await _viewer_can_see(referenced_post):
+                by_post[attachment.post_id].append(
+                    FeedAttachmentPayload(asset_type=asset_type, asset_id=str(attachment.asset_id), restricted=True)
+                )
+                continue
+
+            preview = previews.get(referenced_post.id) or {}
+            dashboard_id = (
+                preview.get("dashboardId")
+                or (str(chart_dashboard_ids[attachment.asset_id]) if attachment.asset_id in chart_dashboard_ids else None)
+                if asset_type == "chart"
+                else None
+            )
+            by_post[attachment.post_id].append(
+                FeedAttachmentPayload(
+                    asset_type=asset_type,
+                    asset_id=str(attachment.asset_id),
+                    restricted=False,
+                    title=referenced_post.title,
+                    description=referenced_post.description,
+                    referencedPostId=str(referenced_post.id),
+                    renderMode=_enum_value(referenced_post.render_mode) or "live",
+                    dashboardId=dashboard_id,
+                    previewType=preview.get("previewType"),
+                    previewData=preview.get("previewData"),
+                    previews=preview.get("previews"),
+                    chartWidget=preview.get("chartWidget"),
+                    snapshotPayload=preview.get("snapshotPayload"),
+                )
+            )
+        return by_post
+
     async def _load_recent_comments(
         self,
         posts: Sequence[FeedPost],
@@ -296,6 +560,9 @@ class FeedServiceSerializationMixin:
         user_map = await self._load_users(
             comment.user_id for comment in comments if comment.user_id
         )
+        org_map = await self._load_primary_organizations(
+            comment.user_id for comment in comments if comment.user_id
+        )
         post_author_map: Dict[UUID, Optional[UUID]] = {post.id: post.author_id for post in posts}
 
         serialized: Dict[UUID, List[FeedComment]] = {}
@@ -315,7 +582,11 @@ class FeedServiceSerializationMixin:
 
                 return FeedComment(
                     id=str(comment_row.id),
-                    author=self._to_author(user_map.get(comment_row.user_id), comment_row.user_id),
+                    author=self._to_author(
+                        user_map.get(comment_row.user_id),
+                        comment_row.user_id,
+                        org_name=org_map.get(comment_row.user_id),
+                    ),
                     content=comment_row.content,
                     createdAt=_to_iso(comment_row.created_at),
                     parentCommentId=str(comment_row.parent_id) if comment_row.parent_id else None,
@@ -343,6 +614,9 @@ class FeedServiceSerializationMixin:
         followed_authors: Optional[Set[UUID]] = None,
         preview_payload: Optional[Dict[str, Any]] = None,
         viewer_id: Optional[UUID] = None,
+        org_names: Optional[Dict[UUID, str]] = None,
+        attachments: Optional[Dict[UUID, List[FeedAttachmentPayload]]] = None,
+        reaction_breakdown: Optional[Dict[UUID, Dict[ReactionType, int]]] = None,
     ) -> FeedItemResponse:
         asset_type = _enum_value(post.asset_type)
         post_id = post.id
@@ -418,20 +692,25 @@ class FeedServiceSerializationMixin:
             id=str(post.id),
             assetType=typed_asset_type,
             assetId=str(post.asset_id),
-            title=post.title or "Untitled insight",
+            title=post.title or ("" if asset_type == AssetType.post.value else "Untitled insight"),
             description=post.description or "",
             tags=list(post.tags or []),
             visibility=typed_visibility,
             approvalStatus=typed_approval,
             publishedAt=_to_iso(post.published_at or post.created_at),
             lastActivityAt=last_activity_at,
-            author=self._to_author(users.get(post.author_id), post.author_id),
+            author=self._to_author(
+                users.get(post.author_id),
+                post.author_id,
+                org_name=(org_names or {}).get(post.author_id),
+            ),
             metrics=FeedMetrics(
                 views=int(post.view_count or 0),
                 comments=int(post.comment_count or 0),
                 reactions=int(post.reaction_count or 0),
                 bookmarks=int(post.save_count or 0),
                 shares=int(post.share_count or 0),
+                reactionBreakdown=(reaction_breakdown or {}).get(post_id, {}),
             ),
             userInteraction=FeedUserInteraction(
                 reaction=typed_reaction,
@@ -449,4 +728,9 @@ class FeedServiceSerializationMixin:
             renderMode=typed_render_mode,
             snapshot=snapshot_info,
             isOwner=is_owner,
+            attachments=(attachments or {}).get(post_id, []),
+            mentions=[str(m) for m in (post.mentions or [])],
+            editedAt=_to_iso(post.edited_at) if getattr(post, "edited_at", None) else None,
+            isEdited=getattr(post, "edited_at", None) is not None,
+            canEdit=is_owner and asset_type == AssetType.post.value,
         )

@@ -6,6 +6,7 @@ import type { FeedItem, ReactionType } from '@/services/socialFeedService';
 import useFeedCardComments from '../FeedCard/useFeedCardComments';
 import FeedDiscussionComment from './FeedDiscussionComment';
 import FeedDiscussionComposer from './FeedDiscussionComposer';
+import { useTranslations } from 'next-intl';
 
 const { Title } = Typography;
 
@@ -24,6 +25,7 @@ interface FeedDiscussionProps {
  * is not persisted anywhere.
  */
 const FeedDiscussion: React.FC<FeedDiscussionProps> = ({ item, onAddComment, onCommentDeleted, commenting = false }) => {
+  const t = useTranslations('feed');
   const [resolvedCommentIds, setResolvedCommentIds] = useState<Set<string>>(new Set());
 
   const safeAddComment = useCallback(
@@ -66,7 +68,7 @@ const FeedDiscussion: React.FC<FeedDiscussionProps> = ({ item, onAddComment, onC
     <div className="rounded-xl border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-5">
       <div className="mb-4 flex items-center gap-2">
         <Title level={4} className="!mb-0 !mt-0 !text-base">
-          Discussion
+          {t('discussion')}
         </Title>
         <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--ant-color-fill-tertiary)] px-2 text-xs font-semibold text-[var(--ant-color-text-secondary)]">
           {item.metrics.comments}
@@ -76,7 +78,7 @@ const FeedDiscussion: React.FC<FeedDiscussionProps> = ({ item, onAddComment, onC
       <div className="flex flex-col">
         {commentApi.commentTree.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ant-color-text-tertiary)]">
-            No comments yet. Start the discussion below.
+            {t('discussion_empty')}
           </p>
         ) : (
           commentApi.commentTree.map((comment) => (
@@ -122,6 +124,7 @@ const FeedDiscussion: React.FC<FeedDiscussionProps> = ({ item, onAddComment, onC
           onCommentValueChange={commentApi.setCommentValue}
           onCommentSubmit={commentApi.handleCommentSubmit}
           commenting={commenting}
+          mentionOptions={commentApi.mentionOptions}
         />
       </div>
     </div>

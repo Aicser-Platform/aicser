@@ -31,7 +31,7 @@ export function AccessDenied({
         icon={<LockOutlined />}
         message={title ?? t('title')}
         description={
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <span>{description ?? t('description')}</span>
             {permissionHint ? (
               <span style={{ fontSize: 13, opacity: 0.85 }}>{permissionHint}</span>
@@ -41,13 +41,16 @@ export function AccessDenied({
                 <Link href={primaryAction.href}>
                   <Button type="primary">{primaryAction.label}</Button>
                 </Link>
-              ) : (
+              ) : isEnterpriseEdition() ? (
+                // Team settings is an EE-only page (client/src/app/(dashboard)/settings/page.tsx
+                // filters it out of CE's nav) — in CE this link silently landed on Profile instead
+                // of anything admin-related, so only offer it where the destination is real.
                 <Link href="/settings?tab=team">
                   <Button type="primary" icon={<TeamOutlined />}>
                     {t('contact_admin')}
                   </Button>
                 </Link>
-              )}
+              ) : null}
               {secondaryAction ? (
                 <Link href={secondaryAction.href}>
                   <Button>{secondaryAction.label}</Button>
@@ -65,9 +68,10 @@ export function AccessDenied({
   );
 }
 
+function isEnterpriseEdition(): boolean {
+  return ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
+}
+
 function getFallbackHome(): string {
-  const isEE = ['enterprise', 'ee'].includes(
-    (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
-  );
-  return isEE ? '/dashboards' : '/dashboards';
+  return '/dashboards';
 }

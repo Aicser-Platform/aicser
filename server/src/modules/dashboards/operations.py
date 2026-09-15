@@ -11,7 +11,7 @@ import copy
 import hashlib
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from uuid import UUID
 
 from fastapi import HTTPException, Request
@@ -238,6 +238,71 @@ def merge_runtime_filters(chart_query: dict, runtime_filters: Optional[List[dict
     return merged
 
 
+def detect_filter_overrides(chart_query: dict, runtime_filters: Optional[List[dict]]) -> List[str]:
+    """Human-readable warnings when a runtime filter is about to replace a
+    widget's own saved filter on the same field (see merge_runtime_filters'
+    docstring for why replace, not AND-combine, is the correct default here:
+    AND-combining two filters on the same field can produce a contradictory,
+    silently-empty result — e.g. a widget saved with region='US' AND'd
+    against a dashboard filter for region='EU' returns nothing, with no
+    signal why. Replace avoids that trap, but was itself silent — a widget
+    built to always show one region could have that assumption invisibly
+    overridden by an unrelated global filter. This surfaces it, following
+    the same at-the-API-boundary warning pattern as
+    detect_unsupported_runtime_filters, without changing the merge itself.
+    """
+    if not runtime_filters:
+        return []
+    existing_fields = {
+        str(f.get("field")) for f in (chart_query or {}).get("filters") or [] if f.get("field")
+    }
+    if not existing_fields:
+        return []
+    warnings: List[str] = []
+    seen: Set[str] = set()
+    for rf in runtime_filters:
+        if not isinstance(rf, dict):
+            continue
+        field = str(rf.get("field") or "").strip()
+        if field and field in existing_fields and field not in seen:
+            seen.add(field)
+            warnings.append(
+                f"Dashboard filter on '{field}' replaced this widget's own saved filter on the same field."
+            )
+    return warnings
+
+
+def detect_unsupported_runtime_filters(runtime_filters: Optional[List[dict]]) -> List[str]:
+    """Human-readable warnings for runtime filters that will be silently
+    dropped downstream (ChartService._apply_filters_db) rather than applied.
+
+    RELIABILITY: type='sql' runtime filters are a deliberate security control
+    (see chart_service.py's _apply_filters_db comment) -- a client-supplied
+    raw-SQL filter clause is never spliced into the generated query, since
+    that would let a caller with only chart:edit permission UNION-SELECT
+    arbitrary tables the data source's DB credential can see. That control is
+    correct and untouched here. But the drop itself was silent: a user (or an
+    integration) configuring a raw-SQL filter got no signal it was ignored,
+    just a chart that quietly rendered as if the filter didn't exist. This
+    check runs at the API boundary, before the filter reaches that deep
+    enforcement point, purely to surface a warning in the response -- it is
+    not itself a security boundary and must never be treated as one; the
+    actual enforcement stays exactly where it was.
+    """
+    if not runtime_filters:
+        return []
+    warnings: List[str] = []
+    for rf in runtime_filters:
+        if not isinstance(rf, dict):
+            continue
+        if str(rf.get("type") or "").strip().lower() == "sql":
+            field = str(rf.get("field") or "").strip() or "unknown field"
+            warnings.append(
+                f"Raw-SQL filter on '{field}' was not applied (not supported for security reasons)."
+            )
+    return warnings
+
+
 def apply_drill_context(chart_query: dict, drill_context: Optional[dict]) -> dict:
     """Apply hierarchical drill-down: override x dimension and merge drill filters."""
     if not drill_context:
@@ -283,11 +348,35 @@ async def verify_dashboard_read_access(
                 verified = await embed_service.verify_embed_token(
                     embed_token, required_scope="dashboard"
                 )
-                if verified and str(verified.get("resource_id") or verified.get("dashboard_id") or "") in (
-                    "",
-                    str(dashboard_id),
-                ):
+                # SECURITY: `resource_id` is optional at token-creation time (see
+                # embed/service.py::create_embed_token), so a dashboard-scope token
+                # minted with no resource_id used to fall through to `"" in ("",
+                # str(dashboard_id))`, which is always True — granting that token
+                # read access to *every* dashboard in the system, not just the one
+                # it was meant for. A token must now name the exact dashboard it
+                # grants access to; no wildcard fallback.
+                token_resource_id = verified.get("resource_id") if verified else None
+                if verified and token_resource_id and str(token_resource_id) == str(dashboard_id):
+                    # Defense in depth: also confirm the token's own org actually
+                    # owns this dashboard, in case a resource_id is ever reused
+                    # across orgs or a dashboard's project is later reassigned.
+                    token_org_id = verified.get("org_id")
+                    project_id = getattr(dashboard, "project_id", None)
+                    if token_org_id and project_id:
+                        from src.modules.project.models import Project
+
+                        org_result = await db.execute(
+                            select(Project.organization_id).where(Project.id == project_id)
+                        )
+                        dashboard_org_id = org_result.scalar_one_or_none()
+                        if dashboard_org_id and str(dashboard_org_id) != str(token_org_id):
+                            raise HTTPException(
+                                status_code=403,
+                                detail="Embed token is not authorized for this dashboard",
+                            )
                     return dashboard
+            except HTTPException:
+                raise
             except Exception as exc:
                 logger.debug("Embed JWT verification failed: %s", exc)
         else:
@@ -455,12 +544,18 @@ async def refresh_dashboard_charts(
                     }
                 else:
                     exec_chart = chart
+                    filter_warnings: List[str] = []
                     if runtime_filters or drill_context:
                         exec_chart = copy.deepcopy(chart)
                         base_query = copy.deepcopy(chart.chart_query or {})
                         if runtime_filters:
+                            filter_warnings.extend(detect_unsupported_runtime_filters(runtime_filters))
+                            filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
                             base_query = merge_runtime_filters(base_query, runtime_filters)
                         if drill_context:
+                            filter_warnings.extend(
+                                detect_unsupported_runtime_filters(drill_context.get("drill_filters"))
+                            )
                             base_query = apply_drill_context(base_query, drill_context)
                         exec_chart.chart_query = base_query
                     data = await chart_svc.chart_service.execute(
@@ -478,6 +573,8 @@ async def refresh_dashboard_charts(
                             "success": True,
                             "data": data,
                         }
+                        if filter_warnings:
+                            result["filter_warnings"] = filter_warnings
                     else:
                         result = {
                             "chart_id": chart_id,
@@ -563,7 +660,16 @@ async def get_filter_options(
         if isinstance(rows, list):
             return [r.get("v") if isinstance(r, dict) else r for r in rows]
     except Exception as e:
-        logger.warning("filter-options query failed: %s", e)
+        # Was a one-line warning with no traceback — every failure reason
+        # (RLS/column-security refusing a missing/insufficient identity, a
+        # real connection error, a genuine data-source outage) collapsed
+        # into the same frontend message ("No values found — check
+        # table/column"), which sends whoever's debugging straight to the
+        # wrong place when the real cause is upstream of the query entirely.
+        logger.error(
+            "filter-options query failed for field=%s table=%s data_source_id=%s: %s",
+            field, table, data_source_id, e, exc_info=True,
+        )
     return []
 
 

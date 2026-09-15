@@ -35,6 +35,12 @@ class _ExecuteResult:
     def scalars(self):
         return _ScalarResult(self._rows)
 
+    def scalar_one_or_none(self):
+        # _load_user_attributes calls this directly on the execute() result
+        # (not via .scalars() first) - real SQLAlchemy's Result supports both
+        # forms.
+        return self._rows[0] if self._rows else None
+
 
 class _Session:
     def __init__(self, results):

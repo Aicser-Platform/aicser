@@ -1,5 +1,5 @@
 import { getCeBearerToken } from '@/auth/ce/bearerToken'
-import { updateEeUserPassword } from '@/ee'
+import { updateEeUserPassword } from '@/ee/auth/authClient'
 
 /** Set password for the current session: Supabase when opted in, else FastAPI JWT cookie. */
 export async function updateUserPassword(password: string): Promise<void> {

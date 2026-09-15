@@ -4,6 +4,7 @@ import {
   createRelationship,
   updateRelationship,
   deleteRelationship,
+  autoDetectRelationships,
   type DataModelRelationship,
   type RelationshipCreatePayload,
   type RelationshipUpdatePayload,
@@ -47,6 +48,16 @@ export function useUpdateRelationship(dataSourceId: string) {
       if (ctx?.prev) qc.setQueryData(QUERY_KEY(dataSourceId), ctx.prev);
     },
     onSettled: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
+    },
+  });
+}
+
+export function useAutoDetectRelationships(dataSourceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => autoDetectRelationships(dataSourceId),
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
     },
   });

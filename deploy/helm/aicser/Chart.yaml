@@ -1,0 +1,11 @@
+apiVersion: v2
+name: aicser
+description: >-
+  Aicser server + client with horizontal autoscaling. Companion to
+  deploy/terraform (EKS + cluster autoscaler) — this chart is what the
+  cluster autoscaler actually reacts to. Does not manage Postgres/Redis/
+  Keycloak; point this at managed/external instances of those (see
+  deploy/terraform/README.md).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

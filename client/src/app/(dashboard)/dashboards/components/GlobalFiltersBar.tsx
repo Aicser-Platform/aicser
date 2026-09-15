@@ -229,6 +229,12 @@ type Props = {
   onClearAll?: () => void;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** The 'toolbar' layout's own refresh/reset buttons -- default on for
+   * standalone consumers (embed/shared/feed views), but a caller whose page
+   * already has these actions elsewhere (e.g. the studio's own toolbar) can
+   * turn them off here to avoid showing two controls that do the same
+   * thing. */
+  showToolbarActions?: boolean;
 };
 
 export function GlobalFiltersBar({
@@ -242,6 +248,7 @@ export function GlobalFiltersBar({
   onClearAll,
   onRefresh,
   refreshing = false,
+  showToolbarActions = true,
 }: Props) {
   const t = useTranslations('dashboards');
   const [searchDrafts, setSearchDrafts] = useState<Record<string, string>>({});
@@ -274,6 +281,7 @@ export function GlobalFiltersBar({
         <Button
           type="text"
           size="small"
+          className="icon-only-btn"
           icon={<ClearOutlined />}
           aria-label={t('clear_filters')}
           onClick={() => (onClearAll ? onClearAll() : clearAll())}
@@ -301,12 +309,12 @@ export function GlobalFiltersBar({
   const toolbarRefreshControl = onRefresh ? (
     <Tooltip title={t('refresh_tooltip')}>
       <Button
-        type="default"
+        type="text"
         size="small"
         icon={<ReloadOutlined spin={refreshing} />}
         onClick={onRefresh}
         disabled={refreshing}
-        className="report-filter-icon-button"
+        className="icon-only-btn"
         aria-label={t('refresh_data')}
       />
     </Tooltip>
@@ -355,10 +363,12 @@ export function GlobalFiltersBar({
           </div>
         ))}
       </div>
-      <div className="report-filter-toolbar-actions">
-        {toolbarRefreshControl}
-        {toolbarResetControl}
-      </div>
+      {showToolbarActions ? (
+        <div className="report-filter-toolbar-actions">
+          {toolbarRefreshControl}
+          {toolbarResetControl}
+        </div>
+      ) : null}
     </div>
   );
 }

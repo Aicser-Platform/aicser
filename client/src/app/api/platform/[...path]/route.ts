@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBackendUrlForApi } from '@/utils/backendUrl';
+import { getBackendUrlForProxy } from '@/utils/backendUrl';
 import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
 /**
@@ -16,10 +16,10 @@ async function handlePlatformRequest(
     const pathSegments = (resolvedParams as { path?: string[] })?.path || [];
     const path = Array.isArray(pathSegments) ? pathSegments.join('/') : String(pathSegments || '');
 
-    const backendBase = getBackendUrlForApi();
+    const backendBase = getBackendUrlForProxy();
     const { searchParams } = new URL(request.url);
     const queryString = searchParams.toString();
-    const backendUrl = `${backendBase}/platform/${path}${queryString ? `?${queryString}` : ''}`;
+    const backendUrl = `${backendBase}/api/platform/${path}${queryString ? `?${queryString}` : ''}`;
 
     const headers: Record<string, string> = {};
     const contentType = request.headers.get('content-type');

@@ -154,10 +154,15 @@ class ErrorBoundary extends Component<Props, State> {
               icon={<BugOutlined style={{ color: '#ff4d4f' }} />}
               title="Something went wrong"
               subTitle={
-                <Space direction="vertical" size="small">
+                <Space orientation="vertical" size="small">
                   <Text type="secondary">
                     We're sorry, but something unexpected happened. Our team has been notified.
                   </Text>
+                  {this.state.error?.message ? (
+                    <Text code style={{ display: 'block', maxWidth: 480, whiteSpace: 'normal' }}>
+                      {String(this.state.error.message).slice(0, 280)}
+                    </Text>
+                  ) : null}
                   {process.env.NODE_ENV === 'development' && (
                     <Alert
                       message="Development Error Details"

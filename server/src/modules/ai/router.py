@@ -26,6 +26,8 @@ from src.modules.ai.services.text_to_sql_service import (
     TextToSqlService,
     NoProviderKeyError,
     DataSourceNotFoundError,
+    DataSourceAccessDeniedError,
+    UnsafeSqlError,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,36 +71,47 @@ def _model_with_status(
 
 @router.get("/models")
 async def list_models(request: Request):
+    """Return only models the user (or env) can actually use — no ambient local catalog."""
+    from src.modules.ai.provider_key_store import enabled_models_from_store
+
     user_id = await _optional_user_id(request)
     saved_keys = await _saved_provider_keys(user_id)
     models: list[dict[str, Any]] = []
 
     for provider, provider_models in PROVIDER_MODELS.items():
         saved_config = saved_keys.get(provider) or {}
-        has_saved_key = bool(saved_config.get("api_key")) or provider == "ollama" and bool(saved_config.get("endpoint"))
+        has_saved_key = bool(saved_config.get("api_key")) or (
+            provider == "ollama" and bool(saved_config.get("endpoint"))
+        )
         has_env_key = _has_env_provider(provider)
-        available = has_saved_key or has_env_key
-        source = "user_key" if has_saved_key else "environment" if has_env_key else ""
+        if not has_saved_key and not has_env_key:
+            # Hide unconfigured providers entirely (esp. local Ollama presets).
+            continue
 
-        for model in provider_models:
-            models.append(_model_with_status(provider, model, available=available, source=source))
+        source = "user_key" if has_saved_key else "environment"
+        enabled = enabled_models_from_store(saved_config)
 
-        custom_model = (saved_config.get("model") or "").strip()
-        if custom_model and all(m.get("id") != custom_model for m in provider_models):
-            models.append(
-                _model_with_status(
-                    provider,
-                    {
-                        "id": custom_model,
-                        "name": custom_model,
-                        "tier": "custom",
-                        "cost_per_1k_tokens": 0,
-                        "is_local": provider == "ollama",
-                    },
-                    available=available,
-                    source=source,
-                )
-            )
+        if has_saved_key and enabled:
+            catalog_by_id = {m.get("id"): m for m in provider_models if m.get("id")}
+            for mid in enabled:
+                base = catalog_by_id.get(mid) or {
+                    "id": mid,
+                    "name": mid,
+                    "tier": "custom" if provider != "ollama" else "local",
+                    "cost_per_1k_tokens": 0,
+                    "is_local": provider == "ollama",
+                }
+                models.append(_model_with_status(provider, base, available=True, source=source))
+            continue
+
+        if has_env_key:
+            for model in provider_models:
+                models.append(_model_with_status(provider, model, available=True, source=source))
+            continue
+
+        # Key/endpoint configured but no enabled models yet — nothing to list
+        # (user adds models in Settings). Exception: cloud may still want a
+        # hint via custom single `model` field handled above via enabled_models.
 
     default_model = os.getenv("DEFAULT_AI_MODEL") or "auto"
     return {
@@ -171,6 +184,13 @@ async def generate_text_to_sql(
         )
     except DataSourceNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Data source not found")
+    except DataSourceAccessDeniedError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this data source")
+    except UnsafeSqlError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Generated SQL is not a read-only SELECT. Rephrase the question.",
+        )
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
     except Exception as err:  # provider / litellm failure

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
 from jose import JWTError, jwt
 
 from src.core.config import settings
@@ -90,6 +91,8 @@ def _build_embed_urls(token: str, scopes: List[str], resource_id: Optional[str])
         urls["chart"] = f"{base}/embed/chart/{resource_id}?token={token}"
     if "chat" in scopes:
         urls["chat"] = f"{base}/embed/chat?token={token}"
+    if "report" in scopes and resource_id:
+        urls["report"] = f"{base}/embed/report/{resource_id}?token={token}"
     return urls
 
 
@@ -102,7 +105,21 @@ async def create_embed_token(
     resource_id: Optional[str] = None,
     allowed_domains: Optional[List[str]] = None,
     expires_in_hours: int = DEFAULT_EXPIRY_HOURS,
+    theme: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    # SECURITY: a resource-scoped token (dashboard/chart/report) with no
+    # resource_id used to verify successfully against *any* resource of that
+    # type (verify_dashboard_read_access's `"" in ("", str(dashboard_id))`
+    # check was always True when the token carried no resource_id) — a
+    # cross-tenant data leak, not just a UX gap. Reject at creation instead of
+    # relying solely on the read-side check to catch it.
+    _RESOURCE_SCOPED = {"dashboard", "chart", "report"}
+    if not resource_id and any(s in _RESOURCE_SCOPED for s in scopes):
+        raise HTTPException(
+            status_code=400,
+            detail="A specific dashboard, chart, or report must be selected for this embed scope.",
+        )
+
     token_id = str(uuid.uuid4())
     created_at = _now()
     expires_at = created_at + timedelta(hours=expires_in_hours)
@@ -129,6 +146,7 @@ async def create_embed_token(
         "expires_at": _iso(expires_at),
         "status": "active",
         "org_id": org_id,
+        "theme": theme,
     }
 
     records = await _load_records(user_id)
@@ -152,6 +170,34 @@ async def list_embed_tokens(user_id: str) -> List[Dict[str, Any]]:
         }
         for record in records
     ]
+
+
+async def get_embed_token_record(user_id: str, token_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch a single embed token record without modifying it — used to
+    resolve which org a token belongs to before enforcing org-scoped
+    permission/plan checks on update/revoke (mirrors create_embed_token's
+    own org-scoping fix; see router.py)."""
+    records = await _load_records(user_id)
+    return next((r for r in records if r.get("id") == token_id), None)
+
+
+async def update_embed_token_theme(
+    user_id: str, token_id: str, theme: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """Theme-only edit — reuses the existing signed token/URLs. Returns the
+    updated record, or None if no matching token exists for this user."""
+    records = await _load_records(user_id)
+    updated: List[Dict[str, Any]] = []
+    found: Optional[Dict[str, Any]] = None
+    for record in records:
+        if record.get("id") == token_id:
+            record = {**record, "theme": theme}
+            found = record
+        updated.append(record)
+    if found is None:
+        return None
+    await _save_records(user_id, updated)
+    return {**found, "token_preview": found.get("token_preview") or "••••"}
 
 
 async def revoke_embed_token(user_id: str, token_id: str) -> bool:
@@ -197,4 +243,5 @@ async def verify_embed_token(token: str, *, required_scope: Optional[str] = None
         "allowed_domains": payload.get("allowed_domains") or [],
         "expires_at": expires_at,
         "jti": token_id,
+        "theme": record.get("theme"),
     }

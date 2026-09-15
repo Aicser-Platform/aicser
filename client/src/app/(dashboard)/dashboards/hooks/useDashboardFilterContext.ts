@@ -12,7 +12,11 @@ import { mergeFilterDefaults } from '../utils/filterConfigMerge';
 import { detectFilterFieldConflicts } from '../utils/filterConflicts';
 import { filterVisibleLayout, filterVisibleWidgets } from '../utils/dashboardViewerScope';
 import { useDashboardChartRefresh } from './useDashboardChartRefresh';
-import { enrichFiltersWithTableNames } from '../utils/filterSchemaColumns';
+import {
+  enrichFiltersWithTableNames,
+  type DataSourceWithSchema,
+  type SchemaTable,
+} from '../utils/filterSchemaColumns';
 import { useDataSources } from '@/hooks/useDataSources';
 import { useDashboardRefresh } from './useDashboardRefresh';
 import { isDataWidget } from '../utils/dashboardRefresh';
@@ -124,7 +128,10 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
     let cancelled = false;
     const load = async () => {
       try {
-        const dash = await chartService.getDashboard(activeDashboardId);
+        const [dash, charts] = await Promise.all([
+          chartService.getDashboard(activeDashboardId),
+          chartService.listCharts(activeDashboardId).catch(() => []),
+        ]);
         if (cancelled) return;
 
         useDashboardStore.getState().setDashboardDescription(
@@ -140,12 +147,20 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           }));
         }
 
-        const filterSourceWidget = useDashboardStore
-          .getState()
-          .widgets.find((widget) => widget.dataSourceId);
+        // Fetched directly (not read from useDashboardStore.getState().widgets) —
+        // that store state is populated by the separate, independently-triggered
+        // loadDashboardById action, and reading it here raced against that action:
+        // whichever of the two concurrent loads (this effect's getDashboard, or
+        // loadDashboardById's own getDashboard+listCharts) resolved first would see
+        // an empty/stale widgets array, so AI-generated global filters could lose
+        // their dataSourceId inference (resolveFieldContext falls through to
+        // undefined) purely based on network timing.
+        const allWidgets = (charts || []) as Array<{ dataSourceId?: string; chartQuery?: Record<string, unknown> }>;
+        const filterSourceWidget = allWidgets.find((widget) => widget.dataSourceId);
         const filterDataContext = {
           dataSourceId: filterSourceWidget?.dataSourceId,
-          tableName: filterSourceWidget?.chartQuery?.tableName,
+          tableName: filterSourceWidget?.chartQuery?.tableName as string | undefined,
+          widgets: allWidgets,
         };
         let cfgFilters = normalizeDashboardFilters(
           dash?.config?.global_filters,
@@ -514,9 +529,9 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
 
   useEffect(() => {
     if (!dataSources.length) return;
-    const dsPayload = dataSources.map((ds) => ({
+    const dsPayload: DataSourceWithSchema[] = dataSources.map((ds) => ({
       id: ds.id,
-      schema: (ds as { schema?: { tables?: unknown[] } }).schema,
+      schema: (ds as { schema?: { tables?: SchemaTable[] } }).schema,
     }));
     const enrichedGlobal = enrichFiltersWithTableNames(globalFiltersConfig, dsPayload);
     if (JSON.stringify(enrichedGlobal) !== JSON.stringify(globalFiltersConfig)) {

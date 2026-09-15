@@ -30,16 +30,154 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Presidio's stock DATE_TIME recognizer (spaCy NER-backed) false-positives on
+# duration phrases like "90-day", "30 day", "24-hour" - these describe a span
+# of time, not a calendar date, and are never themselves identifying. Live-
+# reproduced: a business-journey "90-day action plan" prompt got scrubbed to
+# "<DATE_TIME> action plan" before the LLM ever saw it, which then echoed the
+# placeholder straight into its generated plan text. An absolute date/time
+# ("March 5, 1990", "2026-08-30T12:00Z") still gets scrubbed normally - this
+# only excludes the "<number> <unit>" duration shape.
+_DURATION_PHRASE_RE = re.compile(
+    r"\d+\s*-?\s*(day|days|hour|hours|week|weeks|month|months|year|years|minute|minutes|second|seconds)",
+    re.IGNORECASE,
+)
+
+# Same false-positive class, different shape: Presidio's DATE_TIME recognizer
+# also tags bare relative-time words ("today", "next quarter") that carry no
+# identifying information on their own (unlike an absolute date, they don't
+# even pin down *which* day without external context). Live-reproduced: a
+# purely conversational LLM reply containing "...dig into today?" got
+# scrubbed to "...dig into <DATE_TIME>?" and that placeholder — a format
+# meant for an LLM to read (see module docstring), not a human — was shown
+# to the end user verbatim in the chat bubble.
+_RELATIVE_TIME_WORD_RE = re.compile(
+    r"(this|next|last)\s+(week|month|quarter|year)|today|tomorrow|tonight|yesterday",
+    re.IGNORECASE,
+)
+
+# Same false-positive class, different shape again: bare recurrence/cadence adjectives
+# ("monthly", "quarterly", "annual", "weekly", "daily") describe how OFTEN something
+# happens, not a calendar date — same rationale as the two guards above (they carry no
+# identifying information on their own). Live-reported: an executive-report insight
+# narrative's "$198K monthly data revenue" was scrubbed to "$198K <DATE_TIME> data
+# revenue", shown verbatim to the end user in the report.
+_CADENCE_WORD_RE = re.compile(
+    r"^(monthly|quarterly|annual|annually|weekly|daily|yearly|biweekly|semiannual|semiannually|biannual|biannually|half.?yearly)$",
+    re.IGNORECASE,
+)
+
+# Same false-positive class, different shape again: "<period>-to-date" spans
+# ("year-to-date", "month-to-date", "quarter-to-date", "YTD") describe a
+# running span up to now, not a calendar date — same rationale as the cadence
+# guard above. Live-reproduced: an executive-report summary's "with
+# year-to-date average usage reaching..." was scrubbed to "with <DATE_TIME>
+# average usage reaching...", shown verbatim in the exported report. Presidio
+# only actually catches the spelled-out and YTD forms live (not MTD/QTD, an
+# inconsistency of its own NER model, not this guard) — all four included
+# defensively since none carry identifying information regardless.
+_TO_DATE_PHRASE_RE = re.compile(
+    r"^(year|month|quarter)-to-date$|^ytd$|^mtd$|^qtd$",
+    re.IGNORECASE,
+)
+
+# Same false-positive class, different (and Presidio-inconsistent) shape:
+# half-year/quarter shorthand codes ("H1", "H2", "Q1"..."Q4") get misread as
+# a US driver's-license number or even a LOCATION depending on surrounding
+# text — Presidio assigns a different entity_type per occurrence for the
+# identical two-character shape, which is itself evidence this is a shape-
+# level false positive, not a genuine per-entity-type detection. A bare
+# "H1"/"Q3" carries no identifying information under any interpretation, so
+# this guard isn't scoped to one entity_type the way the others are — it
+# matches by shape alone, applied to whichever type Presidio happened to
+# assign. Live-reproduced: an executive-report summary's "Total H1
+# consumption..." was scrubbed to "Total <US_DRIVER_LICENSE> consumption...".
+_PERIOD_CODE_RE = re.compile(r"^(h[12]|q[1-4])$", re.IGNORECASE)
+
+# Same false-positive class, LOCATION shape: short measurement-unit abbreviations
+# ("GB", "MB", "min", "hrs") get misclassified as LOCATION by Presidio's NER when
+# they follow a number in a sentence — Presidio's spaCy model reads a 2-3 letter
+# capitalized/lowercase token as a place-name abbreviation regardless of the
+# numeric context right before it. Live-reported: an insight narrative's "0.43–
+# 8.01 GB" and "≈4 GB/day" both had "GB" redacted to "<LOCATION>". Scoped to a
+# fixed allowlist of common data/time/measurement units, AND required to
+# immediately follow a digit — "GB" as a genuine country-code reference (e.g. "our
+# office in GB") has no preceding number and is still caught normally.
+_UNIT_ABBREVIATION_RE = re.compile(
+    r"^(gb|mb|kb|tb|pb|ghz|mhz|khz|hz|ms|sec|secs|min|mins|hr|hrs|kg|lb|lbs|km|mi|ft|cm|mm|oz|pct)$",
+    re.IGNORECASE,
+)
+_PRECEDING_NUMBER_RE = re.compile(r"[\d.]\s*$")
+
+# Same false-positive class, different (and much broader) shape: schema/code
+# identifiers -- ordinary column names like "subscriber_id", "transaction_id",
+# "ip_address", "is_active" -- get misclassified by Presidio's spaCy-backed
+# NER as NRP/PERSON/LOCATION entities. Live-measured: a sweep of 56 common,
+# everyday column names found this on ~7% of them, across two independently-
+# discovered failure categories in one session (a URL/ccTLD detector on
+# dotted identifiers, and this NER misclassification on bare ones) -- this
+# is a systemic property of feeding single out-of-context tokens to a model
+# trained on natural sentences, not a handful of unlucky column names.
+# score_threshold tuning cannot fix this: confirmed live that these false
+# positives score the exact same flat 0.850 as genuine PERSON/LOCATION
+# detections (Presidio's spaCy recognizer doesn't produce a real confidence
+# gradient), so no threshold value separates them.
+#
+# Scoped to whole-string identifier shape (letters/digits/underscores, at
+# least one underscore, ^...$ anchored to the matched span) and to the NER-
+# driven entity types this failure mode actually hits -- pattern/checksum-
+# based recognizers (EMAIL_ADDRESS, CREDIT_CARD, US_SSN, the 25+ regional ID
+# recognizers below) are untouched, since they don't share this failure mode
+# and narrowing them here would weaken real detection for no benefit.
+# Confirmed safe against genuine PII: real names in real sentences don't
+# take this shape even when informally underscore-joined ("jean_pierre lives
+# in montreal" -> only "montreal" flagged, not "jean_pierre").
+#
+# This is a second, systemic layer beneath the caller-side protected_terms/
+# auto_protect_identifiers mechanism (pii_gate.py) that specific call sites
+# (nl2sql_agent.py, dashboard_llm_planner.py, code_analysis_capability.py)
+# opt into -- this one applies to every caller of scrub_text, including ones
+# not yet audited for the same bug, without requiring them to know to opt in.
+_BARE_IDENTIFIER_SHAPE_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+$")
+_NER_ENTITY_TYPES_PRONE_TO_IDENTIFIER_FALSE_POSITIVES = frozenset(
+    {"PERSON", "NRP", "LOCATION", "DATE_TIME", "ORGANIZATION"}
+)
+# Discovered live once Presidio+spaCy were actually running locally (this repo's
+# dev sandbox previously lacked the presidio-analyzer/presidio-anonymizer/spacy
+# model dependencies, so this class of false positive was never exercised
+# outside the real Docker image): ordinary bare schema/column identifiers —
+# customer_id, user_id, updated_at, ip_address, is_deleted — got tagged
+# DATE_TIME or ORGANIZATION by the NER model and corrupted to "<DATE_TIME>"/
+# "<ORGANIZATION>". Same guard as the PERSON/NRP/LOCATION case above: only
+# suppresses these entity types when the matched span is ALSO shaped like a
+# bare identifier (_BARE_IDENTIFIER_SHAPE_RE), so a genuine date or
+# organization name in ordinary prose is unaffected.
+
 # ── Presidio bootstrap ────────────────────────────────────────────────────────
 _presidio_analyzer = None
 _presidio_anonymizer = None
 
 try:
     from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
     from presidio_anonymizer import AnonymizerEngine
     from presidio_anonymizer.entities import OperatorConfig
 
-    _base_analyzer = AnalyzerEngine()
+    # Presidio's own AnalyzerEngine() default (no config) hardcodes
+    # en_core_web_lg (~590MB) via its packaged default.yaml. Its actual NER
+    # tagging quality -- the only thing Presidio's spaCy recognizer consumes
+    # -- is published as very close to en_core_web_md's (~40MB); the lg/md
+    # gap is mostly in static word-vector table size, used for similarity
+    # tasks Presidio never calls. Explicit engine config, matching the
+    # smaller model Dockerfile.prod now downloads, buys back ~550MB of image
+    # size for a NER-quality difference too small to be worth it here.
+    _nlp_engine = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_md"}],
+        }
+    ).create_engine()
+    _base_analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
 
     # ── Custom regional recognizers not in Presidio's built-ins ──────────────
     _CUSTOM_RECOGNIZERS: List[PatternRecognizer] = [
@@ -360,18 +498,74 @@ _REGEX_PATTERNS: List[Tuple[str, re.Pattern]] = [
     ("CA_POSTAL", re.compile(r"\b[A-Z]\d[A-Z][-\s]?\d[A-Z]\d\b")),
     ("CA_PHONE",  re.compile(r"\b(?:\+1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}\b")),
 
-    # Generic date of birth patterns (multiple regional formats)
-    ("DATE_OF_BIRTH", re.compile(
-        r"\b(?:"
-        r"(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}"  # DD/MM/YYYY
-        r"|(?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])[/\-.](?:19|20)\d{2}"  # MM/DD/YYYY
-        r"|(?:19|20)\d{2}[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])"  # YYYY/MM/DD (Asia)
-        r")\b"
-    )),
+    # NOTE: date-of-birth is intentionally NOT in this list - unlike every
+    # other entry here, a bare date has zero distinguishing structure (a
+    # report date, a transaction date, a "show me Feb 2024 data" filter all
+    # match the exact same shape as a birthdate). Scrubbing every date-shaped
+    # string in free text corrupted SQL date literals embedded in prompts
+    # (e.g. conversation history containing a prior turn's generated SQL),
+    # which then got echoed verbatim into new queries and broke them. See
+    # _DATE_OF_BIRTH_PATTERN + _scrub_dates_of_birth below - it requires an
+    # actual birth-context keyword nearby, in the same multilingual set used
+    # for column-name detection, not just a date-shaped string in isolation.
 
     # Generic passport (conservative — requires prefix letters to avoid false positives)
     ("PASSPORT", re.compile(r"\b[A-Z]{1,2}\d{6,9}\b")),
 ]
+
+
+# Same date shapes as the old blanket entry, matched separately so each hit
+# can be checked for a nearby birth-context keyword before being scrubbed.
+_DATE_OF_BIRTH_PATTERN = re.compile(
+    r"\b(?:"
+    r"(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}"  # DD/MM/YYYY
+    r"|(?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])[/\-.](?:19|20)\d{2}"  # MM/DD/YYYY
+    r"|(?:19|20)\d{2}[/\-.](?:0?[1-9]|1[0-2])[/\-.](?:0?[1-9]|[12]\d|3[01])"  # YYYY/MM/DD (Asia)
+    r")\b"
+)
+
+# Natural-language birth-date phrasing, not the underscore-joined column-name
+# style below - covers the same regional breadth this file uses elsewhere
+# (Vietnam/Indonesia/Korea/Japan/China/Thailand/India/Middle East/LatAm/
+# Europe/Russia) so non-English contexts get the same protection.
+_BIRTH_CONTEXT_KEYWORDS: List[str] = [
+    "date of birth", "birth date", "birthdate", "birthday", "born on", "dob",
+    "fecha de nacimiento", "nacio el", "nació el", "cumpleanos", "cumpleaños",  # Spanish
+    "date de naissance", "ne le", "né le", "anniversaire",  # French
+    "geburtsdatum", "geboren am", "geburtstag",  # German
+    "data de nascimento", "nascido em",  # Portuguese
+    "data di nascita", "nato il",  # Italian
+    "data urodzenia",  # Polish
+    "data rozhdeniya", "дата рождения",  # Russian
+    "ngay sinh", "ngày sinh", "sinh ngay", "sinh ngày",  # Vietnamese
+    "tanggal lahir", "lahir pada",  # Indonesian/Malay
+    "vanh koet", "wan koet", "วันเกิด",  # Thai
+    "shengri", "chusheng riqi", "出生日期", "生日",  # Chinese
+    "seinengappi", "tanjoubi", "生年月日", "誕生日",  # Japanese
+    "saengnyeonwolil", "saengil", "생년월일", "생일",  # Korean
+    "janam tithi", "janmatithi", "जन्म तिथि",  # Hindi
+    "tarikh lahir",  # Malay
+    "tarikh al-milad", "تاريخ الميلاد",  # Arabic
+]
+_BIRTH_CONTEXT_WINDOW_CHARS = 40
+
+
+def _scrub_dates_of_birth(text: str) -> str:
+    """
+    Replace date-shaped substrings with <DATE_OF_BIRTH> only when a birth-
+    context keyword appears within _BIRTH_CONTEXT_WINDOW_CHARS on either
+    side - see the note above _DATE_OF_BIRTH_PATTERN for why a bare date
+    match alone isn't enough.
+    """
+    def _replace(match: "re.Match[str]") -> str:
+        start = max(0, match.start() - _BIRTH_CONTEXT_WINDOW_CHARS)
+        end = min(len(text), match.end() + _BIRTH_CONTEXT_WINDOW_CHARS)
+        window = text[start:end].lower()
+        if any(keyword in window for keyword in _BIRTH_CONTEXT_KEYWORDS):
+            return "<DATE_OF_BIRTH>"
+        return match.group(0)
+
+    return _DATE_OF_BIRTH_PATTERN.sub(_replace, text)
 
 
 # ── Column-name PII keywords (multilingual) ───────────────────────────────────
@@ -495,8 +689,8 @@ class PiiScrubber:
         if not text or not isinstance(text, str):
             return text
         if _presidio_analyzer and _presidio_anonymizer:
-            return self._scrub_with_presidio(text)
-        return self._scrub_with_regex(text)
+            return _scrub_dates_of_birth(self._scrub_with_presidio(text))
+        return _scrub_dates_of_birth(self._scrub_with_regex(text))
 
     def scrub_value(self, value: Any, column_name: str = "") -> Any:
         """Scrub a single cell. Fast-paths PII column names; otherwise runs text scan."""
@@ -549,10 +743,17 @@ class PiiScrubber:
             result.append(new_row)
         return result
 
-    def scrub_schema_samples(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+    def scrub_schema_samples(
+        self,
+        schema: Dict[str, Any],
+        sensitive_columns: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Scrub sample_data/sample_rows inside a schema dict before LLM ingestion.
         Returns a deep copy with values scrubbed.
+
+        When ``sensitive_columns`` is provided, only those columns are masked
+        (no Presidio value-discovery scan).
         """
         if not isinstance(schema, dict):
             return schema
@@ -564,7 +765,9 @@ class PiiScrubber:
             for key in ("sample_data", "sample_rows"):
                 raw = table.get(key)
                 if isinstance(raw, list) and raw:
-                    table[key] = self.scrub_rows(raw)
+                    table[key] = self.scrub_rows(
+                        raw, sensitive_columns=sensitive_columns
+                    )
         return schema
 
     def scrub_insight_text(self, text: str) -> str:
@@ -578,6 +781,24 @@ class PiiScrubber:
         try:
             # Try with English first; could be extended to detect language and pass it
             results = _presidio_analyzer.analyze(text=text, language="en")
+            results = [r for r in results if not (
+                r.entity_type == "DATE_TIME" and (
+                    _DURATION_PHRASE_RE.fullmatch(text[r.start:r.end])
+                    or _RELATIVE_TIME_WORD_RE.fullmatch(text[r.start:r.end])
+                    or _CADENCE_WORD_RE.fullmatch(text[r.start:r.end])
+                    or _TO_DATE_PHRASE_RE.fullmatch(text[r.start:r.end])
+                )
+            )]
+            results = [r for r in results if not _PERIOD_CODE_RE.fullmatch(text[r.start:r.end])]
+            results = [r for r in results if not (
+                r.entity_type == "LOCATION"
+                and _UNIT_ABBREVIATION_RE.fullmatch(text[r.start:r.end])
+                and _PRECEDING_NUMBER_RE.search(text[max(0, r.start - 6):r.start])
+            )]
+            results = [r for r in results if not (
+                r.entity_type in _NER_ENTITY_TYPES_PRONE_TO_IDENTIFIER_FALSE_POSITIVES
+                and _BARE_IDENTIFIER_SHAPE_RE.match(text[r.start:r.end])
+            )]
             if not results:
                 return text
             operators = {
@@ -587,6 +808,18 @@ class PiiScrubber:
             anonymized = _presidio_anonymizer.anonymize(
                 text=text, analyzer_results=results, operators=operators
             )
+            # Observability: this codebase had no visibility into what PII
+            # scrubbing actually redacts, which is exactly why three separate
+            # false-positive corruption bugs (SQL generation, dashboard
+            # planning, code generation) shipped silently in one session
+            # before being caught by a user hitting a broken query. A DEBUG-
+            # level summary (entity types + count, never the redacted value
+            # itself) is cheap, greppable evidence for the next investigation.
+            if anonymized.text != text:
+                entity_counts: Dict[str, int] = {}
+                for r in results:
+                    entity_counts[r.entity_type] = entity_counts.get(r.entity_type, 0) + 1
+                logger.debug("PII scrub redacted %s in %d-char text", entity_counts, len(text))
             return anonymized.text
         except Exception as exc:
             logger.debug("Presidio scrub failed: %s — using regex fallback", exc)

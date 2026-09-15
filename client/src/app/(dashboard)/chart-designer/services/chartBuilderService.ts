@@ -47,6 +47,8 @@ export interface StandaloneChartExecutePayload {
   chartType: string;
   dataSourceId?: string | null;
   chartQuery?: ChartQuery | Record<string, unknown>;
+  chartOptions?: Record<string, unknown>;
+  title?: string;
 }
 
 /** Raw serialized standalone chart as returned by the backend. */
@@ -148,6 +150,11 @@ class ChartBuilderService {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  }
+
+  /** Execute a saved library chart (standalone) via GET chart/{id}/data. */
+  async executeSavedChart(chartId: string): Promise<{ data: unknown }> {
+    return await fetchApi<{ data: unknown }>(`chart/${chartId}/data`, { method: 'GET' });
   }
 }
 

@@ -52,7 +52,7 @@ export function buildStarterDashboardWidgets(
       chartType: spec.chartType,
       title: spec.title,
       chartOptions: defaultChartOptions(spec.chartType),
-      chartQuery: spec.chartType === 'stat' ? { aggregate: 'count' as const } : undefined,
+      chartQuery: spec.chartType === 'stat' ? { yMetric: 'count' as const } : undefined,
     };
     const layoutItem: LayoutItem = {
       i: id,

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
+  App,
   Card,
   Form,
   Button,
-  message,
   Space,
   Table,
   Tag,
@@ -17,17 +17,28 @@ import {
   Alert,
   Select,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, EyeOutlined, EyeInvisibleOutlined, RobotOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined,
+  DeleteOutlined,
+  RobotOutlined,
+  ReloadOutlined,
+  ClearOutlined,
+} from '@ant-design/icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import { fetchApi } from '@/utils/api';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { asDynamicComponent } from '@/utils/asDynamicModule';
 
+const ModelSelectorFallback = () => null;
 const ModelSelector = dynamic(
-  () => import('@/components/ai/ModelSelector/ModelSelector').then((m) => m.ModelSelector),
-  { ssr: false }
+  () =>
+    import('@/components/ai/ModelSelector/ModelSelector').then((m) =>
+      asDynamicComponent(m.ModelSelector ?? m.default, ModelSelectorFallback),
+    ),
+  { ssr: false },
 );
 
 const { Text } = Typography;
@@ -88,12 +99,52 @@ const PROVIDER_MODEL_DEFS: Record<string, ProviderModelDef[]> = {
     { value: 'deepseek-v4-pro', labelKey: 'ai_model_deepseek_v4_pro' },
   ],
   // OpenRouter fronts hundreds of vendor/model slugs (e.g. "z-ai/glm-4.6") — no small
-  // fixed list covers it, so GLM 5.2 is the one preset called out explicitly; anything
+  // fixed list covers it, so these are the presets called out explicitly; anything
   // else goes through the custom-model field below.
+  // qwen3.8-27b is the default pick here despite the "Flash" variant's name:
+  // OpenRouter's own measured P50 numbers show 27B at 0.48s TTFT / 75 tok/s
+  // vs Flash's 3.07s TTFT / 54 tok/s — faster despite not being the "Flash"
+  // branded one. Muse Glimmer 30B is Meta Superintelligence Labs' first
+  // open-weight release, distinct from the Llama family.
   openrouter: [
+    { value: 'qwen/qwen3.8-27b', labelKey: 'ai_model_qwen3_8_27b', suffix: 'default' },
     { value: 'z-ai/glm-5.2', labelKey: 'ai_model_glm_5_2' },
+    { value: 'qwen/qwen3.8-flash', labelKey: 'ai_model_qwen3_8_flash' },
+    { value: 'qwen/qwen3.8-max', labelKey: 'ai_model_qwen3_8_max' },
+    { value: 'meta/muse-glimmer-30b', labelKey: 'ai_model_muse_glimmer_30b' },
+  ],
+  // Suggested local tags only — never auto-enabled in chat until the user
+  // adds them (or discovers them from a running Ollama). Tags must match
+  // `ollama pull` / `ollama list` exactly.
+  ollama: [
+    { value: 'qwen3.8:27b', labelKey: 'ai_model_qwen3_8_27b' },
+    { value: 'muse-glimmer:30b', labelKey: 'ai_model_muse_glimmer_30b' },
+    { value: 'llama3.2:1b', labelKey: 'ai_model_llama3_2_1b' },
   ],
 };
+
+function modelsFromProviderKey(key: { model?: string; models?: string[] } | undefined): string[] {
+  if (!key) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const mid of key.models ?? []) {
+    const id = String(mid || '').trim();
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  const legacy = String(key.model || '').trim();
+  if (legacy && !seen.has(legacy)) {
+    out.unshift(legacy);
+  }
+  return out;
+}
+
+function defaultPresetForProvider(provider: string): string | undefined {
+  const defs = PROVIDER_MODEL_DEFS[provider] ?? [];
+  return defs.find((d) => d.suffix === 'default')?.value ?? defs[0]?.value;
+}
 
 function buildProviderModelLabel(translate: (key: string) => string, def: ProviderModelDef): string {
   const base = translate(def.labelKey);
@@ -118,6 +169,7 @@ import type { TabComponentProps } from '../page';
 
 export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
+  const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
   // 'ai-model' is a legacy subtab key from before "Default AI Model" was folded into
@@ -139,10 +191,8 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     apiKeys,
     providerApiKeys,
     loading,
-    showApiKey,
     showProviderKeyModal,
     editingProvider,
-    toggleApiKeyVisibility,
     setShowProviderKeyModal,
     setEditingProvider,
     loadApiKeys,
@@ -150,12 +200,19 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     deleteApiKey,
     loadProviderApiKeys,
     saveProviderKey,
+    deleteProviderKey,
     availableModels,
   } = useSettingsStore();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   /** Bumps ModelSelector to refetch /api/ai/models after provider key save */
   const [aiModelsReloadNonce, setAiModelsReloadNonce] = useState(0);
+  /** Enabled model ids for the provider currently being edited */
+  const [enabledModels, setEnabledModels] = useState<string[]>([]);
+  const [customModelDraft, setCustomModelDraft] = useState('');
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [clearingProvider, setClearingProvider] = useState(false);
 
   useEffect(() => {
     loadApiKeys();
@@ -180,17 +237,20 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     ? t(PROVIDER_I18N_KEYS[editingProvider]?.nameKey ?? 'unknown')
     : '';
 
-  const providerModelSelectOptions = useMemo(() => {
+  const providerPresetDefs = useMemo(() => {
     if (!editingProvider) return [];
-    const defs = PROVIDER_MODEL_DEFS[editingProvider] ?? [];
-    return [
-      ...defs.map((def) => ({
-        value: def.value,
-        label: buildProviderModelLabel(t, def),
-      })),
-      { value: '__custom__', label: t('select_model_other_option') },
-    ];
-  }, [editingProvider, t]);
+    return PROVIDER_MODEL_DEFS[editingProvider] ?? [];
+  }, [editingProvider]);
+
+  const addEnabledModel = useCallback((raw: string) => {
+    const id = raw.trim();
+    if (!id) return;
+    setEnabledModels((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, []);
+
+  const removeEnabledModel = useCallback((id: string) => {
+    setEnabledModels((prev) => prev.filter((m) => m !== id));
+  }, []);
 
   const handleCreateApiKey = async (values: { name: string }) => {
     try {
@@ -220,69 +280,137 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const handleOpenProviderKeyModal = (provider: string) => {
     setEditingProvider(provider);
     setShowProviderKeyModal(true);
+    setCustomModelDraft('');
+    setDiscoveredModels([]);
     const existingKey = providerApiKeys[provider];
+    const existingModels = modelsFromProviderKey(existingKey);
+    setEnabledModels(existingModels);
     if (existingKey) {
-      const defs = PROVIDER_MODEL_DEFS[provider] ?? [];
-      const isPredefined = defs.some((d) => d.value === existingKey.model);
       providerKeyForm.setFieldsValue({
         api_key: existingKey.api_key ?? '',
-        model: isPredefined ? existingKey.model : existingKey.model ? '__custom__' : '',
-        model_custom: isPredefined ? undefined : (existingKey.model ?? ''),
         endpoint: existingKey.endpoint ?? '',
         workspace_id: existingKey.workspace_id ?? '',
+        preferred_model: existingModels[0] ?? undefined,
       });
     } else {
       providerKeyForm.resetFields();
       if (provider === 'ollama') {
         providerKeyForm.setFieldsValue({
           endpoint: 'http://ollama:11434',
-          model: '__custom__',
-          model_custom: 'llama3.2:1b',
         });
+      } else {
+        const preset = defaultPresetForProvider(provider);
+        if (preset) {
+          setEnabledModels([preset]);
+          providerKeyForm.setFieldsValue({ preferred_model: preset });
+        }
       }
+    }
+  };
+
+  const handleDiscoverOllama = async () => {
+    const endpoint = String(providerKeyForm.getFieldValue('endpoint') || '').trim();
+    if (!endpoint) {
+      message.warning(t('ollama_endpoint_required_discover'));
+      return;
+    }
+    setDiscoverLoading(true);
+    try {
+      const qs = new URLSearchParams({ endpoint });
+      const data = await fetchApi<{ models?: { id?: string; name?: string }[] }>(
+        `users/ai-provider-keys/ollama/tags?${qs.toString()}`,
+      );
+      const ids = (data?.models ?? [])
+        .map((m) => String(m.id || m.name || '').trim())
+        .filter(Boolean);
+      setDiscoveredModels(ids);
+      if (!ids.length) {
+        message.info(t('ollama_discover_empty'));
+      } else {
+        message.success(t('ollama_discover_found', { count: ids.length }));
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('ollama_discover_failed');
+      message.error(msg);
+    } finally {
+      setDiscoverLoading(false);
+    }
+  };
+
+  const handleClearProviderKey = async () => {
+    if (!editingProvider) return;
+    setClearingProvider(true);
+    try {
+      await deleteProviderKey(editingProvider);
+      setAiModelsReloadNonce((n) => n + 1);
+      setShowProviderKeyModal(false);
+      setEditingProvider(null);
+      setEnabledModels([]);
+      setDiscoveredModels([]);
+      providerKeyForm.resetFields();
+      message.success(t('provider_config_cleared'));
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('provider_config_clear_failed');
+      message.error(msg);
+    } finally {
+      setClearingProvider(false);
     }
   };
 
   const handleSaveProviderKey = async (values: {
     api_key?: string;
-    model?: string;
-    model_custom?: string;
     endpoint?: string;
     workspace_id?: string;
+    preferred_model?: string;
   }) => {
     if (!editingProvider) return;
-    const modelToSave = (values.model === '__custom__' ? values.model_custom : values.model) ?? '';
+    const modelsToSave = [...enabledModels];
+    if (editingProvider === 'ollama' && modelsToSave.length === 0) {
+      message.warning(t('ollama_models_required'));
+      return;
+    }
+    let preferred = (values.preferred_model || '').trim();
+    if (preferred && !modelsToSave.includes(preferred)) {
+      modelsToSave.unshift(preferred);
+    }
+    if (!preferred && modelsToSave.length) {
+      preferred = modelsToSave[0];
+    }
+    // Prefer preferred first in the list for stable byok_{provider} id.
+    const ordered =
+      preferred && modelsToSave.includes(preferred)
+        ? [preferred, ...modelsToSave.filter((m) => m !== preferred)]
+        : modelsToSave;
+
     const savedProvider = editingProvider;
     try {
       await saveProviderKey(savedProvider, {
         api_key: values.api_key ?? '',
-        model: modelToSave,
+        model: preferred || ordered[0] || '',
+        models: ordered,
         endpoint: values.endpoint,
         workspace_id: values.workspace_id,
       });
       setAiModelsReloadNonce((n) => n + 1);
       setShowProviderKeyModal(false);
       setEditingProvider(null);
+      setEnabledModels([]);
+      setDiscoveredModels([]);
       providerKeyForm.resetFields();
 
-      // Previously this just showed "saved" regardless of whether the key actually
-      // works — the user only found out it was wrong the next time a real AI request
-      // failed. saveProviderKey() already refreshed availableModels; read it fresh
-      // from the store (not the destructured hook value, which is a stale closure
-      // from this render) and probe the new BYOK model's live connection status.
-      const savedModel = useSettingsStore
+      const byokModels = useSettingsStore
         .getState()
-        .availableModels.find((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
-      if (savedModel) {
+        .availableModels.filter((m) => m.provider === savedProvider && m.id.startsWith('byok_'));
+      const probe = byokModels[0];
+      if (probe) {
         try {
-          const status = await fetchApi(`/ai/model-status?model_id=${savedModel.id}`);
+          const status = await fetchApi(`/ai/model-status?model_id=${probe.id}`);
           if (status?.success === false || status?.available === false) {
             message.warning(t('api_key_saved_but_invalid'));
           } else {
             message.success(t('api_key_provider_saved'));
           }
         } catch {
-          // Status probe itself failing isn't proof the key is bad — don't block save success on it.
           message.success(t('api_key_provider_saved'));
         }
       } else {
@@ -305,15 +433,14 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       dataIndex: 'key',
       key: 'key',
       render: (text: string, record: ApiKey) => (
-        <Space>
-          <Text code>{showApiKey[record.id] ? record.key : '••••••••••••' + record.key.slice(-4)}</Text>
-          <Button
-            type="text"
-            size="small"
-            icon={showApiKey[record.id] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-            onClick={() => toggleApiKeyVisibility(record.id)}
-          />
-        </Space>
+        // RELIABILITY: the list endpoint (GET /users/api-keys) never returns the
+        // real secret — the backend masks it before storing (mask_key(secret)),
+        // by design (the full key is shown exactly once, at creation). This used
+        // to re-mask that already-masked string on top ('••••••••••••' +
+        // record.key.slice(-4)), which happened to render the same bullets by
+        // coincidence but made toggling "show" a no-op — there was never a real
+        // secret in `record.key` to reveal for a key loaded from the list.
+        <Text code>{record.key}</Text>
       ),
     },
     {
@@ -349,7 +476,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           okText={t('yes')}
           cancelText={t('no')}
         >
-          <Button type="text" danger icon={<DeleteOutlined />} />
+          <Button type="text" danger className="icon-only-btn" icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
     },
@@ -378,12 +505,12 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   return (
     <div>
-      <Card bordered={false} style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
+      <Card variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <Tabs
-          className="bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-content-holder]:block [&_.ant-tabs-content-holder]:h-auto [&_.ant-tabs-content-holder]:min-h-0 [&_.ant-tabs-content-holder]:flex-none [&_.ant-tabs-content-holder]:overflow-visible [&_.ant-tabs-content-holder]:!p-0 [&_.ant-tabs-content]:block [&_.ant-tabs-content]:h-auto [&_.ant-tabs-content]:min-h-0 [&_.ant-tabs-content]:flex-none [&_.ant-tabs-content]:overflow-visible [&_.ant-tabs-tabpane]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
+          className="settings-inline-tabs bg-transparent p-0 shadow-none rounded-none [&_.ant-tabs-body-holder]:block [&_.ant-tabs-body-holder]:h-auto [&_.ant-tabs-body-holder]:min-h-0 [&_.ant-tabs-body-holder]:flex-none [&_.ant-tabs-body-holder]:overflow-visible [&_.ant-tabs-body-holder]:!p-0 [&_.ant-tabs-body]:block [&_.ant-tabs-body]:h-auto [&_.ant-tabs-body]:min-h-0 [&_.ant-tabs-body]:flex-none [&_.ant-tabs-body]:overflow-visible [&_.ant-tabs-content]:!p-0 [&>.ant-tabs-nav]:mb-4 [&>.ant-tabs-nav::before]:border-b-[var(--ant-color-border-secondary)] [&_.ant-tabs-tab]:rounded-md [&_.ant-tabs-tab]:!px-3.5 [&_.ant-tabs-tab]:!py-1.5 [&_.ant-tabs-tab]:text-[13px] [&_.ant-tabs-tab]:border-0 [&_.ant-tabs-tab]:bg-transparent [&_.ant-tabs-tab:hover]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab:hover]:text-[var(--ant-color-text)] [&_.ant-tabs-tab-active]:bg-[var(--ant-color-fill-quaternary)] [&_.ant-tabs-tab-active]:!text-[var(--ant-color-primary)] [&_.ant-tabs-tab-active]:font-medium [&_.ant-tabs-ink-bar]:h-0.5 [&_.ant-tabs-ink-bar]:rounded-sm"
           activeKey={activeApiTab}
           onChange={handleApiTabChange}
-          destroyInactiveTabPane
+          destroyOnHidden
           items={[
             {
               key: 'providers',
@@ -443,7 +570,12 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                           <Tag style={{ margin: 0, fontSize: 10 }}>{t('coming_soon')}</Tag>
                         ) : providerApiKeys[provider.key] ? (
                           <Tag color="green" style={{ margin: 0, fontSize: 10 }}>
-                            {t('configured')}
+                            {(() => {
+                              const n = modelsFromProviderKey(providerApiKeys[provider.key]).length;
+                              return n > 0
+                                ? t('configured_with_models', { count: n })
+                                : t('configured');
+                            })()}
                           </Tag>
                         ) : (
                           <Tag style={{ margin: 0, fontSize: 10 }}>{t('not_set')}</Tag>
@@ -560,9 +692,14 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
         onCancel={() => {
           setShowProviderKeyModal(false);
           setEditingProvider(null);
+          setEnabledModels([]);
+          setDiscoveredModels([]);
+          setCustomModelDraft('');
           providerKeyForm.resetFields();
         }}
         footer={null}
+        destroyOnHidden
+        width={560}
       >
         <Form form={providerKeyForm} layout="vertical" onFinish={handleSaveProviderKey}>
           {editingProvider !== 'ollama' && (
@@ -582,14 +719,181 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               rules={[
                 {
                   required: true,
-                  message: editingProvider === 'ollama' ? t('endpoint_url') : t('azure_endpoint_required'),
+                  message:
+                    editingProvider === 'ollama'
+                      ? t('ollama_endpoint_required')
+                      : t('azure_endpoint_required'),
                 },
               ]}
+              extra={editingProvider === 'ollama' ? t('ollama_endpoint_help') : undefined}
             >
+              {editingProvider === 'ollama' ? (
+                <Space.Compact style={{ width: '100%' }}>
+                  <Input
+                    placeholder="http://localhost:11434"
+                    type="url"
+                    autoComplete="off"
+                  />
+                  <Button
+                    icon={<ReloadOutlined />}
+                    loading={discoverLoading}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void handleDiscoverOllama();
+                    }}
+                  >
+                    {t('ollama_discover')}
+                  </Button>
+                </Space.Compact>
+              ) : (
+                <Input
+                  placeholder={t('azure_endpoint_placeholder')}
+                  type="url"
+                  autoComplete="off"
+                />
+              )}
+            </Form.Item>
+          )}
+
+          <Form.Item
+            label={t('enabled_models_label')}
+            required={editingProvider === 'ollama'}
+            extra={t('enabled_models_help')}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10, minHeight: 28 }}>
+              {enabledModels.length === 0 ? (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {t('enabled_models_empty')}
+                </Text>
+              ) : (
+                enabledModels.map((id) => (
+                  <Tag
+                    key={id}
+                    closable
+                    onClose={(e) => {
+                      e.preventDefault();
+                      removeEnabledModel(id);
+                      const preferred = providerKeyForm.getFieldValue('preferred_model');
+                      if (preferred === id) {
+                        const next = enabledModels.filter((m) => m !== id)[0];
+                        providerKeyForm.setFieldsValue({ preferred_model: next });
+                      }
+                    }}
+                    style={{ margin: 0 }}
+                  >
+                    {id}
+                  </Tag>
+                ))
+              )}
+            </div>
+
+            {providerPresetDefs.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                  {t('suggested_models')}
+                </Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {providerPresetDefs.map((def) => {
+                    const active = enabledModels.includes(def.value);
+                    return (
+                      <Tag.CheckableTag
+                        key={def.value}
+                        checked={active}
+                        onChange={(checked) => {
+                          if (checked) {
+                            addEnabledModel(def.value);
+                            if (!providerKeyForm.getFieldValue('preferred_model')) {
+                              providerKeyForm.setFieldsValue({ preferred_model: def.value });
+                            }
+                          } else {
+                            removeEnabledModel(def.value);
+                          }
+                        }}
+                      >
+                        {buildProviderModelLabel(t, def)}
+                      </Tag.CheckableTag>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {editingProvider === 'ollama' && discoveredModels.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                  {t('ollama_discovered_models')}
+                </Text>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {discoveredModels.map((id) => {
+                    const active = enabledModels.includes(id);
+                    return (
+                      <Tag.CheckableTag
+                        key={id}
+                        checked={active}
+                        onChange={(checked) => {
+                          if (checked) {
+                            addEnabledModel(id);
+                            if (!providerKeyForm.getFieldValue('preferred_model')) {
+                              providerKeyForm.setFieldsValue({ preferred_model: id });
+                            }
+                          } else {
+                            removeEnabledModel(id);
+                          }
+                        }}
+                      >
+                        {id}
+                      </Tag.CheckableTag>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <Space.Compact style={{ width: '100%' }}>
               <Input
-                placeholder={editingProvider === 'ollama' ? 'http://ollama:11434' : t('azure_endpoint_placeholder')}
-                type="url"
-                autoComplete="off"
+                value={customModelDraft}
+                onChange={(e) => setCustomModelDraft(e.target.value)}
+                placeholder={
+                  editingProvider === 'ollama'
+                    ? t('custom_model_id_placeholder_ollama')
+                    : t('custom_model_id_placeholder')
+                }
+                onPressEnter={(e) => {
+                  e.preventDefault();
+                  if (!customModelDraft.trim()) return;
+                  addEnabledModel(customModelDraft);
+                  if (!providerKeyForm.getFieldValue('preferred_model')) {
+                    providerKeyForm.setFieldsValue({ preferred_model: customModelDraft.trim() });
+                  }
+                  setCustomModelDraft('');
+                }}
+              />
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  if (!customModelDraft.trim()) return;
+                  addEnabledModel(customModelDraft);
+                  if (!providerKeyForm.getFieldValue('preferred_model')) {
+                    providerKeyForm.setFieldsValue({ preferred_model: customModelDraft.trim() });
+                  }
+                  setCustomModelDraft('');
+                }}
+              >
+                {t('add_model')}
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+
+          {enabledModels.length > 0 && (
+            <Form.Item
+              name="preferred_model"
+              label={t('preferred_model_label')}
+              extra={t('preferred_model_help')}
+            >
+              <Select
+                placeholder={t('preferred_model_placeholder')}
+                options={enabledModels.map((id) => ({ value: id, label: id }))}
+                allowClear
               />
             </Form.Item>
           )}
@@ -602,36 +906,33 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               <Input placeholder="wrkspc_..." autoComplete="off" />
             </Form.Item>
           )}
-          <Form.Item name="model" label={t('default_model')} extra={t('default_model_help')}>
-            <Select
-              placeholder={t('select_model_or_custom')}
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              options={providerModelSelectOptions}
-              notFoundContent={t('enter_custom_model_below')}
-            />
-          </Form.Item>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prev, curr) => prev?.model === '__custom__' || curr?.model === '__custom__'}
-          >
-            {({ getFieldValue }) =>
-              getFieldValue('model') === '__custom__' ? (
-                <Form.Item name="model_custom" label={t('custom_model_id')}>
-                  <Input placeholder={t('custom_model_id_placeholder')} />
-                </Form.Item>
-              ) : null
-            }
-          </Form.Item>
-          <Divider />
-          <Form.Item>
-            <Space>
-              <Button onClick={() => setShowProviderKeyModal(false)}>{t('cancel')}</Button>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                {t('save_key')}
-              </Button>
-            </Space>
+
+          <Divider style={{ margin: '12px 0 16px' }} />
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              {editingProvider && providerApiKeys[editingProvider] ? (
+                <Popconfirm
+                  title={t('provider_clear_confirm_title')}
+                  description={t('provider_clear_confirm_desc')}
+                  onConfirm={() => void handleClearProviderKey()}
+                  okText={t('yes')}
+                  cancelText={t('no')}
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger icon={<ClearOutlined />} loading={clearingProvider}>
+                    {t('clear_provider_config')}
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <span />
+              )}
+              <Space>
+                <Button onClick={() => setShowProviderKeyModal(false)}>{t('cancel')}</Button>
+                <Button type="primary" htmlType="submit" loading={loading}>
+                  {t('save_key')}
+                </Button>
+              </Space>
+            </div>
           </Form.Item>
         </Form>
       </Modal>

@@ -21,6 +21,16 @@ COPY . .
 ARG EDITION=community
 ENV EDITION=$EDITION
 
+# CE checkouts normally never have ee/ checked out at all (it's a separate
+# git submodule), so this is a no-op for the common case -- structural
+# safeguard for building the CE-tagged image from a full checkout that
+# happens to have the ee/ submodule initialized. next.config.mjs's alias
+# setup already falls back to ee-fallback.ts stubs when ee/ is absent.
+RUN if [ "$EDITION" = "community" ] || [ "$EDITION" = "ce" ]; then \
+      echo "EDITION=$EDITION -- stripping ee/ from the CE image"; \
+      rm -rf ee && mkdir -p ee; \
+    fi
+
 # Accept build arguments for NEXT_PUBLIC_* variables
 ARG NEXT_PUBLIC_AUTH_PROVIDER
 ARG NEXT_PUBLIC_KEYCLOAK_URL

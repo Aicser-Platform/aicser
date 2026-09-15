@@ -1,6 +1,6 @@
 """Tests for clarification_utils normalization (resume payloads)."""
 
-from src.modules.ai.utils.clarification_utils import normalize_clarification_choices
+from ee.modules.ai.utils.clarification_utils import normalize_clarification_choices
 
 
 def test_normalize_selected_fields_key():

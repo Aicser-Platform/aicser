@@ -141,6 +141,68 @@
   border-radius: 6px !important;
 }
 
+/* Stop button carries a label ("Stop"), not just an icon like the other
+   square controls in this bar - it needs to grow past the shared square
+   sizing above instead of clipping its own text. */
+.query-editor-workspace .qe-ai-bar .qe-ai-stop-btn {
+  width: auto !important;
+  min-width: auto !important;
+  padding: 0 10px !important;
+  gap: 6px;
+}
+
+/* Generating status row - elapsed-time proof of life while generate-code
+   (a single-shot request, no backend progress events) is in flight. */
+.query-editor-workspace .qe-ai-bar .qe-ai-generating-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 36px; /* aligns under the input, past the avatar */
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.qe-ai-generating-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-primary);
+  flex-shrink: 0;
+  animation: qe-ai-generating-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes qe-ai-generating-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.qe-ai-generating-reassurance {
+  color: var(--ant-color-text-tertiary);
+  font-style: italic;
+}
+
+/* In-editor banner - the status row above lives in a small strip the user
+   isn't looking at while waiting for code to appear in the editor itself. */
+.qe-ai-editor-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  pointer-events: none;
+}
+
 /* Query tabs row — line tabs (not editable-card) */
 .query-editor-workspace .qe-query-tabs-row {
   flex-shrink: 0;
@@ -275,9 +337,60 @@
   gap: 2px !important;
 }
 
-.query-editor-workspace .qe-tab-toolbar .ant-btn {
+/* Icon-only toolbar buttons (format, duplicate tab, close, etc.) get squeezed
+   to a small square — but this selector's specificity (3 classes) beats
+   .qe-run-btn's (1 class) regardless of source order, so without this
+   exclusion it was also squeezing the Run/Cancel button down to a 28x28
+   icon-only box, clipping its "Run SQL"/"Cancel" label entirely. */
+.query-editor-workspace .qe-tab-toolbar .ant-btn:not(.qe-run-btn):not(.qe-cancel-btn) {
   width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
   height: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.query-editor-workspace .qe-tab-toolbar .ant-btn .anticon {
+  font-size: 14px !important;
+}
+
+/* Model selector pill — same compact/centered treatment as the chat composer's
+   (chat-panel-styles/composer.css), which this page's bundle never loads.
+   Height was hardcoded to 30px (copied from chat's own pill), 2px shorter
+   than every sibling control in this toolbar (--qe-control-h: 32px, see the
+   .qe-ai-bar .ant-input/.ant-btn rules above) — flexbox still centered the
+   pill in the row, but at a visibly different height than its neighbors,
+   reading as misaligned rather than as part of the same control row. */
+.query-editor-workspace .model-selector-compact.ant-select:not(.model-selector-composer-embed) .ant-select-selector {
+  background: var(--ant-color-fill-quaternary, rgba(0, 0, 0, 0.02)) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 0 10px !important;
+  height: var(--qe-control-h) !important;
+  display: flex !important;
+  align-items: center !important;
+  box-shadow: none !important;
+  transition: background 0.15s ease;
+}
+
+.query-editor-workspace .model-selector-compact.ant-select:not(.model-selector-composer-embed):hover .ant-select-selector {
+  background: var(--ant-color-fill-tertiary, rgba(0, 0, 0, 0.04)) !important;
+}
+
+.query-editor-workspace .model-selector-compact.ant-select-focused:not(.model-selector-composer-embed) .ant-select-selector {
+  background: var(--ant-color-fill-tertiary, rgba(0, 0, 0, 0.04)) !important;
+}
+
+.query-editor-workspace .model-selector-compact.ant-select:not(.model-selector-composer-embed) .ant-select-selection-item {
+  display: flex !important;
+  align-items: center !important;
+  line-height: normal !important;
+  font-size: 13px !important;
+}
+
+.query-editor-workspace .model-selector-compact.ant-select:not(.model-selector-composer-embed) .ant-select-arrow {
+  display: none;
 }
 
 .query-editor-workspace .qe-query-tab-label {
@@ -499,7 +612,7 @@
   border-bottom: var(--qe-zone-border);
 }
 
-.query-editor-workspace .query-editor-results-tabs > .ant-tabs-content-holder {
+.query-editor-workspace .query-editor-results-tabs > .ant-tabs-body-holder {
   flex: 1 !important;
   min-height: 0 !important;
   display: flex !important;
@@ -507,19 +620,28 @@
   overflow: hidden !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-content {
+/* antd v6's @rc-component/tabs renamed the shared multi-pane wrapper from
+   .ant-tabs-content to .ant-tabs-body, and the old per-pane .ant-tabs-tabpane*
+   classes to .ant-tabs-content* (TabPanelList.js: bodyPrefixCls = `${prefixCls}-body`,
+   contentPrefixCls = `${prefixCls}-content`, applied per-pane not to the shared
+   wrapper anymore). Missing this rename broke the flex-height chain into the
+   results table: .ant-tabs-content matched the wrong element after the v5->v6
+   bump, so the active pane (and everything inside it, down to the results
+   table) fell back to content-sized instead of viewport-bounded, and its
+   scroll region collapsed. */
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-body {
   flex: 1 !important;
   min-height: 0 !important;
   height: 100% !important;
 }
 
-/* Do not force display:flex on all tabpanes — breaks Ant Design tab switching */
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane {
+/* Do not force display:flex on all tab panes — breaks Ant Design tab switching */
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content {
   height: 100% !important;
   overflow: hidden !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane-hidden {
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content-hidden {
   display: none !important;
 }
 
@@ -528,7 +650,7 @@
   font-size: 12px !important;
 }
 
-.query-editor-workspace .query-editor-results-tabs .ant-tabs-tabpane-active {
+.query-editor-workspace .query-editor-results-tabs .ant-tabs-content-active {
   display: flex !important;
   flex-direction: column !important;
   min-height: 0 !important;
@@ -889,6 +1011,25 @@
   padding: 0;
 }
 
+/* Row-shaped loading state (TableRowsSkeleton) — top-aligned and full-width,
+   unlike the centered spinner-only .qe-results-loading default. */
+.qe-results-loading.qe-results-loading--skeleton {
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: 8px 0 0;
+  gap: 4px;
+  min-height: 0;
+}
+
+.qe-results-loading-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px var(--qe-gutter-x) 12px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
 .qe-results-loading-copy {
   text-align: center;
   max-width: 400px;
@@ -1222,9 +1363,14 @@
   font-size: 12px;
   padding: 0 6px;
   height: 22px;
-  border: 1px solid var(--ant-color-primary);
+  /* Neutral border, not primary - the global *:focus-visible rule (globals.css
+     "one ring, one mechanism") already draws the primary-colored focus ring on
+     autoFocus. This used to also set border: 1px solid var(--ant-color-primary)
+     plus outline: none - but *:focus-visible's !important always won over that
+     non-important outline: none, so the primary border AND the primary outline
+     rendered together as a visible double border the instant rename mode opened. */
+  border: 1px solid var(--ant-color-border);
   border-radius: 4px;
-  outline: none;
 }
 
 .qe-performance-pane__inner,
@@ -1304,11 +1450,17 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.qe-performance-pane__plan-pre {
-  font-size: 11px;
-  white-space: pre-wrap;
-  margin: 0;
+.qe-performance-pane__plan-tree.ant-tree {
   background: transparent;
-  font-family: monospace;
-  line-height: 1.5;
+  font-size: 12px;
+}
+
+.qe-performance-pane__plan-tree .ant-tree-node-content-wrapper {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
+.qe-performance-pane__plan-tree .ant-tree-treenode {
+  padding: 1px 0;
 }

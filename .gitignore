@@ -17,15 +17,27 @@ build/
 venv/
 *.db
 *.sqlite3
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
 
 # Node / Next.js
 node_modules/
 .next/
 .next-verify/
+.next-local/
+.next-ee-local/
+.next-dev/
+.next.broken/
 out/
+.turbo/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.tsbuildinfo
 
 # OS
 .DS_Store
@@ -45,5 +57,22 @@ Thumbs.db
 .claude/
 CLAUDE.md
 
+# Local agent / editor recovery dumps (not source of truth)
+.recovery-snapshots/
+
 # Superpowers brainstorm mockups
 .superpowers/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Logs & temp
+*.log
+tmp/
+temp/
+.cache/

@@ -2,8 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Table, Tag, Space, message, Typography, Modal, Form, Input, Select } from 'antd';
-import { ReloadOutlined, PlusOutlined, DeleteOutlined, LinkOutlined } from '@ant-design/icons';
-import Link from 'next/link';
+import { ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useDataSourceSchema } from '@/hooks/useDataSources';
 import {
@@ -13,8 +12,6 @@ import {
   listRelationships,
   type DataModelRelationship,
 } from '@/api/dataModel';
-
-const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 type ModelColumn = {
   name: string;
@@ -29,12 +26,10 @@ type ModelTable = {
 type Props = {
   dataSourceId: string;
   compact?: boolean;
-  showPlatformLink?: boolean;
 };
 
-export function DataModelRelationships({ dataSourceId, compact = false, showPlatformLink = true }: Props) {
+export function DataModelRelationships({ dataSourceId, compact = false }: Props) {
   const t = useTranslations('dashboards');
-  const td = useTranslations('data_page');
   const { schema, isLoading: schemaLoading } = useDataSourceSchema(dataSourceId);
   const [rows, setRows] = useState<DataModelRelationship[]>([]);
   const [loading, setLoading] = useState(false);
@@ -198,13 +193,6 @@ export function DataModelRelationships({ dataSourceId, compact = false, showPlat
         <Button size="small" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
           {t('add_relationship')}
         </Button>
-        {showPlatformLink && isEE && (
-          <Link href={`/data-platform?tab=semantic&dataSourceId=${encodeURIComponent(dataSourceId)}`}>
-            <Button size="small" icon={<LinkOutlined />}>
-              {td('open_semantic_platform')}
-            </Button>
-          </Link>
-        )}
       </Space>
       <Table
         size="small"

@@ -6,7 +6,6 @@ Mounted at /api/users in core/api.py.
 
 import json
 import logging
-import os
 import secrets
 import uuid as _uuid
 import base64
@@ -20,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import async_session, get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.pricing.feature_gate import require_plan_feature
 from src.modules.user.service import UserService
 from src.modules.user.schemas import UserProfileUpdate, UserProfileResponse
 from src.core.edition import is_ee_enabled
@@ -32,6 +32,7 @@ from src.modules.user.avatar_storage_service import (
     generate_avatar_s3_url,
     generate_avatar_sas_url,
     is_avatar_data_uri,
+    resolve_storage_backend,
 )
 from src.modules.user.utils import mask_key
 from src.modules.user.user_setting_repository import UserSettingRepository
@@ -170,7 +171,7 @@ async def _get_org_ai_provider_settings(user_id: str, organization_id: Optional[
         return {}
 
 
-async def _save_org_ai_provider_setting(organization_id: str, provider: str, value: str) -> None:
+async def _save_org_ai_provider_setting(organization_id: str, provider: str, value: Optional[str]) -> None:
     from src.modules.organizations.models import Organization
 
     oid = _uuid.UUID(str(organization_id))
@@ -189,7 +190,10 @@ async def _save_org_ai_provider_setting(organization_id: str, provider: str, val
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
         settings = dict(org.settings or {})
         keys = dict(settings.get("ai_provider_keys") or {})
-        keys[provider] = value
+        if value is None:
+            keys.pop(provider, None)
+        else:
+            keys[provider] = value
         settings["ai_provider_keys"] = keys
         org.settings = settings
         await session.commit()
@@ -285,22 +289,7 @@ async def upload_avatar(
     # EE: S3/Azure store a stable object URL in users.avatar_url and profile
     # reads return a signed display URL when needed. Self-host PostgreSQL keeps
     # the compressed data URI in the user row, same as CE.
-    storage_backend = os.getenv("STORAGE_BACKEND", "").strip().lower()
-    storage_config = None
-    try:
-        from src.core.system_settings.runtime_config import get_effective_storage_config
-
-        effective_storage = await get_effective_storage_config()
-        effective_backend = str(effective_storage.get("backend") or "").strip().lower()
-        if effective_storage.get("enabled") and effective_backend:
-            storage_backend = effective_backend
-            if effective_backend == "s3":
-                storage_config = effective_storage
-    except Exception:
-        logger.debug(
-            "Runtime storage config unavailable; using env avatar storage backend",
-            exc_info=True,
-        )
+    storage_backend, storage_config = await resolve_storage_backend()
 
     if storage_backend == "postgresql":
         return await _store_avatar_as_data_uri(db, user_id, file_content)
@@ -326,11 +315,21 @@ async def upload_avatar(
             else AvatarStorageService()
         )
     except ValueError as e:
-        logger.error(f"Avatar storage not configured: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Avatar storage is not configured on this server.",
+        # RELIABILITY: a self-hosted EE deployment with neither STORAGE_BACKEND
+        # nor Azure/S3 credentials set (all empty here) used to hard-fail the
+        # entire upload with a 503, surfaced to the end user as a generic
+        # "Failed to upload photo. Please try again." with no way to actually
+        # succeed by retrying — the constructor fails identically every time.
+        # sibling storage_backend == "postgresql" case above already proves
+        # the compressed-data-URI path is safe for this deployment; use the
+        # same one here instead of blocking the upload entirely, matching CE's
+        # own default behavior for the exact same "no cloud storage" case.
+        logger.warning(
+            "Avatar cloud storage not configured (%s) — falling back to "
+            "postgres data-URI storage for this upload",
+            e,
         )
+        return await _store_avatar_as_data_uri(db, user_id, file_content)
 
     # Upload (overwrite=True replaces the existing blob at the fixed path — no delete needed)
     avatar_url = await avatar_svc.upload_avatar(
@@ -383,6 +382,9 @@ class ProviderKeyPayload(BaseModel):
     model: Optional[str] = None
     endpoint: Optional[str] = None
     workspace_id: Optional[str] = None
+    # Enabled model ids for the chat picker (multi-model BYOK). When omitted on
+    # update, existing models are preserved; when [] the list is cleared.
+    models: Optional[List[str]] = None
 
 
 class AiModelPreferenceRequest(BaseModel):
@@ -504,7 +506,10 @@ async def put_notification_preferences(
 
 # ─── Platform API keys & AI provider keys ───────────────────────────────────
 
-@router.get("/api-keys")
+_require_api_access = Depends(require_plan_feature("api_access"))
+
+
+@router.get("/api-keys", dependencies=[_require_api_access])
 async def list_api_keys(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
@@ -520,7 +525,7 @@ async def list_api_keys(
         return []
 
 
-@router.post("/api-keys")
+@router.post("/api-keys", dependencies=[_require_api_access])
 async def create_api_key(
     payload: ApiKeyCreateRequest,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
@@ -559,7 +564,7 @@ async def create_api_key(
     }
 
 
-@router.delete("/api-keys/{key_id}")
+@router.delete("/api-keys/{key_id}", dependencies=[_require_api_access])
 async def delete_api_key(
     key_id: str,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
@@ -664,13 +669,24 @@ async def save_ai_provider_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="api_key is required for new provider key")
     if key_normalized == "ollama" and not (endpoint_val or existing.get("endpoint")):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint is required for Ollama")
-    store = {
-        "model": (payload.model or "").strip() or existing.get("model"),
-        "endpoint": endpoint_val or existing.get("endpoint"),
-        "workspace_id": workspace_id_val or existing.get("workspace_id"),
-    }
-    if api_key_val:
-        store["api_key"] = api_key_val
+    from src.modules.ai.provider_key_store import normalize_store_for_save
+
+    resolved_key = None
+    if api_key_val and not api_key_val.startswith("••••"):
+        resolved_key = api_key_val
+    elif existing.get("api_key"):
+        resolved_key = existing["api_key"]
+
+    store = normalize_store_for_save(
+        api_key=resolved_key,
+        endpoint=endpoint_val or None,
+        model=(payload.model or "").strip() or None,
+        models=payload.models,
+        existing=existing,
+    )
+    workspace_id_resolved = workspace_id_val or existing.get("workspace_id")
+    if workspace_id_resolved:
+        store["workspace_id"] = workspace_id_resolved
     try:
         store = encrypt_credentials(store)
     except RuntimeError as exc:
@@ -683,6 +699,72 @@ async def save_ai_provider_key(
         return {"success": True, "provider": key_normalized, "scope": "organization"}
     await _user_settings_repo.set_setting(user_id, f"provider_key.{key_normalized}", json.dumps(store))
     return {"success": True, "provider": key_normalized, "scope": "personal"}
+
+
+@router.delete("/ai-provider-keys/{provider}")
+async def delete_ai_provider_key(
+    provider: str,
+    request: Request,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Remove a BYOK provider configuration (personal or org-scoped)."""
+    user_id = _require_user_id(current_token)
+    if not provider:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="provider is required")
+    key_normalized = provider.strip().lower().replace(" ", "_")
+    organization_id = _request_organization_id(request)
+    if organization_id:
+        if not await _user_is_org_member(user_id, organization_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization membership is required")
+        await _require_org_provider_key_manager(user_id, organization_id)
+        await _save_org_ai_provider_setting(organization_id, key_normalized, None)
+        return {"success": True, "provider": key_normalized, "scope": "organization", "deleted": True}
+    await _user_settings_repo.delete_setting(user_id, f"provider_key.{key_normalized}")
+    return {"success": True, "provider": key_normalized, "scope": "personal", "deleted": True}
+
+
+@router.get("/ai-provider-keys/ollama/tags")
+async def list_ollama_tags(
+    endpoint: str = Query(..., description="Ollama base URL, e.g. http://localhost:11434"),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Proxy Ollama /api/tags so the browser can discover local models without CORS issues."""
+    _require_user_id(current_token)
+    base = (endpoint or "").strip().rstrip("/")
+    if not base.startswith("http://") and not base.startswith("https://"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint must be an http(s) URL")
+    # Block obvious SSRF to cloud metadata; allow private LAN for self-hosted Ollama.
+    low = base.lower()
+    if "169.254.169.254" in low or "metadata.google" in low:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="endpoint not allowed")
+    import httpx
+
+    url = f"{base}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.get(url)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not reach Ollama at {base}: {exc}",
+        ) from exc
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ollama returned HTTP {resp.status_code}",
+        )
+    try:
+        payload = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Invalid JSON from Ollama") from exc
+    models = []
+    for item in payload.get("models") or []:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or item.get("model") or "").strip()
+        if name:
+            models.append({"id": name, "name": name})
+    return {"success": True, "endpoint": base, "models": models}
 
 
 # ─── AI model preference ─────────────────────────────────────────────────────

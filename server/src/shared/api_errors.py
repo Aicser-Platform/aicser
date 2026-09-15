@@ -75,6 +75,11 @@ def http_exception_to_response(exc: HTTPException) -> JSONResponse:
     )
 
 
+def raise_internal(status_code: int = 500, *, fallback: str = "Request failed") -> None:
+    """Raise HTTPException without leaking exception strings to the client."""
+    raise HTTPException(status_code=status_code, detail={"error": "internal_error", "message": fallback})
+
+
 def raise_http(status_code: int, error: str, message: str, **details: Any) -> None:
     """Raise HTTPException with unified detail shape."""
     payload: dict[str, Any] = {"error": error, "message": message}

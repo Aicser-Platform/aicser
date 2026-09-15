@@ -425,6 +425,42 @@
   background: var(--ant-color-bg-container);
 }
 
+/* Lazy-mounted widget: wrapper fills the grid tile's reserved size so
+   swapping the placeholder for the real chart never shifts layout. */
+.lazy-widget-mount {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.widget-lazy-placeholder {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(
+    100deg,
+    var(--ant-color-bg-layout) 30%,
+    var(--ant-color-border-secondary) 50%,
+    var(--ant-color-bg-layout) 70%
+  );
+  background-size: 200% 100%;
+  animation: widget-lazy-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes widget-lazy-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 /* Chart / data widget content fills card without bleeding or clipping */
 .widget-content-root {
   position: relative;
@@ -826,6 +862,14 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   font-variant-numeric: proportional-nums;
   letter-spacing: -0.02em;
   font-weight: 600;
+  /* A widget narrower than its formatted value (e.g. a large negative currency in a
+   * small grid tile) truncates gracefully with a hover tooltip (see the `title` prop
+   * on the value span) instead of clipping raggedly or overflowing the tile bounds. */
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Table Number Formatting */
@@ -849,6 +893,9 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 .number-compact {
   font-variant-numeric: proportional-nums;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Large number displays */
@@ -1016,10 +1063,6 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   flex: 1 1 auto;
 }
 
-.studio-context-presentation .studio-refresh-dropdown-trigger.studio-context-btn {
-  max-width: min(200px, 32vw);
-}
-
 .studio-wrapper:fullscreen .studio-context-presentation,
 .studio-wrapper:-webkit-full-screen .studio-context-presentation {
   margin-top: 4px;
@@ -1040,23 +1083,6 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   z-index: 12;
 }
 
-/* Dense icon toolbar on the page chrome — matches View/Add density above */
-.studio-context-actions .studio-refresh-dropdown-trigger.ant-btn,
-.studio-context-actions .studio-filter-btn.ant-btn {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.studio-context-actions .studio-style-menu-btn.ant-btn {
-  height: 32px;
-  padding-inline: 8px;
-}
-
 .dashboard-page-chrome-viewer {
   padding: 0 24px 8px;
   margin-bottom: 4px;
@@ -1065,7 +1091,7 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 }
 
 /* View Full / View Table — sized to widget type; above sidebar chrome (z-index 1200) */
-.studio-widget-inspect-modal .ant-modal-content {
+.studio-widget-inspect-modal {
   overflow: hidden;
   display: flex;
   flex-direction: column;

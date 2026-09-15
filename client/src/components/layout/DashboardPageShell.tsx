@@ -108,7 +108,7 @@ export type DashboardPageEmptyProps = {
 
 export function DashboardPageEmpty({ description, action }: DashboardPageEmptyProps) {
   return (
-    <Card className="page-state-empty" bordered={false}>
+    <Card className="page-state-empty" variant="borderless">
       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={description}>
         {action}
       </Empty>

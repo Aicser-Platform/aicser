@@ -1,11 +1,13 @@
+import type { ChatEchartsConfig } from './echartsChatConfig';
+
 /** Unwrap primary_chart wrapper used by backend chart builder. */
-export function rawChartConfig(config: unknown): Record<string, unknown> {
+export function rawChartConfig(config: unknown): ChatEchartsConfig {
   if (!config || typeof config !== 'object') return {};
   const c = config as Record<string, unknown>;
   if (c.primary_chart && typeof c.primary_chart === 'object') {
-    return c.primary_chart as Record<string, unknown>;
+    return c.primary_chart as ChatEchartsConfig;
   }
-  return c;
+  return c as ChatEchartsConfig;
 }
 
 /**
@@ -78,4 +80,14 @@ export function isChartConfigRenderable(
   const hasEncode = (series || []).some((s) => s.encode && typeof s.encode === 'object');
   const hasRows = Array.isArray(rows) && rows.length > 0;
   return hasSeriesData || !!hasDataset || (hasEncode && hasRows);
+}
+
+/**
+ * ChartMessage used to package SQL rows as a shared table whenever
+ * resolveSharedChartProps returned null. Forecast / waterfall options are
+ * intentionally null there so they stay on native ECharts — do not replace
+ * them with the previous query_result.
+ */
+export function shouldPackageQueryRowsAsSharedChart(config: unknown): boolean {
+  return !isChartConfigRenderable(config, null);
 }

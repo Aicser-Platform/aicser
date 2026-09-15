@@ -2,11 +2,12 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { Empty } from 'antd';
+import { Empty, Tooltip } from 'antd';
+import { WarningOutlined } from '@ant-design/icons';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
 import { RawRowsTableWidget } from './RawRowsTableWidget';
-import { StatWidget } from './StatWidget';
+import { StatWidget, type StatWidgetProps } from './StatWidget';
 import { TextWidget } from './TextWidget';
 import { SlicerWidget } from './SlicerWidget';
 import { EmbedWidget } from './EmbedWidget';
@@ -21,6 +22,7 @@ import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity';
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 import { DASHBOARD_CHART_TYPES } from '../utils/filterConfigMerge';
+import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
 
 const widgetChunkLoading = () => (
   <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -41,6 +43,32 @@ const EChartWidget = dynamic(
 const RawEChartWidget = dynamic(
   () => import('./RawEChartWidget').then((m) => m.RawEChartWidget),
   { ssr: false, loading: widgetChunkLoading }
+);
+
+const StaleDataBadge: React.FC<{ tooltip: string }> = ({ tooltip }) => (
+  <Tooltip title={tooltip}>
+    <div
+      className="widget-stale-badge"
+      style={{
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        zIndex: 11,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 20,
+        height: 20,
+        borderRadius: '50%',
+        background: 'var(--ant-color-warning-bg, #fffbe6)',
+        color: 'var(--ant-color-warning, #d48806)',
+        border: '1px solid var(--ant-color-warning-border, #ffe58f)',
+        cursor: 'help',
+      }}
+    >
+      <WarningOutlined style={{ fontSize: 11 }} />
+    </div>
+  </Tooltip>
 );
 
 interface QueryMetric {
@@ -150,6 +178,10 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   const effectiveData = hasRenderableChartData(data)
     ? data
     : (prefetchedData ?? data);
+  // A live refresh just failed but we still have a durable snapshot to fall back to
+  // (see the error-suppression branch below) — surface that quietly instead of
+  // silently presenting stale data as if it were current.
+  const isShowingStaleFallbackAfterError = Boolean(error) && !hasRenderableChartData(data) && hasRenderableChartData(prefetchedData);
   const metricFormats = React.useMemo(
     () => buildMetricFormats(query as Record<string, unknown>),
     [query]
@@ -166,19 +198,24 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   if (echartsSnapshot && !hasRenderableChartData(effectiveData)) {
     const paletteId = resolveChartPaletteId(config?.colorPalette, config?.dashboardDefaultPalette);
     const paletteColors = getColorsFromPalette(paletteId);
-    const snapshotOption = enhanceEchartsInteractivity(
-      {
-        ...echartsSnapshot,
-        color: Array.isArray(echartsSnapshot.color) && echartsSnapshot.color.length
-          ? echartsSnapshot.color
-          : paletteColors,
-      },
-      { suppressCardTitle: true },
-    );
+    const design = normalizeChartDesign(config?.design);
+    const withPalette = {
+      ...echartsSnapshot,
+      color: Array.isArray(echartsSnapshot.color) && echartsSnapshot.color.length
+        ? echartsSnapshot.color
+        : paletteColors,
+    };
+    const designed = design
+      ? compileDesignToEcharts(withPalette, design, { chartType: type })
+      : withPalette;
+    const snapshotOption = enhanceEchartsInteractivity(designed, { suppressCardTitle: true });
 
     return (
       <div className="widget-content-root">
         <RawEChartWidget option={snapshotOption} onChartReady={onChartReady} minHeight={minHeight} />
+        {error && (
+          <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last saved chart.`} />
+        )}
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
             <AppLoadingIndicator variant="minimal" tip="Updating..." />
@@ -394,7 +431,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       return (
         <TableWidget
           data={effectiveData}
-          config={config}
+          config={chartConfig}
           query={query}
           crossFilterField={query?.x}
           activeCrossFilterValues={
@@ -407,21 +444,19 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
     // Stat / Metric
     if (type === 'stat') {
-      const crossField = query?.x;
+      // Not click-to-filter: `query.x` on a stat widget is the temporal column
+      // added purely to drive the trend sparkline, not a dimension the KPI
+      // represents. Wiring it up made every KPI card silently clickable (no
+      // visible affordance) and, when clicked, pinned the *entire* dashboard
+      // to a single arbitrary date (the sparkline's last bucket) — producing
+      // the "numbers look wrong after clicking a card" reports. A single
+      // aggregate number has no discrete category to cross-filter by, unlike
+      // a bar/pie segment or table row, so stat widgets don't cross-filter.
       return (
         <StatWidget
           data={effectiveData}
           config={config}
-          filterValue={
-            crossField && effectiveData && Array.isArray((effectiveData as { x?: unknown[] }).x)
-              ? (effectiveData as { x: unknown[] }).x[(effectiveData as { x: unknown[] }).x.length - 1]
-              : undefined
-          }
-          onFilter={
-            onFilter && crossField
-              ? (value) => onFilter(crossField, value)
-              : undefined
-          }
+          query={query as StatWidgetProps['query']}
         />
       );
     }
@@ -453,6 +488,9 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   return (
     <div className="widget-content-root">
       {renderContent()}
+      {isShowingStaleFallbackAfterError && (
+        <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last successful data.`} />
+      )}
       {isLoading && (
         <div className={activeOverlayClass} style={activeOverlayStyle}>
           <AppLoadingIndicator variant="minimal" tip="Updating..." />

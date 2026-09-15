@@ -71,8 +71,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const theme = localStorage.getItem('darkMode');
-                if (theme === 'true') {
+                // Mirrors ThemeProvider.tsx's readEffectiveDarkFromStorage()
+                // exactly - this only checked the legacy 'darkMode' boolean,
+                // so any 'auto' setting or first-time OS-dark-preference
+                // visitor got a light first paint that flipped to dark right
+                // after hydration (a visible flash on every load for them).
+                var mode = localStorage.getItem('aiser_theme_mode');
+                var isDark;
+                if (mode === 'dark') {
+                  isDark = true;
+                } else if (mode === 'light') {
+                  isDark = false;
+                } else if (mode === 'auto') {
+                  isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                } else {
+                  var legacy = localStorage.getItem('darkMode');
+                  isDark = legacy !== null ? legacy === 'true' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                }
+                if (isDark) {
                   document.documentElement.classList.add('dark');
                   document.documentElement.setAttribute('data-theme', 'dark');
                 }

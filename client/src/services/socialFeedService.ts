@@ -5,7 +5,58 @@ import { fetchApi } from '@/utils/api';
 export type FeedVisibility = 'private' | 'project' | 'organization' | 'public' | 'following';
 export type FeedScope = 'private' | 'organization' | 'project' | 'public' | 'following';
 export type FeedSort = 'recommended' | 'trending' | 'recent';
-export type AssetType = 'dashboard' | 'chart' | 'insight' | 'query';
+export type AssetType = 'dashboard' | 'chart' | 'insight' | 'query' | 'post';
+
+/** An existing dashboard/chart a NEW text post wants to reference - access-
+ * checked against the author at publish time, then re-checked per-VIEWER at
+ * read time (see FeedAttachmentPayload's `restricted` flag). */
+export interface AttachmentRef {
+  asset_type: 'dashboard' | 'chart' | 'insight';
+  asset_id: string;
+  /** Pre-captured at pick time (AttachmentPicker) so the resulting
+   * publication renders from a stored snapshot instead of a live query on
+   * every future view - see buildAttachmentSnapshot.ts for why. */
+  snapshot_payload?: Record<string, unknown> | null;
+  /** Reuse an already-published feed post instead of auto-publishing a copy. */
+  publication_id?: string | null;
+}
+
+export interface FeedAttachmentPayload {
+  asset_type: 'dashboard' | 'chart' | 'insight';
+  asset_id: string;
+  restricted: boolean;
+  title?: string | null;
+  /** The referenced publication's own description - same title+description
+   * pairing a normal "Publish to Feed" post renders with. */
+  description?: string | null;
+  thumbnail_url?: string | null;
+  /** The real feed publication behind this attachment - auto-published (same
+   * pipeline as "Publish to Feed") the first time it's attached anywhere, so
+   * this always deep-links correctly to /feed/{referencedPostId} and has a
+   * real preview. Unset only if that publication was later deleted. */
+  referencedPostId?: string | null;
+  /** "snapshot" = the preview* fields below are complete, render as-is.
+   * "live" (the common case - an auto-published attachment carries no
+   * captured snapshot) = fetch live data using asset_id (+ dashboardId for
+   * a chart), the same path a normal live dashboard/chart post uses. */
+  renderMode?: 'live' | 'snapshot';
+  /** Chart attachments only: the parent dashboard's id, needed for the live
+   * chart-fetch path. Unset for dashboard-type attachments (asset_id IS the
+   * dashboard already). */
+  dashboardId?: string | null;
+  previewType?: FeedPreviewType;
+  previewData?: number[];
+  previews?: FeedAssetPreview[];
+  chartWidget?: {
+    chartType: string;
+    chartData?: Record<string, unknown>;
+    chartOptions?: Record<string, unknown>;
+    chartQuery?: Record<string, unknown>;
+  } | null;
+  /** Only set when renderMode is "snapshot" - the full captured payload,
+   * read directly with no live fetch at all (see FeedPostViewer). */
+  snapshotPayload?: Record<string, unknown> | null;
+}
 export type ReactionType = 'like' | 'insightful' | 'love' | 'applause' | 'funny' | 'celebrate';
 export type FeedPreviewType = 'bar' | 'pie' | 'line' | 'dashboard';
 export type LeaderboardTimeRange = 'today' | 'week' | 'month' | 'all';
@@ -17,6 +68,8 @@ export interface FeedAuthor {
   username: string;
   avatarUrl?: string;
   title?: string;
+  /** Only ever populated on the /discover/author profile response - see FeedAuthor (schemas.py). */
+  bio?: string | null;
 }
 
 export interface FeedComment {
@@ -42,6 +95,8 @@ export interface FeedMetrics {
   reactions: number;
   bookmarks: number;
   shares: number;
+  /** Per-type breakdown (e.g. {like: 3, love: 1}) - mirrors FeedComment's own `reactions` field. */
+  reactionBreakdown?: Partial<Record<ReactionType, number>>;
 }
 
 export interface FeedAssetPreview {
@@ -103,6 +158,18 @@ export interface FeedItem {
     conversationId?: string;
     messageId?: string;
   };
+  /** Existing dashboards/charts this post references - each already access-
+   * checked for the CURRENT viewer server-side (service_serialization.py);
+   * `restricted: true` entries have no title/thumbnail and should render a
+   * placeholder rather than the real card. */
+  attachments?: FeedAttachmentPayload[];
+  /** User ids @mentioned in the post body. */
+  mentions?: string[];
+  editedAt?: string;
+  isEdited?: boolean;
+  /** True only for the author's own pure-text posts - dashboard/chart/
+   * insight/query posts are edited by re-publishing, not through this flag. */
+  canEdit?: boolean;
 }
 
 export interface FeedQuery {
@@ -114,6 +181,17 @@ export interface FeedQuery {
   authorId?: string;
   limit?: number;
   offset?: number;
+  /** Scopes 'organization'/'project' to a SPECIFIC org/project — omitting
+   * these doesn't mean "no scope", it falls back (server-side) to every
+   * org/project the viewer belongs to. Without them, switching the active
+   * project in the header does nothing to the "My Project" feed filter. */
+  organizationId?: string;
+  projectId?: string;
+  /** Narrows 'private' scope ("Only Me") to just the active project — every
+   * other scope already follows the active project, but private defaults to
+   * cross-project (a personal scratch space) so this is opt-in. Ignored
+   * server-side for every other scope. */
+  privateProjectOnly?: boolean;
 }
 
 export interface FeedResponse {
@@ -128,6 +206,7 @@ export interface FeedAssetCounts {
   chart: number;
   insight: number;
   query?: number;
+  post?: number;
 }
 
 export interface FeedFilterOptions {
@@ -186,6 +265,9 @@ export interface FeedSidebarQuery {
   contentType?: AssetType | 'all';
   sortBy?: LeaderboardSortBy;
   leaderboardLimit?: number;
+  organizationId?: string;
+  projectId?: string;
+  privateProjectOnly?: boolean;
 }
 
 export interface FeedReactResult {
@@ -244,13 +326,20 @@ export interface FeedDeleteItemResult {
   success: boolean;
 }
 
+export interface FeedUpdatePostResult {
+  success: boolean;
+  item: FeedItem;
+}
+
 export interface PublishAssetRequest {
   asset_type: AssetType;
   asset_id?: string;
   source_query_id?: string;
   organization_id?: string;
   project_id?: string;
-  title: string;
+  // Required for dashboard/chart/insight/query; a "post"'s body is
+  // `description` instead (enforced server-side, not by this type).
+  title?: string;
   description?: string;
   tags?: string[];
   visibility?: FeedVisibility;
@@ -265,6 +354,9 @@ export interface PublishAssetRequest {
   render_mode?: FeedRenderMode;
   snapshot_payload?: Record<string, unknown>;
   thumbnail_url?: string;
+  /** Text-post-only fields (both no-op for dashboard/chart/insight/query). */
+  attachments?: AttachmentRef[];
+  mentioned_users?: string[];
 }
 
 export interface PublishFromChatRequest {
@@ -291,6 +383,12 @@ export interface PublicationLookupResult {
   published_at?: string;
   snapshot_version?: number;
   visibility?: FeedVisibility;
+  /** The asset's real project (dashboard/chart owning project) - always wins
+   * over whatever project is active in the header at publish time. See
+   * FeedPublishComposer's use of this: shown before publish so "Project"
+   * visibility never surprises the user with a different destination. */
+  asset_project_id?: string | null;
+  asset_project_name?: string | null;
 }
 
 export interface PublicAuthorStats {
@@ -380,6 +478,10 @@ export interface PublishAssetResponse {
   status: 'draft' | 'pending' | 'approved' | 'rejected';
   snapshot_version?: number;
   render_mode?: FeedRenderMode;
+  /** The project this post actually landed under, resolved server-side from
+   * the asset's own project (not necessarily the composer's active project —
+   * see FeedPublishComposer's use of this field). */
+  project_id?: string | null;
 }
 
 export interface ApprovalQueueItem {
@@ -457,6 +559,9 @@ class SocialFeedService {
     if (params.assetType) query.set('assetType', params.assetType);
     if (params.authorId) query.set('authorId', params.authorId);
     if (params.search?.trim()) query.set('search', params.search.trim());
+    if (params.organizationId) query.set('organizationId', params.organizationId);
+    if (params.projectId) query.set('projectId', params.projectId);
+    if (params.privateProjectOnly) query.set('privateProjectOnly', 'true');
     if (params.tags?.length) {
       params.tags.forEach((tag) => {
         if (tag.trim()) query.append('tags', tag.trim());
@@ -624,12 +729,13 @@ class SocialFeedService {
 
   async getFilterOptions(
     scope: FeedScope = 'organization',
-    params: { organizationId?: string; projectId?: string } = {}
+    params: { organizationId?: string; projectId?: string; privateProjectOnly?: boolean } = {}
   ): Promise<FeedFilterOptions> {
     const query = new URLSearchParams();
     query.set('scope', scope);
     if (params.organizationId) query.set('organizationId', params.organizationId);
     if (params.projectId) query.set('projectId', params.projectId);
+    if (params.privateProjectOnly) query.set('privateProjectOnly', 'true');
     return this.request<FeedFilterOptions>(`feed/filters?${query.toString()}`);
   }
 
@@ -645,6 +751,14 @@ class SocialFeedService {
     if (query.contentType && query.contentType !== 'all') {
       params.set('contentType', query.contentType);
     }
+    // Without these, 'organization'/'project'/'private+privateProjectOnly'
+    // scope silently fell back (server-side) to "every org/project I belong
+    // to" instead of the one active in the header — the sidebar never
+    // actually respected project/org context at all (see getFeed's
+    // buildQuery, which already sent these; this method just never did).
+    if (query.organizationId) params.set('organizationId', query.organizationId);
+    if (query.projectId) params.set('projectId', query.projectId);
+    if (query.privateProjectOnly) params.set('privateProjectOnly', 'true');
     return this.request<FeedSidebarData>(`feed/sidebar?${params.toString()}`);
   }
 
@@ -676,13 +790,33 @@ class SocialFeedService {
     });
   }
 
-  async addComment(itemId: string, content: string, parentCommentId?: string): Promise<FeedAddCommentResult> {
+  /** Edit a pure-text post's own content (`item.canEdit` gates this - only
+   * the author's own "post"-type items, not dashboard/chart/insight/query
+   * posts, which are edited by re-publishing instead). */
+  async updatePost(itemId: string, description: string, mentionedUsers?: string[]): Promise<FeedUpdatePostResult> {
+    return this.request<FeedUpdatePostResult>(`feed/${itemId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        description,
+        mentioned_users: mentionedUsers?.length ? mentionedUsers : undefined,
+      }),
+    });
+  }
+
+  async addComment(
+    itemId: string,
+    content: string,
+    parentCommentId?: string,
+    mentionedUsers?: string[],
+  ): Promise<FeedAddCommentResult> {
     return this.request<FeedAddCommentResult>(`feed/${itemId}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content,
         parent_comment_id: parentCommentId || undefined,
+        mentioned_users: mentionedUsers?.length ? mentionedUsers : undefined,
       }),
     });
   }

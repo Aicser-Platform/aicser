@@ -1,7 +1,8 @@
-"""CE shim for Teams bot module."""
+"""CE shim: redirect src.modules.teams.* to ee/modules/teams/"""
 import os as _os
-import sys as _sys
 
-_ee_root = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), "..", "..", "..", "ee"))
-if _os.path.isdir(_ee_root) and _ee_root not in _sys.path:
-    _sys.path.insert(0, _ee_root)
+from src.core.edition import is_ee_enabled
+
+_ee_path = _os.path.normpath(_os.path.join(_os.path.dirname(__file__), "..", "..", "..", "ee", "modules", "teams"))
+if is_ee_enabled() and _os.path.isdir(_ee_path):
+    __path__ = [_ee_path]

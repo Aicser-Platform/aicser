@@ -14,3 +14,14 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   }) as unknown as MediaQueryList;
 }
+
+// antd v6's Table (virtual mode) and other size-aware components observe
+// element resize via ResizeObserver, which jsdom doesn't implement.
+if (typeof window !== 'undefined' && !window.ResizeObserver) {
+  class MockResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  window.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+}

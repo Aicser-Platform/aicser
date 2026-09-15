@@ -92,9 +92,11 @@ def notification_priority(item: Any) -> int:
         return 2
     if kind == "invitation":
         return 3
-    if kind == "activity":
+    if kind == "feed":
         return 4
-    return 5
+    if kind == "activity":
+        return 5
+    return 6
 
 
 def compute_unread_count(

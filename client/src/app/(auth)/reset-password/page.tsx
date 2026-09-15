@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { updateUserPassword } from '@/auth/updatePassword';
 import { MARKETING_HOME_URL, PRIVACY_URL, TERMS_URL } from '@/constants/legalUrls';
+import { PasswordStrengthMeter } from '@/components/auth/PasswordStrengthMeter';
 import '../login/login.css';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,7 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     if (!isSupabaseRecovery) return;
@@ -162,8 +164,15 @@ export default function ResetPasswordPage() {
                   { min: 8, message: t('new_password_min') },
                 ]}
               >
-                <Input.Password prefix={<LockOutlined />} placeholder={t('new_password')} autoComplete="new-password" />
+                <Input.Password
+                  prefix={<LockOutlined />}
+                  placeholder={t('new_password')}
+                  autoComplete="new-password"
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
               </Form.Item>
+
+              <PasswordStrengthMeter password={newPassword} />
 
               <Form.Item
                 name="confirmPassword"

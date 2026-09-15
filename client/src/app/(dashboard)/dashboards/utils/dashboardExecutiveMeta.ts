@@ -1,5 +1,5 @@
-import type { WidgetInstance } from '../../stores/useDashboardStore';
-import type { DashboardExecutiveMeta, WidgetInsightItem } from '../../components/viewer/DashboardExecutiveBanner';
+import type { WidgetInstance } from '../stores/useDashboardStore';
+import type { DashboardExecutiveMeta, WidgetInsightItem } from '../components/viewer/DashboardExecutiveBanner';
 
 export function executiveMetaFromConfig(
   config?: Record<string, unknown> | null,

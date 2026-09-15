@@ -225,6 +225,16 @@ async def create_calc_field(
     if not name or not expression:
         raise HTTPException(status_code=422, detail="name and expression are required")
 
+    # SECURITY: this expression is stored and interpolated into every future
+    # query against this calculated field -- a persistent SQL injection
+    # surface, not a one-off one, if left unvalidated.
+    from src.shared.sql_expression_validator import InvalidSQLExpressionError, validate_sql_expression
+
+    try:
+        expression = validate_sql_expression(expression, label="Calculated field expression")
+    except InvalidSQLExpressionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     field_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{data_source_id}:{name}"))
     try:
         await db.execute(

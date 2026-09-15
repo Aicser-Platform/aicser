@@ -104,14 +104,14 @@ export const EffectiveAccessDrawer: React.FC<{
   }, [open, grant?.id, policy?.id, effect?.kind, canSimulate, dataSourceId]);
 
   if (!grant || !effect) {
-    return <Drawer open={open} onClose={onClose} title={t('effective_access_title')} width={480} />;
+    return <Drawer open={open} onClose={onClose} title={t('effective_access_title')} size={480} />;
   }
 
   const level = accessLevelFor(grant.permissions);
 
   return (
-    <Drawer open={open} onClose={onClose} title={t('effective_access_title')} width={480}>
-      <Space direction="vertical" size={20} style={{ width: '100%' }}>
+    <Drawer open={open} onClose={onClose} title={t('effective_access_title')} size={480}>
+      <Space orientation="vertical" size={20} style={{ width: '100%' }}>
         <div>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {t('effective_access_grantee_label')}
@@ -181,7 +181,7 @@ export const EffectiveAccessDrawer: React.FC<{
             <Text type="secondary" style={{ fontSize: 12 }}>
               {t('effective_access_rules_label')}
             </Text>
-            <Space direction="vertical" size={6} style={{ marginTop: 4, width: '100%' }}>
+            <Space orientation="vertical" size={6} style={{ marginTop: 4, width: '100%' }}>
               {effect.rules.map((rule) => (
                 <AccessSentence key={rule.id} rule={rule} tone="normal" />
               ))}
@@ -242,7 +242,7 @@ export const EffectiveAccessDrawer: React.FC<{
                           {t('preview_unavailable')}
                         </Text>
                       ) : (
-                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                        <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                           {preview.masked ? (
                             <Alert type="info" showIcon message={t('preview_masked')} />
                           ) : null}

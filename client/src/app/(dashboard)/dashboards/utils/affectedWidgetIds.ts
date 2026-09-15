@@ -17,7 +17,7 @@ export function getAffectedWidgetIds(
 
   return widgets
     .filter((w) => {
-      if (w.chartType === 'slicer' || w.chartType === 'filter' || w.chartType === 'text' || !w.chartId || !w.dataSourceId) {
+      if (w.chartType === 'slicer' || w.chartType === 'filter' || w.chartType === 'text' || !w.chartId) {
         return false;
       }
       const scoped = resolveRuntimeFiltersForWidget(runtimeFilters, filterConfigs, w);
@@ -26,13 +26,15 @@ export function getAffectedWidgetIds(
       if (scoped.some((f) => fields.has(f.field))) return true;
 
       const widgetKeys = new Set([w.id, w.chartId].filter(Boolean) as string[]);
-      const removedOrClearedConfig = filterConfigs.some((filter) => {
-        if (!fields.has(filter.field)) return false;
+      const matchingConfig = filterConfigs.filter((filter) => fields.has(filter.field));
+      // Fields not in the saved filter bar still apply to every data widget
+      // (cross-filter / slicer). Clearing them must refresh everyone too.
+      if (!matchingConfig.length) return true;
+      return matchingConfig.some((filter) => {
         const scope = filter.affects;
         if (!scope?.length) return true;
         return scope.some((id) => widgetKeys.has(id));
       });
-      return removedOrClearedConfig;
     })
     .map((w) => w.id);
 }

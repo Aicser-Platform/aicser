@@ -91,3 +91,16 @@ class User(BaseModel):
 
     # Key-value settings store (replaces user_settings table)
     settings = Column(JSONB, nullable=True)
+
+    # ── Two-factor authentication (TOTP, RFC 6238) ──────────────────────────
+    # See src/modules/authentication/totp_service.py for the crypto helpers.
+    # Fernet-encrypted at rest (ENCRYPTION_KEY, same scheme as
+    # src/modules/data/utils/credentials.py). Holds the *pending* secret
+    # during enrollment (while totp_enabled is still false) and the active
+    # secret once enrollment is confirmed.
+    totp_secret = Column(Text, nullable=True)
+    totp_enabled = Column(Boolean, nullable=False, server_default=text("false"), default=False)
+    # One-time backup codes, hashed the same way passwords are (passlib/bcrypt
+    # via src.modules.authentication.service.hash_password). Each code is
+    # removed from the list the moment it's used.
+    totp_backup_codes = Column(JSONB, nullable=True)

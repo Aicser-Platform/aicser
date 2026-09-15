@@ -17,7 +17,11 @@ from ee.modules.ai.services.org_workflow_service import _WORKFLOW_CACHE, match_o
 
 
 class _FakeVisionService:
+    def __init__(self):
+        self.calls: list = []
+
     async def generate_completion(self, **kwargs):
+        self.calls.append(kwargs)
         return {
             "success": True,
             "content": "- Four KPI cards across the top\n- Filter controls in the header\n- Green finance palette",
@@ -60,6 +64,7 @@ def test_resolve_goal_heuristic_multimodal_constraints():
 
 @pytest.mark.asyncio
 async def test_image_attachment_is_summarized_for_text_planners():
+    vision_service = _FakeVisionService()
     ctx = await ingest_attachments(
         [
             {
@@ -69,7 +74,7 @@ async def test_image_attachment_is_summarized_for_text_planners():
                 "name": "reference-dashboard.png",
             }
         ],
-        litellm_service=_FakeVisionService(),
+        litellm_service=vision_service,
     )
 
     assert "image" in ctx.modalities
@@ -77,9 +82,17 @@ async def test_image_attachment_is_summarized_for_text_planners():
     assert "Reference image dashboard layout" in ctx.text_excerpt
     assert "Four KPI cards" in ctx.text_excerpt
     assert "Image layout summarized" in ctx.attachment_summaries
+    # Regression: this call sends real image content and must resolve to a
+    # vision-capable model tier -- NOT node_name="dashboard_layout", whose
+    # "fast" tier on this platform's current provider config is a
+    # confirmed-text-only model (deepseek-v4-flash; vision requires the
+    # separate deepseek-v4-flash-vision-exp endpoint, not what's configured).
+    assert len(vision_service.calls) == 1
+    assert vision_service.calls[0].get("node_name") == "dashboard_reference_image_vision"
 
 
-def test_match_org_workflow_and_build_plan():
+@pytest.mark.asyncio
+async def test_match_org_workflow_and_build_plan():
     org_id = "org-test-1"
     _WORKFLOW_CACHE[org_id] = [
         {
@@ -96,7 +109,7 @@ def test_match_org_workflow_and_build_plan():
     wf = match_org_workflow(org_id, "Run our monthly review for sales")
     assert wf is not None
     goal = AgentGoal(objective="Monthly review", deliverable_type=DeliverableType.multi_step)
-    plan = build_plan(goal, {"organization_id": org_id, "query": "monthly review for sales"})
+    plan = await build_plan(goal, {"organization_id": org_id, "query": "monthly review for sales"}, litellm_service=None)
     assert len(plan.steps) == 2
     assert plan.steps[0].capability == "analytics_pipeline"
     assert plan.steps[1].capability == "create_dashboard"

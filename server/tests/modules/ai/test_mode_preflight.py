@@ -19,7 +19,7 @@ def test_ai_search_requires_kb_message_pattern():
 
 
 def test_mode_degradation_reason_is_user_facing():
-    from src.modules.ai.utils.mode_quality import apply_mode_degradation
+    from ee.modules.ai.utils.mode_quality import apply_mode_degradation
 
     state = {"execution_metadata": {}}
     apply_mode_degradation(state, from_mode="predictive", reason="Insufficient history for forecast")

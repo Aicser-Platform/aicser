@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  App,
   Modal,
   Steps,
   Form,
@@ -20,7 +21,6 @@ import {
   Collapse,
   Typography,
   Divider,
-  message,
   Table,
 } from 'antd';
 import { useTranslations } from 'next-intl';
@@ -45,8 +45,8 @@ import {
 import { fetchApi, handlePlanLimitError, ApiError } from '@/utils/api';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useProjectStore } from '@/stores/useProjectStore';
-
-const { Step } = Steps;
+import { DataSourceIcon } from '@/utils/dataSourceIcons';
+import EnterpriseConnectorTab from './EnterpriseConnectorTab';
 const { Option } = Select;
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
@@ -166,6 +166,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   existingDataSource = null,
 }) => {
   const t = useTranslations('data_source_modal');
+  const { message } = App.useApp();
   const screens = useBreakpoint();
   const isCompactViewport = !screens.md;
   const authenticatedFetch = useAuthenticatedFetch();
@@ -351,111 +352,14 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     };
   }, []);
 
-  // Brand colors for each database (used for colored styling and fallback)
-  const brandColors: Record<string, string> = {
-    postgresql: '#336791',
-    mysql: '#4479A1',
-    sqlserver: '#CC2927',
-    duckdb: '#29B5E8',
-    clickhouse: '#FFCC02',
-    snowflake: '#29B5E8',
-    bigquery: '#4285F4',
-    redshift: '#8C4FFF',
-    delta_lake: '#00ADD8',
-    iceberg: '#1E88E5',
-    s3_parquet: '#FF9900',
-    azure_blob: '#0078D4',
-    gcp_cloud_storage: '#4285F4',
-    prometheus_source: '#E6522C',
-  };
-
-  // Helper function to get database logo URL from CDN
-  const getDatabaseLogoUrl = (dbType: string): string => {
-    // Using simple-icons CDN for logos
-    const iconMap: Record<string, string> = {
-      postgresql: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/postgresql.svg',
-      mysql: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/mysql.svg',
-      sqlserver: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/microsoftsqlserver.svg',
-      duckdb: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/duckdb.svg',
-      clickhouse: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/clickhouse.svg',
-      snowflake: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/snowflake.svg',
-      bigquery: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/googlebigquery.svg',
-      redshift: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/amazonredshift.svg',
-      delta_lake: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/delta.svg',
-      iceberg: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/apacheiceberg.svg',
-      s3_parquet: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/amazons3.svg',
-      azure_blob: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/microsoftazure.svg',
-      gcp_cloud_storage: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/googlecloud.svg',
-      prometheus_source: 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/prometheus.svg',
-    };
-    return iconMap[dbType] || 'https://cdn.jsdelivr.net/npm/simple-icons@v9/icons/database.svg';
-  };
-
-  // Helper component to render database logo with theme-aware colored styling
-  const DatabaseLogo: React.FC<{ dbType: string; size?: number }> = ({ dbType, size = 20 }) => {
-    const logoUrl = getDatabaseLogoUrl(dbType);
-    const [imgError, setImgError] = useState(false);
-    const brandColor = brandColors[dbType] || '#666';
-
-    return (
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: size,
-          height: size,
-          marginRight: '8px',
-          flexShrink: 0,
-          verticalAlign: 'middle',
-          position: 'relative',
-        }}
-      >
-        {!imgError ? (
-          <img
-            src={logoUrl}
-            alt={`${dbType} logo`}
-            width={size}
-            height={size}
-            style={{
-              objectFit: 'contain',
-              display: 'block',
-              // Apply brand color as CSS filter to colorize the SVG
-              // Using a combination of filters to apply brand color tinting
-              filter: isDarkMode
-                ? `brightness(1.15) contrast(1.1) drop-shadow(0 0 2px ${brandColor}50)`
-                : `drop-shadow(0 0 1px ${brandColor}40)`,
-              // Add subtle padding and background for better visibility
-              padding: '1px',
-              borderRadius: '2px',
-              backgroundColor: isDarkMode ? `${brandColor}15` : 'transparent',
-            }}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          // Fallback: colored badge with first letter
-          <span
-            style={{
-              width: size,
-              height: size,
-              borderRadius: '4px',
-              backgroundColor: brandColor,
-              color: '#fff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: size * 0.6,
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              boxShadow: isDarkMode ? `0 0 4px ${brandColor}60` : `0 1px 2px ${brandColor}40`,
-            }}
-          >
-            {dbType.charAt(0).toUpperCase()}
-          </span>
-        )}
-      </span>
-    );
-  };
+  // Real vendor logos come from the same @/utils/dataSourceIcons registry
+  // the chat Sources panel and query editor already use, instead of a
+  // locally-scoped duplicate of the same lookup.
+  const DatabaseLogo: React.FC<{ dbType: string; size?: number }> = ({ dbType, size = 20 }) => (
+    <span style={{ marginRight: 8, display: 'inline-flex' }}>
+      <DataSourceIcon type="warehouse" dbType={dbType} size={size} />
+    </span>
+  );
 
   // Database types
   // NOTE: The core relational/warehouse options mirror `CubeConnectorService.supported_databases`.
@@ -513,7 +417,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: false,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'bigquery',
@@ -522,7 +426,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: false,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'redshift',
@@ -531,7 +435,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: false,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'delta_lake',
@@ -540,7 +444,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: true,
       isCloudStorage: false,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'iceberg',
@@ -549,7 +453,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: true,
       isCloudStorage: false,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 's3_parquet',
@@ -558,7 +462,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: true,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'azure_blob',
@@ -567,7 +471,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: true,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'gcp_cloud_storage',
@@ -576,7 +480,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isDataLake: false,
       isCloudStorage: true,
       isNoSQL: false,
-      disabled: true,
+      disabled: false,
     },
     {
       value: 'mongodb',
@@ -614,6 +518,19 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isNoSQL: false,
       disabled: false,
     },
+    // These 7 have no equivalent in the switch/submit logic below -- they're
+    // the only types EnterpriseConnectorsService still owns (see that
+    // service's own comment on why the rest were trimmed out of it). Picking
+    // one of these renders EnterpriseConnectorTab's proven config form
+    // instead of this component's own per-type fields (see isEnterpriseConnector
+    // usage further down) rather than reimplementing field-by-field here.
+    { value: 'databricks', label: 'Databricks', port: null, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'kafka', label: 'Kafka', port: 9092, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'elasticsearch', label: 'Elasticsearch', port: 9200, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'opensearch', label: 'OpenSearch', port: 9200, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'influxdb', label: 'InfluxDB', port: 8086, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'graphql_api', label: 'GraphQL API', port: null, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
+    { value: 'rest_api', label: 'REST API', port: null, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
   ];
 
   const [selectedDatabaseType, setSelectedDatabaseType] = useState('postgresql');
@@ -912,9 +829,18 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     setDataSourceConfig((prev) => ({
       ...prev,
       type: type as any,
+      // Smart default name -- matches the same "only if the user hasn't
+      // already typed something" convention handleFileUpload below already
+      // uses for uploads. Database/warehouse/enterprise-connector types get
+      // theirs once the specific vendor is chosen (see the type <Select>
+      // onChange handlers), since "Connection" alone isn't useful yet here.
       ...(type === 'sample_duckdb' && !prev.name
         ? { name: `Sample: ${SAMPLE_DOMAINS.find((d) => d.value === selectedSampleDomain)?.label ?? selectedSampleDomain}` }
-        : {}),
+        : type === 'api' && !prev.name
+          ? { name: 'REST API Connection' }
+          : type === 'knowledge_base' && !prev.name
+            ? { name: 'Knowledge Base' }
+            : {}),
     }));
     if (type === 'file') setFileSourceKind('upload');
     setCurrentStep(1);
@@ -1559,7 +1485,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                   type: 'google_sheets',
                   description: dataSourceConfig.description || undefined,
                   connection_config: connectionConfigSheets,
-                  project_id: String(currentProject.id),
+                  project_id: currentProject?.id ? String(currentProject.id) : undefined,
                 }),
               });
               if (result?.success && result?.data_source) {
@@ -1818,7 +1744,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 type: 'sample_duckdb',
                 description: dataSourceConfig.description || undefined,
                 connection_config: connectionConfigSample,
-                project_id: String(currentProject.id),
+                project_id: currentProject?.id ? String(currentProject.id) : undefined,
               }),
             });
             if (result?.success && result?.data_source) {
@@ -2433,7 +2359,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           style={{ marginBottom: 16 }}
           message={t('header_row_warning')}
           description={
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
               <Text style={{ fontSize: 13 }}>
                 {t('header_row_warning_desc')}
               </Text>
@@ -2537,6 +2463,59 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   );
   };
 
+  // The 7 connector types EnterpriseConnectorsService still uniquely owns
+  // (Databricks/REST API/GraphQL/Kafka/Elasticsearch/InfluxDB/OpenSearch) --
+  // no field-by-field form here, just embed EnterpriseConnectorTab's own
+  // proven test/create form, locked to whichever of the 7 is selected. Keeps
+  // the same vendor-type <Select> visible/functional (mirroring the one
+  // inside renderDatabaseConfiguration) so switching back to a regular
+  // database type falls straight back to the normal flow.
+  const renderEnterpriseConnectorForm = () => (
+    <div style={{ padding: '8px 0' }}>
+      <Title level={4} style={{ margin: '0 0 16px' }}>
+        {t('database_configuration')}
+      </Title>
+      <div
+        style={{
+          border: '1px solid var(--ant-color-border-secondary, #d9d9d9)',
+          borderRadius: 10,
+          background: 'var(--ant-color-bg-container)',
+          padding: isCompactViewport ? '16px' : '20px 24px',
+          marginBottom: 16,
+        }}
+      >
+        <Form layout="vertical">
+          <Form.Item label={t('label_database_type')} required style={{ marginBottom: 0 }}>
+            <Select
+              value={selectedDatabaseType}
+              onChange={(value) => {
+                setSelectedDatabaseType(value);
+                setTestResult(null);
+              }}
+              style={{ width: '100%' }}
+            >
+              {databaseTypes.map((db) => (
+                <Option key={db.value} value={db.value} disabled={db.disabled}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <DatabaseLogo dbType={db.value} size={18} />
+                    <span>{db.label}</span>
+                  </div>
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Form>
+      </div>
+      <EnterpriseConnectorTab
+        lockedType={selectedDatabaseType}
+        onConnectionCreated={(created) => {
+          onDataSourceCreated(created);
+          onClose();
+        }}
+      />
+    </div>
+  );
+
   const renderDatabaseConfiguration = () => {
     const isCloudStorage = ['s3_parquet', 'azure_blob', 'gcp_cloud_storage'].includes(selectedDatabaseType);
     const isDataLake = ['delta_lake', 'iceberg'].includes(selectedDatabaseType);
@@ -2615,10 +2594,26 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                       return true;
                     })
                     .map((db) => (
-                      <Option key={db.value} value={db.value} disabled={db.disabled}>
+                      <Option
+                        key={db.value}
+                        value={db.value}
+                        disabled={db.disabled}
+                        title={db.disabled ? t('db_connector_enterprise_only') : undefined}
+                      >
                         <Space>
                           <DatabaseLogo dbType={db.value} size={18} />
                           <span>{db.label}</span>
+                          {/* Text, not just a hover tooltip - disabled options in
+                              an antd Select don't reliably surface hover state,
+                              and this used to be a dead end with zero
+                              explanation (real backend support exists via
+                              EnterpriseConnectorsService, just unreachable from
+                              this particular form). */}
+                          {db.disabled && (
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              {t('db_connector_enterprise_only')}
+                            </Text>
+                          )}
                         </Space>
                       </Option>
                     ))}
@@ -3013,8 +3008,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               </Row>
 
               {connectionConfig.connectionPool && (
+                // RELIABILITY: this third column used to re-edit the exact same
+                // connectionConfig.connectionTimeout state as the always-visible
+                // "Connection Timeout (seconds)" field above, just under a
+                // different label ("Timeout (s)") -- two fields bound to one
+                // value, not two distinct settings, so changing one silently
+                // changed what the other displayed. Pool row now only holds the
+                // two settings that are actually pool-specific.
                 <Row gutter={16}>
-                  <Col span={8}>
+                  <Col span={12}>
                     <Form.Item label={t('label_min_connections')}>
                       <Input
                         type="number"
@@ -3025,24 +3027,13 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                       />
                     </Form.Item>
                   </Col>
-                  <Col span={8}>
+                  <Col span={12}>
                     <Form.Item label={t('label_max_connections')}>
                       <Input
                         type="number"
                         value={connectionConfig.maxConnections}
                         onChange={(e) =>
                           setConnectionConfig((prev) => ({ ...prev, maxConnections: parseInt(e.target.value) }))
-                        }
-                      />
-                    </Form.Item>
-                  </Col>
-                  <Col span={8}>
-                    <Form.Item label={t('label_timeout_s')}>
-                      <Input
-                        type="number"
-                        value={connectionConfig.connectionTimeout}
-                        onChange={(e) =>
-                          setConnectionConfig((prev) => ({ ...prev, connectionTimeout: parseInt(e.target.value) }))
                         }
                       />
                     </Form.Item>
@@ -3739,6 +3730,12 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       const formData = new FormData();
       formData.append('name', dataSourceConfig.name);
       formData.append('description', dataSourceConfig.description || '');
+      // Unlike every other data source type here, this was never sending project_id -
+      // the backend then fell back to the user's *first* project (see
+      // DataSourcesCRUD.create_data_source), landing the KB in a different project
+      // than whichever one the user is actually working in, which looked like the
+      // upload had spun up a separate project space.
+      if (currentProject?.id) formData.append('project_id', currentProject.id.toString());
       for (const file of kbFiles) {
         formData.append('files', file.originFileObj || file);
       }
@@ -3958,6 +3955,9 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               </>
             );
           }
+          if (databaseTypes.find((db) => db.value === selectedDatabaseType)?.isEnterpriseConnector) {
+            return renderEnterpriseConnectorForm();
+          }
           return (
             <>
               {renderDatabaseConfiguration()}
@@ -3965,6 +3965,9 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </>
           );
         } else {
+          if (databaseTypes.find((db) => db.value === selectedDatabaseType)?.isEnterpriseConnector) {
+            return renderEnterpriseConnectorForm();
+          }
           return (
             <>
               {renderDatabaseConfiguration()}
@@ -4173,7 +4176,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         {currentStep === 1 &&
           (dataSourceConfig.type !== 'file' || fileSourceKind === 'google_sheet') &&
           dataSourceConfig.type !== 'knowledge_base' &&
-          dataSourceConfig.type !== 'sample_duckdb' && (
+          dataSourceConfig.type !== 'sample_duckdb' &&
+          // EnterpriseConnectorTab (rendered by renderEnterpriseConnectorForm)
+          // has its own Test/Create buttons built in -- this footer's pair
+          // would just be a second, non-functional set for these 7 types.
+          !databaseTypes.find((db) => db.value === selectedDatabaseType)?.isEnterpriseConnector && (
             <>
               <Button type="default" onClick={testConnection} loading={loading} icon={<CheckCircleOutlined />}>
                 {t('btn_test')}
@@ -4228,14 +4235,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     >
       <Steps
         current={currentStep}
-        direction={isCompactViewport ? 'vertical' : 'horizontal'}
-        size={isCompactViewport ? 'small' : 'default'}
+        orientation={isCompactViewport ? 'vertical' : 'horizontal'}
+        size={isCompactViewport ? 'small' : 'medium'}
         style={{ marginBottom: '24px' }}
-      >
-        {steps.map((step, index) => (
-          <Step key={index} title={step.title} description={step.description} />
-        ))}
-      </Steps>
+        items={steps.map((step, index) => ({
+          key: index,
+          title: step.title,
+          content: step.description,
+        }))}
+      />
 
       {renderStepContent()}
     </Modal>

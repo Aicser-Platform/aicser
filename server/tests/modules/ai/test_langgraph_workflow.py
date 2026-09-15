@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, patch
 def orchestrator():
     """Build orchestrator with minimal deps (no DB required for graph/state tests)."""
     try:
-        from src.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
-        from src.modules.ai.services.litellm_service import LiteLLMService
+        from ee.modules.ai.services.langgraph_orchestrator import LangGraphMultiAgentOrchestrator
+        from ee.modules.ai.services.litellm_service import LiteLLMService
     except ImportError as e:
         pytest.skip(f"LangGraph not available: {e}")
     litellm = LiteLLMService()
@@ -191,7 +191,7 @@ def test_v2_quality_gate_removed(orchestrator):
 def test_sql_dialect_rules_module():
     """Centralized dialect rules and dialect library (sqlglot) integration."""
     try:
-        from src.modules.ai.utils.sql_dialect_rules import (
+        from ee.modules.ai.utils.sql_dialect_rules import (
             get_dialect_rules,
             get_dialect_name_for_prompt,
             get_fix_strategy_for_error,
@@ -245,7 +245,7 @@ def _import_response_builder():
 def _import_schema_for_llm():
     """Import schema_for_llm (requires app). Skip if not installed."""
     try:
-        from src.modules.ai.utils import schema_for_llm
+        from ee.modules.ai.utils import schema_for_llm
         return schema_for_llm
     except ModuleNotFoundError:
         pytest.skip("App dependencies not installed (e.g. fastapi)")
@@ -308,6 +308,42 @@ def test_compute_partial_success_sql_only():
     assert out["meaningful_output"] is False
     assert out["partial_success"] is False
     assert out["partial_message"] is None
+
+
+def test_compute_partial_success_chart_skipped_by_plan():
+    """Planned skip of chart/insights is a complete answer, not a failed visualization."""
+    rb = _import_response_builder()
+    _compute_partial_success = rb._compute_partial_success
+    state = {
+        "sql_query": "SELECT COUNT(*) AS n FROM accounts",
+        "query_result": [{"n": 80}],
+        "query_result_row_count": 1,
+        "echarts_config": None,
+        "insights": [{"title": "There are 80 accounts."}],
+        "executive_summary": "There are 80 accounts in the current snapshot.",
+        "error": None,
+        "critical_failure": False,
+        "execution_metadata": {"chart_skipped_by_plan": True},
+    }
+    out = _compute_partial_success(state)
+    assert out["partial_success"] is False
+    assert "chart" in out["completed_components"]
+    assert out["partial_message"] is None
+
+
+def test_compute_partial_success_dashboard_counts_as_complete():
+    rb = _import_response_builder()
+    _compute_partial_success = rb._compute_partial_success
+    state = {
+        "sql_query": None,
+        "query_result": None,
+        "dashboard_created": True,
+        "error": None,
+        "critical_failure": False,
+    }
+    out = _compute_partial_success(state)
+    assert out["meaningful_output"] is True
+    assert out["partial_success"] is False
 
 
 def test_build_workflow_response_partial_success_preserves_insight_narration():

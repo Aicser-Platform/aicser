@@ -210,7 +210,7 @@ export const UnifiedAISearchPanel: React.FC<UnifiedAISearchPanelProps> = ({
 
   return (
     <div>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <div>
           <Title level={3} style={{ marginBottom: 4 }}>
             {t('title')}
@@ -273,7 +273,7 @@ export const UnifiedAISearchPanel: React.FC<UnifiedAISearchPanelProps> = ({
               key: 'schema',
               label: t('tab_schema'),
               children: (
-                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <Space orientation="vertical" style={{ width: '100%' }} size="middle">
                   <Select
                     style={{ width: '100%', maxWidth: 420 }}
                     placeholder={t('select_data_source')}

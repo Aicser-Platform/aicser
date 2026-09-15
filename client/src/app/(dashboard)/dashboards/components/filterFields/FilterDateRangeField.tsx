@@ -49,8 +49,10 @@ export function FilterDateRangeField({
     const parsed = dayjs(value as string | number | Date);
     return parsed.isValid() ? parsed.format('YYYY-MM-DD') : null;
   };
-  const displayFrom = from || normalizeDate(displayRange?.[0]);
-  const displayTo = to || normalizeDate(displayRange?.[1]);
+  const displayFrom = from;
+  const displayTo = to;
+  const minBound = normalizeDate(displayRange?.[0]);
+  const maxBound = normalizeDate(displayRange?.[1]);
   const detectedPreset = useMemo(() => detectDatePresetKey(from, to), [from, to]);
   const resolvedPreset = activePreset ?? detectedPreset;
 
@@ -76,8 +78,15 @@ export function FilterDateRangeField({
       className="gfb-date-range-picker"
       style={{ width: '100%' }}
       value={displayFrom && displayTo ? [dayjs(displayFrom), dayjs(displayTo)] : displayFrom ? [dayjs(displayFrom), null] : null}
+      disabledDate={(current) => {
+        if (!current) return false;
+        if (minBound && current.isBefore(dayjs(minBound), 'day')) return true;
+        if (maxBound && current.isAfter(dayjs(maxBound), 'day')) return true;
+        return false;
+      }}
       onChange={(_, strings) => {
         const [f, end] = strings;
+        if (!f && !end) setActivePreset(null);
         onChange(f || null, end || null);
       }}
     />

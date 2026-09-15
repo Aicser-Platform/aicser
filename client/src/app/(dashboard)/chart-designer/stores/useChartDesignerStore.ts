@@ -487,12 +487,18 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
         response = await fetchApi(`dashboards/${widget.dashboardId}/charts/${widget.chartId}/data`, {
           method: 'GET',
         });
+      } else if (widget.chartId) {
+        // Library / chat-pinned charts: re-run the saved definition (sample_sql,
+        // bindings) instead of a thin adhoc chartQuery that blanks the preview.
+        response = await chartBuilderService.executeSavedChart(String(widget.chartId));
       } else {
         response = await chartBuilderService.executeAdhoc(
           {
             chartQuery: widget.chartQuery,
             chartType: widget.chartType,
             dataSourceId: widget.dataSourceId,
+            chartOptions: widget.chartOptions,
+            title: widget.title,
           },
           useProjectStore.getState().currentProjectId,
         );
@@ -569,9 +575,15 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       }
     }
 
-    // 3. Fetch fresh data if needed (if query or data source changed)
+    // 3. Fetch fresh data if needed (if query, type, or SQL binding changed).
+    // Title-only / pure visual chartOptions can skip; sample_sql in options must refetch.
+    const optionKeys = updates.chartOptions ? Object.keys(updates.chartOptions) : [];
+    const optionsAffectData = optionKeys.some(
+      (k) => k === 'sample_sql' || k === 'sql' || k === '__boundSql',
+    );
     const nonDataKeys = ['chartOptions', 'title', 'chartId', 'dashboardId', 'userId', 'lastFetchedQueryHash'];
-    const skipDataFetch = Object.keys(updates).every((key) => nonDataKeys.includes(key));
+    const skipDataFetch =
+      Object.keys(updates).every((key) => nonDataKeys.includes(key)) && !optionsAffectData;
     
     if (updatedWidget.dataSourceId && !skipDataFetch) {
       await get().fetchChartData(widgetId);
