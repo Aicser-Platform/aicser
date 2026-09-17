@@ -8,6 +8,7 @@ import type { FeedItem, ReactionType } from '@/services/socialFeedService';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
 import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
 import { useProjectStore } from '@/stores/useProjectStore';
+import { isFeedPostAuthor } from '@/components/Feed/feedPostDisplay';
 import FeedCardActions, { FeedCardActionsHandle } from './FeedCardActions';
 import FeedCardBody from './FeedCardBody';
 import FeedCardComments from './FeedCardComments';
@@ -85,14 +86,7 @@ const FeedCard: React.FC<FeedCardProps> = ({
     organizationId,
     user?.id
   );
-  // Compare by username too: author.id can come from a different identity source
-  // than the session user.id for legacy/seeded posts, which otherwise leaks a
-  // "Follow" button onto the viewer's own posts.
-  const normalizeHandle = (handle?: string) => handle?.trim().replace(/^@/, '').toLowerCase() || '';
-  const isPostOwner =
-    !!user &&
-    (item.author?.id === user.id ||
-      (!!user.username && normalizeHandle(item.author?.username) === normalizeHandle(user.username)));
+  const isPostOwner = isFeedPostAuthor(item, user);
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
   const safeAddComment = useCallback(

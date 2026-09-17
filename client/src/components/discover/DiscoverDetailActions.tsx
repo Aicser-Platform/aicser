@@ -1,15 +1,8 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
-import { Button, message } from 'antd';
-import {
-  CopyOutlined,
-  ExperimentOutlined,
-  LoginOutlined,
-  ShareAltOutlined,
-} from '@ant-design/icons';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import React, { useCallback } from 'react';
+import { Button, Tooltip, message } from 'antd';
+import { CopyOutlined, ShareAltOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { FeedItem } from '@/services/socialFeedService';
 import { socialFeedService } from '@/services/socialFeedService';
@@ -23,9 +16,7 @@ type Props = {
 
 export function DiscoverDetailActions({ item, className }: Props) {
   const t = useTranslations('discover');
-  const router = useRouter();
-  const { isAuthenticated, user } = useAuthStore();
-  const [remixing, setRemixing] = useState(false);
+  const { user } = useAuthStore();
 
   const refHandle =
     user?.username?.trim() ||
@@ -42,48 +33,46 @@ export function DiscoverDetailActions({ item, className }: Props) {
     }
   }, [item.id, refHandle, t]);
 
-  const handleRemix = useCallback(async () => {
-    if (!isAuthenticated) {
-      router.push(`/login?next=${encodeURIComponent(`/discover/${item.id}`)}`);
-      return;
+  const handleShare = useCallback(async () => {
+    const url = buildDiscoverShareUrl(item.id, refHandle || getStoredDiscoverReferral());
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: item.title,
+          text: item.description || item.title,
+          url,
+        });
+        void socialFeedService.shareItem(item.id).catch(() => undefined);
+        return;
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'name' in err && (err as { name: string }).name === 'AbortError') {
+          return;
+        }
+      }
     }
-    setRemixing(true);
-    try {
-      const referral = getStoredDiscoverReferral() || undefined;
-      const result = await socialFeedService.remixFeedPost(item.id, { referral_code: referral });
-      message.success(t('remix_success'));
-      router.push(result.open_path);
-    } catch {
-      message.error(t('remix_failed'));
-    } finally {
-      setRemixing(false);
-    }
-  }, [isAuthenticated, item.id, router, t]);
+    await handleCopyShare();
+  }, [handleCopyShare, item.description, item.id, item.title, refHandle]);
 
   return (
     <div className={`discover-detail-actions ${className ?? ''}`}>
-      {isAuthenticated ? (
+      <Tooltip title={t('share_link')}>
         <Button
-          type="primary"
-          icon={<ExperimentOutlined />}
-          loading={remixing}
-          onClick={() => void handleRemix()}
-        >
-          {t('remix_cta')}
-        </Button>
-      ) : (
-        <Link href={`/login?next=${encodeURIComponent(`/discover/${item.id}`)}`}>
-          <Button type="primary" icon={<LoginOutlined />}>
-            {t('remix_sign_in')}
-          </Button>
-        </Link>
-      )}
-      <Button icon={<ShareAltOutlined />} onClick={() => void handleCopyShare()}>
-        {t('share_link')}
-      </Button>
-      <Button icon={<CopyOutlined />} onClick={() => void handleCopyShare()}>
-        {t('copy_link')}
-      </Button>
+          type="default"
+          shape="circle"
+          icon={<ShareAltOutlined />}
+          aria-label={t('share_link')}
+          onClick={() => void handleShare()}
+        />
+      </Tooltip>
+      <Tooltip title={t('copy_link')}>
+        <Button
+          type="default"
+          shape="circle"
+          icon={<CopyOutlined />}
+          aria-label={t('copy_link')}
+          onClick={() => void handleCopyShare()}
+        />
+      </Tooltip>
     </div>
   );
 }

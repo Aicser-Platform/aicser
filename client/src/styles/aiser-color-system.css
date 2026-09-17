@@ -261,6 +261,30 @@ h6,
   color: var(--color-text-secondary) !important;
 }
 
+/* KPI Cards - Executive/filled cards always use white text on dark colored backgrounds */
+.studio-stat-executive,
+.studio-stat-executive .studio-stat-value,
+.studio-stat-executive .studio-stat-label,
+.studio-stat-executive .ant-typography,
+.studio-stat-executive .ant-typography-title,
+.studio-stat-executive h1,
+.studio-stat-executive h2,
+.studio-stat-executive h3,
+.studio-stat-executive h4,
+.studio-stat-executive h5,
+.studio-stat-executive h6,
+.studio-stat-executive span:not(.anticon) {
+  color: #ffffff !important;
+}
+
+.studio-stat-executive .studio-stat-label {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.studio-stat-executive .studio-stat-comparison {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
 /* Scrollbars - Subtle */
 ::-webkit-scrollbar-track {
   background: var(--color-bg-base) !important;

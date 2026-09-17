@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import '@/app/globals.css';
 import PublicShell from '@/components/layout/PublicShell';
 import '@/components/layout/PublicShell.css';
 

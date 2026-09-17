@@ -23,6 +23,8 @@ from src.modules.knowledge.schemas import (
     CitationOut,
     KnowledgeDocumentOut,
     KnowledgeDocumentUpdate,
+    KnowledgeReindexRequest,
+    KnowledgeReindexResponse,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
     KnowledgeUploadResponse,
@@ -67,7 +69,13 @@ _FILE_TYPE_CONTENT_TYPES = {
 }
 
 
-async def _store_uploaded_file(file: UploadFile, data_source_id: str, project_id: Optional[str], user_id: str) -> str:
+async def _store_uploaded_file(
+    file: UploadFile,
+    data_source_id: str,
+    project_id: Optional[str],
+    user_id: str,
+    organization_id: Optional[str] = None,
+) -> str:
     """
     Validate and durably store an uploaded file's bytes via
     UploadDatasourceStorageService -- the same S3/Azure Blob/PostgreSQL-backed
@@ -106,6 +114,7 @@ async def _store_uploaded_file(file: UploadFile, data_source_id: str, project_id
         original_filename=file.filename,
         content_type=file.content_type or _FILE_TYPE_CONTENT_TYPES.get(ext, "application/octet-stream"),
         source_id=data_source_id,
+        organization_id=organization_id,
         user_id=user_id,
     )
     logger.info(
@@ -114,21 +123,49 @@ async def _store_uploaded_file(file: UploadFile, data_source_id: str, project_id
     return object_key
 
 
-async def _resolve_data_source_project_id(data_source_id: str, session: AsyncSession) -> Optional[str]:
-    """Resolve a data source's project_id so KB file storage/retrieval is
-    scoped consistently with how CSV/datasource uploads scope object storage
-    keys (see UploadDatasourceStorageService.store_file's project_id param).
-    Best-effort: returns None (CE-style unscoped storage) on any lookup
-    failure rather than blocking upload/download."""
+async def _resolve_data_source_scope(
+    data_source_id: str, session: AsyncSession
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve a data source's project_id and organization_id so KB file storage
+    and retrieval are scoped under orgs/{org}/projects/{proj}/ consistently with
+    how CSV/datasource uploads scope object storage keys.
+    Best-effort: returns (None, None) on lookup failure rather than blocking."""
     try:
         from src.modules.data.models import DataSource
 
-        result = await session.execute(select(DataSource.project_id).where(DataSource.id == data_source_id))
+        result = await session.execute(
+            select(DataSource.project_id, DataSource.organization_id).where(DataSource.id == data_source_id)
+        )
         row = result.first()
-        return str(row[0]) if row and row[0] else None
+        if not row:
+            return None, None
+
+        project_id = str(row[0]) if row[0] else None
+        org_id = str(row[1]) if row[1] else None
+
+        if not org_id and project_id:
+            try:
+                from src.modules.project.models import Project
+                import uuid as _uuid
+                proj_result = await session.execute(
+                    select(Project.organization_id).where(Project.id == _uuid.UUID(str(project_id)))
+                )
+                p_org = proj_result.scalar_one_or_none()
+                if p_org:
+                    org_id = str(p_org)
+            except Exception:
+                pass
+
+        return project_id, org_id
     except Exception:
-        logger.debug("Failed to resolve project_id for data source %s", data_source_id, exc_info=True)
-        return None
+        logger.debug("Failed to resolve scope for data source %s", data_source_id, exc_info=True)
+        return None, None
+
+
+async def _resolve_data_source_project_id(data_source_id: str, session: AsyncSession) -> Optional[str]:
+    """Resolve a data source's project_id. Preserved for backward compatibility."""
+    project_id, _ = await _resolve_data_source_scope(data_source_id, session)
+    return project_id
 
 
 async def _create_pending_document(
@@ -168,7 +205,11 @@ async def _create_pending_document(
 
 
 async def _create_kb_data_source(
-    name: str, user_id: str, description: str = "", project_id: Optional[str] = None
+    name: str,
+    user_id: str,
+    description: str = "",
+    project_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
 ) -> str:
     """Create a knowledge_base data source record and return its ID."""
     from src.modules.data.services.data_sources_crud import DataSourcesCRUD, DataSourceCreate
@@ -182,6 +223,7 @@ async def _create_kb_data_source(
         description=description or "Knowledge base for document retrieval",
         connection_config={},
         project_id=project_id,
+        organization_id=organization_id,
         is_active=True,
     )
     async with async_session() as db:
@@ -207,6 +249,7 @@ async def create_knowledge_base(
     name: str = Form(...),
     description: str = Form(""),
     project_id: Optional[str] = Form(None),
+    organization_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(...),
     session: AsyncSession = Depends(get_async_session),
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
@@ -223,7 +266,9 @@ async def create_knowledge_base(
 
     # Create KB data source
     try:
-        ds_id = await _create_kb_data_source(name, user_id, description, project_id=project_id)
+        ds_id = await _create_kb_data_source(
+            name, user_id, description, project_id=project_id, organization_id=organization_id
+        )
     except Exception as exc:
         logger.exception("Failed to create KB data source")
         raise HTTPException(status_code=500, detail=f"Failed to create knowledge base: {str(exc)[:200]}")
@@ -243,6 +288,10 @@ async def create_knowledge_base(
         except Exception:
             logger.warning("Knowledge library wrapper creation skipped for %s", ds_id, exc_info=True)
 
+    resolved_proj_id, resolved_org_id = await _resolve_data_source_scope(ds_id, session)
+    resolved_proj_id = resolved_proj_id or project_id
+    resolved_org_id = resolved_org_id or organization_id
+
     # Store each file durably, create a "processing" placeholder row, and
     # enqueue background ingestion -- parse+chunk+embed no longer happens
     # inline in this request (see ingest_knowledge_document in
@@ -254,7 +303,9 @@ async def create_knowledge_base(
 
     for file in files:
         try:
-            object_key = await _store_uploaded_file(file, ds_id, project_id, user_id)
+            object_key = await _store_uploaded_file(
+                file, ds_id, resolved_proj_id, user_id, organization_id=resolved_org_id
+            )
             doc = await _create_pending_document(
                 session, ds_id, user_id, file.filename or "unknown", object_key,
             )
@@ -265,7 +316,7 @@ async def create_knowledge_base(
                 data_source_id=ds_id,
                 user_id=user_id,
                 filename=file.filename or "unknown",
-                project_id=project_id,
+                project_id=resolved_proj_id,
             )
             results.append(KnowledgeUploadResponse(
                 success=True,
@@ -308,8 +359,10 @@ async def upload_knowledge_document(
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:create")
 
-    project_id = await _resolve_data_source_project_id(data_source_id, session)
-    object_key = await _store_uploaded_file(file, data_source_id, project_id, user_id)
+    project_id, organization_id = await _resolve_data_source_scope(data_source_id, session)
+    object_key = await _store_uploaded_file(
+        file, data_source_id, project_id, user_id, organization_id=organization_id
+    )
 
     try:
         from src.shared.jobs.client import enqueue_job
@@ -348,12 +401,26 @@ async def list_knowledge_documents(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """List knowledge documents, optionally filtered by data_source_id."""
-    user_id = _get_user_id(current_token)
-    stmt = select(KnowledgeDocument).where(KnowledgeDocument.user_id == user_id)
-    if data_source_id:
-        stmt = stmt.where(KnowledgeDocument.data_source_id == data_source_id)
-    stmt = stmt.order_by(KnowledgeDocument.created_at.desc())
+    raw_uid = _get_user_id(current_token)
+    user_uuid = uuid.UUID(_ensure_uuid(raw_uid))
 
+    if data_source_id:
+        from src.modules.knowledge.access import user_can_access_data_source
+        from src.modules.data.models import DataSource
+
+        can_access = await user_can_access_data_source(session, user_uuid, data_source_id)
+        if not can_access:
+            ds = await session.scalar(select(DataSource).where(DataSource.id == data_source_id))
+            if not ds or (ds.user_id and ds.user_id != user_uuid):
+                raise HTTPException(status_code=403, detail="Access denied to this data source")
+
+        stmt = select(KnowledgeDocument).where(KnowledgeDocument.data_source_id == data_source_id)
+    else:
+        from src.modules.knowledge.access import knowledge_documents_filter
+
+        stmt = select(KnowledgeDocument).where(knowledge_documents_filter(user_uuid))
+
+    stmt = stmt.order_by(KnowledgeDocument.created_at.desc())
     result = await session.execute(stmt)
     docs = result.scalars().all()
 
@@ -383,16 +450,19 @@ async def get_knowledge_document(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """Get details of a specific knowledge document."""
-    user_id = _get_user_id(current_token)
-    stmt = select(KnowledgeDocument).where(
-        KnowledgeDocument.id == doc_id,
-        KnowledgeDocument.user_id == user_id,
-    )
+    raw_uid = _get_user_id(current_token)
+    user_uuid = uuid.UUID(_ensure_uuid(raw_uid))
+
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
     result = await session.execute(stmt)
     doc = result.scalar_one_or_none()
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     return KnowledgeDocumentOut(
         id=str(doc.id),
@@ -420,8 +490,7 @@ async def download_knowledge_document(
     Stream the original uploaded file back for a knowledge document.
 
     Read-scoped ("knowledge:view", same permission knowledge_retrieval_health
-    uses -- not "knowledge:create") plus the same ownership filter
-    get_knowledge_document above uses.
+    uses -- not "knowledge:create") plus the same ownership or data-source access filter.
 
     Documents ingested before object_key existed (see the
     2026_09_02_knowledge_doc_object_key migration) have no durably-stored
@@ -431,16 +500,18 @@ async def download_knowledge_document(
     """
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:view")
+    user_uuid = uuid.UUID(_ensure_uuid(user_id))
 
-    stmt = select(KnowledgeDocument).where(
-        KnowledgeDocument.id == doc_id,
-        KnowledgeDocument.user_id == user_id,
-    )
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
     result = await session.execute(stmt)
     doc = result.scalar_one_or_none()
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not doc.object_key:
         raise HTTPException(
@@ -483,15 +554,17 @@ async def update_knowledge_document(
     """Rename a document or update metadata (no re-ingest)."""
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:create")
+    user_uuid = uuid.UUID(_ensure_uuid(user_id))
 
-    stmt = select(KnowledgeDocument).where(
-        KnowledgeDocument.id == doc_id,
-        KnowledgeDocument.user_id == user_id,
-    )
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
     result = await session.execute(stmt)
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     data = payload.model_dump(exclude_unset=True)
     if "filename" in data and data["filename"]:
@@ -536,16 +609,18 @@ async def delete_knowledge_document(
     """Delete a knowledge document and all its chunks."""
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:delete")
+    user_uuid = uuid.UUID(_ensure_uuid(user_id))
 
-    stmt = select(KnowledgeDocument).where(
-        KnowledgeDocument.id == doc_id,
-        KnowledgeDocument.user_id == user_id,
-    )
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
     result = await session.execute(stmt)
     doc = result.scalar_one_or_none()
 
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete chunks first (CASCADE should handle this, but explicit is safer)
     await session.execute(
@@ -555,6 +630,127 @@ async def delete_knowledge_document(
     await session.commit()
 
     return {"success": True, "message": f"Document '{doc.filename}' and its chunks deleted"}
+
+
+# ── Retry Document Ingestion ──────────────────────────────────────────────
+
+@router.post("/documents/{doc_id}/retry", response_model=KnowledgeUploadResponse)
+async def retry_knowledge_document_ingestion(
+    doc_id: str,
+    session: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """
+    Retry background ingestion for a failed or stuck document.
+    Requires that the original file bytes exist (object_key is not null).
+    """
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:write")
+    user_uuid = uuid.UUID(_ensure_uuid(user_id))
+
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.id == doc_id)
+    result = await session.execute(stmt)
+    doc = result.scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not doc.object_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot retry ingestion: original file was not durably stored. Please re-upload the document.",
+        )
+
+    from src.shared.jobs.client import enqueue_job
+    resolved_proj_id, _ = await _resolve_data_source_scope(session, doc.data_source_id)
+
+    doc.status = "processing"
+    doc.error_message = None
+    await session.commit()
+
+    await enqueue_job(
+        "ingest_knowledge_document",
+        document_id=str(doc.id),
+        object_key=doc.object_key,
+        data_source_id=str(doc.data_source_id),
+        user_id=str(doc.user_id),
+        filename=doc.filename,
+        project_id=resolved_proj_id,
+    )
+
+    return KnowledgeUploadResponse(
+        success=True,
+        document_id=str(doc.id),
+        filename=doc.filename,
+        status="processing",
+        message="Ingestion queued",
+    )
+
+
+# ── Reindex Knowledge Base ────────────────────────────────────────────────
+
+@router.post("/reindex", response_model=KnowledgeReindexResponse)
+async def reindex_knowledge_base(
+    request: KnowledgeReindexRequest,
+    session: AsyncSession = Depends(get_async_session),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """
+    Reindex an entire knowledge base (data_source_id):
+    1. Re-queues any stuck or failed documents that have an object_key.
+    2. Re-embeds any ready document chunks whose embedding is missing or stale.
+    """
+    user_id = _get_user_id(current_token)
+    await require_permission(user_id, "knowledge:write")
+    user_uuid = uuid.UUID(_ensure_uuid(user_id))
+
+    from src.modules.knowledge.access import user_can_access_data_source
+    if not await user_can_access_data_source(session, user_uuid, request.data_source_id):
+        raise HTTPException(status_code=403, detail="Access denied to data source")
+
+    from src.shared.jobs.client import enqueue_job
+
+    stmt = select(KnowledgeDocument).where(KnowledgeDocument.data_source_id == request.data_source_id)
+    docs = (await session.execute(stmt)).scalars().all()
+
+    resolved_proj_id, _ = await _resolve_data_source_scope(session, request.data_source_id)
+
+    queued_count = 0
+    for doc in docs:
+        if doc.status in ("failed", "processing") and doc.object_key:
+            doc.status = "processing"
+            doc.error_message = None
+            await enqueue_job(
+                "ingest_knowledge_document",
+                document_id=str(doc.id),
+                object_key=doc.object_key,
+                data_source_id=str(doc.data_source_id),
+                user_id=str(doc.user_id),
+                filename=doc.filename,
+                project_id=resolved_proj_id,
+            )
+            queued_count += 1
+
+    await session.commit()
+
+    # Trigger worker maintenance task to re-embed any stale chunks across this KB
+    await enqueue_job("reindex_stale_knowledge_chunks")
+
+    msg_parts = []
+    if queued_count > 0:
+        msg_parts.append(f"{queued_count} pending document(s) queued for ingestion")
+    msg_parts.append(f"Reindexing initiated for {len(docs)} document(s)")
+
+    return KnowledgeReindexResponse(
+        success=True,
+        documents_processed=len(docs),
+        chunks_reindexed=0,
+        message=". ".join(msg_parts),
+    )
 
 
 # ── Semantic Search ──────────────────────────────────────────────────────

@@ -200,12 +200,11 @@ class FeedServiceQueryMixin:
         elif scope == FeedScope.organization:
             if organization_id:
                 filters.append(
-                    or_(
-                        and_(
-                            FeedPost.organization_id == organization_id,
-                            FeedPost.visibility == FeedVisibility.organization.value,
+                    and_(
+                        FeedPost.organization_id == organization_id,
+                        FeedPost.visibility.in_(
+                            [FeedVisibility.organization.value, FeedVisibility.public.value]
                         ),
-                        FeedPost.visibility == FeedVisibility.public.value,
                     )
                 )
             else:
@@ -228,11 +227,7 @@ class FeedServiceQueryMixin:
                         )
                     )
                 else:
-                    filters.append(
-                        FeedPost.visibility.in_(
-                            [FeedVisibility.organization.value, FeedVisibility.public.value]
-                        )
-                    )
+                    filters.append(false())
         elif scope == FeedScope.project:
             if project_id:
                 filters.append(
@@ -273,11 +268,17 @@ class FeedServiceQueryMixin:
             filters.append(FeedPost.visibility == FeedVisibility.public.value)
             filters.append(FeedPost.public_access_level == "results_only")
         else:
-            filters.append(
-                FeedPost.visibility.in_(
-                    [FeedVisibility.organization.value, FeedVisibility.public.value]
+            if organization_id:
+                filters.append(
+                    and_(
+                        FeedPost.organization_id == organization_id,
+                        FeedPost.visibility.in_(
+                            [FeedVisibility.organization.value, FeedVisibility.public.value]
+                        ),
+                    )
                 )
-            )
+            else:
+                filters.append(FeedPost.visibility == FeedVisibility.public.value)
 
         return filters
 

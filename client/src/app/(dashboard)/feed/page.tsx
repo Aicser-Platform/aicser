@@ -20,7 +20,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { getChatHref, isEnterpriseEdition } from '@/utils/appPaths';
-import { DashboardPageHeader } from '@/components/layout/DashboardPageShell';
 
 /** Feed publication moderation queue — hidden until re-enabled. */
 const SHOW_FEED_APPROVALS_UI = false;
@@ -705,12 +704,6 @@ const SocialFeedPage: React.FC = () => {
                   const highlighted =
                     resolvedHighlightId === item.id ||
                     (focusedPostIndex >= 0 && items[focusedPostIndex]?.id === item.id);
-                  // Text/discussion posts have no visual asset to browse and exist to
-                  // be read and replied to — a thumbnail grid tile that defers comments
-                  // to a full page navigation kills exactly the back-and-forth this
-                  // feature was built for. Render them full-width with the same
-                  // inline-comment FeedCard already used on Saved/My Comments, and
-                  // keep the compact tile treatment for dashboard/chart discovery.
                   if (isTextPostItem(item)) {
                     const card = (
                       <FeedCard

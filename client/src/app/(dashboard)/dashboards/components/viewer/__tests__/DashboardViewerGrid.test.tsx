@@ -71,4 +71,42 @@ describe('DashboardViewerGrid (preserve mode)', () => {
       }
     }
   });
+
+  it('reflows gracefully on tablet and mobile when layoutMode is auto', () => {
+    const layout: LayoutItem[] = [
+      { i: 'a', x: 0, y: 0, w: 6, h: 6 },
+      { i: 'b', x: 6, y: 0, w: 6, h: 6 },
+    ];
+    const widgets = [makeWidget('a'), makeWidget('b')];
+
+    render(
+      <DashboardViewerGrid
+        widgets={widgets}
+        layout={layout}
+        dashboardId="d1"
+        runtimeFilters={[]}
+        onCrossFilter={() => {}}
+        layoutMode="auto"
+      />
+    );
+
+    expect(capturedProps).not.toBeNull();
+    const { cols, layouts } = capturedProps!;
+
+    // Desktop preserves 12 columns
+    expect(cols.lg).toBe(12);
+    // Tablet reflows into 10 columns
+    expect(cols.md).toBe(10);
+    // Mobile reflows into 6, 4, 2 columns
+    expect(cols.sm).toBe(6);
+    expect(cols.xs).toBe(4);
+    expect(cols.xxs).toBe(2);
+
+    for (const bp of ['lg', 'md', 'sm', 'xs', 'xxs']) {
+      const bpCols = cols[bp];
+      for (const item of layouts[bp]) {
+        expect(item.x + item.w).toBeLessThanOrEqual(bpCols);
+      }
+    }
+  });
 });

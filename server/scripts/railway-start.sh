@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# If invoked for a background worker service (e.g. RAILWAY_SERVICE_NAME matches *worker* or SERVICE_TYPE=worker)
+case "${SERVICE_TYPE:-${RAILWAY_SERVICE_NAME:-}}" in
+  *worker*)
+    echo "Detected worker service mode (${RAILWAY_SERVICE_NAME:-worker}), starting ARQ worker..."
+    exec /app/scripts/railway-worker-start.sh
+    ;;
+esac
+
 PORT="${PORT:-8000}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-true}"
 
@@ -26,5 +34,5 @@ if [ "$RUN_MIGRATIONS" = "true" ] || [ "$RUN_MIGRATIONS" = "1" ]; then
   python -m alembic -c alembic.ini upgrade heads
 fi
 
-echo "Starting Aicser server on port ${PORT}..."
-exec uvicorn src.main:app --host 0.0.0.0 --port "$PORT"
+echo "Starting Aicser server on port ${PORT} with ${SERVER_WORKERS:-1} worker process(es)..."
+exec uvicorn src.main:app --host 0.0.0.0 --port "$PORT" --workers "${SERVER_WORKERS:-1}"

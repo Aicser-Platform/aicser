@@ -30,7 +30,7 @@ import { useFeedItemInteractions } from '@/hooks/feed/useFeedInteractions';
 import { canOpenFeedAsset, getFeedAskAiPath, getFeedAssetPath } from '@/utils/feedAssetLinks';
 import { feedItemDisplayTitle } from '@/utils/sanitizeDisplayTitle';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
-import { resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
+import { isFeedPostAuthor, resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
 
 const { Title } = Typography;
 
@@ -166,7 +166,7 @@ const FeedDetailPage: React.FC = () => {
     );
   }
 
-  const isPostOwner = !!user && item.author?.id === user.id;
+  const isPostOwner = isFeedPostAuthor(item, user);
   const canOpenAsset = canOpenFeedAsset(item, isPostOwner);
   const isDashboard = item.assetType === 'dashboard';
   const handleStartEditPost = () => {

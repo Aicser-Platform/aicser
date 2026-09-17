@@ -97,7 +97,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
 
     const reactionClass = currentReaction
       ? '!font-semibold'
-      : '!text-[var(--ant-color-text-secondary)] hover:!text-[var(--ant-color-text)] hover:!bg-[var(--ant-color-bg-layout)]';
+      : '!text-[var(--ant-color-text-secondary)] hover:!text-[var(--ant-color-text)] hover:!bg-[var(--ant-color-fill-secondary)]';
 
     const clearReactionCloseTimer = useCallback(() => {
       if (closePickerTimerRef.current !== null) {
@@ -508,16 +508,19 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
               </span>
             )}
 
-            <div className="flex items-center gap-3 ml-auto opacity-80">
+            <div className="flex items-center gap-2 ml-auto text-xs text-[var(--ant-color-text-secondary)]">
               {item.metrics.comments > 0 && (
-                <span className="hover:text-[var(--ant-color-primary)] cursor-pointer transition-colors">
+                <span className="hover:text-[var(--ant-color-primary)] cursor-pointer transition-colors font-medium">
                   {item.metrics.comments} comment{item.metrics.comments !== 1 ? 's' : ''}
                 </span>
               )}
+              {item.metrics.comments > 0 && item.metrics.views > 0 && (
+                <span className="text-[var(--ant-color-text-tertiary)] opacity-60">&bull;</span>
+              )}
               {item.metrics.views > 0 && (
-                <span className="flex items-center gap-1">
-                  <EyeOutlined />
-                  {item.metrics.views} view{item.metrics.views !== 1 ? 's' : ''}
+                <span className="flex items-center gap-1 font-medium">
+                  <EyeOutlined className="text-xs text-[var(--ant-color-text-tertiary)]" />
+                  <span>{item.metrics.views} view{item.metrics.views !== 1 ? 's' : ''}</span>
                 </span>
               )}
             </div>
@@ -595,7 +598,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
 
           <Button
             type="text"
-            className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors ${showCommentBox ? 'bg-[var(--ant-color-bg-layout)] text-[var(--ant-color-text)]' : ''}`}
+            className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-fill-secondary)] transition-colors ${showCommentBox ? 'bg-[var(--ant-color-fill-secondary)] text-[var(--ant-color-text)]' : ''}`}
             icon={<MessageOutlined className="text-lg" />}
             loading={commenting}
             disabled={commenting}
@@ -609,7 +612,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
 
           <Button
             type="text"
-            className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors ${item.userInteraction.isBookmarked ? 'text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
+            className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-fill-secondary)] transition-colors ${item.userInteraction.isBookmarked ? 'text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''}`}
             icon={<BookmarkIcon filled={item.userInteraction.isBookmarked} className="text-lg" />}
             loading={saving}
             disabled={saving}
@@ -624,7 +627,7 @@ const FeedCardActions = React.forwardRef<FeedCardActionsHandle, FeedCardActionsP
           {!hideOpen ? (
             <Button
               type="text"
-              className="flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-bg-layout)] transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 h-10 rounded-md font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-fill-secondary)] transition-colors"
               icon={<ReadOutlined className="text-lg" />}
               onMouseEnter={onPrefetch}
               onFocus={onPrefetch}

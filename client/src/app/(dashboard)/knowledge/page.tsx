@@ -33,6 +33,7 @@ import {
   MessageOutlined,
   PlusOutlined,
   EditOutlined,
+  RedoOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -48,6 +49,7 @@ import {
   useUpdateKnowledgeDocument,
   useUploadKnowledgeDocument,
   useReindexKnowledgeBase,
+  useRetryKnowledgeDocument,
 } from '@/hooks/useKnowledge';
 import {
   useKnowledgeLibraries,
@@ -304,6 +306,21 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   const updateLibrary = useUpdateKnowledgeLibrary();
   const uploadDoc = useUploadKnowledgeDocument();
   const reindexKb = useReindexKnowledgeBase();
+  const retryDoc = useRetryKnowledgeDocument();
+  const [retryingDocId, setRetryingDocId] = useState<string | null>(null);
+
+  const handleRetryDoc = async (doc: KnowledgeDocument) => {
+    try {
+      setRetryingDocId(doc.id);
+      await retryDoc.mutateAsync(doc.id);
+      message.success(t('retry_queued'));
+      void refetch();
+    } catch (err) {
+      message.error(formatApiValidationError(err));
+    } finally {
+      setRetryingDocId(null);
+    }
+  };
 
   useEffect(() => {
     if (!highlightDocumentId || docsLoading) return;
@@ -500,10 +517,21 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     {
       title: t('col_actions'),
       key: 'actions',
-      width: 100,
+      width: 120,
       render: (_: unknown, record: KnowledgeDocument) =>
         canManage ? (
           <Space>
+            {record.status !== 'ready' && (
+              <Tooltip title={t('retry')}>
+                <Button
+                  type="text"
+                  icon={<RedoOutlined />}
+                  loading={retryingDocId === record.id}
+                  aria-label={t('retry')}
+                  onClick={() => handleRetryDoc(record)}
+                />
+              </Tooltip>
+            )}
             <Button
               type="text"
               icon={<EditOutlined />}

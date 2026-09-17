@@ -17,6 +17,10 @@ from src.core.ee_import_alias import install as _install_ee_import_alias
 
 _install_ee_import_alias()
 
+# Ensure all SQLAlchemy models are registered in Base.metadata so ForeignKey targets
+# (e.g. data_sources for knowledge_documents) are available during worker flush/commit.
+import src.db.registry  # noqa: F401
+
 from arq.cron import cron
 from arq.connections import RedisSettings
 

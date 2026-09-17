@@ -6,6 +6,8 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.sql import func, text
 
 from src.db.base import Base
+# Ensure data_sources table is registered in Base.metadata for ForeignKey("data_sources.id")
+from src.modules.data.models import DataSource  # noqa: F401
 
 
 class KnowledgeDocument(Base):

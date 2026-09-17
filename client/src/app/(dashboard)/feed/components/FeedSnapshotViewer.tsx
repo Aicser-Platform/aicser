@@ -163,8 +163,8 @@ export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Pro
           dashboardId={dashboardId}
           runtimeFilters={[]}
           onCrossFilter={noopCrossFilter}
-          canvasMinHeight={detailCanvasMinHeight}
-          layoutMode="preserve"
+          canvasMinHeight="auto"
+          layoutMode="auto"
           hideInteractionHint
           eagerMount
         />

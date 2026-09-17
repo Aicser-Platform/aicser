@@ -1927,27 +1927,21 @@ class DuckDBEngine(BaseQueryEngine):
                 from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
 
                 storage_service = UploadDatasourceStorageService()
-                file_content = await storage_service.get_file(object_key, project_id)
-                import tempfile
-                with tempfile.NamedTemporaryFile(delete=False, suffix=f".{blob_file_format}") as tmp:
-                    tmp.write(file_content)
-                    tmp_path = tmp.name
-                try:
-                    safe_path = tmp_path.replace("'", "''")
-                    if blob_file_format == "csv":
-                        conn.execute(f"CREATE TABLE data AS SELECT * FROM read_csv_auto('{safe_path}')")
-                    elif blob_file_format == "parquet":
-                        conn.execute(f"CREATE TABLE data AS SELECT * FROM read_parquet('{safe_path}')")
-                    elif blob_file_format == "json":
-                        conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{safe_path}')")
-                    elif blob_file_format in ("xlsx", "xls"):
-                        await self._load_excel_all_sheets_into_duckdb(conn, tmp_path, schema)
-                    logger.info("✅ Loaded full file from datasource storage into DuckDB")
-                    data_source["analysis_based_on_sample_only"] = False
-                    return
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+                tmp_path = await storage_service.get_local_file_path(
+                    object_key, project_id, suffix=f".{blob_file_format}"
+                )
+                safe_path = tmp_path.replace("'", "''")
+                if blob_file_format == "csv":
+                    conn.execute(f"CREATE TABLE data AS SELECT * FROM read_csv_auto('{safe_path}')")
+                elif blob_file_format == "parquet":
+                    conn.execute(f"CREATE TABLE data AS SELECT * FROM read_parquet('{safe_path}')")
+                elif blob_file_format == "json":
+                    conn.execute(f"CREATE TABLE data AS SELECT * FROM read_json_auto('{safe_path}')")
+                elif blob_file_format in ("xlsx", "xls"):
+                    await self._load_excel_all_sheets_into_duckdb(conn, tmp_path, schema)
+                logger.info("✅ Loaded full file from datasource storage into DuckDB")
+                data_source["analysis_based_on_sample_only"] = False
+                return
             except Exception as e:
                 logger.error(f"❌ Failed to load full file from datasource storage, falling back to sample: {e}")
 
@@ -2758,25 +2752,19 @@ class PandasEngine(BaseQueryEngine):
                     from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
 
                     storage_service = UploadDatasourceStorageService()
-                    file_content = await storage_service.get_file(object_key, project_id)
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{blob_file_format}") as tmp:
-                        tmp.write(file_content)
-                        tmp_path = tmp.name
-                    try:
-                        if blob_file_format == "csv":
-                            return (pd.read_csv(tmp_path), None)
-                        elif blob_file_format == "parquet":
-                            return (pd.read_parquet(tmp_path), None)
-                        elif blob_file_format == "json":
-                            return (pd.read_json(tmp_path), None)
-                        elif blob_file_format in ("xlsx", "xls"):
-                            return (pd.read_excel(tmp_path), None)
-                        elif blob_file_format == "txt":
-                            return (pd.read_csv(tmp_path, names=["text"]), None)
-                    finally:
-                        if os.path.exists(tmp_path):
-                            os.unlink(tmp_path)
+                    tmp_path = await storage_service.get_local_file_path(
+                        object_key, project_id, suffix=f".{blob_file_format}"
+                    )
+                    if blob_file_format == "csv":
+                        return (pd.read_csv(tmp_path), None)
+                    elif blob_file_format == "parquet":
+                        return (pd.read_parquet(tmp_path), None)
+                    elif blob_file_format == "json":
+                        return (pd.read_json(tmp_path), None)
+                    elif blob_file_format in ("xlsx", "xls"):
+                        return (pd.read_excel(tmp_path), None)
+                    elif blob_file_format == "txt":
+                        return (pd.read_csv(tmp_path, names=["text"]), None)
                 except Exception as e:
                     logger.warning(f"Failed to load full file from datasource storage, falling back to sample: {e}")
 

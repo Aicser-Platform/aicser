@@ -512,7 +512,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     return (
       <div
         {...interactiveProps}
-        className="studio-stat-root studio-stat-executive"
+        className="studio-stat-root studio-stat-executive text-white"
         aria-label={ariaLabel}
         style={{
           height: '100%',
@@ -522,7 +522,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           justifyContent: 'space-between',
           padding: '14px 16px 12px',
           background: cardColor,
-          color: '#fff',
+          color: '#ffffff',
           borderRadius: 6,
           overflow: 'hidden',
           position: 'relative',
@@ -540,7 +540,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
               alignItems: 'center',
               justifyContent: 'center',
               background: 'rgba(255,255,255,0.16)',
-              color: '#fff',
+              color: '#ffffff',
               flex: '0 0 auto',
               fontSize: 16,
             }}
@@ -549,23 +549,24 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
             {resolveKpiIcon(config.icon, config.iconName, displayTitle, format)}
           </div>
           <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <Title
-              level={2}
-              className={valueClass}
+            <div
+              role="heading"
+              aria-level={2}
+              className={`${valueClass} studio-stat-executive-value text-white`}
               style={{
                 margin: 0,
-                color: '#fff',
+                color: '#ffffff',
                 fontSize: `${Math.min(Math.max(fontSize, 24), 32)}px`,
                 fontWeight: 800,
                 lineHeight: 1.1,
               }}
             >
-              <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
-            </Title>
+              <span aria-live="polite" title={formattedValue} style={{ color: '#ffffff' }}>{formattedValue}</span>
+            </div>
             <div
-              className="studio-stat-label"
+              className="studio-stat-label studio-stat-executive-label text-white/90"
               style={{
-                color: 'rgba(255,255,255,0.8)',
+                color: 'rgba(255,255,255,0.9)',
                 fontSize: 13,
                 fontWeight: 500,
                 lineHeight: 1.3,
@@ -593,6 +594,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           <div style={{ minWidth: 0, flex: 1 }}>
             {showTrendUi ? (
               <div
+                className="studio-stat-trend"
                 style={{
                   color: executiveTrendColor,
                   display: 'flex',
@@ -603,19 +605,19 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
                 }}
               >
                 {trendIsPositive ? <CaretUpOutlined style={{ fontSize: 10 }} aria-hidden /> : <CaretDownOutlined style={{ fontSize: 10 }} aria-hidden />}
-                <span aria-live="polite">{computedTrendValue.replace(/^\+/, '')}</span>
+                <span aria-live="polite" style={{ color: executiveTrendColor }}>{computedTrendValue.replace(/^\+/, '')}</span>
               </div>
             ) : null}
             {trendVisible && comparisonCaption ? (
               <div
-                className="studio-stat-label"
-                style={{ color: 'rgba(255,255,255,0.58)', fontSize: 11, marginTop: 2, lineHeight: 1.25 }}
+                className="studio-stat-label studio-stat-comparison text-white/70"
+                style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2, lineHeight: 1.25 }}
               >
                 {comparisonCaption}
               </div>
             ) : null}
             {goalTarget != null && Number.isFinite(Number(goalTarget)) && Number.isFinite(numericValue) ? (
-              <GoalProgress value={numericValue} goal={Number(goalTarget)} color="#fff" light goodDirection={config.trendGoodDirection} />
+              <GoalProgress value={numericValue} goal={Number(goalTarget)} color="#ffffff" light goodDirection={config.trendGoodDirection} />
             ) : null}
           </div>
           {hasSpark ? (

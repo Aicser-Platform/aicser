@@ -4569,6 +4569,7 @@
     "interact_cta": "Sign in to like, comment, save, and follow this author.",
     "search_placeholder": "Search public insights…",
     "empty": "No public insights yet. Check back soon.",
+    "all_caught_up": "คุณดูเนื้อหาทั้งหมดแล้ว",
     "load_more": "Load more",
     "back_to_discover": "Back to discover",
     "footer_tagline": "Public snapshots only — live data stays in the workspace.",

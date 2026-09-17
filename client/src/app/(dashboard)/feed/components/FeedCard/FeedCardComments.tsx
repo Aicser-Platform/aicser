@@ -286,10 +286,10 @@ const FeedCardComments: React.FC<FeedCardCommentsProps> = ({
                       : undefined
                   }
                   onClick={() => onToggleCommentReactionPicker(comment.id)}
+                  aria-label={commentReactionLabel}
                 >
-                  <span className="text-sm">{selectedCommentReaction?.icon || <LikeOutlined />}</span>
-                  <span className="sr-only">{commentReactionLabel}</span>
-                  <span>Like{comment.reactionCount ? ` (${comment.reactionCount})` : ''}</span>
+                  <span className="text-sm flex items-center">{selectedCommentReaction?.icon || <LikeOutlined />}</span>
+                  <span>{commentReactionLabel}{comment.reactionCount ? ` (${comment.reactionCount})` : ''}</span>
                 </button>
               </div>
 

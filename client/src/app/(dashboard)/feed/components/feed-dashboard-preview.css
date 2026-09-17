@@ -45,6 +45,17 @@
   overflow-y: auto;
 }
 
+.feed-dash-preview-tile .studio-stat-executive,
+.feed-dash-preview-tile .studio-stat-executive .studio-stat-value,
+.feed-dash-preview-tile .studio-stat-executive .studio-stat-label,
+.feed-dash-preview-tile .studio-stat-executive span:not(.anticon) {
+  color: #ffffff !important;
+}
+
+.feed-dash-preview-tile .studio-stat-executive .studio-stat-label {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
 /* Two columns only when the tile itself is wide enough (list/detail), never in
    a ~280px discovery-grid card. */
 @container feed-dash (min-width: 440px) {

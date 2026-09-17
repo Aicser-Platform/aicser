@@ -41,6 +41,14 @@ export const useDeleteKnowledgeDocument = () => {
   });
 };
 
+export const useRetryKnowledgeDocument = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (docId: string) => api.retryKnowledgeDocument(docId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: knowledgeKeys.all }),
+  });
+};
+
 export const useUpdateKnowledgeDocument = () => {
   const qc = useQueryClient();
   return useMutation({

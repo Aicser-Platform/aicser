@@ -168,7 +168,7 @@ RUN python -m src.shared.sample_data.ensure
 
 # Remove Python cache
 RUN find . -name "__pycache__" -type d -exec rm -rf {} + || true
-RUN chmod +x /app/scripts/railway-start.sh
+RUN chmod +x /app/scripts/railway-start.sh /app/scripts/railway-worker-start.sh 2>/dev/null || chmod +x /app/scripts/*.sh
 
 EXPOSE 8000
 

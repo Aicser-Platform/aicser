@@ -287,7 +287,7 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
               ) : null}
               <button
                 type="button"
-                className={`flex items-center gap-1 text-xs font-semibold transition-colors ${commentReactionBtnClass} ${isCommentReactionAnimating ? 'animate-bounce' : ''}`}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-semibold transition-colors ${commentReactionBtnClass} ${isCommentReactionAnimating ? 'animate-bounce' : ''}`}
                 style={
                   comment.userReaction
                     ? {
@@ -296,16 +296,16 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
                     : undefined
                 }
                 onClick={() => onToggleCommentReactionPicker(comment.id)}
+                aria-label={commentReactionLabel}
               >
-                <span className="text-sm">{selectedCommentReaction?.icon || <LikeOutlined />}</span>
-                <span className="sr-only">{commentReactionLabel}</span>
-                <span>Like{comment.reactionCount ? ` (${comment.reactionCount})` : ''}</span>
+                <span className="text-sm flex items-center">{selectedCommentReaction?.icon || <LikeOutlined />}</span>
+                <span>{commentReactionLabel}{comment.reactionCount ? ` (${comment.reactionCount})` : ''}</span>
               </button>
             </div>
 
             <button
               type="button"
-              className={`text-xs font-semibold hover:text-[var(--ant-color-text)] transition-colors ${isReplying ? 'text-[var(--ant-color-text)]' : 'text-[var(--ant-color-text-secondary)]'}`}
+              className={`px-2 py-1 rounded text-xs font-medium hover:bg-[var(--ant-color-fill-tertiary)] transition-colors ${isReplying ? 'text-[var(--ant-color-primary)] font-semibold bg-[var(--ant-color-primary-bg)]' : 'text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)]'}`}
               onClick={() => onToggleReply(comment.id)}
             >
               Reply
@@ -315,14 +315,14 @@ const FeedDiscussionComment: React.FC<FeedDiscussionCommentProps> = ({
               <>
                 <button
                   type="button"
-                  className="text-xs font-semibold text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
+                  className="px-2 py-1 rounded text-xs font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] hover:bg-[var(--ant-color-fill-tertiary)] transition-colors"
                   onClick={() => onStartEdit(comment)}
                 >
                   Edit
                 </button>
                 <button
                   type="button"
-                  className="text-xs font-semibold text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-error)] transition-colors disabled:opacity-50"
+                  className="px-2 py-1 rounded text-xs font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-error)] hover:bg-[var(--ant-color-error-bg)] transition-colors disabled:opacity-50"
                   onClick={confirmDelete}
                   disabled={isDeleting}
                 >

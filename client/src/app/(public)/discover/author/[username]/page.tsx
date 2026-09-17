@@ -2,15 +2,20 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Avatar, Button, Empty, Spin } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import FeedCard from '@/app/(dashboard)/feed/components/FeedCard';
+import FeedGridCard from '@/app/(dashboard)/feed/components/FeedGridCard';
 import FeedCardSkeleton from '@/app/(dashboard)/feed/components/FeedCardSkeleton';
-import { socialFeedService, type FeedItem, type PublicAuthorProfile } from '@/services/socialFeedService';
+import {
+  socialFeedService,
+  type FeedItem,
+  type PublicAuthorProfile,
+  type ReactionType,
+} from '@/services/socialFeedService';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useFeedInteractions } from '@/hooks/feed/useFeedInteractions';
 
@@ -31,22 +36,52 @@ export default function DiscoverAuthorPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const { pendingInteractions, handleDeleteItem } = useFeedInteractions(items, setItems);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const {
+    pendingInteractions,
+    handleReact,
+    handleSave,
+    handleToggleFollow,
+    handleDeleteItem,
+  } = useFeedInteractions(items, setItems);
+
+  const handleAuthReact = useCallback(
+    (itemId: string, reaction: ReactionType) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      return handleReact(itemId, reaction);
+    },
+    [isAuthenticated, handleReact]
+  );
+
+  const handleAuthSave = useCallback(
+    (itemId: string) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      return handleSave(itemId);
+    },
+    [isAuthenticated, handleSave]
+  );
 
   const loadProfile = useCallback(
     async (offset: number, append: boolean) => {
       if (!username) return;
       if (offset === 0) setLoading(true);
-      else setLoadingMore(true);
+      else {
+        if (loadingMore) return;
+        setLoadingMore(true);
+      }
       try {
         const res = await socialFeedService.getPublicAuthorProfile(username, {
           limit: PAGE_SIZE,
           offset,
         });
-      setProfile(res);
-      setItems((prev) => (append ? [...prev, ...res.items] : res.items));
-      setHasMore(offset + res.items.length < res.total);
-      setFollowing(Boolean(res.isFollowing));
+        setProfile(res);
+        setItems((prev) => (append ? [...prev, ...res.items] : res.items));
+        setHasMore(offset + res.items.length < res.total);
+        setFollowing(Boolean(res.isFollowing));
       } catch {
         if (!append) {
           setProfile(null);
@@ -57,12 +92,30 @@ export default function DiscoverAuthorPage() {
         setLoadingMore(false);
       }
     },
-    [username],
+    [username, loadingMore]
   );
 
   useEffect(() => {
     void loadProfile(0, false);
   }, [loadProfile]);
+
+  useEffect(() => {
+    if (!hasMore || loading || loadingMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void loadProfile(items.length, true);
+        }
+      },
+      { rootMargin: '400px 0px', threshold: 0.01 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loading, loadingMore, items.length, loadProfile]);
 
   if (loading) {
     return (
@@ -85,7 +138,7 @@ export default function DiscoverAuthorPage() {
       <Button
         type="text"
         icon={<ArrowLeftOutlined />}
-        className="mb-4"
+        className="discover-detail-back-btn mb-4"
         onClick={() => router.push('/discover')}
       >
         {t('back_to_discover')}
@@ -141,24 +194,35 @@ export default function DiscoverAuthorPage() {
       {items.length === 0 ? (
         <Empty description={t('author_empty')} />
       ) : (
-        <div className="discover-feed-list">
-          {items.map((item) => (
-            <FeedCard
-              key={item.id}
-              item={item}
-              detailBasePath="/discover"
-              hideInteractions={!isAuthenticated}
-              onDeleteItem={isAuthenticated ? handleDeleteItem : undefined}
-              interactionState={pendingInteractions[item.id]}
-            />
-          ))}
-          {hasMore ? (
-            <div className="flex justify-center py-4">
-              <Button loading={loadingMore} onClick={() => void loadProfile(items.length, true)}>
-                {t('load_more')}
-              </Button>
+        <div>
+          <div className="discover-feed-list">
+            {items.map((item) => (
+              <FeedGridCard
+                key={item.id}
+                item={item}
+                maxPreviews={3}
+                detailBasePath="/discover"
+                onReact={handleAuthReact}
+                onSave={handleAuthSave}
+                onToggleFollow={isAuthenticated ? handleToggleFollow : undefined}
+                onDeleteItem={isAuthenticated ? handleDeleteItem : undefined}
+                interactionState={pendingInteractions[item.id]}
+              />
+            ))}
+          </div>
+          {loadingMore && (
+            <div className="mt-6 flex flex-col gap-6">
+              <FeedCardSkeleton compact />
             </div>
-          ) : null}
+          )}
+          <div ref={sentinelRef} className="h-8 w-full" aria-hidden="true" />
+          {!hasMore && items.length > 0 && (
+            <div className="flex items-center justify-center py-8 text-xs text-[var(--ant-color-text-tertiary)]">
+              <span className="h-px flex-1 bg-[var(--ant-color-border-secondary)]" />
+              <span className="px-4 font-medium">{t('all_caught_up')}</span>
+              <span className="h-px flex-1 bg-[var(--ant-color-border-secondary)]" />
+            </div>
+          )}
         </div>
       )}
     </>
