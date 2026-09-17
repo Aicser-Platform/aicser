@@ -78,6 +78,8 @@ body {
 }
 
 /* Routes outside the dashboard app shell may scroll the document */
+html:has(.public-shell),
+html:has(.public-shell) body,
 html:has(.login-page),
 html:has(.login-page) body,
 html:has(.aicser-embed-root),

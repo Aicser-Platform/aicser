@@ -118,3 +118,29 @@ def test_sanitize_preview_data_accepts_floats():
     model = FeedAssetPayload.model_validate(payload)
     assert model.previewData == [135160.67, 146007.17, 42.5]
     assert model.previews[0].data == [135160.67, 146007.17, 42.5]
+
+
+def test_feed_scope_filters_organization_vs_public():
+    from src.modules.feed.service_queries import FeedServiceQueryMixin
+    from src.modules.feed.schemas import FeedScope
+
+    class QueryStub(FeedServiceQueryMixin):
+        db = None
+
+    org_id = uuid4()
+    stub = QueryStub()
+
+    # Organization scope must strictly scope to organization_id and not leak public posts from other orgs
+    org_filters = stub._feed_scope_filters(scope=FeedScope.organization, organization_id=org_id)
+    assert len(org_filters) == 1
+    org_clause = str(org_filters[0])
+    assert "feed_posts.organization_id = :organization_id_1" in org_clause
+    assert "feed_posts.visibility IN" in org_clause
+    assert "OR feed_posts.visibility" not in org_clause
+
+    # Public scope is cross-organization (not restricted to a single organization_id)
+    public_filters = stub._feed_scope_filters(scope=FeedScope.public, organization_id=org_id)
+    public_clauses = [str(f) for f in public_filters]
+    assert any("feed_posts.visibility = :visibility_1" in s for s in public_clauses)
+    assert not any("feed_posts.organization_id" in s for s in public_clauses)
+

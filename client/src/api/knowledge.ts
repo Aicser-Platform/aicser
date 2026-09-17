@@ -48,6 +48,11 @@ export const deleteKnowledgeDocument = (
 ): Promise<{ success: boolean; message?: string }> =>
   fetchApi(`knowledge/documents/${docId}`, { method: 'DELETE' });
 
+export const retryKnowledgeDocument = (
+  docId: string,
+): Promise<{ success: boolean; document_id: string; filename: string; status: string; message: string }> =>
+  fetchApi(`knowledge/documents/${docId}/retry`, { method: 'POST' });
+
 export const updateKnowledgeDocument = (
   docId: string,
   body: { filename?: string; description?: string; metadata?: Record<string, unknown> },

@@ -13,6 +13,17 @@ class KnowledgeUploadResponse(BaseModel):
     message: str = "Ingestion started"
 
 
+class KnowledgeReindexRequest(BaseModel):
+    data_source_id: str
+
+
+class KnowledgeReindexResponse(BaseModel):
+    success: bool
+    documents_processed: int = 0
+    chunks_reindexed: int = 0
+    message: str = "Reindexing complete"
+
+
 class KnowledgeSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     data_source_id: str

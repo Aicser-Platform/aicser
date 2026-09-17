@@ -98,21 +98,18 @@ export function DashboardViewerGrid({
   onWidgetChartClick,
   onRetryWidget,
   refreshing = false,
-  canvasMinHeight = 'calc(100vh - 180px)',
+  canvasMinHeight = 'auto',
   layoutMode = 'auto',
   hideInteractionHint = false,
   eagerMount = false,
 }: Props) {
   const screens = useBreakpoint();
-  // `screens.md` is `undefined` until the media-query hook's effect has run
-  // (SSR / first paint) — treat "not yet known" as desktop so there's no
-  // flash of the reflowed mobile layout on a normal-width screen; only an
-  // *actual* observed narrow viewport (`screens.md === false`) switches it.
-  const isNarrowViewport = screens.md === false;
-  const effectiveLayoutMode: 'preserve' | 'preview' =
-    layoutMode === 'auto' ? (isNarrowViewport ? 'preview' : 'preserve') : layoutMode;
+  // Narrow screens: tablet (< 992px) and mobile (< 768px)
+  const isNarrowScreen = screens.lg === false;
+  const shouldReflow = layoutMode === 'preview' || (layoutMode === 'auto' && isNarrowScreen);
+
   const responsiveLayouts = useMemo(() => {
-    if (effectiveLayoutMode === 'preserve') {
+    if (layoutMode === 'preserve') {
       return {
         lg: layout,
         md: layout,
@@ -122,14 +119,35 @@ export function DashboardViewerGrid({
       };
     }
 
+    if (layoutMode === 'preview') {
+      return {
+        lg: buildPreviewLayout(widgets, layout, 12, 2),
+        md: buildPreviewLayout(widgets, layout, 10, 2),
+        sm: buildPreviewLayout(widgets, layout, 6, 1),
+        xs: buildPreviewLayout(widgets, layout, 4, 1),
+        xxs: buildPreviewLayout(widgets, layout, 2, 1),
+      };
+    }
+
+    // layoutMode === 'auto' (default):
+    // Preserves desktop 12-column authored layout on large screens,
+    // but reflows cleanly on tablet (10 cols, 2 per row) and mobile (1 per row)
+    // so charts are spacious, legible, and easy to view.
     return {
-      lg: buildPreviewLayout(widgets, layout, 12, 2),
+      lg: layout,
       md: buildPreviewLayout(widgets, layout, 10, 2),
       sm: buildPreviewLayout(widgets, layout, 6, 1),
       xs: buildPreviewLayout(widgets, layout, 4, 1),
       xxs: buildPreviewLayout(widgets, layout, 2, 1),
     };
-  }, [layout, effectiveLayoutMode, widgets]);
+  }, [layout, layoutMode, widgets]);
+
+  const responsiveCols = useMemo(() => {
+    if (layoutMode === 'preserve') {
+      return { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 };
+    }
+    return { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
+  }, [layoutMode]);
 
   return (
     <div className="dashboard-canvas-wrapper dashboard-viewer-canvas" style={{ minHeight: canvasMinHeight }}>
@@ -144,25 +162,14 @@ export function DashboardViewerGrid({
           xxs: responsiveLayouts.xxs.map((item) => ({ ...item, static: true })),
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-        cols={
-          effectiveLayoutMode === 'preserve'
-            // 'preserve' reuses the Studio canvas's saved x/y/w/h verbatim (see
-            // DashboardCanvas.tsx), which are authored against a constant 12-column
-            // grid at every breakpoint. Keeping cols at 12 here too — instead of
-            // narrowing to 10/6/4/2 — is what lets WidthProvider shrink column
-            // *width* on smaller screens without invalidating those positions
-            // (item.x + item.w must stay <= cols, or items collide/overlap and
-            // widgets appear to vanish).
-            ? { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 }
-            : { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }
-        }
+        cols={responsiveCols}
         rowHeight={42}
         margin={[8, 8]}
         containerPadding={[0, 0]}
         isDraggable={false}
         isResizable={false}
-        compactType={effectiveLayoutMode === 'preserve' ? null : 'vertical'}
-        preventCollision={effectiveLayoutMode === 'preserve'}
+        compactType={layoutMode === 'preserve' ? null : 'vertical'}
+        preventCollision={layoutMode === 'preserve'}
         useCSSTransforms
       >
         {widgets.map((widget) => {

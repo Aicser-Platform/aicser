@@ -19,6 +19,8 @@ interface AppUser {
   id: string;
   email: string;
   username?: string;
+  name?: string;
+  user_id?: string;
   user_metadata?: Record<string, unknown>;
 }
 
@@ -46,14 +48,30 @@ export interface AuthState {
 
 function userFromMePayload(j: {
   id?: unknown;
+  user_id?: unknown;
   email?: unknown;
   username?: unknown;
+  name?: unknown;
+  full_name?: unknown;
+  first_name?: unknown;
+  last_name?: unknown;
+  user_metadata?: Record<string, unknown>;
 }): AppUser | null {
   if (j?.id == null) return null;
+  const firstName = String(j.first_name ?? '').trim();
+  const lastName = String(j.last_name ?? '').trim();
+  const combinedName = [firstName, lastName].filter(Boolean).join(' ');
+  const meta = (j.user_metadata || {}) as Record<string, unknown>;
+  const metaName = String(meta.full_name || meta.name || '').trim();
+  const name = String(j.name || j.full_name || combinedName || metaName || '').trim();
+
   return {
     id: String(j.id),
+    user_id: j.user_id != null ? String(j.user_id) : undefined,
     email: String(j.email ?? ''),
     username: j.username != null ? String(j.username) : undefined,
+    name: name || undefined,
+    user_metadata: j.user_metadata,
   };
 }
 

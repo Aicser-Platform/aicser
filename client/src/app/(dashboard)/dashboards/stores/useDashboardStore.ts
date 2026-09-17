@@ -43,6 +43,8 @@ const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
 
+const _inFlightChartFetches = new Map<string, Promise<void>>();
+
 export type {
   WidgetType,
   LayoutItem,
@@ -626,8 +628,8 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         const widgetsToFetch = loaded.widgets.filter(
           (w) => w.chartId && !isNonDataWidget(w.chartType) && !isRemixSnapshotWidget(w),
         );
-        for (const widget of widgetsToFetch) {
-          void get().fetchChartData(widget.id);
+        if (widgetsToFetch.length > 0) {
+          void get().refreshAllChartData(widgetsToFetch.map((w) => w.id));
         }
       }
       return true;
@@ -761,9 +763,11 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       return;
     }
 
-    const widgetsToFetch = targetDash.widgets.filter((w) => w.chartId);
-    for (const widget of widgetsToFetch) {
-      get().fetchChartData(widget.id);
+    const widgetsToFetch = targetDash.widgets.filter(
+      (w) => w.chartId && !isNonDataWidget(w.chartType) && !isRemixSnapshotWidget(w),
+    );
+    if (widgetsToFetch.length > 0) {
+      void get().refreshAllChartData(widgetsToFetch.map((w) => w.id));
     }
     try {
       void import('../services/dashboardLibraryService').then(({ dashboardLibraryService }) =>
@@ -1395,32 +1399,60 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         if (hasRenderableChartData(chartOpts?.__prefetchedChartData)) return;
       }
 
-      set((state) => {
-        const nextWidgets = state.widgets.map((w) => (w.id === widgetId ? { ...w, isLoading: true, error: null } : w));
-        const dashboards = state.dashboards.map((d) =>
-          d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
-        );
-        return { widgets: nextWidgets, dashboards };
-      });
+      const inFlightKey = `${activeDashboardId}:${widgetId}:${JSON.stringify(state.runtimeFilters || {})}`;
+      const existing = _inFlightChartFetches.get(inFlightKey);
+      if (existing) {
+        return await existing;
+      }
 
-      const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-      const { chartData, filterWarnings } = await fetchWidgetChartData({
-        dashboardId: activeDashboardId,
-        widget,
-        runtimeFilters: get().runtimeFilters,
-        filterConfigs,
-        drillState: get().widgetDrillState[widgetId],
-      });
+      const run = (async () => {
+        try {
+          set((s) => {
+            const nextWidgets = s.widgets.map((w) => (w.id === widgetId ? { ...w, isLoading: true, error: null } : w));
+            const dashboards = s.dashboards.map((d) =>
+              d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
+            );
+            return { widgets: nextWidgets, dashboards };
+          });
 
-      set((state) => {
-        const nextWidgets = state.widgets.map((w) =>
-          w.id === widgetId ? { ...w, chartData, filterWarnings, isLoading: false } : w
-        );
-        const dashboards = state.dashboards.map((d) =>
-          d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
-        );
-        return { widgets: nextWidgets, dashboards };
-      });
+          const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
+          const { chartData, filterWarnings } = await fetchWidgetChartData({
+            dashboardId: activeDashboardId,
+            widget,
+            runtimeFilters: get().runtimeFilters,
+            filterConfigs,
+            drillState: get().widgetDrillState[widgetId],
+          });
+
+          set((s) => {
+            const nextWidgets = s.widgets.map((w) =>
+              w.id === widgetId ? { ...w, chartData, filterWarnings, isLoading: false } : w
+            );
+            const dashboards = s.dashboards.map((d) =>
+              d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
+            );
+            return { widgets: nextWidgets, dashboards };
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to fetch chart data';
+          set((s) => {
+            const nextWidgets = s.widgets.map((w) =>
+              w.id === widgetId ? { ...w, isLoading: false, error: errorMessage } : w
+            );
+            const dashboards = s.dashboards.map((d) =>
+              d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
+            );
+            return { widgets: nextWidgets, dashboards };
+          });
+        }
+      })();
+
+      _inFlightChartFetches.set(inFlightKey, run);
+      try {
+        await run;
+      } finally {
+        _inFlightChartFetches.delete(inFlightKey);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch chart data';
       set((state) => {

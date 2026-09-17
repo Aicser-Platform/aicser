@@ -10,10 +10,6 @@ import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/Dashb
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
 import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
 import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
-// Same stylesheet the dashboard studio canvas and the shared/embed viewers load
-// (e.g. src/app/shared/dashboards/page.tsx, src/app/embed/dashboard/[id]/page.tsx) —
-// importing it here, not re-deriving widget-card/grid styling, is what keeps this
-// feed viewer visually identical to the canvas and automatically in sync with it.
 import '@/app/(dashboard)/dashboards/DashboardStudio.css';
 
 type Props = {
@@ -110,7 +106,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
           full filtering for the expanded view, which 'card' already does
           for the widget grid below - filters were the one piece still
           rendered at full interactive size regardless of variant. */}
-      {viewer.combinedFiltersConfig.length > 0 && variant !== 'card' ? (
+      {viewer.combinedFiltersConfig.length > 0 && (
         <div className="feed-dashboard-viewer-filters">
           <DashboardFilterPanel
             variant="toolbar"
@@ -122,14 +118,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
             showHeader={false}
           />
         </div>
-      ) : viewer.combinedFiltersConfig.length > 0 ? (
-        <div className="flex items-center gap-1.5 px-1 pb-2 text-xs text-[var(--ant-color-text-tertiary)]">
-          <FilterOutlined style={{ fontSize: 11 }} />
-          <span>
-            {t('card_filters_available', { count: viewer.combinedFiltersConfig.length })}
-          </span>
-        </div>
-      ) : null}
+      )}
 
       <DashboardViewerGrid
         widgets={widgets}
@@ -140,7 +129,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         onRetryWidget={viewer.handleRetryWidget}
         refreshing={viewer.refreshing}
         canvasMinHeight="auto"
-        layoutMode="preserve"
+        layoutMode="auto"
         hideInteractionHint
         eagerMount
       />

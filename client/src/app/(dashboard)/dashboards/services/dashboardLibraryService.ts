@@ -67,6 +67,14 @@ function scopedPath(projectId?: string | number | null, suffix = ''): string {
 }
 
 class DashboardLibraryServiceClient {
+  private _inflightCollections = new Map<string, { promise: Promise<DashboardCollection[]>; expiresAt: number }>();
+  private _inflightList = new Map<string, { promise: Promise<DashboardLibraryListResult>; expiresAt: number }>();
+
+  public invalidateCache(): void {
+    this._inflightCollections.clear();
+    this._inflightList.clear();
+  }
+
   async list(
     opts: {
       projectId?: string | number | null;
@@ -78,41 +86,69 @@ class DashboardLibraryServiceClient {
       detail?: 'summary' | 'full';
     } = {},
   ): Promise<DashboardLibraryListResult> {
-    const params = new URLSearchParams();
-    const pid = normalizeProjectId(opts.projectId);
-    if (IS_ENTERPRISE_EDITION) {
-      if (!pid) throw new Error('Select a project before loading dashboards');
-      params.set('project_id', pid);
-    } else if (pid) {
-      params.set('project_id', pid);
+    const key = JSON.stringify(opts);
+    const cached = this._inflightList.get(key);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.promise;
     }
-    if (opts.q) params.set('q', opts.q);
-    if (opts.facet) params.set('facet', opts.facet);
-    if (opts.collectionId) params.set('collection_id', opts.collectionId);
-    params.set('limit', String(opts.limit ?? 50));
-    params.set('offset', String(opts.offset ?? 0));
-    params.set('detail', opts.detail ?? 'summary');
-    const data = await fetchApi<{
-      dashboards?: DashboardLibraryItem[];
-      total?: number;
-      limit?: number;
-      offset?: number;
-      hasMore?: boolean;
-    }>(`dashboards?${params.toString()}`);
-    return {
-      dashboards: Array.isArray(data?.dashboards) ? data.dashboards : [],
-      total: Number(data?.total ?? 0),
-      limit: Number(data?.limit ?? opts.limit ?? 50),
-      offset: Number(data?.offset ?? opts.offset ?? 0),
-      hasMore: Boolean(data?.hasMore),
-    };
+
+    const promise = (async () => {
+      const params = new URLSearchParams();
+      const pid = normalizeProjectId(opts.projectId);
+      if (IS_ENTERPRISE_EDITION) {
+        if (!pid) throw new Error('Select a project before loading dashboards');
+        params.set('project_id', pid);
+      } else if (pid) {
+        params.set('project_id', pid);
+      }
+      if (opts.q) params.set('q', opts.q);
+      if (opts.facet) params.set('facet', opts.facet);
+      if (opts.collectionId) params.set('collection_id', opts.collectionId);
+      params.set('limit', String(opts.limit ?? 50));
+      params.set('offset', String(opts.offset ?? 0));
+      params.set('detail', opts.detail ?? 'summary');
+      const data = await fetchApi<{
+        dashboards?: DashboardLibraryItem[];
+        total?: number;
+        limit?: number;
+        offset?: number;
+        hasMore?: boolean;
+      }>(`dashboards?${params.toString()}`);
+      return {
+        dashboards: Array.isArray(data?.dashboards) ? data.dashboards : [],
+        total: Number(data?.total ?? 0),
+        limit: Number(data?.limit ?? opts.limit ?? 50),
+        offset: Number(data?.offset ?? opts.offset ?? 0),
+        hasMore: Boolean(data?.hasMore),
+      };
+    })().catch((err) => {
+      this._inflightList.delete(key);
+      throw err;
+    });
+
+    this._inflightList.set(key, { promise, expiresAt: Date.now() + 3000 });
+    return promise;
   }
 
   async listCollections(projectId?: string | number | null): Promise<DashboardCollection[]> {
-    const data = await fetchApi<{ collections?: DashboardCollection[] }>(
-      scopedPath(projectId, '/collections'),
-    );
-    return Array.isArray(data?.collections) ? data.collections : [];
+    const pid = normalizeProjectId(projectId) || '__none__';
+    const cached = this._inflightCollections.get(pid);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.promise;
+    }
+
+    const promise = (async () => {
+      const data = await fetchApi<{ collections?: DashboardCollection[] }>(
+        scopedPath(projectId, '/collections'),
+      );
+      return Array.isArray(data?.collections) ? data.collections : [];
+    })().catch((err) => {
+      this._inflightCollections.delete(pid);
+      throw err;
+    });
+
+    this._inflightCollections.set(pid, { promise, expiresAt: Date.now() + 10000 });
+    return promise;
   }
 
   async createCollection(
@@ -120,6 +156,7 @@ class DashboardLibraryServiceClient {
     projectId?: string | number | null,
     parentId?: string | null,
   ): Promise<DashboardCollection> {
+    this.invalidateCache();
     return await fetchApi<DashboardCollection>(scopedPath(projectId, '/collections'), {
       method: 'POST',
       body: JSON.stringify({ name, parentId: parentId || undefined }),
@@ -131,6 +168,7 @@ class DashboardLibraryServiceClient {
     name: string,
     projectId?: string | number | null,
   ): Promise<DashboardCollection> {
+    this.invalidateCache();
     return await fetchApi<DashboardCollection>(
       scopedPath(projectId, `/collections/${collectionId}`),
       { method: 'PUT', body: JSON.stringify({ name }) },
@@ -138,6 +176,7 @@ class DashboardLibraryServiceClient {
   }
 
   async deleteCollection(collectionId: string, projectId?: string | number | null): Promise<void> {
+    this.invalidateCache();
     await fetchApi(scopedPath(projectId, `/collections/${collectionId}`), {
       method: 'DELETE',
     });
@@ -160,6 +199,7 @@ class DashboardLibraryServiceClient {
     dashboardId: string,
     collectionId: string | null,
   ): Promise<DashboardLibraryItem> {
+    this.invalidateCache();
     return await fetchApi<DashboardLibraryItem>(`dashboards/${dashboardId}`, {
       method: 'PUT',
       body: JSON.stringify({ collectionId }),
@@ -167,12 +207,14 @@ class DashboardLibraryServiceClient {
   }
 
   async restore(dashboardId: string): Promise<DashboardLibraryItem> {
+    this.invalidateCache();
     return await fetchApi<DashboardLibraryItem>(`dashboards/${dashboardId}/restore`, {
       method: 'POST',
     });
   }
 
   async purge(dashboardId: string): Promise<void> {
+    this.invalidateCache();
     await fetchApi(`dashboards/${dashboardId}?purge=true`, { method: 'DELETE' });
   }
 }

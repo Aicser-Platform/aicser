@@ -552,6 +552,7 @@ async def ingest_knowledge_document(
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "tmp"
 
     from src.db.session import async_session
+    from src.modules.data.models import DataSource  # noqa: F401
     from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
     from src.modules.knowledge.models import KnowledgeDocument
     from src.modules.knowledge.services.document_ingestion_service import DocumentIngestionService
@@ -605,6 +606,19 @@ async def ingest_knowledge_document(
             "status": doc.status,
             "chunk_count": doc.chunk_count or 0,
         }
+    except Exception as exc:
+        logger.exception("ingest_knowledge_document: failed during ingestion for document %s", document_id)
+        try:
+            async with async_session() as session:
+                await session.execute(
+                    _sa_update(KnowledgeDocument)
+                    .where(KnowledgeDocument.id == doc_uuid)
+                    .values(status="failed", error_message=f"Ingestion error: {str(exc)[:400]}")
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("ingest_knowledge_document: also failed to mark document %s as failed", document_id)
+        return {"success": False, "document_id": document_id, "error": str(exc)[:200]}
     finally:
         if tmp_path:
             try:

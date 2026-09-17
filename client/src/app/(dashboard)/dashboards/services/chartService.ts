@@ -200,6 +200,33 @@ export interface DashboardVersionFullResponse {
 }
 
 class ChartService {
+  private _inflightCache = new Map<string, { promise: Promise<any>; expiresAt: number }>();
+
+  private _fetchWithInflightCache<T>(key: string, fn: () => Promise<T>, ttlMs = 5000): Promise<T> {
+    const cached = this._inflightCache.get(key);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.promise as Promise<T>;
+    }
+    const promise = fn().catch((err) => {
+      this._inflightCache.delete(key);
+      throw err;
+    });
+    this._inflightCache.set(key, { promise, expiresAt: Date.now() + ttlMs });
+    return promise;
+  }
+
+  public invalidateDashboardCache(dashboardId?: string): void {
+    if (!dashboardId) {
+      this._inflightCache.clear();
+      return;
+    }
+    for (const k of Array.from(this._inflightCache.keys())) {
+      if (k.includes(dashboardId)) {
+        this._inflightCache.delete(k);
+      }
+    }
+  }
+
   private async authenticatedFetch(endpoint: string, options: RequestInit = {}): Promise<any> {
     return fetchApi(endpoint, options);
   }
@@ -287,9 +314,15 @@ class ChartService {
   }
 
   async getDashboard(dashboardId: string, opts?: DashboardAccessOptions): Promise<DashboardResponse> {
-    return await this.authenticatedFetch(this.withAccessQuery(`${DASHBOARDS_BASE}/${dashboardId}`, opts), {
-      method: 'GET',
-    });
+    const key = `dash:${dashboardId}:${opts?.embedToken || ''}`;
+    return this._fetchWithInflightCache(
+      key,
+      () =>
+        this.authenticatedFetch(this.withAccessQuery(`${DASHBOARDS_BASE}/${dashboardId}`, opts), {
+          method: 'GET',
+        }),
+      5000,
+    );
   }
 
   async getDashboardBuildProgress(dashboardId: string): Promise<Record<string, unknown>> {
@@ -309,6 +342,7 @@ class ChartService {
   }
 
   async updateDashboard(dashboardId: string, payload: Partial<DashboardPayload>): Promise<DashboardResponse> {
+    this.invalidateDashboardCache(dashboardId);
     return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
@@ -316,12 +350,19 @@ class ChartService {
   }
 
   async deleteDashboard(dashboardId: string): Promise<void> {
+    this.invalidateDashboardCache(dashboardId);
     await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}`, { method: 'DELETE' });
   }
 
   async getDashboardTemplates(): Promise<DashboardTemplate[]> {
-    const result = await this.authenticatedFetch(`charts/dashboards/templates`, { method: 'GET' });
-    return Array.isArray(result?.templates) ? result.templates : [];
+    return this._fetchWithInflightCache(
+      'templates:catalog',
+      async () => {
+        const result = await this.authenticatedFetch(`charts/dashboards/templates`, { method: 'GET' });
+        return Array.isArray(result?.templates) ? result.templates : [];
+      },
+      60000,
+    );
   }
 
   async createDashboardFromTemplate(payload: CreateDashboardFromTemplatePayload): Promise<any> {
@@ -389,6 +430,7 @@ class ChartService {
       };
     }
   ): Promise<Chart> {
+    this.invalidateDashboardCache(dashboardId);
     const body = { ...payload };
     if (payload.layout) {
       body.layout = sanitizeLayoutItem(payload.layout);
@@ -418,6 +460,7 @@ class ChartService {
       };
     },
   ): Promise<Chart & { linked?: boolean; created?: boolean; copied?: boolean }> {
+    this.invalidateDashboardCache(dashboardId);
     const body: Record<string, unknown> = {
       chartId: payload.chartId,
       mode: payload.mode || 'link',
@@ -432,6 +475,7 @@ class ChartService {
   }
 
   async unlinkChart(dashboardId: string, chartId: string): Promise<void> {
+    this.invalidateDashboardCache(dashboardId);
     await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/${chartId}/link`, {
       method: 'DELETE',
     });
@@ -444,13 +488,21 @@ class ChartService {
   }
 
   async listCharts(dashboardId: string, opts?: DashboardAccessOptions): Promise<Chart[]> {
-    const data = await this.authenticatedFetch(this.withAccessQuery(this.getChartsEndpoint(dashboardId), opts), {
-      method: 'GET',
-    });
-    return Array.isArray(data) ? data : [];
+    const key = `charts:${dashboardId}:${opts?.embedToken || ''}`;
+    return this._fetchWithInflightCache(
+      key,
+      async () => {
+        const data = await this.authenticatedFetch(this.withAccessQuery(this.getChartsEndpoint(dashboardId), opts), {
+          method: 'GET',
+        });
+        return Array.isArray(data) ? data : [];
+      },
+      5000,
+    );
   }
 
   async updateChart(dashboardId: string, chartId: string, payload: Partial<Chart>): Promise<Chart> {
+    this.invalidateDashboardCache(dashboardId);
     return await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/${chartId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
@@ -458,6 +510,7 @@ class ChartService {
   }
 
   async deleteChart(dashboardId: string, chartId: string): Promise<void> {
+    this.invalidateDashboardCache(dashboardId);
     await this.authenticatedFetch(`${this.getChartsEndpoint(dashboardId)}/${chartId}`, {
       method: 'DELETE',
     });
@@ -526,14 +579,22 @@ class ChartService {
   }
 
   async listPages(dashboardId: string, opts?: DashboardAccessOptions) {
-    const data = await this.authenticatedFetch(
-      this.withAccessQuery(`${DASHBOARDS_BASE}/${dashboardId}/pages`, opts),
-      { method: 'GET' }
+    const key = `pages:${dashboardId}:${opts?.embedToken || ''}`;
+    return this._fetchWithInflightCache(
+      key,
+      async () => {
+        const data = await this.authenticatedFetch(
+          this.withAccessQuery(`${DASHBOARDS_BASE}/${dashboardId}/pages`, opts),
+          { method: 'GET' }
+        );
+        return data.pages || [];
+      },
+      5000,
     );
-    return data.pages || [];
   }
 
   async createPage(dashboardId: string, name: string) {
+    this.invalidateDashboardCache(dashboardId);
     return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/pages`, {
       method: 'POST',
       body: JSON.stringify({ name }),
@@ -541,6 +602,7 @@ class ChartService {
   }
 
   async updatePage(dashboardId: string, pageId: string, payload: Record<string, unknown>) {
+    this.invalidateDashboardCache(dashboardId);
     return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/pages/${pageId}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
@@ -548,10 +610,12 @@ class ChartService {
   }
 
   async deletePage(dashboardId: string, pageId: string) {
+    this.invalidateDashboardCache(dashboardId);
     await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/pages/${pageId}`, { method: 'DELETE' });
   }
 
   async reorderPages(dashboardId: string, pageIds: string[]) {
+    this.invalidateDashboardCache(dashboardId);
     const data = await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/pages/reorder`, {
       method: 'PUT',
       body: JSON.stringify({ page_ids: pageIds }),
@@ -560,6 +624,7 @@ class ChartService {
   }
 
   async setDefaultPage(dashboardId: string, pageId: string) {
+    this.invalidateDashboardCache(dashboardId);
     const dash = await this.getDashboard(dashboardId);
     return await this.updateDashboard(dashboardId, {
       config: { ...(dash.config || {}), default_page_id: pageId },
@@ -588,9 +653,15 @@ class ChartService {
         qs.set('runtime_filters', JSON.stringify(normalized));
       }
     }
-    return await this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/filter-options?${qs}`, {
-      method: 'GET',
-    });
+    const key = `filter-opts:${dashboardId}:${qs.toString()}`;
+    return this._fetchWithInflightCache(
+      key,
+      () =>
+        this.authenticatedFetch(`${DASHBOARDS_BASE}/${dashboardId}/filter-options?${qs}`, {
+          method: 'GET',
+        }),
+      10000,
+    );
   }
 
   async getFilterFieldStats(

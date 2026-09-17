@@ -38,6 +38,8 @@ type StoreWithRuntime = DashboardRuntimeSlice & {
   fetchChartData: (widgetId: string) => Promise<void>;
 };
 
+const _batchInflightMap = new Map<string, Promise<RefreshResult>>();
+
 export const createDashboardRuntimeSlice: StateCreator<
   StoreWithRuntime,
   [],
@@ -123,78 +125,96 @@ export const createDashboardRuntimeSlice: StateCreator<
       return { ok: 0, failed: toRefresh.length, total: toRefresh.length };
     }
 
-    set((s) => {
-      const loadingIds = new Set(toRefresh.map((w) => w.id));
-      const nextWidgets = s.widgets.map((w) =>
-        loadingIds.has(w.id) ? { ...w, isLoading: true, error: null } : w,
-      );
-      const dashboards = s.dashboards.map((d) =>
-        d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d,
-      );
-      return { widgets: nextWidgets, dashboards };
-    });
+    const inflightKey = `${activeDashboardId}:${toRefresh
+      .map((w) => w.id)
+      .sort()
+      .join(',')}:${JSON.stringify(state.runtimeFilters || {})}`;
+    const existing = _batchInflightMap.get(inflightKey);
+    if (existing) {
+      return existing;
+    }
 
-    const applyBatchResults = (
-      results: Array<{
-        widget_id?: string;
-        chart_id: string;
-        success: boolean;
-        data?: ChartData;
-        error?: string;
-        filter_warnings?: string[];
-      }>,
-    ) => {
-      const byWidget = new Map<string, (typeof results)[number]>();
-      results.forEach((r) => {
-        if (r.widget_id) byWidget.set(r.widget_id, r);
-      });
+    const run = (async () => {
       set((s) => {
-        const refreshIds = new Set(toRefresh.map((w) => w.id));
-        const nextWidgets = s.widgets.map((w) => {
-          if (!refreshIds.has(w.id)) return w;
-          const result = byWidget.get(w.id) ?? results.find((r) => r.chart_id === w.chartId);
-          if (!result) return { ...w, isLoading: false, error: 'No result' };
-          if (!result.success) {
-            return { ...w, isLoading: false, error: result.error || 'Failed to fetch chart data' };
-          }
-          const processedData = get().partitionSeriesData(result.data!, w);
-          return {
-            ...w,
-            chartData: processedData,
-            filterWarnings: result.filter_warnings,
-            isLoading: false,
-            error: null,
-          };
-        });
+        const loadingIds = new Set(toRefresh.map((w) => w.id));
+        const nextWidgets = s.widgets.map((w) =>
+          loadingIds.has(w.id) ? { ...w, isLoading: true, error: null } : w,
+        );
         const dashboards = s.dashboards.map((d) =>
           d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d,
         );
         return { widgets: nextWidgets, dashboards };
       });
-    };
 
+      const applyBatchResults = (
+        results: Array<{
+          widget_id?: string;
+          chart_id: string;
+          success: boolean;
+          data?: ChartData;
+          error?: string;
+          filter_warnings?: string[];
+        }>,
+      ) => {
+        const byWidget = new Map<string, (typeof results)[number]>();
+        results.forEach((r) => {
+          if (r.widget_id) byWidget.set(r.widget_id, r);
+        });
+        set((s) => {
+          const refreshIds = new Set(toRefresh.map((w) => w.id));
+          const nextWidgets = s.widgets.map((w) => {
+            if (!refreshIds.has(w.id)) return w;
+            const result = byWidget.get(w.id) ?? results.find((r) => r.chart_id === w.chartId);
+            if (!result) return { ...w, isLoading: false, error: 'No result' };
+            if (!result.success) {
+              return { ...w, isLoading: false, error: result.error || 'Failed to fetch chart data' };
+            }
+            const processedData = get().partitionSeriesData(result.data!, w);
+            return {
+              ...w,
+              chartData: processedData,
+              filterWarnings: result.filter_warnings,
+              isLoading: false,
+              error: null,
+            };
+          });
+          const dashboards = s.dashboards.map((d) =>
+            d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d,
+          );
+          return { widgets: nextWidgets, dashboards };
+        });
+      };
+
+      try {
+        const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
+        const batch = await refreshWidgetsBatchData({
+          dashboardId: activeDashboardId,
+          widgets: toRefresh,
+          runtimeFilters: state.runtimeFilters,
+          filterConfigs,
+          drillStateByWidget: state.widgetDrillState,
+        });
+        applyBatchResults(batch.results);
+        return { ok: batch.ok, failed: batch.failed, total: batch.total };
+      } catch {
+        await runWithConcurrency(toRefresh, (w) => get().fetchChartData(w.id));
+        const after = get().widgets;
+        let ok = 0;
+        let failed = 0;
+        toRefresh.forEach((w) => {
+          const current = after.find((x) => x.id === w.id);
+          if (current?.error) failed += 1;
+          else ok += 1;
+        });
+        return { ok, failed, total: toRefresh.length };
+      }
+    })();
+
+    _batchInflightMap.set(inflightKey, run);
     try {
-      const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
-      const batch = await refreshWidgetsBatchData({
-        dashboardId: activeDashboardId,
-        widgets: toRefresh,
-        runtimeFilters: state.runtimeFilters,
-        filterConfigs,
-        drillStateByWidget: state.widgetDrillState,
-      });
-      applyBatchResults(batch.results);
-      return { ok: batch.ok, failed: batch.failed, total: batch.total };
-    } catch {
-      await runWithConcurrency(toRefresh, (w) => get().fetchChartData(w.id));
-      const after = get().widgets;
-      let ok = 0;
-      let failed = 0;
-      toRefresh.forEach((w) => {
-        const current = after.find((x) => x.id === w.id);
-        if (current?.error) failed += 1;
-        else ok += 1;
-      });
-      return { ok, failed, total: toRefresh.length };
+      return await run;
+    } finally {
+      _batchInflightMap.delete(inflightKey);
     }
   },
 });

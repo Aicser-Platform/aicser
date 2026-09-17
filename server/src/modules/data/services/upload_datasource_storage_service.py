@@ -15,15 +15,45 @@ When STORAGE_BACKEND is unset in EE, auto-detect in order:
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import os
 import re
+import tempfile
+import time
 from typing import Optional
 
 from src.core.edition import is_ee_enabled
 from src.core.system_settings.runtime_config import get_effective_storage_config
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_CACHE_LOCKS: dict[str, asyncio.Lock] = {}
+_LOCAL_CACHE_DIR: Optional[str] = None
+
+
+def _get_cache_dir() -> str:
+    global _LOCAL_CACHE_DIR
+    if _LOCAL_CACHE_DIR is None:
+        candidates = [
+            "/app/uploads/cache",
+            os.path.join(tempfile.gettempdir(), "aiser_file_cache"),
+        ]
+        for c in candidates:
+            try:
+                os.makedirs(c, exist_ok=True)
+                test_file = os.path.join(c, f".writable_test_{os.getpid()}")
+                with open(test_file, "w") as f:
+                    f.write("1")
+                os.unlink(test_file)
+                _LOCAL_CACHE_DIR = c
+                break
+            except Exception:
+                continue
+        if _LOCAL_CACHE_DIR is None:
+            _LOCAL_CACHE_DIR = tempfile.gettempdir()
+    return _LOCAL_CACHE_DIR
 
 POSTGRES_OBJECT_PREFIX = "user_files/"
 CE_OBJECT_PREFIX = "user_files/ce/"
@@ -242,8 +272,68 @@ class UploadDatasourceStorageService:
 
         return await self._azure_storage().get_file(object_key, project_id)
 
+    async def get_local_file_path(
+        self,
+        object_key: str,
+        project_id: Optional[str],
+        suffix: str = "",
+        max_age_seconds: int = 1800,
+    ) -> str:
+        """Retrieve file and cache on local disk, returning a persistent local file path.
+
+        Concurrent requests for the same object_key share an asyncio lock so only
+        a single download occurs across parallel queries.
+        """
+        cache_dir = _get_cache_dir()
+        key_hash = hashlib.sha256(f"{project_id or ''}:{object_key}".encode()).hexdigest()
+        clean_suffix = suffix if (suffix.startswith(".") or not suffix) else f".{suffix}"
+        cache_path = os.path.join(cache_dir, f"{key_hash}{clean_suffix}")
+
+        # 1. Fast path: check existing cache without locking
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+            try:
+                mtime = os.path.getmtime(cache_path)
+                if time.time() - mtime < max_age_seconds:
+                    return cache_path
+            except Exception:
+                pass
+
+        # 2. Synchronized fetch: only one concurrent task downloads the file
+        if key_hash not in _LOCAL_CACHE_LOCKS:
+            _LOCAL_CACHE_LOCKS[key_hash] = asyncio.Lock()
+        lock = _LOCAL_CACHE_LOCKS[key_hash]
+
+        async with lock:
+            if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
+                try:
+                    mtime = os.path.getmtime(cache_path)
+                    if time.time() - mtime < max_age_seconds:
+                        return cache_path
+                except Exception:
+                    pass
+
+            content = await self.get_file(object_key, project_id)
+            tmp_write = f"{cache_path}.tmp.{os.getpid()}_{time.time_ns()}"
+            with open(tmp_write, "wb") as f:
+                f.write(content)
+            os.replace(tmp_write, cache_path)
+            return cache_path
+
     async def delete_file(self, object_key: str, project_id: Optional[str]) -> bool:
         """Delete uploaded datasource content from the storage backend."""
+        # Evict from local cache if present
+        try:
+            cache_dir = _get_cache_dir()
+            key_hash = hashlib.sha256(f"{project_id or ''}:{object_key}".encode()).hexdigest()
+            for fname in os.listdir(cache_dir):
+                if fname.startswith(key_hash):
+                    try:
+                        os.unlink(os.path.join(cache_dir, fname))
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
         project_id = self._storage_project_id(object_key, project_id)
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().delete_file(object_key, project_id)

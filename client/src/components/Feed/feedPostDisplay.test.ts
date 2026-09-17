@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FeedItem } from '@/services/socialFeedService';
 import {
   feedItemHasLiveVisual,
+  isFeedPostAuthor,
   resolveFeedCardHeading,
   resolveFeedPostSummary,
   showFeedAssetTypeBadge,
@@ -40,18 +41,18 @@ describe('feedItemHasLiveVisual', () => {
       feedItemHasLiveVisual({
         ...base,
         asset: { ...base.asset, snapshotPayload: { visuals: { widgets: [] } } },
-      } as FeedItem),
+      } as unknown as FeedItem),
     ).toBe(true);
     expect(
       feedItemHasLiveVisual({
         ...base,
         asset: { ...base.asset, chartWidget: { chartType: 'bar' } },
-      } as FeedItem),
+      } as unknown as FeedItem),
     ).toBe(true);
   });
 
   it('is false when only a still thumbnail could exist', () => {
-    expect(feedItemHasLiveVisual(base as FeedItem)).toBe(false);
+    expect(feedItemHasLiveVisual(base as unknown as FeedItem)).toBe(false);
   });
 });
 
@@ -71,7 +72,7 @@ describe('resolveFeedCardHeading', () => {
         title: 'Analytics',
         assetType: 'insight',
         asset: chartAsset,
-      } as FeedItem),
+      } as unknown as FeedItem),
     ).toBe('');
   });
 
@@ -81,7 +82,7 @@ describe('resolveFeedCardHeading', () => {
         title: 'Principal Amount Share by Npl Flag',
         assetType: 'chart',
         asset: chartAsset,
-      } as FeedItem),
+      } as unknown as FeedItem),
     ).toBe('');
   });
 
@@ -91,7 +92,7 @@ describe('resolveFeedCardHeading', () => {
         title: 'Q4 collateral mix',
         assetType: 'insight',
         asset: chartAsset,
-      } as FeedItem),
+      } as unknown as FeedItem),
     ).toBe('Q4 collateral mix');
   });
 });
@@ -129,5 +130,75 @@ describe('resolveFeedPostSummary', () => {
         asset: { ...dashboard.asset, excerpt: long },
       } as FeedItem),
     ).toBe(long);
+  });
+});
+
+describe('isFeedPostAuthor', () => {
+  const author = {
+    id: 'user-123',
+    name: 'Makara Sok',
+    username: 'makarasok',
+  };
+
+  it('validates true when item.isOwner is true', () => {
+    expect(isFeedPostAuthor({ isOwner: true } as FeedItem, null)).toBe(true);
+  });
+
+  it('validates true when author.id matches user.id', () => {
+    expect(
+      isFeedPostAuthor({ author } as FeedItem, { id: 'user-123', email: 'other@test.com' }),
+    ).toBe(true);
+  });
+
+  it('validates true when author.id matches user.user_id', () => {
+    expect(
+      isFeedPostAuthor({ author } as FeedItem, { id: 'session-id', user_id: 'user-123', email: 'other@test.com' }),
+    ).toBe(true);
+  });
+
+  it('validates true when username matches normalized', () => {
+    expect(
+      isFeedPostAuthor({ author } as FeedItem, { id: 'other-id', username: '@makarasok', email: 'test@test.com' }),
+    ).toBe(true);
+  });
+
+  it('validates true for synthetic serialized username derived from email', () => {
+    const syntheticAuthor = {
+      id: 'author-456',
+      name: 'Makara Sok',
+      username: 'makara-7a8b9c0d',
+    };
+    expect(
+      isFeedPostAuthor({ author: syntheticAuthor } as FeedItem, {
+        id: 'user-999',
+        email: 'makara@dataticon.com',
+      }),
+    ).toBe(true);
+  });
+
+  it('validates true when display name matches', () => {
+    expect(
+      isFeedPostAuthor({ author } as FeedItem, {
+        id: 'auth-diff',
+        name: 'Makara Sok',
+        email: 'makara@aicser.com',
+      }),
+    ).toBe(true);
+  });
+
+  it('validates false when user is a different person', () => {
+    expect(
+      isFeedPostAuthor({ author } as FeedItem, {
+        id: 'other-user',
+        name: 'Alice Johnson',
+        username: 'alice',
+        email: 'alice@example.com',
+      }),
+    ).toBe(false);
+  });
+
+  it('validates false when user or item is null', () => {
+    expect(isFeedPostAuthor(null, { id: '1' })).toBe(false);
+    expect(isFeedPostAuthor({ author } as FeedItem, null)).toBe(false);
   });
 });

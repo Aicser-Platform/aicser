@@ -8,6 +8,8 @@ import type { MenuProps } from 'antd';
 import {
   CheckCircleFilled,
   CheckOutlined,
+  DeleteOutlined,
+  EyeOutlined,
   HeartOutlined,
   LinkOutlined,
   MessageOutlined,
@@ -20,7 +22,13 @@ import { useTranslations } from 'next-intl';
 import { socialFeedService, formatTimeAgo } from '@/services/socialFeedService';
 import type { FeedItem, ReactionType } from '@/services/socialFeedService';
 import { errorMessage } from '@/hooks/feed/feedInteractionUtils';
-import { resolveFeedPostSummary, buildPreviewFeedItem, resolveFeedCardHeading } from '@/components/Feed/feedPostDisplay';
+import {
+  resolveFeedPostSummary,
+  buildPreviewFeedItem,
+  resolveFeedCardHeading,
+  isFeedPostAuthor,
+} from '@/components/Feed/feedPostDisplay';
+import { FeedPostContent } from '@/components/Feed/FeedPostContent';
 import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
 import ReactionBreakdownTooltip from './FeedCard/ReactionBreakdownTooltip';
@@ -42,6 +50,8 @@ interface FeedGridCardProps {
   highlighted?: boolean;
   /** Detail link base — default `/feed` for app feed; `/discover` for public. */
   detailBasePath?: string;
+  /** Maximum visual previews teased on the card. Defaults to 1 for tight grids, 3+ for single-column feed. */
+  maxPreviews?: number;
 }
 
 const normalizeHandle = (handle?: string) => handle?.trim().replace(/^@/, '').toLowerCase() || '';
@@ -71,6 +81,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   interactionState,
   highlighted = false,
   detailBasePath = '/feed',
+  maxPreviews = 1,
 }) => {
   const t = useTranslations('feed');
   const ta = useTranslations('feed_card_actions');
@@ -91,13 +102,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   const followPending = Boolean(interactionState?.following);
   const detailPath = `${detailBasePath}/${item.id}`;
 
-  // Compare by username too: author.id can come from a different identity source
-  // than the session user.id for legacy/seeded posts, which otherwise leaks a
-  // "Follow" action onto the viewer's own posts.
-  const isPostOwner =
-    !!user &&
-    (item.author?.id === user.id ||
-      (!!user.username && normalizeHandle(item.author?.username) === normalizeHandle(user.username)));
+  const isPostOwner = isFeedPostAuthor(item, user);
   const canFollow = !!onToggleFollow && !!user && !!item.author?.id && !isPostOwner;
   const isFollowingAuthor = Boolean(item.userInteraction?.isFollowingAuthor);
 
@@ -363,14 +368,14 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
   );
 
   return (
-    <div id={`feed-post-${item.id}`} className="h-full">
+    <div id={`feed-post-${item.id}`} className="w-full">
       <div
-        className={`flex h-full flex-col bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm hover:shadow-md overflow-hidden transition-all duration-300 ${
+        className={`flex w-full flex-col bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border-secondary)] rounded-xl shadow-sm hover:shadow-md overflow-hidden transition-all duration-300 ${
           highlighted ? 'ring-2 ring-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]' : ''
         }`}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-2 px-3 py-2 border-b border-[var(--ant-color-border-secondary)]">
+        <div className="flex items-center justify-between gap-2 px-3.5 sm:px-4 py-2.5 sm:py-3 border-b border-[var(--ant-color-border-secondary)]">
           <div className="flex items-center gap-2.5 min-w-0">
             {authorProfileHref ? (
               <Link href={authorProfileHref} onClick={stopPropagation} className="shrink-0">
@@ -392,17 +397,24 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
               </Avatar>
             )}
             <div className="flex flex-col min-w-0">
-              {authorProfileHref ? (
-                <Link href={authorProfileHref} onClick={stopPropagation} className="truncate">
-                  <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
+              <div className="flex items-center gap-1.5 truncate">
+                {authorProfileHref ? (
+                  <Link href={authorProfileHref} onClick={stopPropagation} className="truncate">
+                    <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight hover:text-[var(--ant-color-primary)]">
+                      {authorName}
+                    </span>
+                  </Link>
+                ) : (
+                  <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight truncate">
                     {authorName}
                   </span>
-                </Link>
-              ) : (
-                <span className="text-sm font-semibold text-[var(--ant-color-text)] leading-tight truncate">
-                  {authorName}
-                </span>
-              )}
+                )}
+                {isPostOwner ? (
+                  <span className="shrink-0 rounded-full bg-[var(--ant-color-primary-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--ant-color-primary)]">
+                    Author
+                  </span>
+                ) : null}
+              </div>
               <span className="text-xs text-[var(--ant-color-text-tertiary)] truncate">
                 {authorTitle ? `${authorTitle} • ` : ''}
                 {formatTimeAgo(item.lastActivityAt || item.publishedAt)}
@@ -411,6 +423,50 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            {/* Quick View Icon Button */}
+            <Tooltip title={t('open_post')}>
+              <Button
+                type="text"
+                size="small"
+                shape="circle"
+                aria-label={t('open_post')}
+                icon={<EyeOutlined className="text-sm" />}
+                className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
+                onMouseEnter={handlePrefetch}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleOpen();
+                }}
+              />
+            </Tooltip>
+
+            {/* Quick Bookmark / Save Icon Button */}
+            <Tooltip title={isBookmarked ? ta('saved') : ta('save')}>
+              <Button
+                type="text"
+                size="small"
+                shape="circle"
+                aria-label={isBookmarked ? ta('saved') : ta('save')}
+                icon={
+                  <BookmarkIcon
+                    filled={isBookmarked}
+                    className={isBookmarked ? 'text-[var(--ant-color-primary)] text-sm' : 'text-[var(--ant-color-text-secondary)] text-sm'}
+                  />
+                }
+                className={`w-7 h-7 flex items-center justify-center p-0 shrink-0 hover:bg-[var(--ant-color-bg-layout)] ${
+                  isBookmarked
+                    ? 'text-[var(--ant-color-primary)] bg-[var(--ant-color-primary-bg)]'
+                    : 'text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)]'
+                }`}
+                disabled={saving}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onSave?.(item.id);
+                }}
+              />
+            </Tooltip>
+
+            {/* Follow Button: ONLY for non-author */}
             {canFollow && (
               <Tooltip title={isFollowingAuthor ? t('unfollow_author') : t('follow_author')}>
                 <Button
@@ -425,7 +481,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
                       <UserAddOutlined />
                     )
                   }
-                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)]"
+                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-primary)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
                   loading={followPending}
                   disabled={followPending || deleting}
                   onClick={(event) => {
@@ -435,6 +491,28 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
                 />
               </Tooltip>
             )}
+
+            {/* Delete button: ONLY for post author */}
+            {isPostOwner && onDeleteItem && (
+              <Tooltip title={t('delete')}>
+                <Button
+                  type="text"
+                  size="small"
+                  shape="circle"
+                  danger
+                  aria-label={t('delete')}
+                  icon={<DeleteOutlined className="text-sm" />}
+                  className="text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-error)] hover:bg-[var(--ant-color-bg-layout)] w-7 h-7 flex items-center justify-center p-0 shrink-0"
+                  loading={deleting}
+                  disabled={deleting}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDeleteItem();
+                  }}
+                />
+              </Tooltip>
+            )}
+
             <Dropdown
               trigger={['click']}
               classNames={{ root: "min-w-[160px] shadow-lg rounded-lg overflow-hidden py-1" }}
@@ -461,31 +539,27 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
           </div>
         </div>
 
-        {/* Flexible content: title/description + thumbnail + tags grow to fill the row's height */}
-        {heading || description ? (
-          <div className="shrink-0 flex flex-col gap-1.5 px-3.5 pt-3 pb-1">
-            {heading ? (
-              <p className="m-0 line-clamp-2 text-base font-semibold leading-snug text-[var(--ant-color-text)]">
-                {heading}
-              </p>
-            ) : null}
-            {description ? (
-              <p className="m-0 line-clamp-2 text-sm leading-relaxed text-[var(--ant-color-text-secondary)]">
-                {description}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        {/* Post Message Layout */}
+        <div className="shrink-0 px-3.5 sm:px-4 pt-3 pb-1.5" onClick={stopPropagation}>
+          <FeedPostContent
+            item={item}
+            titleOverride={heading || undefined}
+            descriptionOverride={description || undefined}
+            compactTitle={false}
+            descriptionMaxRows={3}
+            variant="card"
+          />
+        </div>
 
-          <div className="min-h-[220px] min-w-0 flex-1 px-3.5 pb-2.5">
+        <div className={`min-w-0 flex-1 px-3.5 sm:px-4 pb-2.5 ${maxPreviews <= 1 ? 'min-h-[220px]' : ''}`}>
           <FeedCardMedia
             item={mediaItem}
-            maxPreviews={1}
-            fillHeight
+            maxPreviews={maxPreviews}
+            fillHeight={maxPreviews <= 1}
             previewClickable
             onPreviewClick={handleOpen}
-            thumbnailWrapperClassName="h-full"
-            tagsWrapperClassName="px-0 pt-1.5 pb-0"
+            thumbnailWrapperClassName={maxPreviews <= 1 ? 'h-full' : undefined}
+            tagsWrapperClassName="px-0 pt-2 pb-0"
             cornerBadge={
               extraAttachmentCount > 0 ? (
                 <span className="rounded-full bg-[var(--ant-color-bg-elevated)] px-2 py-0.5 text-[10px] font-semibold text-[var(--ant-color-text-secondary)] shadow-sm">
@@ -498,10 +572,10 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
 
         {/* Footer actions — pinned to the bottom of the card */}
         <div
-          className="flex items-center justify-between gap-3 px-3 py-2 border-t border-[var(--ant-color-border-secondary)]"
+          className="flex items-center justify-between gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 border-t border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)]"
           onClick={stopPropagation}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <div
               ref={reactionPickerRef}
               className="relative"
@@ -510,7 +584,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             >
               {isReactionPickerOpen && !reacting && (
                 <div
-                  className="absolute bottom-full left-0 mb-2 bg-[var(--ant-color-bg-elevated)] rounded-full shadow-lg border border-[var(--ant-color-border-secondary)] p-1 flex items-center gap-1 z-50"
+                  className="absolute bottom-full left-0 mb-2 bg-[var(--ant-color-bg-elevated)] rounded-full shadow-lg border border-[var(--ant-color-border-secondary)] p-1 flex items-center gap-1 z-50 max-w-[calc(100vw-32px)] overflow-x-auto"
                   role="menu"
                   aria-label={ta('choose_reaction_aria')}
                 >
@@ -541,7 +615,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
               <ReactionBreakdownTooltip breakdown={item.metrics.reactionBreakdown}>
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
+                  className="flex items-center gap-1.5 text-sm font-medium min-h-[36px] px-2 py-1 rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors disabled:opacity-60"
                   style={currentReaction ? { color: REACTION_PALETTE[currentReaction].color } : undefined}
                   disabled={reacting}
                   aria-label={selectedReaction?.label || ta('like')}
@@ -562,7 +636,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
 
             <button
               type="button"
-              className="flex items-center gap-1.5 text-sm font-medium text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
+              className="flex items-center gap-1.5 text-sm font-medium min-h-[36px] px-2 py-1 rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
               onMouseEnter={handlePrefetch}
               onClick={(event) => {
                 event.stopPropagation();
@@ -586,7 +660,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             >
               <button
                 type="button"
-                className="flex items-center text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
+                className="flex items-center justify-center min-h-[36px] min-w-[36px] rounded-lg text-[var(--ant-color-text-secondary)] hover:text-[var(--ant-color-text)] transition-colors"
                 aria-label={ta('share')}
                 onClick={stopPropagation}
               >
@@ -597,7 +671,7 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
 
           <button
             type="button"
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-60 ${
+            className={`flex items-center gap-1.5 rounded-full min-h-[32px] px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
               isBookmarked
                 ? 'bg-[var(--ant-color-primary-bg)] text-[var(--ant-color-primary)]'
                 : 'bg-[var(--ant-color-fill-tertiary)] text-[var(--ant-color-text-secondary)] hover:bg-[var(--ant-color-primary-bg)] hover:text-[var(--ant-color-primary)]'

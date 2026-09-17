@@ -13,8 +13,6 @@ watchPatterns = [
 ]
 
 [deploy]
-startCommand = "/app/scripts/railway-start.sh"
-healthcheckPath = "/health"
-healthcheckTimeout = 300
+startCommand = "/app/scripts/railway-worker-start.sh"
 restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 5
