@@ -137,7 +137,14 @@ const DataSourcesPage: React.FC = () => {
     const refreshDataSources = () => qc.invalidateQueries({ queryKey: ['data-sources'] });
     const authenticatedFetch = useAuthenticatedFetch();
     const { hasPermission, loading: permissionsLoading } = usePermissions();
-    const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
+    const canManageDataSettings =
+        !permissionsLoading &&
+        (hasPermission(Permission.ORG_DELETE) ||
+            hasPermission(Permission.DATA_DELETE) ||
+            hasPermission(Permission.DATA_EDIT) ||
+            hasPermission(Permission.DATA_CREATE) ||
+            hasPermission(Permission.DATA_CONNECT) ||
+            hasPermission(Permission.DATA_UPLOAD));
 
     // Open edit modal when navigating from settings with ?edit=<id>
     const openedEditIdRef = React.useRef<string | null>(null);
@@ -443,7 +450,15 @@ const DataSourcesPage: React.FC = () => {
                 title={t('title')}
                 description={t('description')}
                 extra={
-                    <PermissionGuard permission={Permission.ORG_DELETE}>
+                    <PermissionGuard
+                        permission={[
+                            Permission.DATA_CONNECT,
+                            Permission.DATA_CREATE,
+                            Permission.DATA_UPLOAD,
+                            Permission.DATA_EDIT,
+                            Permission.ORG_DELETE,
+                        ]}
+                    >
                         <Tooltip
                             title={
                                 canAddDataSource

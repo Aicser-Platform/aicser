@@ -124,16 +124,6 @@ class DataSourcesCRUD:
                 except (ValueError, TypeError):
                     pass
             if not project_id_val and not organization_id_val and session:
-                # Fallback: first project for user (e.g. when creating via POST /sources with no
-                # project_id/organization_id at all). Skipped when the caller explicitly scoped the
-                # source to a project or organization, so intentionally org-only sources (no project)
-                # aren't silently reassigned to an arbitrary project.
-                #
-                # This fallback previously masked a real bug (the knowledge-base upload endpoint
-                # never sent project_id, so every KB upload silently landed in the user's first
-                # project rather than the one they were actually working in — looked like the
-                # upload had "created a new project space"). Logging here so a future caller that
-                # forgets to scope its request is visible instead of silently misfiled again.
                 logger.warning(
                     "create_data_source: no project_id/organization_id given for source %r "
                     "(user=%s, type=%s) — falling back to the user's first project",
@@ -578,37 +568,38 @@ class DataSourcesCRUD:
         user_id: str,
         session: Optional[AsyncSession] = None
     ) -> bool:
-        """Delete a data source"""
+        """Delete a data source and clean up S3 and storage files"""
         try:
-            # Get existing data source
+            # Normalize user_id to UUID so ownership check matches create
+            user_id_val = user_id
+            try:
+                uuid.UUID(user_id)
+            except (ValueError, TypeError):
+                user_id_val = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"test-user-{user_id}"))
+
+            # Get existing active data source
             result = await session.execute(
                 select(DataSource).where(
                     and_(
                         DataSource.id == data_source_id,
-                        DataSource.user_id == user_id
+                        or_(
+                            DataSource.user_id == user_id,
+                            DataSource.user_id == user_id_val,
+                            DataSource.user_id.is_(None),
+                        ),
                     )
                 )
             )
             data_source = result.scalar_one_or_none()
-            
+
             if not data_source:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Data source not found"
+                    detail="Data source not found",
                 )
-            
-            # Soft delete by setting is_active to False
-            data_source.is_active = False
-            data_source.updated_at = datetime.now(timezone.utc)
-            
-            await session.commit()
-            try:
-                DS_DELETE_COUNTER.inc()
-            except Exception:
-                pass
 
-            return True
-            
+            return await self._apply_data_source_deletion(data_source, session)
+
         except HTTPException:
             raise
         except Exception as e:
@@ -616,8 +607,65 @@ class DataSourcesCRUD:
             logger.error(f"Error deleting data source: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to delete data source: {str(e)}"
+                detail=f"Failed to delete data source: {str(e)}",
             )
+
+    async def delete_data_source_by_id(
+        self,
+        data_source_id: str,
+        session: Optional[AsyncSession] = None,
+    ) -> bool:
+        """Delete a data source by ID only (call after verifying caller permissions)."""
+        if session is None:
+            raise ValueError("session is required for delete_data_source_by_id")
+        result = await session.execute(
+            select(DataSource).where(DataSource.id == data_source_id)
+        )
+        data_source = result.scalar_one_or_none()
+        if not data_source:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Data source not found",
+            )
+        return await self._apply_data_source_deletion(data_source, session)
+
+    async def _apply_data_source_deletion(
+        self,
+        data_source: DataSource,
+        session: AsyncSession,
+    ) -> bool:
+        """Clean up S3 and storage files, soft delete data source record, and commit."""
+        from src.modules.data.services.s3_storage_cleanup_service import (
+            delete_datasource_storage_files,
+        )
+
+        try:
+            await delete_datasource_storage_files(
+                data_source=data_source,
+                project_id=str(data_source.project_id) if data_source.project_id else None,
+            )
+        except Exception as st_err:
+            logger.warning("Storage cleanup during data source deletion failed: %s", st_err)
+
+        try:
+            from src.modules.data.services.pool_invalidation import (
+                dispose_direct_sql_pool_for_data_source,
+            )
+            dispose_direct_sql_pool_for_data_source(data_source.id)
+        except Exception:
+            pass
+
+        data_source.is_active = False
+        data_source.updated_at = datetime.now(timezone.utc)
+
+        await session.commit()
+        try:
+            DS_DELETE_COUNTER.inc()
+        except Exception:
+            pass
+
+        return True
+
     
     async def test_connection(
         self,

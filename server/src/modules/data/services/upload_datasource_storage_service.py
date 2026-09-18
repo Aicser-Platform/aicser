@@ -138,6 +138,8 @@ class UploadDatasourceStorageService:
         return detect_storage_backend()
 
     def _use_postgres_for_key(self, object_key: str) -> bool:
+        if object_key.startswith("s3://"):
+            return False
         return not is_ee_enabled() or object_key.startswith(POSTGRES_OBJECT_PREFIX)
 
     def _storage_project_id(self, object_key: str, project_id: Optional[str]) -> Optional[str]:
@@ -334,6 +336,15 @@ class UploadDatasourceStorageService:
         except Exception:
             pass
 
+        if object_key.startswith("s3://"):
+            try:
+                from src.modules.data.services.s3_storage_cleanup_service import delete_s3_file
+                res = await delete_s3_file(object_key)
+                return bool(res.get("success", True))
+            except Exception as e:
+                logger.warning("Failed direct S3 delete for %s: %s", object_key, e)
+                return False
+
         project_id = self._storage_project_id(object_key, project_id)
         if self._use_postgres_for_key(object_key):
             return await self._postgres_storage().delete_file(object_key, project_id)
@@ -347,3 +358,4 @@ class UploadDatasourceStorageService:
             return await self._postgres_storage().delete_file(object_key, project_id)
 
         return await self._azure_storage().delete_file(object_key, project_id)
+

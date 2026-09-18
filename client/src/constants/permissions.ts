@@ -19,6 +19,7 @@ export enum Permission {
   DATA_DELETE = 'data:delete',
   DATA_UPLOAD = 'data:upload',
   DATA_CONNECT = 'data:connect',
+  DATA_CREATE = 'data:create',
 
   CHART_VIEW = 'chart:view',
   CHART_EDIT = 'chart:edit',

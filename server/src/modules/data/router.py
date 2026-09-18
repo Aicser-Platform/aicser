@@ -10,7 +10,7 @@ import json
 import re
 import os
 import tempfile
-from typing import Callable, List, Dict, Any, Optional, Union
+from typing import Callable, List, Dict, Any, Optional, Union, Sequence
 from datetime import datetime, timezone
 import time
 from fastapi import (
@@ -371,11 +371,12 @@ async def _require_data_source_permission(
 ):
     """Load an active data source and require an explicit source grant in EE."""
     row = await _get_active_data_source_or_404(db, data_source_id)
+    effective_project_id = project_id or (str(row.project_id) if getattr(row, "project_id", None) else None)
     allowed = await DataSourceAccessService.can_access(
         user_id,
         data_source_id,
         permission,
-        project_id=project_id,
+        project_id=effective_project_id,
         session=db,
     )
     if not allowed:
@@ -386,23 +387,82 @@ async def _require_data_source_permission(
     return row
 
 
+async def _require_data_manage_permission(
+    user_id: str,
+    permission_codes: Union[str, Sequence[str]],
+    *,
+    organization_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> None:
+    """Require data-level permissions (e.g. data:create, data:upload, data:connect, data:edit) in EE."""
+    if not is_ee_enabled() or not user_id:
+        return
+
+    if isinstance(permission_codes, str):
+        codes = [permission_codes]
+    else:
+        codes = list(permission_codes)
+
+    # Any of the specified data permissions, data wildcard, or org admin/owner are acceptable
+    acceptable_codes = list(codes) + ["data:*", "*", "org:admin", "org:delete"]
+
+    try:
+        from src.modules.authentication.rbac.rbac_service import RBACService
+    except ImportError:
+        return
+
+    safe_user_id = str(user_id)
+    safe_org_id = str(organization_id) if organization_id else None
+    safe_proj_id = str(project_id) if project_id else None
+
+    import uuid
+    try:
+        uuid.UUID(safe_user_id)
+    except ValueError:
+        safe_user_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"test-user-{safe_user_id}"))
+
+    if safe_org_id:
+        try:
+            uuid.UUID(safe_org_id)
+        except ValueError:
+            safe_org_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"test-org-{safe_org_id}"))
+
+    if safe_proj_id:
+        try:
+            uuid.UUID(safe_proj_id)
+        except ValueError:
+            safe_proj_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"test-proj-{safe_proj_id}"))
+
+    for code in acceptable_codes:
+        try:
+            if await RBACService.check_permission(
+                user_id=safe_user_id,
+                permission_code=code,
+                organization_id=safe_org_id,
+                project_id=safe_proj_id,
+            ):
+                return
+        except Exception as e:
+            logger.debug("Permission check for %s raised: %s", code, e)
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Permission required: one of {', '.join(codes)}",
+    )
+
+
 async def _require_data_settings_owner(
     user_id: str,
     *,
     organization_id: Optional[str] = None,
     project_id: Optional[str] = None,
+    permissions: Optional[Sequence[str]] = None,
 ) -> None:
-    """Require org-owner-level access for managing data source settings in EE."""
-    if not is_ee_enabled():
-        return
-    if not organization_id and not project_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Organization owner access is required to manage data source settings",
-        )
-    await require_permission(
+    """Require data management permissions (e.g. data:create, data:upload, data:connect, data:edit) in EE."""
+    codes = permissions or ["data:create", "data:upload", "data:connect", "data:edit"]
+    await _require_data_manage_permission(
         user_id,
-        "org:delete",
+        codes,
         organization_id=organization_id,
         project_id=project_id,
     )
@@ -1054,6 +1114,7 @@ async def connect_database(
             )
             or None,
             project_id=str(requested_project_id or "") or None,
+            permissions=["data:connect", "data:create", "data:edit"],
         )
 
         # Enforce data source limit based on plan
@@ -1469,7 +1530,10 @@ async def create_data_source(
             )
         else:
             await _require_data_settings_owner(
-                user_id, project_id=str(project_id or "") or None
+                user_id,
+                organization_id=str(organization_id) if organization_id else None,
+                project_id=str(project_id or "") or None,
+                permissions=["data:create", "data:upload", "data:connect", "data:edit"],
             )
         format_val = body.get("format") or (
             ds_type if ds_type != "file" else "api" if ds_type == "api" else "file"
@@ -1591,8 +1655,16 @@ async def upload_file(
             if not is_ee_enabled()
             else await _resolve_upload_project_id(user_id, project_id)
         )
+        raw_org_id = (
+            str(upload_org_id or "").replace("user-", "")
+            if upload_org_id and not str(upload_org_id).startswith("user-")
+            else None
+        )
         await _require_data_settings_owner(
-            user_id, project_id=str(project_id or "") or None
+            user_id,
+            organization_id=raw_org_id,
+            project_id=str(project_id or "") or None,
+            permissions=["data:upload", "data:create", "data:edit"],
         )
 
         # Validate file - check if file is None or missing
@@ -3266,27 +3338,29 @@ async def update_data_source_via_project_path(
     return await update_data_source(data_source_id, request, current_token)
 
 
-# Delete data source endpoint
-@router.delete("/sources/{data_source_id}")
-async def delete_data_source(
-    data_source_id: str, current_token: Union[str, dict] = Depends(JWTCookieBearer())
-):
-    """Delete data source with project-based access check"""
+# Delete data source endpoints
+async def _handle_delete_data_source(
+    data_source_id: str,
+    current_token: Union[str, dict],
+    project_id: Optional[str] = None,
+    organization_id: Optional[str] = None,
+) -> dict:
+    """Core deletion handler: verifies permissions, cleans up S3/storage, invalidates caches, and deactivates record."""
     try:
-        # Extract user ID from JWT token
-        user_id = None
-        if isinstance(current_token, dict):
-            user_id = str(
-                current_token.get("id")
-                or current_token.get("user_id")
-                or current_token.get("sub")
-                or ""
-            )
+        user_payload = (
+            current_token if isinstance(current_token, dict) else extract_user_payload(current_token)
+        )
+        user_id = str(
+            user_payload.get("id")
+            or user_payload.get("user_id")
+            or user_payload.get("sub")
+            or ""
+        )
 
         if not user_id:
             logger.warning("delete_data_source attempted without authenticated user")
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Authentication required"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required"
             )
 
         from src.db.session import async_session
@@ -3297,26 +3371,84 @@ async def delete_data_source(
                 user_id,
                 data_source_id,
                 DATA_SOURCE_PERMISSION_MANAGE,
+                project_id=project_id,
             )
 
-            # Soft-delete; list filters is_active == True so it disappears
+            # 1. Clean up S3 and storage objects
+            from src.modules.data.services.s3_storage_cleanup_service import (
+                delete_datasource_storage_files,
+            )
+
+            storage_res = await delete_datasource_storage_files(
+                data_source=data_source,
+                project_id=project_id or (str(data_source.project_id) if data_source.project_id else None),
+            )
+            logger.info("Storage cleanup for data source %s: %s", data_source_id, storage_res)
+
+            # 2. Invalidate pools and in-memory caches
+            try:
+                from src.modules.data.services.pool_invalidation import (
+                    dispose_direct_sql_pool_for_data_source,
+                )
+                dispose_direct_sql_pool_for_data_source(data_source_id)
+            except Exception as pool_err:
+                logger.warning("Pool invalidation failed: %s", pool_err)
+
+            try:
+                data_service.data_sources.pop(data_source_id, None)
+            except Exception:
+                pass
+
+            try:
+                invalidate_api_response_cache(data_source_id)
+                invalidate_query_result_cache(data_source_id)
+            except Exception:
+                pass
+
+            # 3. Soft-delete the database record
             data_source.is_active = False
             data_source.updated_at = datetime.now(timezone.utc)
             await db.commit()
 
-        from src.modules.data.services.pool_invalidation import (
-            dispose_direct_sql_pool_for_data_source,
-        )
-
-        dispose_direct_sql_pool_for_data_source(data_source_id)
-
-        return {"success": True, "message": "Data source deleted successfully"}
+        return {
+            "success": True,
+            "message": "Data source deleted successfully",
+            "s3_deleted": storage_res.get("s3_deleted", False),
+            "storage_details": storage_res,
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ Delete data source failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/sources/{data_source_id}")
+async def delete_data_source(
+    data_source_id: str, current_token: Union[str, dict] = Depends(JWTCookieBearer())
+):
+    """Delete data source with access check and S3/storage cleanup."""
+    return await _handle_delete_data_source(data_source_id=data_source_id, current_token=current_token)
+
+
+@router.delete(
+    "/api/organizations/{organization_id}/projects/{project_id}/data-sources/{data_source_id}"
+)
+async def delete_data_source_via_project_path(
+    organization_id: str,
+    project_id: str,
+    data_source_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Delete data source via project scoped route (frontend compatibility)."""
+    return await _handle_delete_data_source(
+        data_source_id=data_source_id,
+        current_token=current_token,
+        project_id=project_id,
+        organization_id=organization_id,
+    )
+
 
 
 # Integrated chat-to-chart workflow endpoint (LangGraph single entry path)
