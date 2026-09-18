@@ -28,6 +28,7 @@ import { usePermissions, Permission } from '@/hooks/usePermissions';
 import { useCanManageDataAccess } from '@/hooks/access/useCanManageDataAccess';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { fetchApi } from '@/utils/api';
+import { deleteDataSource } from '@/api/dataSources';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import type { DataSource as SettingsDataSource } from '../types';
 import type { TabComponentProps } from '../page';
@@ -42,7 +43,14 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
   const [editingSource, setEditingSource] = useState<SettingsDataSource | null>(null);
   const router = useRouter();
   const { hasPermission, loading: permissionsLoading } = usePermissions();
-  const canManageDataSettings = !permissionsLoading && hasPermission(Permission.ORG_DELETE);
+  const canManageDataSettings =
+    !permissionsLoading &&
+    (hasPermission(Permission.ORG_DELETE) ||
+      hasPermission(Permission.DATA_DELETE) ||
+      hasPermission(Permission.DATA_EDIT) ||
+      hasPermission(Permission.DATA_CREATE) ||
+      hasPermission(Permission.DATA_CONNECT) ||
+      hasPermission(Permission.DATA_UPLOAD));
   // Same rule as the Data page, and the same one the server enforces.
   const canManageAccess = useCanManageDataAccess();
 
@@ -104,7 +112,7 @@ export const DataSourcesTab: React.FC<TabComponentProps> = ({ onSetAction }) => 
       onOk: async () => {
         setDeletingId(record.id);
         try {
-          await fetchApi(`/api/data/sources/${record.id}`, { method: 'DELETE' });
+          await deleteDataSource(record.id);
           message.success(t('data_source_deleted'));
           await reloadDataSources();
         } catch (e) {

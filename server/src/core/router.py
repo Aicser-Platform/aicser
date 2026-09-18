@@ -88,6 +88,26 @@ async def get_data_source_proxy(
         )
 
 
+@api_router.delete("/api/data/sources/{data_source_id}")
+async def delete_data_source_proxy(
+    data_source_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Compatibility proxy for DELETE /data/sources/{id} with /api prefix."""
+    from src.modules.data.router import delete_data_source
+    try:
+        return await delete_data_source(data_source_id, current_token)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("delete_data_source_proxy failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "internal_error", "message": "Failed to delete data source"},
+        )
+
+
+
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
 if is_ee_enabled():
     try:
