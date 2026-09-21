@@ -179,17 +179,17 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
   } = useDataSources();
 
   const selectedDataSource = useMemo(
-    () => dataSources.find((ds) => ds.id === selectedDataSourceId) || dataSources[0] || null,
+    () => (selectedDataSourceId ? dataSources.find((ds) => ds.id === selectedDataSourceId) ?? null : null),
     [dataSources, selectedDataSourceId]
   );
 
   const selectedSchema = selectedDataSource ? dataSourceSchemas.get(selectedDataSource.id) : null;
 
   const selectAndLoad = useCallback(
-    async (id: string) => {
+    async (id: string | null | undefined) => {
       try {
-        await selectDataSource(id);
-        if (!dataSourceSchemas.has(id)) {
+        await selectDataSource(id ?? null);
+        if (id && !dataSourceSchemas.has(id)) {
           await fetchDataSourceSchema(id);
         }
       } catch (error) {
@@ -198,11 +198,6 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
     },
     [dataSourceSchemas, fetchDataSourceSchema, selectDataSource]
   );
-
-  useEffect(() => {
-    if (!selectedDataSource || selectedDataSourceId) return;
-    void selectAndLoad(selectedDataSource.id);
-  }, [selectAndLoad, selectedDataSource, selectedDataSourceId]);
 
   useEffect(() => {
     if (!selectedDataSource || selectedSchema || schemaLoading) return;
@@ -320,8 +315,11 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
                 style={{ width: '100%', marginTop: 8 }}
                 loading={isLoading}
                 showSearch
+                allowClear
+                onClear={() => void selectAndLoad(null)}
+                placeholder={t('select_data_source')}
                 optionFilterProp="label"
-                onChange={(id: string) => void selectAndLoad(id)}
+                onChange={(id: string | undefined) => void selectAndLoad(id ?? null)}
                 options={dataSources.map((ds) => ({
                   value: ds.id,
                   label: ds.name,

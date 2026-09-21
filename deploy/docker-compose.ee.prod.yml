@@ -2,7 +2,7 @@ name: aiser-ee-prod
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: aiser-postgres-ee-prod
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-aiser}
@@ -55,14 +55,17 @@ services:
     restart: unless-stopped
 
   server:
-    build:
+    build: &server-build
       context: ../server
       dockerfile: Dockerfile.prod
     container_name: aiser-server-ee-prod
-    environment:
+    environment: &server-env
       AISER_EDITION: enterprise
       AISER_EDITION_LICENSE_KEY: ${LICENSE_KEY:-}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-15}
+      DB_POOL_MAX_OVERFLOW: ${DB_POOL_MAX_OVERFLOW:-20}
+      LANGGRAPH_CHECKPOINT_POSTGRES_URI: postgresql://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
       POSTGRES_SERVER: postgres
       POSTGRES_DB: ${POSTGRES_DB:-aiser}
       POSTGRES_USER: ${POSTGRES_USER:-aiser}
@@ -81,6 +84,7 @@ services:
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       AUTH_PROVIDER: ${AUTH_PROVIDER:-local}
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required (public client URL, e.g. https://app.example.com)}
+      INTERNAL_FRONTEND_URL: ${INTERNAL_FRONTEND_URL:-http://client:3000}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -153,6 +157,25 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
+    restart: unless-stopped
+
+  # ARQ background worker — evaluates alert rules (cron, every minute), runs
+  # scheduled reports/BI sync/retention cleanup, and ingests knowledge documents.
+  worker:
+    build: *server-build
+    image: aiser-ee-server-prod
+    container_name: aiser-worker-ee-prod
+    environment: *server-env
+    volumes:
+      - server_ee_prod_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    entrypoint: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
     restart: unless-stopped
 
   client:

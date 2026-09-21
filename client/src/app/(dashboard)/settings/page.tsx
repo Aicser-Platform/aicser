@@ -292,26 +292,26 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'AI Agent',
     items: [
-      {
-        key: 'agent-skills',
-        label: 'Skills',
-        icon: <ThunderboltOutlined />,
-        eeOnly: true,
-        component: AgentSkillsTab,
-        description: 'Org SKILL.md instruction packs',
-        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
-        requiredFeature: 'agent_configuration',
-      },
-      {
-        key: 'agent-workflows',
-        label: 'Workflows',
-        icon: <ApartmentOutlined />,
-        eeOnly: true,
-        component: AgentWorkflowsTab,
-        description: 'Trigger → multi-step capability pipelines',
-        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
-        requiredFeature: 'agent_configuration',
-      },
+      // {
+      //   key: 'agent-skills',
+      //   label: 'Skills',
+      //   icon: <ThunderboltOutlined />,
+      //   eeOnly: true,
+      //   component: AgentSkillsTab,
+      //   description: 'Org SKILL.md instruction packs',
+      //   requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+      //   requiredFeature: 'agent_configuration',
+      // },
+      // {
+      //   key: 'agent-workflows',
+      //   label: 'Workflows',
+      //   icon: <ApartmentOutlined />,
+      //   eeOnly: true,
+      //   component: AgentWorkflowsTab,
+      //   description: 'Trigger → multi-step capability pipelines',
+      //   requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+      //   requiredFeature: 'agent_configuration',
+      // },
       {
         key: 'agent-capabilities',
         label: 'Capabilities',
@@ -406,7 +406,8 @@ const SettingsPage: React.FC = () => {
     organizationId: currentOrganization?.id,
   });
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEE });
-  const showHostedBilling = isEE && !isSelfHostDeploymentFromEnv() && !isSelfHost;
+  const isSelfHostMode = isSelfHostDeploymentFromEnv() || isSelfHost;
+  const showHostedBilling = isEE && !isSelfHostMode;
   const { planType, init: initSubscription } = useSubscriptionStore();
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -615,7 +616,7 @@ const SettingsPage: React.FC = () => {
           )}
 
           {/* Tab content */}
-          {activeItem?.requiredFeature ? (
+          {activeItem?.requiredFeature && !isSelfHostMode ? (
             <FeatureGate feature={activeItem.requiredFeature} key={activeTab}>
               <ActiveComponent onSetAction={handleSetAction} />
             </FeatureGate>

@@ -1230,7 +1230,7 @@ export default function NewDashboardStudio() {
               onCollapse={() => handleSidebarSectionChange(null)}
             >
               {sidebarSection === 'dashboards' && <DashboardsSection />}
-              {sidebarSection === 'data' && <DataSection />}
+              {/* {sidebarSection === 'data' && <DataSection />} */}
               {sidebarSection === 'modeling' && (
                 <DataModelingSection
                   onRelationshipSelect={setSelectedRelationship}
