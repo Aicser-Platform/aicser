@@ -3,6 +3,8 @@
 import React, { useCallback } from 'react';
 import type { PricingPlanKey } from '@/utils/pricingPlans';
 
+import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
+
 /**
  * Community / open-source: no billing integration — all plan gates open.
  * Shared CE components import this path. EE-only screens import `@/ee/hooks/usePlanRestrictions`.
@@ -19,18 +21,19 @@ export function usePlanRestrictions() {
   );
   const getRequiredPlan = useCallback((_feature: string) => 'Pro', []);
 
+  const isSelfHost = isSelfHostDeploymentFromEnv();
+
   return {
-    // Matches PricingPlanKey used everywhere else (useSubscriptionStore, pricingPlans) —
-    // this previously said 'community', a value that type doesn't even define, so any
-    // caller comparing planType against the other plan tiers silently never matched CE.
-    planType: 'free' as PricingPlanKey,
+    // In self-hosted mode, full enterprise capabilities are available.
+    planType: (isSelfHost ? 'enterprise' : 'free') as PricingPlanKey,
     loading: false,
     hasFeature,
     canPerformAction,
     getRequiredPlan,
     showUpgradePrompt,
     UpgradeModal,
-    isFreePlan: true,
+    isFreePlan: !isSelfHost,
     canUseFeature: hasFeature,
   };
 }
+

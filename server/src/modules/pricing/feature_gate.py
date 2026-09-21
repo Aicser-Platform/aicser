@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.modules.pricing.plans import get_plan_config, is_feature_available
+from src.core.deployment_mode import is_self_host_deployment
+from src.core.edition import is_ee_enabled
 
 
 async def get_user_organization_id(
@@ -37,6 +39,8 @@ async def org_entitlement(
     feature: str,
 ) -> Tuple[bool, str]:
     del organization_id, db
+    if is_self_host_deployment() and is_ee_enabled():
+        return True, ""
     if is_feature_available("free", feature):
         return True, ""
     return False, f"Feature '{feature}' is not available in Community Edition."
@@ -56,6 +60,8 @@ async def get_merged_plan_features_for_org(
     db: AsyncSession,
 ) -> dict[str, Any]:
     del organization_id, db
+    if is_self_host_deployment() and is_ee_enabled():
+        return dict(get_plan_config("enterprise").get("features") or {})
     return dict(get_plan_config("free").get("features") or {})
 
 
@@ -69,6 +75,8 @@ async def check_feature_for_org(
 
 async def get_organization_plan(organization_id: str, db: AsyncSession) -> Optional[str]:
     del organization_id, db
+    if is_self_host_deployment() and is_ee_enabled():
+        return "enterprise"
     return "free"
 
 

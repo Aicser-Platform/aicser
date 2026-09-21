@@ -10,7 +10,7 @@ import {
 import { useTranslations } from 'next-intl';
 import './StudioSidebar.css';
 
-export type SidebarSection = 'dashboards' | 'data' | 'modeling';
+export type SidebarSection = 'dashboards' | 'modeling';
 
 interface StudioSidebarRailProps {
   activeSection: SidebarSection | null;
@@ -21,7 +21,6 @@ export function StudioSidebarRail({ activeSection, onSectionChange }: StudioSide
   const t = useTranslations('dashboards_page');
   const sections: { key: SidebarSection; icon: React.ReactNode; label: string }[] = [
     { key: 'dashboards', icon: <AppstoreOutlined />, label: t('rail_dashboards') },
-    { key: 'data', icon: <DatabaseOutlined />, label: t('rail_data') },
     { key: 'modeling', icon: <ApartmentOutlined />, label: t('rail_modeling') },
   ];
 

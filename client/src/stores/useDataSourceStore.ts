@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools, persist } from 'zustand/middleware';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import * as api from '@/api/dataSources';
@@ -12,13 +12,35 @@ import {
 
 const CHAT_DS_PREF_KEY = 'userPreferences';
 
-function persistSelectedDataSourceId(id: string | null): void {
-  if (typeof window === 'undefined' || !id) return;
+export function getStoredDataSourcePreference(): { id: string | null; explicitlyCleared: boolean } {
+  if (typeof window === 'undefined') return { id: null, explicitlyCleared: false };
+  try {
+    const raw = localStorage.getItem(CHAT_DS_PREF_KEY);
+    if (!raw) return { id: null, explicitlyCleared: false };
+    const prefs = JSON.parse(raw);
+    if (!prefs || typeof prefs !== 'object') return { id: null, explicitlyCleared: false };
+    return {
+      id: typeof prefs.dataSourceId === 'string' && prefs.dataSourceId.trim() ? prefs.dataSourceId.trim() : null,
+      explicitlyCleared: prefs.explicitlyClearedDataSource === true,
+    };
+  } catch {
+    return { id: null, explicitlyCleared: false };
+  }
+}
+
+export function persistSelectedDataSourceId(id: string | null): void {
+  if (typeof window === 'undefined') return;
   try {
     const raw = localStorage.getItem(CHAT_DS_PREF_KEY);
     const prefs = raw ? JSON.parse(raw) : {};
     if (!prefs || typeof prefs !== 'object') return;
-    prefs.dataSourceId = id;
+    if (id && typeof id === 'string' && id.trim()) {
+      prefs.dataSourceId = id.trim();
+      prefs.explicitlyClearedDataSource = false;
+    } else {
+      delete prefs.dataSourceId;
+      prefs.explicitlyClearedDataSource = true;
+    }
     localStorage.setItem(CHAT_DS_PREF_KEY, JSON.stringify(prefs));
   } catch {
     /* ignore */
@@ -119,20 +141,34 @@ interface DataSourceUIState {
   setSchemaLoading: (loading: boolean) => void;
 }
 
+const initialPref = getStoredDataSourcePreference();
+
 export const useDataSourceStore = create<DataSourceUIState>()(
   devtools(
-    (set) => ({
-      selectedId: null,
-      explicitlyCleared: false,
-      filterType: null,
-      schemaCache: {},
-      schemaLoading: false,
-      select: (id) => set({ selectedId: id, explicitlyCleared: id === null }),
-      setFilter: (type) => set({ filterType: type }),
-      setSchemaCache: (id, schema) =>
-        set((s) => ({ schemaCache: { ...s.schemaCache, [id]: schema } })),
-      setSchemaLoading: (loading) => set({ schemaLoading: loading }),
-    }),
+    persist(
+      (set) => ({
+        selectedId: initialPref.explicitlyCleared ? null : initialPref.id,
+        explicitlyCleared: initialPref.explicitlyCleared,
+        filterType: null,
+        schemaCache: {},
+        schemaLoading: false,
+        select: (id) => {
+          persistSelectedDataSourceId(id);
+          set({ selectedId: id, explicitlyCleared: id === null });
+        },
+        setFilter: (type) => set({ filterType: type }),
+        setSchemaCache: (id, schema) =>
+          set((s) => ({ schemaCache: { ...s.schemaCache, [id]: schema } })),
+        setSchemaLoading: (loading) => set({ schemaLoading: loading }),
+      }),
+      {
+        name: 'datasource-ui-storage',
+        partialize: (state) => ({
+          selectedId: state.selectedId,
+          explicitlyCleared: state.explicitlyCleared,
+        }),
+      }
+    ),
     { name: 'DataSourceStore' }
   )
 );
@@ -165,18 +201,22 @@ export function useDataSources() {
   const dataSources: DataSource[] = data ?? [];
 
   // Auto-select a project data source when none is selected (or selection is stale after project switch).
-  // Skipped right after the user explicitly cleared the selection — otherwise
-  // this effect re-fires on the very next render (selectedId just went null)
-  // and immediately re-selects the first source, making the clear button a
-  // no-op from the user's perspective.
+  // Skipped right after the user explicitly cleared the selection (persisted across refreshes) —
+  // otherwise this effect re-fires on the very next render or refresh (selectedId just went null)
+  // and immediately re-selects the first source, making the clear button a no-op across refreshes.
   useEffect(() => {
     if (dataSources.length === 0) {
       if (selectedId) setSelectedId(null);
       return;
     }
-    if (explicitlyCleared) return;
+    const storedPref = getStoredDataSourcePreference();
+    if (explicitlyCleared || storedPref.explicitlyCleared) return;
     const stillValid = selectedId && dataSources.some((ds) => ds.id === selectedId);
     if (stillValid) return;
+    if (storedPref.id && dataSources.some((ds) => ds.id === storedPref.id)) {
+      setSelectedId(storedPref.id);
+      return;
+    }
     const preferred =
       dataSources.find((ds) => ds.connection_status === 'connected') ?? dataSources[0];
     if (preferred?.id) {
@@ -186,7 +226,13 @@ export function useDataSources() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteDataSource(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: dataSourceKeys.all }),
+    onSuccess: (_, deletedId) => {
+      qc.invalidateQueries({ queryKey: dataSourceKeys.all });
+      if (selectedId === deletedId) {
+        setSelectedId(null);
+        persistSelectedDataSourceId(null);
+      }
+    },
   });
 
   const fetchDataSourceSchema = useCallback(

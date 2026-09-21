@@ -103,14 +103,14 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
         { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
       ],
     },
-    {
-      kind: 'group',
-      key: 'grp-operate',
-      labelKey: NAV_LABEL_KEYS['grp-operate'],
-      children: [
-        { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
-      ],
-    },
+    // {
+    //   kind: 'group',
+    //   key: 'grp-operate',
+    //   labelKey: NAV_LABEL_KEYS['grp-operate'],
+    //   children: [
+    //     { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
+    //   ],
+    // },
   ];
 }
 
