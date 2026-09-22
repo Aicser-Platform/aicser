@@ -709,7 +709,6 @@ async def sync_hubspot_object(
         object_api_name, result.get("rows_read"), result.get("rows_written"),
     )
     return result
-        return {"success": False, "error": str(exc)}
 
 
 async def run_pipeline(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:

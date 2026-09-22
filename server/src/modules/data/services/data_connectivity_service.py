@@ -3690,100 +3690,16 @@ class DataConnectivityService:
 
         return {"success": True, "data_sources": sources, "count": len(sources)}
 
+    async def delete_data_source_async(self, data_source_id: str) -> Dict[str, Any]:
+        """Delete data source and clean up S3, local storage, and database records."""
+
         try:
-            data_source = self.data_sources.get(data_source_id)
-
-            # Attempt DB deletion first (if persisted)
-            try:
-                import asyncio
-
-                # Use async_session factory directly (get_async_session is an async generator for FastAPI deps)
-                from src.db.session import async_session
-                from src.modules.data.models import DataSource, ProjectDataSource
-
-                async def _delete_from_db():
-                    async with async_session() as db:
-                        from sqlalchemy import delete, select
-
-                        # First, fetch the data source to get file_path/project_id for object storage deletion
-                        try:
-                            result = await db.execute(
-                                select(DataSource).where(
-                                    DataSource.id == data_source_id
-                                )
-                            )
-                            db_source = result.scalar_one_or_none()
-
-                            # Delete stored file if it's a file source
-                            if db_source:
-                                ds_type = getattr(db_source, "type", None)
-                                ds_file_path = getattr(db_source, "file_path", None)
-
-                                if ds_type == "file" and ds_file_path:
-                                    file_path = str(ds_file_path)
-                                    # Check if file_path is an object_key (new or legacy paths)
-                                    is_blob_key = (
-                                        file_path.startswith("orgs/")
-                                        or file_path.startswith("projects/")
-                                        or file_path.startswith("org_files/")
-                                        or file_path.startswith("project_files/")
-                                        or file_path.startswith("user_files/")
-                                    )
-                                    if is_blob_key:
-                                        try:
-                                            storage_service = (
-                                                UploadDatasourceStorageService()
-                                            )
-                                            project_id_str = (
-                                                str(db_source.project_id)
-                                                if db_source.project_id
-                                                else ""
-                                            )
-                                            await storage_service.delete_file(
-                                                file_path, project_id_str
-                                            )
-                                            logger.info(
-                                                f"✅ Deleted file from datasource storage during data source deletion: {file_path}"
-                                            )
-                                        except Exception as e:
-                                            logger.warning(
-                                                f"⚠️ Failed to delete file from datasource storage for data_source {data_source_id}: {e}"
-                                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"⚠️ Failed to fetch data source for file deletion: {e}"
-                            )
-
-                        # Remove project links
-                        try:
-                            await db.execute(
-                                delete(ProjectDataSource).where(
-                                    ProjectDataSource.data_source_id == data_source_id
-                                )
-                            )
-                        except Exception:
-                            pass
-                        # Remove data source row
-                        await db.execute(
-                            delete(DataSource).where(DataSource.id == data_source_id)
-                        )
-                        await db.commit()
-
-                # Run async deletion in current loop if available
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        fut = asyncio.ensure_future(_delete_from_db())
-                        # fire-and-forget
-                    else:
-                        loop.run_until_complete(_delete_from_db())
-                except RuntimeError:
-                    # No loop, run new loop
-                    asyncio.run(_delete_from_db())
-            except Exception as db_del_err:
-                logger.warning(
-                    f"DB deletion for data source {data_source_id} skipped/failed: {db_del_err}"
-                )
+            from src.modules.data.models import DataSource, ProjectDataSource
+            from src.db.session import async_session
+            from sqlalchemy import delete, select
+            from src.modules.data.services.s3_storage_cleanup_service import (
+                delete_datasource_storage_files,
+            )
 
             storage_details = {}
             async with async_session() as db:
@@ -3816,80 +3732,31 @@ class DataConnectivityService:
             # Clean up in-memory entry if present
             data_source = self.data_sources.pop(data_source_id, None)
             if data_source:
-                # Clean up file if it's a file-based source
-                if data_source.get("type") == "file" and "file_path" in data_source:
-                    file_path = data_source["file_path"]
-                    user_id = data_source.get("user_id")
-
-                    # Check if file_path is an object_key (new or legacy paths)
-                    is_blob_key = file_path and (
-                        file_path.startswith("orgs/")
-                        or file_path.startswith("projects/")
-                        or file_path.startswith("org_files/")
-                        or file_path.startswith("project_files/")
-                        or file_path.startswith("user_files/")
-                    )
-                    if is_blob_key:
-                        project_id = data_source.get("project_id") or user_id
-                        if project_id:
-                            try:
-                                import asyncio
-
-                                storage_service = UploadDatasourceStorageService()
-
-                                async def _delete_from_storage():
-                                    await storage_service.delete_file(
-                                        file_path, str(project_id)
-                                    )
-
-                                # Run async deletion
-                                try:
-                                    loop = asyncio.get_event_loop()
-                                    if loop.is_running():
-                                        asyncio.ensure_future(_delete_from_storage())
-                                    else:
-                                        loop.run_until_complete(_delete_from_storage())
-                                except RuntimeError:
-                                    asyncio.run(_delete_from_storage())
-                                logger.info(
-                                    f"✅ Deleted file from datasource storage (in-memory cleanup): {file_path}"
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    f"⚠️ Failed to delete file from datasource storage (in-memory): {e}"
-                                )
-                        else:
-                            logger.warning(
-                                f"⚠️ Cannot delete file from datasource storage: project_id missing in data_source {data_source_id}"
-                            )
-                    elif file_path and os.path.exists(file_path):
-                        # Legacy: local file path (shouldn't happen with new uploads, but handle for backwards compatibility)
+                if not storage_details:
+                    try:
+                        storage_details = await delete_datasource_storage_files(data_source)
+                    except Exception:
+                        pass
+                if data_source.get("type") == "database" and "connection" in data_source:
+                    conn = data_source["connection"]
+                    if hasattr(conn, "close"):
                         try:
-                            os.unlink(file_path)
-                            logger.info(f"✅ Deleted local file: {file_path}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Failed to delete local file: {e}")
-                # Close database connection if tracked
-                if (
-                    data_source.get("type") == "database"
-                    and "connection" in data_source
-                ):
-                    connection = data_source["connection"]
-                    if hasattr(connection, "close"):
-                        try:
-                            connection.close()
+                            conn.close()
                         except Exception:
                             pass
 
             from src.modules.data.services.pool_invalidation import (
                 dispose_direct_sql_pool_for_data_source,
             )
-
             dispose_direct_sql_pool_for_data_source(data_source_id)
 
-            return {"success": True, "message": "Data source deleted successfully"}
+            return {
+                "success": True,
+                "message": "Data source deleted successfully",
+                "storage_details": storage_details,
+            }
         except Exception as e:
-            logger.error(f"Failed to delete data source {data_source_id}: {e}")
+            logger.error("Failed to delete data source %s: %s", data_source_id, e)
             return {"success": False, "error": str(e)}
 
     def delete_data_source(self, data_source_id: str) -> Dict[str, Any]:

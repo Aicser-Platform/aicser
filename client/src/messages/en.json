@@ -3538,6 +3538,7 @@
     "error_show_details": "Show details",
     "error_details_title": "Error details",
     "executive_banner_dismiss": "Dismiss"
+  },
   "data_platform": {
     "upgrade_title": "Pro or higher required",
     "upgrade_desc": "Integrations (semantic layer, BI export, catalog, lakehouse, streams) require Pro, Team, or Enterprise. Refresh after upgrading.",
