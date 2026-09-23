@@ -224,8 +224,21 @@ export function useConversationStore() {
     setCurrentConversationId: (_id?: string | null) => {},
     sendMessage: async (..._args: unknown[]) => {},
     resetStore: () => {},
+    reset: () => {},
   };
 }
+(useConversationStore as any).getState = () => ({
+  conversations: [] as unknown[],
+  currentConversationId: null as string | null,
+  messages: new Map<string, unknown[]>(),
+  isLoading: false,
+  loadConversations: async () => {},
+  createConversation: async (_payload?: unknown) => null,
+  setCurrentConversationId: (_id?: string | null) => {},
+  sendMessage: async (..._args: unknown[]) => {},
+  resetStore: () => {},
+  reset: () => {},
+});
 export function useOnboardingStore() {
   return {
     status: null,

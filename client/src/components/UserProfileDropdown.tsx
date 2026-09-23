@@ -29,6 +29,7 @@ import { fetchApi } from '@/utils/api';
 import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
 import { getBuildTimeAiserVersionLabel } from '@/utils/appVersion';
+import { clearLocalStorageOnLogout } from '@/utils/resetWorkspaceScope';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -412,9 +413,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       onClick: async () => {
         try {
           await logout();
+          clearLocalStorageOnLogout();
           router.replace('/login');
         } catch (error) {
           void error;
+          clearLocalStorageOnLogout();
           // Force redirect even if logout fails
           if (typeof window !== 'undefined') {
             window.location.replace('/login');
