@@ -4,6 +4,11 @@ export class IFileUpload {
     storage_type: string;
     file_size: number;
     uuid_filename: string;
+    rowCount?: number | null;
+    schema?: unknown;
+    preview?: unknown;
+    uploadedAt?: string | null;
+    onboardingSessionId?: string | null;
 
     constructor(
         filename: string,

@@ -59,6 +59,7 @@ from src.core.middleware import SensitiveQueryParamLogFilter  # noqa: E402
 logging.getLogger("uvicorn.access").addFilter(SensitiveQueryParamLogFilter())
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response

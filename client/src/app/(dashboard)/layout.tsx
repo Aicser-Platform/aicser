@@ -98,10 +98,7 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ c
     <ProtectedRoute>
       <SkipToContentLink />
       <SubscriptionInitializer />
-      <TrialExpiryBanner />
-      <CommandPalette />
-      <GlobalPricingModal />
-      <CustomLayout>
+      <CustomLayout banner={<TrialExpiryBanner />}>
         {children}
       </CustomLayout>
       <BillingSuccessHandler />

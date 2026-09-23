@@ -9,6 +9,9 @@
 # testing
 /coverage
 .vitest/
+/test-results/
+e2e/.auth/
+
 
 # next.js
 /.next/

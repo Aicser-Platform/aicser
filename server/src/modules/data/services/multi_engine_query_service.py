@@ -880,6 +880,17 @@ class MultiEngineQueryService:
         except Exception:
             resolved = dialect
 
+        # A pipeline-managed source is read from the lakehouse, where the query
+        # may reference DuckDB's "data" table while the policy is configured
+        # against the source's real table name. Both names identify the same
+        # rows (the loader registers a view under the real name), so the
+        # predicate is registered under both rather than silently missing.
+        table_name_aliases: Dict[str, str] = {}
+        if (data_source.get("type") or "").lower() == "lakehouse_iceberg":
+            real_table = (data_source.get("source_table") or "").strip()
+            if real_table and real_table.lower() != "data":
+                table_name_aliases["data"] = real_table
+
         try:
             return await self._apply_sql_rls(
                 query,
@@ -889,6 +900,7 @@ class MultiEngineQueryService:
                 project_id=access.project_id,
                 token_payload=dict(access.token_payload or {}),
                 dialect=resolved,
+                table_name_aliases=table_name_aliases or None,
             )
         except RowSecurityIdentityRequired:
             raise
@@ -921,6 +933,38 @@ class MultiEngineQueryService:
         rather than by callers, so chat, dashboards, charts and the HTTP handlers
         cannot reach data by a route that skips it.
         """
+        # Resolve the source FIRST. A pipeline-managed source is read from the
+        # lakehouse, so row/column security must be computed against the source
+        # that will actually be queried — that dict determines the SQL dialect
+        # the predicates are rendered in and the table names they are matched
+        # against. Enforcing against the original live-database dict and only
+        # then switching engines would render predicates for the wrong dialect.
+        from src.modules.data.services.query_routing import (LakehouseNotReady,
+                                                             resolve_query_source)
+
+        try:
+            data_source = await resolve_query_source(data_source)
+        except LakehouseNotReady as exc:
+            if exc.last_run_status in ("queued", "running"):
+                message = (
+                    "This data source's analytics pipeline is still syncing its "
+                    "first load. Try again shortly."
+                )
+            else:
+                message = (
+                    "This data source's analytics pipeline hasn't produced data "
+                    "yet (last run: "
+                    f"{exc.last_run_status or 'never run'}). Contact an admin to "
+                    "check the pipeline."
+                )
+            return {
+                "success": False,
+                "error": message,
+                "data": [],
+                "columns": [],
+                "row_count": 0,
+            }
+
         try:
             query, columns_omitted = await self._enforce_column_security(
                 query, data_source, identity
@@ -1178,6 +1222,11 @@ class MultiEngineQueryService:
                     except Exception as _e:
                         logger.error(f"❌ Failed to rewrite query table name: {_e}", exc_info=True)
                         # Don't fail the query, but log the error for debugging
+
+            # NOTE: pipeline-managed database sources are routed to the lakehouse
+            # by ``execute_query`` before row/column security runs, so by the time
+            # this method is reached ``data_source`` is already the resolved dict.
+            # Resolving here instead would hand RLS/CLS the live-database source.
 
             # Select engine if not specified
             if not engine:
@@ -1631,6 +1680,8 @@ class DuckDBEngine(BaseQueryEngine):
                             pass
                         google_sheets_temp_path = None
                     raise
+            elif data_source.get("type") == "lakehouse_iceberg":
+                await self._load_lakehouse_iceberg(conn, data_source)
             elif is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 # MULTI-FILE SUPPORT: Detect if query references multiple files and load them all
                 detected_file_ids = self._detect_file_references(query)
@@ -1892,6 +1943,23 @@ class DuckDBEngine(BaseQueryEngine):
         )
         blob_file_format = (storage_format or file_format or "csv").lower()
 
+        # Fast path: a Bronze-backed source is read in place; no blob download.
+        storage_uri = (data_source or {}).get("storage_uri") or ""
+        if storage_uri.startswith("s3://"):
+            try:
+                from src.modules.pipeline.ingest.duckdb_s3 import (
+                    bronze_scan_sql,
+                    configure_duckdb_s3,
+                )
+
+                if configure_duckdb_s3(conn):
+                    conn.execute(f"CREATE OR REPLACE TABLE data AS {bronze_scan_sql(storage_uri)}")
+                    logger.info("Loaded Bronze asset in place from %s", storage_uri)
+                    data_source["analysis_based_on_sample_only"] = False
+                    return
+            except Exception as exc:  # noqa: BLE001 - any failure falls through to the blob path
+                logger.warning("Bronze in-place load failed, using blob path: %s", exc)
+
         # Local file path (e.g. temp file from Google Sheet CSV): load directly. No blob or user_id needed.
         if file_path and isinstance(file_path, str) and os.path.isfile(file_path):
             try:
@@ -1992,6 +2060,31 @@ class DuckDBEngine(BaseQueryEngine):
         # This would connect to the source database and load data
         # For now, we'll simulate loading data
         pass
+
+    async def _load_lakehouse_iceberg(self, conn, data_source: Dict[str, Any]) -> None:
+        """Load a pipeline-managed source's Gold Iceberg table as the single "data"
+        table — the same convention file/sheet sources use, so no query rewriting
+        or schema-shape special-casing is needed anywhere downstream."""
+        from src.modules.pipeline.ingest.duckdb_s3 import (
+            configure_duckdb_iceberg, configure_duckdb_s3, iceberg_scan_sql)
+
+        configure_duckdb_s3(conn)
+        configure_duckdb_iceberg(conn)
+
+        storage_uri = data_source.get("storage_uri")
+        if not storage_uri:
+            raise ValueError("lakehouse_iceberg source is missing storage_uri")
+
+        scan_sql = iceberg_scan_sql(storage_uri)
+        conn.execute(f"CREATE TABLE data AS {scan_sql}")
+
+        # SQL generated against the source's real schema (chart_service builds
+        # exactly that) references the pipeline's configured table name, so
+        # expose the same rows under that name too.
+        real_name = data_source.get("source_table")
+        if real_name and real_name != "data":
+            safe_name = real_name.replace('"', '""')
+            conn.execute(f'CREATE VIEW "{safe_name}" AS SELECT * FROM data')
 
 
 class SparkEngine(BaseQueryEngine):
@@ -2504,6 +2597,103 @@ class DirectSQLEngine(BaseQueryEngine):
         except Exception as e:
             logger.error(f"❌ Direct SQL query execution failed: {str(e)}")
             return {"success": False, "error": str(e)}
+
+
+class DirectSQLArrowExecutor:
+    """A CDCSource-compatible executor bound to one data source's live connection —
+    used only by the pipeline's watermark/CDC ingest path (server/ee/modules/pipeline/),
+    never by chat/chart queries (those stay on DirectSQLEngine.execute).
+
+    Deliberately does not share code with DirectSQLEngine.execute: that method is the
+    production query path for every already-connected database customer today, and this
+    narrower helper keeps changes here from risking it.
+
+    Supports Postgres, MySQL and SQL Server (the dialects SQLAlchemy connects to directly).
+    ClickHouse (HTTP-only) is not supported here yet.
+    """
+
+    def __init__(self, data_source: Dict[str, Any]):
+        self.data_source = data_source
+
+    def _connection_uri(self) -> str:
+        conn_info = (
+            self.data_source.get('connection_info')
+            or self.data_source.get('connection_config')
+            or self.data_source.get('metadata')
+            or self.data_source.get('config')
+            or {}
+        )
+        if isinstance(conn_info, str):
+            try:
+                conn_info = json.loads(conn_info)
+            except Exception:
+                conn_info = {}
+        if isinstance(conn_info, dict):
+            try:
+                from src.modules.data.utils.credentials import decrypt_credentials
+                conn_info = decrypt_credentials(conn_info)
+            except Exception:
+                pass
+
+        conn_uri = conn_info.get('uri') or conn_info.get('connection_string')
+        if conn_uri:
+            return conn_uri
+
+        db_type = (
+            conn_info.get('db_type') or conn_info.get('type')
+            or self.data_source.get('db_type') or 'postgresql'
+        ).lower()
+        if db_type == 'clickhouse':
+            raise NotImplementedError(
+                "the pipeline ingest path does not support ClickHouse (HTTP-only) "
+                "sources yet"
+            )
+
+        user = conn_info.get('username') or conn_info.get('user')
+        password = conn_info.get('password') or conn_info.get('pass')
+        host = conn_info.get('host') or conn_info.get('hostname')
+        port = conn_info.get('port')
+        database = (
+            conn_info.get('database') or conn_info.get('db')
+            or conn_info.get('database_name') or conn_info.get('initial_database')
+        )
+        if not host or not database:
+            raise ValueError(
+                "Pipeline ingest requires a database connection with 'host' and "
+                "'database' (or a full 'uri'/'connection_string') in connection_info"
+            )
+
+        scheme = {
+            'postgresql': 'postgresql+psycopg2',
+            'postgres': 'postgresql+psycopg2',
+            'mysql': 'mysql+pymysql',
+            'sqlserver': 'mssql+pyodbc',
+            'mssql': 'mssql+pyodbc',
+        }.get(db_type, db_type)
+
+        from urllib.parse import quote_plus
+        auth = f"{quote_plus(user)}:{quote_plus(password or '')}@" if user else ""
+        hostpart = f"{host}:{port}" if port else host
+        return f"{scheme}://{auth}{hostpart}/{database}"
+
+    async def fetch_arrow(self, sql: str, params: Dict[str, Any]) -> List[Any]:
+        import pyarrow as pa
+
+        from src.modules.data.services.direct_sql_pool import get_sync_engine
+
+        conn_uri = self._connection_uri()
+
+        def run_sync() -> List[Dict[str, Any]]:
+            eng = get_sync_engine(self.data_source, conn_uri)
+            with eng.connect() as conn:
+                result = conn.execute(sa.text(sql), params or {})
+                cols = list(result.keys())
+                return [dict(zip(cols, row)) for row in result.fetchall()]
+
+        rows = await asyncio.to_thread(run_sync)
+        if not rows:
+            return []
+        return pa.Table.from_pylist(rows).to_batches()
 
 
 class PandasEngine(BaseQueryEngine):
