@@ -256,6 +256,42 @@ if is_ee_enabled():
         logger.warning("Catalog router not loaded: %s", _err)
 
     try:
+        from src.modules.pipeline.connectors.router import router as connectors_router
+        api_router.include_router(
+            connectors_router, prefix="/api", tags=["connectors"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Connectors router not loaded: %s", _err)
+
+    try:
+        from src.modules.pipeline.sync.router import router as sync_router
+        api_router.include_router(
+            sync_router, prefix="/api", tags=["pipeline-sync"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Sync router not loaded: %s", _err)
+
+    try:
+        from src.modules.pipeline.gold.router import router as gold_router
+        api_router.include_router(
+            gold_router, prefix="/api", tags=["gold-serving"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Gold serving router not loaded: %s", _err)
+
+    try:
+        from src.modules.pipeline.dbt.router import router as dbt_router
+        api_router.include_router(
+            dbt_router, prefix="/api", tags=["dbt-semantic-layer"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("dbt and MetricFlow router not loaded: %s", _err)
+
+    try:
         from ee.modules.schedule_email.router import router as schedule_email_router
         api_router.include_router(
             schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"],
