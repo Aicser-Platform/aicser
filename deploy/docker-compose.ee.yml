@@ -26,6 +26,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
@@ -37,6 +38,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.5
@@ -74,6 +76,34 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     restart: unless-stopped
 
+  # Drive-time and routing for location analysis: Valhalla (MIT) on OpenStreetMap roads
+  # (© OpenStreetMap contributors, ODbL). The first start downloads the region below and builds
+  # its road graph (minutes for one country; larger regions need more memory and time); later
+  # starts reuse the built tiles. Change ROUTING_OSM_PBF_URL to cover your region, e.g. several
+  # comma-separated Geofabrik extracts, then remove the volume to rebuild.
+  routing:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:3.5.1
+    container_name: aiser-routing-ee
+    environment:
+      tile_urls: ${ROUTING_OSM_PBF_URL:-https://download.geofabrik.de/asia/cambodia-latest.osm.pbf}
+      serve_tiles: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      build_transit: "False"
+      force_rebuild: "False"
+      use_tiles_ignore_pbf: "True"
+      server_threads: ${ROUTING_THREADS:-4}
+    volumes:
+      - routing_ee_tiles:/custom_files
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8002/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: unless-stopped
+
   server:
     build: &server-build
       context: ../server
@@ -81,7 +111,21 @@ services:
       args:
         AISER_VERSION: ${AISER_VERSION:-1.1.1}
     container_name: aiser-server-ee
+    # Optional EE settings documented in .env.ee.example (decision layer, router fallbacks,
+    # hedging, residency, SCIM, forecasting, audit/SIEM…) go in deploy/.env.ee (git-ignored).
+    # env_file passes exactly what is set — no empty-string placeholders overriding code
+    # defaults — and the explicit `environment` below still wins. Deliberately not .env:
+    # that file also feeds older stacks (DEBUG, AUTH_PROVIDER=auth_service, …).
+    env_file: &server-env-file
+      - path: .env.ee
+        required: false
     environment: &server-env
+      ROUTING_URL: ${ROUTING_URL:-http://routing:8002}
+      WAREHOUSE_COMPUTE_URL: ${WAREHOUSE_COMPUTE_URL:-http://warehouse-compute:8100}
+      # Scheduled notebook runs (the notebook-runner service); off while the key is empty.
+      NOTEBOOK_RUNNER_URL: ${NOTEBOOK_RUNNER_URL:-http://notebook-runner:8200}
+      NOTEBOOK_RUNNER_KEY: ${NOTEBOOK_RUNNER_KEY:-}
+      TRINO_URL: ${TRINO_URL:-}
       APP_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_VERSION: ${AISER_VERSION:-1.1.1}
       AISER_EDITION: enterprise
@@ -276,6 +320,8 @@ services:
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_uploads:/app/uploads
+      # Embedding model weights survive redeploys (first search otherwise re-downloads ~400 MB).
+      - hf_model_cache:/app/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -286,6 +332,8 @@ services:
       redis:
         condition: service_healthy
     entrypoint:
+      # Fix volume ownership as root, then run everything below as the unprivileged app user.
+      - /app/scripts/docker-entrypoint.sh
       - /bin/sh
       - -c
       - |
@@ -316,6 +364,7 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    networks: [default, runner]
 
   # ARQ background worker — evaluates alert rules (cron, every minute), runs
   # scheduled reports/BI sync/retention cleanup (see src/shared/jobs/worker.py).
@@ -326,9 +375,11 @@ services:
     build: *server-build
     image: aiser-ee-server
     container_name: aiser-worker-ee
+    env_file: *server-env-file
     environment: *server-env
     volumes:
       - server_ee_uploads:/app/uploads
+      - hf_model_cache:/app/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
@@ -336,7 +387,89 @@ services:
         condition: service_healthy
       server:
         condition: service_healthy
-    entrypoint: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+    entrypoint: ["/app/scripts/docker-entrypoint.sh", "python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+    restart: unless-stopped
+    networks: [default, runner]
+
+  # Scheduled notebook runs: Python in WebAssembly (Pyodide) on Deno, the same engine as the
+  # browser notebook. Sandboxed — no secrets but its own key, read-only, unprivileged, and on an
+  # internal network that reaches only the Aicser server (every data call goes back through it,
+  # as the notebook's owner). Set NOTEBOOK_RUNNER_KEY in deploy/.env.ee to turn it on.
+  notebook-runner:
+    build:
+      context: ./notebook-runner
+      additional_contexts:
+        notebook: ../client/public/notebook
+        bridge: ../client/src/app/(dashboard)/notebooks/components
+    image: aiser-ee-notebook-runner
+    container_name: aiser-notebook-runner-ee
+    environment:
+      RUNNER_KEY: ${NOTEBOOK_RUNNER_KEY:-}
+      RUNNER_CALLBACK_HOST: server:8000
+      DENO_DIR: /tmp/deno
+    networks: [runner]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${NOTEBOOK_RUNNER_MEMORY:-3g}
+    pids_limit: 128
+    restart: unless-stopped
+
+  # Warehouse compute pool: stateless DuckDB nodes that run "pool" warehouses' queries away
+  # from the app server. Gold tables stay in object storage, so scale out by raising
+  # WAREHOUSE_COMPUTE_REPLICAS (or `docker compose up -d --scale warehouse-compute=N`); the
+  # service name resolves to every replica and busy nodes hand work to the next one.
+  warehouse-compute:
+    image: aiser-ee-server
+    env_file: *server-env-file
+    environment:
+      <<: *server-env
+      WAREHOUSE_NODE_SLOTS: ${WAREHOUSE_NODE_SLOTS:-2}
+    volumes:
+      - server_ee_uploads:/app/uploads
+    depends_on:
+      server:
+        condition: service_healthy
+    entrypoint: ["/app/scripts/docker-entrypoint.sh", "python", "-m", "uvicorn", "ee.modules.warehouse.compute_app:app", "--host", "0.0.0.0", "--port", "8100"]
+    deploy:
+      replicas: ${WAREHOUSE_COMPUTE_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: "${WAREHOUSE_NODE_CPUS:-2}"
+          memory: ${WAREHOUSE_NODE_MEMORY:-4g}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8100/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # Optional distributed engine for Gold tables larger than one machine: Trino (Apache-2.0)
+  # reading the same Iceberg catalog. Start with `--profile trino`; add workers with the
+  # coordinator's discovery settings in deploy/trino (see the README there).
+  trino:
+    image: trinodb/trino:476
+    container_name: aiser-trino-ee
+    profiles:
+      - trino
+    environment:
+      AICSER_CATALOG_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aiser_world_db}?currentSchema=iceberg_catalog,public
+      AICSER_CATALOG_USER: ${POSTGRES_USER:-postgres}
+      AICSER_CATALOG_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      AICSER_S3_ENDPOINT: ${S3_ENDPOINT_URL:-}
+      AICSER_S3_REGION: ${S3_REGION:-us-east-1}
+      AICSER_S3_KEY: ${S3_ACCESS_KEY_ID:-}
+      AICSER_S3_SECRET: ${S3_SECRET_ACCESS_KEY:-}
+    mem_limit: ${TRINO_MEMORY:-2g}
+    volumes:
+      - ./trino/entrypoint.sh:/aicser/entrypoint.sh:ro
+      - server_ee_uploads:/app/uploads:ro
+    entrypoint: ["/bin/bash", "/aicser/entrypoint.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
   client:
@@ -392,8 +525,14 @@ volumes:
   redis_ee_data:
   server_ee_uploads:
   ollama_ee_models:
+  hf_model_cache:
+  routing_ee_tiles:
 
 networks:
   default:
     name: aiser-ee-network
     driver: bridge
+  # No route out: only the notebook runner and the server/worker that talk to it.
+  runner:
+    name: aiser-ee-runner-network
+    internal: true

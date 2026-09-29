@@ -49,6 +49,8 @@ def encrypt_credentials(config: Dict[str, Any]) -> Dict[str, Any]:
         "password", "api_key", "token", "secret_access_key", "access_key_id", "connection_string", "credentials",
         # OAuth2 delegated-flow fields (server/src/modules/data/models.py OAuthConnectorConnection)
         "client_secret", "access_token", "refresh_token",
+        # Warehouse secrets: a BigQuery service-account key, and a full URL that can embed a password.
+        "credentials_json", "service_account_json", "uri",
     }
     out = dict(config)
     for k in list(out.keys()):

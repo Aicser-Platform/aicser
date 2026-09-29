@@ -149,10 +149,20 @@ const nextConfig = {
 
   productionBrowserSourceMaps: false,
 
+  // Real-time collaboration (socket.io) through this app's own address, so browsers never need
+  // the server's internal name. Rewrites also carry the WebSocket upgrade; socket.io falls
+  // back to long-polling if a proxy in front doesn't.
+  async rewrites() {
+    const target = (process.env.API_TARGET || 'http://server:8000').replace(/\/$/, '');
+    return [{ source: '/socket.io/:path*', destination: `${target}/socket.io/:path*` }];
+  },
+
   async redirects() {
     return [
       { source: '/ai-search', destination: '/chat?mode=ai_search', permanent: false },
       { source: '/ai-analytics', destination: '/chat', permanent: false },
+      // The chart library lives in the Chart Designer; /charts is where people expect it.
+      { source: '/charts', destination: '/chart-designer', permanent: false },
     ];
   },
 

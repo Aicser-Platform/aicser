@@ -1,7 +1,12 @@
-# Environment
+# Environment (any .env.<name> holds real settings; the .example templates are kept)
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+!.env.*.example
+# npm auth config can carry a publish token
+.npmrc
 
 # Python
 __pycache__/
@@ -23,6 +28,9 @@ venv/
 htmlcov/
 .coverage
 .coverage.*
+coverage/
+.nyc_output/
+.uv/
 
 # Node / Next.js
 node_modules/
@@ -37,7 +45,19 @@ out/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.eslintcache
+.parcel-cache/
+.vite/
 *.tsbuildinfo
+# npm pack output (packages/embed release tarballs)
+*.tgz
+# Playwright / Vitest browser output
+test-results/
+playwright-report/
+blob-report/
+storybook-static/
 
 # OS
 .DS_Store

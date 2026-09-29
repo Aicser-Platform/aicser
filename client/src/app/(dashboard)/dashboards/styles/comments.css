@@ -1,0 +1,132 @@
+/* Comment threads panel (dashboards and notebooks share it: DashboardCollabCommentsPanel). */
+.dashboard-collab-comments-anchor {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 45;
+}
+
+.dashboard-collab-comments-trigger {
+  box-shadow: none;
+}
+
+.dashboard-collab-comments-trigger--toolbar {
+  box-shadow: none;
+}
+
+.dashboard-comments-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.dashboard-comments-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboard-comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 4px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--studio-radius, 8px);
+  background: var(--ant-color-bg-container);
+}
+
+.dashboard-comment-thread--selected {
+  border-color: var(--ant-color-primary-border);
+}
+
+.dashboard-comment-thread--resolved {
+  opacity: 0.8;
+}
+
+.dashboard-comment {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.dashboard-comment--reply {
+  padding-left: 34px;
+}
+
+.dashboard-comment-avatar {
+  flex: none;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-size: 12px;
+}
+
+.dashboard-comment-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dashboard-comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.dashboard-comment-author {
+  font-size: 12px;
+}
+
+.dashboard-comment-time {
+  font-size: 11px;
+  flex: 1 1 auto;
+}
+
+.dashboard-comment-more {
+  margin-left: auto;
+}
+
+.dashboard-comment-body.ant-typography {
+  margin: 2px 0 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-comment-widget {
+  margin-top: 4px;
+}
+
+.dashboard-comment-deleted {
+  font-size: 12px;
+}
+
+.dashboard-comment-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+
+.dashboard-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.dashboard-comment-thread-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: 26px;
+}
+
+.dashboard-comments-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}

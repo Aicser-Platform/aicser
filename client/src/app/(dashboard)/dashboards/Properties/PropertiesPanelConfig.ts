@@ -100,8 +100,11 @@ export interface ComputedMetricSide {
 
 export type MetricValueFormat = 'auto' | 'compact' | 'currency' | 'percent' | 'full';
 
+/** Point-and-click formula over two aggregated fields (see server COMPUTED_OPERATIONS). */
+export type ComputedOperation = 'ratio' | 'change' | 'difference' | 'sum' | 'product';
+
 export interface ComputedMetric {
-  type: 'ratio';
+  type: ComputedOperation;
   numerator: ComputedMetricSide;
   denominator: ComputedMetricSide;
   multiplier: 1 | 100;
@@ -426,6 +429,14 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         maxCount: 1,
       },
       {
+        // One dot per value of this column (Power BI "Values", Tableau "Detail").
+        key: 'detail',
+        type: 'select',
+        label: 'Dot for each',
+        required: false,
+        allowClear: true,
+      },
+      {
         key: 'legend',
         type: 'select',
         label: 'Color by',
@@ -468,6 +479,8 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         required: true,
         maxCount: 1,
       },
+      // Click a stage / box / step to see it broken down by the next field.
+      ADDITIONAL_DIMS_FIELD,
       {
         key: 'filters',
         type: 'filter-list',
@@ -603,6 +616,35 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
       },
     ],
   },
+  sankey: {
+    label: 'Sankey',
+    fields: [
+      { key: 'x', type: 'select', label: 'From', required: true },
+      { key: 'groupField', type: 'select', label: 'To', required: true },
+      { key: 'yMetrics', type: 'metric-list', label: 'Flow', required: true, maxCount: 1 },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
+      },
+    ],
+  },
+  histogram: {
+    label: 'Histogram',
+    fields: [
+      // The number whose spread is shown; every row is counted into a value range.
+      { key: 'yMetrics', type: 'metric-list', label: 'Value', required: true, maxCount: 1 },
+      {
+        key: 'filters',
+        type: 'filter-list',
+        label: 'Filters',
+        required: false,
+        conditionalRender: (query) => !query?.compiled_semantic_sql,
+      },
+    ],
+  },
   treemap: {
     label: 'Treemap',
     fields: [
@@ -619,6 +661,8 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         required: true,
         maxCount: 1,
       },
+      // Click a stage / box / step to see it broken down by the next field.
+      ADDITIONAL_DIMS_FIELD,
       {
         key: 'filters',
         type: 'filter-list',
@@ -650,6 +694,8 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         required: true,
         maxCount: 1,
       },
+      // Click a stage / box / step to see it broken down by the next field.
+      ADDITIONAL_DIMS_FIELD,
       {
         key: 'filters',
         type: 'filter-list',
@@ -729,6 +775,12 @@ export const CHART_TYPE_CONFIGS: Record<string, ChartTypeConfig> = {
         required: true,
         maxCount: 1,
       },
+      // Exact places (shops, villages, customers): a dot per place at its position.
+      { key: 'latitude', type: 'select', label: 'Latitude', required: false },
+      { key: 'longitude', type: 'select', label: 'Longitude', required: false },
+      // Place hierarchy (country → province → district): clicking an area drills to the next
+      // field, and the map follows to that area's own boundaries.
+      ADDITIONAL_DIMS_FIELD,
       {
         key: 'filters',
         type: 'filter-list',

@@ -55,24 +55,14 @@ export function handlePlanLimitError(error: unknown): boolean {
   if (!detail || !limitErrors.includes(detail.error)) return false;
 
   // Lazy-import antd Modal so this utility works without a direct antd dependency at import time
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Modal } = require('antd');
-    const titles: Record<string, string> = {
-      project_limit_reached: 'Project Limit Reached',
-      data_source_limit_reached: 'Data Source Limit Reached',
-      ai_credit_limit_reached: 'AI Credit Limit Reached',
-    };
-    Modal.warning({
-      title: titles[detail.error] || 'Plan Limit Reached',
-      content: detail.message || 'You have reached the limit on your current plan. Upgrade to continue.',
-      okText: 'Upgrade Plan',
-      onOk: () => {
-        window.dispatchEvent(new CustomEvent('open-pricing-modal'));
-      },
-    });
-  } catch {
-    // If antd is unavailable, fall through
+  // The layout's GlobalPricingModal (React, translated) explains it: plans on hosted billing,
+  // "ask your administrator" on self-hosted installs. This used to be a hard-coded English modal.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('open-pricing-modal', {
+        detail: { reason: typeof detail.message === 'string' ? detail.message : undefined, feature: detail.feature },
+      }),
+    );
   }
   return true;
 }
@@ -320,6 +310,20 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
       throw new ApiError(response.status, parsed.detail, errorText);
     }
 
+    // Flat envelope from the global handler: { error: code, message, details? }. Keep the
+    // human message and any structured fields — a 402 carries upgrade_required/required_plan,
+    // which handleUpgradeRequiredError needs to show the upgrade prompt.
+    if (parsed && typeof parsed.message === 'string' && parsed.message.trim() && typeof parsed.error === 'string') {
+      const extra = parsed.details && typeof parsed.details === 'object' && !Array.isArray(parsed.details) ? parsed.details : {};
+      const structured = {
+        ...extra,
+        error: parsed.error,
+        message: parsed.message,
+        ...(response.status === 402 ? { upgrade_required: true } : {}),
+      };
+      throw new ApiError(response.status, structured, errorText);
+    }
+
     // Simple detail string or error string
     let message = errorText;
     if (parsed && typeof parsed.detail === 'string') {
@@ -332,10 +336,10 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
       parsed.message.trim()
     ) {
       message = parsed.message;
-    } else if (parsed && typeof parsed.error === 'string') {
-      message = parsed.error;
     } else if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
       message = parsed.message;
+    } else if (parsed && typeof parsed.error === 'string') {
+      message = parsed.error;
     }
     throw new ApiError(response.status, message, errorText);
   }

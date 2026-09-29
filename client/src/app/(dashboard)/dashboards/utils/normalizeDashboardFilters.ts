@@ -67,6 +67,11 @@ const DATE_PRESET_ALIASES: Record<string, DatePresetKey> = {
   ytd: 'ytd',
 };
 
+/** A saved default like "last_30_days" (a window relative to today), not fixed dates. */
+export function isRelativeDatePreset(value: unknown): boolean {
+  return typeof value === 'string' && Boolean(DATE_PRESET_ALIASES[value.trim()]);
+}
+
 function normalizeType(type: unknown, multi: unknown): DashboardFilter['type'] {
   switch (String(type || '').trim()) {
     case 'date_range':
@@ -112,7 +117,13 @@ export function normalizeDashboardFilters(raw: unknown, context: FilterDataConte
       (typeof filter.name === 'string' && filter.name.trim()) ||
       (typeof filter.label === 'string' && filter.label.trim()) ||
       field.replace(/[_-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-    const defaultValue = filter.defaultValue ?? filter.default;
+    // A relative preset ("last_30_days") is the intent; dates stored beside it are only what it
+    // meant on the day it was saved. Re-evaluate the preset on every load, never the stale dates.
+    const presetDefault =
+      type === 'dateRange' && typeof filter.default === 'string' && DATE_PRESET_ALIASES[filter.default.trim()]
+        ? filter.default
+        : undefined;
+    const defaultValue = presetDefault ?? filter.defaultValue ?? filter.default;
     const fieldContext = resolveFieldContext(field, context);
 
     return [

@@ -1,0 +1,2 @@
+# Run artifacts land here (*.md / *.json) and are gitignored.
+# Commit only intentional pins such as VENDOR_PIN.txt when a lab week starts.

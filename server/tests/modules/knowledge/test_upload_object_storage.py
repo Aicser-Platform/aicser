@@ -120,7 +120,7 @@ async def test_resolve_data_source_project_id_returns_none_on_lookup_failure():
 async def test_resolve_data_source_project_id_returns_value_when_found():
     session = AsyncMock()
     row_result = MagicMock()
-    row_result.first.return_value = ("proj-42",)
+    row_result.first.return_value = ("proj-42", "org-7")  # (project_id, organization_id)
     session.execute = AsyncMock(return_value=row_result)
     result = await _resolve_data_source_project_id("ds-1", session)
     assert result == "proj-42"

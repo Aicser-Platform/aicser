@@ -426,6 +426,13 @@ class FeedServiceSerializationMixin:
         if not post_ids:
             return {}
 
+        # Images ride the same batched load (every read path calls this first); the post's
+        # own visibility already governs them, and GET /images/{id} re-checks it per viewer.
+        from src.modules.feed.image_service import images_for_posts, serialize_images
+
+        images = await images_for_posts(self.db, post_ids)
+        self._images_by_post = {pid: serialize_images(rows, public=viewer_id is None) for pid, rows in images.items()}
+
         result = await self.db.execute(
             select(FeedPostAttachment)
             .where(FeedPostAttachment.post_id.in_(post_ids))
@@ -729,6 +736,7 @@ class FeedServiceSerializationMixin:
             snapshot=snapshot_info,
             isOwner=is_owner,
             attachments=(attachments or {}).get(post_id, []),
+            images=(getattr(self, "_images_by_post", None) or {}).get(post_id, []),
             mentions=[str(m) for m in (post.mentions or [])],
             editedAt=_to_iso(post.edited_at) if getattr(post, "edited_at", None) else None,
             isEdited=getattr(post, "edited_at", None) is not None,

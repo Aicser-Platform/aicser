@@ -1,0 +1,14 @@
+id: it_admin
+name: IT admin
+role: Onboards users, checks settings / identity
+digital_literacy: medium
+goals:
+  - Reach Settings without getting lost in AI Engine
+  - Confirm org identity / residency pages exist when EE
+pains:
+  - Same chrome density as analyst tools
+must_not_see:
+  - Being forced through Query Editor to reach Settings
+success_looks_like:
+  - Settings reachable from shell
+  - Clear labels for identity / AI residency if present

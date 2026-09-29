@@ -30,6 +30,7 @@ import { useFeedItemInteractions } from '@/hooks/feed/useFeedInteractions';
 import { canOpenFeedAsset, getFeedAskAiPath, getFeedAssetPath } from '@/utils/feedAssetLinks';
 import { feedItemDisplayTitle } from '@/utils/sanitizeDisplayTitle';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import { FeedImages } from '@/components/Feed/FeedImages';
 import { isFeedPostAuthor, resolveFeedPostSummary } from '@/components/Feed/feedPostDisplay';
 
 const { Title } = Typography;
@@ -297,6 +298,9 @@ const FeedDetailPage: React.FC = () => {
           ) : (
             <div className="mt-3">
               <FeedPostContent item={item} variant="detail" showTitle={false} />
+              <div className="mt-3 -mx-4">
+                <FeedImages images={item.images} />
+              </div>
             </div>
           )}
         </header>

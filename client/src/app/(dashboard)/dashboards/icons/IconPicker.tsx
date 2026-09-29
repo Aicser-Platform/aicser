@@ -40,6 +40,8 @@ export function IconPicker({
   const t = useTranslations('dashboards');
   const brandItems = useBrandIconPack();
   const current = normalizeWidgetIcon(value, legacyIconName);
+  // The library (~80 icons) stays folded until asked for, so it doesn't bury the rest of Format.
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<WidgetIconCategory | 'all'>('all');
   const [tab, setTab] = useState<string>(current?.set === 'brand' ? 'brand' : current?.set || 'antd');
@@ -115,6 +117,9 @@ export function IconPicker({
           />
         ) : null}
       </div>
+      <Button size="small" onClick={() => setLibraryOpen((open) => !open)} aria-expanded={libraryOpen}>
+        {libraryOpen ? t('icon_library_hide') : current ? t('icon_library_change') : t('icon_library_choose')}
+      </Button>
       <Button
         type="text"
         size="small"
@@ -126,10 +131,15 @@ export function IconPicker({
     </div>
   );
 
+  if (!libraryOpen) {
+    return <div className={`icon-picker icon-picker--${size}`}>{preview}</div>;
+  }
+
   return (
     <div className={`icon-picker icon-picker--${size}`}>
       {preview}
       <Input
+        autoFocus
         size={size}
         allowClear
         prefix={<SearchOutlined />}

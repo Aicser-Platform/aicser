@@ -184,6 +184,10 @@ if is_ee_enabled():
         ("src.modules.lakehouse.router", "router", "/api", "Lakehouse"),
         ("src.modules.catalog.router", "router", "/api", "Catalog bridge"),
         ("src.modules.bi_sync.router", "router", "/api", "BI Sync"),
+        ("src.modules.warehouse.router", "router", "/api", "Warehouse"),
+        ("src.modules.mlops.router", "router", "/api", "Models"),
+        ("src.modules.notebook_runs.router", "router", "/api", "Scheduled notebook runs"),
+        ("src.modules.warehouse.iceberg_rest", "router", "/api/warehouse/iceberg", "Iceberg REST catalog"),
     ]:
         try:
             import importlib
@@ -239,15 +243,27 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    from fastapi.encoders import jsonable_encoder
+
     logger.warning("Validation error for path=%s: %s", request.url.path, exc)
+    # A validator's own ValueError sits in each error's ctx; encode it as text (a raw exception
+    # isn't JSON and used to turn a 422 into a 500). Show the first reason in plain words.
+    errors = jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
+    first = str((errors[0] or {}).get("msg") or "") if errors else ""
+    message = first.removeprefix("Value error, ") if first.startswith("Value error, ") else "Request validation failed"
     return JSONResponse(
         status_code=422,
-        content=error_body(
-            "validation_error",
-            "Request validation failed",
-            details=exc.errors(),
-        ),
+        content=error_body("validation_error", message, details=errors),
     )
+
+
+from src.modules.data.services.project_scope import CrossProjectSourceError  # noqa: E402
+
+
+@app.exception_handler(CrossProjectSourceError)
+async def cross_project_source_handler(request: Request, exc: CrossProjectSourceError):
+    # A chart/dashboard pointed at another project's data source: a clear 400, never a 500.
+    return JSONResponse(status_code=400, content=error_body("cross_project_source", str(exc)))
 
 
 @app.exception_handler(Exception)

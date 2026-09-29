@@ -9,12 +9,14 @@
  * 4. Navigation (brand blue) - #0f1b3d
  * 5. Border/Divider - #30363d
  * 
- * Color Hierarchy (Light Mode):
- * 1. Background (lightest) - #ffffff
- * 2. Container (slightly grey) - #f8f9fa
- * 3. Elevated (grey) - #f1f3f5
- * 4. Navigation (off-white) - #fafafa
- * 5. Border/Divider - #e1e4e8
+ * Color Hierarchy (Light Mode) - the same layering as dark: the page and its chrome (header,
+ * sidebar, side panels) are the lowest layer; content sits on surfaces above it.
+ * 1. Background / chrome (canvas) - #f0f2f5
+ * 2. Container (cards, panels, tables, inputs) - #ffffff
+ * 3. Elevated (modals, dropdowns; separated by shadow) - #ffffff
+ * 4. Navigation (header, sidebar) - the canvas, #f0f2f5
+ * 5. Border/Divider - #d0d7de (decorative), #8c959f (controls)
+ * Runtime values come from ThemeProvider.tsx (LIGHT); keep these in step for first paint.
  */
 
 /* ========================================
@@ -23,18 +25,18 @@
 
 :root {
   /* Light Mode - 5 Colors Only (Default) */
-  --color-bg-base: #ffffff;
-  /* 1. Page background (lightest) */
-  --color-bg-container: #f8f9fa;
+  --color-bg-base: #f0f2f5;
+  /* 1. Page background / chrome (lowest layer) */
+  --color-bg-container: #ffffff;
   /* 2. Cards, panels, containers */
-  --color-bg-elevated: #f1f3f5;
+  --color-bg-elevated: #ffffff;
   /* 3. Modals, dropdowns, elevated */
-  --color-bg-navigation: #fafafa;
+  --color-bg-navigation: #f0f2f5;
   /* Legacy fallback */
-  --color-bg-navigation-sider: #eef1f5;
+  --color-bg-navigation-sider: #f0f2f5;
   /* Sidebar/menu tone */
-  --color-bg-navigation-header: #ffffff;
-  /* Header tone */
+  --color-bg-navigation-header: #f0f2f5;
+  /* Header tone: the page canvas, so chrome recedes and content cards stand out */
   --color-bg-navigation-header-glow: #dfe4ec;
   /* Header gradient accent */
   --color-border: #7a7f85;
@@ -143,6 +145,27 @@ body,
   border: 1px solid var(--color-border) !important;
 }
 
+/* variant="borderless" cards stay borderless; the rule above used to force a border on them. */
+.ant-card:not(.ant-card-bordered) {
+  border-color: transparent !important;
+}
+
+/* Surfaces nest: a card or table inside a modal, drawer or popover takes the raised surface it
+   sits on instead of painting a second, darker box inside it. */
+.ant-modal .ant-card,
+.ant-drawer .ant-card,
+.ant-popover .ant-card,
+.ant-modal .ant-table,
+.ant-modal .ant-table-container,
+.ant-modal .ant-table-wrapper,
+.ant-drawer .ant-table,
+.ant-drawer .ant-table-container,
+.ant-drawer .ant-table-wrapper,
+.ant-modal .ant-table-thead > tr > th,
+.ant-drawer .ant-table-thead > tr > th {
+  background: transparent !important;
+}
+
 /* Tables - single canonical global default; page-specific tables (query editor,
    chat results, dashboard widgets) layer higher-specificity overrides on top. */
 .ant-table,
@@ -173,11 +196,18 @@ body,
   display: none !important;
 }
 
-.ant-table-tbody>tr>td {
+/* Not the measure row: antd renders an invisible, zero-height row (tr.ant-table-measure-row)
+   to size columns; padding it here turned it into a visible blank row under every header. */
+.ant-table-tbody>tr:not(.ant-table-measure-row)>td {
   border-bottom: 1px solid var(--color-border) !important;
   padding: 10px 14px !important;
   color: var(--color-text-primary) !important;
   font-size: 13px !important;
+}
+
+.ant-table-wrapper .ant-table .ant-table-tbody>tr.ant-table-measure-row>td {
+  padding: 0 !important;
+  border: 0 !important;
 }
 
 .ant-table-tbody>tr:hover>td {
@@ -188,16 +218,25 @@ body,
   border-bottom: none !important;
 }
 
-/* Forms - Container Color */
-.ant-form,
-.ant-form-item,
+/* Form fields - Container Color. .ant-form / .ant-form-item are layout wrappers, not surfaces,
+   so they are not painted (painting them left container-coloured strips inside modals). */
 .ant-input-affix-wrapper,
 .ant-select-selector,
 .ant-picker,
 textarea.ant-input {
   background: var(--color-bg-container) !important;
-  border-color: var(--color-border) !important;
+  /* One edge colour for every form control (inputs matched selects' token border otherwise). */
+  border-color: var(--color-border-control, var(--color-border)) !important;
   color: var(--color-text-primary) !important;
+}
+
+/* Hover shows on every control (the shared edge colour above would otherwise hide it). */
+.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-disabled):hover,
+.ant-input-outlined:not([disabled]):hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:not(.ant-picker-disabled):hover,
+textarea.ant-input:not([disabled]):hover {
+  border-color: var(--ant-color-primary-hover, var(--color-primary)) !important;
 }
 
 .ant-input-affix-wrapper-focused,
@@ -207,19 +246,11 @@ textarea.ant-input {
 
 /* Button colors — base layout in unified-design-system; hover in interaction-system */
 
-/* Tabs - Elevated Color (page-level tabs only) — matches the elevated
-   surface used by the popovers/dropdowns tabs typically sit inside (e.g.
-   AddBlockPopover), so a tabs panel doesn't read as a second, slightly
-   different grey against its own floating container.
-   .settings-inline-tabs is excluded for the opposite reason: those Tabs
-   (ApiKeysTab, BillingSubscriptionTab, IntegrationTab) are deliberately
-   bg-transparent so they blend into their own parent Card's
-   --color-fill-quaternary background — this !important rule was painting
-   them --color-bg-elevated instead, fighting that transparency and
-   producing the exact same "two greys in one panel" bug this rule exists
-   to prevent, just with different colors. */
+/* Tabs never paint a surface of their own: they take the surface of whatever holds them (page,
+   card, drawer, popover). Painting them a fixed colour made every tabs block inside a card or
+   panel read as a second grey box. */
 .ant-tabs:not(.workspace-inline-tabs):not(.analysis-data-tabs):not(.settings-inline-tabs) {
-  background: var(--color-bg-elevated) !important;
+  background: transparent !important;
 }
 
 .ant-tabs-tab {
@@ -235,9 +266,6 @@ textarea.ant-input {
 }
 
 /* Dividers - Border Color */
-.ant-divider {
-  border-color: var(--color-border) !important;
-}
 
 /* Text Colors - Consistent Hierarchy */
 .ant-typography,

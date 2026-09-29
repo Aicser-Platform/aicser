@@ -9,6 +9,7 @@ import {
   AppstoreOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
+  FileExcelOutlined,
   FileImageOutlined,
   FilePdfOutlined,
   LoadingOutlined,
@@ -23,6 +24,8 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { DashboardFilterPanel } from '../DashboardFilterPanel';
 import type { RuntimeFilter } from '../../utils/filterOperators';
 import { DashboardPageTabs, type DashboardPageItem } from '../DashboardPageTabs';
+import { DashboardPaletteProvider } from '../../widgets/DashboardPaletteContext';
+import { isDateRuntimeFilter } from '../../utils/filterOperators';
 import { DashboardViewerGrid } from './DashboardViewerGrid';
 import { DashboardExecutiveBanner } from './DashboardExecutiveBanner';
 import { widgetInsightsFromWidgets } from '../../utils/dashboardExecutiveMeta';
@@ -30,6 +33,7 @@ import '../AddDashboardDrawer.css';
 import type { LayoutItem, WidgetInstance } from '../../stores/useDashboardStore';
 import type { DashboardFilter } from '@/types/dashboard';
 import { exportDashboardCanvas, printDashboardOnly } from '../../services/exportDashboardService';
+import { exportCSV } from '../../services/exportChartDataService';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { shouldApplyWatermark } from '@/utils/watermark';
 import { isEmbedChromeHidden } from '../../utils/isEmbedChromeHidden';
@@ -43,6 +47,8 @@ export type DashboardViewerMeta = {
   description?: string;
   keyInsight?: string;
   storyArc?: string;
+  /** The dashboard's own default chart palette (config.default_color_palette). */
+  colorPalette?: string;
 };
 
 type Props = {
@@ -76,6 +82,10 @@ type Props = {
   autoRefreshMinutes?: number;
   onAutoRefreshIntervalChange?: (minutes: number) => void;
   lastRefreshedLabel?: string;
+  /** Embed only: what visitors may save (the embed's download setting). Default none. */
+  download?: 'none' | 'image' | 'data';
+  /** Embed only: an export the host page asked for (SDK exportImage); a new nonce runs it. */
+  exportRequest?: { format: 'png' | 'pdf'; nonce: number } | null;
 };
 
 function ViewerLoading({ title, message: msg }: { title: string; message?: string }) {
@@ -110,6 +120,8 @@ export function DashboardViewerShell({
   autoRefreshMinutes = 0,
   onAutoRefreshIntervalChange,
   lastRefreshedLabel,
+  download = 'none',
+  exportRequest = null,
 }: Props) {
   const t = useTranslations('dashboard_viewer');
   const td = useTranslations('dashboards');
@@ -232,6 +244,48 @@ export function DashboardViewerShell({
     },
   ];
 
+  const exportRef = useRef(handleExport);
+  useEffect(() => {
+    exportRef.current = handleExport;
+  });
+  useEffect(() => {
+    if (!exportRequest || variant !== 'embed' || download === 'none') return;
+    void exportRef.current(exportRequest.format);
+  }, [exportRequest, variant, download]);
+
+  // Embedded: nothing to save unless the embed's owner allowed it. Pictures show only what's
+  // on screen; data is each chart's own result (summarised, capped, and filtered the same way
+  // the embed is), never the table behind it.
+  const embedDownloadItems = ((): NonNullable<MenuProps['items']> => {
+    if (variant !== 'embed' || download === 'none') return [];
+    const items: NonNullable<MenuProps['items']> = [
+      exportMenuItems[0],
+      exportMenuItems[1],
+    ].filter(Boolean) as NonNullable<MenuProps['items']>;
+    if (download === 'data') {
+      const withData = widgets.filter((w) => w.chartData != null && !w.error && w.title);
+      if (withData.length) {
+        items.push({
+          type: 'group',
+          label: t('embed_download_data'),
+          children: withData.map((w) => ({
+            key: `csv:${w.id}`,
+            icon: <FileExcelOutlined />,
+            label: w.title,
+            onClick: () => {
+              try {
+                exportCSV(w.chartData, w.title || 'chart-data', w);
+              } catch (err) {
+                message.error(err instanceof Error ? err.message : t('export_failed'));
+              }
+            },
+          })),
+        });
+      }
+    }
+    return items;
+  })();
+
   const goHome = useCallback(() => {
     if (isAuthenticated) {
       navigateToStudio(meta.id, activePageId);
@@ -319,6 +373,22 @@ export function DashboardViewerShell({
         </header>
       )}
 
+      {embedDownloadItems && embedDownloadItems.length > 0 ? (
+        <div className="embed-download-trigger no-print">
+          <Dropdown menu={{ items: embedDownloadItems }} trigger={['click']} disabled={exportBusy} placement="bottomRight">
+            <Tooltip title={t('export_menu')}>
+              <Button
+                size="small"
+                shape="circle"
+                icon={exportBusy ? <LoadingOutlined spin /> : <DownloadOutlined />}
+                aria-label={t('export_menu')}
+                aria-haspopup="menu"
+              />
+            </Tooltip>
+          </Dropdown>
+        </div>
+      ) : null}
+
       <main className="shared-dashboard-content">
         {(meta.keyInsight || meta.storyArc || widgetInsights.length > 0) && (
           <DashboardExecutiveBanner
@@ -369,16 +439,19 @@ export function DashboardViewerShell({
 
         <div className="dashboard-workspace dashboard-workspace-viewer">
           <div className="dashboard-workspace-main">
-            <DashboardViewerGrid
-              widgets={widgets}
-              layout={layout}
-              dashboardId={dashboardId}
-              runtimeFilters={runtimeFilters}
-              onCrossFilter={onCrossFilter}
-              onRetryWidget={onRetryWidget}
-              refreshing={refreshing}
-              canvasMinHeight={hideChrome ? '100vh' : 'auto'}
-            />
+            <DashboardPaletteProvider palette={meta.colorPalette}>
+              <DashboardViewerGrid
+                widgets={widgets}
+                layout={layout}
+                dashboardId={dashboardId}
+                runtimeFilters={runtimeFilters}
+                onCrossFilter={onCrossFilter}
+                onRetryWidget={onRetryWidget}
+                onClearDateFilters={() => onRuntimeFiltersChange(runtimeFilters.filter((f) => !isDateRuntimeFilter(f)))}
+                refreshing={refreshing}
+                canvasMinHeight={hideChrome ? '100vh' : 'auto'}
+              />
+            </DashboardPaletteProvider>
           </div>
         </div>
       </main>

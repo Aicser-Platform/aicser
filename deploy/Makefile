@@ -166,6 +166,25 @@ ee-self-host-local-logs:
 ee-self-host-local-down:
 	$(EE_SELF_HOST_LOCAL) down
 
+# ── Evals & migrations ────────────────────────────────────────────────────────
+eval-answers:
+	# Execution-accuracy gate: golden questions through the live pipeline vs ground-truth SQL.
+	# Options: LOCALE=km LIMIT=40 MIN=0.8
+	$(EE) exec server python -m ee.modules.ai.evals.run_answer_eval $(if $(LOCALE),--locale $(LOCALE)) $(if $(LIMIT),--limit $(LIMIT)) --min-accuracy $(or $(MIN),0.8) --json /tmp/answer_eval.json
+eval-modes:
+	# Release gate: every chat mode through the live pipeline — answer shape, text hygiene, time budget.
+	# Options: ONLY=Decide,Forecast  SCALE=1.5 (slower hardware)
+	$(EE) exec server python -m ee.modules.ai.evals.run_mode_eval $(if $(ONLY),--only "$(ONLY)") --time-scale $(or $(SCALE),1.0) --json /tmp/mode_eval.json
+eval:
+	# Full AI release gate: execution accuracy + every mode.
+	$(MAKE) eval-answers
+	$(MAKE) eval-modes
+eval-decisions:
+	# Decision-layer golden set (needs DECISION_LAYER_BACKEND credentials).
+	$(EE) exec server python -m ee.modules.ai.evals.run_decision_eval --backend $(or $(BACKEND),jev)
+migrate-ee:
+	$(EE) exec server alembic upgrade heads
+
 # ── RBAC seed ─────────────────────────────────────────────────────────────────
 # Run inside the already-running EE container (prod build)
 seed-rbac-ee:
@@ -178,6 +197,7 @@ seed-rbac-dev:
 .PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
+        eval eval-answers eval-modes eval-decisions migrate-ee \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
         ee ee-down ee-logs ee-ollama ee-client-light ee-restart ee-restart-client \
         ee-recreate ee-reset ee-self-host-build ee-self-host-up \

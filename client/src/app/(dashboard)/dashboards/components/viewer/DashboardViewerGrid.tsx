@@ -1,6 +1,11 @@
 'use client';
 
+import { CrossFilterChips } from './CrossFilterChips';
+import { cardTitleStyle, chartSource } from '../../utils/chartAnnotations';
+import { WidgetFootnote } from '../WidgetFootnote';
 import React, { useMemo } from 'react';
+import { useTranslations } from 'next-intl';
+import { displayTitle } from '../../utils/widgetAutoTitle';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import { DashboardWidgetCell } from '../DashboardWidgetCell';
 import { LazyWidgetMount } from '../LazyWidgetMount';
@@ -20,6 +25,7 @@ type Props = {
   onCrossFilter: (field: string, value: unknown) => void;
   onWidgetChartClick?: (widget: WidgetInstance, field: string, value: unknown, shiftKey: boolean) => void;
   onRetryWidget?: (widgetId: string) => void;
+  onClearDateFilters?: () => void;
   refreshing?: boolean;
   canvasMinHeight?: string;
   /**
@@ -47,7 +53,7 @@ function getPreviewWidgetHeight(widget: WidgetInstance, sourceLayout?: LayoutIte
   return Math.min(8, Math.max(6, sourceLayout?.h || 7));
 }
 
-function buildPreviewLayout(
+export function buildPreviewLayout(
   widgets: WidgetInstance[],
   sourceLayout: LayoutItem[],
   columns: number,
@@ -64,12 +70,19 @@ function buildPreviewLayout(
 
     return leftPosition.y - rightPosition.y || leftPosition.x - rightPosition.x;
   });
-  const itemWidth = Math.floor(columns / columnCount);
   const result: LayoutItem[] = [];
   let rowY = 0;
-
-  for (let index = 0; index < orderedWidgets.length; index += columnCount) {
-    const rowWidgets = orderedWidgets.slice(index, index + columnCount);
+  // One card per row on phones, except KPIs: two small number cards share a row (Power BI /
+  // Looker mobile), so a phone shows the headline numbers without scrolling past each one.
+  const isKpi = (w: WidgetInstance) => w.chartType === 'stat' || w.chartType === 'gauge';
+  const pairKpis = columnCount === 1 && columns >= 4;
+  let index = 0;
+  while (index < orderedWidgets.length) {
+    let rowWidgets = orderedWidgets.slice(index, index + columnCount);
+    if (pairKpis && isKpi(orderedWidgets[index]) && orderedWidgets[index + 1] && isKpi(orderedWidgets[index + 1])) {
+      rowWidgets = [orderedWidgets[index], orderedWidgets[index + 1]];
+    }
+    const itemWidth = Math.floor(columns / rowWidgets.length);
     const rowHeight = Math.max(
       ...rowWidgets.map((widget) => getPreviewWidgetHeight(widget, sourceById.get(widget.id)))
     );
@@ -84,9 +97,15 @@ function buildPreviewLayout(
       });
     });
     rowY += rowHeight;
+    index += rowWidgets.length;
   }
 
   return result;
+}
+
+/** Widgets the author hid from phones (Format → Hide on phones). */
+export function phoneWidgets(widgets: WidgetInstance[]): WidgetInstance[] {
+  return widgets.filter((w) => (w.chartOptions as { hideOnMobile?: boolean } | undefined)?.hideOnMobile !== true);
 }
 
 export function DashboardViewerGrid({
@@ -97,6 +116,7 @@ export function DashboardViewerGrid({
   onCrossFilter,
   onWidgetChartClick,
   onRetryWidget,
+  onClearDateFilters,
   refreshing = false,
   canvasMinHeight = 'auto',
   layoutMode = 'auto',
@@ -107,7 +127,12 @@ export function DashboardViewerGrid({
   // Narrow screens: tablet (< 992px) and mobile (< 768px)
   const isNarrowScreen = screens.lg === false;
   const shouldReflow = layoutMode === 'preview' || (layoutMode === 'auto' && isNarrowScreen);
+  // Phones (and "preview as mobile") leave out what the author hid from phones; tablets keep all.
+  const isPhone = layoutMode === 'preview' || (layoutMode === 'auto' && screens.md === false);
+  const allWidgets = widgets;
+  widgets = useMemo(() => (isPhone ? phoneWidgets(allWidgets) : allWidgets), [isPhone, allWidgets]);
 
+  const tPage = useTranslations('dashboards_page');
   const responsiveLayouts = useMemo(() => {
     if (layoutMode === 'preserve') {
       return {
@@ -133,9 +158,11 @@ export function DashboardViewerGrid({
     // Preserves desktop 12-column authored layout on large screens,
     // but reflows cleanly on tablet (10 cols, 2 per row) and mobile (1 per row)
     // so charts are spacious, legible, and easy to view.
+    // View looks exactly like Edit wherever the design fits (768 px and wider): only phones and
+    // portrait tablets reflow, one card per row.
     return {
       lg: layout,
-      md: buildPreviewLayout(widgets, layout, 10, 2),
+      md: layout,
       sm: buildPreviewLayout(widgets, layout, 6, 1),
       xs: buildPreviewLayout(widgets, layout, 4, 1),
       xxs: buildPreviewLayout(widgets, layout, 2, 1),
@@ -146,11 +173,15 @@ export function DashboardViewerGrid({
     if (layoutMode === 'preserve') {
       return { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 };
     }
-    return { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
+    if (layoutMode === 'preview') return { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
+    return { lg: 12, md: 12, sm: 6, xs: 4, xxs: 2 };
   }, [layoutMode]);
 
   return (
     <div className="dashboard-canvas-wrapper dashboard-viewer-canvas" style={{ minHeight: canvasMinHeight }}>
+      {onCrossFilter ? (
+        <CrossFilterChips runtimeFilters={runtimeFilters} onRemove={(field) => onCrossFilter(field, null)} />
+      ) : null}
       <ResponsiveGridLayout
         className="layout"
         style={{ opacity: refreshing ? 0.72 : 1, transition: 'opacity 0.2s ease' }}
@@ -168,7 +199,8 @@ export function DashboardViewerGrid({
         containerPadding={[0, 0]}
         isDraggable={false}
         isResizable={false}
-        compactType={layoutMode === 'preserve' ? null : 'vertical'}
+        // Never re-pack the author's design (Edit doesn't); reflowed phone layouts are packed already.
+        compactType={null}
         preventCollision={layoutMode === 'preserve'}
         useCSSTransforms
       >
@@ -180,13 +212,13 @@ export function DashboardViewerGrid({
               <div className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}>
                 {showHeader && (
                   <div className="widget-card-header widget-card-header-stack">
-                    <span className="widget-card-title" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <span className="widget-card-title" style={{ display: 'inline-flex', alignItems: 'center', ...cardTitleStyle(widget.chartOptions) }}>
                       {widget.chartOptions?.headerIcon ? (
                         <span className="widget-header-icon">
                           <DashboardIcon icon={widget.chartOptions.headerIcon} size={14} />
                         </span>
                       ) : null}
-                      {widget.title}
+                      {displayTitle(widget, tPage as never)}
                     </span>
                     {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
                       <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
@@ -203,6 +235,7 @@ export function DashboardViewerGrid({
                       onCrossFilter={onCrossFilter}
                       onWidgetChartClick={onWidgetChartClick}
                       onRetryWidget={onRetryWidget}
+                      onClearDateFilters={onClearDateFilters}
                       hideInteractionHint={hideInteractionHint}
                     />
                   ) : (
@@ -215,11 +248,13 @@ export function DashboardViewerGrid({
                         onCrossFilter={onCrossFilter}
                         onWidgetChartClick={onWidgetChartClick}
                         onRetryWidget={onRetryWidget}
+                      onClearDateFilters={onClearDateFilters}
                         hideInteractionHint={hideInteractionHint}
                       />
                     </LazyWidgetMount>
                   )}
                 </div>
+                <WidgetFootnote note={chartSource(widget.chartOptions)} />
               </div>
             </div>
           );

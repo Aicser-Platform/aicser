@@ -218,6 +218,8 @@ class FeedItemResponse(BaseModel):
     snapshot: Optional[FeedSnapshotInfo] = None
     isOwner: bool = False
     attachments: List[FeedAttachmentPayload] = Field(default_factory=list)
+    # Uploaded images: [{id, url, width, height, alt}] — url is an authorised API path.
+    images: List[Dict[str, Any]] = Field(default_factory=list)
     mentions: List[str] = Field(default_factory=list)
     editedAt: Optional[str] = None
     isEdited: bool = False
@@ -500,6 +502,8 @@ class PublishAssetRequest(BaseModel):
     thumbnail_url: Optional[str] = None
     # Text-post-only fields (both no-op for dashboard/chart/insight/query).
     attachments: Optional[List[AttachmentRef]] = Field(None, max_length=MAX_POST_ATTACHMENTS)
+    # Ids from POST /api/feed/images (the author's own uploads), in display order.
+    images: Optional[List[UUID]] = Field(None, max_length=4)
     mentioned_users: Optional[List[UUID]] = None
 
 

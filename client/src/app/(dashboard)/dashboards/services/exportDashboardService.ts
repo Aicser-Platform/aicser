@@ -769,6 +769,67 @@ function replaceCanvasesWithImages(
   }
 }
 
+/** Every surface that renders a dashboard grid: studio (edit/view), shared viewer and preview. */
+const DASHBOARD_ROOT_SELECTORS = ['.dashboard-container', '.dashboard-viewer-canvas'];
+
+/**
+ * The dashboard grid on this page. Callers used to pass one fixed selector, so export from a
+ * surface that renders the other grid (e.g. preview vs studio) failed with "canvas not found".
+ * Prefer the requested selector, else the largest visible known grid.
+ */
+export function resolveDashboardRoot(selector?: string): HTMLElement | null {
+  const visible = (el: Element | null): el is HTMLElement =>
+    !!el && (el as HTMLElement).getClientRects().length > 0;
+  if (selector) {
+    const hit = Array.from(document.querySelectorAll(selector)).find(visible);
+    if (hit) return hit;
+  }
+  const candidates = DASHBOARD_ROOT_SELECTORS.flatMap((sel) => Array.from(document.querySelectorAll(sel))).filter(
+    visible,
+  );
+  candidates.sort((a, b) => b.scrollHeight * b.scrollWidth - a.scrollHeight * a.scrollWidth);
+  return candidates[0] ?? null;
+}
+
+/** Fired before export/print so LazyWidgetMount mounts every widget, on- or off-screen. */
+export const DASHBOARD_EXPORT_PREPARE_EVENT = 'aicser:dashboard-export-prepare';
+
+/**
+ * Mount all lazily-rendered widgets and wait until they have data and have drawn:
+ * no lazy placeholders, no loading overlays/skeletons, and ECharts done animating.
+ * Bounded (12 s) so a widget that never loads can't hang the export.
+ */
+export async function prepareWidgetsForCapture(root: HTMLElement, timeoutMs = 12000): Promise<void> {
+  window.dispatchEvent(new CustomEvent(DASHBOARD_EXPORT_PREPARE_EVENT));
+  const pending = () =>
+    root.querySelectorAll(
+      '.widget-lazy-placeholder, .widget-loading-overlay, .ant-skeleton-active, .app-loading-indicator',
+    ).length;
+  const started = Date.now();
+  let quietSince = 0;
+  while (Date.now() - started < timeoutMs) {
+    await waitFrames(2);
+    if (pending() === 0) {
+      quietSince = quietSince || Date.now();
+      // ECharts entry animation (~1 s) — wait for it to settle once everything is mounted.
+      if (Date.now() - quietSince >= 1100) break;
+    } else {
+      quietSince = 0;
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  try {
+    const echarts = await import('echarts');
+    root.querySelectorAll<HTMLElement>('[_echarts_instance_]').forEach((el) => {
+      const chart = echarts.getInstanceByDom(el);
+      chart?.resize();
+    });
+    await waitFrames(2);
+  } catch {
+    /* echarts not on this page */
+  }
+}
+
 /**
  * Render a branded dashboard canvas (theme-matched by default).
  * Shared by PNG/PDF export and print-to-image.
@@ -781,11 +842,13 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
   title: string;
   widgetBands: WidgetBand[];
 }> {
-  const selector = opts.selector ?? '.dashboard-container';
-  const root = document.querySelector(selector) as HTMLElement | null;
+  const root = resolveDashboardRoot(opts.selector);
   if (!root) {
     throw new Error('Dashboard canvas not found');
   }
+  // Charts below the fold are mounted lazily; mount every widget and let it finish drawing
+  // first, or they export as empty placeholders.
+  await prepareWidgetsForCapture(root);
 
   const html2canvasMod = await import('html2canvas');
   const html2canvas = html2canvasMod.default ?? html2canvasMod;
@@ -860,12 +923,21 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
 
   const rootRect = root.getBoundingClientRect();
   const zoom = readCssZoom(root) || 1;
+  // How far widgets reach past the container's left/top edge (negative = outside).
+  const overflow = { left: 0, top: 0 };
+  root.querySelectorAll<HTMLElement>('.react-grid-item').forEach((el) => {
+    const r = el.getBoundingClientRect();
+    overflow.left = Math.min(overflow.left, Math.floor((r.left - rootRect.left) / zoom) - 4);
+    overflow.top = Math.min(overflow.top, Math.floor((r.top - rootRect.top) / zoom) - 4);
+  });
+  if (overflow.left > -5) overflow.left = 0;
+  if (overflow.top > -5) overflow.top = 0;
   const cssBands: WidgetBand[] = [];
   root.querySelectorAll<HTMLElement>('.react-grid-item').forEach((el) => {
     const r = el.getBoundingClientRect();
     cssBands.push({
-      top: (r.top - rootRect.top) / zoom + root.scrollTop,
-      bottom: (r.bottom - rootRect.top) / zoom + root.scrollTop,
+      top: (r.top - rootRect.top) / zoom + root.scrollTop - overflow.top,
+      bottom: (r.bottom - rootRect.top) / zoom + root.scrollTop - overflow.top,
     });
   });
 
@@ -882,12 +954,16 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
       allowTaint: false,
       logging: false,
       imageTimeout: 15000,
-      width: box.width,
-      height: box.height,
-      windowWidth: box.width,
-      windowHeight: box.height,
-      x: 0,
-      y: 0,
+      width: box.width - overflow.left,
+      height: box.height - overflow.top,
+      // Lay the clone out at the real window width (a window only as wide as the dashboard
+      // can trip narrower breakpoints). x/y are offsets from the dashboard's own origin (0,0 =
+      // its top-left); they go negative when widgets sit outside the container (grid
+      // margins), which used to crop the left edge of the first column.
+      windowWidth: Math.max(document.documentElement.clientWidth, window.innerWidth, box.width),
+      windowHeight: Math.max(window.innerHeight, box.height - overflow.top),
+      x: overflow.left,
+      y: overflow.top,
       scrollX: -window.scrollX,
       scrollY: -window.scrollY,
       ignoreElements: shouldIgnoreExportElement,
@@ -895,6 +971,14 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
         if (!(clonedElement instanceof HTMLElement)) return;
         sanitizeCloneForHtml2Canvas(clonedElement, root);
         replaceCanvasesWithImages(clonedDoc, clonedElement, root);
+        // Pin the dashboard to the clone's top-left so capture bounds can't depend on the
+        // surrounding page (viewer padding, centring, scroll containers shifted the grid
+        // inside its box and cropped its left/top edge).
+        clonedElement.style.position = 'fixed';
+        clonedElement.style.left = '0px';
+        clonedElement.style.top = '0px';
+        clonedElement.style.margin = '0';
+        clonedElement.style.zIndex = '2147483647';
         clonedElement.style.width = `${box.width}px`;
         clonedElement.style.height = `${box.height}px`;
         clonedElement.style.minHeight = `${box.height}px`;
@@ -935,7 +1019,7 @@ async function renderDashboardExportCanvas(opts: ExportOptions = {}): Promise<{
       backgroundColor,
     });
 
-    const pxPerCss = capture.width / Math.max(box.width, 1);
+    const pxPerCss = capture.width / Math.max(box.width - overflow.left, 1);
     const widgetBands = cssBands.map((b) => ({
       top: composed.captureOriginY + b.top * pxPerCss,
       bottom: composed.captureOriginY + b.bottom * pxPerCss,
@@ -1030,9 +1114,12 @@ export async function printDashboardOnly(opts: {
   subtitle?: string;
   branding?: boolean;
   matchTheme?: boolean;
+  /** Grid to print; resolved like export (viewer, preview and studio all work). */
+  selector?: string;
 } = {}) {
   const title = (opts.title || 'Dashboard').trim() || 'Dashboard';
   const { canvas, backgroundColor, widgetBands } = await renderDashboardExportCanvas({
+    selector: opts.selector,
     title,
     subtitle: opts.subtitle,
     branding: opts.branding === true,

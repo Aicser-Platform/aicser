@@ -1,18 +1,31 @@
 'use client';
 
 import './NewPostComposer.css';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Avatar, Button, Mentions, Radio, Tag, message } from 'antd';
-import { BulbOutlined, DashboardOutlined, LineChartOutlined, PaperClipOutlined, SendOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Avatar, Button, Mentions, Select, Tag, Tooltip, message } from 'antd';
+import {
+  BulbOutlined,
+  CloseOutlined,
+  DashboardOutlined,
+  EyeOutlined,
+  LineChartOutlined,
+  LoadingOutlined,
+  PaperClipOutlined,
+  PictureOutlined,
+  SendOutlined,
+} from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProfileStore } from '@/stores/useProfileStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
-import { socialFeedService, type FeedScope, type FeedVisibility } from '@/services/socialFeedService';
+import { socialFeedService, type FeedImage, type FeedScope, type FeedVisibility } from '@/services/socialFeedService';
+import { FeedImageView } from './FeedImages';
 import { useMentionableMembers, resolveMentionedUserIds } from '@/hooks/feed/useMentionableMembers';
 import { AttachmentPicker, type PickedAttachment } from './AttachmentPicker';
 import { consumePendingFeedAttachment } from './pendingFeedAttachment';
+
+const MAX_POST_IMAGES = 4;
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
@@ -27,6 +40,9 @@ export interface NewPostComposerProps {
    * My company" trust gaps). Ignored once the user manually picks visibility.
    */
   feedScope?: FeedScope;
+  /** The composer's audience and the feed tab stay in step: picking an audience here shows
+   * that audience's feed, so what you're looking at is where the post lands. */
+  onAudienceChange?: (scope: FeedScope) => void;
 }
 
 /** Post-only visibility: no "public" - see publish_asset's own guard for why
@@ -47,7 +63,7 @@ function visibilityFromFeedScope(
   return 'private';
 }
 
-export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
+export function NewPostComposer({ onPosted, feedScope, onAudienceChange }: NewPostComposerProps) {
   const t = useTranslations('feed_page');
   const { user } = useAuth();
   // Same store the header's own profile menu (UserProfileDropdown) already
@@ -73,12 +89,42 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
   // hydrating on first render, so this keeps tracking until the user picks.
   const [visibility, setVisibility] = useState<PostVisibility>('private');
   const [visibilityTouched, setVisibilityTouched] = useState(false);
+  // Clicking a feed tab re-aligns the audience, even after an earlier manual pick.
+  useEffect(() => {
+    setVisibilityTouched(false);
+  }, [feedScope]);
   useEffect(() => {
     if (visibilityTouched) return;
     setVisibility(visibilityFromFeedScope(feedScope, Boolean(organizationId), Boolean(projectId)));
   }, [feedScope, organizationId, projectId, visibilityTouched]);
   const [attachments, setAttachments] = useState<PickedAttachment[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Uploaded as soon as they're picked (object storage, private until the post is published).
+  const [images, setImages] = useState<FeedImage[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addImageFiles = async (files: File[]) => {
+    const room = MAX_POST_IMAGES - images.length - uploading;
+    const picked = files.filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, room));
+    if (files.length && !picked.length) {
+      message.warning(room <= 0 ? t('image_limit', { max: MAX_POST_IMAGES }) : t('image_type_hint'));
+      return;
+    }
+    setUploading((n) => n + picked.length);
+    await Promise.all(
+      picked.map(async (file) => {
+        try {
+          const img = await socialFeedService.uploadImage(file);
+          setImages((prev) => (prev.length >= MAX_POST_IMAGES ? prev : [...prev, img]));
+        } catch (e) {
+          message.error((e as Error)?.message || t('image_upload_failed'));
+        } finally {
+          setUploading((n) => n - 1);
+        }
+      }),
+    );
+  };
   const [posting, setPosting] = useState(false);
   const [focusOnMount, setFocusOnMount] = useState(false);
 
@@ -99,22 +145,27 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
   const visibilityOptions: { value: PostVisibility; label: string; disabled?: boolean }[] = isEnterpriseEdition
     ? [
         { value: 'private', label: t('scope_private') },
-        { value: 'project', label: t('scope_project'), disabled: !projectId },
+        {
+          value: 'project',
+          label: currentProject?.name ? `${t('scope_project')} · ${currentProject.name}` : t('scope_project'),
+          disabled: !projectId,
+        },
         { value: 'organization', label: t('scope_organization'), disabled: !organizationId },
       ]
     : [{ value: 'private', label: t('scope_private') }];
 
-  const canPost = (text.trim().length > 0 || attachments.length > 0) && !posting;
+  const canPost = (text.trim().length > 0 || attachments.length > 0 || images.length > 0) && !posting && uploading === 0;
 
   const handlePost = async () => {
     const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) return;
+    if (!trimmed && attachments.length === 0 && images.length === 0) return;
+    // An image-only post needs no filler text; an attachment-only post keeps its title line.
     const body =
       trimmed ||
       (attachments[0]
         ? t('post_attachment_only_fallback', { title: attachments[0].title || t('attachment_untitled') })
         : '');
-    if (!body) return;
+    if (!body && images.length === 0) return;
     setPosting(true);
     try {
       const mentionedUsers = resolveMentionedUserIds(body, members);
@@ -132,10 +183,12 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
               publication_id: publication_id || undefined,
             }))
           : undefined,
+        images: images.length ? images.map((img) => img.id) : undefined,
         mentioned_users: mentionedUsers.length ? mentionedUsers : undefined,
       });
       setText('');
       setAttachments([]);
+      setImages([]);
       message.success(t('post_created'));
       onPosted(result.publication_id);
     } catch (error) {
@@ -160,17 +213,16 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
         ? t('post_audience_project', { name: currentProject?.name || t('scope_project') })
         : t('post_audience_organization', { name: organizationName || t('scope_organization') });
 
+  // The tab and the audience move together; the one gap is Community, which shows content
+  // published publicly — posts themselves never go public, so say where this one goes.
   const scopeMismatchHint = useMemo(() => {
-    if (!feedScope || visibilityTouched) return null;
-    if (feedScope === 'private' && visibility !== 'private') return null;
-    if (feedScope === 'project' && visibility !== 'project') {
-      return t('post_audience_scope_note_project');
-    }
-    if (feedScope === 'organization' && visibility === 'private') {
-      return t('post_audience_scope_note_company');
+    if (feedScope === 'public' && visibility !== 'private') {
+      return t('post_audience_scope_note_public', {
+        audience: visibility === 'project' ? t('scope_project') : t('scope_organization'),
+      });
     }
     return null;
-  }, [feedScope, visibility, visibilityTouched, t]);
+  }, [feedScope, visibility, t]);
 
   if (!isEnterpriseEdition) return null;
 
@@ -188,7 +240,37 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
           autoSize={{ minRows: 2, maxRows: 8 }}
           className="new-post-composer-input"
           autoFocus={focusOnMount}
+          onPaste={(e: React.ClipboardEvent) => {
+            const files = Array.from(e.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
+            if (files.length) {
+              e.preventDefault();
+              void addImageFiles(files);
+            }
+          }}
         />
+
+        {(images.length > 0 || uploading > 0) && (
+          <div className="new-post-composer-images">
+            {images.map((img) => (
+              <div key={img.id} className="new-post-composer-image">
+                <FeedImageView image={img} height={88} />
+                <Button
+                  size="small"
+                  shape="circle"
+                  icon={<CloseOutlined />}
+                  aria-label={t('image_remove')}
+                  className="new-post-composer-image-remove"
+                  onClick={() => setImages((prev) => prev.filter((x) => x.id !== img.id))}
+                />
+              </div>
+            ))}
+            {Array.from({ length: uploading }).map((_, i) => (
+              <div key={`up-${i}`} className="new-post-composer-image new-post-composer-image--loading">
+                <LoadingOutlined />
+              </div>
+            ))}
+          </div>
+        )}
 
         {attachments.length > 0 && (
           <div className="new-post-composer-attachments">
@@ -217,24 +299,36 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
           </div>
         )}
 
-        <div className="new-post-composer-audience-hint">
-          <span>{audienceHint}</span>
-          {scopeMismatchHint ? <span className="new-post-composer-audience-note"> · {scopeMismatchHint}</span> : null}
-        </div>
+        {scopeMismatchHint ? (
+          <div className="new-post-composer-audience-hint">
+            <span className="new-post-composer-audience-note">{scopeMismatchHint}</span>
+          </div>
+        ) : null}
 
         <div className="new-post-composer-footer">
           <div className="new-post-composer-footer-left">
-            <Radio.Group
-              size="small"
-              optionType="button"
-              buttonStyle="solid"
-              value={visibility}
-              onChange={(e) => {
-                setVisibilityTouched(true);
-                setVisibility(e.target.value as PostVisibility);
-              }}
-              options={visibilityOptions}
-            />
+            {/* Who sees this post — a compact choice, not a second copy of the feed's
+                scope filter above (which it defaults to). */}
+            <Tooltip title={audienceHint}>
+              <Select
+                size="small"
+                value={visibility}
+                onChange={(v) => {
+                  setVisibilityTouched(true);
+                  setVisibility(v as PostVisibility);
+                  onAudienceChange?.(v as FeedScope);
+                }}
+                options={visibilityOptions}
+                popupMatchSelectWidth={false}
+                aria-label={audienceHint}
+                className="new-post-composer-audience"
+                labelRender={({ label }) => (
+                  <span className="new-post-composer-audience-label">
+                    <EyeOutlined aria-hidden /> {label}
+                  </span>
+                )}
+              />
+            </Tooltip>
             <Button
               size="small"
               type={attachments.length > 0 ? 'default' : 'primary'}
@@ -248,6 +342,27 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
                 ? t('attach_insight_button_more', { count: attachments.length })
                 : t('attach_insight_button')}
             </Button>
+            <Button
+              size="small"
+              icon={<PictureOutlined />}
+              disabled={images.length + uploading >= MAX_POST_IMAGES}
+              onClick={() => fileInputRef.current?.click()}
+              className="new-post-composer-attach"
+            >
+              {t('image_add')}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              hidden
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                e.target.value = '';
+                void addImageFiles(files);
+              }}
+            />
           </div>
           <Button type="primary" icon={<SendOutlined />} disabled={!canPost} loading={posting} onClick={() => void handlePost()}>
             {attachments.length > 0 && !text.trim() ? t('post_insight_button') : t('post_button')}
@@ -260,6 +375,10 @@ export function NewPostComposer({ onPosted, feedScope }: NewPostComposerProps) {
         excludeIds={attachments.flatMap((a) => [a.asset_id, a.publication_id].filter(Boolean) as string[])}
         organizationId={organizationId}
         onPick={(a) => setAttachments((prev) => [...prev, a])}
+        onPickImages={(files) => {
+          setPickerOpen(false);
+          void addImageFiles(files);
+        }}
         onClose={() => setPickerOpen(false)}
       />
     </div>

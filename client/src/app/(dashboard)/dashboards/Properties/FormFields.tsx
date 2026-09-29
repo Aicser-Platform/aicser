@@ -5,6 +5,14 @@ import { Input, InputNumber, DatePicker, Select, Switch, Segmented, Checkbox, Ty
 import { CloseOutlined, DownOutlined, CheckOutlined, HolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import dayjs from 'dayjs';
+import {
+  columnKind,
+  operatorForColumn,
+  operatorLabelKey,
+  operatorsFor,
+  valueInputFor,
+  type ColumnKind,
+} from '../utils/filterEditor';
 import { METRIC_OPTIONS } from './PropertiesPanelConfig';
 import type { SegmentedOption, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
 import { ComputedMetricEditor } from './ComputedMetricEditor';
@@ -109,7 +117,8 @@ interface FieldProps {
   hint?: string;
 }
 
-export const SectionLabel: React.FC<FieldProps> = ({ label, required = false, className = '', hint }) => (
+export const SectionLabel: React.FC<FieldProps> = ({ label, required = false, className = '', hint }) =>
+  !label && !hint ? null : (
   <div className={`pp-section-label ${className}`.trim()} style={{ marginBottom: 8 }}>
     <span className="section-label">
       {label}
@@ -332,6 +341,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [isFieldDragOver, setIsFieldDragOver] = useState(false);
+  const tFormula = useTranslations('formula_editor');
   const [computedEditorOpen, setComputedEditorOpen] = useState(false);
   const [editingComputedIndex, setEditingComputedIndex] = useState<number | null>(null);
 
@@ -525,7 +535,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
             ? [
                 {
                   key: 'fx-edit',
-                  label: 'Edit computed metric (fx)',
+                  label: tFormula('edit_menu'),
                   onClick: () => {
                     setEditingComputedIndex(index);
                     setComputedEditorOpen(true);
@@ -672,7 +682,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                 setEditingComputedIndex(null);
                 setComputedEditorOpen(true);
               }}
-              title="Add a computed metric (ratio/formula)"
+              title={tFormula('add_tooltip')}
             >
               fx
             </button>
@@ -717,21 +727,6 @@ export interface FilterItem {
   sql?: string;
 }
 
-const FILTER_OPERATORS = [
-  { label: 'Is null', value: 'is_null', disableValue: true },
-  { label: 'Is not null', value: 'is_not_null', disableValue: true },
-  { label: 'Equal (=)', value: '=' },
-  { label: 'Not equal (≠)', value: '!=' },
-  { label: 'Greater than (>)', value: '>' },
-  { label: 'Greater or equal (≥)', value: '>=' },
-  { label: 'Less than (<)', value: '<' },
-  { label: 'Less or equal (≤)', value: '<=' },
-  { label: 'In', value: 'in' },
-  { label: 'Not In', value: 'not_in' },
-  { label: 'Like', value: 'like' },
-  { label: 'Like (case sensitive)', value: 'like_case' },
-];
-
 interface FilterListFieldProps extends FieldProps {
   filters: FilterItem[];
   onChange: (filters: FilterItem[]) => void;
@@ -750,10 +745,12 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
   filters = [],
   onChange,
   columnOptions,
-  placeholder = 'Select columns here or click',
+  placeholder,
   onFieldDrop,
   fetchDistinctValues,
 }) => {
+  const tFilters = useTranslations('dashboards');
+  placeholder = placeholder ?? tFilters('filter_add_condition');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [tempFilter, setTempFilter] = useState<FilterItem>({
@@ -767,9 +764,10 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
 
   const handleAddFilterClick = () => {
     setEditingIndex(null);
+    const field = columnOptions[0]?.value || '';
     setTempFilter({
-      field: columnOptions[0]?.value || '',
-      operator: '=',
+      field,
+      operator: operatorForColumn(columnKind(columnOptions[0]?.type), '='),
       value: '',
       type: 'simple',
     });
@@ -837,140 +835,165 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
     setIsModalOpen(false);
   };
 
-  const filterOp = FILTER_OPERATORS.find(op => op.value === tempFilter.operator);
-  const selectedColumnType = columnOptions.find(opt => opt.value === tempFilter.field)?.type;
-  // Same detection style as the Column dropdown's '#'/'abc' icon above -
-  // reused here so the Value input adapts to the column's actual data type
-  // (date picker for dates, numeric input for numbers) instead of a plain
-  // text box for everything, which is what Tableau/Power BI/Looker do for
-  // per-widget filter value entry.
-  const isDateColumn = /(date|time|timestamp)/i.test(String(selectedColumnType || ''));
-  const isNumericColumn = /(int|float|double|decimal|numeric|number|real)/i.test(String(selectedColumnType || ''));
+  const kindOf = (field: string) => columnKind(columnOptions.find((opt) => opt.value === field)?.type);
+  const kind = kindOf(tempFilter.field);
+  const operatorOptions = operatorsFor(kind).map((op) => ({ value: op.value, label: tFilters(op.labelKey as never) }));
+  const valueInput = valueInputFor(kind, tempFilter.operator, distinctOptions.length > 0);
+  const listValue = Array.isArray(tempFilter.value)
+    ? tempFilter.value
+    : tempFilter.value
+      ? String(tempFilter.value).split(',').map((v) => v.trim())
+      : [];
+  const kindMark: Record<ColumnKind, string> = { number: '#', date: '📅', boolean: '✓', text: 'Aa' };
 
   const filterConfigContent = (
     <div style={{ width: 280, padding: '4px 8px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Column</div>
+          <div className="pp-filter-editor-label">{tFilters('filter_column')}</div>
           <Select
             style={{ width: '100%' }}
             classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
-            options={columnOptions.map(opt => {
-              const isNumeric = (opt.type || '').toLowerCase().includes('int') || 
-                              (opt.type || '').toLowerCase().includes('float') || 
-                              (opt.type || '').toLowerCase().includes('number') || 
-                              (opt.type || '').toLowerCase().includes('decimal');
-              return {
-                label: (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: 'var(--ant-color-primary)', fontSize: 13, minWidth: 14 }}>
-                      {isNumeric ? '#' : 'abc'}
-                    </span>
-                    {opt.label}
-                  </div>
-                ),
-                value: opt.value,
-              };
-            })}
+            options={columnOptions.map((opt) => ({
+              label: (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--ant-color-primary)', fontSize: 12, minWidth: 16 }} aria-hidden>
+                    {kindMark[columnKind(opt.type)]}
+                  </span>
+                  {opt.label}
+                </div>
+              ),
+              value: opt.value,
+            }))}
             value={tempFilter.field}
-            onChange={(val) => setTempFilter({ ...tempFilter, field: val })}
+            onChange={(val) => {
+              // A new column may be another kind: keep the operator only if it still fits.
+              const operator = operatorForColumn(kindOf(val), tempFilter.operator);
+              setTempFilter({ ...tempFilter, field: val, operator, value: ['in', 'not_in'].includes(operator) ? [] : '' });
+            }}
             showSearch
-            placeholder="Select column"
+            optionFilterProp="value"
+            placeholder={tFilters('filter_column_placeholder')}
           />
         </div>
         <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Operator</div>
+          <div className="pp-filter-editor-label">{tFilters('filter_condition')}</div>
           <Select
             style={{ width: '100%' }}
             classNames={{ popup: { root: 'properties-panel-dropdown' } }}
             size="small"
-            options={FILTER_OPERATORS}
+            options={operatorOptions}
             value={tempFilter.operator}
             onChange={(val) => {
               let newValue = tempFilter.value;
               const wasIn = ['in', 'not_in'].includes(tempFilter.operator);
               const isIn = ['in', 'not_in'].includes(val);
-              
               if (isIn && !wasIn) {
                 newValue = tempFilter.value ? [String(tempFilter.value)] : [];
               } else if (!isIn && wasIn) {
-                newValue = Array.isArray(tempFilter.value) ? tempFilter.value.join(', ') : String(tempFilter.value);
+                newValue = Array.isArray(tempFilter.value) ? tempFilter.value[0] ?? '' : String(tempFilter.value);
               }
-              
               setTempFilter({ ...tempFilter, operator: val, value: newValue });
             }}
-            placeholder="Select operator"
-            showSearch
           />
         </div>
-        <div>
-          <div style={{ marginBottom: 4, fontSize: '11px', color: 'var(--ant-color-text-secondary)' }}>Value</div>
-          {['in', 'not_in'].includes(tempFilter.operator) ? (
-            <Select
-              mode={distinctOptions.length ? 'multiple' : 'tags'}
-              className="filter-select"
-              style={{ width: '100%' }}
-              placeholder={distinctLoading ? 'Loading values…' : 'Select or type values…'}
-              loading={distinctLoading}
-              value={Array.isArray(tempFilter.value) ? tempFilter.value : (tempFilter.value ? String(tempFilter.value).split(',').map(s => s.trim()) : [])}
-              onChange={(vals) => setTempFilter({ ...tempFilter, value: vals })}
-              options={distinctOptions}
-              tokenSeparators={[',']}
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              suffixIcon={<CloseOutlined style={{ rotate: '45deg', color: 'var(--ant-color-text-tertiary)' }} />}
-            />
-          ) : filterOp?.disableValue ? (
-            <Input size="small" className="premium-input" value="" disabled placeholder="(Value not required)" />
-          ) : distinctOptions.length > 0 ? (
-            <Select
-              size="small"
-              style={{ width: '100%' }}
-              classNames={{ popup: { root: 'properties-panel-dropdown' } }}
-              placeholder={distinctLoading ? 'Loading…' : 'Select value'}
-              loading={distinctLoading}
-              showSearch
-              allowClear
-              options={distinctOptions}
-              value={tempFilter.value != null && tempFilter.value !== '' ? String(tempFilter.value) : undefined}
-              onChange={(val) => setTempFilter({ ...tempFilter, value: val })}
-            />
-          ) : isDateColumn ? (
-            <DatePicker
-              size="small"
-              style={{ width: '100%' }}
-              value={tempFilter.value ? dayjs(String(tempFilter.value)) : null}
-              onChange={(d) => setTempFilter({ ...tempFilter, value: d ? d.format('YYYY-MM-DD') : '' })}
-              allowClear
-            />
-          ) : isNumericColumn ? (
-            <InputNumber
-              size="small"
-              className="premium-input"
-              style={{ width: '100%' }}
-              placeholder="Filter value"
-              value={tempFilter.value === '' || tempFilter.value == null ? undefined : Number(tempFilter.value)}
-              onChange={(val) => setTempFilter({ ...tempFilter, value: val ?? '' })}
-            />
-          ) : (
-            <Input
-              size="small"
-              className="premium-input"
-              placeholder={distinctLoading ? 'Loading values…' : 'Filter value'}
-              value={String(tempFilter.value ?? '')}
-              onChange={(e) => setTempFilter({ ...tempFilter, value: e.target.value })}
-            />
-          )}
-        </div>
+        {valueInput === 'none' ? null : (
+          <div>
+            <div className="pp-filter-editor-label">{tFilters('filter_value')}</div>
+            {valueInput === 'multi' ? (
+              <Select
+                mode={distinctOptions.length ? 'multiple' : 'tags'}
+                className="filter-select"
+                style={{ width: '100%' }}
+                size="small"
+                placeholder={distinctLoading ? tFilters('filter_values_loading') : tFilters('filter_values_pick')}
+                loading={distinctLoading}
+                value={listValue}
+                onChange={(vals) => setTempFilter({ ...tempFilter, value: vals })}
+                options={distinctOptions}
+                tokenSeparators={[',']}
+                allowClear
+                showSearch
+                optionFilterProp="label"
+              />
+            ) : valueInput === 'date' ? (
+              <DatePicker
+                size="small"
+                style={{ width: '100%' }}
+                value={tempFilter.value && dayjs(String(tempFilter.value)).isValid() ? dayjs(String(tempFilter.value)) : null}
+                onChange={(d) => setTempFilter({ ...tempFilter, value: d ? d.format('YYYY-MM-DD') : '' })}
+                allowClear
+              />
+            ) : valueInput === 'number' ? (
+              <InputNumber
+                size="small"
+                className="premium-input"
+                style={{ width: '100%' }}
+                value={tempFilter.value === '' || tempFilter.value == null ? undefined : Number(tempFilter.value)}
+                onChange={(val) => setTempFilter({ ...tempFilter, value: val ?? '' })}
+              />
+            ) : valueInput === 'boolean' ? (
+              <Segmented
+                size="small"
+                block
+                options={[
+                  { label: tFilters('filter_yes'), value: 'true' },
+                  { label: tFilters('filter_no'), value: 'false' },
+                ]}
+                value={String(tempFilter.value) === 'false' ? 'false' : 'true'}
+                onChange={(val) => setTempFilter({ ...tempFilter, value: val })}
+              />
+            ) : valueInput === 'pick' ? (
+              <Select
+                size="small"
+                style={{ width: '100%' }}
+                classNames={{ popup: { root: 'properties-panel-dropdown' } }}
+                placeholder={distinctLoading ? tFilters('filter_values_loading') : tFilters('filter_value_pick')}
+                loading={distinctLoading}
+                showSearch
+                allowClear
+                options={distinctOptions}
+                value={tempFilter.value != null && tempFilter.value !== '' ? String(tempFilter.value) : undefined}
+                onChange={(val) => setTempFilter({ ...tempFilter, value: val })}
+              />
+            ) : (
+              <Input
+                size="small"
+                className="premium-input"
+                placeholder={tFilters('filter_value_type')}
+                value={String(tempFilter.value ?? '')}
+                onChange={(e) => setTempFilter({ ...tempFilter, value: e.target.value })}
+              />
+            )}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12, borderTop: '1px solid var(--ant-color-border)', paddingTop: 12 }}>
-        <Button size="small" onClick={() => setIsModalOpen(false)} style={{ borderRadius: 6 }}>Close</Button>
-        <Button size="small" type="primary" onClick={handleSaveFilter} style={{ borderRadius: 6, background: 'var(--ant-color-primary)' }}>Save</Button>
+        <Button size="small" onClick={() => setIsModalOpen(false)}>{tFilters('filter_cancel')}</Button>
+        <Button
+          size="small"
+          type="primary"
+          onClick={handleSaveFilter}
+          disabled={!tempFilter.field || (valueInput !== 'none' && (tempFilter.value === '' || tempFilter.value == null || (Array.isArray(tempFilter.value) && tempFilter.value.length === 0)))}
+        >
+          {tFilters('filter_apply')}
+        </Button>
       </div>
     </div>
   );
+
+  /** "Region is one of North, South" — the saved condition in words. */
+  const describeFilter = (filter: FilterItem) => {
+    if (filter.type === 'sql') return tFilters('filter_custom_sql');
+    const k = kindOf(filter.field);
+    const opKey = operatorLabelKey(k, filter.operator);
+    const op = opKey ? tFilters(opKey as never) : filter.operator;
+    if (filter.operator === 'is_null' || filter.operator === 'is_not_null') return op;
+    const v = Array.isArray(filter.value) ? filter.value.join(', ') : String(filter.value ?? '');
+    const shown = k === 'boolean' ? (v === 'false' ? tFilters('filter_no') : tFilters('filter_yes')) : v;
+    return `${op} ${shown}`;
+  };
 
   return (
     <div className="panel-section">
@@ -995,7 +1018,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
           <Popover
             key={index}
             content={filterConfigContent}
-            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--ant-color-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Edit Filter</div>}
+            title={<div style={{ padding: '8px 0', borderBottom: '1px solid var(--ant-color-border)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>{tFilters('filter_edit_title')}</div>}
             trigger="click"
             open={isModalOpen && editingIndex === index}
             onOpenChange={(open) => {
@@ -1011,15 +1034,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
                   <span className="filter-item-field">
                     {columnOptions.find(opt => opt.value === filter.field)?.label || filter.field}
                   </span>
-                <span className="filter-item-condition">
-                  {filter.type === 'sql' 
-                    ? 'Custom SQL' 
-                    : `${FILTER_OPERATORS.find(op => op.value === filter.operator)?.label || filter.operator}${
-                        FILTER_OPERATORS.find(op => op.value === filter.operator)?.disableValue 
-                          ? '' 
-                          : ` ${Array.isArray(filter.value) ? filter.value.join(', ') : String(filter.value)}`
-                      }`}
-                </span>
+                <span className="filter-item-condition">{describeFilter(filter)}</span>
                 </div>
               </div>
               <div className="metric-item-actions">
@@ -1037,7 +1052,7 @@ export const FilterListField: React.FC<FilterListFieldProps> = ({
 
         <Popover
           content={filterConfigContent}
-          title="Add Filter"
+          title={tFilters('filter_add_title')}
           trigger="click"
           open={isModalOpen && editingIndex === null}
           onOpenChange={(open) => {
@@ -1328,11 +1343,18 @@ interface CheckboxFieldProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   className?: string;
+  /** One short sentence, shown on hover of the ⓘ after the label. */
+  hint?: string;
 }
 
-export const CheckboxField: React.FC<CheckboxFieldProps> = ({ label, checked, onChange, className = '' }) => (
+export const CheckboxField: React.FC<CheckboxFieldProps> = ({ label, checked, onChange, className = '', hint }) => (
   <Checkbox className={`checkbox-item ${className}`} checked={checked} onChange={(e) => onChange(e.target.checked)}>
     {label}
+    {hint ? (
+      <Tooltip title={hint}>
+        <InfoCircleOutlined className="pp-section-label-tip" aria-label={hint} style={{ marginInlineStart: 6 }} />
+      </Tooltip>
+    ) : null}
   </Checkbox>
 );
 

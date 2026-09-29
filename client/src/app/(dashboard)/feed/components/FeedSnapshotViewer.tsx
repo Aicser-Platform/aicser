@@ -17,6 +17,7 @@ import {
 } from '../utils/buildFeedSnapshotPayload';
 import { FEED_DASHBOARD_PREVIEW_MAX, isFeedPreviewableWidget, pickFeedPreviewWidgets } from '../utils/feedDashboardPreviewLayout';
 import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
+import { DashboardPaletteProvider } from '@/app/(dashboard)/dashboards/widgets/DashboardPaletteContext';
 
 type Props = {
   item: FeedItem;
@@ -27,7 +28,17 @@ type Props = {
 /**
  * Read-only renderer for snapshot-mode feed posts (immutable captured payload).
  */
-export function FeedSnapshotViewer({ item, variant = 'detail', maxWidgets }: Props) {
+export function FeedSnapshotViewer(props: Props) {
+  // Colours as published: the palette captured with the snapshot, not the live dashboard's.
+  const payload = (props.item.asset.snapshotPayload || null) as FeedSnapshotPayload | null;
+  return (
+    <DashboardPaletteProvider palette={payload?.visuals?.presentation?.colorPalette}>
+      <FeedSnapshotViewerBody {...props} />
+    </DashboardPaletteProvider>
+  );
+}
+
+function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets }: Props) {
   const t = useTranslations('feed');
   const noopCrossFilter = useCallback(() => {}, []);
 

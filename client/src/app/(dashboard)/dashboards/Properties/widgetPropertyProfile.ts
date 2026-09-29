@@ -17,6 +17,8 @@ export type WidgetPropertyKind =
   | 'heatmap'
   | 'waterfall'
   | 'bullet'
+  | 'sankey'
+  | 'histogram'
   | 'map'
   | 'content'
   | 'control';
@@ -226,6 +228,32 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showSortControls: true,
     showDesign: true,
   },
+  sankey: {
+    kind: 'sankey',
+    inChartTypeSwitcher: true,
+    showLegendToggle: false, // nodes are labelled in place
+    showDataLabelToggle: false,
+    showCartesianAxes: false,
+    showColorPalette: true,
+    showLegendSeriesControls: false,
+    showValueFormat: true,
+    showOverlays: false,
+    showSortControls: false, // flow layout decides the order
+    showDesign: false,
+  },
+  histogram: {
+    kind: 'histogram',
+    inChartTypeSwitcher: true,
+    showLegendToggle: false, // one series: counts
+    showDataLabelToggle: true,
+    showCartesianAxes: true,
+    showColorPalette: true,
+    showLegendSeriesControls: false,
+    showValueFormat: true, // formats the range edges ($1k–$2k)
+    showOverlays: false,
+    showSortControls: false, // ranges are always in order
+    showDesign: false,
+  },
   geo: {
     kind: 'map',
     inChartTypeSwitcher: true,
@@ -234,7 +262,7 @@ export const WIDGET_PROPERTY_PROFILES: Record<string, WidgetPropertyProfile> = {
     showCartesianAxes: false,
     showColorPalette: false, // dedicated colorFrom / colorTo
     showLegendSeriesControls: false,
-    showValueFormat: false,
+    showValueFormat: true, // currency / decimals in the tooltip and scale
     showOverlays: false,
     showSortControls: true,
     showDesign: false,

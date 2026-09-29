@@ -1,4 +1,5 @@
 import { getBackendUrl } from '@/utils/backendUrl';
+import { resolveEmbedToken } from '@/utils/embedSession';
 import type { DashboardFilter } from '@/types/dashboard';
 import type { LayoutItem, RuntimeFilter, WidgetInstance, WidgetType } from '../stores/useDashboardStore';
 import { normalizeRuntimeFiltersForBackend } from './filterOperators';
@@ -93,7 +94,7 @@ export async function fetchEmbedDashboardPayload(
   // this for the rest of the app.
   const base = typeof window !== 'undefined' ? '' : getBackendUrl();
   const params = new URLSearchParams();
-  if (opts?.token) params.set('token', opts.token);
+  if (opts?.token) params.set('token', resolveEmbedToken(opts.token));
   if (opts?.pageId) params.set('page_id', opts.pageId);
   if (opts?.runtimeFilters?.length) {
     // Every other chartService entry point runs runtimeFilters through this

@@ -81,6 +81,10 @@ export function buildProxyAuthHeaders(
     request.headers.get('authorization') ?? request.headers.get('Authorization'),
     extra,
   );
+  // The visitor's address (Next's server records it in x-forwarded-for): without it every
+  // visitor reaches the API from this server's address and shares one rate-limit bucket.
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
   return forwardWorkspaceContextHeaders(request, headers);
 }
 

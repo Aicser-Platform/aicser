@@ -344,6 +344,13 @@ export function PerformancePane({
   }, [perfPlan, t]);
 
   const planTreeData = useMemo(() => buildPlanTreeData(perfPlan, planLabels), [perfPlan, planLabels]);
+  const textPlan = useMemo(
+    () =>
+      isFlatTextRowArray(perfPlan)
+        ? perfPlan.map((row) => String(Object.values(row)[0] ?? '')).join('\n')
+        : null,
+    [perfPlan],
+  );
 
   return (
     <div className="qe-results-tab-body qe-performance-pane">
@@ -359,11 +366,6 @@ export function PerformancePane({
             >
               {t('analyze_query_performance')}
             </Button>
-            {perfPlan ? (
-              <Button size="small" icon={<CopyOutlined />} onClick={copyPlan}>
-                {t('copy_plan')}
-              </Button>
-            ) : null}
           </Space>
           <Card
             size="small"
@@ -414,7 +416,10 @@ export function PerformancePane({
             }
           >
             <div className="data-content qe-performance-pane__plan-scroll">
-              {planTreeData.length ? (
+              {textPlan ? (
+                // DuckDB / MySQL / generic EXPLAIN: a drawn plan, kept as drawn.
+                <pre className="qe-performance-pane__plan-text">{textPlan}</pre>
+              ) : planTreeData.length ? (
                 <Tree
                   treeData={planTreeData}
                   blockNode

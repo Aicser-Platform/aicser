@@ -37,6 +37,20 @@ _MIME_TYPES: Dict[str, str] = {
 
 DEFAULT_VIEWPORT: Dict[str, int] = {"width": 1400, "height": 900}
 
+# Headless Chromium is ~150–300 MB each. Exports (PDF prints, chart images) share one small
+# pool per process so a burst of downloads queues briefly instead of exhausting memory.
+_BROWSER_SLOTS: Optional["asyncio.Semaphore"] = None
+
+
+def browser_slot() -> "asyncio.Semaphore":
+    global _BROWSER_SLOTS
+    if _BROWSER_SLOTS is None:
+        import asyncio
+        import os
+
+        _BROWSER_SLOTS = asyncio.Semaphore(max(1, int(os.getenv("EXPORT_BROWSER_CONCURRENCY", "2") or 2)))
+    return _BROWSER_SLOTS
+
 
 async def render_page_export(
     *,
@@ -80,7 +94,7 @@ async def render_page_export(
 
     from playwright.async_api import async_playwright  # type: ignore
 
-    async with async_playwright() as pw:
+    async with browser_slot(), async_playwright() as pw:
         browser = await pw.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
         try:
             page = await browser.new_page(

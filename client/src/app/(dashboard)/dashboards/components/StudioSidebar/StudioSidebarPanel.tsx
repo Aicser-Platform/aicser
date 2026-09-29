@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import React from 'react';
 import { Button, Tooltip } from 'antd';
 import { MenuFoldOutlined } from '@ant-design/icons';
@@ -13,10 +14,9 @@ interface StudioSidebarPanelProps {
   onCollapse?: () => void;
 }
 
-const SECTION_LABELS: Record<SidebarSection, string> = {
-  dashboards: 'Dashboards',
-  data: 'Data',
-  modeling: 'Data Modeling',
+const SECTION_LABEL_KEYS: Record<SidebarSection, string> = {
+  dashboards: 'rail_dashboards',
+  modeling: 'rail_modeling',
 };
 
 export function StudioSidebarPanel({
@@ -25,6 +25,7 @@ export function StudioSidebarPanel({
   isFullPage,
   onCollapse,
 }: StudioSidebarPanelProps) {
+  const t = useTranslations('dashboards_page');
   const isOpen = activeSection !== null;
   const cls = [
     'studio-sidebar-panel',
@@ -38,7 +39,7 @@ export function StudioSidebarPanel({
       {isOpen && (
         <>
           <div className="studio-panel-header">
-            <span className="studio-panel-header-label">{SECTION_LABELS[activeSection]}</span>
+            <span className="studio-panel-header-label">{t(SECTION_LABEL_KEYS[activeSection] as never)}</span>
             {onCollapse ? (
               <Tooltip title="Collapse panel" placement="bottom">
                 <Button

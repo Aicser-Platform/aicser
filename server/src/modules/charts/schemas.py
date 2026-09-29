@@ -558,6 +558,11 @@ class DashboardExportRequest(BaseModel):
     format: str = Field(..., description="Export format (png, pdf, html, excel)")
     include_data: bool = Field(True, description="Whether to include data in export")
     theme: Optional[str] = Field(None, description="Export theme")
+    layout: str = Field(
+        "snapshot",
+        pattern="^(snapshot|report)$",
+        description="snapshot: the dashboard as one picture; report: a paginated document (cover, KPIs, one chart per page)",
+    )
 
 
 class DashboardExportResponse(BaseModel):

@@ -1,9 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Dropdown, Input, Modal, Tooltip, message } from 'antd';
+import { Button, Dropdown, Input, Modal, Segmented, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
-import { ShareAltOutlined, CodeOutlined } from '@ant-design/icons';
+import {
+  ShareAltOutlined,
+  CodeOutlined,
+  DashboardOutlined,
+  CopyOutlined,
+  DownloadOutlined,
+  FileExcelOutlined,
+  FileImageOutlined,
+  FileTextOutlined,
+  BarChartOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
+import { ADD_TO_DASHBOARD_EVENT } from './chartDesignerEvents';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
@@ -15,13 +27,22 @@ import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
+import { chartDescription, chartSource } from '../../dashboards/utils/chartAnnotations';
+import { InlineText } from '../../dashboards/components/InlineText';
+import { emitWidgetOptionsPatch } from '../../dashboards/widgets/inlineEditEvents';
+import { copyChartData, exportCSV, exportExcel } from '../../dashboards/services/exportChartDataService';
+import { exportChartByWidget } from '../../dashboards/services/exportChartImageService';
 
 interface ChartDesignerToolbarProps {
   selectedWidget: ChartDesignerWidget | null;
+  /** The canvas shows the chart or the data behind it. */
+  view?: 'chart' | 'data';
+  onViewChange?: (view: 'chart' | 'data') => void;
 }
 
-export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarProps) {
+export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewChange }: ChartDesignerToolbarProps) {
   const t = useTranslations('chart_designer');
+  const tDash = useTranslations('dashboards');
   const tf = useTranslations('feed_publish');
   const te = useTranslations('embed_modal');
 
@@ -182,31 +203,110 @@ export function ChartDesignerToolbar({ selectedWidget }: ChartDesignerToolbarPro
       label: te('embed_get_code'),
       onClick: () => void handleShowEmbed(),
     },
+    // Taking the chart out lives with sharing it (Canva / Datawrapper): one menu, not two.
+    { type: 'divider' },
+    {
+      key: 'copy',
+      icon: <CopyOutlined />,
+      label: tDash('menu_copy_data'),
+      disabled: !selectedWidget?.chartData,
+      onClick: () => void handleDownload('copy'),
+    },
+    {
+      key: 'download',
+      icon: <DownloadOutlined />,
+      label: tDash('menu_download'),
+      disabled: !selectedWidget?.chartData,
+      children: [
+        { key: 'csv', icon: <FileTextOutlined />, label: tDash('menu_download_csv'), onClick: () => void handleDownload('csv') },
+        { key: 'excel', icon: <FileExcelOutlined />, label: tDash('menu_download_excel'), onClick: () => void handleDownload('excel') },
+        { key: 'png', icon: <FileImageOutlined />, label: tDash('menu_download_png'), onClick: () => void handleDownload('png') },
+        { key: 'png-print', icon: <FileImageOutlined />, label: tDash('menu_download_png_print'), onClick: () => void handleDownload('png-print') },
+        { key: 'svg', icon: <FileImageOutlined />, label: tDash('menu_download_svg'), onClick: () => void handleDownload('svg') },
+      ],
+    },
   ];
 
   const title = selectedWidget?.title?.trim() || t('untitled_chart');
+
+  const handleDownload = async (key: string) => {
+    if (!selectedWidget) return;
+    const w = selectedWidget as any;
+    try {
+      if (key === 'copy') {
+        const n = await copyChartData(w.chartData, w);
+        if (n) message.success(tDash('data_copied', { count: n }));
+        else message.info(tDash('view_table_empty'));
+      } else if (key === 'csv') exportCSV(w.chartData, title, w);
+      else if (key === 'excel') exportExcel(w.chartData, title, w);
+      else if (key === 'png' || key === 'png-print' || key === 'svg') {
+        await exportChartByWidget(w.id, title, key as 'png' | 'png-print' | 'svg', {
+          description: chartDescription(w.chartOptions),
+          source: chartSource(w.chartOptions),
+        });
+      }
+    } catch {
+      message.error(key === 'copy' ? tDash('copy_failed') : tDash('export_failed'));
+    }
+  };
 
   return (
     <>
       <div className="chart-designer-toolbar">
         {selectedWidget ? (
-          <Input
-            className="chart-designer-toolbar-title"
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={commitTitle}
-            onPressEnter={(e) => {
-              (e.target as HTMLInputElement).blur();
-            }}
-            placeholder={t('untitled_chart')}
-            variant="borderless"
-            maxLength={120}
-          />
+          // Title with its description underneath, as the chart reads on a dashboard.
+          <div className="chart-designer-toolbar-heading">
+            <Input
+              className="chart-designer-toolbar-title"
+              value={titleDraft}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitle}
+              onPressEnter={(e) => {
+                (e.target as HTMLInputElement).blur();
+              }}
+              placeholder={t('untitled_chart')}
+              variant="borderless"
+              maxLength={120}
+            />
+            <InlineText
+              className="chart-designer-toolbar-description"
+              value={typeof selectedWidget.chartOptions?.subtitle === 'string' ? selectedWidget.chartOptions.subtitle : ''}
+              placeholder={tDash('inline_add_description')}
+              editable
+              onChange={(v) => emitWidgetOptionsPatch(String(selectedWidget.id), { subtitle: v || undefined })}
+            />
+          </div>
         ) : (
           <span className="chart-designer-toolbar-title chart-designer-toolbar-title--empty">
             {t('toolbar_no_selection')}
           </span>
         )}
+        {/* See the numbers behind the chart without leaving it (Power BI "show as table"). */}
+        {selectedWidget && onViewChange ? (
+          <Segmented
+            size="small"
+            value={view}
+            onChange={(v) => onViewChange(v as 'chart' | 'data')}
+            options={[
+              { label: tDash('view_chart'), value: 'chart', icon: <BarChartOutlined /> },
+              { label: tDash('view_data'), value: 'data', icon: <TableOutlined /> },
+            ]}
+          />
+        ) : null}
+        {/* The next step after building a chart, one click away (the library "⋮" menu opens the
+            same dialog). */}
+        <Button
+          size="small"
+          icon={<DashboardOutlined />}
+          disabled={!selectedWidget?.chartId}
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent(ADD_TO_DASHBOARD_EVENT, { detail: { chartId: String(selectedWidget?.chartId) } }),
+            )
+          }
+        >
+          {t('add_to_dashboard')}
+        </Button>
         <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
           <Tooltip title={selectedWidget ? t('share_menu_tooltip') : t('share_select_chart')}>
             <Button

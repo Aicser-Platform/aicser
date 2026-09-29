@@ -409,6 +409,27 @@ html[data-theme='dark'] .studio-canvas-area {
   color: var(--studio-primary);
 }
 
+.widget-unapplied-filters {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--ant-color-warning-text, #ad6800);
+  background: var(--ant-color-warning-bg, #fffbe6);
+  border: 1px solid var(--ant-color-warning-border, #ffe58f);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .widget-filter-warning-hint-wrap {
   position: absolute;
   top: 2px;
@@ -431,23 +452,6 @@ html[data-theme='dark'] .studio-canvas-area {
 .widget-filter-warning-hint-btn.ant-btn:hover,
 .widget-filter-warning-hint-btn.ant-btn:focus-visible {
   opacity: 1;
-}
-
-/* ─── Explain Chart Drawer ────────────────────────────────────────────────── */
-@keyframes explain-blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
-}
-
-.explain-cursor {
-  display: inline-block;
-  animation: explain-blink 0.9s step-end infinite;
-  margin-left: 1px;
-  color: var(--studio-primary, #1677ff);
-}
-
-.explain-chart-response .ant-typography {
-  color: var(--ant-color-text);
 }
 
 /* ─── Print / browser PDF ────────────────────────────────────────────────── */
@@ -799,12 +803,25 @@ body.dashboard-print-mode .sidebar-toggle-btn {
     border-bottom: 1px solid var(--studio-border);
   }
 
+  /* Stack Properties under the canvas: in a row it kept its 320px min-width and was
+     pushed off-screen on tablets/phones (QA D-DASH-03). */
+  .dashboard-studio-root .studio-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
   .properties-panel {
     width: 100% !important;
+    min-width: 0 !important;
     max-width: 100%;
     max-height: 45vh;
     border-left: none !important;
     border-top: 1px solid var(--studio-border);
+  }
+
+  .properties-panel.collapsed {
+    max-height: 0;
+    border-top: none;
   }
 
   .studio-canvas-area {
@@ -891,39 +908,6 @@ body.dashboard-print-mode .sidebar-toggle-btn {
   font-size: 10px;
   font-weight: 600;
   vertical-align: top;
-}
-
-.dashboard-collab-comments-anchor {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 45;
-}
-
-.dashboard-collab-comments-trigger {
-  box-shadow: none;
-}
-
-.dashboard-collab-comments-trigger--toolbar {
-  box-shadow: none;
-}
-
-.dashboard-collab-comments-scope {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.dashboard-collab-comment-item {
-  align-items: flex-start !important;
-}
-
-.dashboard-collab-comment-author {
-  font-size: 12px;
-}
-
-.dashboard-collab-comment-text {
-  font-size: 13px !important;
 }
 
 /* DashboardExecutiveBanner (AI dashboard key-insight/story-arc card) --
@@ -1023,4 +1007,89 @@ body.dashboard-print-mode .sidebar-toggle-btn {
 
 .dashboard-executive-banner-toggle:hover {
   text-decoration: underline;
+}
+
+/* Quick bar above the selected card (Canva-style): chart type, colours, duplicate, delete. */
+.react-grid-item > .widget-quickbar,
+[data-widget-id] > .widget-quickbar {
+  /* The card wrapper is the grid item, whose generic child rule stretches divs to 100%. */
+  width: auto;
+  height: auto;
+  box-sizing: border-box;
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border-secondary);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  white-space: nowrap;
+}
+
+.react-grid-item > .widget-quickbar.widget-quickbar--below,
+[data-widget-id] > .widget-quickbar.widget-quickbar--below {
+  top: auto;
+  bottom: -18px;
+  transform: translate(-50%, 50%);
+}
+
+.widget-quickbar .ant-btn {
+  height: 26px;
+}
+
+.widget-quickbar-text {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.widget-quickbar-palette {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 170px;
+}
+
+.widget-quickbar-swatches {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.widget-quickbar-swatches i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* Filters set by clicking a chart, above the viewer grid. */
+.cross-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.cross-filter-chips .ant-tag {
+  margin: 0;
+}
+
+.dashboard-executive-banner {
+  position: relative;
+}
+
+.dashboard-executive-banner-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }

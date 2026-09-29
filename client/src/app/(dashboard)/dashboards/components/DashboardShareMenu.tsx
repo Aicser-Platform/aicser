@@ -174,6 +174,13 @@ export function DashboardShareMenu({
           onClick: () => onExport?.('pdf'),
         },
         {
+          key: 'pdf_report',
+          icon: <FilePdfOutlined />,
+          label: menuItemWithDescription(t('export_pdf_report'), t('export_pdf_report_desc')),
+          disabled: exportBusy,
+          onClick: () => onExport?.('pdf_report'),
+        },
+        {
           key: 'print',
           icon: <PrinterOutlined />,
           label: menuItemWithDescription(t('export_print'), t('export_print_desc')),

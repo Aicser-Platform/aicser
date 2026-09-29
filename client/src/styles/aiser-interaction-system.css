@@ -8,7 +8,10 @@
 
 .ant-dropdown:not(.ant-dropdown-hidden),
 .ant-dropdown.ant-dropdown-menu-submenu-popup,
-.ant-dropdown-menu-submenu-popup {
+.ant-dropdown-menu-submenu-popup,
+/* antd 6 gives the submenu popup wrapper the .ant-dropdown-menu class too; without this the
+   surface rule below paints it as a second rim around the submenu list. */
+.ant-dropdown-menu.ant-dropdown-menu-submenu-popup {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -16,9 +19,9 @@
   outline: none !important;
 }
 
-.ant-dropdown-menu,
+.ant-dropdown-menu:not(.ant-dropdown-menu-submenu-popup),
 .ant-dropdown-menu-submenu-popup > .ant-dropdown-menu,
-.ant-dropdown-menu-submenu-popup .ant-dropdown-menu {
+.ant-dropdown-menu-submenu-popup .ant-dropdown-menu:not(.ant-dropdown-menu-submenu-popup) {
   background: var(--ant-color-bg-elevated) !important;
   border: var(--overlay-border) !important;
   border-radius: var(--overlay-radius) !important;
@@ -40,7 +43,7 @@
   padding: 0 !important;
 }
 
-.widget-overflow-dropdown .ant-dropdown-menu,
+.widget-overflow-dropdown .ant-dropdown-menu:not(.ant-dropdown-menu-submenu-popup),
 .widget-overflow-dropdown .ant-dropdown-menu-submenu-popup > .ant-dropdown-menu {
   border: var(--overlay-border) !important;
   box-shadow: var(--overlay-shadow) !important;
@@ -155,8 +158,12 @@
    near-black text onto the dark sidebar itself. Fall back to the same
    light base color used for the unselected state. */
 .ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title,
-.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-title-content {
-  color: #e6edf3 !important;
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-title-content,
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-submenu-arrow {
+  /* The section holding the current page: brand colour + weight, so you can see where you
+     are even when the section is folded (it used to look identical to the others). */
+  color: var(--ant-color-primary-text, #5eead4) !important;
+  font-weight: 600;
 }
 .ant-menu-dark .ant-menu-sub.ant-menu-inline {
   background: var(--color-bg-navigation-sider, #030712) !important;
@@ -174,6 +181,12 @@
 .ant-menu-light .ant-menu-submenu-title .ant-menu-submenu-arrow,
 .ant-menu-light .ant-menu-submenu-title .ant-menu-title-content {
   color: #24292f !important;
+}
+.ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title,
+.ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-title-content,
+.ant-menu-light .ant-menu-submenu-selected > .ant-menu-submenu-title .ant-menu-submenu-arrow {
+  color: var(--ant-color-primary, #0f766e) !important;
+  font-weight: 600;
 }
 .ant-menu-light .ant-menu-sub.ant-menu-inline {
   background: var(--color-bg-navigation-sider, #eef1f5) !important;
@@ -202,8 +215,14 @@
   transition: var(--interaction-hover-transition) !important;
 }
 
-.ant-list-item:hover {
+/* Hover highlight only where a row is actually clickable (antd sets cursor:pointer via
+   onClick → .ant-list-item with a role/button, or opt-in .list-item-interactive). */
+.ant-list-item.list-item-interactive:hover,
+.ant-list-item[role="button"]:hover,
+.ant-list-item[style*="cursor: pointer"]:hover {
   background: var(--interaction-hover-bg) !important;
+}
+.ant-list-item:hover {
   transform: none !important;
 }
 

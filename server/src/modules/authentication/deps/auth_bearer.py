@@ -239,6 +239,10 @@ def verify_supabase_token(token: str) -> dict:
                         "verify_signature": True,
                         "verify_exp": True,
                         "verify_iat": True,
+                        # python-jose skips the audience check when a token has no "aud" at
+                        # all; Supabase always sets it, so require it — an aud-less token
+                        # signed with a shared secret (e.g. an Aicser session) must not pass here.
+                        "require_aud": True,
                     },
                 )
                 if isinstance(claims, dict):
@@ -281,6 +285,10 @@ def verify_supabase_token(token: str) -> dict:
                         "verify_signature": True,
                         "verify_exp": True,
                         "verify_iat": True,
+                        # python-jose skips the audience check when a token has no "aud" at
+                        # all; Supabase always sets it, so require it — an aud-less token
+                        # signed with a shared secret (e.g. an Aicser session) must not pass here.
+                        "require_aud": True,
                     },
                 )
                 if isinstance(claims, dict):
@@ -462,6 +470,16 @@ def _jwt_from_supabase_auth_cookies(request: Request) -> Optional[str]:
     return None
 
 
+def _raise_if_revoked(payload: dict) -> None:
+    from src.modules.authentication.service import is_session_revoked
+
+    if is_session_revoked(payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been signed out. Please log in again.",
+        )
+
+
 class JWTCookieBearer(HTTPBearer):
     def __init__(self, auto_error: bool = True):
         super(JWTCookieBearer, self).__init__(auto_error=auto_error)
@@ -544,6 +562,10 @@ class JWTCookieBearer(HTTPBearer):
 
         # No token means no authentication
         if not token:
+            if not self.auto_error:
+                # Optional auth (embeds, public shares, exports): the route decides, e.g. by an
+                # embed token. Raising here made every anonymous embedded dashboard fail.
+                return None
             logger.warning("JWTCookieBearer: No token found (header or cookies)")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -557,14 +579,23 @@ class JWTCookieBearer(HTTPBearer):
             ce_payload = decode_access_token(token)
             uid = str(ce_payload.get("sub") or "")
             if uid:
+                from src.shared.llm_principal import set_llm_principal
+
+                set_llm_principal(uid)
                 return {
                     "id": uid,
                     "user_id": uid,
                     "sub": uid,
                     "email": ce_payload.get("email"),
                 }
-        except Exception:
-            pass
+        except Exception as _ce_exc:
+            # A valid session that was revoked (logout / "sign out everywhere") is final:
+            # never retry it with another decoder that doesn't know about revocation.
+            if "revoked" in str(_ce_exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Session has been signed out. Please log in again.",
+                )
 
         # Keycloak OIDC (async path — proper signature verification before sync fallbacks) — EE only
         from src.core.edition import is_ee_enabled
@@ -579,13 +610,21 @@ class JWTCookieBearer(HTTPBearer):
                 if is_keycloak_enabled():
                     kc_payload = await verify_keycloak_token(token)
                     if kc_payload:
+                        _raise_if_revoked(kc_payload)
                         return kc_payload
+            except HTTPException:
+                raise
             except Exception:
                 pass
 
         # Extract payload from token (HS256 / Supabase JWKS / dev fallback)
         payload = extract_user_id_from_token(token)
         if payload:
+            # SSO tokens honour logout / "sign out everywhere" / deprovisioning like our own.
+            _raise_if_revoked(payload)
+            from src.shared.llm_principal import set_llm_principal
+
+            set_llm_principal(payload.get("id") or payload.get("user_id") or payload.get("sub"))
             return payload
         
         # SECURITY: a `demo_token_<anything>` branch used to live here, granting

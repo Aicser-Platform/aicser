@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
+vi.mock('next-intl', () => ({ useTranslations: () => (key: string) => key }));
 import { DashboardViewerGrid } from '../DashboardViewerGrid';
 import type { LayoutItem, WidgetInstance } from '../../../stores/useDashboardStore';
 
@@ -72,7 +73,7 @@ describe('DashboardViewerGrid (preserve mode)', () => {
     }
   });
 
-  it('reflows gracefully on tablet and mobile when layoutMode is auto', () => {
+  it('keeps the edited design down to tablet width, reflowing only phones and portrait tablets', () => {
     const layout: LayoutItem[] = [
       { i: 'a', x: 0, y: 0, w: 6, h: 6 },
       { i: 'b', x: 6, y: 0, w: 6, h: 6 },
@@ -93,10 +94,10 @@ describe('DashboardViewerGrid (preserve mode)', () => {
     expect(capturedProps).not.toBeNull();
     const { cols, layouts } = capturedProps!;
 
-    // Desktop preserves 12 columns
+    // Desktop and landscape tablet show exactly what Edit shows
     expect(cols.lg).toBe(12);
-    // Tablet reflows into 10 columns
-    expect(cols.md).toBe(10);
+    expect(cols.md).toBe(12);
+    expect(layouts.md).toEqual(layouts.lg);
     // Mobile reflows into 6, 4, 2 columns
     expect(cols.sm).toBe(6);
     expect(cols.xs).toBe(4);

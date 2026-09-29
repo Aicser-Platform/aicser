@@ -98,6 +98,14 @@ def _is_revoked(payload: dict) -> bool:
     return False
 
 
+def is_session_revoked(payload: dict) -> bool:
+    """Revocation check for any accepted token (ours or an SSO provider's), keyed by our user id."""
+    if not isinstance(payload, dict):
+        return False
+    user_id = payload.get("id") or payload.get("user_id") or payload.get("sub")
+    return _is_revoked({"jti": payload.get("jti"), "sub": user_id, "iat": payload.get("iat")})
+
+
 def revoke_access_token(token: str) -> None:
     """Revoke a single session token (logout). Best-effort and safe to call
     on an already-expired/invalid/claim-less token — it just becomes a no-op."""
@@ -109,7 +117,13 @@ def revoke_access_token(token: str) -> None:
             options={"verify_exp": False},
         )
     except JWTError:
-        return
+        # SSO tokens (Supabase / Keycloak) are signed by the identity provider. Denylisting
+        # only needs their id and expiry; reading them unverified is safe here because this
+        # can only ever *remove* access, never grant it.
+        try:
+            payload = jwt.get_unverified_claims(token)
+        except JWTError:
+            return
     jti = payload.get("jti")
     exp = payload.get("exp")
     if not jti or exp is None:

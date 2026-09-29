@@ -48,3 +48,21 @@ describe('preserveChartQueryOnTypeChange', () => {
     expect(result.groupField).toBeUndefined();
   });
 });
+
+describe('pie automatic sort', () => {
+  const bar = (q: Record<string, unknown>) => ({ id: 'w', chartType: 'bar', chartQuery: q }) as any;
+  const pie = (q: Record<string, unknown>) => ({ id: 'w', chartType: 'pie', chartQuery: q }) as any;
+
+  it('is undone when the chart leaves pie, so dates read in order again', () => {
+    const toPie = preserveChartQueryOnTypeChange(bar({ x: 'order_date' }), 'pie');
+    expect(toPie).toMatchObject({ sortBy: 'y', sortOrder: 'desc', sortAuto: true });
+    const back = preserveChartQueryOnTypeChange(pie(toPie), 'bar');
+    expect(back.sortBy).toBeUndefined();
+    expect(back.sortOrder).toBeUndefined();
+  });
+
+  it('keeps a sort the person chose', () => {
+    const back = preserveChartQueryOnTypeChange(pie({ x: 'region', sortBy: 'y', sortOrder: 'asc' }), 'bar');
+    expect(back).toMatchObject({ sortBy: 'y', sortOrder: 'asc' });
+  });
+});

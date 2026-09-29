@@ -16,6 +16,13 @@ def wrap_arq_functions(functions: Iterable[Callable[..., Any]]) -> List[Callable
 def trace_arq_job(fn: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(fn)
     async def wrapper(ctx: dict, *args: Any, **kwargs: Any) -> Any:
+        from src.core.work_priority import background_work
+
+        # Every worker job is background work: capacity controls keep headroom for people.
+        with background_work():
+            return await _traced(ctx, *args, **kwargs)
+
+    async def _traced(ctx: dict, *args: Any, **kwargs: Any) -> Any:
         job_name = fn.__name__
         job_id = ctx.get("job_id") if isinstance(ctx, dict) else None
 

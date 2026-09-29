@@ -46,6 +46,8 @@ prometheus-client = "^0.26.0"
 python-dotenv = "^1.0.0"
 python-multipart = "^0.0.32"
 openpyxl = "^3.1.2"
+# Aicser Sheet: the IronCalc engine (MIT/Apache-2.0) — xlsx import/export and server-side recalculation
+ironcalc = "^0.8.3"
 pyarrow = "^14.0.2"
 chardet = "^5.2.0"
 python-telegram-bot = "^22.0.0"
@@ -56,6 +58,12 @@ pymongo = "^4.6.0"
 elasticsearch = "^8.11.0"
 # Data Warehouse Drivers
 snowflake-connector-python = "^4.4.0"
+snowflake-sqlalchemy = "^1.11.1"
+sqlalchemy-bigquery = "^1.17.2"
+sqlalchemy-redshift = "^1.0.0"
+oracledb = "^26.0.1"
+trino = "^0.340.0"
+pyathena = "^3.36.0"
 google-cloud-bigquery = "^3.13.0"
 # Directly imported by ee/modules/data/services/{cloud_storage_service,azure_blob_storage_service}.py,
 # ee/modules/data/services/enterprise_connectors_service.py, src/modules/user/avatar_storage_service.py,

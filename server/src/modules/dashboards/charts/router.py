@@ -4,6 +4,7 @@ import copy
 from fastapi import APIRouter, Depends, HTTPException, Body, status, Path, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.embed.limits import cap_rows, embed_row_cap
 from src.db.session import get_async_session
 from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
@@ -68,6 +69,14 @@ def normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "drillPath": chart_query.get("drillPath") or [],
             "interactionMode": chart_query.get("interactionMode"),
             "drillThrough": chart_query.get("drillThrough"),
+            # Map points: the columns holding each row's position.
+            "latitude": chart_query.get("latitude"),
+            "longitude": chart_query.get("longitude"),
+            # The pie's automatic largest-first sort, undone when the chart leaves pie.
+            "sortAuto": chart_query.get("sortAuto"),
+            # Scatter: one dot per value of this column. Histogram: number of bins (None = auto).
+            "detail": chart_query.get("detail"),
+            "bins": chart_query.get("bins"),
         },
         "chart_options": payload.get("chartOptions"),
     }
@@ -113,9 +122,35 @@ def _query_identity_from_current_user(
     )
 
 
+def _embed_query_identity(embed_token: Optional[str], dashboard: Any) -> Optional[QueryIdentity]:
+    """An embedded view (no signed-in viewer): the token's creator, in the dashboard's project,
+    carrying the token's locked filters so every query is pinned to the host's end customer.
+    The token was already verified by verify_dashboard_read_access."""
+    if not embed_token:
+        return None
+    from types import MappingProxyType
+
+    from src.modules.embed.service import decode_embed_token
+
+    try:
+        payload = decode_embed_token(embed_token)
+    except Exception:
+        return None
+    if not payload.get("sub"):
+        return None
+    project_id = getattr(dashboard, "project_id", None)
+    return QueryIdentity(
+        user_id=str(payload["sub"]),
+        organization_id=str(payload["org_id"]) if payload.get("org_id") else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=MappingProxyType({"embed_locked_filters": list(payload.get("locked_filters") or [])}),
+    )
+
+
 def _dashboard_query_identity(
     current_user: Optional[dict],
     dashboard: Any,
+    embed_token: Optional[str] = None,
 ) -> Optional[QueryIdentity]:
     """The viewer's identity, scoped to the project the dashboard lives in.
 
@@ -123,6 +158,8 @@ def _dashboard_query_identity(
     matches no grant and comes back unfiltered. Taken from the dashboard rather
     than the chart row, whose project_id is nullable.
     """
+    if not current_user and embed_token:
+        return _embed_query_identity(embed_token, dashboard)
     project_id = getattr(dashboard, "project_id", None)
     return _query_identity_from_current_user(
         current_user,
@@ -153,14 +190,9 @@ async def create_chart(
     chart_payload, layout = normalize_chart_payload(payload)
     # Ensure dashboard_id is set in the chart payload for DB integrity
     chart_payload["dashboard_id"] = str(dashboard_id)
-    # Improved debug logging
-    print(f"[CREATE CHART] Path: {request.url.path} Method: {request.method}")
-    print(f"[CREATE CHART] Received layout: {layout}")
-    print(f"[CREATE CHART] Full payload: {payload}")
-    print(f"[CREATE CHART] dashboard_id (from path): {dashboard_id}")
 
     service = DashboardChartService(db)
-    chart = await service.create(dashboard_id, chart_payload, layout)
+    chart = await service.create(dashboard_id, chart_payload, layout, user_id=uid)
     return serialize_chart(chart)
 
 
@@ -202,8 +234,12 @@ async def link_chart(
         chart = await service.copy_chart_to_dashboard(dashboard_id, source, layout)
         return {**serialize_chart(chart), "linked": False, "copied": True}
 
+    from src.modules.data.services.project_scope import CrossProjectSourceError
+
     try:
         chart, created = await service.link_existing(dashboard_id, chart_id, layout)
+    except CrossProjectSourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError:
         raise HTTPException(status_code=404, detail="Chart not found")
     return {**serialize_chart(chart), "linked": True, "created": created}
@@ -333,6 +369,7 @@ async def _execute_chart_data(
     runtime_filters: Optional[List[dict]] = None,
     drill_context: Optional[dict] = None,
     identity: Optional[QueryIdentity] = None,
+    row_cap: Optional[int] = None,
 ) -> dict:
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
@@ -362,8 +399,11 @@ async def _execute_chart_data(
             base_query = apply_drill_context(base_query, drill_context)
         exec_chart.chart_query = base_query
 
+    from src.modules.charts.services.v2.chart_service import track_unapplied_filters
+
+    unapplied = track_unapplied_filters()
     try:
-        data = await service.chart_service.execute(exec_chart, identity=identity)
+        data = cap_rows(await service.chart_service.execute(exec_chart, identity=identity), row_cap)
     except ValueError as exc:
         message = str(exc).strip() or "Chart execution failed"
         if "data source not found" in message.lower():
@@ -386,6 +426,9 @@ async def _execute_chart_data(
     }
     if filter_warnings:
         result["filter_warnings"] = filter_warnings
+    if unapplied:
+        # Structured so the card can say, translated, which dashboard filter it ignores.
+        result["unapplied_filters"] = list(unapplied)
     return result
 
 
@@ -404,7 +447,8 @@ async def execute_chart(
         dashboard_id,
         chart_id,
         db,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
+        row_cap=None if current_user else embed_row_cap(),
     )
 
 
@@ -431,7 +475,8 @@ async def execute_chart_with_filters(
         dashboard_id, chart_id, db,
         runtime_filters=runtime_filters or None,
         drill_context=drill_context,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
+        row_cap=None if current_user else embed_row_cap(),
     )
 
 

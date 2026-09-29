@@ -2,6 +2,7 @@
 
 import React from 'react';
 import {
+  AlertOutlined,
   AppstoreOutlined,
   CodeOutlined,
   DashboardOutlined,
@@ -10,6 +11,13 @@ import {
   MessageOutlined,
   SettingOutlined,
   AreaChartOutlined,
+  ClusterOutlined,
+  EnvironmentOutlined,
+  ExperimentOutlined,
+  FileSearchOutlined,
+  ReadOutlined,
+  TableOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Drawer } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
@@ -39,8 +47,16 @@ const TAB_ICONS: Record<string, React.ReactNode> = {
 };
 
 const MORE_ICONS: SidebarNavIconMap = {
-  'query-editor': <CodeOutlined />,
   'chart-designer': <AreaChartOutlined />,
+  alerts: <AlertOutlined />,
+  'query-editor': <CodeOutlined />,
+  notebooks: <ReadOutlined />,
+  sheets: <TableOutlined />,
+  spatial: <EnvironmentOutlined />,
+  models: <ExperimentOutlined />,
+  'ai-decisions': <ThunderboltOutlined />,
+  knowledge: <FileSearchOutlined />,
+  warehouse: <ClusterOutlined />,
   settings: <SettingOutlined />,
 };
 

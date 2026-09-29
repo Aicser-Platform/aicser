@@ -9,6 +9,7 @@ import { WatermarkOverlay } from '@/utils/watermark-overlay';
 import { syncCrossFilterHighlight } from '../utils/crossFilterChart';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import { CHART_CLICK_EVENT, type ChartClickDetail } from './inlineEditEvents';
 
 interface EChartWidgetProps {
   type: string;
@@ -24,6 +25,35 @@ interface EChartWidgetProps {
 type CoreProps = EChartWidgetProps & {
   planType: string;
 };
+
+
+/** Report clicks on axis titles and data points, so they can be edited in place. */
+function reportChartClicks(instance: echarts.ECharts, host: HTMLElement) {
+  instance.on('click', (params: any) => {
+    const widgetId = host.closest('[data-widget-id]')?.getAttribute('data-widget-id');
+    const e = params?.event?.event as MouseEvent | undefined;
+    if (!widgetId || !e) return;
+    const isAxisTitle =
+      (params.componentType === 'xAxis' || params.componentType === 'yAxis') && params.targetType === 'axisName';
+    const isPoint = params.componentType === 'series' && params.name != null;
+    if (!isAxisTitle && !isPoint) return;
+    window.dispatchEvent(
+      new CustomEvent<ChartClickDetail>(CHART_CLICK_EVENT, {
+        detail: {
+          widgetId,
+          kind: isAxisTitle ? 'axisTitle' : 'point',
+          axis: params.componentType === 'yAxis' ? 'y' : 'x',
+          // Pie slices carry the raw value in `raw`; bars and points are named by their category.
+          category: isPoint
+            ? String(params.data && typeof params.data === 'object' && params.data.raw != null ? params.data.raw : params.name)
+            : undefined,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        },
+      }),
+    );
+  });
+}
 
 /**
  * Renders an ECharts chart with automatic resizing.
@@ -58,6 +88,7 @@ function EChartWidgetCore({
   const showWatermark = shouldApplyWatermark(planType) && !skipWatermark;
   const watermarkSubtle = isDashboardWidget;
 
+  const [compact, setCompact] = React.useState(false);
   const optionsKey = useMemo(() => {
     try {
       return JSON.stringify({
@@ -69,11 +100,12 @@ function EChartWidgetCore({
         showWatermark,
         planType,
         isDarkMode,
+        compact,
       });
     } catch {
       return `${type}-${Date.now()}`;
     }
-  }, [type, data, config, isDesigner, isDashboardWidget, showWatermark, planType, isDarkMode]);
+  }, [type, data, config, isDesigner, isDashboardWidget, showWatermark, planType, isDarkMode, compact]);
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -91,12 +123,18 @@ function EChartWidgetCore({
 
     if (!echartsInstance.current) {
       echartsInstance.current = echarts.init(el, null, { renderer: 'canvas' });
+      reportChartClicks(echartsInstance.current, el);
     }
 
     let raf = 0;
     const scheduleResize = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => echartsInstance.current?.resize());
+      raf = requestAnimationFrame(() => {
+        echartsInstance.current?.resize();
+        // Small cards drop the legend (tooltips still name every value), as Datawrapper does
+        // on narrow screens — a legend squeezed into a KPI-sized card only pages "1/5".
+        setCompact(el.clientWidth < 320 || el.clientHeight < 220);
+      });
     };
     const onWin = () => scheduleResize();
     window.addEventListener('resize', onWin);
@@ -131,6 +169,7 @@ function EChartWidgetCore({
 
     if (!echartsInstance.current) {
       echartsInstance.current = echarts.init(chartRef.current, null, { renderer: 'canvas' });
+      reportChartClicks(echartsInstance.current, chartRef.current);
     }
 
     if (lastOptionsKeyRef.current === optionsKey) return;
@@ -138,6 +177,7 @@ function EChartWidgetCore({
 
     let options = buildChartOptions(type, data, {
       ...config,
+      ...(compact && isDashboardWidget ? { showLegend: false, legendPosition: 'hide' } : {}),
       isDesigner,
       isDashboardWidget,
     } as ChartConfig & { isDesigner?: boolean; isDashboardWidget?: boolean });
@@ -165,7 +205,7 @@ function EChartWidgetCore({
     if (onChartReadyRef.current) {
       onChartReadyRef.current(echartsInstance.current);
     }
-  }, [optionsKey, type, data, config, isDarkMode, isDesigner, isDashboardWidget, showWatermark, planType]);
+  }, [optionsKey, type, data, config, isDarkMode, isDesigner, isDashboardWidget, showWatermark, planType, compact]);
 
   useEffect(() => {
     if (!echartsInstance.current || !crossFilterField) return;

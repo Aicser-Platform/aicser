@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import nextDynamic from 'next/dynamic';
 import { Tooltip } from 'antd';
+import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
   UserOutlined,
   SecurityScanOutlined,
@@ -41,8 +42,10 @@ import {
   FundOutlined,
   LineChartOutlined,
   FileSearchOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -61,6 +64,7 @@ import { ApiKeysTab } from './components/ApiKeysTab';
 import { DataSourcesTab } from './components/DataSourcesTab';
 import { GeneralTab } from './components/GeneralTab';
 import { ProjectTab } from './components/ProjectTab';
+import { NotificationsTab } from './components/NotificationsTab';
 
 const OrganizationTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
@@ -104,6 +108,15 @@ const AuditLogTab = nextDynamic(() => import('./components/AuditLogTab').then((m
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const AIQualityTab = nextDynamic(() => import('./components/AIQualityTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AIDecisionLayerTab = nextDynamic(() => import('./components/AIDecisionLayerTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const IdentityTab = nextDynamic(() => import('./components/IdentityTab').then((m) => ({ default: m.default })), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AIResidencyTab = nextDynamic(() => import('./components/AIResidencyTab').then((m) => ({ default: m.default })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const AIAuditLogTab = nextDynamic(() => import('./components/AIAuditLogTab').then((m) => ({ default: m.default })), {
@@ -158,6 +171,14 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <UserOutlined />,
         component: ProfileTab,
         description: 'Name, avatar, preferences',
+      },
+      {
+        // The Activity bell's "Manage settings" and /settings/notifications land here.
+        key: 'notifications',
+        label: 'Notifications',
+        icon: <BellOutlined />,
+        component: NotificationsTab,
+        description: 'Email and the Activity bell',
       },
       {
         key: 'security',
@@ -223,6 +244,25 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: Permission.ORG_MANAGE_BILLING,
         component: SubscriptionTab,
         description: 'Plan, usage, invoices',
+      },
+      {
+        key: 'identity',
+        label: 'Identity (SCIM)',
+        icon: <TeamOutlined />,
+        eeOnly: true,
+        // Same permission the SCIM token/role API checks: provisioning people is user management.
+        requiredPermission: Permission.ORG_MANAGE_USERS,
+        component: IdentityTab,
+        description: 'Provision users and groups from your identity provider',
+      },
+      {
+        key: 'ai-residency',
+        label: 'AI Residency',
+        icon: <SafetyOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: AIResidencyTab,
+        description: 'Where your prompts and data may be processed',
       },
       {
         key: 'license',
@@ -343,6 +383,16 @@ const NAV_GROUPS: NavGroup[] = [
         requiredFeature: 'audit_logs',
       },
       {
+        key: 'ai-decision-layer',
+        label: 'Decision Layer',
+        icon: <ThunderboltOutlined />,
+        eeOnly: true,
+        component: AIDecisionLayerTab,
+        description: 'Fast typed AI decisions and their readiness',
+        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
+      },
+      {
         key: 'ai-audit-log',
         label: 'AI Audit Log',
         icon: <FileSearchOutlined />,
@@ -366,6 +416,23 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/**
+ * Who each page is for (QA F-SET-01): personal settings, everyday workspace setup, AI tuning,
+ * admin-only governance, then developer tools. Permission filtering still hides what a role
+ * can't use, so a business user sees "Me" and a short "Workspace"; admins see the rest grouped.
+ */
+const SETTINGS_SECTIONS: { id: string; label: string; keys: string[] }[] = [
+  { id: 'account', label: 'Me', keys: ['profile', 'notifications', 'security'] },
+  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'data-sources', 'integrations', 'billing-subscription'] },
+  { id: 'ai', label: 'AI', keys: ['agent-capabilities', 'kpi-definitions', 'briefings', 'ai-quality'] },
+  {
+    id: 'admin',
+    label: 'Admin',
+    keys: ['organization', 'roles', 'identity', 'ai-residency', 'ai-decision-layer', 'license', 'audit', 'ai-audit-log'],
+  },
+  { id: 'developer', label: 'Developer', keys: ['api-keys', 'embed'] },
+];
+
 function hasRequiredPermission(
   item: NavItem,
   hasPermission: (permission: Permission) => boolean,
@@ -375,6 +442,10 @@ function hasRequiredPermission(
   return Array.isArray(item.requiredPermission)
     ? hasAnyPermission(item.requiredPermission)
     : hasPermission(item.requiredPermission);
+}
+
+function SettingsTabLoading() {
+  return <AppLoadingIndicator variant="inline" />;
 }
 
 function resolveSettingsTab(tabParam: string | null | undefined, visibleItems: NavItem[]): string {
@@ -402,7 +473,7 @@ const SettingsPage: React.FC = () => {
       draggable={false}
     />
   ) : null;
-  const { hasPermission, hasAnyPermission } = usePermissions({
+  const { hasPermission, hasAnyPermission, loading: permissionsLoading } = usePermissions({
     organizationId: currentOrganization?.id,
   });
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEE });
@@ -425,28 +496,54 @@ const SettingsPage: React.FC = () => {
     return () => window.removeEventListener('open-pricing-modal', handler);
   }, []);
 
-  const visibleNavGroups = useMemo(
-    () =>
-      NAV_GROUPS.map((group) => ({
+  const tNav = useTranslations('settings_nav');
+  const visibleNavGroups = useMemo(() => {
+    const tr = (key: string, fallback: string) => (tNav.has(key as any) ? tNav(key as any) : fallback);
+    const allowed = NAV_GROUPS.flatMap((group) => group.items).filter(
+      (item) =>
+        (item.key !== 'billing-subscription' || showHostedBilling) &&
+        (!item.eeOnly || isEE) &&
+        hasRequiredPermission(item, hasPermission, hasAnyPermission)
+    );
+    const byKey = new Map(allowed.map((item) => [item.key, item]));
+    const placed = new Set<string>();
+    const groups: NavGroup[] = SETTINGS_SECTIONS.map((section) => ({
+      label: tr(`group_${section.id}`, section.label),
+      items: section.keys.flatMap((key) => {
+        const item = byKey.get(key);
+        if (!item) return [];
+        placed.add(key);
+        return [item];
+      }),
+    }));
+    // Anything not yet assigned a section still shows, under Workspace.
+    groups[1].items.push(...allowed.filter((item) => !placed.has(item.key)));
+    return groups
+      .map((group) => ({
         ...group,
-        items: group.items.filter(
-          (item) =>
-            (item.key !== 'billing-subscription' || showHostedBilling) &&
-            (!item.eeOnly || isEE) &&
-            hasRequiredPermission(item, hasPermission, hasAnyPermission)
-        ),
-      })).filter((group) => group.items.length > 0),
-    [hasPermission, hasAnyPermission, showHostedBilling]
-  );
+        items: group.items.map((item) => ({
+          ...item,
+          label: tr(`${item.key}_label`, item.label),
+          description: item.description ? tr(`${item.key}_desc`, item.description) : item.description,
+        })),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [hasPermission, hasAnyPermission, showHostedBilling, tNav]);
   const visibleItems = useMemo(() => visibleNavGroups.flatMap((group) => group.items), [visibleNavGroups]);
   const requestedTab = searchParams?.get('tab');
-  const activeTab = resolveSettingsTab(requestedTab, visibleItems);
+  // While permissions load, gated tabs look invisible; resolving then sent every deep link
+  // (?tab=identity, ?tab=ai-residency…) to Profile and rewrote the URL. Keep the requested
+  // tab until permissions are known, and only then fall back if it really isn't allowed.
+  const knownTab = Boolean(requestedTab && NAV_GROUPS.some((g) => g.items.some((i) => i.key === requestedTab)));
+  const activeTab =
+    permissionsLoading && knownTab ? (requestedTab as string) : resolveSettingsTab(requestedTab, visibleItems);
 
   useEffect(() => {
+    if (permissionsLoading) return;
     if (requestedTab && requestedTab !== activeTab) {
       router.replace(`/settings?tab=${activeTab}`, { scroll: false });
     }
-  }, [activeTab, requestedTab, router]);
+  }, [activeTab, requestedTab, router, permissionsLoading]);
 
   const [prevActiveTab, setPrevActiveTab] = useState(activeTab);
   if (prevActiveTab !== activeTab) {
@@ -489,7 +586,9 @@ const SettingsPage: React.FC = () => {
   }, []);
 
   const activeItem = useMemo(() => visibleItems.find((i) => i.key === activeTab), [activeTab, visibleItems]);
-  const ActiveComponent = (activeItem?.component ?? ProfileTab) as React.ComponentType<TabComponentProps>;
+  const ActiveComponent = (
+    activeItem?.component ?? (permissionsLoading ? SettingsTabLoading : ProfileTab)
+  ) as React.ComponentType<TabComponentProps>;
 
   // ── Sidebar nav ──────────────────────────────────────────────────────────────
   const SidebarNav = () => (
@@ -549,7 +648,7 @@ const SettingsPage: React.FC = () => {
             className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent text-[13px] font-semibold text-[var(--ant-color-text)]"
           >
             <MenuOutlined className="text-[15px]" />
-            <span>{activeItem?.label || 'Settings'}</span>
+            <span>{activeItem?.label || tNav('title')}</span>
           </button>
           {pageAction}
         </div>

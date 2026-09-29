@@ -237,3 +237,22 @@ export const exportCSV = (data: any, filename: string, widget?: any) => {
     );
   }
 };
+
+/**
+ * Rows as tab-separated text with a header line: pastes into Excel, Google Sheets or Numbers as
+ * columns. Tabs and line breaks inside values become spaces so cells stay put.
+ */
+export function rowsToTsv(rows: Array<Record<string, unknown>>): string {
+  if (!rows.length) return '';
+  const keys = Object.keys(rows[0]);
+  const cell = (v: unknown) => (v == null ? '' : String(v).replace(/[\t\r\n]+/g, ' '));
+  return [keys.map(cell).join('\t'), ...rows.map((r) => keys.map((k) => cell(r[k])).join('\t'))].join('\n');
+}
+
+/** Copy a chart's data to the clipboard; resolves to the number of rows copied (0 when none). */
+export async function copyChartData(data: unknown, widget?: unknown): Promise<number> {
+  const rows = normalizeToRows(data, widget);
+  if (!rows.length) return 0;
+  await navigator.clipboard.writeText(rowsToTsv(rows));
+  return rows.length;
+}

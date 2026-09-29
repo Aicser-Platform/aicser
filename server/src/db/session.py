@@ -56,6 +56,8 @@ async_session = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+# Conventional name used by EE BI Sync export / persist and dashboard collaboration.
+AsyncSessionLocal = async_session
 
 # Create sync engine for sync operations (like migrations) - lazy initialization
 _sync_engine = None

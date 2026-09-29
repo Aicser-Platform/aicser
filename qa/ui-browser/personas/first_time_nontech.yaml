@@ -1,0 +1,18 @@
+id: first_time_nontech
+name: First-time business user
+role: Store / ops coordinator new to Aicser
+digital_literacy: low
+goals:
+  - Ask a simple question about sales or inventory and understand the answer
+  - Avoid opening SQL or schema tools
+pains:
+  - Jargon (AI Engine, BIGINT, model blend names)
+  - Too many panels and dropdowns before an answer
+must_not_see:
+  - Raw SQL types as the primary UI
+  - Model picker as a required step
+  - Empty insights after a long wait
+success_looks_like:
+  - A plain-language headline or summary is visible
+  - One clear chart or number
+  - Next step suggested in everyday words

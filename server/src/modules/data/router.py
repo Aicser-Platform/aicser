@@ -35,6 +35,7 @@ from .services.database_connector_service import DatabaseConnectorService
 from .services.data_retention_service import DataRetentionService
 from src.modules.data.services.multi_engine_query_service import (
     MultiEngineQueryService,
+    check_sql_read_only_safety,
     QueryEngine,
     get_multi_engine_query_service,
     invalidate_api_response_cache,
@@ -1461,10 +1462,10 @@ async def test_google_sheet_connection(request: Request):
         result = await data_service.get_google_sheets_schema(data_source)
         if result.get("success"):
             tables = (result.get("schema") or {}).get("tables") or []
-            row_count = result.get("data_source", {}).get("row_count", 0)
+            row_count = result.get("data_source", {}).get("row_count") or 0
             return {
                 "success": True,
-                "message": f"Connected. {len(tables)} table(s), {row_count} row(s) available.",
+                "message": f"Connected. {len(tables)} {'table' if len(tables) == 1 else 'tables'}, {row_count:,} {'row' if row_count == 1 else 'rows'} available.",
             }
         return {
             "success": False,
@@ -5281,10 +5282,14 @@ async def analyze_query(
 
         # Try to get execution plan - support multiple database types
         try:
-            source_type = (
-                data_source.get("type") or data_source.get("source_type", "").lower()
-            )
-            db_type = data_source.get("db_type", "").lower()
+            # Any of these may be missing or null (file sources have no db_type).
+            source_type = str(
+                data_source.get("type") or data_source.get("source_type") or ""
+            ).lower()
+            db_type = str(data_source.get("db_type") or "").lower()
+            unsafe = check_sql_read_only_safety(sql)
+            if unsafe:
+                raise ValueError(unsafe)
 
             # PostgreSQL/ClickHouse style EXPLAIN
             if "postgres" in source_type or "postgres" in db_type:
@@ -5305,7 +5310,12 @@ async def analyze_query(
 
             # Many drivers return a single-row JSON plan under a key
             rows = plan_res.get("data", [])
-            if rows:
+            if not plan_res.get("success", True) and not rows:
+                raise ValueError(plan_res.get("error") or "EXPLAIN is not supported for this source")
+            if rows and isinstance(rows[0], dict) and "explain_value" in rows[0]:
+                # DuckDB (file sources): the plan is text in explain_value.
+                plan = [{"plan": str(r.get("explain_value") or "")} for r in rows]
+            elif rows:
                 first = rows[0]
                 # Try multiple possible field names
                 plan_json_text = (
@@ -5370,7 +5380,7 @@ async def analyze_query(
                 )
 
         # Aggregation suggestions
-        if " group by " in lowered and " having " not in lowered:
+        if " group by " in lowered and "(select" in lowered and " having " not in lowered:
             suggestions.append(
                 "Consider using HAVING clause for filtering aggregated results instead of subqueries"
             )

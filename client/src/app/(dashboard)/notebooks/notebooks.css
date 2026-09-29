@@ -1,0 +1,623 @@
+.nb-loading {
+  display: flex;
+  justify-content: center;
+  padding: 64px 0;
+}
+
+.nb-card__title {
+  font-weight: 500;
+}
+
+.nb-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.nb-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  background: var(--ant-color-bg-layout);
+}
+
+.nb-toolbar__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.nb-title.ant-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: 640px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: 6px;
+  text-overflow: ellipsis;
+}
+
+.nb-title.ant-input:hover:not([readonly]),
+.nb-title.ant-input:focus {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.nb-save-state {
+  white-space: nowrap;
+}
+
+.nb-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.nb-body--side {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+@media (max-width: 1100px) {
+  .nb-body--side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nb-body--side .nb-side {
+    order: -1;
+    position: static;
+    max-height: 320px;
+  }
+}
+
+.nb-main {
+  min-width: 0;
+}
+
+.nb-side {
+  position: sticky;
+  top: 64px;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  padding: 4px 12px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg, 8px);
+  background: var(--ant-color-bg-container);
+}
+
+.nb-side__body {
+  display: grid;
+  gap: 8px;
+}
+
+.nb-side__hint {
+  font-size: 12px;
+}
+
+.nb-side__node {
+  display: inline-flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.nb-side__node > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nb-side__meta {
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.nb-side .ant-tree .ant-tree-treenode {
+  width: 100%;
+}
+
+.nb-side .ant-tree .ant-tree-node-content-wrapper {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.nb-side .ant-tree .ant-tree-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-side__results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.nb-side__result {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nb-side__result:hover,
+.nb-side__result:focus-visible {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.nb-side__cols {
+  display: block;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.nb-save-state {
+  font-size: 12px;
+}
+
+.nb-cell__count {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.nb-cell--stale .nb-output {
+  opacity: 0.6;
+}
+
+.nb-cells {
+  display: grid;
+  gap: 0;
+}
+
+.nb-cell {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg, 8px);
+  background: var(--ant-color-bg-container);
+  transition: border-color 0.15s;
+}
+
+.nb-cell:focus-within {
+  border-color: var(--ant-color-border);
+}
+
+.nb-cell--running {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+
+.nb-cell__bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px;
+}
+
+/* One border per cell. Secondary actions (Ask AI, cell menu) appear with the pointer or focus;
+   Run stays visible. Touch screens always show them. */
+.nb-cell__secondary {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.nb-cell:hover .nb-cell__secondary,
+.nb-cell:focus-within .nb-cell__secondary,
+.nb-cell__secondary:has([aria-expanded='true']) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .nb-cell__secondary {
+    opacity: 1;
+  }
+}
+
+/* Text cells read as the document: no frame at rest, a frame and menu while working on them. */
+.nb-cell--markdown {
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+}
+
+.nb-cell--markdown:hover,
+.nb-cell--markdown:focus-within {
+  border-color: var(--ant-color-border-secondary);
+}
+
+.nb-cell--markdown .nb-cell__bar {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  padding: 0;
+}
+
+.nb-cell--markdown .nb-cell__bar > :first-child {
+  display: none;
+}
+
+.nb-cell__ai {
+  padding: 4px 8px 8px;
+}
+
+.nb-cell__editor {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0 0 var(--ant-border-radius-lg, 8px) var(--ant-border-radius-lg, 8px);
+}
+
+.nb-cell__placeholder {
+  position: absolute;
+  top: 6px;
+  left: 46px;
+  right: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--ant-color-text-quaternary);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nb-cell__markdown {
+  padding: 10px 16px;
+  cursor: text;
+  min-height: 32px;
+}
+
+.nb-cell__markdown > :first-child {
+  margin-top: 0;
+}
+
+.nb-cell__text-edit {
+  padding: 6px 8px 8px;
+}
+
+.nb-cell__chart {
+  display: grid;
+  gap: 10px;
+  padding: 8px 12px 12px;
+}
+
+.nb-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.nb-chart-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 8px;
+}
+
+.nb-output-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.nb-output {
+  display: grid;
+  gap: 8px;
+  padding: 4px 12px 12px;
+}
+
+/* Errors: tinted, no second frame inside the cell. */
+.nb-output .ant-alert {
+  border: 0;
+  padding: 8px 12px;
+}
+
+.nb-output-text,
+.nb-output-error {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.nb-output-meta {
+  font-size: 12px;
+}
+
+.nb-output-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.nb-add {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.nb-add .ant-btn {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+/* Between cells the bar appears where the pointer or keyboard focus is; the one after the last
+   cell always shows, so there's always a visible way to add a cell. */
+.nb-add:hover,
+.nb-add:focus-within,
+.nb-add--end {
+  opacity: 1;
+}
+
+.nb-add--end {
+  padding-top: 8px;
+}
+
+@media (hover: none) {
+  .nb-add {
+    opacity: 1;
+  }
+}
+
+
+.nb-share {
+  max-width: 320px;
+}
+
+.nb-share__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.nb-share__icon {
+  color: var(--ant-color-text-secondary);
+  padding-top: 2px;
+}
+
+.nb-share__text {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+
+/* The panel's content never pushes past its column. */
+.nb-side,
+.nb-side .ant-tabs,
+.nb-side .ant-tabs-content-holder,
+.nb-side__body {
+  min-width: 0;
+}
+
+.nb-side__body > .ant-select,
+.nb-side__body > .ant-input-affix-wrapper {
+  width: 100%;
+}
+
+/* Editing text sits on the cell itself, not a second filled box. */
+.nb-cell__text-edit textarea.ant-input {
+  background: transparent !important;
+  padding-inline: 8px;
+}
+
+.nb-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nb-field__label {
+  font-size: 11px;
+  color: var(--ant-color-text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.nb-chart-controls .ant-checkbox-wrapper {
+  align-self: flex-end;
+  font-size: 12px;
+}
+
+.nb-pivot .ant-table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tint over a solid base: the fill token is translucent, and pinned cells (row labels,
+   Total) must hide the columns scrolling underneath them. */
+.nb-pivot__totals td {
+  background:
+    linear-gradient(var(--ant-color-fill-quaternary), var(--ant-color-fill-quaternary)),
+    var(--ant-color-bg-container) !important;
+}
+
+.nb-pivot .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+.nb-pivot .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+  background-color: var(--ant-color-bg-container);
+}
+
+/* Command mode: the selected cell is marked by a neutral border, not an accent stripe. */
+.nb-cell--selected {
+  border-color: var(--ant-color-border);
+}
+
+.nb-cell--markdown.nb-cell--selected {
+  border-color: var(--ant-color-border-secondary);
+}
+
+.nb-shortcuts {
+  display: grid;
+  gap: 16px;
+}
+
+.nb-shortcuts h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ant-color-text-tertiary);
+}
+
+.nb-shortcuts dl {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.nb-shortcuts dt,
+.nb-shortcuts dd {
+  margin: 0;
+}
+
+.nb-shortcuts kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--ant-color-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 12px/1.5 var(--font-mono, ui-monospace, monospace);
+  background: var(--ant-color-fill-quaternary);
+}
+
+/* Wide outputs (pivots, tables) scroll inside their own cell instead of spilling under the
+   Data panel: every level between the grid column and the table may shrink to the column. */
+.nb-main,
+.nb-main > *,
+.nb-cell,
+.nb-output,
+.nb-pivot,
+.nb-output-table {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nb-pivot,
+.nb-output-table {
+  overflow-x: auto;
+}
+
+/* The Data panel never scrolls sideways: fields fill its width, long names end in "…" with
+   their type still visible. */
+.nb-side {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.nb-side .ant-tabs-nav,
+.nb-side .ant-tabs-content,
+.nb-side .ant-tabs-tabpane,
+.nb-side .ant-tree,
+.nb-side .ant-tree-list,
+.nb-side .ant-tree-list-holder,
+.nb-side .ant-tree-list-holder-inner {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nb-side .ant-tree-list-holder-inner {
+  overflow: hidden;
+}
+
+.nb-side .ant-tree .ant-tree-treenode {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.nb-side__body .ant-select,
+.nb-side__body .ant-input-affix-wrapper {
+  width: 100%;
+  max-width: 100%;
+}
+
+.nb-side__meta {
+  flex: none;
+}
+
+/* Version history drawer */
+.nb-history {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.nb-history__list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+}
+.nb-history__item {
+  cursor: pointer;
+  padding-inline: 12px !important;
+}
+.nb-history__item:hover {
+  background: var(--ant-color-fill-quaternary);
+}
+.nb-history__item--on {
+  background: var(--ant-color-primary-bg);
+}
+.nb-history__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.nb-history__cell {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  padding: 8px 10px;
+}
+.nb-history__cell--same {
+  opacity: 0.6;
+}
+.nb-history__cell pre {
+  margin: 6px 0 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}

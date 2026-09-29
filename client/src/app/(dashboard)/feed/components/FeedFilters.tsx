@@ -57,9 +57,10 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({
 
   const scopeOptions: { label: string; value: FeedScope }[] = isEnterpriseEdition
     ? [
+        // Narrowest → widest, the same order as the post composer's audience.
         { label: t('scope_private'), value: 'private' },
-        { label: t('scope_organization'), value: 'organization' },
         { label: t('scope_project'), value: 'project' },
+        { label: t('scope_organization'), value: 'organization' },
         { label: t('scope_public'), value: 'public' },
       ]
     : [

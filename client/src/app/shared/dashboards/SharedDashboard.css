@@ -575,3 +575,12 @@
     background: #ffffff !important;
   }
 }
+
+/* Embedded viewer: the one download control, shown only when the embed allows downloads.
+   Bottom-left so it clears widget headers (top) and the "Powered by" badge (bottom-right). */
+.embed-download-trigger {
+  position: fixed;
+  left: 10px;
+  bottom: 10px;
+  z-index: 30;
+}

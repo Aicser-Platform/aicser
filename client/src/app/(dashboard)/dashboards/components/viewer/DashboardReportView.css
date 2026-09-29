@@ -1,0 +1,118 @@
+/* Paginated dashboard report (PDF "Report" export). A4 portrait content width: 190mm. */
+.dashboard-report {
+  width: 190mm;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 8mm 0;
+  color: var(--ant-color-text, #1f2937);
+  background: var(--ant-color-bg-container, #fff);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dashboard-report h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  text-wrap: balance;
+}
+
+.report-cover {
+  /* Top padding, not a fixed height: a cover that is even 1mm taller than the page adds a
+     blank page after it. */
+  padding-top: 70mm;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-kicker {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ant-color-primary, #0d7a78);
+}
+
+.report-lede {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ant-color-text-secondary, #6b7280);
+  max-width: 60ch;
+}
+
+.report-facts {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary, #e5e7eb);
+}
+
+.report-facts div {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+}
+
+.report-facts dt {
+  color: var(--ant-color-text-tertiary, #9ca3af);
+}
+
+.report-facts dd {
+  margin: 0;
+}
+
+.report-heading {
+  font-size: 18px;
+  margin: 10mm 0 4mm;
+  break-after: avoid;
+}
+
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56mm, 1fr));
+  gap: 4mm;
+  margin-bottom: 6mm;
+  break-inside: avoid;
+}
+
+.report-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  break-inside: avoid;
+}
+
+.report-figure figcaption h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.report-desc {
+  margin: 2px 0 0;
+  color: var(--ant-color-text-secondary, #6b7280);
+}
+
+.report-kpis .report-chart {
+  height: 34mm;
+}
+
+.report-figure-tall .report-chart {
+  height: 150mm;
+}
+
+.report-page {
+  break-after: page;
+}
+
+.report-chart-page:last-child {
+  break-after: auto;
+}
+
+@media print {
+  .dashboard-report {
+    padding: 0;
+  }
+}

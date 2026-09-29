@@ -90,11 +90,9 @@ class TestBuildLitellmConfigForOllama:
     def test_missing_endpoint_is_rejected(self):
         assert _build_litellm_config("ollama", {"api_key": "", "model": "llama3.2:1b", "endpoint": ""}) is None
 
-    def test_defaults_to_a_reasonable_model_when_none_saved(self):
-        built = _build_litellm_config("ollama", {"api_key": "", "model": "", "endpoint": "http://ollama:11434"})
-        assert built is not None
-        _, cfg = built
-        assert cfg["model"] == "ollama/llama3.2:1b"
+    def test_no_model_is_invented_when_none_saved(self):
+        # A local server only has the models its owner pulled; guessing one would fail at chat time.
+        assert _build_litellm_config("ollama", {"api_key": "", "model": "", "endpoint": "http://ollama:11434"}) is None
 
     def test_strips_trailing_slash_from_endpoint(self):
         built = _build_litellm_config(

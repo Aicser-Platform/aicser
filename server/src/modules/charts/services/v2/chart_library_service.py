@@ -331,7 +331,11 @@ class ChartLibraryService:
             return None
         filters = [
             self._scope_filter(user_id=user_id, project_id=project_id),
-            Chart.chart_query["saved_query_id"].astext == str(saved_query_id),
+            # A chat pin converted to table + fields keeps its saved query as origin_saved_query_id.
+            or_(
+                Chart.chart_query["saved_query_id"].astext == str(saved_query_id),
+                Chart.chart_query["origin_saved_query_id"].astext == str(saved_query_id),
+            ),
         ]
         if chart_type:
             filters.append(Chart.chart_type == chart_type)

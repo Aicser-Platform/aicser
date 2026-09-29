@@ -76,6 +76,8 @@ services:
       redis:
         condition: service_healthy
     entrypoint:
+      # Fix volume ownership as root, then run everything below as the unprivileged app user.
+      - /app/scripts/docker-entrypoint.sh
       - /bin/sh
       - -c
       - |

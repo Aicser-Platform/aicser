@@ -53,9 +53,9 @@ export function useDashboardCrossFilter(
 
       const next = runtimeFilters.filter((f) => f.field !== field);
       if (Array.isArray(value)) {
-        next.push({ field, operator: 'in', value, type: 'simple' });
+        next.push({ field, operator: 'in', value, type: 'simple', crossFilter: true });
       } else {
-        next.push({ field, operator: '=', value, type: 'simple' });
+        next.push({ field, operator: '=', value, type: 'simple', crossFilter: true });
       }
       onChange(next);
     },

@@ -49,6 +49,7 @@ PLAN_CONFIGS: Dict[str, Dict[str, Any]] = {
             "bi_sync": False,
             "catalog": False,
             "lakehouse": False,
+            "ml_models": False,
             "streaming": False,
             "alerts": False,
             "pivot_table": False,

@@ -18,7 +18,6 @@ import {
   hydrateRemixWidget,
   isRemixSnapshotWidget,
 } from '../utils/remixSnapshotHydration';
-import { getColorsFromPalette } from '../widgets/WidgetRendererConfig';
 import { isWidgetPaletteInherited, WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import {
   buildStarterDashboardWidgets,
@@ -1157,7 +1156,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
       try {
         const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-        const { chartData, filterWarnings } = await fetchWidgetChartData({
+        const { chartData, filterWarnings, unappliedFilters } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: { ...widget, chartId: chart.id },
           runtimeFilters: get().runtimeFilters,
@@ -1167,7 +1166,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         set((state) => {
           const nextWidgets = state.widgets.map((w) =>
             w.id === widget.id
-              ? { ...w, chartData, filterWarnings, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
+              ? { ...w, chartData, filterWarnings, unappliedFilters, lastFetchedQueryHash: widget.lastFetchedQueryHash, isLoading: false, error: null }
               : w
           );
           const dashboards = state.dashboards.map((d) =>
@@ -1290,7 +1289,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
         });
       } else {
         const filterConfigs = studioFilterConfigs(state.globalFiltersConfig, state.pageFiltersConfig);
-        const { chartData, filterWarnings } = await fetchWidgetChartData({
+        const { chartData, filterWarnings, unappliedFilters } = await fetchWidgetChartData({
           dashboardId: activeDashboardId,
           widget: {
             ...widget,
@@ -1321,6 +1320,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
                   chartOptions: liveOptions,
                   chartData,
                   filterWarnings,
+                  unappliedFilters,
                   isLoading: false,
                   error: null,
                 }
@@ -1416,7 +1416,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
           });
 
           const filterConfigs = studioFilterConfigs(get().globalFiltersConfig, get().pageFiltersConfig);
-          const { chartData, filterWarnings } = await fetchWidgetChartData({
+          const { chartData, filterWarnings, unappliedFilters } = await fetchWidgetChartData({
             dashboardId: activeDashboardId,
             widget,
             runtimeFilters: get().runtimeFilters,
@@ -1426,7 +1426,7 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
 
           set((s) => {
             const nextWidgets = s.widgets.map((w) =>
-              w.id === widgetId ? { ...w, chartData, filterWarnings, isLoading: false } : w
+              w.id === widgetId ? { ...w, chartData, filterWarnings, unappliedFilters, isLoading: false } : w
             );
             const dashboards = s.dashboards.map((d) =>
               d.id === activeDashboardId ? { ...d, widgets: nextWidgets } : d
@@ -1565,7 +1565,6 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
     const activeDashboardId = state.activeDashboardId;
     if (!activeDashboardId) return;
 
-    const paletteColors = getColorsFromPalette(paletteId);
     const previousPalette = state.dashboards.find((d) => d.id === activeDashboardId)?.config
       ?.default_color_palette as string | undefined;
 
@@ -1577,6 +1576,25 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       return false;
     };
 
+    // The palette lives on the dashboard and reaches widgets at render time
+    // (DashboardPaletteProvider). Chart rows are only touched when a chart has something that
+    // would stop it following: an explicit copy of the old default or a single-colour override.
+    // Colours are never baked into saved snapshots, so feed posts and other surfaces keep theirs.
+    const followerPatch = (w: WidgetInstance): Record<string, unknown> | null => {
+      if (w.chartType === 'text' || w.chartType === 'slicer' || w.chartType === 'filter') return null;
+      const opts = (w.chartOptions || {}) as Record<string, unknown>;
+      if (!shouldFollowDashboardPalette(opts.colorPalette)) return null;
+      const pinned = typeof opts.colorPalette === 'string' && !isWidgetPaletteInherited(opts.colorPalette);
+      if (!pinned && !opts.customColor && !opts.customPalette && !opts.paletteInverted) return null;
+      return {
+        ...opts,
+        colorPalette: WIDGET_PALETTE_INHERIT,
+        customColor: undefined,
+        customPalette: undefined,
+        paletteInverted: false,
+      };
+    };
+
     try {
       const dash = await chartService.getDashboard(activeDashboardId);
       const nextConfig = { ...(dash.config || {}), default_color_palette: paletteId };
@@ -1586,23 +1604,8 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
           d.id === activeDashboardId ? { ...d, config: nextConfig } : d,
         ),
         widgets: s.widgets.map((w) => {
-          if (w.chartType === 'text' || w.chartType === 'slicer' || w.chartType === 'filter') return w;
-          if (!shouldFollowDashboardPalette(w.chartOptions?.colorPalette)) return w;
-          const snapshot = w.chartOptions?.__echartsSnapshot;
-          const nextOptions: Record<string, unknown> = {
-            ...w.chartOptions,
-            colorPalette: WIDGET_PALETTE_INHERIT,
-            customColor: undefined,
-            customPalette: undefined,
-            paletteInverted: false,
-          };
-          if (snapshot && typeof snapshot === 'object') {
-            nextOptions.__echartsSnapshot = {
-              ...(snapshot as Record<string, unknown>),
-              color: paletteColors,
-            };
-          }
-          return { ...w, chartOptions: nextOptions as WidgetInstance['chartOptions'] };
+          const patch = followerPatch(w);
+          return patch ? { ...w, chartOptions: patch as WidgetInstance['chartOptions'] } : w;
         }),
       }));
     } catch (error) {
@@ -1610,32 +1613,10 @@ export const useDashboardStore = create<DashboardState>()((set, get, store) => (
       throw error;
     }
 
-    const targets = state.widgets.filter(
-      (w) =>
-        w.chartId &&
-        w.chartType !== 'text' &&
-        w.chartType !== 'slicer' &&
-        w.chartType !== 'filter' &&
-        shouldFollowDashboardPalette(w.chartOptions?.colorPalette),
-    );
-
     await Promise.all(
-      targets.map((w) => {
-        const snapshot = w.chartOptions?.__echartsSnapshot;
-        const nextOptions: Record<string, unknown> = {
-          ...w.chartOptions,
-          colorPalette: WIDGET_PALETTE_INHERIT,
-          customColor: undefined,
-          customPalette: undefined,
-          paletteInverted: false,
-        };
-        if (snapshot && typeof snapshot === 'object') {
-          nextOptions.__echartsSnapshot = {
-            ...(snapshot as Record<string, unknown>),
-            color: paletteColors,
-          };
-        }
-        return get().updateChartAndFetchData(w.id, { chartOptions: nextOptions });
+      state.widgets.map((w) => {
+        const patch = w.chartId ? followerPatch(w) : null;
+        return patch ? get().updateChartAndFetchData(w.id, { chartOptions: patch }) : null;
       }),
     );
   },

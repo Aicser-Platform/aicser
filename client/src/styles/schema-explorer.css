@@ -3,9 +3,12 @@
  */
 
 .schema-explorer-panel.data-panel,
-.chat-page-container .schema-explorer-panel,
-.query-editor-workspace .schema-explorer-panel {
+.chat-page-container .data-panel.schema-explorer-panel,
+.query-editor-workspace .data-panel.schema-explorer-panel {
   border-left: 1px solid var(--ant-color-border-secondary) !important;
+  /* A side panel is page chrome: it sits on the page canvas, like the sidebar; only what's
+     inside it that you act on (search, selects, cards) is a white surface. */
+  background: var(--ant-color-bg-layout) !important;
 }
 
 .schema-explorer-body {
@@ -15,7 +18,7 @@
   flex-direction: column;
   overflow: hidden;
   padding: 0 !important;
-  background: var(--ant-color-bg-container);
+  background: transparent;
 }
 
 .schema-explorer-toolbar {

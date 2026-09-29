@@ -1,5 +1,6 @@
 'use client';
 
+import { clearFiltersWithUndo } from '../utils/undoableFilterClear';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Tooltip } from 'antd';
 import { ClearOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -268,23 +269,28 @@ export function GlobalFiltersBar({
 
   if (!filters.length) return null;
 
+  // Clears only the selections (never widgets or the filters themselves), with Undo.
   const clearAll = () => {
     setSearchDrafts({});
-    onChange([]);
+    clearFiltersWithUndo(
+      runtimeFilters,
+      (next) => (next.length === 0 && onClearAll ? onClearAll() : onChange(next)),
+      { cleared: t('filters_cleared'), undo: t('undo') },
+    );
   };
 
   const hasActive = runtimeFilters.length > 0;
 
   const clearControl = hasActive ? (
     minimal ? (
-      <Tooltip title={t('clear_filters')}>
+      <Tooltip title={t('clear_filters_tip')}>
         <Button
           type="text"
           size="small"
           className="icon-only-btn"
           icon={<ClearOutlined />}
           aria-label={t('clear_filters')}
-          onClick={() => (onClearAll ? onClearAll() : clearAll())}
+          onClick={clearAll}
         />
       </Tooltip>
     ) : (
@@ -295,16 +301,18 @@ export function GlobalFiltersBar({
   ) : null;
 
   const toolbarResetControl = (
+    <Tooltip title={t('clear_filters_tip')}>
     <Button
       type="default"
       size="small"
       icon={<ClearOutlined />}
-      onClick={() => (onClearAll ? onClearAll() : clearAll())}
+      onClick={clearAll}
       disabled={!hasActive}
       className="report-filter-reset-button"
     >
       {t('reset')}
     </Button>
+    </Tooltip>
   );
   const toolbarRefreshControl = onRefresh ? (
     <Tooltip title={t('refresh_tooltip')}>

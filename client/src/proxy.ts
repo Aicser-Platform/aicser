@@ -14,6 +14,8 @@ const PUBLIC_PATHS = [
   '/offline',
   '/invite/accept',
   '/invite/set-password',
+  // Collaboration sockets authenticate themselves (token in the handshake).
+  '/socket.io',
 ];
 
 /** Static asset prefixes — always allowed. */
@@ -40,6 +42,39 @@ function corsHeaders(origin: string): Record<string, string> {
 }
 
 /**
+ * Sites allowed to frame an embed page, from its link token's allowed_domains claim. The claim
+ * is read without checking the signature: a forged token can only loosen the header for a page
+ * whose data requests it can't authorize anyway (the server verifies every token).
+ */
+function embedFrameAncestors(token: string | null): string[] {
+  if (!token) return [];
+  const part = token.split('.')[1];
+  if (!part) return [];
+  try {
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4));
+    const domains = (JSON.parse(json) as { allowed_domains?: unknown }).allowed_domains;
+    if (!Array.isArray(domains)) return [];
+    const hosts = new Set<string>();
+    for (const d of domains) {
+      const raw = String(d || '').trim().toLowerCase();
+      if (!raw) continue;
+      let host = '';
+      try {
+        host = new URL(raw.includes('://') ? raw : `https://${raw}`).hostname;
+      } catch {
+        continue;
+      }
+      if (/^[a-z0-9.-]+$/.test(host)) hosts.add(host);
+    }
+    return Array.from(hosts).flatMap((h) =>
+      h === 'localhost' || h === '127.0.0.1' ? [`http://${h}:*`, `https://${h}:*`] : [`https://${h}`, `https://*.${h}`],
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Next.js 16 proxy (formerly middleware).
  * Handles API CORS + auth cookie guard. Keep a single file under src/proxy.ts.
  */
@@ -57,6 +92,17 @@ export function proxy(request: NextRequest) {
   if (pathname.startsWith('/api/')) {
     const response = NextResponse.next();
     Object.entries(corsHeaders(origin)).forEach(([k, v]) => response.headers.set(k, v));
+    return response;
+  }
+
+  if (pathname.startsWith('/embed/')) {
+    // Only the sites an embed was made for may show it: browsers refuse to render the page
+    // inside any other site's iframe (Power BI, Tableau and Metabase restrict embeds this way).
+    const ancestors = embedFrameAncestors(request.nextUrl.searchParams.get('token'));
+    const response = NextResponse.next();
+    if (ancestors.length) {
+      response.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ancestors.join(' ')}`);
+    }
     return response;
   }
 

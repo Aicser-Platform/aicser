@@ -12,6 +12,7 @@ Uses pgvector when available; falls back to JSONB cosine similarity in Python.
 Always scoped by data_source_id to respect data boundaries.
 """
 
+import asyncio
 import logging
 import math
 import os
@@ -93,6 +94,9 @@ def _keyword_score(query: str, content: str) -> float:
 
 
 RERANK_KEYWORD_WEIGHT = 0.4  # blended with the existing hybrid score, not a replacement for it
+# Cross-encoder relevance blended with the hybrid (embedding + keyword) score; it leads because
+# it reads query and passage together, but a passage the embeddings strongly liked isn't buried.
+RERANK_CE_WEIGHT = 0.6
 
 # Cross-encoder rerank: a real relevance model (not just keyword overlap) scores
 # each (query, chunk) pair directly, the industry-standard second stage after a
@@ -111,11 +115,42 @@ _cross_encoder_unavailable = False  # sticky after first load failure -- don't r
 
 def _load_cross_encoder(model_name: str):
     model = _cross_encoder_cache.get(model_name)
+    if model is not None:
+        return model
+    from src.shared.model_loading import MODEL_LOAD_LOCK
+
+    with MODEL_LOAD_LOCK:
+        return _load_cross_encoder_locked(model_name)
+
+
+def _load_cross_encoder_locked(model_name: str):
+    model = _cross_encoder_cache.get(model_name)
     if model is None:
         from sentence_transformers import CrossEncoder
-        model = CrossEncoder(model_name)
+        try:
+            # Cached weights first (skips the online revision check, ~30 s per process).
+            model = CrossEncoder(model_name, local_files_only=True)
+        except Exception:
+            model = CrossEncoder(model_name)
         _cross_encoder_cache[model_name] = model
     return model
+
+
+async def warm_reranker() -> None:
+    """Load the rerank model at startup; its first load (~45 s) otherwise landed inside a
+    user's first document search, on top of the embedding model's."""
+    if not USE_RAG_RERANK:
+        return
+    import time
+
+    started = time.monotonic()
+    try:
+        loop = asyncio.get_event_loop()
+        model = await loop.run_in_executor(None, _load_cross_encoder, RAG_RERANK_CROSS_ENCODER_MODEL)
+        await loop.run_in_executor(None, lambda: model.predict([("warm up", "warm up")]))
+        logger.info("Search rerank model ready in %.1fs", time.monotonic() - started)
+    except Exception as exc:
+        logger.warning("Rerank warm-up skipped: %s", exc)
 
 
 async def _cross_encoder_rerank(chunks: List[RetrievedChunk], query: str) -> Optional[List[RetrievedChunk]]:
@@ -141,8 +176,11 @@ async def _cross_encoder_rerank(chunks: List[RetrievedChunk], query: str) -> Opt
         lo, hi = float(min(raw_scores)), float(max(raw_scores))
         spread = hi - lo
         normalized = [((float(s) - lo) / spread if spread > 1e-9 else 0.5) for s in raw_scores]
-        scored = sorted(zip(normalized, chunks), key=lambda x: x[0], reverse=True)
-        return [c for _, c in scored]
+        # The score people see must be the one that decided the order: showing the pre-rerank
+        # hybrid score next to rerank order read as "70%, 71%, 72%… best last".
+        for norm, ch in zip(normalized, chunks):
+            ch.score = round(RERANK_CE_WEIGHT * norm + (1 - RERANK_CE_WEIGHT) * ch.score, 4)
+        return sorted(chunks, key=lambda c: c.score, reverse=True)
     except ImportError:
         logger.info("RAG rerank: sentence_transformers CrossEncoder not available, falling back to keyword rerank")
         _cross_encoder_unavailable = True
@@ -171,6 +209,8 @@ def _keyword_rerank(chunks: List[RetrievedChunk], query: str) -> List[RetrievedC
         blended = (1 - RERANK_KEYWORD_WEIGHT) * ch.score + RERANK_KEYWORD_WEIGHT * kw
         scored.append((blended, ch))
     scored.sort(key=lambda x: x[0], reverse=True)
+    for blended, ch in scored:
+        ch.score = round(blended, 4)  # shown score = ranking score
     return [c for _, c in scored]
 
 

@@ -2353,6 +2353,7 @@ async def export_dashboard(
     dashboard_id: str,
     export_request: DashboardExportRequest,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
 ):
     """Export dashboard as PNG, PDF, or HTML using Playwright.
 
@@ -2373,6 +2374,18 @@ async def export_dashboard(
     user_id = str(user_payload.get('id') or user_payload.get('user_id') or user_payload.get('sub') or '')
     org_id = user_payload.get('organization_id')
 
+    # The caller must be able to see this dashboard: the render token below would otherwise let
+    # anyone signed in export any dashboard by id.
+    from uuid import UUID as _UUID
+
+    from src.modules.dashboards.operations import verify_dashboard_read_access
+
+    try:
+        dashboard_uuid = _UUID(str(dashboard_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    dashboard = await verify_dashboard_read_access(db, dashboard_uuid, current_user=user_payload)
+
     # Short-lived, single-use embed token scoped to just this dashboard -
     # minted and revoked around the capture rather than left listed in the
     # user's persisted embed-token settings (this is an internal render
@@ -2384,15 +2397,24 @@ async def export_dashboard(
         scopes=["dashboard"],
         resource_id=dashboard_id,
         expires_in_hours=1,
+        kind="export",
     )
     export_token = token_record["token"]
 
     try:
-        file_bytes, mime_type = await render_page_export(
-            embed_path=f"/embed/dashboard/{dashboard_id}",
-            token=export_token,
-            export_format=export_format,  # type: ignore[arg-type]
-        )
+        if export_request.layout == "report" and export_format == "pdf":
+            # A paginated document: cover, KPIs, one chart per page, page numbers in the footer.
+            from src.modules.exports.dashboard_report import render_dashboard_report
+
+            file_bytes, mime_type, _ = await render_dashboard_report(
+                db, dashboard_id, user_payload=user_payload, org_id=str(org_id) if org_id else None
+            )
+        else:
+            file_bytes, mime_type = await render_page_export(
+                embed_path=f"/embed/dashboard/{dashboard_id}",
+                token=export_token,
+                export_format=export_format,  # type: ignore[arg-type]
+            )
     except ImportError:
         logger.warning("Playwright not installed; export unavailable")
         raise HTTPException(status_code=501, detail="Export is not available on this server (Playwright not installed)")
@@ -3073,7 +3095,7 @@ async def get_chart_for_embed(slug: str, request: Request, response: Response, t
         raise HTTPException(status_code=403, detail="Embed token is not authorized for this chart")
 
     allowed_domains = verified.get("allowed_domains") or []
-    domain_err = _check_embed_domain(request, allowed_domains)
+    domain_err = _check_embed_domain(request, allowed_domains, session=bool(verified.get("session")))
     if domain_err:
         return domain_err
 
@@ -3103,7 +3125,9 @@ async def get_chart_for_embed(slug: str, request: Request, response: Response, t
                 raise HTTPException(status_code=403, detail="Embed token is not authorized for this chart")
 
         try:
-            data = await service.execute(chart, identity=None)
+            from src.modules.embed.limits import cap_rows, embed_row_cap
+
+            data = cap_rows(await service.execute(chart, identity=None), embed_row_cap())
         except Exception as exc:
             logger.error(f"Embed chart execution failed for {chart_uuid}: {exc}")
             # This endpoint always executes with identity=None (a public embed
@@ -3196,6 +3220,14 @@ def _normalize_chart_payload(payload: dict) -> tuple[dict, dict | None]:
             "drillPath": chart_query.get("drillPath") or [],
             "interactionMode": chart_query.get("interactionMode"),
             "drillThrough": chart_query.get("drillThrough"),
+            # Map points: the columns holding each row's position.
+            "latitude": chart_query.get("latitude"),
+            "longitude": chart_query.get("longitude"),
+            # The pie's automatic largest-first sort, undone when the chart leaves pie.
+            "sortAuto": chart_query.get("sortAuto"),
+            # Scatter: one dot per value of this column. Histogram: number of bins (None = auto).
+            "detail": chart_query.get("detail"),
+            "bins": chart_query.get("bins"),
         },
         "chart_options": chart_options,
     }
@@ -3315,6 +3347,26 @@ async def standalone_create_chart(
     cq = chart_payload.get("chart_query") or {}
     if isinstance(cq, dict):
         saved_qid = cq.get("saved_query_id")
+
+    # A chart pinned from AI chat becomes table + fields where its SQL has an exact equivalent
+    # (and gets its data source linked if the pin had none), so dashboard filters and Build
+    # editing work on it like on any other chart.
+    from src.modules.charts.services.sql_to_chart_query import structure_pinned_chart
+
+    chart_payload = await structure_pinned_chart(db, chart_payload, project_uuid)
+
+    # A chat answer with nothing to run (no query, no table, no saved picture) would become a
+    # chart that can never show data; say so now instead of saving a dead widget.
+    _opts = chart_payload.get("chart_options") or {}
+    _q = chart_payload.get("chart_query") or {}
+    if isinstance(_opts, dict) and _opts.get("__source") == "ai_chat" and not (
+        _q.get("tableName") or _q.get("saved_query_id") or _q.get("query_snapshot_id")
+        or _opts.get("sample_sql") or _opts.get("__echartsSnapshot") or _opts.get("__prefetchedChartData")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="This answer has no query behind it, so it can't stay up to date. Ask again and pin the new answer.",
+        )
     if reuse and saved_qid:
         lib = ChartLibraryService(db)
         existing = await lib.find_reusable_by_saved_query(

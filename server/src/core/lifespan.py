@@ -285,6 +285,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             except Exception as e:
                 logger.warning("Organization subscription auto-seed failed: %s", e)
 
+            # Local embedding model (document search, Search docs, semantic schema): load it in
+            # the background per process so the first search after a deploy doesn't wait ~90 s.
+            # Import via src.modules (the canonical path): the ee.* path is a *separate* module
+            # object behind the CE shim, with its own model cache that search never reads.
+            try:
+                from src.modules.ai.utils.embedding_service import warm_local_model
+                from src.modules.knowledge.services.rag_retrieval_service import warm_reranker
+
+                async def _warm_search_models() -> None:
+                    await warm_local_model()
+                    await warm_reranker()
+                    # The PII scrubber loads its NER model on import (~20 s); without this the
+                    # first AI Decisions preview or scrubbed chat answer pays for it.
+                    import importlib
+
+                    await asyncio.to_thread(importlib.import_module, "src.modules.data.services.pii_scrubber")
+
+                app.state.search_warmup_task = asyncio.create_task(_warm_search_models())
+            except Exception as e:
+                logger.warning("Search model warm-up not scheduled: %s", e)
+
             # Trial lifecycle jobs (EE) — one container-wide instance; see
             # _try_acquire_singleton_lease's docstring for why this needs a lease.
             if _try_acquire_singleton_lease("trial_jobs"):

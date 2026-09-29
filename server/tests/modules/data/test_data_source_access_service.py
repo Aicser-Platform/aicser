@@ -122,7 +122,7 @@ class _SessionReturning:
 
 
 @pytest.mark.asyncio
-async def test_ce_unowned_sources_are_not_readable(monkeypatch):
+async def test_ce_unowned_sources_are_read_only(monkeypatch):
     async def get_source(*_args, **_kwargs):
         return SimpleNamespace(user_id=None)
 
@@ -133,8 +133,9 @@ async def test_ce_unowned_sources_are_not_readable(monkeypatch):
         staticmethod(get_source),
     )
 
-    assert not await DataSourceAccessService.can_view("user-1", "ds-1", session=_Session([]))
-    assert not await DataSourceAccessService.can_query("user-1", "ds-1", session=_Session([]))
+    # Built-in samples / legacy rows have no owner: usable by everyone, changeable by no one.
+    assert await DataSourceAccessService.can_view("user-1", "ds-1", session=_Session([]))
+    assert await DataSourceAccessService.can_query("user-1", "ds-1", session=_Session([]))
     assert not await DataSourceAccessService.can_edit("user-1", "ds-1", session=_Session([]))
     assert not await DataSourceAccessService.can_manage("user-1", "ds-1", session=_Session([]))
 

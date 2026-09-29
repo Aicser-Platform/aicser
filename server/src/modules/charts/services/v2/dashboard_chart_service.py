@@ -24,14 +24,32 @@ class DashboardChartService:
         dashboard_id: UUID,
         chart_payload: Mapping[str, Any],
         layout: Optional[Mapping[str, Any]] = None,
+        user_id: Optional[str] = None,
     ) -> Chart:
         """
         Creates a chart and attaches it to a dashboard
-        in a single transaction.
+        in a single transaction. The chart belongs to its creator and the dashboard's project,
+        so the chart library can find and manage it (it authorises by owner or project).
         """
+        from src.modules.data.services.project_scope import dashboard_project, ensure_source_in_project
+
+        project = await dashboard_project(self.db, dashboard_id)
+        await ensure_source_in_project(self.db, chart_payload.get("data_source_id"), project)
+        payload = dict(chart_payload)
+
+        def as_uuid(value: Any) -> Optional[UUID]:
+            try:
+                return value if isinstance(value, UUID) else UUID(str(value))
+            except (TypeError, ValueError):
+                return None
+
+        if project and not payload.get("project_id"):
+            payload["project_id"] = as_uuid(project)
+        if user_id and not payload.get("user_id"):
+            payload["user_id"] = as_uuid(user_id)
         try:
             chart = await self.chart_service.create(
-                chart_payload,
+                payload,
                 commit=False,
             )
 
@@ -62,6 +80,9 @@ class DashboardChartService:
         chart = await self.chart_service.get(chart_id)
         if not chart:
             raise ValueError("Chart not found")
+        from src.modules.data.services.project_scope import dashboard_project, ensure_source_in_project
+
+        await ensure_source_in_project(self.db, chart.data_source_id, await dashboard_project(self.db, dashboard_id))
 
         existing = await self.get_dashboard_chart(dashboard_id, chart_id)
         if existing:

@@ -4,16 +4,31 @@ All dashboard-related models are defined here to ensure single source of truth
 and avoid duplicate mapper registration conflicts.
 """
 
+import re
+
+from src.modules.folders.models import AssetFolder
 from src.shared.model import BaseModel
 from src.db.base import Base
 from sqlalchemy import Column, String, Text, Boolean, Integer, DateTime, JSON, ForeignKey, UUID, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import validates, relationship
 from sqlalchemy import func, Table, MetaData
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.sql import text
 import uuid
 from src.core.edition import is_ee_enabled
+
+
+_SCRUB_PLACEHOLDER = re.compile(r"<[A-Z][A-Z_]{2,}>")
+
+
+def clean_display_name(value, fallback: str):
+    """Names users read must never carry privacy-scrubber placeholders ("<DATE_TIME> Performance")."""
+    if not isinstance(value, str):
+        return value
+    cleaned = " ".join(_SCRUB_PLACEHOLDER.sub(" ", value).split()).strip(" -–—:|")
+    return cleaned or fallback
+
 
 def _org_fk():
     return [ForeignKey("organizations.id")] if is_ee_enabled() else []
@@ -22,32 +37,9 @@ def _project_fk():
     return [ForeignKey("projects.id")] if is_ee_enabled() else []
 
 
-class DashboardCollection(Base):
-    """
-    Server-backed folder/collection for Dashboard Studio library.
-    Table: dashboard_collections
-    """
-    __tablename__ = "dashboard_collections"
-
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        server_default=func.gen_random_uuid(),
-        index=True,
-    )
-    name = Column(Text, nullable=False)
-    parent_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("dashboard_collections.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
-    sort_order = Column(Integer, nullable=False, server_default=text("0"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
+# Folders are shared by every asset in a project (src/modules/folders); the name is kept for the
+# library service that files dashboards.
+DashboardCollection = AssetFolder
 
 class DashboardChart(Base):
     """
@@ -83,6 +75,10 @@ class Dashboard(BaseModel):
     """Dashboard model - single canonical definition"""
     __tablename__ = "dashboards"
     __table_args__ = {'extend_existing': True}
+
+    @validates("name")
+    def _clean_name(self, _key, value):
+        return clean_display_name(value, "Untitled dashboard")
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
@@ -96,7 +92,7 @@ class Dashboard(BaseModel):
     # Library organization (mirrors charts)
     collection_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("dashboard_collections.id", ondelete="SET NULL"),
+        ForeignKey("asset_folders.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -365,3 +361,25 @@ PLAN_LIMITS = {
 # Ensure cross-module relationship targets are registered in the same declarative registry.
 # Dashboard.embeds references "DashboardEmbed" which is defined in charts.models.
 from src.modules.charts.models import DashboardEmbed  # noqa: F401
+
+
+class DashboardComment(Base):
+    """A comment on a dashboard or one of its widgets. Top-level comments start a thread
+    (replies point to it with parent_id) that can be resolved and reopened; edits are marked
+    and deletes are soft, so a thread keeps its shape."""
+
+    __tablename__ = "dashboard_comments"
+
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dashboard_id = Column(PG_UUID(as_uuid=True), ForeignKey("dashboards.id", ondelete="CASCADE"), nullable=False, index=True)
+    widget_id = Column(String(128), nullable=True)
+    parent_id = Column(PG_UUID(as_uuid=True), ForeignKey("dashboard_comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    author_id = Column(PG_UUID(as_uuid=True), nullable=False, index=True)
+    author_name = Column(String(255), nullable=True)
+    body = Column(Text, nullable=False)
+    edited_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    is_deleted = Column(Boolean, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

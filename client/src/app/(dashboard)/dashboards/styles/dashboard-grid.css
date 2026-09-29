@@ -348,6 +348,7 @@
 }
 
 .widget-card-subtitle {
+  white-space: pre-line;
   font-size: 12px;
   line-height: 1.35;
   color: var(--ant-color-text-tertiary, rgba(0, 0, 0, 0.45));
@@ -733,7 +734,8 @@ html[data-theme='light'] .dashboard-chart-tooltip,
 }
 
 .canvas-empty-content {
-  margin: auto;
+  /* Top-anchored: centring in a tall canvas pushed the story layouts below the fold. */
+  margin: 0 auto auto;
   width: 100%;
   max-width: 800px;
   display: flex;
@@ -1173,4 +1175,58 @@ html[data-theme='light'] .dashboard-chart-tooltip,
   min-height: 240px;
   height: 100%;
   width: 100%;
+}
+
+/* Executive KPI cards: the value never truncates (see StatWidget containerType). In a narrow
+   tile the decorative icon gives way to the number, and the value is not ellipsized. */
+.studio-stat-executive-value .studio-stat-value,
+.studio-stat-executive-value span {
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+}
+@container (max-width: 220px) {
+  .studio-stat-executive-icon {
+    display: none !important;
+  }
+}
+
+/* Empty / not-connected / no-rows states fit any card size (Datawrapper-style graceful
+   shrink): small cards keep the headline and the action, and drop the picture and detail. */
+.widget-center.widget-state {
+  min-height: 0;
+  overflow: hidden;
+  container-type: size;
+  padding: 8px;
+  text-align: center;
+}
+
+@container (max-width: 260px) or (max-height: 170px) {
+  .widget-state .ant-empty-image,
+  .widget-state .widget-state-detail {
+    display: none;
+  }
+  .widget-state .ant-empty {
+    margin: 0;
+  }
+  .widget-state .ant-empty-description {
+    font-size: 12px;
+    line-height: 1.35;
+  }
+}
+
+/* Source / notes byline under a chart. */
+.widget-card-footnote {
+  flex: none;
+  padding: 0 12px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ant-color-text-tertiary);
+  /* Keep the author's line breaks; up to three lines, then "…". */
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

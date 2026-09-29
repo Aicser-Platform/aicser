@@ -1,4 +1,5 @@
 import { fetchApi } from '@/utils/api';
+import { resolveEmbedToken } from '@/utils/embedSession';
 import { normalizeRuntimeFiltersForBackend } from '../utils/filterOperators';
 import { sanitizeLayoutItem } from '../utils/layoutSanitize';
 
@@ -88,6 +89,8 @@ export interface ChartExecutionResponse {
    * (e.g. a raw-SQL filter, rejected for security reasons) — surface to the user
    * rather than letting the chart render as if the filter had been applied. */
   filter_warnings?: string[];
+  /** Dashboard filter fields this SQL-bound chart couldn't apply (not in its output). */
+  unapplied_filters?: string[];
 }
 
 export interface BatchChartRefreshItem {
@@ -109,6 +112,7 @@ export interface BatchChartRefreshResult {
   error?: string;
   /** See ChartExecutionResponse.filter_warnings. */
   filter_warnings?: string[];
+  unapplied_filters?: string[];
 }
 
 export interface BatchChartRefreshResponse {
@@ -234,7 +238,7 @@ class ChartService {
   private withAccessQuery(path: string, opts?: DashboardAccessOptions): string {
     if (!opts?.embedToken) return path;
     const sep = path.includes('?') ? '&' : '?';
-    return `${path}${sep}token=${encodeURIComponent(opts.embedToken)}`;
+    return `${path}${sep}token=${encodeURIComponent(resolveEmbedToken(opts.embedToken))}`;
   }
 
   private getChartsEndpoint(dashboardId: string) {
@@ -554,7 +558,7 @@ class ChartService {
     charts: BatchChartRefreshItem[],
     opts?: { embedToken?: string }
   ): Promise<BatchChartRefreshResponse> {
-    const qs = opts?.embedToken ? `?token=${encodeURIComponent(opts.embedToken)}` : '';
+    const qs = opts?.embedToken ? `?token=${encodeURIComponent(resolveEmbedToken(opts.embedToken))}` : '';
     const payload = {
       charts: charts.map((item) => ({
         chart_id: item.chart_id,
@@ -644,7 +648,7 @@ class ChartService {
   ) {
     const qs = new URLSearchParams({ field, data_source_id: dataSourceId });
     if (opts?.tableName) qs.set('table_name', opts.tableName);
-    if (opts?.embedToken) qs.set('token', opts.embedToken);
+    if (opts?.embedToken) qs.set('token', resolveEmbedToken(opts.embedToken));
     if (opts?.runtimeFilters?.length) {
       const normalized = normalizeRuntimeFiltersForBackend(
         opts.runtimeFilters.filter((f) => f.field !== (opts.excludeField || field))
@@ -676,7 +680,7 @@ class ChartService {
   ): Promise<{ min?: number | string | null; max?: number | string | null }> {
     const qs = new URLSearchParams({ field, data_source_id: dataSourceId });
     if (opts?.tableName) qs.set('table_name', opts.tableName);
-    if (opts?.embedToken) qs.set('token', opts.embedToken);
+    if (opts?.embedToken) qs.set('token', resolveEmbedToken(opts.embedToken));
     if (opts?.runtimeFilters?.length) {
       const normalized = normalizeRuntimeFiltersForBackend(opts.runtimeFilters);
       if (normalized.length) qs.set('runtime_filters', JSON.stringify(normalized));

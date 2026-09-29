@@ -12,6 +12,7 @@ import {
 import { Alert, Badge, Button, Layout, Tooltip, Modal, Form, Input, Typography, message, Dropdown } from 'antd';
 const { Text } = Typography;
 import UserProfileDropdown from '@/components/UserProfileDropdown';
+import { HeaderPageCrumb } from '../Navigation/HeaderPageCrumb';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useTranslations } from 'next-intl';
 import { handlePlanLimitError, ApiError } from '@/utils/api';
@@ -113,7 +114,9 @@ export const LayoutHeader: React.FC<Props> = ({
     () =>
       dynamic(
         () =>
-          import('@/ee').then((m) => asDynamicModule(m.ThemeCustomizer, () => null)),
+          import('@/ee').then((m) =>
+            asDynamicModule<{ open?: boolean; onClose?: () => void }>(m.ThemeCustomizer, () => null),
+          ),
         { ssr: false },
       ),
     [],
@@ -433,6 +436,13 @@ export const LayoutHeader: React.FC<Props> = ({
               </Button>
             </Tooltip>
           </>
+        )}
+
+        {/* Where you are, as the last step of the trail (no separate breadcrumb row) */}
+        {!isBreakpoint && (
+          <React.Suspense fallback={null}>
+            <HeaderPageCrumb withSeparator={isEnterpriseEdition} />
+          </React.Suspense>
         )}
 
         {extraLeft && <>{extraLeft}</>}

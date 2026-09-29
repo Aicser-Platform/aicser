@@ -422,12 +422,21 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
     ? formatStatValue(valueToDisplay, format, currencySym, unitSuffix)
     : t('no_data_value');
 
+  // Rows by category (provinces, products) have no "prior period": only rows over time trend.
+  const rowsOverTime =
+    Boolean((query as { xGrain?: string } | undefined)?.xGrain) ||
+    (Array.isArray(data?.x) &&
+      data!.x!.length > 0 &&
+      data!.x!.slice(0, 12).every((v: unknown) => /^\d{4}-\d{2}(-\d{2})?([T ].*)?$/.test(String(v ?? ''))));
   let computedTrendValue = trendValue;
   let trendIsPositive = trendValue.startsWith('+');
   let trendIsNeutral = !trendValue;
 
+  // The server sends the latest bucket when the headline is a whole-window aggregate, so the
+  // change compares like with like (latest period vs the one before), never total vs one period.
+  const currentPeriodValue = (data as { currentPeriodValue?: number | string } | undefined)?.currentPeriodValue;
   if (!trendValue && hasValue && comparisonValue !== undefined && comparisonValue !== null) {
-    const curr = Number(displayValue);
+    const curr = Number(currentPeriodValue ?? displayValue);
     const prev = Number(comparisonValue);
     if (!isNaN(curr) && !isNaN(prev) && prev !== 0) {
       const pct = ((curr - prev) / Math.abs(prev)) * 100;
@@ -438,9 +447,12 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       // AI-generated KPI tiles (report_templates.py's _sql_kpi) send a bare
       // comparisonValue with no label for exactly this reason — same
       // fallback as the sparkline-trend branch below.
-      if (!comparisonLabel) comparisonLabel = config.comparisonPeriodLabel || t('prior_period');
+      if (!comparisonLabel) {
+        comparisonLabel = config.comparisonPeriodLabel
+          || (currentPeriodValue !== undefined && currentPeriodValue !== null ? t('latest_vs_prior_period') : t('prior_period'));
+      }
     }
-  } else if (!trendValue && comparisonValue === undefined && sparklineValues.length >= 2) {
+  } else if (!trendValue && comparisonValue === undefined && sparklineValues.length >= 2 && rowsOverTime) {
     const curr = Number(sparklineValues[sparklineValues.length - 1]);
     const prev = Number(sparklineValues[sparklineValues.length - 2]);
     if (!isNaN(curr) && !isNaN(prev) && prev !== 0) {
@@ -515,6 +527,9 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         className="studio-stat-root studio-stat-executive text-white"
         aria-label={ariaLabel}
         style={{
+          // The headline number is the one thing a KPI card must never truncate: size it to the
+          // card (container query units) instead of cutting it to "$…" in narrow tiles.
+          containerType: 'inline-size',
           height: '100%',
           minHeight: 0,
           display: 'flex',
@@ -532,6 +547,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
           <div
+            className="studio-stat-executive-icon"
             style={{
               width: 36,
               height: 36,
@@ -556,7 +572,8 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
               style={{
                 margin: 0,
                 color: '#ffffff',
-                fontSize: `${Math.min(Math.max(fontSize, 24), 32)}px`,
+                fontSize: `clamp(18px, 13cqw, ${Math.min(Math.max(fontSize, 24), 32)}px)`,
+                whiteSpace: 'nowrap',
                 fontWeight: 800,
                 lineHeight: 1.1,
               }}
@@ -572,7 +589,10 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
                 lineHeight: 1.3,
                 whiteSpace: 'normal',
                 overflow: 'visible',
-                wordBreak: 'break-word',
+                // Wrap between words only ("Outstanding", never "Outstand / ing").
+                wordBreak: 'normal',
+                overflowWrap: 'normal',
+                hyphens: 'auto',
               }}
               title={titleLabel}
             >
@@ -700,8 +720,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
-          padding: '8px 16px',
-          borderLeft: `3px solid ${accent}`,
+          padding: '8px 16px 8px 12px',
           ...(interactiveProps.style || {}),
         }}
       >
@@ -787,11 +806,12 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        padding: isCentered ? '12px 16px' : '8px 16px 8px 14px',
+        // Value lines up with the card title (12px); no side stripe - it sat on this inner area,
+        // not the card, so it never matched the card's edge or height.
+        padding: isCentered ? '12px 16px' : '8px 16px 8px 12px',
         textAlign: isCentered ? 'center' : 'left',
         alignItems: isCentered ? 'center' : 'flex-start',
         gap: 4,
-        borderLeft: isCentered ? undefined : `3px solid ${accent}`,
         ...(interactiveProps.style || {}),
       }}
     >

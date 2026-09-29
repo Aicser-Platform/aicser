@@ -70,7 +70,8 @@ export default function DataSourceDetailPage() {
           </Button>
         </div>
         <Text type="secondary" className={styles.description}>
-          {[dataSource?.type, dataSource?.connection_status].filter(Boolean).join(' · ')}
+          {/* Plain type (the raw "sample_duckdb · unknown" enum pair used to show here). */}
+          {dataSource?.description || (dataSource?.type ? t(`overview_type_${dataSource.type}` as never) : '')}
         </Text>
       </header>
       <div className={styles.body}>

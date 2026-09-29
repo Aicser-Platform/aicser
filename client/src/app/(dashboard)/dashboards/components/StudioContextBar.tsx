@@ -1,5 +1,6 @@
 'use client';
 
+import { clearFiltersWithUndo } from '../utils/undoableFilterClear';
 import React, { useEffect } from 'react';
 import { Badge, Button, Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
@@ -148,7 +149,11 @@ export function StudioContextBar({
               {
                 key: 'clear',
                 label: t('clear_filters'),
-                onClick: () => onRuntimeFiltersChange([]),
+                onClick: () =>
+                  clearFiltersWithUndo(runtimeFilters, onRuntimeFiltersChange, {
+                    cleared: t('filters_cleared'),
+                    undo: t('undo'),
+                  }),
               },
             ]
           : []),
@@ -192,7 +197,11 @@ export function StudioContextBar({
               {
                 key: 'clear',
                 label: t('clear_filters'),
-                onClick: () => onRuntimeFiltersChange([]),
+                onClick: () =>
+                  clearFiltersWithUndo(runtimeFilters, onRuntimeFiltersChange, {
+                    cleared: t('filters_cleared'),
+                    undo: t('undo'),
+                  }),
               },
             ]
           : []),

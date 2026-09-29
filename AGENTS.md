@@ -2,7 +2,7 @@
 
 This file is the canonical project brain for AI coding agents (Cursor, Claude Code, GitHub Copilot, etc.). Read it before making non-trivial changes.
 
-**Related docs:** [CONTRIBUTING.md](CONTRIBUTING.md) · [README.md](README.md) · [client/DEVELOPMENT.md](client/DEVELOPMENT.md) · [server/ARCHITECTURE.md](server/ARCHITECTURE.md)
+**Related docs:** [CONTRIBUTING.md](CONTRIBUTING.md) · [README.md](README.md) · [client/DEVELOPMENT.md](client/DEVELOPMENT.md) · [server/ARCHITECTURE.md](server/ARCHITECTURE.md) · [qa/README.md](qa/README.md) (optional UI browser QA track — does not affect default Docker)
 
 ---
 

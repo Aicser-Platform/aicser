@@ -1,0 +1,186 @@
+/* Aicser Sheet */
+.wb-loading {
+  display: flex;
+  justify-content: center;
+  padding-block: 64px;
+}
+.wb-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.wb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.wb-toolbar__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+.wb-toolbar__title .wb-title {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+.wb-title.ant-input {
+  text-overflow: ellipsis;
+  font-size: 18px;
+  font-weight: 600;
+  padding-inline: 0;
+  min-width: 160px;
+}
+.wb-save-state {
+  display: inline-block;
+  flex-shrink: 0; /* the title shortens first; the save status stays readable */
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 12px;
+}
+.wb-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.wb-body--panel {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+.wb-grid,
+.wb-preview {
+  position: relative;
+  height: calc(100dvh - 200px);
+  min-height: 460px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  overflow: hidden;
+  background: var(--ant-color-bg-container);
+}
+/* IronCalc's inputs and tab names inherit the text colour instead of using its palette; each
+ * part resolves it from its own palette (in dark mode the grid's differs from the chrome's). */
+.wb-grid.ic-root > *,
+.wb-preview.ic-root > *,
+.wb-fill > * {
+  color: var(--palette-common-black);
+}
+/* IronCalc's root is the sheet's own element (never the page body). */
+.wb-grid--dark {
+  background: var(--ant-color-bg-container);
+}
+.wb-preview {
+  height: 64vh;
+}
+/* IronCalc's tooltips live in the sheet's root (so they inherit the colour rule above); they look
+ * like every other tooltip in the app instead, in both themes. */
+.wb-grid .ic-tooltip,
+.wb-preview .ic-tooltip {
+  background: var(--ant-color-bg-spotlight, rgba(0, 0, 0, 0.85));
+  color: #fff;
+}
+/* Only the grid fills the box. IronCalc also puts its tooltips and menus in this element (its
+ * root container); stretching every child made a tooltip a full-height bar and pushed menus off. */
+.wb-fill,
+.wb-fill > * {
+  height: 100%;
+}
+.wb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-height: calc(100dvh - 200px);
+  padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--ant-color-bg-container);
+  overflow-y: auto;
+}
+.wb-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wb-panel__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wb-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius);
+}
+.wb-range__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.wb-range__name {
+  all: unset;
+  cursor: pointer;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.wb-range__name:hover,
+.wb-range__name:focus-visible {
+  color: var(--ant-color-primary);
+}
+.wb-range__meta {
+  font-size: 12px;
+  word-break: break-word;
+}
+.wb-sql textarea,
+textarea.wb-sql {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.wb-card__title {
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .wb-body--panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wb-panel {
+    max-height: none;
+  }
+}
+.wb-formula {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, 80vw);
+}
+.wb-formula__note {
+  font-size: 12px;
+}
+.wb-formula__code {
+  display: block;
+  padding: 6px 8px;
+  border-radius: var(--ant-border-radius);
+  background: var(--ant-color-fill-quaternary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+/* IronCalc paints its in-place/formula editor white regardless of theme. */
+.wb-grid .ic-editor-container,
+.wb-preview .ic-editor-container {
+  background: var(--palette-common-white);
+  color: var(--palette-common-black);
+}

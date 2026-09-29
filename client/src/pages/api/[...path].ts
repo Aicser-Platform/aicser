@@ -56,6 +56,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // a Docker-internal hostname and isn't reachable from an actual
       // visitor's browser.
       target = `${targetBase}/${pathSegment}`;
+    } else if (/^ai\/(decisions|accuracy|formula)(\/|\?|$)/.test(pathSegment)) {
+      // These AI routers are mounted under /api/ai/... on the backend (decision layer, answer
+      // accuracy, formula suggestions), unlike the main AI router at /ai.
+      target = `${targetBase}/api/${pathSegment}`;
     } else if (pathSegment.startsWith('ai/')) {
       target = `${targetBase}/${pathSegment}`;
     } else if (pathSegment.startsWith('conversations') || pathSegment.startsWith('chats')) {
@@ -72,6 +76,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (organizationId) {
       headers['X-Organization-Id'] = Array.isArray(organizationId) ? organizationId[0] : String(organizationId);
     }
+    // Pass the visitor's address on like any proxy: without it every visitor reaches the API
+    // from this server's address and shares one rate-limit bucket (anonymous embeds especially).
+    const priorHops = req.headers['x-forwarded-for'];
+    const peer = req.socket?.remoteAddress?.replace(/^::ffff:/, '');
+    const hops = [Array.isArray(priorHops) ? priorHops.join(', ') : priorHops, peer].filter(Boolean);
+    if (hops.length) headers['X-Forwarded-For'] = hops.join(', ');
 
     const fetchOptions: any = { method: req.method, headers, redirect: 'follow' };
 

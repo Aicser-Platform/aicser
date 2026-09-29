@@ -31,6 +31,7 @@ import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import MemoryOptimizedEditor, { type MemoryOptimizedEditorHandle } from '@/components/ai/MemoryOptimizedEditor';
 import {
   DatabaseOutlined,
+  TableOutlined,
   PlusOutlined,
   SaveOutlined,
   CopyOutlined,
@@ -251,11 +252,9 @@ const computeMaxEditorHeight = (workspaceHeight?: number) => {
 };
 const computeDefaultEditorHeight = () => {
   const max = computeMaxEditorHeight();
-  // Default to a generously tall code area (most of the available space) rather
-  // than a box that leaves a large empty void above the results pane on first
-  // load — matches how most SQL editors (and this one, once resized) look.
-  const target = Math.max(500, Math.floor(max * 0.88));
-  return Math.min(max, target, 760);
+  // An even split: the code and its results get the same room, as in DBeaver/DataGrip.
+  // People resize from there, and their choice is remembered.
+  return Math.max(MIN_TOP_SECTION_HEIGHT, Math.floor(max * 0.5));
 };
 const buildPythonTemplate = (baseSql: string, dataSourceName?: string) => `# Python code to query data source
 import pandas as pd
@@ -385,6 +384,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [columnsOmitted, setColumnsOmitted] = useState<string[]>([]);
   const [rlsPopoverOpen, setRlsPopoverOpen] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  // The query behind the rows on screen, for "Open as workbook" (a live range re-runs it).
+  const lastRunRef = useRef<{ sql: string; dataSourceId: string | null }>({ sql: '', dataSourceId: null });
   const [resultLimitApplied, setResultLimitApplied] = useState(false);
   const [executionStatus, setExecutionStatus] = useState<string>('');
   
@@ -532,6 +533,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [aiGenerateElapsedS, setAiGenerateElapsedS] = useState(0);
   const aiGenerateAbortRef = useRef<AbortController | null>(null);
   const [aiModel, setAiModel] = useState<string | undefined>();
+  // Same opt-in as the Ask composer (QA D-QE-06): the engine picks and fails over models itself,
+  // so the picker only shows once a user turned it on there, or already chose a specific model.
+  const [showModelPicker] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('aicser.composer.showModelPicker') === '1';
+    } catch {
+      return false;
+    }
+  });
   const selectedAiModel = aiModel ?? 'auto';
   // validate=false: only "configured" is read below, which doesn't need a live
   // test-completion call — Settings already validates keys live at save time.
@@ -586,7 +596,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [editorHeight, setEditorHeight] = useState<number>(() => {
     if (typeof window === 'undefined') return DEFAULT_EDITOR_HEIGHT;
     const max = computeMaxEditorHeight();
-    const stored = Number(window.localStorage.getItem('qe_editor_height_v3'));
+    const stored = Number(window.localStorage.getItem('qe_editor_height_v4'));
     const initial = Number.isFinite(stored) && stored > 0 ? stored : computeDefaultEditorHeight();
     return Math.min(Math.max(initial, MIN_TOP_SECTION_HEIGHT), max);
   });
@@ -633,7 +643,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       const clamped = Math.min(Math.max(h, MIN_TOP_SECTION_HEIGHT), nextMax);
       if (clamped !== h) {
         try {
-          window.localStorage.setItem('qe_editor_height_v3', String(clamped));
+          window.localStorage.setItem('qe_editor_height_v4', String(clamped));
         } catch {
           /* ignore */
         }
@@ -655,7 +665,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       editorResizeStateRef.current.startHeight = editorHeight;
     }
     try {
-      window.localStorage.setItem('qe_editor_height_v3', String(editorHeight));
+      window.localStorage.setItem('qe_editor_height_v4', String(editorHeight));
     } catch {
       // ignore storage failures
     }
@@ -814,9 +824,19 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     if (importHandledRef.current || peekQueryEditorImport()) return;
     if (editorLanguage !== 'sql' || !selectedDataSourceId || !schema) return;
     const trimmed = sqlQuery.trim();
-    if (trimmed !== DEFAULT_SQL_SNIPPET.trim()) return; // leave user's query as-is
     const tables = schema.tables;
     if (!tables || tables.length === 0) return;
+    // Replace only the default snippet, or a starter written for another source (an untouched
+    // "SELECT * FROM <table> LIMIT n" whose table this source doesn't have). A user's own query
+    // is never touched.
+    const starter = /^SELECT \* FROM ([^\s;]+) LIMIT \d+;?$/i.exec(trimmed);
+    const bare = (ref: string) => ref.replace(/"/g, '').split('.').pop()?.toLowerCase();
+    const staleStarter =
+      starter &&
+      selectedDataSource?.type !== 'file' &&
+      !tables.some((t: { name?: string }) => bare(String(t.name ?? '')) === bare(starter[1]));
+    const staleFileStarter = starter && selectedDataSource?.type === 'file' && bare(starter[1]) !== 'data';
+    if (trimmed !== DEFAULT_SQL_SNIPPET.trim() && !staleStarter && !staleFileStarter) return;
     const isFile = selectedDataSource?.type === 'file';
     const firstTable = tables[0];
     const tableName = isFile ? 'data' : firstTable?.name || 'data';
@@ -1154,6 +1174,30 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   useEffect(() => {
     saveTabsToBackendRef.current = saveTabsToBackend;
   }, [saveTabsToBackend]);
+
+  /** Open a new query tab (the toolbar's + and the tab strip share this). */
+  const addQueryTab = () => {
+    const newKey = `q-${Date.now()}`;
+    const defaultPython = buildPythonTemplate(DEFAULT_SQL_SNIPPET, selectedDataSource?.name);
+    const newTitle = getNextDefaultTabTitle(queryTabs);
+    const newTab = {
+      key: newKey,
+      title: newTitle,
+      sql: DEFAULT_SQL_SNIPPET,
+      python: defaultPython,
+      language: editorLanguage
+    };
+    const next = [...queryTabs, newTab];
+    setQueryTabs(next);
+    setActiveQueryKey(newKey);
+    setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
+    saveTabsToBackend(next, newKey, true);
+    requestAnimationFrame(() => {
+      document.querySelector(`.query-editor-query-tabs [data-node-key="${newKey}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  };
+  const addQueryTabRef = useRef(addQueryTab);
+  addQueryTabRef.current = addQueryTab;
 
   const removeQueryTab = useCallback(
     (key: string) => {
@@ -2101,6 +2145,27 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     setError(null);
   }, []);
 
+  // A new workbook holding these results: live when the query is known (it re-runs as
+  // whoever opens it), else a snapshot of the rows.
+  const openResultsAsWorkbook = async () => {
+    const { openAsWorkbook } = await import('@/app/(dashboard)/sheets/components/openAsWorkbook');
+    const columns = Object.keys(results[0] ?? {});
+    const run = lastRunRef.current;
+    const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+    try {
+      const id = await openAsWorkbook({
+        title: tab?.title || t('open_as_sheet'),
+        projectId: projectId || null,
+        columns,
+        rows: results.map((r) => columns.map((c) => (r as Record<string, unknown>)[c])),
+        live: run.sql && run.dataSourceId ? { dataSourceId: run.dataSourceId, sql: run.sql, sourceName: selectedDataSource?.name } : undefined,
+      });
+      router.push(`/sheets/${id}`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('open_as_sheet_failed'));
+    }
+  };
+
   // Export functions
   const exportToCSV = (data: any[]) => {
     if (data.length === 0) return;
@@ -2661,6 +2726,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         }
 
         setResults(resultData);
+        lastRunRef.current = { sql: executedSql, dataSourceId: dsId ? String(dsId) : null };
         setResultLimitApplied(appendedLimit);
         setRlsApplied(Boolean(result.rls_applied));
         setColumnsOmitted(Array.isArray(result.columns_omitted) ? result.columns_omitted.map(String) : []);
@@ -2989,7 +3055,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   />
                 </Tooltip>
               )}
-              <ModelSelector
+              {(showModelPicker || (aiModel && aiModel !== 'auto')) && <ModelSelector
                 compact
                 value={aiModel}
                 onModelChange={setAiModel}
@@ -2997,7 +3063,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 persistPreference
                 style={{ minWidth: 0, maxWidth: 140, width: 'clamp(56px, 16vw, 140px)', flexShrink: 1 }}
                 dropdownWidth={200}
-              />
+              />}
             </div>
             {aiGenerating && (
               <div className="qe-ai-generating-status" role="status" aria-live="polite">
@@ -3044,10 +3110,16 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 size="small"
                 type="editable-card"
                 className="workspace-inline-tabs query-editor-query-tabs"
+                classNames={{ popup: { root: "qe-query-tabs-dropdown" } }}
                 activeKey={activeQueryKey}
                 tabBarExtraContent={{
                   right: (
                   <Space size={4} className="icon-toolbar qe-tab-toolbar">
+                    {/* Always visible, however many tabs are open (tabs that don't fit go to the ⋯ menu). */}
+                    <Tooltip title={t('new_query_tab')}>
+                      <Button type="text" size="small" icon={<PlusOutlined />} className="qe-tab-add-btn"
+                        aria-label={t('new_query_tab')} onClick={() => addQueryTabRef.current?.()} />
+                    </Tooltip>
                     {isExecuting ? (
                       <Tooltip title={t('cancel_query_tooltip')}>
                         <Button
@@ -3118,14 +3190,14 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
                     </Tooltip>
                     {editorLanguage === 'sql' && (
-                      <Tooltip title="Visualize — add chart to a dashboard or Chart Designer">
+                      <Tooltip title={t('visualize_tooltip')}>
                         <Button
                           type="text"
                           size="small"
                           icon={<LineChartOutlined />}
                           disabled={!sqlQuery.trim() || !selectedDataSourceId}
                           onClick={openVisualizeModal}
-                          aria-label="Visualize query"
+                          aria-label={t('visualize')}
                         />
                       </Tooltip>
                     )}
@@ -3189,23 +3261,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     latestEditorContentRef.current = nextContent;
                   }
                 }}
+                hideAdd
                 onEdit={(targetKey, action) => {
                   if (action === 'add') {
-                    const newKey = `q-${Date.now()}`;
-                    const defaultPython = buildPythonTemplate(DEFAULT_SQL_SNIPPET, selectedDataSource?.name);
-                    const newTitle = getNextDefaultTabTitle(queryTabs);
-                    const newTab = {
-                      key: newKey,
-                      title: newTitle,
-                      sql: DEFAULT_SQL_SNIPPET,
-                      python: defaultPython,
-                      language: editorLanguage
-                    };
-                    const next = [...queryTabs, newTab];
-                    setQueryTabs(next);
-                    setActiveQueryKey(newKey);
-                    setSqlQuery(editorLanguage === 'python' ? defaultPython : DEFAULT_SQL_SNIPPET);
-                    saveTabsToBackend(next, newKey, true);
+                    addQueryTab();
                   } else if (action === 'remove') {
                     removeQueryTab(String(targetKey));
                   }
@@ -3534,6 +3593,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         </Tooltip>
                         <Dropdown menu={{ items: [
                           {
+                            key: 'workbook',
+                            label: t('open_as_sheet'),
+                            icon: <TableOutlined />,
+                            disabled: results.length === 0,
+                            onClick: () => void openResultsAsWorkbook(),
+                          },
+                          {
                             key: 'csv',
                             label: t('export_csv'),
                             icon: <DownloadOutlined />,
@@ -3662,7 +3728,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             borderTop: isStackedLayout
               ? `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
               : 'none',
-            background: 'var(--layout-panel-background, var(--ant-color-bg-container))',
+            background: 'var(--ant-color-bg-layout)',
             transition: 'all 0.3s ease',
             display: 'flex',
             flexDirection: 'column',

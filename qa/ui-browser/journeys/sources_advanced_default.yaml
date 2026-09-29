@@ -1,0 +1,17 @@
+id: sources_advanced_default
+title: Sources panel — types as default noise
+persona: first_time_nontech
+start_path: /chat
+goal: >
+  Open AI chat. If a Sources panel is open showing tables and column types
+  (e.g. BIGINT), stop. Do not expand every table. Goal is observation for UX scoring.
+max_steps: 12
+tags: [sources, disclosure, p1]
+rubric_focus: [progressive_disclosure, jargon_control]
+checks:
+  - kind: note
+    value: Human — are SQL types visible without clicking Advanced?
+    severity: major
+notes_for_devs: >
+  EnhancedDataPanel + SchemaExplorerTree. Prefer summary "Using Orders · order total"
+  before tree (F-SRC-01). Data engineer persona journey can keep types.

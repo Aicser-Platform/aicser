@@ -1,0 +1,23 @@
+id: composer_controls_density
+title: Composer footer — mode/model/source clarity
+persona: first_time_nontech
+start_path: /chat
+goal: >
+  Open AI chat. Observe the input area and the controls under it. Stop when the
+  composer is visible. Do not change the model. Note whether you can tell which
+  data source is active without opening Sources.
+max_steps: 15
+tags: [composer, disclosure, p1]
+rubric_focus: [composer_clarity, progressive_disclosure, jargon_control]
+checks:
+  - kind: text_present
+    value: Forecast
+    severity: minor
+    why: Mode pill often visible — document density even if present
+  - kind: note
+    value: Human — can a new user identify active data source in <5 seconds?
+    severity: major
+notes_for_devs: >
+  Footer triad in ChatPanelMain: InlineModeSelector + ModelSelector + datasource pill.
+  Model should be Advanced-only for low-literacy personas (F-CHAT-05).
+  Source pill vs Prompt Library industry filter confusion (F-CHAT-06).

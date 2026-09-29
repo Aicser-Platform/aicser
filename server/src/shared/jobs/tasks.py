@@ -24,6 +24,14 @@ async def run_data_retention_cleanup(ctx: Dict[str, Any]) -> Dict[str, Any]:
             service = DataRetentionService(db)
             affected = await service.cleanup_expired_file_sources()
             affected_conversations = await service.cleanup_expired_conversations()
+            # Feed images uploaded but never posted (composer abandoned): files + rows after a day.
+            try:
+                from src.modules.feed.image_service import purge_orphan_images
+
+                orphan_images = await purge_orphan_images(db)
+            except Exception as exc:
+                orphan_images = 0
+                logger.warning("Orphan feed image purge skipped: %s", exc)
         logger.info(
             "Retention cleanup complete: %s data sources, %s conversations affected",
             affected, affected_conversations,
@@ -32,6 +40,7 @@ async def run_data_retention_cleanup(ctx: Dict[str, Any]) -> Dict[str, Any]:
             "success": True,
             "affected": affected,
             "affected_conversations": affected_conversations,
+            "orphan_feed_images": orphan_images,
             "completed_at": datetime.utcnow().isoformat(),
         }
     except Exception as e:
@@ -149,6 +158,19 @@ async def classify_data_source_columns(ctx: Dict[str, Any], data_source_id: str)
         raise
 
 
+async def _fetch_fresh_schema(svc: Any, source_id: str) -> Dict[str, Any]:
+    """Re-introspect a source's live schema (bypassing caches) and persist it.
+
+    get_source_schema only returns the stored copy — comparing it with itself can never
+    detect drift. Files/uploads have no live side to re-read (they change on re-upload),
+    so they fall back to the stored schema.
+    """
+    fresh = await svc.get_database_schema(source_id, force_refresh=True)
+    if fresh.get("success") or "not a database or warehouse" not in str(fresh.get("error") or ""):
+        return fresh
+    return await svc.get_source_schema(source_id)
+
+
 async def refresh_schema_cache(ctx: Dict[str, Any], data_source_id: str) -> Dict[str, Any]:
     """
     Refresh the Redis-cached schema for a data source.
@@ -157,7 +179,7 @@ async def refresh_schema_cache(ctx: Dict[str, Any], data_source_id: str) -> Dict
     try:
         from src.modules.data.services.data_connectivity_service import DataConnectivityService
         svc = DataConnectivityService()
-        result = await svc.get_source_schema(data_source_id, force_refresh=True)
+        result = await _fetch_fresh_schema(svc, data_source_id)
         return {
             "success": result.get("success", False),
             "data_source_id": data_source_id,
@@ -341,7 +363,7 @@ async def refresh_all_active_schemas(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 before = await svc.get_source_schema(source_id)
                 old_schema = before.get("schema") if before.get("success") else None
 
-                after = await svc.get_source_schema(source_id, force_refresh=True)
+                after = await _fetch_fresh_schema(svc, source_id)
                 if not after.get("success"):
                     failed += 1
                     continue
@@ -652,8 +674,15 @@ async def sync_salesforce_object(
         "sync_salesforce_object: org=%s object=%s source_connection=%s target=%s job_id=%s",
         organization_id, object_api_name, source_connection_id, target_data_source_id, job_id,
     )
+    from src.core.edition import is_ee_enabled
     from src.db.session import async_session
-    from ee.modules.data.services.salesforce_sync_service import sync_object
+
+    # CE never imports EE directly: the connector sync is an Enterprise job.
+    if not is_ee_enabled():
+        return {"success": False, "error": "EE edition required for Salesforce sync"}
+    import importlib
+
+    sync_object = importlib.import_module("ee.modules.data.services.salesforce_sync_service").sync_object
 
     async with async_session() as db:
         result = await sync_object(
@@ -690,8 +719,15 @@ async def sync_hubspot_object(
         "sync_hubspot_object: org=%s object=%s source_connection=%s target=%s job_id=%s",
         organization_id, object_api_name, source_connection_id, target_data_source_id, job_id,
     )
+    from src.core.edition import is_ee_enabled
     from src.db.session import async_session
-    from ee.modules.data.services.hubspot_sync_service import sync_object
+
+    # CE never imports EE directly: the connector sync is an Enterprise job.
+    if not is_ee_enabled():
+        return {"success": False, "error": "EE edition required for Hubspot sync"}
+    import importlib
+
+    sync_object = importlib.import_module("ee.modules.data.services.hubspot_sync_service").sync_object
 
     async with async_session() as db:
         result = await sync_object(
@@ -709,3 +745,97 @@ async def sync_hubspot_object(
         object_api_name, result.get("rows_read"), result.get("rows_written"),
     )
     return result
+
+
+async def forward_audit_events_to_siem(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron: push new audit events to the configured SIEM (no-op unless AUDIT_SIEM_URL is set)."""
+    from src.shared.audit.siem_forwarder import forward_audit_events
+
+    result = await forward_audit_events()
+    if result.get("sent"):
+        logger.info("Audit SIEM forwarder: delivered %s events", result["sent"])
+    return result
+
+
+async def check_decision_calibration(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Nightly: decision-layer calibration (EE; a no-op when the decision layer isn't present
+    or has logged nothing)."""
+    try:
+        from src.modules.ai.decisions.calibration import run_calibration
+    except Exception:
+        return {"skipped": "decision layer not available"}
+    result = await run_calibration()
+    return {"questions": len(result.get("questions") or {})}
+
+
+async def run_answer_accuracy_eval(ctx: Dict[str, Any], trigger: str = "nightly") -> Dict[str, Any]:
+    """Nightly (opt-in, AISER_NIGHTLY_EVAL=on) or on demand: run the answer golden set and store
+    the pass rate for the AI Quality page (EE)."""
+    try:
+        from src.modules.ai.evals.history import nightly_enabled, run_and_store
+    except Exception:
+        return {"skipped": "AI engine not available"}
+    if trigger == "nightly" and not nightly_enabled():
+        return {"skipped": "nightly accuracy runs are off (AISER_NIGHTLY_EVAL)"}
+    return await run_and_store(trigger)
+
+
+async def run_ai_decision(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
+    """On-demand: execute one AI Decisions run (EE; per-distinct-value classification)."""
+    from src.modules.ai.decisions.tool_service import process_run
+
+    return await process_run(run_id)
+
+
+async def train_ml_model(ctx: Dict[str, Any], version_id: str) -> Dict[str, Any]:
+    """On-demand: train one model version (EE Models). Reads data as the model's creator."""
+    try:
+        from src.modules.mlops.service import run_training
+    except Exception:
+        return {"skipped": "Models are part of the Enterprise edition"}
+    return await run_training(version_id)
+
+
+async def score_scheduled_ml_models(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (hourly): re-score tables on a schedule and refresh their datasets (EE Models)."""
+    try:
+        from src.modules.mlops.service import score_due_models
+    except Exception:
+        return {"skipped": "Models are part of the Enterprise edition"}
+    return await score_due_models()
+
+
+async def export_report_file(ctx: Dict[str, Any], job_id: str) -> Dict[str, Any]:
+    """On-demand: build a report/deck/workbook for a chat answer (EE exports)."""
+    try:
+        from src.modules.ai.reports.export_jobs import run
+    except Exception:
+        return {"skipped": "Exports are part of the Enterprise edition"}
+    return await run(job_id)
+
+
+async def retrain_scheduled_ml_models(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (hourly): start retraining for models whose retrain schedule has come round (EE Models)."""
+    try:
+        from src.modules.mlops.service import retrain_due_models
+    except Exception:
+        return {"skipped": "Models are part of the Enterprise edition"}
+    return await retrain_due_models()
+
+
+async def run_notebook(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
+    """On-demand: one notebook run in the sandboxed notebook runner (EE scheduled runs)."""
+    try:
+        from src.modules.notebook_runs.service import execute_run
+    except Exception:
+        return {"skipped": "Scheduled notebook runs are part of the Enterprise edition"}
+    return await execute_run(run_id)
+
+
+async def run_due_notebook_schedules(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every minute): queue notebooks whose schedule has come round (EE)."""
+    try:
+        from src.modules.notebook_runs.service import run_due_schedules
+    except Exception:
+        return {"skipped": "Scheduled notebook runs are part of the Enterprise edition"}
+    return await run_due_schedules()

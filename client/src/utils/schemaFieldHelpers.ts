@@ -51,6 +51,17 @@ export function friendlyName(name: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/**
+ * How a column reads to people: its business label when the data source defines one, otherwise
+ * its name in words ("order_total" → "Order Total"). The raw name stays the value everywhere.
+ */
+export function fieldDisplayName(column: unknown): string {
+  if (typeof column === 'string') return friendlyName(column);
+  const c = (column || {}) as { name?: unknown; label?: unknown; display_name?: unknown; displayName?: unknown };
+  const label = [c.label, c.display_name, c.displayName].find((v) => typeof v === 'string' && v.trim());
+  return label ? String(label).trim() : friendlyName(String(c.name ?? ''));
+}
+
 export function fieldKey(table: { id?: string } | null, column: { name?: string } | null): string {
   if (!table?.id || !column?.name) return '';
   return `${table.id}.${column.name}`;
@@ -155,4 +166,20 @@ export function normalizeSchemaTables(schema: unknown): SchemaFieldTable[] {
       return normalizedTable;
     })
     .filter((table): table is SchemaFieldTable => Boolean(table));
+}
+
+
+/** Quote a SQL identifier only when it needs it (spaces, hyphens, leading digit, etc). */
+export function quoteIdentifier(id: string): string {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(id) ? id : `"${String(id).replace(/"/g, '""')}"`;
+}
+
+/** A table reference safe to put in `SELECT … FROM <ref>` for this source (files expose "data"). */
+export function buildTableRef(table: { name: string; schema?: string | null }, dataSourceType?: string | null): string {
+  const isFile = dataSourceType === 'file';
+  const tableName = isFile ? 'data' : table.name;
+  if (isFile || !table.schema || table.schema === 'public' || table.schema === 'file') {
+    return quoteIdentifier(tableName);
+  }
+  return `${quoteIdentifier(table.schema)}.${quoteIdentifier(tableName)}`;
 }

@@ -14,6 +14,7 @@ import type { FeedItem } from '@/services/socialFeedService';
 import { chartService } from '../../dashboards/services/chartService';
 import type { WidgetInstance } from '../../dashboards/stores/useDashboardStore';
 import { FeedPreviewEmpty } from './FeedPreviewEmpty';
+import { DashboardPaletteProvider } from '@/app/(dashboard)/dashboards/widgets/DashboardPaletteContext';
 import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
 import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
 
@@ -29,6 +30,7 @@ export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props
   const dashboardId = item.asset.dashboardId;
   const [widgets, setWidgets] = useState<WidgetInstance[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dashboardPalette, setDashboardPalette] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!dashboardId) {
@@ -40,7 +42,12 @@ export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props
 
     (async () => {
       try {
-        const charts = await chartService.listCharts(dashboardId);
+        const [charts, dashboard] = await Promise.all([
+          chartService.listCharts(dashboardId),
+          chartService.getDashboard(dashboardId).catch(() => null),
+        ]);
+        const palette = (dashboard?.config as Record<string, unknown> | undefined)?.default_color_palette;
+        if (!cancelled) setDashboardPalette(typeof palette === 'string' ? palette : undefined);
         // Skip text/markdown widgets; keep visual charts that read well as thumbnails.
         const visual = (charts || []).filter((c) => c.chartType && c.chartType !== 'text');
         const top = visual.slice(0, maxWidgets);
@@ -95,11 +102,13 @@ export function FeedDashboardChartGrid({ item, maxWidgets = DEFAULT_MAX }: Props
   const totalWidgets = item.asset.widgetCount ?? widgets.length;
 
   return (
-    <FeedDashboardPreviewGrid
-      widgets={widgets}
-      maxWidgets={maxWidgets}
-      totalWidgetCount={totalWidgets}
-    />
+    <DashboardPaletteProvider palette={dashboardPalette}>
+      <FeedDashboardPreviewGrid
+        widgets={widgets}
+        maxWidgets={maxWidgets}
+        totalWidgetCount={totalWidgets}
+      />
+    </DashboardPaletteProvider>
   );
 }
 

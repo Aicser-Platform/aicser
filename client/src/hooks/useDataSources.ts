@@ -21,13 +21,13 @@ export const useDataSources = (projectId?: string | null, options?: UseDataSourc
     [projectId, currentProjectId, options?.allProjects]
   );
 
-  const { data, error, isLoading } = useQuery({
+  const { data, error, isLoading, refetch } = useQuery({
     queryKey: dataSourceKeys.list(effectiveProjectId ?? null),
     queryFn: () => api.listDataSources(effectiveProjectId),
     enabled: Boolean(options?.allProjects || !isEnterpriseEdition || effectiveProjectId),
     select: (res) => res?.data_sources ?? [],
   });
-  return { dataSources: data ?? [], error, isLoading };
+  return { dataSources: data ?? [], error, isLoading, refetch };
 };
 
 export const useDataSource = (id: string | null) => {
