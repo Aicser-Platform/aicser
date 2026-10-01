@@ -173,6 +173,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   existingDataSource = null,
 }) => {
   const t = useTranslations('data_source_modal');
+  const { message } = App.useApp();
   const router = useRouter();
   const screens = useBreakpoint();
   const isCompactViewport = !screens.md;
