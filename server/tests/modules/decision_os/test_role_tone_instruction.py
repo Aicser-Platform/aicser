@@ -15,7 +15,7 @@ async def test_synthesize_tactical_appends_role_tone_to_system_prompt():
     captured = {}
 
     async def fake_node_llm(**kwargs):
-        captured["system"] = kwargs.get("system")
+        captured["system"] = kwargs.get("system_context")
         return {"content": "{}", "success": True}
 
     with patch("ee.modules.ai.services.llm_node_helpers.node_llm", new=fake_node_llm):
@@ -36,7 +36,7 @@ async def test_synthesize_tactical_system_prompt_unchanged_when_no_persona_set()
     captured = {}
 
     async def fake_node_llm(**kwargs):
-        captured["system"] = kwargs.get("system")
+        captured["system"] = kwargs.get("system_context")
         return {"content": "{}", "success": True}
 
     with patch("ee.modules.ai.services.llm_node_helpers.node_llm", new=fake_node_llm):

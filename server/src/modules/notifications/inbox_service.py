@@ -7,6 +7,8 @@ Assemble the header Activity inbox for AISER:
 - **Feed**: mentions/comments/reactions/shares/follows/approvals on the user's Feed
   activity (feed_notifications table) — previously tracked only by the Feed page's
   own bell icon, invisible from the header inbox everything else surfaces through.
+- **Comment**: new dashboard comments by others — on dashboards the user created, or in
+  threads the user is part of.
 - **Activity** (adoption): contextual setup nudges from real usage (data sources, chat, monitors,
   dashboards) — dismiss keys stored in user_settings alongside other preferences.
 """
@@ -32,6 +34,8 @@ MAX_ACTIVITY_TIPS = 4
 ALERT_EVENT_LIMIT = 10
 AI_AUDIT_LIMIT = 8
 FEED_NOTIFICATION_LIMIT = 10
+COMMENT_NOTIFICATION_LIMIT = 10
+COMMENT_LOOKBACK_DAYS = 14
 
 
 def _iso(dt: Any) -> Optional[str]:
@@ -524,6 +528,95 @@ async def engagement_notifications(
     return items[:MAX_ACTIVITY_TIPS]
 
 
+async def comment_notifications(db: AsyncSession, user_id: str) -> list[NotificationItem]:
+    """New comments by other people on dashboards this user created, or in threads they
+    started or replied to. Failures return nothing rather than emptying the whole inbox."""
+    try:
+        async with db.begin_nested():  # a failure here must not abort the other builders' transaction
+            rows = (await db.execute(sa.text(
+                """
+                SELECT c.id, c.dashboard_id, c.parent_id, c.author_name, c.body, c.created_at,
+                       d.name AS dashboard_name
+                FROM dashboard_comments c
+                JOIN dashboards d ON d.id = c.dashboard_id
+                WHERE COALESCE(c.is_deleted, false) = false
+                  AND CAST(c.author_id AS text) <> :uid
+                  AND c.created_at > now() - make_interval(days => :days)
+                  AND (
+                    CAST(d.created_by AS text) = :uid
+                    OR EXISTS (
+                      SELECT 1 FROM dashboard_comments mine
+                      WHERE CAST(mine.author_id AS text) = :uid
+                        AND COALESCE(mine.is_deleted, false) = false
+                        AND (mine.id = COALESCE(c.parent_id, c.id) OR mine.parent_id = COALESCE(c.parent_id, c.id))
+                    )
+                  )
+                ORDER BY c.created_at DESC
+                LIMIT :lim
+                """
+            ), {"uid": str(user_id), "days": COMMENT_LOOKBACK_DAYS, "lim": COMMENT_NOTIFICATION_LIMIT})).mappings().all()
+    except Exception as exc:
+        logger.debug("comment notifications unavailable: %s", exc)
+        return []
+    items: list[NotificationItem] = []
+    for r in rows:
+        who = r["author_name"] or "Someone"
+        board = r["dashboard_name"] or "a dashboard"
+        verb = "replied on" if r["parent_id"] else "commented on"
+        href = f"/dashboards?id={r['dashboard_id']}&comments=open"
+        items.append(NotificationItem(
+            id=f"comment-{r['id']}",
+            kind="comment",
+            title=f"{who} {verb} {board}",
+            message=_truncate(r["body"], 160),
+            severity="info",
+            created_at=_iso(r["created_at"]),
+            href=href,
+            actions=[NotificationAction(label="Open comments", href=href)],
+        ))
+    return items
+
+
+async def notebook_run_notifications(db: AsyncSession, user_id: str) -> list[NotificationItem]:
+    """Scheduled notebook runs of this user's notebooks, per each schedule's "notify" setting
+    (failures by default). Enterprise tables; on Community the query finds nothing."""
+    try:
+        async with db.begin_nested():
+            rows = (await db.execute(sa.text(
+                """
+                SELECT r.id, r.notebook_id, r.status, r.error, r.finished_at, n.title
+                FROM notebook_runs r
+                JOIN notebooks n ON n.id = r.notebook_id
+                JOIN notebook_schedules s ON s.notebook_id = r.notebook_id
+                WHERE CAST(r.owner_id AS text) = :uid
+                  AND r.trigger = 'schedule'
+                  AND r.status IN ('ok', 'failed')
+                  AND r.finished_at > now() - make_interval(days => 7)
+                  AND (s.notify = 'always' OR (s.notify = 'failure' AND r.status = 'failed'))
+                ORDER BY r.finished_at DESC
+                LIMIT 20
+                """
+            ), {"uid": str(user_id)})).mappings().all()
+    except Exception as exc:
+        logger.debug("notebook run notifications unavailable: %s", exc)
+        return []
+    items: list[NotificationItem] = []
+    for r in rows:
+        failed = r["status"] == "failed"
+        href = f"/notebooks/{r['notebook_id']}?run={r['id']}"
+        items.append(NotificationItem(
+            id=f"notebook-run-{r['id']}",
+            kind="activity",
+            title=f"Scheduled run of {r['title'] or 'a notebook'} {'failed' if failed else 'finished'}",
+            message=_truncate(r["error"], 160) if failed else "Open the notebook to see this run's results.",
+            severity="error" if failed else "info",
+            created_at=_iso(r["finished_at"]),
+            href=href,
+            actions=[NotificationAction(label="Open results", href=href)],
+        ))
+    return items
+
+
 async def build_inbox(
     db: AsyncSession,
     *,
@@ -544,6 +637,8 @@ async def build_inbox(
     chunks: list[NotificationItem] = []
     chunks.extend(await invitation_notifications(db, email))
     chunks.extend(await feed_notifications(db, user_payload))
+    chunks.extend(await comment_notifications(db, user_id))
+    chunks.extend(await notebook_run_notifications(db, user_id))
     if org_id:
         chunks.extend(await engagement_notifications(db, org_id, user_id, dismissed_tips))
         chunks.extend(await data_alert_notifications(db, org_id))

@@ -152,15 +152,22 @@ export function applyChartDesignTemplate(
   };
 }
 
+/**
+ * Deep copy of an ECharts option that keeps functions (axis/tooltip/label formatters) by
+ * reference. structuredClone throws on functions and the JSON fallback silently dropped them,
+ * so every chart with a design lost its date axis labels, currency formats and tooltips.
+ */
 function cloneOption<T>(option: T): T {
-  if (typeof structuredClone === 'function') {
-    try {
-      return structuredClone(option);
-    } catch {
-      /* fall through */
+  const copy = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(copy);
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = copy(v);
+      return out;
     }
-  }
-  return JSON.parse(JSON.stringify(option)) as T;
+    return value; // functions, Dates, class instances (e.g. echarts graphic objects): by reference
+  };
+  return copy(option) as T;
 }
 
 function asAxisArray(axis: unknown): any[] {
@@ -335,7 +342,8 @@ export function compileDesignToEcharts(
   const preserveSeries = isForecastLikeSeries(series) || series.some((s) => s?.stack === 'waterfall');
 
   // ── Axis scales ──────────────────────────────────────────────────────────
-  if (design.axis?.xScale || design.axis?.yScale) {
+  // Bars are read by length from zero, so a log scale would misstate them: never on bars.
+  if ((design.axis?.xScale || design.axis?.yScale) && chartType !== 'bar') {
     const xAxes = asAxisArray(next.xAxis).map((ax) => patchAxisScale(ax, design.axis?.xScale));
     const yAxes = asAxisArray(next.yAxis).map((ax) => patchAxisScale(ax, design.axis?.yScale));
     if (xAxes.length) next.xAxis = Array.isArray(next.xAxis) ? xAxes : xAxes[0];
@@ -512,28 +520,8 @@ export function compileDesignToEcharts(
     next.graphic = graphics;
   }
 
-  // ── Brand footer (subtle) ────────────────────────────────────────────────
-  if (design.brand?.footer) {
-    const graphics: any[] = [];
-    const existing = next.graphic;
-    if (Array.isArray(existing)) graphics.push(...existing.filter((g) => g?.id !== 'aiser-design-footer'));
-    else if (existing && typeof existing === 'object' && (existing as any).id !== 'aiser-design-footer') {
-      graphics.push(existing);
-    }
-    graphics.push({
-      id: 'aiser-design-footer',
-      type: 'text',
-      right: 12,
-      bottom: 6,
-      style: {
-        text: design.brand.footer,
-        fill: '#94a3b8',
-        fontSize: 10,
-      },
-      z: 100,
-    });
-    next.graphic = graphics;
-  }
+  // The old in-chart "Brand footer" now shows as the chart's Source / notes line (see
+  // utils/chartAnnotations), so it is no longer drawn here as a second footer.
 
   return next;
 }

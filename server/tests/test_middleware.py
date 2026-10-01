@@ -157,3 +157,20 @@ class TestRequestIdLogRecordFactory:
             assert record.request_id == "-"
         finally:
             logging.setLogRecordFactory(original_factory)
+
+
+def test_client_ip_trusts_forwarded_only_from_internal_proxies():
+    from types import SimpleNamespace
+
+    from src.core.middleware import client_ip
+
+    def req(peer, xff=None):
+        headers = {"x-forwarded-for": xff} if xff else {}
+        return SimpleNamespace(client=SimpleNamespace(host=peer), headers=headers)
+
+    assert client_ip(req("172.18.0.5", "203.0.113.7, 10.0.0.1")) == "203.0.113.7"  # via our proxy
+    assert client_ip(req("8.8.8.8", "203.0.113.7")) == "8.8.8.8"  # public caller can't spoof
+    assert client_ip(req("172.18.0.5", "not-an-ip")) == "172.18.0.5"
+    # A visitor-supplied first entry is ignored: the nearest public hop is who reached our proxy.
+    assert client_ip(req("172.18.0.5", "1.2.3.4, 9.9.9.9, 10.0.0.1")) == "9.9.9.9"
+    assert client_ip(req("172.18.0.5", "192.168.1.20")) == "192.168.1.20"  # all-private (local)

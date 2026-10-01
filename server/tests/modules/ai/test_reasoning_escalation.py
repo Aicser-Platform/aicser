@@ -104,7 +104,12 @@ async def test_claude_reasoning_tier_gets_extended_thinking(monkeypatch):
     result = await service.generate_completion(prompt="test", model_id="claude_reasoning", max_tokens=4000)
 
     assert result["success"] is True
-    assert captured.get("thinking") == {"type": "enabled", "budget_tokens": 2000}
+    # Thinking gets half the completion budget; reasoning calls are floored at 4096 so a short
+    # JSON answer isn't truncated by deliberation (llm_call_budget._REASONING_FLOOR).
+    thinking = captured.get("thinking") or {}
+    assert thinking.get("type") == "enabled"
+    assert 1024 <= thinking.get("budget_tokens", 0) <= 8000
+    assert thinking["budget_tokens"] < captured.get("max_tokens", 0)  # Anthropic requires budget < max_tokens
     assert captured.get("temperature") == 1.0
     assert "max_completion_tokens" not in captured
 

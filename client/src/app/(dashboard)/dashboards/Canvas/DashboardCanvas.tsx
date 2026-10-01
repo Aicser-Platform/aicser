@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Button, Typography, Dropdown, message, Input, Tooltip, Modal, Table, Divider } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import { Responsive, WidthProvider } from 'react-grid-layout';
+import { useDragAutoScroll } from './useDragAutoScroll';
 import {
   DeleteOutlined,
   MoreOutlined,
@@ -24,8 +25,15 @@ import {
   VerticalAlignTopOutlined,
   ColumnWidthOutlined,
   ColumnHeightOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
-import { ExplainChartDrawer } from '../components/ExplainChartDrawer';
+import { getChatHref } from '@/utils/appPaths';
+import { cardTitleStyle, chartDescription, chartSource, sourcePatch } from '../utils/chartAnnotations';
+import { InlineText } from '../components/InlineText';
+import { emitWidgetOptionsPatch } from '../widgets/inlineEditEvents';
+import { WidgetFootnote } from '../components/WidgetFootnote';
+import { WidgetQuickBar } from '../components/WidgetQuickBar';
+import { WatchNumberModal, type WatchTarget } from '@/components/alerts/WatchNumberModal';
 import { DashboardWidgetCell } from '../components/DashboardWidgetCell';
 import { LazyWidgetMount } from '../components/LazyWidgetMount';
 import { isEnterpriseEdition } from '@/utils/appPaths';
@@ -38,9 +46,10 @@ import '../components/AddDashboardDrawer.css';
 import { WidgetBlockPicker } from '../components/WidgetBlockPicker';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { exportChartByWidget } from '../services/exportChartImageService';
-import { exportCSV, exportExcel, normalizeToRows } from '../services/exportChartDataService';
+import { copyChartData, exportCSV, exportExcel, normalizeToRows } from '../services/exportChartDataService';
 import { useDashboardStore, useUndo, useRedo } from '../stores/useDashboardStore';
 import { useTranslations } from 'next-intl';
+import { displayTitle } from '../utils/widgetAutoTitle';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
 import { formatNumber } from '../utils/numberFormatter';
 import { resolveLayoutCollisions, hasLayoutOverlaps } from '../utils/layoutSanitize';
@@ -74,6 +83,7 @@ export default function DashboardCanvas({
   dashboardId,
   runtimeFilters = [],
   onCrossFilter,
+  onClearDateFilters,
   onWidgetChartClick,
   onPageLayoutChange,
   readOnly = false,
@@ -98,6 +108,7 @@ export default function DashboardCanvas({
   dashboardId?: string;
   runtimeFilters?: RuntimeFilter[];
   onCrossFilter?: (field: string, value: unknown) => void;
+  onClearDateFilters?: () => void;
   onWidgetChartClick?: (
     widget: (typeof widgets)[number],
     field: string,
@@ -112,6 +123,7 @@ export default function DashboardCanvas({
   onCollabCursorMove?: (x: number, y: number, widgetId?: string | null) => void;
 }) {
   const td = useTranslations('dashboards');
+  const tPage = useTranslations('dashboards_page');
   const router = useRouter();
   const pathname = usePathname();
   const isDesigner = pathname?.includes('chart-designer');
@@ -200,11 +212,15 @@ export default function DashboardCanvas({
     [commitLayout, isEditing]
   );
 
+  const gridWrapRef = React.useRef<HTMLDivElement | null>(null);
+  const autoScroll = useDragAutoScroll(gridWrapRef);
+
   const beginLayoutGesture = useCallback(() => {
+    autoScroll.start();
     layoutGestureRef.current = true;
     gestureCancelledRef.current = false;
     layoutBeforeGestureRef.current = layout.map((item) => ({ ...item }));
-  }, [layout]);
+  }, [layout, autoScroll]);
 
   /** Suppress the synthetic click that browsers fire after HTML5 drop / RGL drag,
    *  so the properties panel opens only on intentional click/select. */
@@ -220,6 +236,7 @@ export default function DashboardCanvas({
   }, [setPropertiesCollapsed]);
 
   const cancelLayoutGesture = useCallback(() => {
+    autoScroll.stop();
     if (!layoutBeforeGestureRef.current) return;
     gestureCancelledRef.current = true;
     layoutGestureRef.current = false;
@@ -228,12 +245,26 @@ export default function DashboardCanvas({
       sync: false,
       skipResolve: true,
     });
-  }, [commitLayout, suppressPropertiesOpenBriefly]);
+  }, [commitLayout, suppressPropertiesOpenBriefly, autoScroll]);
 
   const endLayoutGesture = useCallback(
     (nextLayout: any[], movedId?: string | null, beforeItem?: { x: number; y: number; w: number; h: number } | null) => {
+      autoScroll.stop();
       layoutGestureRef.current = false;
-      suppressPropertiesOpenBriefly();
+      // Only a real move/resize should swallow the click that follows. react-grid-layout also
+      // reports a "drag" for a plain click on the header, which stopped the title from opening
+      // Properties.
+      const beforeRef =
+        beforeItem ||
+        (movedId && layoutBeforeGestureRef.current
+          ? layoutBeforeGestureRef.current.find((item) => String(item.i) === String(movedId))
+          : null);
+      const afterRef = movedId ? nextLayout.find((item) => String(item.i) === String(movedId)) : null;
+      const moved =
+        !beforeRef ||
+        !afterRef ||
+        ['x', 'y', 'w', 'h'].some((k) => Number((beforeRef as any)[k]) !== Number((afterRef as any)[k]));
+      if (moved) suppressPropertiesOpenBriefly();
 
       // Escape (or other cancel) already restored the snapshot — ignore the stop event.
       if (gestureCancelledRef.current) {
@@ -269,7 +300,7 @@ export default function DashboardCanvas({
           : null,
       });
     },
-    [commitLayout, suppressPropertiesOpenBriefly]
+    [commitLayout, suppressPropertiesOpenBriefly, autoScroll]
   );
 
   const canvasZoom = useDashboardStore((s) => s.canvasZoom);
@@ -339,7 +370,6 @@ export default function DashboardCanvas({
   const [designerRowHeight, setDesignerRowHeight] = useState(40);
   const [focusedWidgetId, setFocusedWidgetId] = useState<string | null>(null);
   const [tableWidgetId, setTableWidgetId] = useState<string | null>(null);
-  const [explainWidgetId, setExplainWidgetId] = useState<string | null>(null);
 
   const handleFocusWidget = useCallback((widgetId: string) => {
     setFocusedWidgetId(widgetId);
@@ -351,13 +381,20 @@ export default function DashboardCanvas({
 
   useEffect(() => {
     if (!isDesigner) return;
+    const rows = 24; // Matched with DESIGNER_DEFAULT_CHART_HEIGHT
+    // The chart fills the canvas area exactly: measured, not guessed from the window (the header,
+    // toolbar and padding above it vary), so its bottom edge and source line are never cut off.
+    const area = document.querySelector('.designer-canvas-container') as HTMLElement | null;
     const updateHeight = () => {
-      const vh = window.innerHeight;
-      const availableHeight = vh - 110;
-      const rows = 24; // Matched with DESIGNER_DEFAULT_CHART_HEIGHT
-      setDesignerRowHeight(Math.max(26, Math.floor(availableHeight / rows)));
+      const available = area?.clientHeight || window.innerHeight - 160;
+      setDesignerRowHeight(Math.max(20, Math.floor(available / rows)));
     };
     updateHeight();
+    if (area && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(updateHeight);
+      observer.observe(area);
+      return () => observer.disconnect();
+    }
     window.addEventListener('resize', updateHeight);
     return () => window.removeEventListener('resize', updateHeight);
   }, [isDesigner]);
@@ -384,6 +421,22 @@ export default function DashboardCanvas({
       if (e.key === 'Escape' && layoutGestureRef.current) {
         e.preventDefault();
         cancelLayoutGesture();
+        return;
+      }
+
+      // Escape closes an open menu, popover or dialog; it must not also deselect the chart.
+      if (
+        e.key === 'Escape' &&
+        document.querySelector(
+          '.ant-dropdown:not(.ant-dropdown-hidden), .ant-popover:not(.ant-popover-hidden), .ant-modal-wrap, .chart-inline-editor, .ant-select-dropdown:not(.ant-select-dropdown-hidden), .ant-picker-dropdown:not(.ant-picker-dropdown-hidden)',
+        )
+      ) {
+        return;
+      }
+
+      // The Designer shows one chart: nothing to deselect, and deleting goes through its
+      // confirmed "Delete chart" button, never a stray Backspace.
+      if (isDesigner && (e.key === 'Escape' || e.key === 'Delete' || e.key === 'Backspace')) {
         return;
       }
 
@@ -512,6 +565,8 @@ export default function DashboardCanvas({
   }, [readOnly, selectedWidgetId, focusedWidgetId, widgets, widgetById, removeWidget, duplicateWidget, setSelectedWidgetId, td, undo, redo, canvasZoom, setCanvasZoom, layout, commitLayout, cancelLayoutGesture]);
 
   const dashboards = useDashboardStore((s) => s.dashboards);
+  // "Watch this number": an alert on the widget's chart (EE alerts).
+  const [watchTarget, setWatchTarget] = useState<WatchTarget | null>(null);
   const isLoadingDashboards = useDashboardStore((s) => s.isLoadingDashboards);
   const hasLoadedDashboards = useDashboardStore((s) => s.hasLoadedDashboards);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
@@ -525,25 +580,30 @@ export default function DashboardCanvas({
     }
   }, [fetchDashboards, hasLoadedDashboards, isLoadingDashboards]);
 
-  const handleCopyToDashboard = async (targetDashboardId: string, widget: any) => {
+  const handleCopyToDashboard = async (targetDashboardId: string, widget: any, move = false) => {
+    const target = dashboards.find((d) => d.id === targetDashboardId)?.name || td('untitled_dashboard');
     try {
       const layoutItem = layout.find((l) => l.i === widget.id);
       // Prefer link (shared library definition) when the widget already has a chartId.
       // Fall back to copy for unsaved / ephemeral widgets.
       if (widget?.chartId) {
         await linkWidgetToDashboard(widget, layoutItem, targetDashboardId, 'link');
-        message.success('Widget linked to dashboard');
       } else {
         await useDashboardStore.getState().copyWidgetToDashboard(widget, layoutItem, targetDashboardId);
-        message.success('Widget copied to dashboard successfully');
+      }
+      if (move) {
+        removeWidget(widget.id);
+        message.success(td('toast_widget_moved', { name: target }));
+      } else {
+        message.success(td('toast_widget_copied', { name: target }));
       }
 
       if (isDesigner) {
         router.push(`/dashboards?id=${targetDashboardId}&mode=edit`);
       }
     } catch (error) {
-      console.error('Failed to pin widget:', error);
-      message.error('Failed to add widget to dashboard');
+      console.error('Failed to add widget to dashboard:', error);
+      message.error(td('toast_widget_copy_failed'));
     }
   };
 
@@ -563,27 +623,44 @@ export default function DashboardCanvas({
       case 'export-csv':
         try {
           exportCSV(widget.chartData, widget.title || 'chart-data', widget);
-          message.success('CSV exported successfully');
-        } catch (error) {
-          message.error('Failed to export CSV: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } catch {
+          message.error(td('export_failed'));
         }
+        break;
+
+      case 'copy-data':
+        copyChartData(widget.chartData, widget)
+          .then((n) => (n ? message.success(td('data_copied', { count: n })) : message.info(td('view_table_empty'))))
+          .catch(() => message.error(td('copy_failed')));
         break;
 
       case 'export-excel':
         try {
           exportExcel(widget.chartData, widget.title || 'chart-data', widget);
-          message.success('Excel exported successfully');
-        } catch (error) {
-          message.error('Failed to export Excel: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } catch {
+          message.error(td('export_failed'));
         }
         break;
 
       case 'export-png':
-        exportChartByWidget(widgetId, widget?.title, 'png');
+        exportChartByWidget(widgetId, widget ? displayTitle(widget, tPage as never) : undefined, 'png', {
+          description: chartDescription(widget?.chartOptions),
+          source: chartSource(widget?.chartOptions),
+        });
+        break;
+
+      case 'export-png-print':
+        exportChartByWidget(widgetId, widget ? displayTitle(widget, tPage as never) : undefined, 'png-print', {
+          description: chartDescription(widget?.chartOptions),
+          source: chartSource(widget?.chartOptions),
+        });
         break;
 
       case 'export-svg':
-        exportChartByWidget(widgetId, widget?.title, 'svg');
+        exportChartByWidget(widgetId, widget ? displayTitle(widget, tPage as never) : undefined, 'svg', {
+          description: chartDescription(widget?.chartOptions),
+          source: chartSource(widget?.chartOptions),
+        });
         break;
 
       case 'focus':
@@ -600,9 +677,18 @@ export default function DashboardCanvas({
         break;
       }
 
-      case 'explain':
-        setExplainWidgetId(widgetId);
+      case 'explain': {
+        // Hand the chart to AI Chat (the full analysis experience) with a plain question,
+        // instead of a second, cramped chat inside a drawer.
+        const w = widgets.find((x) => x.id === widgetId);
+        router.push(
+          getChatHref({
+            prompt: td('ask_ai_about_chart_prompt', { title: w?.title || td('this_chart') }),
+            data_source_id: w?.dataSourceId ? String(w.dataSourceId) : undefined,
+          }),
+        );
         break;
+      }
 
       case 'delete':
         Modal.confirm({
@@ -622,10 +708,27 @@ export default function DashboardCanvas({
         onUpdateWidget?.(widgetId, { isLocked: !widget.isLocked });
         break;
 
+      case 'watch': {
+        const data = widget.chartData as { value?: unknown; y?: unknown[] } | undefined;
+        const raw = data?.value ?? (Array.isArray(data?.y) ? data!.y!.reduce<number>((a, v) => a + (Number(v) || 0), 0) : undefined);
+        const current = raw == null ? null : Number(raw);
+        setWatchTarget({
+          kind: 'chart',
+          chartId: String(widget.chartId),
+          title: widget.title,
+          currentValue: Number.isFinite(current as number) ? (current as number) : null,
+        });
+        break;
+      }
+
       default:
         if (key.startsWith('move-to-page-')) {
           const targetPageId = key.replace('move-to-page-', '');
           void onMoveWidgetToPage?.(widgetId, targetPageId);
+          break;
+        }
+        if (key.startsWith('move-to-dash-')) {
+          void handleCopyToDashboard(key.replace('move-to-dash-', ''), widget, true);
           break;
         }
         if (key.startsWith('copy-to-')) {
@@ -680,47 +783,71 @@ export default function DashboardCanvas({
     if (!isNonChart && isEnterpriseEdition()) {
       items.push({
         key: 'explain',
-        label: td('explain_with_ai'),
+        label: td('ask_ai_about_chart'),
         icon: <RobotOutlined />,
       });
     }
+    if (!isNonChart && isEnterpriseEdition() && w?.chartId) {
+      items.push({ key: 'watch', label: td('menu_watch_number'), icon: <BellOutlined /> });
+    }
 
     items.push(
-    {
-      key: 'copy-to-dashboard',
-      label: 'Copy to Dashboard',
-      icon: <CopyOutlined />,
-      children: dashboards.length > 0
-        ? dashboards.map((d) => ({
-            key: `copy-to-${d.id}`,
-            label: d.name || 'Untitled Dashboard',
-          }))
-        : [{ key: 'no-dashboards', label: 'No dashboards found', disabled: true }],
-    },
+    (() => {
+      // On a dashboard, only *other* dashboards make sense, and moving is as common as copying.
+      // In the Chart Designer there is no current dashboard: it's "add to dashboard".
+      const currentId = isDesigner ? undefined : dashboardId || activeDashboardId;
+      const others = dashboards.filter((d) => d.id !== currentId);
+      const entry = (prefix: string) => (d: (typeof dashboards)[number]) => ({
+        key: `${prefix}${d.id}`,
+        label: d.name || td('untitled_dashboard'),
+      });
+      const empty = [{ key: 'no-dashboards', label: td('menu_no_other_dashboards'), disabled: true }];
+      if (isDesigner) {
+        return {
+          key: 'copy-to-dashboard',
+          label: td('menu_copy_to_dashboard'),
+          icon: <CopyOutlined />,
+          children: others.length ? others.map(entry('copy-to-')) : empty,
+        };
+      }
+      return {
+        key: 'copy-to-dashboard',
+        label: td('menu_copy_or_move_dashboard'),
+        icon: <CopyOutlined />,
+        children: others.length
+          ? [
+              { type: 'group' as const, key: 'grp-copy', label: td('menu_group_copy'), children: others.map(entry('copy-to-')) },
+              { type: 'group' as const, key: 'grp-move', label: td('menu_group_move'), children: others.map(entry('move-to-dash-')) },
+            ]
+          : empty,
+      };
+    })(),
     ...(!isNonChart ? [
       {
         key: 'export-data',
-        label: 'Export Data',
+        label: td('menu_data'),
         icon: <FileExcelOutlined />,
         children: [
-          { key: 'export-csv', label: 'Export CSV', icon: <FileTextOutlined /> },
-          { key: 'export-excel', label: 'Export Excel (.xlsx)', icon: <FileExcelOutlined /> },
+          { key: 'copy-data', label: td('menu_copy_data'), icon: <CopyOutlined /> },
+          { key: 'export-csv', label: td('menu_download_csv'), icon: <FileTextOutlined /> },
+          { key: 'export-excel', label: td('menu_download_excel'), icon: <FileExcelOutlined /> },
         ],
       },
       {
         key: 'export-image',
-        label: 'Export Image',
+        label: td('menu_image'),
         icon: <FileImageOutlined />,
         children: [
-          { key: 'export-png', label: 'Export PNG' },
-          { key: 'export-svg', label: 'Export SVG' },
+          { key: 'export-png', label: td('menu_download_png') },
+          { key: 'export-png-print', label: td('menu_download_png_print') },
+          { key: 'export-svg', label: td('menu_download_svg') },
         ],
       },
     ] : []),
     { type: 'divider' as const },
     {
       key: 'lock',
-      label: w?.isLocked ? 'Unlock widget' : 'Lock widget (prevent move/resize)',
+      label: w?.isLocked ? td('menu_unlock') : td('menu_lock'),
       icon: w?.isLocked ? <UnlockOutlined /> : <LockOutlined />,
     },
     { type: 'divider' as const },
@@ -888,6 +1015,7 @@ export default function DashboardCanvas({
         </div>
       )}
 
+      <div ref={gridWrapRef}>
       {/* Free placement. Overlap allowed while gesturing so RGL does not cascade
           neighbors downward; on stop we swap or nudge just enough. Escape restores. */}
       <ResponsiveGridLayout
@@ -901,7 +1029,9 @@ export default function DashboardCanvas({
         compactType={null}
         preventCollision={false}
         allowOverlap={true}
-        isBounded={isEditing}
+        // Not bounded: a widget can be dragged below the lowest one (the canvas grows). Columns
+        // still clamp on drop; the page scrolls at the edges while dragging.
+        isBounded={false}
         isDraggable={isEditing}
         isResizable={isEditing}
         resizeHandles={['se', 'nw']}
@@ -935,6 +1065,14 @@ export default function DashboardCanvas({
 
           return (
             <div key={w.id} data-widget-id={w.id} className={isLayoutSlot ? 'dashboard-canvas-slot-placeholder' : undefined}>
+              {isSelected && isEditing && !readOnly && !isLayoutSlot && selectedWidgetIds.size <= 1 && onUpdateWidget ? (
+                <WidgetQuickBar
+                  widget={w}
+                  onUpdate={(patch) => onUpdateWidget(w.id, patch)}
+                  onDuplicate={() => handleMenuClick('duplicate', w.id)}
+                  onDelete={() => handleMenuClick('delete', w.id)}
+                />
+              ) : null}
               <div
                 className={`widget-card ${isSelected ? 'selected' : ''} ${isMultiSelected ? 'multi-selected' : ''} ${isCrossFilterSource ? 'is-cross-filter-source' : ''} ${peerEditingWidgetId === w.id ? 'is-peer-editing' : ''} widget-type-${w.chartType} ${!showHeader ? 'header-hidden' : ''} ${w.chartOptions?.backgroundColor === 'transparent' ? 'is-transparent' : ''} ${isLayoutSlot ? 'is-layout-slot' : ''}`}
                 data-widget-id={w.id}
@@ -1014,8 +1152,8 @@ export default function DashboardCanvas({
                       style={{
                         cursor: isEditing ? 'pointer' : 'default',
                         userSelect: 'none',
-                        fontWeight: w.chartOptions?.titleFontWeight || '700',
-                        color: w.chartOptions?.titleColor || undefined,
+                        fontWeight: 700,
+                        ...cardTitleStyle(w.chartOptions),
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 0,
@@ -1029,11 +1167,19 @@ export default function DashboardCanvas({
                           <DashboardIcon icon={w.chartOptions.headerIcon} size={14} />
                         </span>
                       ) : null}
-                      {w.title}
+                      {displayTitle(w, tPage as never)}
                     </Text>
                   )}
-                  {typeof w.chartOptions?.subtitle === 'string' && w.chartOptions.subtitle.trim() ? (
-                    <span className="widget-card-subtitle">{w.chartOptions.subtitle}</span>
+                  {/* Description: typed straight into the card while editing. */}
+                  {!['text', 'slicer', 'filter', 'divider', 'image'].includes(String(w.chartType)) ? (
+                    <InlineText
+                      className="widget-card-subtitle"
+                      value={typeof w.chartOptions?.subtitle === 'string' ? w.chartOptions.subtitle : ''}
+                      placeholder={td('inline_add_description')}
+                      editable={isEditing && isSelected}
+                      multiline
+                      onChange={(v) => emitWidgetOptionsPatch(w.id, { subtitle: v || undefined })}
+                    />
                   ) : null}
                   </div>
 
@@ -1063,7 +1209,7 @@ export default function DashboardCanvas({
                           ? getMenuItems(w.id)
                           : getMenuItems(w.id).filter((item: any) => {
                               if (!item || item.type === 'divider') return false;
-                              return ['focus', 'view-table', 'explain', 'export-data', 'export-image'].includes(
+                              return ['focus', 'view-table', 'explain', 'watch', 'export-data', 'export-image'].includes(
                                 item.key,
                               );
                             }),
@@ -1100,7 +1246,7 @@ export default function DashboardCanvas({
                           ? getMenuItems(w.id)
                           : getMenuItems(w.id).filter((item: any) => {
                               if (!item || item.type === 'divider') return false;
-                              return ['focus', 'view-table', 'explain', 'export-data', 'export-image'].includes(
+                              return ['focus', 'view-table', 'explain', 'watch', 'export-data', 'export-image'].includes(
                                 item.key,
                               );
                             }),
@@ -1126,7 +1272,9 @@ export default function DashboardCanvas({
                     runtimeFilters={runtimeFilters}
                     readOnly={readOnly}
                     onCrossFilter={onCrossFilter}
+                    onClearDateFilters={onClearDateFilters}
                     onWidgetChartClick={onWidgetChartClick}
+                    interactive={!isEditing}
                     onUpdateConfig={
                       readOnly
                         ? undefined
@@ -1147,11 +1295,32 @@ export default function DashboardCanvas({
                   />
                 </LazyWidgetMount>
               </div>
+              {(isEditing && isSelected) || isDesigner ? (
+                <div className="widget-card-footnote">
+                  <InlineText
+                    value={
+                      typeof w.chartOptions?.sourceNote === 'string'
+                        ? w.chartOptions.sourceNote
+                        : chartSource(w.chartOptions)
+                    }
+                    placeholder={td('inline_add_source')}
+                    editable
+                    multiline
+                    maxLength={300}
+                    onChange={(v) =>
+                      emitWidgetOptionsPatch(w.id, sourcePatch(w.chartOptions, v || undefined))
+                    }
+                  />
+                </div>
+              ) : (
+                <WidgetFootnote note={chartSource(w.chartOptions)} />
+              )}
               </div>
             </div>
           );
         })}
       </ResponsiveGridLayout>
+      </div>
 
       {widgets.length === 0 && isEditing && (
         <div className="canvas-empty">
@@ -1165,19 +1334,6 @@ export default function DashboardCanvas({
         </div>
       )}
 
-      {/* Explain with AI Drawer */}
-      {isEnterpriseEdition() && (
-      <ExplainChartDrawer
-        open={!!explainWidgetId}
-        onClose={() => setExplainWidgetId(null)}
-        widget={explainWidgetId ? (widgets.find((w) => w.id === explainWidgetId) ?? null) : null}
-        onChangeChartType={(chartType) => {
-          if (!explainWidgetId || !onUpdateWidget) return;
-          if (!isSafeChartTypeSwitchTarget(chartType)) return;
-          onUpdateWidget(explainWidgetId, { chartType });
-        }}
-      />
-      )}
 
       {/* Widget Focus / View Full Modal — size by widget type; stay above studio chrome */}
       {focusedWidgetId && (() => {
@@ -1255,6 +1411,7 @@ export default function DashboardCanvas({
                 runtimeFilters={runtimeFilters}
                 readOnly={readOnly}
                 onCrossFilter={onCrossFilter}
+                onClearDateFilters={onClearDateFilters}
                 onWidgetChartClick={onWidgetChartClick}
                 isDesigner={isDesigner}
                 isSelected
@@ -1329,6 +1486,7 @@ export default function DashboardCanvas({
           </Modal>
         );
       })()}
+      <WatchNumberModal open={watchTarget != null} target={watchTarget} onClose={() => setWatchTarget(null)} />
     </div>
   );
 }

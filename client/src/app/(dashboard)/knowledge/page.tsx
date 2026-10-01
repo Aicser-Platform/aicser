@@ -12,14 +12,14 @@ import {
   Modal,
   message,
   Typography,
-  Tabs,
+  Collapse,
+  Dropdown,
   Empty,
   Tooltip,
   Form,
   Input,
   Select,
   Alert,
-  Segmented,
 } from 'antd';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import {
@@ -34,8 +34,11 @@ import {
   PlusOutlined,
   EditOutlined,
   RedoOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
+import type { MenuProps } from 'antd';
 import { useTranslations } from 'next-intl';
+import './knowledge.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getChatHref } from '@/utils/appPaths';
 import { AccessDenied } from '@/components/layout/AccessDenied';
@@ -152,6 +155,14 @@ const ConnectorSyncPanel: React.FC<{ dataSourceId: string | null; canManage: boo
       </Text>
       {!canManage ? (
         <Alert type="info" showIcon message={t('access_denied_desc')} />
+      ) : !statusLoading && !configured.sharepoint && !configured.confluence ? (
+        // Nothing connected: say what's needed and who does it, instead of a disabled form.
+        <Alert
+          type="info"
+          showIcon
+          message={t('connectors_none_title')}
+          description={t('connectors_none_desc')}
+        />
       ) : (
         <Space orientation="vertical" style={{ width: '100%' }} size={8}>
           <Select
@@ -238,8 +249,8 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('libraries');
-  const [advancedSubTab, setAdvancedSubTab] = useState<'connectors' | 'retrieval'>('connectors');
+  // Folded sections under the documents (occasional tasks), opened by deep links too.
+  const [openPanels, setOpenPanels] = useState<string[]>([]);
   const [citationDrawerOpen, setCitationDrawerOpen] = useState(false);
   const [highlightDocumentId, setHighlightDocumentId] = useState<string | null>(null);
   const [form] = Form.useForm();
@@ -269,30 +280,15 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
 
   useEffect(() => {
     if (!urlTab) return;
-    if (urlTab === 'search' || urlTab === 'retrieval') {
-      setActiveTab('advanced');
-      setAdvancedSubTab('retrieval');
-      return;
-    }
-    if (urlTab === 'connectors') {
-      setActiveTab('advanced');
-      setAdvancedSubTab('connectors');
-      return;
-    }
-    if (urlTab === 'advanced') {
-      setActiveTab('advanced');
-      return;
-    }
-    if (['libraries', 'documents'].includes(urlTab)) {
-      setActiveTab(urlTab);
-    }
+    // Old links (?tab=search / retrieval / advanced / connectors / documents) keep working.
+    if (['search', 'retrieval', 'test-search'].includes(urlTab)) setOpenPanels(['test-search']);
+    else if (['connectors', 'advanced', 'sync'].includes(urlTab)) setOpenPanels(['sync']);
   }, [urlTab]);
 
   useEffect(() => {
     if (!fromCitation || !citationDocumentId) return;
     setHighlightDocumentId(citationDocumentId);
     setCitationDrawerOpen(true);
-    if (urlTab === 'documents') setActiveTab('documents');
   }, [fromCitation, citationDocumentId, urlTab]);
 
   const library = libraries.find((l) => l.id === activeLibrary) ?? null;
@@ -502,7 +498,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
               className="page-table-tag"
               color={status === 'ready' ? 'success' : status === 'failed' ? 'error' : 'processing'}
             >
-              {status}
+              {t(`doc_status_${['ready', 'failed', 'processing', 'pending', 'queued'].includes(status) ? status : 'processing'}` as never)}
             </Tag>
           </Space>
         </Tooltip>
@@ -552,109 +548,13 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
     },
   ];
 
-  const libraryColumns = [
-    {
-      title: t('library_name'),
-      dataIndex: 'name',
-      key: 'name',
-      render: (name: string, row: KnowledgeLibrary) => (
-        <Space>
-          <BookOutlined />
-          <Button
-            type="link"
-            style={{ padding: 0 }}
-            onClick={() => {
-              setSelectedLibraryId(row.id);
-              setActiveTab('documents');
-            }}
-          >
-            {name}
-          </Button>
-          {scopeTag(row)}
-        </Space>
-      ),
-    },
-    {
-      title: t('library_documents'),
-      key: 'docs',
-      width: 120,
-      render: (_: unknown, row: KnowledgeLibrary) =>
-        `${row.ready_document_count ?? 0} / ${row.document_count ?? 0}`,
-    },
-    {
-      title: t('col_actions'),
-      key: 'actions',
-      width: 220,
-      render: (_: unknown, row: KnowledgeLibrary) => (
-        <Space wrap>
-          <Button size="small" icon={<MessageOutlined />} onClick={() => openAiSearch(row.id)}>
-            {t('open_in_chat')}
-          </Button>
-          {canManage ? (
-            <>
-              <Button size="small" icon={<EditOutlined />} onClick={() => handleRenameLibrary(row)}>
-                {t('rename')}
-              </Button>
-              <Button
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={() => handleDeleteLibrary(row)}
-              />
-            </>
-          ) : null}
-        </Space>
-      ),
-    },
-  ];
-
   const librarySelectOptions = libraries.map((l) => ({ value: l.id, label: l.name }));
   const retrievalDataSourceOptions = libraries
     .filter((l) => l.data_source_id)
     .map((l) => ({ value: l.data_source_id, label: l.name }));
 
-  const tabItems = [
-    {
-      key: 'libraries',
-      label: t('tab_libraries'),
-      children: libsLoading && libraries.length === 0 ? (
-        <div style={{ padding: '8px 0' }}>
-          <TableRowsSkeleton columns={libraryColumns.length} rows={5} />
-        </div>
-      ) : (
-        <Table
-          className="page-data-table"
-          rowKey="id"
-          columns={libraryColumns}
-          dataSource={libraries}
-          loading={libsLoading}
-          pagination={{ pageSize: 10 }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <Space orientation="vertical" size={4}>
-                    <Text strong>{t('empty_libraries_title')}</Text>
-                    <Text type="secondary">{t('empty_libraries_desc')}</Text>
-                  </Space>
-                }
-              >
-                {canManage ? (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                    {t('create_library')}
-                  </Button>
-                ) : null}
-              </Empty>
-            ),
-          }}
-        />
-      ),
-    },
-    {
-      key: 'documents',
-      label: t('tab_documents'),
-      children: !library ? (
+  const documentsView = (
+    !library ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -716,49 +616,182 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
                 : undefined,
           })}
         />
-      ),
-    },
-    {
-      key: 'advanced',
-      label: t('tab_advanced'),
-      children: (
-        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-          <Segmented
-            value={advancedSubTab}
-            onChange={(v) => setAdvancedSubTab(v as 'connectors' | 'retrieval')}
-            options={[
-              { label: t('advanced_connectors'), value: 'connectors' },
-              { label: t('advanced_retrieval'), value: 'retrieval' },
-            ]}
+      )
+  );
+
+  const libraryMenu: MenuProps['items'] = library
+    ? [
+        { key: 'rename', icon: <EditOutlined />, label: t('rename'), onClick: () => handleRenameLibrary(library) },
+        {
+          key: 'reindex',
+          icon: <RedoOutlined />,
+          label: (
+            <Tooltip title={t('reindex_hint')} placement="left">
+              <span>{t('reindex')}</span>
+            </Tooltip>
+          ),
+          onClick: async () => {
+            if (!activeDataSourceId) return;
+            try {
+              const result = await reindexKb.mutateAsync(activeDataSourceId);
+              message.success(result.message || t('reindex_started'));
+            } catch (err) {
+              message.error(formatApiValidationError(err));
+            }
+          },
+        },
+        { type: 'divider' },
+        { key: 'delete', icon: <DeleteOutlined />, danger: true, label: t('delete_library'), onClick: () => handleDeleteLibrary(library) },
+      ]
+    : [];
+
+  // One screen, master–detail: pick a library on the left; its documents are the main
+  // content; checking search and syncing from apps are occasional, so they stay folded
+  // until asked for (they replaced four tabs that split one job into four places).
+  const libraryList = (
+    <div className="kb-library-list" role="listbox" aria-label={t('libraries_heading')}>
+      <div className="kb-library-list__head">
+        <Text type="secondary" strong>
+          {t('libraries_heading')}
+        </Text>
+        {canManage ? (
+          <Button
+            size="small"
+            type="text"
+            icon={<PlusOutlined />}
+            onClick={() => setCreateOpen(true)}
+            aria-label={t('create_library')}
+            title={t('create_library')}
           />
-          {advancedSubTab === 'connectors' ? (
-            <ConnectorSyncPanel dataSourceId={activeDataSourceId} canManage={canManage} />
-          ) : (
-            <div style={{ maxWidth: 880 }}>
-              {!library ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={t('retrieval_empty_library')}
-                />
-              ) : (
-                <KnowledgeSearchPanel
-                  dataSourceId={activeDataSourceId}
-                  dataSourceOptions={retrievalDataSourceOptions}
-                  showDataSourceSelector={retrievalDataSourceOptions.length > 1}
-                  onDataSourceChange={(id) => {
-                    const match = libraries.find((l) => l.data_source_id === id);
-                    if (match) setSelectedLibraryId(match.id);
-                  }}
-                  showRetrievalHint={false}
-                  defaultTopK={8}
-                />
-              )}
-            </div>
-          )}
+        ) : null}
+      </div>
+      {libsLoading && libraries.length === 0 ? (
+        <TableRowsSkeleton columns={1} rows={4} />
+      ) : (
+        libraries.map((lib) => {
+          const active = lib.id === library?.id;
+          return (
+            <button
+              type="button"
+              key={lib.id}
+              role="option"
+              aria-selected={active}
+              className={`kb-library-item${active ? ' kb-library-item--active' : ''}`}
+              onClick={() => {
+                setSelectedLibraryId(lib.id);
+                setHighlightDocumentId(null);
+              }}
+            >
+              <BookOutlined />
+              <span className="kb-library-item__name">{lib.name}</span>
+              <span className="kb-library-item__count">{lib.document_count ?? 0}</span>
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+
+  const libraryDetail = !library ? (
+    <Empty
+      image={Empty.PRESENTED_IMAGE_SIMPLE}
+      description={
+        <Space orientation="vertical" size={4}>
+          <Text strong>{t('empty_libraries_title')}</Text>
+          <Text type="secondary">{t('empty_libraries_desc')}</Text>
         </Space>
-      ),
-    },
-  ];
+      }
+    >
+      {canManage ? (
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+          {t('create_library')}
+        </Button>
+      ) : null}
+    </Empty>
+  ) : (
+    <div className="kb-detail">
+      <div className="kb-detail__head">
+        <div className="kb-detail__title">
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            {library.name}
+          </Typography.Title>
+          {scopeTag(library)}
+          <Text type="secondary">
+            {t('library_ready_count', {
+              ready: library.ready_document_count ?? 0,
+              total: library.document_count ?? 0,
+            })}
+          </Text>
+        </div>
+        <Space wrap>
+          {canManage ? (
+            <Button type="primary" icon={<UploadOutlined />} loading={uploadDoc.isPending} onClick={triggerUpload}>
+              {t('upload_document')}
+            </Button>
+          ) : null}
+          <Button icon={<MessageOutlined />} onClick={() => openAiSearch(library.id)}>
+            {t('ask_about_library')}
+          </Button>
+          <Button
+            icon={<ReloadOutlined />}
+            aria-label={t('refresh')}
+            title={t('refresh')}
+            onClick={() => {
+              void refetch();
+              void refetchLibs();
+            }}
+          />
+          {canManage ? (
+            <Dropdown menu={{ items: libraryMenu }} trigger={['click']}>
+              <Button icon={<MoreOutlined />} aria-label={t('more_actions')} title={t('more_actions')} />
+            </Dropdown>
+          ) : null}
+        </Space>
+      </div>
+      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+        {t('upload_trust')}
+      </Text>
+
+      {documentsView}
+
+      <Collapse
+        ghost
+        className="kb-more"
+        activeKey={openPanels}
+        onChange={(keys) => setOpenPanels(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
+        items={[
+          {
+            key: 'test-search',
+            label: (
+              <span>
+                <Text strong>{t('tab_test_search')}</Text>
+                <Text type="secondary"> · {t('tab_desc_test_search')}</Text>
+              </span>
+            ),
+            children: (
+              <KnowledgeSearchPanel
+                dataSourceId={activeDataSourceId}
+                dataSourceOptions={retrievalDataSourceOptions}
+                showDataSourceSelector={false}
+                showRetrievalHint={false}
+                defaultTopK={8}
+              />
+            ),
+          },
+          {
+            key: 'sync',
+            label: (
+              <span>
+                <Text strong>{t('tab_sync')}</Text>
+                <Text type="secondary"> · {t('tab_desc_sync')}</Text>
+              </span>
+            ),
+            children: <ConnectorSyncPanel dataSourceId={activeDataSourceId} canManage={canManage} />,
+          },
+        ]}
+      />
+    </div>
+  );
 
   return (
     <DashboardPageShell>
@@ -767,75 +800,31 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         title={t('title_libraries')}
         description={t('subtitle')}
         extra={
-          <Space wrap>
-            {canManage && library ? (
-              <Button
-                type="primary"
-                icon={<UploadOutlined />}
-                loading={uploadDoc.isPending}
-                onClick={triggerUpload}
-              >
-                {t('upload_document')}
-              </Button>
-            ) : canManage ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => setCreateOpen(true)}>
-                {t('create_library')}
-              </Button>
-            ) : null}
-            <Button icon={<MessageOutlined />} onClick={() => openAiSearch(library?.id)}>
-              {t('open_ai_search_mode')}
+          canManage ? (
+            <Button icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              {t('create_library')}
             </Button>
-            {canManage && library ? (
-              <Button icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                {t('create_library')}
-              </Button>
-            ) : null}
-          </Space>
+          ) : null
         }
       />
 
       <div className="page-body">
         <Card className="page-section-card content-card">
-          {library ? (
-            <div className="page-panel-toolbar" style={{ marginBottom: 12 }}>
-              <div className="page-panel-toolbar__row">
-                <div className="page-panel-toolbar__filters">
-                  <Select
-                    style={{ minWidth: 200 }}
-                    value={library.id}
-                    onChange={setSelectedLibraryId}
-                    options={librarySelectOptions}
-                    placeholder={t('select_library')}
-                  />
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={() => {
-                      void refetch();
-                      void refetchLibs();
-                    }}
-                  />
-                  {canManage ? (
-                    <Button
-                      loading={reindexKb.isPending}
-                      onClick={async () => {
-                        if (!activeDataSourceId) return;
-                        try {
-                          const result = await reindexKb.mutateAsync(activeDataSourceId);
-                          message.success(result.message || t('reindex_started'));
-                        } catch (err) {
-                          message.error(formatApiValidationError(err));
-                        }
-                      }}
-                    >
-                      {t('reindex')}
-                    </Button>
-                  ) : null}
-                </div>
-                <Text type="secondary">{t('upload_trust')}</Text>
-              </div>
-            </div>
-          ) : null}
-          <Tabs className="page-tabs" activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+          <div className={`kb-layout${libraries.length > 1 ? '' : ' kb-layout--single'}`}>
+            {libraries.length > 1 ? (
+              <>
+                {libraryList}
+                <Select
+                  className="kb-library-select"
+                  value={library?.id}
+                  onChange={setSelectedLibraryId}
+                  options={librarySelectOptions}
+                  aria-label={t('select_library')}
+                />
+              </>
+            ) : null}
+            {libraryDetail}
+          </div>
         </Card>
       </div>
 
@@ -880,7 +869,6 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
               setCreateOpen(false);
               form.resetFields();
               setSelectedLibraryId(created.id);
-              setActiveTab('documents');
               void refetchLibs();
             } catch (err) {
               message.error(formatApiValidationError(err));

@@ -4,6 +4,7 @@ from sqlalchemy import (
     UniqueConstraint, Enum, Index,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.orm import validates
 from sqlalchemy.sql import func, text
 
 from src.core.edition import is_ee_enabled
@@ -68,6 +69,13 @@ class FeedPost(Base):
     title = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
     tags = Column(ARRAY(Text()), nullable=False, server_default=text("'{}'"))
+
+    @validates("title")
+    def _clean_title(self, _key, value):
+        # Shared cards carry the asset's title; never persist a privacy-scrubber placeholder.
+        from src.modules.dashboards.models import clean_display_name
+
+        return clean_display_name(value, "Untitled insight") if value else value
 
     approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
@@ -230,6 +238,31 @@ class FeedPostAttachment(Base):
         UniqueConstraint("post_id", "asset_type", "asset_id", name="uq_feed_post_attachment"),
         Index("idx_feed_post_attachments_post", "post_id"),
     )
+
+
+class FeedPostImage(Base):
+    """An image uploaded into a feed post (screenshots, photos of a whiteboard...).
+
+    Bytes live in the deployment's object storage (S3 / Azure Blob / PostgreSQL, the same
+    backend CSV and knowledge uploads use); this row only holds the key. Uploaded before the
+    post exists (post_id NULL, visible only to the uploader), then linked by publish_asset.
+    Served through GET /api/feed/images/{id}, which applies the post's own visibility rules.
+    Table: feed_post_images
+    """
+    __tablename__ = "feed_post_images"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"), index=True)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("feed_posts.id", ondelete="CASCADE"), nullable=True, index=True)
+    uploader_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    organization_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    object_key = Column(Text, nullable=False)
+    content_type = Column(String(64), nullable=False, server_default=text("'image/webp'"))
+    width = Column(Integer, nullable=True)
+    height = Column(Integer, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    alt_text = Column(String(300), nullable=True)
+    position = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class FeedInteraction(Base):

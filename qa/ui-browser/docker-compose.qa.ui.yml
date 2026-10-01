@@ -1,0 +1,19 @@
+# Optional overlay — does NOT start Aicser.
+# Use profile qa-ui only. Default product compose files are untouched.
+#
+#   docker compose -f qa/ui-browser/docker-compose.qa.ui.yml --profile qa-ui run --rm qa-ui-hints
+#
+# Live agent runs stay on the host (Chrome + Browser Harness). See README.md.
+
+services:
+  qa-ui-hints:
+    image: curlimages/curl:8.5.0
+    profiles: ["qa-ui"]
+    network_mode: host
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "QA track expects Aicser on host ports (default :3000 / :8000)."
+        echo "Run journeys from qa/ui-browser on the host — see README.md"
+        curl -sf -o /dev/null -w "client %{http_code}\n" http://127.0.0.1:3000 || true
+        curl -sf -o /dev/null -w "api %{http_code}\n" http://127.0.0.1:8000/health || true

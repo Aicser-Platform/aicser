@@ -1,0 +1,555 @@
+/* Markdown Renderer Styles - Uses Ant Design CSS Variables for Dark/Light Mode */
+
+.markdown-content {
+    line-height: 1.7;
+    color: var(--ant-color-text);
+    font-size: 15px;
+    word-wrap: break-word;
+    white-space: normal;
+}
+
+/* Headings — scaled for chat context (smaller than full-page docs) */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    font-weight: 600;
+    margin-top: 1.2em;
+    margin-bottom: 0.5em;
+    line-height: 1.35;
+    color: var(--ant-color-text);
+}
+
+.markdown-content h1 {
+    font-size: 1.4em;
+    border-bottom: 1px solid color-mix(in srgb, var(--ant-color-border) 60%, transparent);
+    padding-bottom: 0.25em;
+}
+
+.markdown-content h2 {
+    font-size: 1.2em;
+    border-bottom: none;
+}
+
+.markdown-content h3 {
+    font-size: 1.08em;
+}
+
+.markdown-content h4 {
+    font-size: 1em;
+}
+
+.markdown-content h5 {
+    font-size: 0.95em;
+}
+
+.markdown-content h6 {
+    font-size: 0.9em;
+    color: var(--ant-color-text-secondary);
+}
+
+/* First heading directly at top: no extra margin */
+.markdown-content > h1:first-child,
+.markdown-content > h2:first-child,
+.markdown-content > h3:first-child {
+    margin-top: 0;
+}
+
+/* Paragraphs */
+.markdown-content p {
+    margin: 0.65em 0;
+    line-height: 1.7;
+    color: var(--ant-color-text);
+}
+
+.markdown-content p:first-child {
+    margin-top: 0;
+}
+
+.markdown-content p:last-child {
+    margin-bottom: 0;
+}
+
+/* Lists — proper spacing for bullet points */
+.markdown-content ul,
+.markdown-content ol {
+    margin: 0.6em 0;
+    padding-left: 1.6em;
+    color: var(--ant-color-text);
+}
+
+.markdown-content li {
+    margin: 0.35em 0;
+    line-height: 1.7;
+    padding-left: 0.2em;
+}
+
+.markdown-content li > p {
+    margin: 0.3em 0;
+}
+
+.markdown-content ul {
+    list-style-type: disc;
+}
+
+.markdown-content ol {
+    list-style-type: decimal;
+}
+
+.markdown-content ul ul,
+.markdown-content ol ol,
+.markdown-content ul ol,
+.markdown-content ol ul {
+    margin: 0.3em 0;
+    padding-left: 1.4em;
+}
+
+/* Ensure first/last list items don't collapse with surrounding content */
+.markdown-content ul:first-child,
+.markdown-content ol:first-child {
+    margin-top: 0;
+}
+.markdown-content ul:last-child,
+.markdown-content ol:last-child {
+    margin-bottom: 0;
+}
+
+/* Code blocks — dark shell by default (github-dark.css in TSX); light theme overrides below */
+.code-block-wrapper {
+    position: relative;
+    margin: 1.5em 0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #0d1117;
+    border: 1px solid #30363d;
+}
+
+.code-block-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5em 1em;
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+}
+
+.code-language {
+    font-size: 0.75em;
+    color: #8b949e;
+    text-transform: uppercase;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+}
+
+.code-copy-btn {
+    margin-left: auto;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #c9d1d9;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.code-copy-btn:hover {
+    background: #30363d;
+    border-color: #8b949e;
+}
+
+.code-copy-btn:focus-visible {
+    outline: 2px solid var(--ant-color-primary, #58a6ff);
+    outline-offset: 2px;
+}
+
+.code-block {
+    margin: 0;
+    padding: 1em 1.25em;
+    overflow-x: auto;
+    background: #0d1117;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Droid Sans Mono', 'Source Code Pro', monospace;
+    font-size: 0.875em;
+    line-height: 1.6;
+}
+
+.code-block code.hljs {
+    display: block;
+    background: transparent !important;
+    padding: 0;
+    border: none;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+/* Light theme: match app surfaces + GitHub-light-style hljs tokens */
+[data-theme='light'] .markdown-content .code-block-wrapper {
+    background: var(--ant-color-fill-quaternary);
+    border-color: var(--ant-color-border);
+}
+
+[data-theme='light'] .markdown-content .code-block-header {
+    background: var(--ant-color-fill-tertiary);
+    border-bottom-color: var(--ant-color-border);
+}
+
+[data-theme='light'] .markdown-content .code-language {
+    color: var(--ant-color-text-secondary);
+}
+
+[data-theme='light'] .markdown-content .code-copy-btn {
+    color: var(--ant-color-text);
+    background: var(--ant-color-fill-secondary);
+    border-color: var(--ant-color-border);
+}
+
+[data-theme='light'] .markdown-content .code-copy-btn:hover {
+    background: var(--ant-color-fill-tertiary);
+    border-color: var(--ant-color-primary);
+}
+
+[data-theme='light'] .markdown-content .code-block {
+    background: var(--ant-color-fill-quaternary);
+}
+
+[data-theme='light'] .markdown-content .hljs {
+    color: #24292e;
+    background: transparent;
+}
+
+[data-theme='light'] .markdown-content .hljs-comment,
+[data-theme='light'] .markdown-content .hljs-quote {
+    color: #6a737d;
+}
+
+[data-theme='light'] .markdown-content .hljs-keyword,
+[data-theme='light'] .markdown-content .hljs-selector-tag,
+[data-theme='light'] .markdown-content .hljs-addition {
+    color: #d73a49;
+}
+
+[data-theme='light'] .markdown-content .hljs-number,
+[data-theme='light'] .markdown-content .hljs-string,
+[data-theme='light'] .markdown-content .hljs-meta .hljs-string {
+    color: #032f62;
+}
+
+[data-theme='light'] .markdown-content .hljs-title,
+[data-theme='light'] .markdown-content .hljs-section,
+[data-theme='light'] .markdown-content .hljs-built_in {
+    color: #6f42c1;
+}
+
+[data-theme='light'] .markdown-content .hljs-attr,
+[data-theme='light'] .markdown-content .hljs-variable,
+[data-theme='light'] .markdown-content .hljs-template-variable,
+[data-theme='light'] .markdown-content .hljs-type,
+[data-theme='light'] .markdown-content .hljs-selector-class {
+    color: #005cc5;
+}
+
+[data-theme='light'] .markdown-content .hljs-symbol,
+[data-theme='light'] .markdown-content .hljs-bullet,
+[data-theme='light'] .markdown-content .hljs-link {
+    color: #e36209;
+}
+
+[data-theme='light'] .markdown-content .hljs-meta,
+[data-theme='light'] .markdown-content .hljs-selector-id {
+    color: #005cc5;
+}
+
+[data-theme='light'] .markdown-content .hljs-emphasis {
+    font-style: italic;
+}
+
+[data-theme='light'] .markdown-content .hljs-strong {
+    font-weight: 600;
+}
+
+/* Inline code — neutral emphasis (not error red); wrap long tokens so chat column doesn't clip */
+.inline-code {
+    background: var(--ant-color-fill-tertiary);
+    padding: 0.2em 0.4em;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+    font-size: 0.9em;
+    color: var(--ant-color-text);
+    border: 1px solid var(--ant-color-border);
+    font-weight: 500;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: pre-wrap;
+    vertical-align: 0.05em;
+}
+
+.markdown-content p .inline-code,
+.markdown-content li .inline-code {
+    box-decoration-break: clone;
+}
+
+/* Tables */
+.table-wrapper {
+    overflow-x: auto;
+    margin: 1.25em 0;
+    border-radius: 10px;
+    border: 1px solid var(--ant-color-border);
+    background: var(--ant-color-bg-container);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+
+.markdown-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    min-width: 280px;
+}
+
+.markdown-table th,
+.markdown-table td {
+    padding: 0.7em 1em;
+    text-align: left;
+    border-bottom: 1px solid var(--ant-color-border);
+    color: var(--ant-color-text);
+    vertical-align: top;
+    line-height: 1.45;
+}
+
+.markdown-table th {
+    background: var(--ant-color-fill-quaternary);
+    font-weight: 600;
+    color: var(--ant-color-text);
+    white-space: nowrap;
+}
+
+.markdown-table tr:last-child td {
+    border-bottom: none;
+}
+
+.markdown-table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--ant-color-fill-quaternary) 45%, transparent);
+}
+
+.markdown-table tr:hover td {
+    background: var(--ant-color-fill-quaternary);
+}
+
+/* Blockquotes */
+.markdown-blockquote {
+    margin: 1.5em 0;
+    padding: 0.75em 1em;
+    padding-left: 1.5em;
+    border-left: 4px solid var(--ant-color-primary);
+    background: var(--ant-color-primary-bg);
+    border-radius: 0 4px 4px 0;
+    color: var(--ant-color-text-secondary);
+    font-style: italic;
+}
+
+.markdown-blockquote p {
+    margin: 0.5em 0;
+    color: var(--ant-color-text-secondary);
+}
+
+.markdown-blockquote p:first-child {
+    margin-top: 0;
+}
+
+.markdown-blockquote p:last-child {
+    margin-bottom: 0;
+}
+
+/* Links */
+.markdown-link {
+    color: var(--ant-color-primary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.markdown-link:hover {
+    border-bottom-color: var(--ant-color-primary);
+    text-decoration: none;
+}
+
+/* Strong/Bold */
+.markdown-strong {
+    font-weight: 600;
+    color: var(--ant-color-text);
+}
+
+/* Emphasis/Italic */
+.markdown-em {
+    font-style: italic;
+    color: var(--ant-color-text-secondary);
+}
+
+/* Horizontal Rules */
+.markdown-content hr {
+    margin: 2em 0;
+    border: none;
+    border-top: 1px solid var(--ant-color-border);
+}
+
+/* Images */
+.markdown-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 1.5em 0;
+}
+
+/* Task Lists (GitHub Flavored Markdown) */
+.markdown-content ul.contains-task-list,
+.markdown-content .contains-task-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0.75em 0 1.25em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45em;
+}
+
+.markdown-content li.task-list-item,
+.markdown-content .task-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65em;
+    margin: 0;
+    padding: 0.55em 0.75em;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 8px;
+    background: var(--ant-color-bg-container);
+    color: var(--ant-color-text);
+    line-height: 1.45;
+}
+
+.markdown-content li.task-list-item > p,
+.markdown-content .task-list-item > p {
+    margin: 0;
+    flex: 1;
+}
+
+.markdown-content .markdown-task-checkbox,
+.markdown-content input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.05em;
+    height: 1.05em;
+    margin: 0.2em 0 0;
+    flex-shrink: 0;
+    border: 1.5px solid var(--ant-color-border);
+    border-radius: 4px;
+    background: var(--ant-color-bg-container);
+    cursor: default;
+    position: relative;
+}
+
+.markdown-content .markdown-task-checkbox:checked,
+.markdown-content input[type="checkbox"]:checked {
+    background: var(--ant-color-primary);
+    border-color: var(--ant-color-primary);
+}
+
+.markdown-content .markdown-task-checkbox:checked::after,
+.markdown-content input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 0.28em;
+    top: 0.05em;
+    width: 0.28em;
+    height: 0.5em;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* Math (KaTeX) */
+.markdown-content .katex {
+    font-size: 1.1em;
+    color: var(--ant-color-text);
+}
+
+.markdown-content .katex-display {
+    margin: 1.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .markdown-content {
+        font-size: 15px;  /* Slightly smaller on mobile but still readable */
+    }
+    
+    .code-block {
+        font-size: 0.8em;
+        padding: 0.75em 1em;
+    }
+    
+    .table-wrapper {
+        font-size: 0.85em;
+    }
+}
+
+/* Compact size: side panels, modals, embeds. */
+.markdown-content.markdown-compact {
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.markdown-content.markdown-compact h1 { font-size: 1.2em; }
+.markdown-content.markdown-compact h2 { font-size: 1.1em; }
+.markdown-content.markdown-compact h3 { font-size: 1.02em; }
+
+/* Citations: GFM footnotes ([^1]) as small numbered references with a quiet source list. */
+.markdown-content sup a[data-footnote-ref] {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 0 0.3em;
+    margin-left: 1px;
+    border-radius: 999px;
+    background: var(--ant-color-fill-secondary);
+    color: var(--ant-color-text-secondary);
+    font-size: 0.72em;
+    line-height: 1.5;
+    text-align: center;
+    text-decoration: none;
+}
+
+.markdown-content sup a[data-footnote-ref]:hover {
+    background: var(--ant-color-primary-bg);
+    color: var(--ant-color-primary);
+}
+
+.markdown-content section.footnotes {
+    margin-top: 1em;
+    padding-top: 0.6em;
+    border-top: 1px solid var(--ant-color-border-secondary);
+    font-size: 0.85em;
+    color: var(--ant-color-text-secondary);
+}
+
+.markdown-content section.footnotes h2 {
+    font-size: 0.85em;
+    font-weight: 600;
+    margin: 0 0 0.4em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Diagrams (```mermaid): drawn to fit, scroll when wide. */
+.markdown-content .markdown-diagram {
+    margin: 0.8em 0;
+    overflow-x: auto;
+    text-align: center;
+}
+
+.markdown-content .markdown-diagram svg {
+    max-width: 100%;
+    height: auto;
+}

@@ -17,6 +17,7 @@ EXEMPT_FILES = {
 # Same method name, different service.
 EXEMPT_RECEIVERS = {
     "database_connector",
+    "db_connector",  # DatabaseConnectorService in the CRM sync writers (DDL/upsert, no identity param)
     "enterprise_connectors_service",
     "real_data_manager",
 }

@@ -196,24 +196,9 @@ div.page-container,
 }
 
 /* Scrollbar styling for page-wrapper */
-.page-wrapper::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.page-wrapper::-webkit-scrollbar-track {
-  background: var(--ant-color-fill-tertiary);
-  border-radius: 4px;
-}
 
 .page-wrapper::-webkit-scrollbar-thumb {
-  background: var(--ant-color-text-tertiary);
-  border-radius: 4px;
   transition: background 0.2s ease;
-}
-
-.page-wrapper::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-text-secondary);
 }
 
 /* Chat page specific - no padding for full coverage */
@@ -257,22 +242,13 @@ div.page-container,
 }
 
 /* Page Toolbar - Consistent styling */
-.page-toolbar {
-  display: flex !important;
-  justify-content: space-between !important;
-  align-items: center !important; /* Middle alignment */
+.page-toolbar { /* Middle alignment */
   flex-wrap: wrap !important;
   gap: 16px !important;
-  padding: 0 !important;
   margin: 0 !important;
-  margin-bottom: 0 !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
   margin-top: 0 !important;
-}
-
-.page-description {
-  color: var(--ant-color-text-secondary) !important;
 }
 
 .page-body {

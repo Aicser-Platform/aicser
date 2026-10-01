@@ -63,6 +63,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _url_types():
+    from src.modules.data.services.warehouse_urls import URL_TYPES
+
+    # Snowflake / Redshift keep their existing native paths for tests; schema reads use the URL.
+    return URL_TYPES - {"redshift"}
+
+
 class DatabaseConnectorService:
     """Unified service for database connections using SQLAlchemy"""
     
@@ -89,6 +96,11 @@ class DatabaseConnectorService:
                 'default_port': 1433,
                 'connection_string': '{driver}://{username}:{password}@{host}:{port}/{database}',
             },
+            # Built by warehouse_urls (one URL for test, schema and queries).
+            'databricks': {'driver': 'databricks', 'default_port': 443, 'connection_string': ''},
+            'oracle': {'driver': 'oracledb', 'default_port': 1521, 'connection_string': ''},
+            'trino': {'driver': 'trino', 'default_port': 443, 'connection_string': ''},
+            'athena': {'driver': 'pyathena', 'default_port': 443, 'connection_string': ''},
             'snowflake': {
                 'driver': 'snowflake',
                 'default_port': 443,
@@ -164,6 +176,10 @@ class DatabaseConnectorService:
             # DuckDB: file-based, test via native library
             if db_type == 'duckdb':
                 return await self._test_duckdb_connection(config)
+            # Warehouses without a native test here: the same URL the queries will use.
+            if db_type in ('databricks', 'oracle', 'trino', 'athena', 'bigquery', 'snowflake'):
+                import asyncio
+                return await asyncio.to_thread(self._test_url_connection_sync, config)
             # Use direct driver test for other databases
             return await self._test_direct_connection(config)
             
@@ -174,6 +190,25 @@ class DatabaseConnectorService:
                 'error': f'Connection test failed: {str(e)}'
             }
     
+    def _test_url_connection_sync(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Connect with the warehouse URL and run the engine's trivial query."""
+        from src.modules.data.services import warehouse_urls
+
+        db_type = config.get('type', '').lower()
+        try:
+            url = warehouse_urls.build_url(db_type, config)
+            engine = create_engine(url, pool_pre_ping=True, **warehouse_urls.engine_kwargs(db_type, config))
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text(warehouse_urls.ping_sql(db_type)))
+            finally:
+                engine.dispose()
+            return {'success': True, 'message': f'Connected to {db_type}', 'connection_info': {'type': db_type}}
+        except ValueError as exc:  # a missing setting, named for the user
+            return {'success': False, 'error': str(exc)}
+        except Exception as exc:
+            return {'success': False, 'error': f'Could not connect: {str(exc)[:300]}'}
+
     async def _test_direct_connection(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Test database connection using direct drivers"""
         try:
@@ -800,6 +835,11 @@ class DatabaseConnectorService:
                     f"@{config.get('host')}:{config.get('port', 1433)}/{config.get('database')}"
                     f"?{'&'.join(query_params)}"
                 )
+            elif db_type in _url_types():
+                from src.modules.data.services import warehouse_urls
+
+                connection_string = warehouse_urls.build_url(db_type, config)
+                engine_extra = warehouse_urls.engine_kwargs(db_type, config)
             else:
                 return {
                     'success': False,
@@ -812,6 +852,7 @@ class DatabaseConnectorService:
                 pool_pre_ping=True,
                 pool_recycle=300,
                 echo=False,
+                **(engine_extra if db_type in _url_types() else {}),
             )
             if db_type in ('postgresql', 'redshift'):
                 return self._get_postgresql_schema_fast(engine)
@@ -819,7 +860,15 @@ class DatabaseConnectorService:
             inspector = inspect(engine)
             
             tables = []
-            schemas_list = inspector.get_schema_names()
+            if db_type in _url_types():
+                # A warehouse can hold hundreds of schemas: read the one the connection names
+                # (Oracle: the user's own schema) instead of walking every catalog.
+                chosen = config.get('schema') or config.get('dataset') or (
+                    (config.get('username') or '').upper() if db_type == 'oracle' else None
+                )
+                schemas_list = [chosen] if chosen else inspector.get_schema_names()
+            else:
+                schemas_list = inspector.get_schema_names()
             
             # Filter out system schemas
             system_schemas = {

@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Input, List, Button, Empty, Spin, Tag, Tabs, Typography, message } from 'antd';
+import { Modal, Input, List, Button, Empty, Spin, Tag, Tabs, Typography, Upload, message } from 'antd';
 import {
   BulbOutlined,
+  PictureOutlined,
   CaretDownOutlined,
   CaretRightOutlined,
   DashboardOutlined,
@@ -45,10 +46,12 @@ interface AttachmentPickerProps {
   /** For cross-referencing each dashboard's project visibility (see the private-project hint below). */
   organizationId?: string;
   onPick: (attachment: PickedAttachment) => void;
+  /** Images chosen in the "Image" tab; the composer uploads them (same path as its Add image button). */
+  onPickImages?: (files: File[]) => void;
   onClose: () => void;
 }
 
-type PickerTab = 'dashboards' | 'charts' | 'published';
+type PickerTab = 'dashboards' | 'charts' | 'published' | 'image';
 
 type CatalogChart = Chart & { dashboardTitle: string };
 
@@ -69,7 +72,7 @@ type CatalogChart = Chart & { dashboardTitle: string };
  * payload Publish to Feed already stored so attach-from-feed matches
  * share-to-feed.
  */
-export function AttachmentPicker({ open, excludeIds, organizationId, onPick, onClose }: AttachmentPickerProps) {
+export function AttachmentPicker({ open, excludeIds, organizationId, onPick, onPickImages, onClose }: AttachmentPickerProps) {
   const t = useTranslations('feed_page');
   const { user } = useAuth();
   const currentProjectId = useProjectStore((s) => s.currentProject?.id);
@@ -525,6 +528,32 @@ export function AttachmentPicker({ open, excludeIds, organizationId, onPick, onC
             label: t('attach_tab_published'),
             children: publishedList,
           },
+          ...(onPickImages
+            ? [
+                {
+                  key: 'image',
+                  label: t('attach_tab_image'),
+                  children: (
+                    <Upload.Dragger
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      multiple
+                      showUploadList={false}
+                      beforeUpload={(file, fileList) => {
+                        // Called once per file; hand the whole selection over on the last one.
+                        if (file === fileList[fileList.length - 1]) onPickImages(fileList as unknown as File[]);
+                        return false;
+                      }}
+                    >
+                      <p className="ant-upload-drag-icon">
+                        <PictureOutlined />
+                      </p>
+                      <p className="ant-upload-text">{t('image_drop_title')}</p>
+                      <p className="ant-upload-hint">{t('image_drop_hint')}</p>
+                    </Upload.Dragger>
+                  ),
+                },
+              ]
+            : []),
         ]}
       />
     </Modal>

@@ -25,7 +25,9 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { EmbedDeveloperGuide } from './embed/EmbedDeveloperGuide';
 import { fetchApi, handleUpgradeRequiredError } from '@/utils/api';
+import { EmbedResourcePicker, useEmbedResources } from './embed/EmbedResourcePicker';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -61,7 +63,11 @@ export interface EmbedTokenRecord {
   status: string;
   token_preview?: string;
   theme?: EmbedTheme | null;
+  download?: EmbedDownload;
+  kind?: string | null;
 }
+
+type EmbedDownload = 'none' | 'image' | 'data';
 
 interface EmbedTokenCreated extends EmbedTokenRecord {
   token: string;
@@ -115,6 +121,14 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   } | null>(null);
   const [assistantEmbedLoading, setAssistantEmbedLoading] = useState(false);
   const [selectedEmbedScope, setSelectedEmbedScope] = useState<string>('dashboard');
+  const watchedScopes = Form.useWatch('scopes', form) as string[] | undefined;
+  // Names for the tokens table, so each row says what it embeds rather than an ID.
+  const embedResources = useEmbedResources();
+  const resourceName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of [...embedResources.dashboards, ...embedResources.charts]) m.set(r.id, r.name);
+    return m;
+  }, [embedResources.dashboards, embedResources.charts]);
   const { createEmbedCode } = useEmbedCode();
 
   const { libraries } = useKnowledgeLibraries(orgId);
@@ -157,6 +171,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     resource_id?: string;
     allowed_domains?: string;
     expires_in_hours?: number;
+    download?: EmbedDownload;
     theme_primary_color?: { toHexString: () => string } | string;
     theme_logo_url?: string;
     theme_font_family?: string;
@@ -191,6 +206,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           resource_id: values.resource_id || undefined,
           allowed_domains: domains,
           expires_in_hours: values.expires_in_hours || 720,
+          download: values.download || 'none',
           theme,
         }),
       });
@@ -318,7 +334,14 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       title: t('embed_resource'),
       dataIndex: 'resource_id',
       key: 'resource_id',
-      render: (value: string | null) => value || '—',
+      render: (value: string | null) => (value ? <span title={value}>{resourceName.get(value) ?? value}</span> : '—'),
+    },
+    {
+      title: t('embed_download'),
+      dataIndex: 'download',
+      key: 'download',
+      render: (value: EmbedDownload | undefined) =>
+        t(value === 'data' ? 'embed_download_data' : value === 'image' ? 'embed_download_image' : 'embed_download_none'),
     },
     {
       title: t('created_at'),
@@ -395,6 +418,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         {t('embed_tab_desc')}
       </Paragraph>
 
+      <EmbedDeveloperGuide />
+
       <Card
         size="small"
         title={t('embed_tokens_title')}
@@ -411,7 +436,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         <Table
           rowKey="id"
           loading={loading}
-          dataSource={tokens}
+          dataSource={tokens.filter((tok) => !tok.kind || tok.kind === 'manual')}
           columns={columns}
           pagination={{ pageSize: 8 }}
           scroll={{ x: 'max-content' }}
@@ -504,7 +529,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ scopes: ['dashboard'], expires_in_hours: 720 }}
+          initialValues={{ scopes: ['dashboard'], expires_in_hours: 720, download: 'none' }}
           onFinish={(values) => void handleCreate(values)}
         >
           <Form.Item name="name" label={t('name')} rules={[{ required: true, message: t('embed_name_required') }]}>
@@ -530,12 +555,21 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               },
             ]}
           >
-            <Input placeholder={t('embed_resource_placeholder')} />
+            <EmbedResourcePicker scopes={watchedScopes ?? ['dashboard']} />
           </Form.Item>
           <Form.Item name="allowed_domains" label={t('embed_allowed_domains')} extra={t('embed_allowed_domains_help')}>
             <Input placeholder="example.com, teams.microsoft.com" />
           </Form.Item>
-          <Form.Item name="expires_in_hours" label={t('embed_expires_hours')}>
+          <Form.Item name="download" label={t('embed_download')} extra={t('embed_download_help')}>
+            <Select
+              options={[
+                { value: 'none', label: t('embed_download_none') },
+                { value: 'image', label: t('embed_download_image') },
+                { value: 'data', label: t('embed_download_data') },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="expires_in_hours" label={t('embed_expires_hours')} extra={t('embed_expires_help')}>
             <Select
               options={[
                 { value: 24, label: '24 hours' },

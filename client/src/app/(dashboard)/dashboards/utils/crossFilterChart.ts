@@ -9,7 +9,7 @@ export type CrossFilterChartOpts = {
   onDrill?: (field: string, value: unknown) => void;
 };
 
-function crossFilterValueFromClick(
+export function crossFilterValueFromClick(
   params: {
     name?: string | number;
     componentType?: string;
@@ -18,8 +18,16 @@ function crossFilterValueFromClick(
   chartType?: string
 ): unknown {
   if (params.componentType === 'series') {
+    // A grouped "Other" pie slice isn't a category of the data.
+    if (params.data && typeof params.data === 'object' && (params.data as { isOther?: boolean }).isOther) {
+      return null;
+    }
     if (chartType === 'scatter' && Array.isArray(params.data)) {
       return params.data[0];
+    }
+    // Pie slices show a formatted name ("Jun 2024"); filter by the value itself.
+    if (params.data && typeof params.data === 'object' && (params.data as { raw?: unknown }).raw != null) {
+      return (params.data as { raw: string | number }).raw;
     }
     if (params.name != null) return params.name;
   }
@@ -67,7 +75,10 @@ export function createChartInteractionReady(opts: {
   } = opts;
 
   return (instance: ECharts) => {
-    instance.off('click');
+    // Replace only our own previous handler: other listeners (editing axis titles, adding notes
+    // on points) live on the same chart.
+    const holder = instance as ECharts & { __aicserInteractionClick?: (...args: any[]) => void };
+    if (holder.__aicserInteractionClick) instance.off('click', holder.__aicserInteractionClick);
 
     const handleClick = (params: {
       name?: string | number;
@@ -110,6 +121,7 @@ export function createChartInteractionReady(opts: {
     if (onCrossFilter || onDrill) {
       // echarts' .on('click', ...) overload wants the full ECElementEvent + `this`
       // binding; handleClick only reads a small, stable subset of those fields.
+      holder.__aicserInteractionClick = handleClick as (...args: any[]) => void;
       (instance.on as (event: 'click', handler: typeof handleClick) => void)('click', handleClick);
     }
 
@@ -144,10 +156,9 @@ export function syncCrossFilterHighlight(
     const pieSeries = option.series?.find((s) => s.type === 'pie');
     if (pieSeries && Array.isArray(pieSeries.data)) {
       pieSeries.data.forEach((item, dataIndex) => {
-        const name =
-          typeof item === 'object' && item !== null && 'name' in item
-            ? String((item as { name: unknown }).name)
-            : String(item);
+        const obj = typeof item === 'object' && item !== null ? (item as { name?: unknown; raw?: unknown }) : null;
+        // Slices carry the raw value next to their formatted name ("Jun 2024").
+        const name = obj ? String(obj.raw ?? obj.name) : String(item);
         if (selected.has(name)) {
           instance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex });
         } else {

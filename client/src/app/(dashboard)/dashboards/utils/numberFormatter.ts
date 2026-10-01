@@ -100,8 +100,64 @@ export const formatNumber = (value: number | string | null | undefined, options:
  * Format numbers for chart axis labels
  */
 export const formatAxisLabel = (value: number): string => {
+  // Decimals follow magnitude: a fixed 1 decimal turned every rate axis (0.105, 0.11, 0.115)
+  // into "0.1, 0.1, 0.1".
+  const abs = Math.abs(Number(value));
+  if (abs > 0 && abs < 10 && !Number.isInteger(Number(value))) {
+    const decimals = Math.min(4, Math.max(1, Math.ceil(-Math.log10(abs)) + 2));
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: decimals });
+  }
   return formatNumber(value, { decimals: 1, compact: true });
 };
+
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/**
+ * Category labels for date buckets, in the granularity the data actually has:
+ * every value on the 1st of a month → "Jan 2024"; every value on 1 Jan → "2024"; plain days →
+ * "5 Jan 2024"; a real time of day is kept. Non-dates pass through unchanged. Raw
+ * "2024-01-01T00:00:00" labels are what the axis used to show.
+ */
+export function makeCategoryLabelFormatter(
+  values: unknown[] | undefined,
+  locale?: string,
+  booleanLabels?: { yes: string; no: string },
+): (v: unknown) => string {
+  // A true/false column reads as Yes / No, not the raw "true" / "false".
+  const asBool = (v: unknown): boolean | null =>
+    typeof v === 'boolean' ? v : typeof v === 'string' && /^(true|false)$/i.test(v.trim()) ? v.trim().toLowerCase() === 'true' : null;
+  if (booleanLabels && values && values.length > 0 && values.every((v) => asBool(v) !== null)) {
+    return (v) => {
+      const b = asBool(v);
+      return b === null ? `${v ?? ''}` : b ? booleanLabels.yes : booleanLabels.no;
+    };
+  }
+  // Blank buckets (null / "") don't decide the column's type: one missing week used to leave
+  // every label as a raw "2024-01-01T00:00:00".
+  const present = (values || []).filter((v) => v !== null && v !== undefined && v !== '');
+  const parsed = present.map((v) => (typeof v === 'string' ? ISO_DATE.exec(v.trim()) : null));
+  const allDates = parsed.length > 0 && parsed.every(Boolean);
+  if (!allDates) return (v) => `${v ?? ''}`;
+  const hasTime = parsed.some((m) => m && ((m[4] && m[4] !== '00') || (m[5] && m[5] !== '00')));
+  const monthly = parsed.every((m) => m && m[3] === '01');
+  const yearly = monthly && parsed.every((m) => m && m[2] === '01');
+  const fmt = new Intl.DateTimeFormat(
+    locale,
+    hasTime
+      ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }
+      : yearly
+        ? { year: 'numeric', timeZone: 'UTC' }
+        : monthly
+          ? { month: 'short', year: 'numeric', timeZone: 'UTC' }
+          : { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' },
+  );
+  return (v) => {
+    const m = typeof v === 'string' ? ISO_DATE.exec(v.trim()) : null;
+    if (!m) return `${v ?? ''}`;
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)));
+    return Number.isNaN(d.getTime()) ? `${v}` : fmt.format(d);
+  };
+}
 
 /**
  * Format numbers for chart tooltips with more detail

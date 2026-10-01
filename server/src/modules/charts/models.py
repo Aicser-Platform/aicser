@@ -1,8 +1,9 @@
+from src.modules.folders.models import AssetFolder
 from src.shared.model import BaseModel
 from src.db.base import Base
 from sqlalchemy import UUID, Column, String, Boolean, Integer, ForeignKey, DateTime, Text, JSON
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from sqlalchemy.sql import func, text
 import uuid
 from src.core.edition import is_ee_enabled
@@ -13,32 +14,9 @@ def _conversation_fk():
     return [ForeignKey("conversation.id")] if is_ee_enabled() else []
 
 
-class ChartCollection(Base):
-    """
-    Server-backed folder/collection for Chart Designer library.
-    Table: chart_collections
-    """
-    __tablename__ = "chart_collections"
-
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        server_default=func.gen_random_uuid(),
-        index=True,
-    )
-    name = Column(Text, nullable=False)
-    parent_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("chart_collections.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
-    project_id = Column(UUID(as_uuid=True), *_project_fk(), nullable=True, index=True)
-    sort_order = Column(Integer, nullable=False, server_default=text("0"))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
+# Folders are shared by every asset in a project (src/modules/folders); the name is kept for the
+# library service that files charts.
+ChartCollection = AssetFolder
 
 class Chart(Base):
     """
@@ -46,6 +24,13 @@ class Chart(Base):
     Table: charts
     """
     __tablename__ = "charts"
+
+    @validates("title")
+    def _clean_title(self, _key, value):
+        # Never persist privacy-scrubber placeholders ("<DATE_TIME> …") as a title users read.
+        from src.modules.dashboards.models import clean_display_name
+
+        return clean_display_name(value, "Untitled chart") if value else value
 
     # Primary key
     id = Column(
@@ -76,7 +61,7 @@ class Chart(Base):
     # Library organization
     collection_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("chart_collections.id", ondelete="SET NULL"),
+        ForeignKey("asset_folders.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

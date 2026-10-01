@@ -1,0 +1,17 @@
+id: finance_analyst
+name: Finance analyst
+role: Weekly bookings / forecast owner
+digital_literacy: medium
+goals:
+  - Forecast a certified metric with clear confidence
+  - Export or share an executive-friendly view
+pains:
+  - Wrong metric (summing IDs)
+  - Confidence ~0% without explanation
+  - Narrative timeout with empty cards
+must_not_see:
+  - Sum of document/ID columns presented as revenue
+success_looks_like:
+  - Forecast chart with actual vs future clearly labelled
+  - Confidence explained in plain language
+  - Insights or evidence cards populated

@@ -1,9 +1,11 @@
 'use client';
 
 import React, { Suspense, useEffect, useMemo, useRef } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize } from '@/utils/embedMessaging';
 import { useEmbedTheme } from '@/hooks/useEmbedTheme';
+import { useEmbedSession, type EmbedSessionState } from '@/hooks/useEmbedSession';
+import { EmbedSessionGate } from '@/components/embed/EmbedSessionGate';
 import { EmbedBrandingFooter } from '@/components/embed/EmbedBrandingFooter';
 import { useReportEmbedState } from '@/ee/app/(dashboard)/report/hooks/useReportEmbedState';
 import { ReportDocument, NarrativeContent, type ReportData } from '@/ee/app/(dashboard)/report/components/ReportDocument';
@@ -27,9 +29,25 @@ function useNotifyEmbedHost(report: ReportData | null, error: string | null) {
 }
 
 function EmbedReportContent({ conversationId, messageId }: { conversationId: string; messageId: string }) {
-  const searchParams = useSearchParams();
-  const token = searchParams?.get('token') || '';
-  const { theme, themeStyle, dataTheme } = useEmbedTheme(token);
+  const session = useEmbedSession('report');
+  return (
+    <EmbedSessionGate session={session}>
+      <EmbedReportView conversationId={conversationId} messageId={messageId} session={session} />
+    </EmbedSessionGate>
+  );
+}
+
+function EmbedReportView({
+  conversationId,
+  messageId,
+  session,
+}: {
+  conversationId: string;
+  messageId: string;
+  session: EmbedSessionState;
+}) {
+  const token = session.token;
+  const { theme, themeStyle, dataTheme } = useEmbedTheme(session.theme);
   const isDark = dataTheme === 'dark';
   const { report, isLoading, error } = useReportEmbedState(conversationId, messageId, token);
   useNotifyEmbedHost(report, error);

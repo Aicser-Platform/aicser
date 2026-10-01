@@ -4,9 +4,10 @@
  */
 
 import * as echarts from 'echarts';
-import { ChartConfig, ChartData, ChartValueFormat, CHART_COLORS, formatByValueFormat, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
+import { ChartConfig, ChartData, ChartValueFormat, CHART_COLORS, legendSide, formatByValueFormat, getCartesianEmphasis, getCartesianBlur } from './WidgetRendererConfig';
 import { getPieLayout, getChartSliceBorderColor } from './chartLayoutUtils';
 import { getSeriesPointColors } from './utils/conditionalFormatting';
+import { makeCategoryLabelFormatter } from '../utils/numberFormatter';
 
 function resolveLabelFormat(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
   const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
@@ -29,7 +30,7 @@ function dataLabelFormatter(config: ChartConfig, seriesName?: string, percentSta
       const value = typeof raw === 'number' ? raw : Number(raw) || 0;
       return value > 5 ? `${value.toFixed(1)}%` : '';
     }
-    return formatByValueFormat(raw, resolveLabelFormat(config, seriesName || params?.seriesName));
+    return formatByValueFormat(raw, resolveLabelFormat(config, seriesName || params?.seriesName), config);
   };
 }
 
@@ -138,7 +139,8 @@ export const buildBarSeries = (data: ChartData, config: ChartConfig, colors?: st
     const primarySeries = (effectiveData.series || []).map((s, index) => ({
       name: s.name,
       type: 'bar',
-      colorBy: allSeries.length === 1 ? 'data' : 'series',
+      // One series = one colour (a rainbow implies categories mean something); opt in per chart.
+      colorBy: allSeries.length === 1 && (config as { varyColors?: boolean }).varyColors === true ? 'data' : 'series',
       stack: isStackedBar ? 'total' : undefined,
       barGap: isStackedBar ? '20%' : '10%', // More space for stacked charts
       label: {
@@ -519,9 +521,30 @@ export const buildAreaSeries = (data: ChartData, config: ChartConfig, colors?: s
   };
 };
 
+/**
+ * What a pie slice's label says (Power BI "label contents"): any of name, value and percent,
+ * in that order. Default: all three.
+ */
+export function sliceLabel(config: ChartConfig, name: string, value: string, percent: string): string {
+  const parts = (config as { pieLabelParts?: Array<'name' | 'value' | 'percent'> }).pieLabelParts;
+  const show = (k: 'name' | 'value' | 'percent') => !parts || parts.length === 0 || parts.includes(k);
+  const numbers = [show('value') ? value : '', show('percent') ? (show('value') ? `(${percent}%)` : `${percent}%`) : '']
+    .filter(Boolean)
+    .join(' ');
+  if (show('name') && numbers) return `${name}: ${numbers}`;
+  return show('name') ? name : numbers;
+}
+
 export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: string[]) => {
   const compact = (config as ChartConfig & { isDashboardWidget?: boolean }).isDashboardWidget ?? true;
   const sliceBorder = getChartSliceBorderColor();
+  // Slices read like the axis of a bar chart ("Jun 2024", "Yes"); `raw` keeps the value a click
+  // filters by.
+  const sliceName = makeCategoryLabelFormatter(
+    data.x as unknown[],
+    undefined,
+    (config as { __booleanLabels?: { yes: string; no: string } }).__booleanLabels,
+  );
 
   // If we have multiple series (from multiple yMetrics), create multiple pie series (rings)
   if (data.series && data.series.length > 1) {
@@ -537,13 +560,14 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
 
       const pieData = (data.x || []).map((label: string, idx: number) => ({
         value: s.data?.[idx] || 0,
-        name: String(label),
+        name: sliceName(label),
+        raw: label,
       }));
 
       const total = pieData.reduce((sum, item) => sum + (item.value || 0), 0);
       const isZeroSum = total === 0;
 
-      const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
+      const legendPos = legendSide(config);
       const { center } = getPieLayout(legendPos, compact);
 
       return {
@@ -557,8 +581,8 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
           formatter: (params: any) => {
             if (params.name && params.value !== undefined) {
               const percentage = total > 0 ? ((params.value / total) * 100).toFixed(1) : '0.0';
-              const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config, s.name));
-              return `${params.name}: ${formattedValue} (${percentage}%)`;
+              const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config, s.name), config);
+              return sliceLabel(config, params.name, formattedValue, percentage);
             }
             return params.name || '';
           },
@@ -598,16 +622,20 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
   // Single series default — fall back to series[0].data when data.y is empty
   // (data.y is deprecated in the backend; newer responses send series[0].data instead)
   const yValues = data.y?.length ? data.y : (data.series?.[0]?.data ?? []);
+  const otherIndex = (data as { otherIndex?: number }).otherIndex;
   const pieData = (data?.x || []).map((label: string, idx: number) => ({
     value: yValues[idx] ?? 0,
-    name: String(label),
+    name: sliceName(label),
+    raw: label,
+    // The grouped "Other" slice: muted, and not a real category to filter by.
+    ...(idx === otherIndex ? { isOther: true, itemStyle: { color: '#b8bec6' } } : {}),
   }));
 
   // Calculate total for percentage calculation
   const total = pieData.reduce((sum, item) => sum + (item.value || 0), 0);
   const isZeroSum = total === 0;
 
-  const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
+  const legendPos = legendSide(config);
   const { center, outerRadius } = getPieLayout(legendPos, compact);
   // The real metric name lives on data.series[0].name — using it (not the
   // generic 'Distribution' placeholder) as this series' identity is what lets
@@ -626,8 +654,8 @@ export const buildPieSeries = (data: ChartData, config: ChartConfig, colors?: st
         if (params.name && params.value !== undefined) {
           // Calculate percentage
           const percentage = total > 0 ? ((params.value / total) * 100).toFixed(1) : '0.0';
-          const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config));
-          return `${params.name}: ${formattedValue} (${percentage}%)`;
+          const formattedValue = formatByValueFormat(params.value, resolveLabelFormat(config), config);
+          return sliceLabel(config, params.name, formattedValue, percentage);
         }
         return params.name || '';
       },
@@ -801,7 +829,7 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
   // partition them locally for coloring and legend support.
   if (data.series && data.series.length === 1) {
     const rawData = data.series[0]?.data || [];
-    if (rawData.length > 0 && Array.isArray(rawData[0]) && rawData[0].length === 3) {
+    if (rawData.length > 0 && Array.isArray(rawData[0]) && rawData[0].length >= 3) {
       const seriesMap: Record<string, any[]> = {};
       rawData.forEach((point: any[]) => {
         const legendVal = point[2];
@@ -812,7 +840,10 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
         const x = typeof point[0] === 'number' ? point[0] : parseFloat(String(point[0]));
         const y = typeof point[1] === 'number' ? point[1] : parseFloat(String(point[1]));
 
-        seriesMap[gName].push([isNaN(x) ? 0 : x, isNaN(y) ? 0 : y, gName]);
+        // A 4th value is the "Dot for each" name (one dot per vendor, product…).
+        seriesMap[gName].push(
+          point.length > 3 ? [isNaN(x) ? 0 : x, isNaN(y) ? 0 : y, gName, point[3]] : [isNaN(x) ? 0 : x, isNaN(y) ? 0 : y, gName],
+        );
       });
 
       return Object.entries(seriesMap).map(([name, points]) => ({
@@ -878,7 +909,7 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
             : (config.axisLabelColor ?? CHART_COLORS.text.primary),
         formatter: (params: any) => {
           const val = Array.isArray(params.data) ? params.data[1] : params.data;
-          return formatByValueFormat(val, resolveLabelFormat(config, s.name));
+          return formatByValueFormat(val, resolveLabelFormat(config, s.name), config);
         },
       },
       data: s.data.map((item, idx) => {
@@ -908,6 +939,7 @@ export const buildScatterSeries = (data: ChartData, config: ChartConfig) => {
         formatByValueFormat(
           Array.isArray(params.data) ? params.data[1] : params.data,
           resolveLabelFormat(config),
+          config,
         ),
     },
     data: (data?.y || []).map((val, idx) => {

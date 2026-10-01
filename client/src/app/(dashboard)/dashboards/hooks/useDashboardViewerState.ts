@@ -1,5 +1,6 @@
 'use client';
 
+import { anchorRelativeDateDefaults } from '../utils/anchorDateDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -52,6 +53,11 @@ export type UseDashboardViewerStateOptions = {
  * Read-only dashboard viewer state shared by /shared/dashboards and /embed/dashboard.
  * Auth mode loads charts via API; embed mode uses the embed payload then batch refresh.
  */
+function paletteFromConfig(cfg: object): string | undefined {
+  const palette = (cfg as { default_color_palette?: unknown }).default_color_palette;
+  return typeof palette === 'string' ? palette : undefined;
+}
+
 export function useDashboardViewerState(
   dashboardId: string,
   options: UseDashboardViewerStateOptions,
@@ -149,10 +155,12 @@ export function useDashboardViewerState(
           ),
         );
         setLastRefreshedAt(new Date());
-      } catch {
+      } catch (err) {
+        // Keep the reason: the widget card turns it into "no access" / "couldn't load" / etc.
+        const reason = err instanceof Error && err.message ? err.message : t('data_unavailable');
         setWidgets((prev) =>
           prev.map((w) =>
-            w.id === widget.id ? { ...w, isLoading: false, error: t('data_unavailable') } : w,
+            w.id === widget.id ? { ...w, isLoading: false, error: reason } : w,
           ),
         );
       }
@@ -191,6 +199,7 @@ export function useDashboardViewerState(
               ...w,
               chartData: partitionSeriesData(result.data!, w),
               filterWarnings: result.filter_warnings,
+              unappliedFilters: result.unapplied_filters,
               isLoading: false,
               error: null,
             };
@@ -258,12 +267,19 @@ export function useDashboardViewerState(
           description: dashInfo.description || '',
           keyInsight: execMeta.keyInsight,
           storyArc: execMeta.storyArc,
+          colorPalette: paletteFromConfig(cfg),
         });
         const gf = normalizeDashboardFilters(cfg.global_filters, filterDataContext);
         setGlobalFilters(gf);
 
         if (!filtersParam) {
-          const defaults = buildDefaultRuntimeFilters(gf);
+          const defaults = await anchorRelativeDateDefaults(gf, buildDefaultRuntimeFilters(gf), (f) =>
+            f.dataSourceId
+              ? chartService
+                  .getFilterFieldStats(dashboardId, f.field, String(f.dataSourceId), { tableName: f.tableName, ...accessOpts })
+                  .then((r) => (r.max != null ? String(r.max) : null))
+              : Promise.resolve(null),
+          );
           if (defaults.length) {
             setRuntimeFilters(defaults);
             prevFiltersRef.current = defaults;
@@ -346,6 +362,7 @@ export function useDashboardViewerState(
         description: data.description || '',
         keyInsight: execMeta.keyInsight,
         storyArc: execMeta.storyArc,
+          colorPalette: paletteFromConfig(cfg),
       });
 
       const normalized = (data.widgets || []).map((w) => normalizeEmbedWidget(w, t('data_unavailable')));
@@ -357,7 +374,16 @@ export function useDashboardViewerState(
       if (!pageIdParam && defaultPage) setActivePageId(defaultPage);
 
       if (!filtersParam && gf.length) {
-        const defaults = buildDefaultRuntimeFilters(gf);
+        const defaults = await anchorRelativeDateDefaults(gf, buildDefaultRuntimeFilters(gf), (f) =>
+          f.dataSourceId
+            ? chartService
+                .getFilterFieldStats(dashboardId, f.field, String(f.dataSourceId), {
+                  tableName: f.tableName,
+                  embedToken: embedToken || undefined,
+                })
+                .then((r) => (r.max != null ? String(r.max) : null))
+            : Promise.resolve(null),
+        );
         if (defaults.length) {
           setRuntimeFilters(defaults);
           prevFiltersRef.current = defaults;

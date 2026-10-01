@@ -22,6 +22,20 @@ import type { RetrievedChunk } from '@/api/knowledge';
 
 const { Text, Paragraph } = Typography;
 
+/** Passages from PDF tables arrive as markdown-ish text ("|a|b|", "|---|", "<br>", "**x**");
+ * show them as plain readable lines. */
+export function cleanPassage(text: string): string {
+  return String(text || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^\s*\|/gm, '')
+    .replace(/\|\s*$/gm, '')
+    .replace(/\s*\|\s*/g, '  ·  ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export interface KnowledgeSearchPanelProps {
   dataSourceId: string | null;
   dataSourceOptions?: { value: string; label: string }[];
@@ -42,6 +56,9 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
   const t = useTranslations('knowledge');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<RetrievedChunk[]>([]);
+  // What the last search did: nothing yet, found results / none, or failed (with why).
+  const [searchedFor, setSearchedFor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { mutateAsync: search, isPending } = useSearchKnowledge();
 
   const handleSearch = async () => {
@@ -55,8 +72,13 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
         top_k: defaultTopK,
       });
       setResults(res.results ?? []);
-    } catch {
+      setError(null);
+      setSearchedFor(trimmed);
+    } catch (e) {
+      // Used to be swallowed: a failed search looked like an endless spinner or "no results".
       setResults([]);
+      setSearchedFor(trimmed);
+      setError((e as Error)?.message || t('search_failed'));
     }
   };
 
@@ -108,6 +130,18 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
               <Text type="secondary">{t('searching')}</Text>
             </div>
           </div>
+        ) : error ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={t('search_failed')}
+            description={error}
+            action={
+              <Button size="small" onClick={() => void handleSearch()}>
+                {t('retry')}
+              </Button>
+            }
+          />
         ) : results.length > 0 ? (
           <List
             dataSource={results}
@@ -125,14 +159,14 @@ export const KnowledgeSearchPanel: React.FC<KnowledgeSearchPanelProps> = ({
                       ellipsis={{ rows: 4, expandable: true, symbol: t('show_more') }}
                       style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
                     >
-                      {item.content}
+                      {cleanPassage(item.content)}
                     </Paragraph>
                   }
                 />
               </List.Item>
             )}
           />
-        ) : query.trim() && !isPending ? (
+        ) : searchedFor ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('no_results')} />
         ) : null}
       </div>

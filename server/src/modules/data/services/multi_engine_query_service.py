@@ -260,6 +260,7 @@ DB_TYPE_TO_SQLGLOT_DIALECT: Dict[str, str] = {
     "bigquery": "bigquery", "snowflake": "snowflake", "duckdb": "duckdb",
     "sqlite": "sqlite", "clickhouse": "clickhouse",
     "mssql": "tsql", "sqlserver": "tsql", "tsql": "tsql",
+    "oracle": "oracle", "databricks": "databricks", "trino": "trino", "athena": "trino",
 }
 
 # Hard ceiling applied to every query that reaches an execution engine, regardless of
@@ -571,6 +572,14 @@ def invalidate_api_response_cache(data_source_id: Optional[str] = None) -> None:
     elif data_source_id in API_RESPONSE_CACHE:
         del API_RESPONSE_CACHE[data_source_id]
         logger.debug("API response cache invalidated for %s", data_source_id)
+    if data_source_id is not None:
+        # The source changed or went away: its parsed file extracts are stale.
+        try:
+            from src.modules.data.services import file_extracts
+
+            file_extracts.drop_for_source(data_source_id)
+        except Exception:
+            pass
 
 
 def invalidate_query_result_cache() -> None:
@@ -1010,6 +1019,19 @@ class MultiEngineQueryService:
             query, rls_applied = await self._enforce_row_security(
                 query, data_source, identity
             )
+            # Embedded for one of the host app's customers: that customer's locked filters.
+            locked = (getattr(identity, "token_payload", None) or {}).get("embed_locked_filters")
+            if locked:
+                from src.modules.embed.locked_filters import LockedFilterError, apply as apply_locked
+
+                db_type = self._data_source_db_type(data_source)
+                source_type = str(data_source.get("type") or "").lower()
+                dialect = "duckdb" if source_type in ("file", "google_sheets", "sample_duckdb", "warehouse") else DB_TYPE_TO_SQLGLOT_DIALECT.get(db_type, "postgres")
+                try:
+                    query = apply_locked(query, data_source, locked, dialect)
+                except (LockedFilterError, ValueError) as lock_exc:
+                    raise RowSecurityDenied(str(lock_exc)) from lock_exc
+                rls_applied = True
         except (RowSecurityIdentityRequired, RowSecurityDenied) as exc:
             return {
                 "success": False,
@@ -1025,19 +1047,37 @@ class MultiEngineQueryService:
         # much as any other. See cap_query_row_limit's docstring.
         query = cap_query_row_limit(query, self._data_source_db_type(data_source))
 
-        result = await self._execute_query_unfiltered(
-            query,
-            data_source,
-            engine=engine,
-            # A filtered query is user-specific; skip the optimizer's rewrites.
-            optimization=False if rls_applied else optimization,
-            allow_spark=allow_spark,
-            cache_context=cache_context,
-        )
+        if str(data_source.get("type") or "").lower() == "warehouse":
+            # Enterprise warehouse over the lakehouse's Gold tables (its own queue, limits,
+            # cache and history); row security was applied above like for every engine.
+            result = await self._execute_warehouse(query, data_source, identity)
+        else:
+            result = await self._execute_query_unfiltered(
+                query,
+                data_source,
+                engine=engine,
+                # A filtered query is user-specific; skip the optimizer's rewrites.
+                optimization=False if rls_applied else optimization,
+                allow_spark=allow_spark,
+                cache_context=cache_context,
+            )
         if rls_applied and isinstance(result, dict):
             result["rls_applied"] = True
         if columns_omitted and isinstance(result, dict):
             result["columns_omitted"] = columns_omitted
+        return result
+
+    async def _execute_warehouse(self, query: str, data_source: Dict[str, Any], identity: QueryAccess) -> Dict[str, Any]:
+        try:
+            import importlib
+
+            engine_mod = importlib.import_module("ee.modules.warehouse.engine")
+        except Exception:
+            return {"success": False, "error": "The warehouse is part of the Enterprise edition.", "data": [], "columns": [], "row_count": 0}
+        result = await engine_mod.execute(query, data_source, identity)
+        result.setdefault("data", [])
+        result.setdefault("columns", [])
+        result.setdefault("row_count", len(result.get("data") or []))
         return result
 
     async def _execute_query_unfiltered(
@@ -1702,19 +1742,22 @@ class DuckDBEngine(BaseQueryEngine):
                         gid_match = re.search(r"[?#&]gid=(\d+)", sheet_url, re.IGNORECASE)
                         gid = gid_match.group(1) if gid_match else "0"
                     export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(export_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                            if resp.status != 200:
-                                raise ValueError(f"Google Sheets export returned {resp.status}")
-                            body = await resp.text()
-                    if not body or not body.strip():
-                        raise ValueError("Google Sheet export returned empty content")
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv", encoding="utf-8") as tmp:
-                        tmp.write(body)
-                        google_sheets_temp_path = tmp.name
+
+                    async def _fetch_sheet_csv() -> str:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(export_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                                if resp.status != 200:
+                                    raise ValueError(f"Google Sheets export returned {resp.status}")
+                                return await resp.text()
+
+                    from src.modules.data.services.sheet_snapshot_cache import get_sheet_snapshot
+
+                    # Shared snapshot (not a per-query temp file): never deleted after the query.
+                    snapshot_path = await get_sheet_snapshot(
+                        str(data_source.get("id") or ""), sheet_id, gid, _fetch_sheet_csv
+                    )
                     # Load directly into DuckDB (do not use _load_file_data — that expects blob/sample_data)
-                    safe_path = google_sheets_temp_path.replace("'", "''")
+                    safe_path = snapshot_path.replace("'", "''")
                     conn.execute(f"CREATE TABLE data AS SELECT * FROM read_csv_auto('{safe_path}')")
                     logger.info("✅ Loaded Google Sheet into DuckDB from CSV export")
                 except Exception as e:
@@ -1741,8 +1784,8 @@ class DuckDBEngine(BaseQueryEngine):
                 
                 # If query references additional files, we'd load them here.
                 # Today only the primary upload is loaded; extra file_* ids are not fetched from storage yet.
-                # Load the current (primary) file
-                await self._load_file_data(conn, data_source)
+                # Load the current (primary) file — from its parsed extract when one exists.
+                await self._load_file_data_cached(conn, data_source)
                 
                 # IMPORTANT: Create an alias for multi-file support
                 # Allow queries to reference table by file_id (e.g., file_1765031881)
@@ -1971,6 +2014,32 @@ class DuckDBEngine(BaseQueryEngine):
         # Return unique file IDs
         return list(set(m.lower() for m in matches))
     
+    async def _load_file_data_cached(
+        self, conn: duckdb.DuckDBPyConnection, data_source: Dict[str, Any]
+    ) -> None:
+        """Load a file source from its extract (parsed once, see file_extracts), else parse the
+        file and save the extract for the next query. Any extract problem falls back to parsing."""
+        from src.modules.data.services import file_extracts
+
+        path = file_extracts.extract_path(data_source) if file_extracts.enabled() else None
+        if path and os.path.isfile(path):
+            try:
+                file_extracts.attach(conn, path)
+                return
+            except Exception as exc:
+                logger.warning("File extract unusable, re-parsing the upload: %s", exc)
+                try:
+                    conn.execute("DETACH IF EXISTS aicser_extract")
+                    os.remove(path)
+                except Exception:
+                    pass
+        await self._load_file_data(conn, data_source)
+        if path:
+            try:
+                file_extracts.write(conn, path)
+            except Exception as exc:
+                logger.debug("File extract not saved: %s", exc)
+
     async def _load_file_data(
         self, conn: duckdb.DuckDBPyConnection, data_source: Dict[str, Any]
     ):
@@ -2498,6 +2567,27 @@ class DirectSQLEngine(BaseQueryEngine):
                     logger.error(f"❌ ClickHouse query execution failed: {str(clickhouse_error)}")
                     return {"success": False, "error": f"ClickHouse query failed: {str(clickhouse_error)}"}
 
+            # Warehouses and enterprise databases (Databricks, Oracle, Trino, Athena, Snowflake,
+            # BigQuery, Redshift): one URL builder shared with the connection test and schema.
+            from src.modules.data.services import warehouse_urls
+
+            warehouse_kwargs: Dict[str, Any] = {}
+            if db_type in warehouse_urls.URL_TYPES:
+                try:
+                    if not conn_uri:
+                        conn_uri = warehouse_urls.build_url(db_type, conn_info)
+                    warehouse_kwargs = warehouse_urls.engine_kwargs(db_type, conn_info)
+                except ValueError as url_error:
+                    return {"success": False, "error": str(url_error)}
+            if warehouse_urls.sqlglot_dialect(db_type) == "oracle":
+                # Oracle has no LIMIT (FETCH FIRST instead) and its own date functions.
+                try:
+                    import sqlglot
+
+                    query = sqlglot.transpile(query, read="postgres", write="oracle")[0]
+                except Exception as oracle_err:
+                    logger.debug("Oracle rewrite skipped: %s", oracle_err)
+
             if not conn_uri:
                 # Try to build a SQLAlchemy URL from common fields
                 user = conn_info.get('username') or conn_info.get('user')
@@ -2624,7 +2714,7 @@ class DirectSQLEngine(BaseQueryEngine):
 
             def run_sync_query(source: Dict[str, Any], uri: str, sql: str) -> Dict[str, Any]:
                 try:
-                    eng = get_sync_engine(source, uri)
+                    eng = get_sync_engine(source, uri, warehouse_kwargs)
                     with eng.connect() as conn:
                         res = conn.execute(sa.text(sql))
                         try:

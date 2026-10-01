@@ -60,13 +60,17 @@ class RateLimiter:
         requests_per_minute: int = 60,
         tokens_per_minute: int = 50000,
         cost_weight: float = 1.0,
+        bucket: str = "",
     ):
+        # Each family of endpoints counts separately: a burst of exports must not use up the
+        # allowance for asking questions, and vice versa.
+        self.bucket = bucket
         self.requests_per_minute = requests_per_minute
         self.tokens_per_minute = tokens_per_minute
         self.cost_weight = cost_weight
 
     def _get_key(self, user_id: str, org_id: str, scope: str) -> str:
-        return f"ratelimit:{scope}:{org_id}:{user_id}"
+        return _key(scope, self.bucket, org_id, user_id)
 
     def _check_fallback(self, user_id: str, org_id: str, cost: float) -> tuple[bool, Optional[str]]:
         """In-memory fallback rate check."""
@@ -153,9 +157,14 @@ class RateLimiter:
             return self._check_fallback(user_id, org_id, cost)
 
 
+def _key(scope: str, bucket: str, org_id: str, user_id: str) -> str:
+    return f"ratelimit:{scope}:{bucket}:{org_id}:{user_id}" if bucket else f"ratelimit:{scope}:{org_id}:{user_id}"
+
+
 def rate_limit(
     requests_per_minute: int = 60,
     cost_weight: float = 1.0,
+    bucket: Optional[str] = None,
 ):
     """
     Decorator for rate limiting API endpoints.
@@ -169,9 +178,11 @@ def rate_limit(
         async def expensive_endpoint(...):
             ...
     """
-    limiter = RateLimiter(requests_per_minute=requests_per_minute, cost_weight=cost_weight)
-
     def decorator(func):
+        # Named bucket shared by related endpoints, else this endpoint's own.
+        limiter = RateLimiter(requests_per_minute=requests_per_minute, cost_weight=cost_weight,
+                              bucket=bucket or f"{func.__module__.rsplit('.', 1)[-1]}.{func.__name__}")
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             request = None
@@ -215,6 +226,9 @@ def rate_limit(
     return decorator
 
 
+AI_BUCKET = "ai"
+
+
 async def get_rate_limit_status(user_id: str, org_id: str) -> dict:
     """Get current rate limit status for a user from Redis."""
     now = time.time()
@@ -222,14 +236,14 @@ async def get_rate_limit_status(user_id: str, org_id: str) -> dict:
 
     redis = _get_redis()
     if redis is None:
-        user_key = f"ratelimit:user:{org_id}:{user_id}"
+        user_key = _key("user", AI_BUCKET, org_id, user_id)
         state = _fallback_store.get(user_key, {"events": []})
         events = [(ts, c) for ts, c in state.get("events", []) if now - ts < window]
         used = len(events)
         return {"requests_used": used, "requests_remaining": max(0, 60 - used), "reset_at": now + window}
 
     try:
-        user_key = f"ratelimit:user:{org_id}:{user_id}"
+        user_key = _key("user", AI_BUCKET, org_id, user_id)
         await redis.zremrangebyscore(user_key, "-inf", now - window)
         used = await redis.zcard(user_key)
         oldest_members = await redis.zrange(user_key, 0, 0, withscores=True)

@@ -1,0 +1,5 @@
+*
+!Dockerfile
+!fetch_packages.ts
+!main.ts
+!run_worker.ts

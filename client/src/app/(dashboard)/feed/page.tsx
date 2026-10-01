@@ -524,7 +524,11 @@ const SocialFeedPage: React.FC = () => {
 
       <div className="mt-5 flex min-w-0 flex-col pb-10">
         <div className="mx-auto w-full max-w-[1100px]">
-              <NewPostComposer onPosted={handleNewPost} feedScope={filters.scope} />
+              <NewPostComposer
+                onPosted={handleNewPost}
+                feedScope={filters.scope}
+                onAudienceChange={(scope) => setFilters({ ...filters, scope })}
+              />
               {/* New posts available banner */}
               {newPostsCount > 0 && !loading && (
                 <div className="mb-4 flex justify-center">

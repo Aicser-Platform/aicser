@@ -36,7 +36,8 @@ async def test_download_returns_404_when_document_not_found():
     not_found.scalar_one_or_none.return_value = None
     session.execute = AsyncMock(return_value=not_found)
 
-    with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)):
+    with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)):
         with pytest.raises(HTTPException) as exc_info:
             await download_knowledge_document(
                 doc_id=str(uuid.uuid4()),
@@ -66,7 +67,8 @@ async def test_download_returns_404_when_object_key_missing():
     doc_result.scalar_one_or_none.return_value = doc
     session.execute = AsyncMock(return_value=doc_result)
 
-    with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)):
+    with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)):
         with pytest.raises(HTTPException) as exc_info:
             await download_knowledge_document(
                 doc_id=str(doc.id),
@@ -95,6 +97,7 @@ async def test_download_streams_original_bytes_when_object_key_present():
     mock_storage.get_file = AsyncMock(return_value=b"%PDF-1.4 fake pdf bytes")
 
     with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)), \
          patch(
              "src.modules.data.services.upload_datasource_storage_service.UploadDatasourceStorageService",
              return_value=mock_storage,
@@ -131,6 +134,7 @@ async def test_download_returns_404_when_storage_retrieval_fails():
     mock_storage.get_file = AsyncMock(side_effect=ValueError("File not found: user_files/ce/missing"))
 
     with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)), \
          patch(
              "src.modules.data.services.upload_datasource_storage_service.UploadDatasourceStorageService",
              return_value=mock_storage,

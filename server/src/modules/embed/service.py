@@ -57,8 +57,19 @@ def _build_payload(
     resource_id: Optional[str],
     allowed_domains: List[str],
     expires_at: datetime,
+    locked_filters: Optional[List[Dict[str, Any]]] = None,
+    download: str = "none",
+    once: bool = False,
 ) -> Dict[str, Any]:
+    extra: Dict[str, Any] = {"locked_filters": locked_filters} if locked_filters else {}
+    if download != "none":
+        extra["download"] = download
+    if once:
+        # Signed per-visitor links open once: the page trades the link for a session and a
+        # copied or logged URL is useless afterwards (Looker's nonce, Tableau's single-use JWT).
+        extra["once"] = True
     return {
+        **extra,
         "jti": token_id,
         "sub": str(user_id),
         "org_id": org_id,
@@ -106,7 +117,20 @@ async def create_embed_token(
     allowed_domains: Optional[List[str]] = None,
     expires_in_hours: int = DEFAULT_EXPIRY_HOURS,
     theme: Optional[Dict[str, Any]] = None,
+    locked_filters: Optional[List[Dict[str, Any]]] = None,
+    expires_in_minutes: Optional[int] = None,
+    kind: str = "manual",
+    download: str = "none",
 ) -> Dict[str, Any]:
+    """``locked_filters`` pin every query made with this token to one of the host app's customers
+    (see embed/locked_filters.py). ``kind="signed"`` marks short-lived tokens minted by a host
+    server per end user; they open once, and expired ones are pruned so the list can't grow
+    without bound. ``download`` is what visitors may save: nothing, a picture, or the data
+    behind each chart."""
+    from src.modules.embed.limits import DOWNLOAD_LEVELS
+
+    if download not in DOWNLOAD_LEVELS:
+        raise HTTPException(status_code=400, detail="download must be none, image or data.")
     # SECURITY: a resource-scoped token (dashboard/chart/report) with no
     # resource_id used to verify successfully against *any* resource of that
     # type (verify_dashboard_read_access's `"" in ("", str(dashboard_id))`
@@ -120,9 +144,17 @@ async def create_embed_token(
             detail="A specific dashboard, chart, or report must be selected for this embed scope.",
         )
 
+    from src.modules.embed.locked_filters import sanitize as _sanitize_locked
+
+    try:
+        locked = _sanitize_locked(locked_filters) if locked_filters else []
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     token_id = str(uuid.uuid4())
     created_at = _now()
-    expires_at = created_at + timedelta(hours=expires_in_hours)
+    expires_at = created_at + (
+        timedelta(minutes=expires_in_minutes) if expires_in_minutes else timedelta(hours=expires_in_hours)
+    )
     domains = [d.strip().lower() for d in (allowed_domains or []) if d and d.strip()]
 
     payload = _build_payload(
@@ -133,6 +165,9 @@ async def create_embed_token(
         resource_id=resource_id,
         allowed_domains=domains,
         expires_at=expires_at,
+        locked_filters=[{"field": f["field"], "value": f["values"]} for f in locked] or None,
+        download=download,
+        once=kind == "signed",
     )
     signed = sign_embed_token(payload)
 
@@ -147,9 +182,19 @@ async def create_embed_token(
         "status": "active",
         "org_id": org_id,
         "theme": theme,
+        "kind": kind,
+        "download": download,
+        "locked_fields": sorted({f["field"] for f in locked}) or None,
     }
 
     records = await _load_records(user_id)
+    now_iso = _iso(_now())
+    # Signed per-customer tokens and render tokens are short-lived: drop the expired ones as new
+    # ones are minted, so the list can't grow without bound.
+    records = [
+        r for r in records
+        if not (r.get("kind") in ("signed", "export") and str(r.get("expires_at") or "") < now_iso)
+    ]
     records.append(record)
     await _save_records(user_id, records)
 
@@ -216,17 +261,36 @@ async def revoke_embed_token(user_id: str, token_id: str) -> bool:
     return True
 
 
-async def verify_embed_token(token: str, *, required_scope: Optional[str] = None) -> Dict[str, Any]:
-    payload = decode_embed_token(token)
+def needs_session(payload: Dict[str, Any]) -> bool:
+    """A link that opens once, or that only certain sites may show, reads data only through the
+    session its page opened: that exchange is where single use and the site check happen."""
+    return not payload.get("ses") and bool(payload.get("once") or payload.get("allowed_domains"))
+
+
+async def _active_record(payload: Dict[str, Any]) -> Dict[str, Any]:
     token_id = payload.get("jti")
     user_id = payload.get("sub")
     if not token_id or not user_id:
         raise JWTError("Invalid embed token payload")
-
     records = await _load_records(str(user_id))
     record = next((r for r in records if r.get("id") == token_id), None)
     if not record or record.get("status") != "active":
         raise JWTError("Embed token revoked or not found")
+    return record
+
+
+async def verify_embed_token(
+    token: str, *, required_scope: Optional[str] = None, allow_link: bool = False
+) -> Dict[str, Any]:
+    """Check an embed token. A session token (from :func:`open_embed_session`) is what embed
+    pages send with their data requests; the link token itself only works where ``allow_link``
+    says so, unless it is an unrestricted public link."""
+    payload = decode_embed_token(token)
+    token_id = payload.get("jti")
+    user_id = payload.get("sub")
+    record = await _active_record(payload)
+    if not allow_link and needs_session(payload):
+        raise JWTError("Open this embed through its page")
 
     scopes = payload.get("scopes") or []
     if required_scope and required_scope not in scopes:
@@ -244,4 +308,91 @@ async def verify_embed_token(token: str, *, required_scope: Optional[str] = None
         "expires_at": expires_at,
         "jti": token_id,
         "theme": record.get("theme"),
+        "download": payload.get("download") or "none",
+        "locked": bool(payload.get("locked_filters")),
+        "session": bool(payload.get("ses")),
+    }
+
+
+class EmbedOriginError(Exception):
+    """The page showing the embed isn't one of the token's allowed sites."""
+
+
+def origin_allowed(origin: str, allowed_domains: List[str]) -> bool:
+    """``origin`` (https://app.example.com) is one of the allowed sites or a subdomain of one."""
+    from src.core.middleware import _normalize_host
+
+    host = _normalize_host(origin)
+    allowed = {_normalize_host(d) for d in allowed_domains if d}
+    return bool(host) and (host in allowed or any(host.endswith(f".{d}") for d in allowed if d))
+
+
+_used_links: Dict[str, float] = {}
+
+
+def _claim_link(token_id: str, expires_at: int) -> bool:
+    """True the first time a single-use link is opened (Redis when available, so every server
+    process agrees; otherwise this process's memory)."""
+    ttl = max(60, int(expires_at - _now().timestamp()) + 60)
+    try:
+        from src.core.cache import cache
+
+        rc = cache.redis_client if cache else None
+        if rc is not None:
+            return bool(rc.set(f"embed_link_used:{token_id}", "1", nx=True, ex=ttl))
+    except Exception:
+        pass
+    now = _now().timestamp()
+    for key, until in list(_used_links.items()):
+        if until < now:
+            _used_links.pop(key, None)
+    if token_id in _used_links:
+        return False
+    _used_links[token_id] = now + ttl
+    return True
+
+
+async def open_embed_session(
+    token: str, *, parent_origin: str = "", required_scope: Optional[str] = None
+) -> Dict[str, Any]:
+    """Trade an embed link for the session its page uses from then on.
+
+    * The site showing the embed (``parent_origin``, read by the page from the browser) must be
+      one of the token's allowed sites. Browsers also enforce this through the page's
+      frame-ancestors header, which is the check a site can't talk its way around.
+    * A signed per-visitor link opens once; a second open (a copied URL, a proxy log) is refused.
+    * The session keeps the link's expiry, filters and permissions, and never appears in a URL.
+    """
+    payload = decode_embed_token(token)
+    if payload.get("ses"):
+        raise JWTError("Open the embed link, not a session")
+    record = await _active_record(payload)
+    scopes = payload.get("scopes") or []
+    if required_scope and required_scope not in scopes:
+        raise JWTError(f"Missing required scope: {required_scope}")
+    allowed = payload.get("allowed_domains") or []
+    if allowed:
+        own = [settings.FRONTEND_URL] if settings.FRONTEND_URL else []  # Aicser's own previews
+        if not parent_origin:
+            # Opened on its own rather than inside a page: nothing says which site it's on.
+            raise EmbedOriginError("This embed only opens inside the website it was made for.")
+        if not origin_allowed(parent_origin, allowed + own):
+            raise EmbedOriginError("This embed can't be shown on this site.")
+    exp = int(payload.get("exp") or 0)
+    if payload.get("once") and not _claim_link(str(payload["jti"]), exp):
+        raise JWTError("This embed link was already opened. Reload the page to get a new one.")
+    session_payload = {k: v for k, v in payload.items() if k != "once"}
+    session_payload.update({"ses": 1, "sid": str(uuid.uuid4()), "iat": int(_now().timestamp())})
+    return {
+        "token": sign_embed_token(session_payload),
+        "expires_at": _iso(datetime.fromtimestamp(exp, tz=timezone.utc)) if exp else None,
+        "scopes": scopes,
+        "resource_id": payload.get("resource_id"),
+        "org_id": payload.get("org_id"),
+        "allowed_domains": allowed,
+        "download": payload.get("download") or "none",
+        "theme": record.get("theme"),
+        "single_use": bool(payload.get("once")),
+        # Aicser's own renders (PDF reports) use embed links too; they aren't audience views.
+        "metered": record.get("kind") != "export",
     }

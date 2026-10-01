@@ -1,12 +1,20 @@
 'use client';
 
+import { CheckboxField } from './FormFields';
 import React, { useState, useEffect, useMemo } from 'react';
-import { Tabs, Input, Select, Button, Tooltip, Collapse, Modal, Segmented, Typography } from 'antd';
+import { useDataSource } from '@/hooks/useDataSources';
+import { Tabs, Input, Select, Button, Tooltip, Collapse, Modal, Segmented, Typography, Alert, message } from 'antd';
 import {
   MenuUnfoldOutlined,
   CodeOutlined,
-  RobotOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
+import { ChartAnnotations } from './ChartAnnotations';
+import { ChartAnalytics } from './ChartAnalytics';
+import { ChartTextFields } from './ChartTextFields';
+import { ChartNotesFields } from './ChartNotesFields';
+import { ChartInlineEditor } from './ChartInlineEditor';
+import { chartSource, sourcePatch } from '../utils/chartAnnotations';
 import { useWidgetProperties } from '../hooks/useWidgetProperties';
 import { ChartOptions } from './ChartOptions';
 import { ChartDesignControls } from './ChartDesignControls';
@@ -25,8 +33,9 @@ import { getDashboardFieldDragData, isDashboardFieldDrag } from '../utils/dashbo
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { useTranslations } from 'next-intl';
 import { isContentWidgetType, isControlWidgetType } from './widgetPropertyProfile';
+import { duplicateKpis, isEmptyDataWidget, kpiSignature, planEmptyWidgetBindings, planKpiVariety } from '../utils/bindEmptyWidgets';
+import { AUTO_TITLE_KEY, deriveAutoTitle, isAutoTitle } from '../utils/widgetAutoTitle';
 import { buildDashboardChartTypeSwitcherOptions } from './dashboardChartTypeSwitcher';
-import { ExplainChartDrawer } from '../components/ExplainChartDrawer';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { isSafeChartTypeSwitchTarget } from '@/components/charts/chartTypeCatalog';
 import './PropertiesPanel.css';
@@ -74,6 +83,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     dataSources,
     selectedTableColumns,
     availableTables,
+    effectiveTableName,
     handleDataSourceChange,
     isLoading,
     updateWidgetRoot,
@@ -99,11 +109,175 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         selectedWidget.chartOptions.sample_sql.trim()),
   );
   const [sqlEditorOpen, setSqlEditorOpen] = useState(false);
-  const [explainOpen, setExplainOpen] = useState(false);
+  /** Types that need a different data shape stay out of the way until asked for. */
+  const [showAllChartTypes, setShowAllChartTypes] = useState(false);
+  /** In the Designer the thing is a chart; on a dashboard it's a card on the page. */
+  const deleteLabelKey = isDesigner ? 'delete_chart' : 'delete_widget';
+  /** The X axis has an order (dates, numbers), so a trend or an "unusual" point means something. */
+  const orderedXAxis = React.useMemo(() => {
+    const q = (selectedWidget?.chartQuery || {}) as Record<string, unknown>;
+    if (selectedWidget?.chartType === 'scatter' || q.xGrain) return true;
+    const type = String(
+      (selectedTableColumns || []).find((c: any) => c.value === q.x)?.type || '',
+    ).toUpperCase();
+    return type.includes('DATE') || type.includes('TIME');
+  }, [selectedWidget?.chartType, selectedWidget?.chartQuery, selectedTableColumns]);
   const tDash = useTranslations('dashboards');
   const eeEnabled = isEnterpriseEdition();
   const [applyLoading, setApplyLoading] = useState(false);
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
+  const storeUpdateWidget = useDashboardStore((s) => s.updateWidget);
+  const storeCreateChartAndFetchData = useDashboardStore((s) => s.createChartAndFetchData);
+  const tStory = useTranslations('dashboards_page');
+  /** Titles layouts give their empty slots ("KPI", "Trend"…), translated. */
+  const kpiPlaceholders = React.useMemo(
+    () =>
+      ['story_slot_kpi', 'story_slot_trend', 'story_slot_compare', 'story_slot_share', 'story_slot_detail'].map((k) =>
+        tStory(k as never),
+      ),
+    [tStory],
+  );
+  const [bindingEmpty, setBindingEmpty] = useState(false);
+
+  // F-DASH-03: once this widget has a table, offer to give every still-empty widget the same data.
+  const emptyOtherWidgets = useMemo(
+    () => (widgets || []).filter((w: any) => w?.id !== selectedWidgetId && isEmptyDataWidget(w)),
+    [widgets, selectedWidgetId],
+  );
+  const selectedSourceId = selectedWidget?.dataSourceId as string | undefined;
+  const selectedTable = (selectedWidget?.chartQuery?.tableName as string | undefined) || effectiveTableName;
+  const canBindEmpty =
+    !isDesigner && !sqlBound && Boolean(selectedSourceId && selectedTable) && emptyOtherWidgets.length > 0;
+
+  const bindEmptyWidgets = async () => {
+    if (!selectedSourceId || !selectedTable) return;
+    const columns = (selectedTableColumns || [])
+      .filter((c: any) => !String(c.value).includes('.'))
+      .map((c: any) => ({ name: String(c.value), type: String(c.type || '') }));
+    const placeholders = new Set(
+      ['story_slot_kpi', 'story_slot_trend', 'story_slot_compare', 'story_slot_share', 'story_slot_detail'].map((k) =>
+        tStory(k as any),
+      ),
+    );
+    const plan = planEmptyWidgetBindings(
+      emptyOtherWidgets,
+      { dataSourceId: selectedSourceId, tableName: selectedTable },
+      columns,
+      {
+        placeholderTitles: placeholders,
+        taken: (widgets || []).flatMap((w: any) =>
+          Array.isArray(w?.chartQuery?.yMetrics) ? w.chartQuery.yMetrics : [],
+        ),
+      },
+    );
+    setBindingEmpty(true);
+    try {
+      for (const b of plan) {
+        const w = emptyOtherWidgets.find((x: any) => x.id === b.id);
+        if (!w) continue;
+        // Placeholder titles become automatic ones, which then follow later edits and type switches.
+        const title = b.title
+          ? deriveAutoTitle({ ...w, chartQuery: b.chartQuery }, tStory as never) || b.title
+          : undefined;
+        const patch = {
+          dataSourceId: b.dataSourceId,
+          chartQuery: b.chartQuery,
+          ...(title
+            ? { title, chartOptions: { ...(w.chartOptions || {}), [AUTO_TITLE_KEY]: title } }
+            : {}),
+        };
+        storeUpdateWidget(b.id, patch);
+        // eslint-disable-next-line no-await-in-loop -- one at a time keeps DB connections calm
+        await (w.chartId
+          ? dashUpdateChartAndFetchData(b.id, patch)
+          : storeCreateChartAndFetchData({ ...w, ...patch }));
+      }
+    } finally {
+      setBindingEmpty(false);
+    }
+  };
+
+  // KPI cards that show the same number as another card (older "Use this data" runs, copies).
+  // One click gives each repeat something new from the same table; Undo puts them back.
+  const repeatedKpis = React.useMemo(() => {
+    const sig = selectedWidget ? kpiSignature(selectedWidget) : null;
+    if (!sig || isDesigner) return [];
+    const all = (widgets || []) as any[];
+    const group = all.filter((w) => kpiSignature(w) === sig);
+    return group.length > 1 ? duplicateKpis(group) : [];
+  }, [selectedWidget, widgets, isDesigner]);
+
+  // Only offered when the table has something new for at least one repeat.
+  const kpiVarietyPlan = React.useMemo(() => {
+    if (!repeatedKpis.length) return [];
+    const columns = (selectedTableColumns || [])
+      .filter((c: any) => !String(c.value).includes('.'))
+      .map((c: any) => ({ name: String(c.value), type: String(c.type || '') }));
+    const taken = (widgets || []).flatMap((w: any) => (Array.isArray(w?.chartQuery?.yMetrics) ? w.chartQuery.yMetrics : []));
+    return planKpiVariety(repeatedKpis, columns, taken);
+  }, [repeatedKpis, selectedTableColumns, widgets]);
+
+  const varyRepeatedKpis = async () => {
+    const plan = kpiVarietyPlan;
+    if (!plan.length) return;
+    const before = plan.map((b) => {
+      const w = (widgets || []).find((x: any) => x.id === b.id) as any;
+      return { id: b.id, chartQuery: w.chartQuery, title: w.title, chartOptions: w.chartOptions };
+    });
+    const apply = async (patches: Array<{ id: string; patch: Record<string, unknown> }>) => {
+      for (const { id, patch } of patches) {
+        storeUpdateWidget(id, patch);
+        // eslint-disable-next-line no-await-in-loop -- one at a time keeps DB connections calm
+        await dashUpdateChartAndFetchData(id, patch);
+      }
+    };
+    setBindingEmpty(true);
+    try {
+      await apply(
+        plan.map((b) => {
+          const w = before.find((x) => x.id === b.id)!;
+          const next = { ...w, chartQuery: b.chartQuery } as any;
+          // A placeholder or automatic title follows the new metric; a typed one is kept.
+          const title = isAutoTitle(w as any, kpiPlaceholders) ? deriveAutoTitle(next, tStory as never) : null;
+          return {
+            id: b.id,
+            patch: {
+              chartQuery: b.chartQuery,
+              ...(title ? { title, chartOptions: { ...(w.chartOptions || {}), [AUTO_TITLE_KEY]: title } } : {}),
+            },
+          };
+        }),
+      );
+    } finally {
+      setBindingEmpty(false);
+    }
+    const key = 'kpi-repeats-varied';
+    message.open({
+      key,
+      type: 'success',
+      duration: 6,
+      content: (
+        <span>
+          {tDash('kpi_repeats_varied', { count: plan.length })}{' '}
+          <Button
+            type="link"
+            size="small"
+            onClick={() => {
+              message.destroy(key);
+              void apply(
+                before.map((b) => ({
+                  id: b.id,
+                  patch: { chartQuery: b.chartQuery, title: b.title, chartOptions: b.chartOptions },
+                })),
+              );
+            }}
+          >
+            {tDash('undo')}
+          </Button>
+        </span>
+      ),
+    });
+  };
 
   const fetchFilterOptions = React.useCallback(
     async (
@@ -223,10 +397,29 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     handleDataSourceChange(dataSourceId);
   };
 
-  const dataSourceOptions = (dataSources || []).map((ds: any) => ({
-    value: String(ds.id),
-    label: ds.name || ds.id,
-  }));
+  // A chart can point at a source outside the current project's list (built elsewhere, or
+  // moved). Name it instead of showing its raw id.
+  const boundSourceId = selectedWidget?.dataSourceId ? String(selectedWidget.dataSourceId) : null;
+  const boundSourceListed = !boundSourceId || (dataSources || []).some((ds: any) => String(ds.id) === boundSourceId);
+  const { dataSource: unlistedSource, error: unlistedSourceError } = useDataSource(
+    boundSourceListed ? null : boundSourceId,
+  );
+  const dataSourceOptions = [
+    ...(dataSources || []).map((ds: any) => ({
+      value: String(ds.id),
+      label: ds.name || ds.id,
+    })),
+    ...(!boundSourceListed && boundSourceId
+      ? [{
+          value: boundSourceId,
+          label: unlistedSource?.name
+            ? tDash('data_source_other_project', { name: unlistedSource.name })
+            : unlistedSourceError
+              ? tDash('data_source_unavailable')
+              : '…',
+        }]
+      : []),
+  ];
 
   const tableOptions = (availableTables || []).map((t: string) => ({
     value: t,
@@ -248,9 +441,18 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   // Safe switch targets (core 8) plus the widget's own current type if it's one of the
   // extended 7 (e.g. AI-authored Geo/Heatmap) — keeps that button visible/active instead of
   // offering a switch that would silently break the widget's data. See dashboardChartTypeSwitchTargets.
+  // A placeholder title ("Line" on a bar, "KPI" on a pie) gets a data-based suggestion, one
+  // click to accept; nothing is renamed behind the user's back.
+  const suggestedTitle = React.useMemo(() => {
+    if (!selectedWidget || isSlicer || isContentBlock) return null;
+    if (!isAutoTitle(selectedWidget, kpiPlaceholders)) return null;
+    const derived = deriveAutoTitle(selectedWidget, tStory as never);
+    return derived && derived !== pendingTitle ? derived : null;
+  }, [selectedWidget, isSlicer, isContentBlock, tStory, pendingTitle, kpiPlaceholders]);
+
   const chartTypeSwitcherOptions = useMemo(
-    () => buildDashboardChartTypeSwitcherOptions(selectedWidget?.chartType),
-    [selectedWidget?.chartType],
+    () => buildDashboardChartTypeSwitcherOptions(selectedWidget?.chartType, selectedWidget?.chartQuery as never),
+    [selectedWidget?.chartType, selectedWidget?.chartQuery],
   );
 
   // Sync pending state when widget selection changes
@@ -361,6 +563,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           cancelText: tDash('switch_to_table_cancel'),
           onOk: () => switchSqlToTable(),
         });
+      } else {
+        // Nothing was bound to SQL yet: just close the editor and keep the table's fields.
+        setSqlEditorOpen(false);
       }
       return;
     }
@@ -415,7 +620,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const buildTab = (
     <div className="properties-panel-body">
       {!hasWidget ? (
-        <div className="pp-empty-state">Select a widget to edit its properties</div>
+        <div className="pp-empty-state">{tDash('select_widget_prompt')}</div>
       ) : isContentBlock ? (
         <>
           {!isDesigner && (
@@ -450,8 +655,101 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 placeholder={tDash('widget_title_placeholder')}
                 size="small"
               />
+              {suggestedTitle ? (
+                <div className="pp-title-suggestion">
+                  {tDash('title_suggestion')}{' '}
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => {
+                      setPendingTitle(suggestedTitle);
+                      updateWidgetRoot('chartOptions', {
+                        ...(selectedWidget?.chartOptions || {}),
+                        [AUTO_TITLE_KEY]: suggestedTitle,
+                      });
+                    }}
+                  >
+                    {suggestedTitle}
+                  </Button>
+                </div>
+              ) : null}
+              {kpiVarietyPlan.length > 0 ? (
+                <div className="pp-title-suggestion pp-kpi-repeats">
+                  {tDash('kpi_repeats', { count: repeatedKpis.length + 1 })}{' '}
+                  <Button type="link" size="small" onClick={varyRepeatedKpis} loading={bindingEmpty}>
+                    {tDash('kpi_repeats_fix')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           )}
+
+          {/* What kind of visual first (Datawrapper / Canva order), then the data behind it. */}
+          {!isSlicer ? (
+                <div>
+                  <PpLabel>{tDash('chart_type_label')}</PpLabel>
+                  <div className="pp-chart-type-row">
+                    {chartTypeSwitcherOptions
+                      .filter((o) => !o.disabled || showAllChartTypes)
+                      .map(({ type, icon, label, disabled, disabledReason }) => {
+                        const name = tDash.has(`chart_type_name_${type}` as never)
+                          ? tDash(`chart_type_name_${type}` as never)
+                          : label;
+                        return (
+                          <Tooltip
+                            key={type}
+                            title={
+                              disabled
+                                ? tDash.has(`chart_type_needs_${type}` as never)
+                                  ? tDash('chart_type_needs', {
+                                      chart: name,
+                                      needs: tDash(`chart_type_needs_${type}` as never),
+                                    })
+                                  : disabledReason || name
+                                : null
+                            }
+                            placement="top"
+                          >
+                            {/* A disabled button gets no mouse events, so the tooltip needs a wrapper. */}
+                            <span className="pp-chart-type-btn-wrap">
+                              <button
+                                type="button"
+                                className={`pp-chart-type-btn${pendingChartType === type ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
+                                disabled={disabled}
+                                onClick={() => {
+                                  if (disabled) return;
+                                  setPendingChartType(type);
+                                  // Chart type can change aggregation shape — commit +
+                                  // let auto-sync refetch when the mapping is runnable.
+                                  updateWidgetRoot('chartType', type);
+                                }}
+                                aria-pressed={pendingChartType === type}
+                                aria-disabled={disabled || undefined}
+                              >
+                                <span className="pp-chart-type-icon" aria-hidden>
+                                  {icon}
+                                </span>
+                                <span className="pp-chart-type-name">{name}</span>
+                              </button>
+                            </span>
+                          </Tooltip>
+                        );
+                      })}
+                  </div>
+                  {chartTypeSwitcherOptions.some((o) => o.disabled) ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      className="pp-chart-type-more"
+                      onClick={() => setShowAllChartTypes((v) => !v)}
+                    >
+                      {showAllChartTypes
+                        ? tDash('chart_types_fewer')
+                        : tDash('chart_types_more', { count: chartTypeSwitcherOptions.filter((o) => o.disabled).length })}
+                    </Button>
+                  ) : null}
+                </div>
+          ) : null}
 
           <div>
             <PpLabel>{tDash('data_source_label')}</PpLabel>
@@ -468,7 +766,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               filterOption={(input, opt) =>
                 String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
+              status={!boundSourceListed && unlistedSource ? 'error' : undefined}
             />
+            {!boundSourceListed && unlistedSource ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginTop: 6 }}
+                message={tDash('data_source_other_project_blocked')}
+              />
+            ) : null}
           </div>
 
           {!isSlicer && selectedWidget?.dataSourceId ? (
@@ -487,7 +794,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           ) : null}
 
-          {!isSlicer && (
+          {!isSlicer && (sqlBound || sqlEditorOpen) && (
             <>
               <SavedQueryPicker
                 value={selectedWidget?.chartQuery?.saved_query_id}
@@ -537,13 +844,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </>
           )}
 
-          {!sqlBound && !selectedWidget?.chartQuery?.saved_query_id && tableOptions.length > 0 && (
+          {!sqlBound && !sqlEditorOpen && !selectedWidget?.chartQuery?.saved_query_id && tableOptions.length > 0 && (
             <div>
               <PpLabel>{tDash('table_label')}</PpLabel>
               <Select
                 size="small"
                 style={{ width: '100%' }}
-                value={(selectedWidget as any)?.chartQuery?.tableName}
+                value={effectiveTableName ?? (selectedWidget as any)?.chartQuery?.tableName}
                 onChange={(val) => {
                   setSqlEditorOpen(false);
                   updateChartQuery('tableName', val);
@@ -563,7 +870,21 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {hasWidget && !isSlicer && (columnOptions.length > 0 || savedQueryColumnsLoading || schemaLoading) ? (
+          {canBindEmpty ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginTop: 8 }}
+              message={tDash('bind_empty_widgets_title', { count: emptyOtherWidgets.length })}
+              action={
+                <Button size="small" type="primary" loading={bindingEmpty} onClick={() => void bindEmptyWidgets()}>
+                  {tDash('bind_empty_widgets_cta')}
+                </Button>
+              }
+            />
+          ) : null}
+
+          {hasWidget && isSlicer && (columnOptions.length > 0 || savedQueryColumnsLoading || schemaLoading) ? (
             <AvailableFieldsPanel
               columns={columnOptions}
               dataSourceId={selectedWidget?.dataSourceId}
@@ -642,50 +963,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 />
               </div>
             </>
+          ) : sqlEditorOpen && !sqlBound ? (
+            /* Query mode before a query exists: the table's shelves would drive the chart, so wait. */
+            <Typography.Text type="secondary" className="pp-query-first-hint">
+              {tDash('query_mode_pick_first')}
+            </Typography.Text>
           ) : (
             /* ---- Chart-specific fields ---- */
             <>
-              <div>
-                <PpLabel>{tDash('chart_type_label')}</PpLabel>
-                <div className="pp-chart-type-row">
-                  {chartTypeSwitcherOptions.map(({ type, icon, label, disabled, disabledReason }) => (
-                    <Tooltip
-                      key={type}
-                      title={disabled ? disabledReason || label : label}
-                      placement="top"
-                    >
-                      <button
-                        type="button"
-                        className={`pp-chart-type-btn${pendingChartType === type ? ' active' : ''}${disabled ? ' is-disabled' : ''}`}
-                        disabled={disabled}
-                        onClick={() => {
-                          if (disabled) return;
-                          setPendingChartType(type);
-                          // Chart type can change aggregation shape — commit +
-                          // let auto-sync refetch when the mapping is runnable.
-                          updateWidgetRoot('chartType', type);
-                        }}
-                        aria-label={label}
-                        aria-disabled={disabled || undefined}
-                      >
-                        {icon}
-                      </button>
-                    </Tooltip>
-                  ))}
-                </div>
-                {eeEnabled && hasWidget && !isSlicer && !isContentBlock ? (
-                  <Button
-                    type="default"
-                    size="small"
-                    icon={<RobotOutlined />}
-                    style={{ marginTop: 8, width: '100%' }}
-                    onClick={() => setExplainOpen(true)}
-                  >
-                    {tDash('describe_tile_ai')}
-                  </Button>
-                ) : null}
-              </div>
-
               {/* Full field mapping — renders the correct fields for each chart type */}
               <ChartSpecificFields
                 chartType={selectedWidget.chartType || pendingChartType || 'bar'}
@@ -703,6 +988,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 fetchDistinctValues={fetchVisualDistinctValues}
                 sqlBound={sqlBound}
               />
+
+              {/* All fields of the table, as a drag source for the shelves above. */}
+              {hasWidget && (columnOptions.length > 0 || savedQueryColumnsLoading || schemaLoading) ? (
+                <AvailableFieldsPanel
+                  columns={columnOptions}
+                  dataSourceId={selectedWidget?.dataSourceId}
+                  tableName={selectedWidget?.chartQuery?.tableName}
+                  loading={Boolean(savedQueryColumnsLoading || (schemaLoading && columnOptions.length === 0))}
+                />
+              ) : null}
 
               {/* Related tables — progressive disclosure; nudge when model is missing */}
               {!sqlBound && selectedWidget?.dataSourceId ? (
@@ -745,6 +1040,38 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               ) : null}
             </>
           )}
+          {!isSlicer && !isContentBlock && hasWidget && !(sqlEditorOpen && !sqlBound) ? (
+            <ChartSpecificFields
+              chartType={selectedWidget.chartType || 'bar'}
+              chartQuery={selectedWidget.chartQuery || {}}
+              selectedWidget={selectedWidget}
+              selectedTableColumns={selectedTableColumns || []}
+              onUpdateChartQuery={updateChartQuery}
+              chartOptions={selectedWidget.chartOptions || {}}
+              mode="sort"
+              sqlBound={sqlBound}
+            />
+          ) : null}
+          {/* Annotate last (Datawrapper order): data first, then the words around the chart. */}
+          {!isSlicer && hasWidget ? (
+            <ChartAnnotations
+              subtitle={selectedWidget?.chartOptions?.subtitle}
+              sourceNote={
+                // The raw text, not the trimmed display value: trimming here ate every space typed.
+                typeof selectedWidget?.chartOptions?.sourceNote === 'string'
+                  ? selectedWidget.chartOptions.sourceNote
+                  : chartSource(selectedWidget?.chartOptions)
+              }
+              onChange={(patch) =>
+                updateWidgetRoot(
+                  'chartOptions',
+                  'sourceNote' in patch
+                    ? sourcePatch(selectedWidget?.chartOptions, patch.sourceNote)
+                    : { ...(selectedWidget?.chartOptions || {}), ...patch },
+                )
+              }
+            />
+          ) : null}
         </>
       )}
     </div>
@@ -754,7 +1081,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const formatTab = (
     <div className="properties-panel-body">
       {!hasWidget ? (
-        <div className="pp-empty-state">Select a widget to edit its properties</div>
+        <div className="pp-empty-state">{tDash('select_widget_prompt')}</div>
       ) : isSlicer ? (
         <div style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 12, padding: 8 }}>
           {tDash('slicer_format_unavailable')}
@@ -777,6 +1104,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         />
       ) : (
         <>
+          {/* Format reads top to bottom: preset, style, colors, labels, axes, analytics. */}
+          <ChartDesignControls
+            chartType={selectedWidget.chartType || 'bar'}
+            chartOptions={selectedWidget.chartOptions || {}}
+            onUpdateChartOptions={(updates) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
+            }
+          />
           <ChartSpecificFields
             chartType={selectedWidget.chartType || 'bar'}
             chartQuery={selectedWidget.chartQuery || {}}
@@ -794,6 +1129,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             }
             mode="customize"
             sqlBound={sqlBound}
+            isDesigner={isDesigner}
           />
           <ChartSpecificFields
             chartType={selectedWidget.chartType || 'bar'}
@@ -824,15 +1160,41 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
             }
           />
-          <ChartDesignControls
+          <ChartTextFields
             chartType={selectedWidget.chartType || 'bar'}
             chartOptions={selectedWidget.chartOptions || {}}
+            isDesigner={isDesigner}
+            onUpdateChartOptions={(updates) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
+            }
+          />
+          <ChartNotesFields
+            chartType={selectedWidget.chartType || 'bar'}
+            chartData={(selectedWidget as { chartData?: { x?: unknown[] } }).chartData}
+            annotations={(selectedWidget.chartOptions?.annotations as never[]) || []}
+            onChange={(next) =>
+              updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), annotations: next })
+            }
+          />
+          <ChartAnalytics
+            chartType={selectedWidget.chartType || 'bar'}
+            chartOptions={selectedWidget.chartOptions || {}}
+            orderedAxis={orderedXAxis}
             onUpdateChartOptions={(updates) =>
               updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), ...updates })
             }
           />
         </>
       )}
+      {hasWidget && !isDesigner ? (
+        // Phones stack cards one per row; the author decides what earns a place there.
+        <CheckboxField
+          label={tDash('hide_on_phones')}
+          hint={tDash('hide_on_phones_hint')}
+          checked={(selectedWidget.chartOptions as { hideOnMobile?: boolean } | undefined)?.hideOnMobile === true}
+          onChange={(v) => updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), hideOnMobile: v || undefined })}
+        />
+      ) : null}
     </div>
   );
 
@@ -926,40 +1288,23 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           />
         </div>
       )}
-    </div>
-  );
-
-  // ── Sort tab ─────────────────────────────────────────────────────────────────
-  const sortTab = (
-    <div className="properties-panel-body">
-      {!hasWidget || isSlicer || isContentBlock ? (
-        <div className="pp-empty-state">
-          {isSlicer
-            ? tDash('interact_not_for_slicer')
-            : isContentBlock
-              ? tDash('interact_not_for_content')
-              : tDash('select_widget_prompt')}
-        </div>
-      ) : (
+      {hasWidget && !isSlicer && !isContentBlock ? (
         <ChartSpecificFields
           chartType={selectedWidget.chartType || 'bar'}
           chartQuery={selectedWidget.chartQuery || {}}
           selectedWidget={selectedWidget}
           selectedTableColumns={selectedTableColumns || []}
-          isLoading={schemaLoading}
           onUpdateChartQuery={updateChartQuery}
-          onFieldDrop={applyDroppedField}
           chartOptions={selectedWidget.chartOptions || {}}
-          onUpdateChartOption={(key, val) =>
-            updateWidgetRoot('chartOptions', { ...(selectedWidget.chartOptions || {}), [key]: val })
-          }
-          mode="sort"
+          mode="interact"
           dashboardPages={dashboardPages}
           sqlBound={sqlBound}
         />
-      )}
+      ) : null}
     </div>
   );
+
+  // ── (Sort lives in Build, click behaviour in Filters) ─────────────────────────
 
   return (
     <aside
@@ -969,8 +1314,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     >
       {!isCollapsed ? (
         <>
+          {hasWidget ? (
+            <ChartInlineEditor
+              widgetId={selectedWidgetId}
+              chartType={selectedWidget?.chartType}
+              chartData={(selectedWidget as { chartData?: { x?: unknown[] } })?.chartData}
+              chartOptions={selectedWidget?.chartOptions || {}}
+              onPatch={(patch) =>
+                updateWidgetRoot('chartOptions', { ...(selectedWidget?.chartOptions || {}), ...patch })
+              }
+            />
+          ) : null}
           <div className="properties-panel-header">
-            <span className="properties-panel-header-label">Properties</span>
+            <span className="properties-panel-header-label">{tDash('properties_heading')}</span>
             {onCollapse ? (
               <Tooltip title="Collapse panel">
                 <Button
@@ -1015,40 +1371,23 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 ),
                 children: filtersTab,
               },
-              {
-                key: 'sort',
-                label: (
-                  <Tooltip title={tDash('tab_sort_tip')}>
-                    <span>{tDash('tab_sort')}</span>
-                  </Tooltip>
-                ),
-                children: sortTab,
-              },
             ]}
           />
-          {eeEnabled && selectedWidget ? (
-            <ExplainChartDrawer
-              open={explainOpen}
-              onClose={() => setExplainOpen(false)}
-              widget={selectedWidget}
-              onChangeChartType={(chartType) => {
-                if (!isSafeChartTypeSwitchTarget(chartType)) return;
-                setPendingChartType(chartType);
-                updateWidgetRoot('chartType', chartType);
-              }}
-            />
-          ) : null}
           <div className="properties-panel-footer">
-            <Button
-                type="primary"
+            {/* Edits apply by themselves; this only re-runs the query (Datawrapper / Canva have
+                no apply step, so a big primary button here read as "nothing saved until pressed"). */}
+            <Tooltip title={tDash('reload_data_tip')}>
+              <Button
                 block
                 size="small"
+                icon={<ReloadOutlined />}
                 disabled={!hasWidget || applyLoading}
                 loading={applyLoading}
                 onClick={handleApply}
               >
                 {tDash('refresh_chart')}
               </Button>
+            </Tooltip>
             {hasWidget && (
               <Button
                 type="link"
@@ -1056,17 +1395,17 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 block
                 size="small"
                 onClick={() => {
-                  const widgetTitle = selectedWidget?.title || tDash('delete_widget');
+                  const widgetTitle = selectedWidget?.title || tDash(deleteLabelKey);
                   Modal.confirm({
                     title: tDash('delete_widget_confirm_title'),
                     content: tDash('delete_widget_confirm_body', { title: widgetTitle }),
                     okButtonProps: { danger: true },
-                    okText: tDash('delete_widget'),
+                    okText: tDash(deleteLabelKey),
                     onOk: () => removeWidget(selectedWidgetId!),
                   });
                 }}
               >
-                {tDash('delete_widget')}
+                {tDash(deleteLabelKey)}
               </Button>
             )}
           </div>

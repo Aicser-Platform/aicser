@@ -122,6 +122,10 @@ async def test_generate_completion_does_not_loop_when_both_time_out(monkeypatch)
         return _ok_response()
 
     monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
+    # The real second-provider budget has a 15 s floor; keep it short so the fallback also hangs.
+    import ee.modules.ai.utils.sql_gen_budget as budget
+
+    monkeypatch.setattr(budget, "timeout_fallback_for", lambda t: 0.2)
 
     service = _make_service()
     result = await service.generate_completion(
@@ -273,3 +277,124 @@ async def test_stream_callback_does_not_fall_back_after_partial_stream(monkeypat
     assert calls["fast"] == 0
     assert result.get("success") is False
     assert streamed == ["partial "]
+
+
+@pytest.mark.asyncio
+async def test_stream_fails_over_on_no_first_token_long_before_full_timeout(monkeypatch):
+    """A provider that never sends a first token is abandoned after
+    LLM_FIRST_TOKEN_TIMEOUT_S, not after the whole budget (live: 35s of silence)."""
+    import time as _t
+
+    class _Stalled:
+        def __aiter__(self):
+            return self._gen()
+
+        async def _gen(self):
+            await asyncio.sleep(30)
+            yield None
+
+    class _Ok:
+        def __aiter__(self):
+            return self._gen()
+
+        async def _gen(self):
+            import types
+            yield types.SimpleNamespace(choices=[types.SimpleNamespace(delta=types.SimpleNamespace(content="fast answer"))])
+
+    async def fake_acompletion(**params):
+        return _Stalled() if "deepseek" in params.get("model", "") else _Ok()
+
+    monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
+    monkeypatch.setenv("LLM_FIRST_TOKEN_TIMEOUT_S", "2")
+    service = _make_service()
+    got = []
+
+    async def _cb(piece):
+        got.append(piece)
+
+    t0 = _t.monotonic()
+    result = await service.generate_completion_with_stream_callback(
+        prompt="hello", system_context="sys", stream_callback=_cb, model_id="fake_slow", timeout=25,
+    )
+    assert result.get("success") is True
+    assert "".join(got) == "fast answer"
+    assert _t.monotonic() - t0 < 8, "must fail over on the first-token budget, not the 25s timeout"
+
+
+def test_first_token_watchdog_is_model_aware(monkeypatch):
+    from ee.modules.ai.services.litellm_service import _first_token_timeout_s
+
+    monkeypatch.setenv("LLM_FIRST_TOKEN_TIMEOUT_S", "10")
+    assert _first_token_timeout_s({"tier": "fast"}) == 10.0
+    assert _first_token_timeout_s({"tier": "reasoning"}) is None   # may think silently
+    assert _first_token_timeout_s({"is_local": True}) is None      # may be loading weights
+    assert _first_token_timeout_s({"tier": "reasoning", "first_token_timeout_s": 45}) == 45.0
+
+
+@pytest.mark.asyncio
+async def test_thinking_models_get_budget_headroom_low_effort_and_empty_answers_fail(monkeypatch):
+    """A thinking model (GLM-5 flash) that spends the whole budget reasoning must not be
+    reported as a successful empty answer; narration can ask it to think less; and the
+    stream gets the same reasoning headroom as the non-streaming call."""
+    import types
+
+    seen = {}
+
+    class _Reasoning:
+        def __aiter__(self):
+            return self._gen()
+
+        async def _gen(self):
+            delta = types.SimpleNamespace(content=None, reasoning_content="thinking " * 50)
+            yield types.SimpleNamespace(choices=[types.SimpleNamespace(delta=delta)])
+
+    async def fake_acompletion(**params):
+        seen.update(params)
+        return _Reasoning()
+
+    monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
+    service = _make_service()
+    service.available_models["glm"] = {"name": "GLM", "model": "openrouter/z-ai/glm-5.3-flash",
+                                       "provider": "openrouter", "api_key": "k", "max_tokens": 16384}
+
+    async def _cb(piece):
+        pass
+
+    result = await service.generate_completion_with_stream_callback(
+        prompt="p", system_context="s", stream_callback=_cb, model_id="glm", max_tokens=4096,
+        timeout=5, reasoning_effort="low", _disable_timeout_fallback=True,
+    )
+    assert result["success"] is False and result.get("reasoning_exhausted") is True
+    assert (seen.get("max_tokens") or seen.get("max_completion_tokens")) >= 16384  # headroom, not 4096
+    assert (seen.get("extra_body") or {}).get("reasoning") == {"effort": "low"}
+
+
+@pytest.mark.asyncio
+async def test_slow_first_token_waits_when_there_is_nowhere_to_fail_over(monkeypatch):
+    """The org's own key (BYOK) has no failover: a first-token cut-off only turned a slow start
+    into a failure (live: a Decide brief lost at 10s of a 90s budget). It waits instead."""
+    import types
+
+    class _SlowStart:
+        def __aiter__(self):
+            return self._gen()
+
+        async def _gen(self):
+            await asyncio.sleep(2.5)
+            yield types.SimpleNamespace(choices=[types.SimpleNamespace(delta=types.SimpleNamespace(content="the brief"))])
+
+    async def fake_acompletion(**params):
+        return _SlowStart()
+
+    monkeypatch.setattr(svc_mod, "acompletion", fake_acompletion)
+    monkeypatch.setenv("LLM_FIRST_TOKEN_TIMEOUT_S", "1")
+    service = _make_service()
+    service.available_models["byok_slow"] = {**service.available_models["fake_slow"], "byok_provider": "google"}
+
+    async def _cb(_piece):
+        return None
+
+    result = await service.generate_completion_with_stream_callback(
+        prompt="hello", system_context="sys", stream_callback=_cb, model_id="byok_slow", timeout=20,
+    )
+    assert result.get("success") is True and result.get("content") == "the brief"

@@ -42,8 +42,8 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
-        name: 'AI Engine',
-        short_name: 'Chat',
+        name: 'Ask',
+        short_name: 'Ask',
         url: '/chat',
         icons: [{ src: '/icons/icon-192.png', sizes: '192x192' }],
       },

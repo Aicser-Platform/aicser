@@ -343,14 +343,20 @@ export function FeedPublishComposer({
   const visibilityOptions: { value: FeedVisibility; label: string; disabled?: boolean }[] =
     isEnterpriseEdition
       ? [
-          { value: 'project', label: tf('scope_project'), disabled: !effectiveProjectId },
+          // Narrowest → widest, the same order everywhere content is shared; "My project"
+          // names the project, so it's clear which one before publishing.
+          { value: 'private', label: tf('scope_private') },
+          {
+            value: 'project',
+            label: effectiveProjectName ? `${tf('scope_project')} · ${effectiveProjectName}` : tf('scope_project'),
+            disabled: !effectiveProjectId,
+          },
           { value: 'organization', label: tf('scope_organization'), disabled: !organizationId },
           { value: 'public', label: tf('scope_public') },
-          { value: 'private', label: tf('scope_private') },
         ]
       : [
-          { value: 'public', label: tf('scope_public') },
           { value: 'private', label: tf('scope_private') },
+          { value: 'public', label: tf('scope_public') },
         ];
 
   const rootClass = layout === 'embedded' ? 'feed-publish-layout feed-publish-layout--embedded' : 'feed-publish-layout';

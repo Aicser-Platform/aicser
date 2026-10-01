@@ -175,16 +175,17 @@
   font-size: var(--font-size-xl) !important;
 }
 
+/* Card spacing lives in ThemeProvider tokens (Card.headerPadding/bodyPadding and the SM
+   variants). A blanket !important padding here forced size="small" cards to the large inset
+   and made nested cards inconsistent. */
 .ant-card-head {
   background: transparent !important;
   border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-md) var(--spacing-lg) !important;
   font-weight: var(--font-weight-semibold) !important;
   font-size: var(--font-size-base) !important;
 }
 
 .ant-card-body {
-  padding: var(--spacing-lg) !important;
   color: var(--ant-color-text) !important;
 }
 
@@ -251,14 +252,13 @@
    BUTTONS - CONSISTENT & INTERACTIVE
    ======================================== */
 
+/* Size, padding and shadow come from the Button theme tokens (32px, same as inputs; flat).
+   Forcing min-height 36px + 8px/24px padding here made size="small" buttons full-size, put
+   buttons taller than the inputs beside them, and needed icon-only-btn counter-overrides. */
 .ant-btn {
   border-radius: var(--radius-md) !important;
   font-weight: var(--font-weight-medium) !important;
-  padding: var(--spacing-sm) var(--spacing-lg) !important;
-  height: auto !important;
-  min-height: 36px !important;
   transition: all var(--transition-base) !important;
-  box-shadow: var(--shadow-xs) !important;
   border-width: var(--border-thin) !important;
   font-size: var(--font-size-sm) !important;
 }
@@ -286,15 +286,17 @@
 .ant-btn-primary {
   background: var(--ant-color-primary) !important;
   border-color: var(--ant-color-primary) !important;
-  color: #ffffff !important;
+  /* The label colour the theme picks for the primary (ThemeProvider); fixed white measured 3:1
+     on the dark-mode teal. */
+  color: var(--color-primary-text, #ffffff) !important;
   font-weight: var(--font-weight-semibold) !important;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2) !important;
+  box-shadow: none !important;
 }
 
 .ant-btn-primary:hover {
   background: var(--ant-color-primary-hover) !important;
   border-color: var(--ant-color-primary-hover) !important;
-  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3) !important;
+  box-shadow: none !important;
 }
 
 .ant-btn-primary:active {
@@ -308,10 +310,12 @@
   color: var(--ant-color-text) !important;
 }
 
+/* Hover shows on the edge; the label keeps the text colour (teal text on the hover fill measured
+   4.0:1 in light and 4.2:1 in dark). */
 .ant-btn-default:hover {
   background: var(--ant-color-fill-secondary) !important;
   border-color: var(--ant-color-primary) !important;
-  color: var(--ant-color-primary) !important;
+  color: var(--ant-color-text) !important;
 }
 
 .ant-btn-text {
@@ -439,8 +443,10 @@
    FORMS - CONSISTENT SPACING
    ======================================== */
 
+/* Same as antd's default; not !important, so a field that sets its own margin (e.g. inside a
+   guided form step) keeps it. */
 .ant-form-item {
-  margin-bottom: var(--spacing-lg) !important;
+  margin-bottom: var(--spacing-lg);
 }
 
 .ant-form-item-label > label {
@@ -465,14 +471,8 @@
   background: var(--ant-color-bg-container) !important;
 }
 
-.ant-table {
-  border: var(--border-thin) solid var(--ant-color-border) !important;
-  box-shadow: var(--shadow-sm) !important;
-}
-
-.ant-table-tbody > tr {
-  transition: all var(--transition-fast) !important;
-}
+/* No frame of its own: tables mostly sit inside cards, and a second border + shadow drew a
+   box inside the box. Tables that need an outline use antd's `bordered` prop. */
 
 /* Number cells — tabular nums, same sans as body (widget overrides beat this) */
 .table-cell-number,
@@ -520,10 +520,11 @@
   font-size: var(--font-size-sm) !important;
 }
 
+/* The hover fill marks it; the label keeps the text colour (teal on the fill was under 4.5:1). */
 .page-tabs.ant-tabs .ant-tabs-tab:hover,
 .settings-tabs.ant-tabs .ant-tabs-tab:hover {
   background: var(--ant-color-fill-secondary) !important;
-  color: var(--ant-color-primary) !important;
+  color: var(--ant-color-text) !important;
 }
 
 .page-tabs.ant-tabs .ant-tabs-tab-active,
@@ -644,11 +645,11 @@
    SELECT DROPDOWN ITEMS (overlay chrome in interaction-system)
    ======================================== */
 
+/* No margins on options: the select list is virtualised and measures item height; extra
+   margins made long lists jump and cut off. */
 .ant-select-item,
 .ant-dropdown-menu-item {
   border-radius: var(--radius-sm) !important;
-  margin: var(--spacing-xs) var(--spacing-sm) !important;
-  padding: var(--spacing-sm) var(--spacing-md) !important;
   transition: all var(--transition-fast) !important;
   font-size: var(--font-size-sm) !important;
 }
@@ -677,28 +678,24 @@
   overflow: auto;
 }
 
+/* "Safe" centering: flex + margin:auto on the modal. With align-items:center a modal taller
+   than the window overflowed both edges and its top (title, first fields) could not be
+   scrolled into view — e.g. the dashboard Schedule dialog. margin:auto centres a modal that
+   fits and starts a tall one at the top, with the wrap scrolling normally. */
 .ant-modal-wrap:not(.ant-modal-hidden):not([style*="display: none"]):not([style*="display:none"]) {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  padding: 16px;
 }
 
 .ant-modal-wrap .ant-modal {
   top: 0 !important;
   padding-bottom: 0 !important;
-  margin: 16px auto !important;
+  margin: auto !important;
   max-width: min(100%, calc(100vw - 32px));
 }
 
 .ant-modal-mask {
   z-index: 1050 !important;
-}
-
-.ant-drawer-content {
-  background: var(--ant-color-bg-elevated) !important;
-  border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-xl) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
 }
 
 /* ========================================
@@ -707,11 +704,13 @@
 
 .ant-divider {
   border-color: var(--ant-color-border) !important;
-  margin: var(--spacing-lg) 0 !important;
 }
 
+/* Horizontal only: the old rule also gave vertical dividers (toolbars, "a | b") a 24px
+   top/bottom margin, pushing items apart. */
 .ant-divider-horizontal {
   border-top-width: var(--border-thin) !important;
+  margin: var(--spacing-lg) 0 !important;
 }
 
 .section-divider {
@@ -725,14 +724,13 @@
    BADGES & TAGS - VIBRANT
    ======================================== */
 
-.ant-badge,
+/* Tags keep antd's own inset and line height (they sit inline with text and in table rows);
+   .ant-badge is a wrapper around icons, so it never gets padding. */
 .ant-tag {
   border-radius: var(--radius-sm) !important;
   font-weight: var(--font-weight-medium) !important;
-  padding: var(--spacing-xs) var(--spacing-sm) !important;
   border: none !important;
   font-size: var(--font-size-xs) !important;
-  line-height: 1.5 !important;
   transition: all var(--transition-fast) !important;
 }
 
@@ -765,11 +763,11 @@
    ALERTS & NOTIFICATIONS - CLEAR
    ======================================== */
 
+/* No forced margin: spacing between components belongs to the layout (Space gap, card
+   body). A global margin-bottom doubled gaps inside Space and left space at card ends. */
 .ant-alert {
   border-radius: var(--radius-md) !important;
   border-width: var(--border-thin) !important;
-  padding: var(--spacing-md) !important;
-  margin-bottom: var(--spacing-md) !important;
 }
 
 .ant-message-notice-content {
@@ -781,18 +779,15 @@
    LIST ITEMS - CLEAR SEPARATION
    ======================================== */
 
+/* Row spacing comes from the List token (ThemeProvider). This rule used to force
+   `padding: 16px 0 !important` on every list, so bordered lists lost their inset and text
+   touched the border; and every row got a hover highlight even when it wasn't clickable. */
 .ant-list-item {
   border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
-  padding: var(--spacing-md) 0 !important;
 }
 
 .ant-list-item:last-child {
   border-bottom: none !important;
-}
-
-.ant-list-item:hover {
-  background: var(--ant-color-fill-secondary) !important;
-  border-radius: var(--radius-sm) !important;
 }
 
 /* ========================================
@@ -911,18 +906,12 @@ h4, .h4 {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
   border-radius: var(--radius-full);
   border: 2px solid var(--ant-color-bg-layout);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-text-tertiary);
 }
 
 /* ========================================
@@ -1034,9 +1023,20 @@ h4, .h4 {
 .page-header {
   margin-bottom: var(--spacing-2xl) !important;
   margin-left: 0 !important;
-  padding-left: 24px !important; /* CRITICAL: Left padding ensures spacing from sidebar */
-  padding-right: 24px !important;
   animation: fadeInUp var(--transition-slow) ease-out;
+}
+
+/* A header outside the page shell keeps its own inset from the sidebar. Inside .page-wrapper the
+   shell's gutter already provides it; adding 24px here pushed titles in past the breadcrumb and
+   the cards below them. */
+.page-header {
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+
+.page-wrapper .page-header {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 .page-description {
@@ -1128,15 +1128,10 @@ h4, .h4 {
    ROW & COL - CONSISTENT SPACING
    ======================================== */
 
-.ant-row {
-  margin-left: calc(-1 * var(--spacing-md) / 2) !important;
-  margin-right: calc(-1 * var(--spacing-md) / 2) !important;
-}
-
-.ant-col {
-  padding-left: calc(var(--spacing-md) / 2) !important;
-  padding-right: calc(var(--spacing-md) / 2) !important;
-}
+/* Intentionally empty. A global fake gutter (.ant-row negative margin + .ant-col padding,
+   !important) used to sit here: it overrode each Row's own `gutter` prop and also hit every
+   component built from Row/Col — every Form label and input was shifted 8px from the text
+   around it. Gutters come from <Row gutter={…}> only. */
 
 /* ========================================
    NAVIGATION - POLISH

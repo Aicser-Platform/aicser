@@ -24,6 +24,11 @@ export function plotValueFromForecastPoint(raw: unknown): number | null {
 }
 
 export function formatForecastAxisDate(val: string, monthly: boolean): string {
+  const hourly = String(val || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (hourly) {
+    const mi = Number(hourly[2]);
+    if (mi >= 1 && mi <= 12) return `${Number(hourly[3])} ${MONTHS[mi - 1]} ${hourly[4]}:${hourly[5]}`;
+  }
   const m = String(val || '').match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
   if (!m) return val;
   const year = Number(m[1]);
@@ -45,6 +50,9 @@ export function forecastAxisLooksMonthly(dates: string[]): boolean {
   return new Set(keys).size === dates.length;
 }
 
+/** Invisible stack bases and band fills — never listed in the tooltip. */
+const CI_HELPER_NAMES = new Set(['_ci_lower', '95% interval', '_ci80_lower', '80% interval']);
+
 export function forecastTooltipHtml(params: unknown): string {
   const list = Array.isArray(params) ? params : params != null ? [params] : [];
   if (!list.length) return '';
@@ -65,18 +73,26 @@ export function forecastTooltipHtml(params: unknown): string {
     const v = plotValueFromForecastPoint(dataObj ?? p.value);
     if (v == null) continue;
     const seriesName = String(p.seriesName || '');
-    if (seriesName === '_ci_lower' || seriesName === '95% interval') continue;
-    html += `<div>${p.marker || ''} <span style="font-weight:500">${seriesName}:</span> <b>${v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b></div>`;
-    if (
-      String(p.seriesName || '') === 'Forecast' &&
-      dataObj &&
-      dataObj.lower != null &&
-      dataObj.upper != null
-    ) {
-      const lo = Number(dataObj.lower);
-      const hi = Number(dataObj.upper);
-      if (Number.isFinite(lo) && Number.isFinite(hi)) {
-        html += `<div style="opacity:0.75">95% interval: ${lo.toLocaleString(undefined, { maximumFractionDigits: 2 })} – ${hi.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>`;
+    if (CI_HELPER_NAMES.has(seriesName)) continue;
+    const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (seriesName === 'In progress') {
+      const cov = (dataObj as { coverage_pct?: unknown } | null)?.coverage_pct;
+      const covTxt = cov != null && Number.isFinite(Number(cov)) ? ` (${Number(cov)}% complete)` : '';
+      html += `<div>${p.marker || ''} <span style="font-weight:500">In progress${covTxt}:</span> <b>${fmt(v)}</b></div>`;
+      continue;
+    }
+    html += `<div>${p.marker || ''} <span style="font-weight:500">${seriesName}:</span> <b>${fmt(v)}</b></div>`;
+    if (seriesName === 'Forecast' && dataObj) {
+      const band = dataObj as { lower?: unknown; upper?: unknown; lower_80?: unknown; upper_80?: unknown };
+      const lo80 = Number(band.lower_80);
+      const hi80 = Number(band.upper_80);
+      if (band.lower_80 != null && band.upper_80 != null && Number.isFinite(lo80) && Number.isFinite(hi80)) {
+        html += `<div style="opacity:0.75">80% interval: ${fmt(lo80)} – ${fmt(hi80)}</div>`;
+      }
+      const lo = Number(band.lower);
+      const hi = Number(band.upper);
+      if (band.lower != null && band.upper != null && Number.isFinite(lo) && Number.isFinite(hi)) {
+        html += `<div style="opacity:0.75">95% interval: ${fmt(lo)} – ${fmt(hi)}</div>`;
       }
     }
   }
@@ -127,8 +143,14 @@ export function polishForecastEchartsOption(config: Record<string, unknown>): Re
   const legend = next.legend;
   const seriesList = Array.isArray(next.series) ? (next.series as Record<string, unknown>[]) : [];
   const legendData: Array<string | { name: string; icon?: string }> = ['Historical', 'Forecast'];
+  if (seriesList.some((s) => s?.name === '80% interval')) {
+    legendData.push({ name: '80% interval', icon: 'roundRect' });
+  }
   if (seriesList.some((s) => s?.name === '95% interval')) {
     legendData.push({ name: '95% interval', icon: 'roundRect' });
+  }
+  if (seriesList.some((s) => s?.name === 'In progress')) {
+    legendData.push('In progress');
   }
   if (legend && typeof legend === 'object' && !Array.isArray(legend)) {
     next.legend = {
@@ -138,19 +160,27 @@ export function polishForecastEchartsOption(config: Record<string, unknown>): Re
     };
   }
 
-  // Ensure CI stack + areaStyle survive any client remaps.
+  // Ensure CI stacks + areaStyle survive any client remaps (95% band = stack 'ci',
+  // inner 80% band = stack 'ci80').
   next.series = seriesList.map((s) => {
     const name = String(s?.name || '');
-    if (name !== '_ci_lower' && name !== '95% interval' && s?.stack !== 'ci') return s;
-    const helper = { ...s, type: 'line', symbol: 'none', stack: 'ci', stackStrategy: s.stackStrategy || 'all' };
-    if (name === '_ci_lower') {
+    const inner = name === '_ci80_lower' || name === '80% interval' || s?.stack === 'ci80';
+    if (!inner && name !== '_ci_lower' && name !== '95% interval' && s?.stack !== 'ci') return s;
+    const helper: Record<string, unknown> = {
+      ...s,
+      type: 'line',
+      symbol: 'none',
+      stack: inner ? 'ci80' : 'ci',
+      stackStrategy: s.stackStrategy || 'all',
+    };
+    if (name === '_ci_lower' || name === '_ci80_lower') {
       helper.lineStyle = { opacity: 0, width: 0, color: 'transparent', ...((s.lineStyle as object) || {}) };
       helper.areaStyle = { opacity: 0, color: 'transparent' };
       helper.itemStyle = { opacity: 0, color: 'transparent', ...((s.itemStyle as object) || {}) };
     } else {
       helper.lineStyle = { opacity: 0, width: 0, ...((s.lineStyle as object) || {}) };
       helper.areaStyle = {
-        color: 'rgba(145, 204, 117, 0.35)',
+        color: inner ? 'rgba(145, 204, 117, 0.45)' : 'rgba(145, 204, 117, 0.35)',
         ...((s.areaStyle as object) || {}),
       };
     }
@@ -162,6 +192,10 @@ export function polishForecastEchartsOption(config: Record<string, unknown>): Re
     if (colors.length >= 4) {
       colors[2] = 'transparent';
       colors[3] = 'rgba(145, 204, 117, 0.55)';
+      if (colors.length >= 6) {
+        colors[4] = 'transparent';
+        colors[5] = 'rgba(145, 204, 117, 0.7)';
+      }
       next.color = colors;
     }
   }

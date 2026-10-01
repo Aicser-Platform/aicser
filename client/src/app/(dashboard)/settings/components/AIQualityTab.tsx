@@ -11,6 +11,7 @@ import { Permission } from '@/hooks/usePermissions';
 import { fetchApi } from '@/utils/api';
 import { MiniEChart } from '@/app/(dashboard)/feed/components/MiniEChart';
 import type { TabComponentProps } from '../page';
+import { AnswerAccuracyCard } from './AnswerAccuracyCard';
 
 const { Text } = Typography;
 
@@ -234,6 +235,8 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           </>
         )}
       </Card>
+      {/* Measured accuracy on the golden set, independent of recent traffic. */}
+      <AnswerAccuracyCard />
     </PermissionGuard>
   );
 };

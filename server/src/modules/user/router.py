@@ -6,7 +6,6 @@ Mounted at /api/users in core/api.py.
 
 import json
 import logging
-import secrets
 import uuid as _uuid
 import base64
 from datetime import datetime
@@ -509,59 +508,42 @@ async def put_notification_preferences(
 _require_api_access = Depends(require_plan_feature("api_access"))
 
 
+async def _legacy_api_keys(user_id: str) -> list:
+    """Keys created before verifiable storage: stored masked only, so they can't authenticate."""
+    try:
+        raw = await _user_settings_repo.get_setting(user_id, "platform_api_keys")
+        data = json.loads(raw.value) if raw and raw.value else []
+        return [{**k, "status": "legacy"} for k in data if isinstance(k, dict)] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
 @router.get("/api-keys", dependencies=[_require_api_access])
 async def list_api_keys(
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """List platform API keys for the current user (key values are masked)."""
+    """List the current user's platform API keys (never the secret). Legacy keys — created before
+    keys were verifiable — are listed with status "legacy" and should be recreated."""
+    from src.modules.user.api_keys import list_api_keys as _list
+
     user_id = _require_user_id(current_token)
-    try:
-        raw = await _user_settings_repo.get_setting(user_id, "platform_api_keys")
-        if not raw or not raw.value:
-            return []
-        data = json.loads(raw.value)
-        return data if isinstance(data, list) else []
-    except Exception:
-        return []
+    return await _list(user_id) + await _legacy_api_keys(user_id)
 
 
 @router.post("/api-keys", dependencies=[_require_api_access])
 async def create_api_key(
     payload: ApiKeyCreateRequest,
+    request: Request,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """Create a platform API key. Returns the full key once; store it securely. Server stores only id, name, prefix."""
+    """Create a platform API key scoped to the current organization. The full key is returned once."""
+    from src.modules.user.api_keys import create_api_key as _create
+
     user_id = _require_user_id(current_token)
     name = (payload.name or "").strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="name is required")
-    key_id = str(_uuid.uuid4())
-    secret = secrets.token_urlsafe(32)
-    raw = await _user_settings_repo.get_setting(user_id, "platform_api_keys")
-    keys_list = []
-    if raw and raw.value:
-        try:
-            keys_list = json.loads(raw.value)
-        except Exception:
-            pass
-    created_at = datetime.utcnow().isoformat() + "Z"
-    keys_list.append({
-        "id": key_id,
-        "name": name,
-        "key": mask_key(secret),
-        "created_at": created_at,
-        "last_used": None,
-        "status": "active",
-    })
-    await _user_settings_repo.set_setting(user_id, "platform_api_keys", json.dumps(keys_list))
-    # Return full key only on create; client must save it (we do not store the full key server-side for security)
-    return {
-        "id": key_id,
-        "name": name,
-        "key": secret,
-        "created_at": created_at,
-        "status": "active",
-    }
+    return await _create(user_id, _request_organization_id(request), name)
 
 
 @router.delete("/api-keys/{key_id}", dependencies=[_require_api_access])
@@ -569,14 +551,18 @@ async def delete_api_key(
     key_id: str,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """Delete a platform API key by id."""
+    """Revoke a platform API key (or remove a legacy entry)."""
+    from src.modules.user.api_keys import revoke_api_key
+
     user_id = _require_user_id(current_token)
+    if await revoke_api_key(user_id, key_id):
+        return {"success": True}
     raw = await _user_settings_repo.get_setting(user_id, "platform_api_keys")
-    if not raw or not raw.value:
+    keys_list = json.loads(raw.value) if raw and raw.value else []
+    remaining = [k for k in keys_list if k.get("id") != key_id]
+    if len(remaining) == len(keys_list):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API key not found")
-    keys_list = json.loads(raw.value)
-    keys_list = [k for k in keys_list if k.get("id") != key_id]
-    await _user_settings_repo.set_setting(user_id, "platform_api_keys", json.dumps(keys_list))
+    await _user_settings_repo.set_setting(user_id, "platform_api_keys", json.dumps(remaining))
     return {"success": True}
 
 

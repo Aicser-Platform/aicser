@@ -251,11 +251,8 @@ class FrictionlessOptimizer:
             "plan_selection": {
                 "title": "Choose Your Plan",
                 # Kept short and distinct on purpose — the step body directly below already
-                # states the exact default (Team trial, 14 days, no card) and what happens
-                # after the trial ends, so this banner shouldn't repeat that (it previously
-                # said "Start with Free" while the actual default toggle is Team trial —
-                # keep this in sync with EnhancedOnboardingModal.tsx's enableTeamTrial default
-                # if that default ever changes).
+                # states the default (Free; a 14-day Team/Pro trial is opt-in, once per
+                # organization — src/shared/trial_grant.py) and what happens after it ends.
                 "content": "Every plan can be changed anytime — no long-term commitment.",
                 "tips": [
                     "Free plan includes 10 AI credits to get started",

@@ -3,6 +3,7 @@
 import React from 'react';
 import dynamic from 'next/dynamic';
 import { Empty, Tooltip } from 'antd';
+import { useTranslations } from 'next-intl';
 import { WarningOutlined } from '@ant-design/icons';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { TableWidget } from './TableWidget';
@@ -156,6 +157,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   onFilter,
   runtimeFilters = [],
 }) => {
+  const t = useTranslations('dashboard_viewer');
   /** Canvas slicers/filters stay interactive in view / presentation even when the canvas is read-only. */
   const effectiveReadOnly = (type === 'slicer' || type === 'filter') && onFilter ? false : readOnly;
   const loadingOverlayStyle: React.CSSProperties = {
@@ -202,6 +204,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     const withPalette = {
       ...echartsSnapshot,
       color: Array.isArray(echartsSnapshot.color) && echartsSnapshot.color.length
+        && (!config?.__paletteChosen || paletteId === 'custom')
         ? echartsSnapshot.color
         : paletteColors,
     };
@@ -214,11 +217,11 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
       <div className="widget-content-root">
         <RawEChartWidget option={snapshotOption} onChartReady={onChartReady} minHeight={minHeight} />
         {error && (
-          <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last saved chart.`} />
+          <StaleDataBadge tooltip={t('widget_stale_saved_chart', { reason: getFriendlyWidgetError(error, t).title })} />
         )}
         {isLoading && (
           <div className="widget-loading-overlay" style={{ ...loadingOverlayStyle, pointerEvents: 'auto' }}>
-            <AppLoadingIndicator variant="minimal" tip="Updating..." />
+            <AppLoadingIndicator variant="minimal" tip={t('widget_updating')} />
           </div>
         )}
       </div>
@@ -231,7 +234,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
 
   // Error state — still prefer durable prefetch (Visualize / Chat pin) over a failed live fetch
   if (error && !hasRenderableChartData(prefetchedData)) {
-    const friendlyError = getFriendlyWidgetError(error);
+    const friendlyError = getFriendlyWidgetError(error, t);
     return (
       <div className="widget-center" title={friendlyError.technicalDetail}>
         <Empty
@@ -388,7 +391,7 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   if (isLoading && needsData && !hasData) {
     return (
       <div style={loadingOverlayStyle}>
-        <AppLoadingIndicator variant="minimal" tip="Loading data..." />
+        <AppLoadingIndicator variant="minimal" tip={t('widget_loading_data')} />
       </div>
     );
   }
@@ -397,7 +400,15 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   if (needsData && !hasData) {
     return (
       <div className="widget-center">
-        <Empty description="No data available. Configure the widget in properties." />
+        <Empty
+          description={
+            <span>
+              <strong>{t('widget_error_not_connected_title')}</strong>
+              <br />
+              {t('widget_error_not_connected_detail')}
+            </span>
+          }
+        />
       </div>
     );
   }
@@ -489,11 +500,11 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     <div className="widget-content-root">
       {renderContent()}
       {isShowingStaleFallbackAfterError && (
-        <StaleDataBadge tooltip={`${getFriendlyWidgetError(error).title} — showing last successful data.`} />
+        <StaleDataBadge tooltip={t('widget_stale_last_data', { reason: getFriendlyWidgetError(error, t).title })} />
       )}
       {isLoading && (
         <div className={activeOverlayClass} style={activeOverlayStyle}>
-          <AppLoadingIndicator variant="minimal" tip="Updating..." />
+          <AppLoadingIndicator variant="minimal" tip={t('widget_updating')} />
         </div>
       )}
     </div>

@@ -48,6 +48,12 @@ import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import EnterpriseConnectorTab from './EnterpriseConnectorTab';
+import {
+  WarehouseConnectionFields,
+  isWarehouseType,
+  missingWarehouseFields,
+  warehouseRequest,
+} from './WarehouseConnectionFields';
 const { Option } = Select;
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
@@ -176,6 +182,8 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   const [testResult, setTestResult] = useState<any>(null);
   const [connectionUrlEditable, setConnectionUrlEditable] = useState(true); // Editable by default
   const [customConnectionUrl, setCustomConnectionUrl] = useState('');
+  // Warehouse / enterprise database settings in each engine's own terms (see WarehouseConnectionFields).
+  const [warehouseValues, setWarehouseValues] = useState<Record<string, string>>({});
   const { currentProject } = useProjectStore();
   // Store normalizes to camelCase; Project type uses snake_case — support both
   const currentOrgId = currentProject
@@ -438,6 +446,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       isNoSQL: false,
       disabled: false,
     },
+    // Saved, queryable sources: charts, SQL and AI Chat run on them like PostgreSQL.
+    { value: 'databricks', label: 'Databricks SQL', port: 443, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false },
+    { value: 'oracle', label: 'Oracle', port: 1521, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false },
+    { value: 'trino', label: 'Trino / Starburst', port: 443, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false },
+    { value: 'athena', label: 'Amazon Athena', port: 443, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false },
     {
       value: 'delta_lake',
       label: t('db_label_delta_lake'),
@@ -525,7 +538,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     // one of these renders EnterpriseConnectorTab's proven config form
     // instead of this component's own per-type fields (see isEnterpriseConnector
     // usage further down) rather than reimplementing field-by-field here.
-    { value: 'databricks', label: 'Databricks', port: null, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
     { value: 'kafka', label: 'Kafka', port: 9092, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
     { value: 'elasticsearch', label: 'Elasticsearch', port: 9200, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
     { value: 'opensearch', label: 'OpenSearch', port: 9200, isDataLake: false, isCloudStorage: false, isNoSQL: false, disabled: false, isEnterpriseConnector: true },
@@ -724,6 +736,20 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         const dsType = (existingDataSource.type || '').toLowerCase();
         const dbType = (conn.type || (existingDataSource as any).db_type || 'postgresql').toLowerCase();
         setSelectedDatabaseType(dbType);
+        if (isWarehouseType(dbType)) {
+          // Settings back into their fields; secrets (password, token, key) are never sent back.
+          const secret = new Set(['password', 'token', 'secret_access_key', 'credentials_json']);
+          const merged: Record<string, unknown> = { ...(conn as Record<string, unknown>), ...(custom as Record<string, unknown>) };
+          setWarehouseValues(
+            Object.fromEntries(
+              Object.entries(merged)
+                .filter(([k, v]) => !secret.has(k) && v != null && typeof v !== 'object')
+                .map(([k, v]) => [k, String(v)]),
+            ),
+          );
+        } else {
+          setWarehouseValues({});
+        }
         setDataSourceConfig({
           name: existingDataSource.name || '',
           type: normalizeInitialDataSourceType((existingDataSource.type as any) || initialDataSourceType),
@@ -1321,6 +1347,21 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         return;
       }
 
+      if (isWarehouseType(selectedDatabaseType)) {
+        const missing = missingWarehouseFields(selectedDatabaseType, warehouseValues);
+        if (missing.length) {
+          setTestResult({ success: false, error: t('wh_fill_required', { fields: missing.map((k) => t(k as never)).join(', ') }) });
+          return;
+        }
+        const result = await fetchApi('/api/data/database/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...warehouseRequest(selectedDatabaseType, warehouseValues), name: dataSourceConfig.name }),
+        });
+        setTestResult(result);
+        return;
+      }
+
       const hasManualFields =
         connectionConfig.host && connectionConfig.database && connectionConfig.username && connectionConfig.password;
       const useUriForTest =
@@ -1780,8 +1821,20 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
       } else {
         // Edit existing database/warehouse: PUT update
         if (existingDataSource?.id && (dataSourceConfig.type === 'database' || dataSourceConfig.type === 'warehouse')) {
-          const conn: Record<string, any> =
-            selectedDatabaseType === 'prometheus_source'
+          const warehouseConn = (): Record<string, any> => {
+            // Same settings as a new connection, flattened as the server stores them; a blank
+            // secret keeps the saved one.
+            const { custom_fields: extra, connection_type: _ct, ...base } = warehouseRequest(
+              selectedDatabaseType as Parameters<typeof warehouseRequest>[0],
+              warehouseValues,
+            ) as Record<string, any>;
+            return Object.fromEntries(
+              Object.entries({ ...base, ...(extra || {}) }).filter(([, v]) => v !== undefined && v !== ''),
+            );
+          };
+          const conn: Record<string, any> = isWarehouseType(selectedDatabaseType)
+            ? warehouseConn()
+            : selectedDatabaseType === 'prometheus_source'
               ? {
                   type: 'prometheus_source',
                   prometheus_url: connectionConfig.prometheusUrl?.trim(),
@@ -1800,7 +1853,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                   min_connections: connectionConfig.minConnections ?? 1,
                   max_connections: connectionConfig.maxConnections ?? 10,
                 };
-          if (selectedDatabaseType !== 'prometheus_source') {
+          if (selectedDatabaseType !== 'prometheus_source' && !isWarehouseType(selectedDatabaseType)) {
             if (connectionConfig.password && connectionConfig.password.trim()) conn.password = connectionConfig.password;
             if (selectedDatabaseType === 'sqlserver') {
               if (connectionConfig.trustServerCertificate !== undefined)
@@ -1941,6 +1994,21 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
               host: connectionConfig.prometheusUrl.trim(),
               port: connectionConfig.port || 9090,
             };
+          } else if (isWarehouseType(selectedDatabaseType)) {
+            const missing = missingWarehouseFields(selectedDatabaseType, warehouseValues);
+            if (missing.length) {
+              const msg = t('wh_fill_required', { fields: missing.map((k) => t(k as never)).join(', ') });
+              setTestResult({ success: false, error: msg });
+              message.error(msg);
+              setLoading(false);
+              return;
+            }
+            let finalNameWh = dataSourceConfig.name;
+            if (!finalNameWh || finalNameWh.trim() === '') {
+              finalNameWh = generateDataSourceName();
+              setDataSourceConfig((prev) => ({ ...prev, name: finalNameWh }));
+            }
+            requestBody = { ...warehouseRequest(selectedDatabaseType, warehouseValues), name: finalNameWh };
           } else {
           const isNoSQL = ['mongodb', 'cassandra', 'dynamodb'].includes(selectedDatabaseType);
           const hasManualFields =
@@ -2636,7 +2704,13 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </Col>
           </Row>
 
-          {selectedDatabaseType === 'prometheus_source' ? (
+          {isWarehouseType(selectedDatabaseType) ? (
+            <WarehouseConnectionFields
+              type={selectedDatabaseType}
+              values={warehouseValues}
+              onChange={setWarehouseValues}
+            />
+          ) : selectedDatabaseType === 'prometheus_source' ? (
             <Row gutter={16}>
               <Col span={24}>
                 <Form.Item label={t('label_prometheus_url')} required help={t('help_prometheus_wizard')}>
@@ -2743,7 +2817,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </Row>
           )}
 
-          {selectedDatabaseType === 'prometheus_source' ? null : selectedDatabaseType === 'mongodb' ? (
+          {selectedDatabaseType === 'prometheus_source' || isWarehouseType(selectedDatabaseType) ? null : selectedDatabaseType === 'mongodb' ? (
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item label={t('label_database')} required>
@@ -2837,7 +2911,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </Row>
           )}
 
-          {selectedDatabaseType === 'prometheus_source' ? null : selectedDatabaseType === 'dynamodb' ? (
+          {selectedDatabaseType === 'prometheus_source' || isWarehouseType(selectedDatabaseType) ? null : selectedDatabaseType === 'dynamodb' ? (
             <Row gutter={16}>
               <Col span={24}>
                 <Form.Item label={t('label_secret_access_key')} required>
@@ -2860,7 +2934,8 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           )}
 
           {/* Connection URL - SQL only; hidden for NoSQL to avoid duplicate/confusing fields */}
-          {!['mongodb', 'cassandra', 'dynamodb', 'prometheus_source'].includes(selectedDatabaseType) && (
+          {!['mongodb', 'cassandra', 'dynamodb', 'prometheus_source'].includes(selectedDatabaseType) &&
+            !isWarehouseType(selectedDatabaseType) && (
             <>
               <Divider style={{ margin: '4px 0 20px' }} />
               <Form.Item label={t('label_connection_url')}>

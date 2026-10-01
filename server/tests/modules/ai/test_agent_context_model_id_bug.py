@@ -38,7 +38,8 @@ def _base_state(**overrides) -> dict:
         "query": "what should we do about declining scores?",
         "user_id": "u1",
         "organization_id": "org1",
-        "analytics_metadata": {},
+        # Decide stops early without driver/forecast/scenario evidence; give it some.
+        "analytics_metadata": {"diagnostic": {"top_contributors": [{"factor": "region=West", "magnitude": 3}]}},
         "query_result": [],
         "data_source_schema": {"name": "Education"},
         "agent_context": {"model_id": "wrong-value-from-agent-context"},

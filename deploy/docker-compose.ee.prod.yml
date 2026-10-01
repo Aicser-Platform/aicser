@@ -143,6 +143,8 @@ services:
       keycloak:
         condition: service_started
     entrypoint:
+      # Fix volume ownership as root, then run everything below as the unprivileged app user.
+      - /app/scripts/docker-entrypoint.sh
       - /bin/sh
       - -c
       - |
@@ -183,7 +185,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+      server:
+        condition: service_healthy
+    entrypoint: ["/app/scripts/docker-entrypoint.sh", "python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
 
   client:
     build:

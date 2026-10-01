@@ -765,7 +765,7 @@ class FeedServiceActionMixin:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="asset_id is required")
 
         if request.asset_type == AssetType.post:
-            if not (request.description or "").strip():
+            if not (request.description or "").strip() and not request.images:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Post text is required")
         elif not (request.title or "").strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title is required")
@@ -963,6 +963,11 @@ class FeedServiceActionMixin:
                 post.preview_metadata = preview_metadata
 
         await self.db.flush()
+
+        if request.images is not None:
+            from src.modules.feed.image_service import link_images
+
+            await link_images(self.db, post, request.images, user_id)
 
         if request.attachments is not None:
             # Author-side validation only - each VIEWER's own access is
@@ -1741,8 +1746,13 @@ class FeedServiceActionMixin:
         await self.db.execute(delete(FeedCommentReaction).where(FeedCommentReaction.comment_id.in_(comment_ids_stmt)))
         await self.db.execute(delete(FeedCommentModel).where(FeedCommentModel.post_id == post.id))
 
+        from src.modules.feed.image_service import delete_objects, object_keys_for_post
+
+        image_keys = await object_keys_for_post(self.db, post.id)  # rows cascade; files don't
         await self.db.delete(post)
         await self.db.commit()
+        if image_keys:
+            await delete_objects(image_keys)
         return DeleteItemResponse(success=True)
 
     async def update_post(

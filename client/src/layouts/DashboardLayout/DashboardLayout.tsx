@@ -4,7 +4,6 @@ import { LayoutHeader } from '../Header/Header';
 import Navigation, { EXPANDED_WIDTH } from '../Navigation/Navigation';
 import { RAIL_WIDTH } from '../Navigation/SidebarNav';
 import MobileBottomNav from '../Navigation/MobileBottomNav';
-import { PageBreadcrumb } from '../Navigation/PageBreadcrumb';
 import '@/layouts/Navigation/MobileBottomNav.css';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import { useDataSources } from '@/hooks/useDataSources';
@@ -226,9 +225,6 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner
               flexDirection: 'column',
             }}
           >
-            <React.Suspense fallback={null}>
-              <PageBreadcrumb />
-            </React.Suspense>
             {children}
           </div>
         </Content>

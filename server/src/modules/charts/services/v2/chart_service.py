@@ -40,9 +40,14 @@ import os
 import logging
 import re
 from contextlib import contextmanager
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
+import math
 
 logger = logging.getLogger(__name__)
+
+# Point-and-click formulas (A ▢ B over two aggregated fields): ratio A÷B, change (A−B)÷B,
+# difference A−B, sum A+B, product A×B. ×100 applies to ratio and change (percentages).
+COMPUTED_OPERATIONS = ("ratio", "change", "difference", "sum", "product")
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,6 +73,8 @@ _IDENTIFIER_QUOTES = {
     "sqlserver": ("[", "]"),
     "mssql": ("[", "]"),
     "tsql": ("[", "]"),
+    "bigquery": ("`", "`"),
+    "databricks": ("`", "`"),
 }
 _DEFAULT_IDENTIFIER_QUOTE = ('"', '"')
 
@@ -77,6 +84,14 @@ _DEFAULT_IDENTIFIER_QUOTE = ('"', '"')
 _DEFAULT_SCHEMA_BY_DIALECT: Dict[str, Optional[str]] = {
     "mysql": None,
     "mariadb": None,
+    # Warehouses: the connection already names the schema / dataset / catalog, and a guessed
+    # "public" is wrong there (Snowflake even treats a quoted "public" as a different name).
+    "snowflake": None,
+    "bigquery": None,
+    "databricks": None,
+    "oracle": None,
+    "trino": None,
+    "athena": None,
 }
 _DEFAULT_SCHEMA = "public"
 
@@ -108,6 +123,55 @@ def _resolve_chart_dialect(data_source: Any) -> str:
                 return candidate
     return db_type or source_type or "postgres"
 
+
+
+# Filters a SQL-bound chart couldn't apply (its SQL doesn't output that column), collected per
+# execution so the dashboard can say which filter a chart ignores instead of failing silently.
+_UNAPPLIED_FILTERS: "contextvars.ContextVar[Optional[List[str]]]" = contextvars.ContextVar(
+    "aicser_unapplied_filters", default=None
+)
+
+
+def track_unapplied_filters() -> List[str]:
+    """Start collecting, in the current task, the filter fields SQL-bound charts skip."""
+    fields: List[str] = []
+    _UNAPPLIED_FILTERS.set(fields)
+    return fields
+
+_AGGREGATE_WORDS = {"count", "sum", "avg", "mean", "min", "max", "none", "distinct_count", "count_distinct"}
+
+
+def has_structured_mapping(chart_type: Optional[str], chart_query: Optional[Dict[str, Any]]) -> bool:
+    """Whether a chart maps real fields (so it can run as a structured query and take dashboard
+    filters). The editor stamps defaults like aggregate="count" / yMetric="count" on every query;
+    those alone are not a mapping, or a chart built on compiled SQL would run as a meaningless
+    structured query (one "Total" row per record) instead of its SQL. A KPI's bare count is a
+    real mapping."""
+    q = chart_query or {}
+    if not q.get("tableName"):
+        return False
+    y_metric = q.get("yMetric")
+    if (
+        q.get("x")
+        or q.get("xField")
+        or (isinstance(q.get("yMetrics"), list) and len(q["yMetrics"]) > 0)
+        or (isinstance(q.get("xMetrics"), list) and len(q["xMetrics"]) > 0)
+        or (isinstance(y_metric, str) and y_metric and y_metric.lower() not in _AGGREGATE_WORDS)
+    ):
+        return True
+    return str(chart_type or "").lower() in ("stat", "gauge", "kpi") and bool(q.get("aggregate") or y_metric)
+
+
+def runs_own_sql(chart_type: Optional[str], chart_query: Optional[Dict[str, Any]], chart_options: Any = None) -> bool:
+    """True when the chart executes its own SQL (saved query, query snapshot, compiled or template
+    SQL) rather than a structured query, so dashboard filters can't be applied to it."""
+    q = chart_query or {}
+    if q.get("query_snapshot_id") or q.get("snapshot_id") or q.get("saved_query_id"):
+        return True
+    if has_structured_mapping(chart_type, q):
+        return False
+    opts = chart_options if isinstance(chart_options, dict) else {}
+    return bool(str(q.get("compiled_semantic_sql") or "").strip() or str(opts.get("sample_sql") or "").strip())
 
 class ChartService:
     def __init__(self, db: AsyncSession):
@@ -171,6 +235,11 @@ class ChartService:
     # CRUD
     # =========================================================
     async def create(self, data: dict, commit: bool = True) -> Chart:
+        from src.modules.data.services.project_scope import dashboard_project, ensure_source_in_project
+
+        # Data stays in its project: every creator (studio, library, AI build, remix) goes through here.
+        project = data.get("project_id") or await dashboard_project(self.db, data.get("dashboard_id"))
+        await ensure_source_in_project(self.db, data.get("data_source_id"), project)
         chart = Chart(**data)
         self.db.add(chart)
         await self.db.flush()
@@ -178,6 +247,26 @@ class ChartService:
         if commit:
             await self.db.commit()
         return chart
+
+    async def chart_project(self, chart: Chart) -> Optional[str]:
+        """The project a chart belongs to: its own, else its dashboard's (a linked chart's first placement)."""
+        from src.modules.data.services.project_scope import dashboard_project
+
+        if getattr(chart, "project_id", None):
+            return str(chart.project_id)
+        dash = await dashboard_project(self.db, getattr(chart, "dashboard_id", None))
+        if dash or getattr(chart, "id", None) is None:
+            return dash
+        row = (
+            await self.db.execute(
+                text(
+                    "SELECT d.project_id FROM dashboard_charts dc JOIN dashboards d ON d.id = dc.dashboard_id "
+                    "WHERE dc.chart_id = :cid AND d.project_id IS NOT NULL LIMIT 1"
+                ),
+                {"cid": str(chart.id)},
+            )
+        ).first()
+        return str(row[0]) if row else None
 
     async def get(self, chart_id: uuid.UUID) -> Optional[Chart]:
         if not isinstance(chart_id, uuid.UUID):
@@ -192,6 +281,14 @@ class ChartService:
         return res.scalars().all()
 
     async def update(self, chart: Chart, data: dict) -> Chart:
+        if any(k in data for k in ("data_source_id", "project_id", "dashboard_id")):
+            from src.modules.data.services.project_scope import ensure_source_in_project
+
+            await ensure_source_in_project(
+                self.db,
+                data.get("data_source_id") or getattr(chart, "data_source_id", None),
+                data.get("project_id") or await self.chart_project(chart),
+            )
         for key, value in data.items():
             if not hasattr(chart, key):
                 continue
@@ -1208,6 +1305,15 @@ class ChartService:
         if chart.chart_type == 'text':
             return {"x": [], "y": [], "series": []}
 
+        # A chart never reads another project's data, whatever saved it (older rows included).
+        from src.modules.data.services.project_scope import ensure_source_in_project
+
+        await ensure_source_in_project(
+            self.db,
+            getattr(chart, "data_source_id", None),
+            getattr(identity, "project_id", None) or getattr(chart, "project_id", None),
+        )
+
         from src.modules.data.services.semantic_context_service import resolve_semantic_chart_query
 
         if chart.chart_query:
@@ -1215,13 +1321,7 @@ class ChartService:
 
         chart_query = chart.chart_query or {}
         compiled_sql = chart_query.get("compiled_semantic_sql")
-        has_structured = bool(chart_query.get("tableName")) and bool(
-            chart_query.get("x")
-            or chart_query.get("xField")
-            or chart_query.get("yMetrics")
-            or chart_query.get("yMetric")
-            or chart_query.get("aggregate")
-        )
+        has_structured = has_structured_mapping(chart.chart_type, chart_query)
         # Prefer structured x/yMetrics so dashboard runtime filters bind. Frozen
         # SQL only projects aliases (x/y) and silently drops date/dimension filters.
         if compiled_sql and isinstance(compiled_sql, str) and compiled_sql.strip() and not has_structured:
@@ -1318,6 +1418,7 @@ class ChartService:
             
         sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
         sort_order = chart_query.get("sortOrder", "desc")  # Default to desc
+        sort_by, sort_order = self._time_axis_sort(chart, chart_query, sort_by, sort_order)
         group_sort_by = chart_query.get("groupSortBy", "field")  # field or order
         group_order = chart_query.get("groupOrder", "desc")  # Default to desc
         limit = chart_query.get("limit")
@@ -1342,6 +1443,56 @@ class ChartService:
         # -------------------------
         # 3. Handle Scatter Chart
         # -------------------------
+        # -------------------------
+        # 3a. Map with points (latitude / longitude columns)
+        # -------------------------
+        if chart.chart_type == 'geo' and chart_query.get("latitude") and chart_query.get("longitude"):
+            lat_field, lon_field = chart_query.get("latitude"), chart_query.get("longitude")
+            name_field = chart_query.get("x") or None
+            metrics = chart_query.get("yMetrics") or []
+            metric = metrics[0] if metrics and metrics[0].get("field") else {"field": lat_field, "aggregation": "count"}
+            for f in [lat_field, lon_field, name_field, metric.get("field")]:
+                if f and not self._is_valid_field_name(f):
+                    raise ValueError(f"Invalid field name: {f}")
+            stmt = select(DataSource).where(DataSource.id == chart.data_source_id)
+            data_source = (await self.db.execute(stmt)).scalar_one_or_none()
+            if not data_source:
+                raise ValueError("Data source not found")
+            if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
+                return self._sample_template_fallback_result(chart)
+            self._bind_sql_dialect(data_source)
+            await self._ensure_data_source_schema(data_source)
+            return await self._execute_geo_points_db(
+                data_source, name_field, lat_field, lon_field, metric,
+                filters=filters, metric_filters=metric_filters, limit=limit,
+                identity=identity, chart_query=chart_query,
+            )
+
+        # -------------------------
+        # 3b. Histogram: how the values of one number column are spread
+        # -------------------------
+        if chart.chart_type == 'histogram':
+            # The chart's number field; a bare x column for charts built before it existed.
+            value_field = next(
+                (m.get("field") for m in (chart_query.get("yMetrics") or []) if m.get("field")), None
+            ) or chart_query.get("x")
+            if not value_field:
+                return {"x": [], "y": [], "series": [], "bins": []}
+            if not self._is_valid_field_name(value_field):
+                raise ValueError(f"Invalid field name: {value_field}")
+            stmt = select(DataSource).where(DataSource.id == chart.data_source_id)
+            data_source = (await self.db.execute(stmt)).scalar_one_or_none()
+            if not data_source:
+                raise ValueError("Data source not found")
+            if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():
+                return self._sample_template_fallback_result(chart)
+            self._bind_sql_dialect(data_source)
+            await self._ensure_data_source_schema(data_source)
+            return await self._execute_histogram_db(
+                data_source, value_field, chart_query.get("bins"),
+                filters=filters, identity=identity, chart_query=chart_query,
+            )
+
         if chart.chart_type == 'scatter':
             x_metrics = chart_query.get("xMetrics") or []
             y_metrics = chart_query.get("yMetrics") or []
@@ -1377,7 +1528,7 @@ class ChartService:
             await self._ensure_data_source_schema(data_source)
 
             if data_source.type == "file":
-                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity, chart_query=chart_query)
             else:
                 # RELIABILITY: this used to swallow ANY execution exception
                 # for a sample_duckdb source into fabricated placeholder
@@ -1394,7 +1545,7 @@ class ChartService:
                 # use case; any exception past that point is a genuine
                 # failure and must surface as one, same as every other data
                 # source type.
-                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity)
+                return await self._execute_scatter_db(data_source, x_metrics, y_metrics, legend_field, filters=filters, metric_filters=metric_filters, limit=limit, series_limit=series_limit, identity=identity, chart_query=chart_query)
 
         # -------------------------
         # 4. Execute Standard Charts
@@ -1593,7 +1744,175 @@ class ChartService:
     # =========================================================
     # SCATTER EXECUTION
     # =========================================================
-    async def _execute_scatter_db(self, data_source: DataSource, x_metrics: List[Dict], y_metrics: List[Dict], legend_field: Optional[str] = None, filters: List[Dict] = [], metric_filters: List[Dict] = [], limit: int = 5000, series_limit: Optional[int] = None, identity: QueryAccess = None) -> Dict[str, Any]:
+    async def _execute_geo_points_db(
+        self,
+        data_source: DataSource,
+        name_field: Optional[str],
+        lat_field: str,
+        lon_field: str,
+        metric: Dict[str, Any],
+        filters: List[Dict] = [],
+        metric_filters: List[Dict] = [],
+        limit: int = 5000,
+        identity: QueryAccess = None,
+        chart_query: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Points for a map: one per place (its average position and the chosen number), or one
+        per coordinate when there is no place name."""
+        self._bind_sql_dialect(data_source)
+        lat_sql, lon_sql = self._quote_identifier(lat_field), self._quote_identifier(lon_field)
+        agg = (metric.get("aggregation") or "sum").lower()
+        value_sql = (
+            self._quote_identifier(metric["field"])
+            if agg == "none"
+            else self._get_aggregate_func(agg, metric.get("field"))
+        )
+        if name_field:
+            name_sql = self._quote_identifier(name_field)
+            select_sql = f"{name_sql} as x, AVG({lat_sql}) as lat, AVG({lon_sql}) as lon, {value_sql} as y"
+            group_sql = f"GROUP BY {name_sql}"
+        else:
+            select_sql = f"{lat_sql} as lat, {lon_sql} as lon, {value_sql} as y"
+            group_sql = f"GROUP BY {lat_sql}, {lon_sql}"
+        schema_info = data_source.schema or {}
+        table, schema = self._resolve_table_from_chart(chart_query, schema_info)
+        if not table:
+            raise ValueError("Table name missing in data source schema")
+        table_full_name = self._quote_table_reference(self._qualified_table_ref(schema, table))
+        where_clause = self._apply_filters_db(filters)
+        null_guard = f"{lat_sql} IS NOT NULL AND {lon_sql} IS NOT NULL"
+        where_clause = f"{where_clause} AND {null_guard}" if where_clause.strip() else f"WHERE {null_guard}"
+        having_clause = self._apply_metric_filters_db(metric_filters)
+        sql = f"SELECT {select_sql} FROM {table_full_name} {where_clause} {group_sql} {having_clause} LIMIT {int(limit or 5000)}"
+        sql = self._quote_known_table_refs_in_sql(sql, schema_info)
+        ds_dict = {
+            "id": data_source.id,
+            "type": data_source.type,
+            "db_type": data_source.db_type,
+            "format": data_source.format,
+            "schema": schema_info,
+            "connection_config": data_source.connection_config,
+            "project_id": str(data_source.project_id),
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
+        }
+        exec_res = await get_multi_engine_query_service().execute_query(sql, ds_dict, identity=identity)
+        if not exec_res.get("success"):
+            raise Exception(f"Query execution failed: {exec_res.get('error')}")
+        points, names, values = [], [], []
+        for row in exec_res.get("data", []):
+            try:
+                lat, lon = float(row.get("lat")), float(row.get("lon"))
+                val = float(row.get("y")) if row.get("y") is not None else None
+            except (TypeError, ValueError):
+                continue
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                continue
+            name = str(row.get("x")) if row.get("x") is not None else f"{lat:.4f}, {lon:.4f}"
+            points.append([lon, lat, val, name])
+            names.append(name)
+            values.append(val)
+        label = metric.get("field") if agg == "none" else f"{agg.capitalize()} of {metric.get('field')}"
+        return {"x": names, "y": values, "series": [{"name": label, "data": values}], "points": points}
+
+    @staticmethod
+    def histogram_bins(lo: float, hi: float, n: int, requested: Any = None) -> Tuple[float, float, int]:
+        """(start, width, count) for a histogram: the nearest "nice" bin width (1, 2, 2.5 or 5 × 10ⁿ) so
+        edges read as round numbers; Sturges' rule for the count unless the author set one."""
+        try:
+            k = int(requested) if requested not in (None, "", "auto") else 0
+        except (TypeError, ValueError):
+            k = 0
+        if k <= 0:
+            k = int(math.ceil(math.log2(max(n, 1)))) + 1
+        k = max(2, min(k, 100))
+        span = hi - lo
+        if span <= 0:
+            width = 1.0 if lo == 0 else 10 ** math.floor(math.log10(abs(lo)))
+            return lo - width / 2, width, 1
+        raw = span / k
+        mag = 10 ** math.floor(math.log10(raw))
+        width = min((m * mag for m in (1, 2, 2.5, 5, 10)), key=lambda w: abs(math.log(w / raw)))
+        start = math.floor(lo / width) * width
+        count = max(1, int(math.ceil((hi - start) / width - 1e-9)))
+        if start + count * width <= hi:  # the maximum sits on the last edge
+            count += 1
+        return start, width, count
+
+    async def _execute_histogram_db(
+        self,
+        data_source: DataSource,
+        field: str,
+        bins: Any = None,
+        filters: List[Dict] = [],
+        identity: QueryAccess = None,
+        chart_query: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Counts of rows per value range, computed in the database over every row (not a sample),
+        so it is right on tables of any size. Empty ranges are kept: gaps are part of the shape."""
+        self._bind_sql_dialect(data_source)
+        col = self._quote_identifier(field)
+        schema_info = data_source.schema or {}
+        table, schema = self._resolve_table_from_chart(chart_query, schema_info)
+        if not table:
+            raise ValueError("Table name missing in data source schema")
+        table_full_name = self._quote_table_reference(self._qualified_table_ref(schema, table))
+        where_clause = self._apply_filters_db(filters)
+        guard = f"{col} IS NOT NULL"
+        where_clause = f"{where_clause} AND {guard}" if where_clause.strip() else f"WHERE {guard}"
+        ds_dict = {
+            "id": data_source.id,
+            "type": data_source.type,
+            "db_type": data_source.db_type,
+            "format": data_source.format,
+            "schema": schema_info,
+            "connection_config": data_source.connection_config,
+            "project_id": str(data_source.project_id),
+            "user_id": str(data_source.user_id) if data_source.user_id else None,
+            "file_path": data_source.file_path,
+        }
+        multi = get_multi_engine_query_service()
+
+        async def run(sql: str) -> List[Dict[str, Any]]:
+            res = await multi.execute_query(
+                self._quote_known_table_refs_in_sql(sql, schema_info), ds_dict, identity=identity
+            )
+            if not res.get("success"):
+                raise Exception(f"Query execution failed: {res.get('error')}")
+            return res.get("data", []) or []
+
+        stats = await run(f"SELECT MIN({col}) AS lo, MAX({col}) AS hi, COUNT({col}) AS n FROM {table_full_name} {where_clause}")
+        row = stats[0] if stats else {}
+        try:
+            lo, hi, n = float(row.get("lo")), float(row.get("hi")), int(row.get("n") or 0)
+        except (TypeError, ValueError):
+            return {"x": [], "y": [], "series": [{"name": "Count", "data": []}], "bins": []}
+        if n == 0:
+            return {"x": [], "y": [], "series": [{"name": "Count", "data": []}], "bins": []}
+        start, width, count = self.histogram_bins(lo, hi, n, bins)
+        bucket = f"FLOOR(({col} - {start!r}) / {width!r})"
+        rows = await run(
+            f"SELECT {bucket} AS b, COUNT(*) AS n FROM {table_full_name} {where_clause} GROUP BY {bucket}"
+        )
+        counts = [0] * count
+        for r in rows:
+            try:
+                i = int(float(r.get("b")))
+            except (TypeError, ValueError):
+                continue
+            counts[max(0, min(count - 1, i))] += int(r.get("n") or 0)
+        edges = [[start + i * width, start + (i + 1) * width] for i in range(count)]
+        return {
+            "x": [e[0] for e in edges],
+            "y": counts,
+            "series": [{"name": "Count", "data": counts}],
+            "bins": edges,
+            "binWidth": width,
+            "field": field,
+            "total": n,
+        }
+
+    async def _execute_scatter_db(self, data_source: DataSource, x_metrics: List[Dict], y_metrics: List[Dict], legend_field: Optional[str] = None, filters: List[Dict] = [], metric_filters: List[Dict] = [], limit: int = 5000, series_limit: Optional[int] = None, identity: QueryAccess = None, chart_query: Optional[Dict] = None) -> Dict[str, Any]:
         if not x_metrics or not y_metrics: return {"series": []}
 
         self._bind_sql_dialect(data_source)
@@ -1602,11 +1921,24 @@ class ChartService:
         x_agg, y_agg = xm.get("aggregation", "none"), ym.get("aggregation", "none")
         if not x_field or not y_field: return {"series": []}
 
+        # "Dot for each": one dot per value of this column (Power BI Values, Tableau Detail). Its
+        # dots need numbers per value, so un-aggregated axes are summed.
+        detail_field = (chart_query or {}).get("detail") or None
+        if detail_field and not self._is_valid_field_name(detail_field):
+            raise ValueError(f"Invalid field name: {detail_field}")
+        if detail_field:
+            x_agg = x_agg if x_agg != 'none' else 'sum'
+            y_agg = y_agg if y_agg != 'none' else 'sum'
+
         # Determine grouping and aggregation requirements
         is_x_agg, is_y_agg = x_agg != 'none', y_agg != 'none'
         is_fully_raw = not is_x_agg and not is_y_agg
         
         select_fields, group_by = [], []
+        if detail_field:
+            detail_sql = self._quote_identifier(detail_field)
+            select_fields.append(f"{detail_sql} as name")
+            group_by.append(detail_sql)
         if legend_field:
             legend_sql = self._quote_identifier(legend_field)
             select_fields.append(f"{legend_sql} as legend")
@@ -1632,7 +1964,9 @@ class ChartService:
                 group_by.append(y_sql)
 
         schema_info = data_source.schema or {}
-        table, schema = self._resolve_table_and_schema(schema_info)
+        # The chart's own table, like every other chart type. The schema's first table was used
+        # before, so a scatter on a multi-table source queried the wrong table and failed.
+        table, schema = self._resolve_table_from_chart(chart_query, schema_info)
         
         if not table:
             raise ValueError("Table name missing in data source schema")
@@ -1642,7 +1976,7 @@ class ChartService:
         )
         where_clause = self._apply_filters_db(filters)
         having_clause = self._apply_metric_filters_db(metric_filters)
-        group_by_clause = f"GROUP BY {', '.join(set(group_by))}" if group_by else ""
+        group_by_clause = f"GROUP BY {', '.join(dict.fromkeys(group_by))}" if group_by else ""
         sql = f"SELECT {', '.join(select_fields)} FROM {table_full_name} {where_clause} {group_by_clause} {having_clause} LIMIT {limit}"
         
         # USE MultiEngineQueryService for external databases
@@ -1684,7 +2018,10 @@ class ChartService:
         data = []
         for row in rows:
             # MultiEngineQueryService returns list of DICTs
-            data.append([row.get("x"), row.get("y"), row.get("legend")])
+            point = [row.get("x"), row.get("y"), row.get("legend")]
+            if detail_field:
+                point.append(row.get("name"))
+            data.append(point)
 
         y_label = f"{y_agg.capitalize()} of {y_field}" if is_y_agg else y_field
         return {
@@ -1882,10 +2219,15 @@ class ChartService:
             raise ValueError("Data source not found")
 
         filters = chart_query.get("filters") or []
+        # Same rule as the raw path: a filter on a column the saved SQL doesn't output can't be
+        # applied to the subquery (it would fail the whole widget); skip it and report it.
+        if isinstance(filters, list):
+            filters = self._filters_projected_by_saved_sql(filters, sql)
         metric_filters = chart_query.get("metricFilters") or []
         group_field = chart_query.get("groupField")
         sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
         sort_order = self._normalize_sort_order(chart_query.get("sortOrder"))
+        sort_by, sort_order = self._time_axis_sort(chart, chart_query, sort_by, sort_order)
         # Default cap for the re-aggregated result. When the chart wasn't given an
         # explicit limit, prefer whatever LIMIT the saved SQL itself specified over
         # the hardcoded fallback — otherwise a chart pinned from a "top 20" chat
@@ -2849,6 +3191,9 @@ class ChartService:
                     field,
                     sorted(projected),
                 )
+                skipped = _UNAPPLIED_FILTERS.get()
+                if skipped is not None and field not in skipped:
+                    skipped.append(field)
         return cleaned
     
     def _build_order_clause(self, sort_by: str, sort_order: str, x_field: Optional[str], has_y_metrics: bool = False) -> str:
@@ -2932,9 +3277,20 @@ class ChartService:
             normalized["series"] = series
         if result.get("x") is not None:
             normalized["x"] = result.get("x")
-        if len(nums) >= 2:
+        # Only a series over time has a "latest period": rows by category (provinces, products)
+        # have no order to compare, and "−46.8% vs the period before" for the last province
+        # against the one before it was nonsense.
+        xs = [v for v in (result.get("x") or []) if v is not None]
+        date_like = re.compile(r"^\d{4}-\d{2}(-\d{2})?([T ].*)?$")
+        over_time = bool(cq.get("xGrain")) or (
+            bool(xs) and all(hasattr(v, "year") or date_like.match(str(v)) for v in xs[:12])
+        )
+        if len(nums) >= 2 and over_time:
+            # Like-for-like change: the latest bucket vs the one before. The headline may be the
+            # whole-window total (sum/count), and comparing that total to one prior bucket showed
+            # "+1100% vs prior period" for 120 loans against last month's 10.
             normalized["comparisonValue"] = nums[-2]
-            normalized["comparisonLabel"] = "prior period"
+            normalized["currentPeriodValue"] = nums[-1]
             normalized["sparklineValues"] = nums
         return normalized
 
@@ -2945,7 +3301,9 @@ class ChartService:
         field = ym.get("field")
         agg = (ym.get("aggregation") or "count").lower()
         # Prefer clean field labels in tables ("Amount") over "Sum of amount"
-        pretty_field = str(field or "").replace("_", " ").strip()
+        # Table prefix is plumbing ("loans.outstanding_principal" read as "Loans.outstanding
+        # Principal" in the legend); the column is the label.
+        pretty_field = str(field or "").split(".")[-1].replace("_", " ").strip()
         if pretty_field:
             pretty_field = " ".join(w.capitalize() for w in pretty_field.split())
         if agg in ("none", ""):
@@ -2968,6 +3326,23 @@ class ChartService:
             "distinct_count": "Distinct Count",
         }.get(agg, agg.capitalize())
         return f"{pretty} of {pretty_field}" if pretty_field else pretty
+
+    _TIME_CHART_TYPES = {"line", "area", "stacked-area", "stacked_area", "step"}
+
+    def _time_axis_sort(self, chart: Any, chart_query: Dict[str, Any], sort_by: str, sort_order: str):
+        """Time runs left to right unless someone chose otherwise.
+
+        A trend (line/area chart, or any chart bucketed by a date grain) with no sort, or sorted
+        by x without a direction, used to come back in GROUP BY order or newest-first, so
+        axes read "Jan, Apr, Jul, Oct, Sep, Jun" or ran backwards. An explicit sortOrder, or
+        sorting by the value (sortBy=y), is still respected.
+        """
+        is_time_axis = bool(chart_query.get("xGrain")) or str(getattr(chart, "chart_type", "") or "") in self._TIME_CHART_TYPES
+        if not is_time_axis or chart_query.get("sortOrder"):
+            return sort_by, sort_order
+        if sort_by in ("record_order", "x"):
+            return "x", "asc"
+        return sort_by, sort_order
 
     def _normalize_sort_order(self, sort_order: Optional[str]) -> str:
         if not sort_order: return "desc"
@@ -3141,7 +3516,18 @@ class ChartService:
         side_filters = side.get("filter") or []
         where = self._apply_filters_db(side_filters if isinstance(side_filters, list) else [])
         if where:
-            return f"{agg_sql} FILTER ({where})"
+            # AGG(CASE WHEN cond THEN col END): the portable form of a filtered aggregate —
+            # FILTER (WHERE …) only exists in PostgreSQL / DuckDB / SQLite.
+            cond = where.strip()
+            if cond.upper().startswith("WHERE "):
+                cond = cond[6:]
+            col = self._quote_identifier(field)
+            case = f"CASE WHEN {cond} THEN {col} END"
+            agg_l = str(agg or "sum").strip().lower()
+            if agg_l in ("distinct_count", "count_distinct"):
+                return f"COUNT(DISTINCT {case})"
+            fn = {"sum": "SUM", "avg": "AVG", "min": "MIN", "max": "MAX", "count": "COUNT"}.get(agg_l, "SUM")
+            return f"{fn}({case})"
         return agg_sql
 
     def _build_metric_sql(self, ym: Dict[str, Any]) -> Optional[str]:
@@ -3152,7 +3538,7 @@ class ChartService:
             return None
         computed = ym.get("computed")
         if computed:
-            if not isinstance(computed, dict) or computed.get("type") != "ratio":
+            if not isinstance(computed, dict) or computed.get("type") not in COMPUTED_OPERATIONS:
                 return None
             num = self._build_metric_side_sql(computed.get("numerator") or {})
             den = self._build_metric_side_sql(computed.get("denominator") or {})
@@ -3161,8 +3547,20 @@ class ChartService:
             mult = computed.get("multiplier", 1)
             if mult not in (1, 100):
                 mult = 1
-            expr = f"{num} / NULLIF({den}, 0)"
-            return f"{expr} * {mult}" if mult != 1 else expr
+            op = computed["type"]
+            # × 1.0: integer ÷ integer truncates on several engines, and it is the one way to
+            # force decimal division that every dialect accepts (BigQuery has no FLOAT type).
+            if op == "ratio":
+                expr = f"{num} * 1.0 / NULLIF({den}, 0)"
+            elif op == "change":
+                expr = f"(({num}) - ({den})) * 1.0 / NULLIF({den}, 0)"
+            elif op == "difference":
+                expr = f"({num}) - ({den})"
+            elif op == "sum":
+                expr = f"({num}) + ({den})"
+            else:  # product
+                expr = f"({num}) * ({den})"
+            return f"{expr} * {mult}" if mult != 1 and op in ("ratio", "change") else expr
         return self._get_aggregate_func(ym.get("aggregation", "count"), ym.get("field"))
 
     def _compute_metric_pandas(self, df, ym: Dict[str, Any], group_by: List[str]):
@@ -3201,7 +3599,17 @@ class ChartService:
 
         num = _side(computed.get("numerator") or {})
         den = _side(computed.get("denominator") or {})
-        ratio = (num / den.replace(0, pd.NA)).fillna(0) * mult
+        op = computed.get("type", "ratio")
+        if op == "difference":
+            ratio = num - den
+        elif op == "sum":
+            ratio = num + den
+        elif op == "product":
+            ratio = num * den
+        elif op == "change":
+            ratio = ((num - den) / den.replace(0, pd.NA)).fillna(0) * mult
+        else:
+            ratio = (num / den.replace(0, pd.NA)).fillna(0) * mult
 
         if group_by:
             out = ratio.reset_index()

@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { EChartsOption } from 'echarts';
 import type { FeedAssetPreview, FeedItem, FeedPreviewType } from '@/services/socialFeedService';
 import { chartService } from '../../dashboards/services/chartService';
+import { DashboardPaletteProvider } from '@/app/(dashboard)/dashboards/widgets/DashboardPaletteContext';
 import { WidgetPreview } from '../../dashboards/widgets/WidgetPreview';
 import {
   CHART_COLORS,
@@ -268,6 +269,8 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
   // this fetch genuinely failed, so unlike the general empty state, Retry makes sense.
   const [fetchFailed, setFetchFailed] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  // The chart's own dashboard palette (live post), never the one open in the studio.
+  const [dashboardPalette, setDashboardPalette] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const dashboardId = item.asset.dashboardId;
@@ -283,10 +286,13 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
     Promise.all([
       chartService.getChart(dashboardId, chartId),
       chartService.executeChart(dashboardId, chartId).catch(() => null),
+      chartService.getDashboard(dashboardId).catch(() => null),
     ])
-      .then(([chart, execution]) => {
+      .then(([chart, execution, dashboard]) => {
         if (cancelled) return;
         const chartOptions = { ...(chart.chartOptions || {}) };
+        const palette = (dashboard?.config as Record<string, unknown> | undefined)?.default_color_palette;
+        setDashboardPalette(typeof palette === 'string' ? palette : undefined);
         setWidget({
           id: `feed-chart-${item.id}`,
           title: feedItemDisplayTitle({ title: chart.title || item.title, asset: item.asset }) || '',
@@ -335,7 +341,9 @@ const ChartLivePreview: React.FC<{ item: FeedItem }> = ({ item }) => {
 
   return (
     <div className="w-full h-full min-h-[200px]">
-      <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
+      <DashboardPaletteProvider palette={dashboardPalette}>
+        <WidgetPreview widget={widget} readOnly minHeight={INSIGHT_CHART_MIN_HEIGHT} />
+      </DashboardPaletteProvider>
     </div>
   );
 };

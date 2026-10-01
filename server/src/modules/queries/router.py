@@ -254,7 +254,7 @@ async def list_saved_queries(
         res = await db.execute(
             text(
                 """
-                SELECT id, name, sql, metadata, created_at, collection_id FROM saved_queries
+                SELECT id, name, sql, metadata, created_at, folder_id FROM saved_queries
                 WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
                   AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
                   AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
@@ -270,7 +270,7 @@ async def list_saved_queries(
                 "sql": r[2],
                 "metadata": r[3],
                 "created_at": r[4],
-                "collectionId": r[5],
+                "collectionId": str(r[5]) if r[5] else None,
             }
             for r in res.fetchall()
         ]
@@ -279,7 +279,7 @@ async def list_saved_queries(
         if _is_missing_table_error(e):
             logger.debug("saved_queries table missing (run migration 20260310_query_tabs): %s", e)
             return {"success": True, "items": []}
-        if _is_missing_column_error(e, "collection_id"):
+        if _is_missing_column_error(e, "folder_id"):
             await db.rollback()
             res = await db.execute(
                 text(
@@ -308,6 +308,57 @@ async def list_saved_queries(
         raise
 
 
+# Saved-query folders are the project's folder tree (src/modules/folders), shared with every
+# other asset type; these endpoints keep the SQL editor's request and response shapes.
+
+
+def _folder_uuid(v: Any):
+    import uuid as _u
+
+    try:
+        return _u.UUID(str(v)) if v else None
+    except ValueError:
+        return None
+
+
+def _folder_scope(user_id: str, project_id: Optional[str]):
+    from sqlalchemy import and_
+
+    from src.modules.folders.models import AssetFolder
+
+    proj = _folder_uuid(project_id)
+    if proj:
+        return AssetFolder.project_id == proj
+    return and_(AssetFolder.project_id.is_(None), AssetFolder.user_id == _folder_uuid(user_id))
+
+
+async def _folder_in_scope(db: AsyncSession, folder_id: Any, user_id: str, project_id: Optional[str]):
+    from sqlalchemy import select
+
+    from src.modules.folders.models import AssetFolder
+
+    fid = _folder_uuid(folder_id)
+    if not fid:
+        return None
+    return (await db.execute(select(AssetFolder).where(AssetFolder.id == fid, _folder_scope(user_id, project_id)))).scalar_one_or_none()
+
+
+async def _folder_name_taken(db: AsyncSession, name: str, user_id: str, project_id: Optional[str], exclude=None) -> bool:
+    from sqlalchemy import func, select
+
+    from src.modules.folders.models import AssetFolder
+
+    conds = [_folder_scope(user_id, project_id), AssetFolder.parent_id.is_(None), func.lower(AssetFolder.name) == name.lower()]
+    if exclude is not None:
+        conds.append(AssetFolder.id != exclude)
+    return (await db.execute(select(AssetFolder.id).where(*conds).limit(1))).first() is not None
+
+
+def _query_user(current_user: Dict[str, Any]) -> str:
+    payload = _resolve_user_payload(current_user)
+    return str(payload.get("id") or payload.get("sub") or payload.get("email") or "guest")
+
+
 @router.get("/collections")
 async def list_query_collections(
     organization_id: Optional[str] = None,
@@ -315,30 +366,20 @@ async def list_query_collections(
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
-    await ensure_tables(db)
+    from sqlalchemy import select
+
+    from src.modules.folders.models import AssetFolder
+
     await _guard_query(current_user, "query:execute", organization_id=organization_id, project_id=project_id)
-    user_payload = _resolve_user_payload(current_user)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
-    try:
-        res = await db.execute(
-            text(
-                """
-                SELECT id, name, sort_order, created_at
-                FROM query_collections
-                WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-                  AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-                  AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-                ORDER BY sort_order ASC, lower(name) ASC
-                """
-            ),
-            {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
-        )
-        items = [{"id": r[0], "name": r[1], "sortOrder": r[2], "createdAt": r[3]} for r in res.fetchall()]
-        return {"success": True, "collections": items}
-    except ProgrammingError as e:
-        if _is_missing_table_error(e):
-            return {"success": True, "collections": []}
-        raise
+    rows = (await db.execute(
+        select(AssetFolder).where(_folder_scope(_query_user(current_user), project_id))
+        .order_by(AssetFolder.sort_order.asc(), AssetFolder.name.asc())
+    )).scalars().all()
+    return {"success": True, "collections": [
+        {"id": str(f.id), "name": f.name, "sortOrder": f.sort_order or 0, "createdAt": f.created_at,
+         "parentId": str(f.parent_id) if f.parent_id else None}
+        for f in rows
+    ]}
 
 
 @router.post("/collections", status_code=201)
@@ -349,155 +390,59 @@ async def create_query_collection(
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
-    await ensure_tables(db)
+    from src.modules.folders.models import AssetFolder
+
     await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
-    user_payload = _resolve_user_payload(current_user)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
-    name = str(payload.get("name") or "").strip() or "Untitled"
-    try:
-        dup = await db.execute(
-            text(
-                """
-                SELECT id FROM query_collections
-                WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-                  AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-                  AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-                  AND lower(trim(name)) = lower(trim(:name))
-                LIMIT 1
-                """
-            ),
-            {"user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or "", "name": name},
-        )
-        if dup.fetchone():
-            raise HTTPException(
-                status_code=409,
-                detail=error_body("collection_name_conflict", f'A collection named "{name}" already exists'),
-            )
-        result = await db.execute(
-            text(
-                """
-                INSERT INTO query_collections (name, user_id, organization_id, project_id, sort_order, created_at, updated_at)
-                VALUES (:name, :user_id, NULLIF(:org_id, ''), NULLIF(:proj_id, ''), 0, NOW(), NOW())
-                RETURNING id, name
-                """
-            ),
-            {"name": name, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
-        )
-        row = result.fetchone()
-        await db.commit()
-        return {"id": row[0], "name": row[1]}
-    except HTTPException:
-        raise
-    except ProgrammingError as e:
-        if _is_missing_table_error(e):
-            raise HTTPException(
-                status_code=503,
-                detail=error_body("collections_unavailable", "Query collections not available. Run migrations."),
-            )
-        raise
+    user_id = _query_user(current_user)
+    name = " ".join(str(payload.get("name") or "").split()) or "Untitled"
+    if await _folder_name_taken(db, name, user_id, project_id):
+        raise HTTPException(status_code=409, detail=error_body("collection_name_conflict", f'A folder named "{name}" already exists'))
+    f = AssetFolder(name=name, project_id=_folder_uuid(project_id), organization_id=_folder_uuid(organization_id),
+                    user_id=_folder_uuid(user_id))
+    db.add(f)
+    await db.commit()
+    await db.refresh(f)
+    return {"id": str(f.id), "name": f.name}
 
 
 @router.put("/collections/{collection_id}")
 async def rename_query_collection(
-    collection_id: int,
+    collection_id: str,
     payload: Dict[str, Any],
     organization_id: Optional[str] = None,
     project_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
-    await ensure_tables(db)
     await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
-    user_payload = _resolve_user_payload(current_user)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
-    name = str(payload.get("name") or "").strip()
+    user_id = _query_user(current_user)
+    name = " ".join(str(payload.get("name") or "").split())
     if not name:
-        raise HTTPException(
-            status_code=400,
-            detail=error_body("missing_name", "name required"),
-        )
-    owned = await db.execute(
-        text(
-            """
-            SELECT id FROM query_collections
-            WHERE id = :id AND CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-            """
-        ),
-        {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
-    )
-    if not owned.fetchone():
-        raise HTTPException(
-            status_code=404,
-            detail=error_body("collection_not_found", "Collection not found"),
-        )
-    dup = await db.execute(
-        text(
-            """
-            SELECT id FROM query_collections
-            WHERE CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-              AND lower(trim(name)) = lower(trim(:name))
-              AND id <> :id
-            LIMIT 1
-            """
-        ),
-        {
-            "user_id": user_id,
-            "org_id": organization_id or "",
-            "proj_id": project_id or "",
-            "name": name,
-            "id": collection_id,
-        },
-    )
-    if dup.fetchone():
-        raise HTTPException(
-            status_code=409,
-            detail=error_body("collection_name_conflict", f'A collection named "{name}" already exists'),
-        )
-    await db.execute(
-        text("UPDATE query_collections SET name = :name, updated_at = NOW() WHERE id = :id"),
-        {"name": name, "id": collection_id},
-    )
+        raise HTTPException(status_code=400, detail=error_body("missing_name", "name required"))
+    f = await _folder_in_scope(db, collection_id, user_id, project_id)
+    if not f:
+        raise HTTPException(status_code=404, detail=error_body("collection_not_found", "Folder not found"))
+    if await _folder_name_taken(db, name, user_id, project_id, exclude=f.id):
+        raise HTTPException(status_code=409, detail=error_body("collection_name_conflict", f'A folder named "{name}" already exists'))
+    f.name = name
     await db.commit()
-    return {"id": collection_id, "name": name}
+    return {"id": str(f.id), "name": name}
 
 
 @router.delete("/collections/{collection_id}", status_code=204)
 async def delete_query_collection(
-    collection_id: int,
+    collection_id: str,
     organization_id: Optional[str] = None,
     project_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
-    await ensure_tables(db)
+    """Delete a folder; everything in it (of any asset type) becomes unfiled."""
     await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
-    user_payload = _resolve_user_payload(current_user)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
-    owned = await db.execute(
-        text(
-            """
-            SELECT id FROM query_collections
-            WHERE id = :id AND CAST(user_id AS TEXT) = CAST(:user_id AS TEXT)
-              AND COALESCE(CAST(organization_id AS TEXT), '') = COALESCE(CAST(:org_id AS TEXT), '')
-              AND COALESCE(CAST(project_id AS TEXT), '') = COALESCE(CAST(:proj_id AS TEXT), '')
-            """
-        ),
-        {"id": collection_id, "user_id": user_id, "org_id": organization_id or "", "proj_id": project_id or ""},
-    )
-    if not owned.fetchone():
-        raise HTTPException(
-            status_code=404,
-            detail=error_body("collection_not_found", "Collection not found"),
-        )
-    await db.execute(
-        text("UPDATE saved_queries SET collection_id = NULL WHERE collection_id = :id"),
-        {"id": collection_id},
-    )
-    await db.execute(text("DELETE FROM query_collections WHERE id = :id"), {"id": collection_id})
+    f = await _folder_in_scope(db, collection_id, _query_user(current_user), project_id)
+    if not f:
+        raise HTTPException(status_code=404, detail=error_body("collection_not_found", "Folder not found"))
+    await db.delete(f)
     await db.commit()
 
 
@@ -510,12 +455,14 @@ async def assign_saved_query_collection(
     current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
     db: AsyncSession = Depends(get_async_session),
 ):
-    """Assign or clear collection for a saved query (collection_id null = unfiled)."""
+    """File a saved query in one of the project's folders (collectionId null = unfiled)."""
     await ensure_tables(db)
     await _guard_query(current_user, "query:save", organization_id=organization_id, project_id=project_id)
-    user_payload = _resolve_user_payload(current_user)
-    user_id = str(user_payload.get("id") or user_payload.get("sub") or user_payload.get("email") or "guest")
-    collection_id = payload.get("collectionId", payload.get("collection_id"))
+    user_id = _query_user(current_user)
+    wanted = payload.get("collectionId", payload.get("collection_id"))
+    folder = await _folder_in_scope(db, wanted, user_id, project_id) if wanted else None
+    if wanted and not folder:
+        raise HTTPException(status_code=404, detail=error_body("collection_not_found", "Folder not found"))
     owned = await db.execute(
         text(
             """
@@ -530,11 +477,11 @@ async def assign_saved_query_collection(
     if not owned.fetchone():
         raise HTTPException(status_code=404, detail="Saved query not found")
     await db.execute(
-        text("UPDATE saved_queries SET collection_id = :cid, updated_at = NOW() WHERE id = :id"),
-        {"cid": collection_id, "id": query_id},
+        text("UPDATE saved_queries SET folder_id = CAST(:fid AS uuid), updated_at = NOW() WHERE id = :id"),
+        {"fid": str(folder.id) if folder else None, "id": query_id},
     )
     await db.commit()
-    return {"success": True, "id": query_id, "collectionId": collection_id}
+    return {"success": True, "id": query_id, "collectionId": str(folder.id) if folder else None}
 
 
 # Max stored SQL length to avoid abuse (saved-queries and snapshots)

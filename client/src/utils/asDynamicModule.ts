@@ -17,7 +17,9 @@ function isRenderableComponent(value: unknown): value is ComponentType<unknown> 
  * until we have a real component, then wrap as `{ default }` for next/dynamic.
  */
 export function asDynamicModule<TProps = unknown>(
-  exported: MaybeModule<ComponentType<TProps>>,
+  // Any shape a dynamic import can resolve to (component, { default }, nested defaults): the
+  // body unwraps it at runtime, so the type must not reject the shapes it exists to handle.
+  exported: MaybeModule<ComponentType<TProps>> | { default?: unknown } | unknown,
   Fallback?: ComponentType<TProps>,
 ): { default: ComponentType<TProps> } {
   let cur: unknown = exported;

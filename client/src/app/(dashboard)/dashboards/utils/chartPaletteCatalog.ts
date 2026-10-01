@@ -43,3 +43,27 @@ export function resolveChartPaletteId(
   if (dashboardPalette && isKnownChartPalette(dashboardPalette)) return dashboardPalette;
   return DEFAULT_CHART_PALETTE_ID;
 }
+
+/**
+ * The catalog palette a list of colours comes from (chat and ECharts configs carry their
+ * palette as plain colours), or null when they're genuinely custom. The product's default
+ * palette maps to "inherit": it was never a choice, so the chart should follow its dashboard.
+ */
+export function paletteIdForColors(colors: unknown): ChartPaletteId | typeof WIDGET_PALETTE_INHERIT | null {
+  if (!Array.isArray(colors) || colors.length === 0) return null;
+  const given = colors.slice(0, 4).map((c) => String(c).trim().toLowerCase());
+  for (const palette of CHART_PALETTE_CATALOG) {
+    const ref = palette.colors.slice(0, given.length).map((c) => c.toLowerCase());
+    if (ref.length === given.length && ref.every((c, i) => c === given[i])) {
+      return palette.id === DEFAULT_CHART_PALETTE_ID ? WIDGET_PALETTE_INHERIT : palette.id;
+    }
+  }
+  return null;
+}
+
+/** A saved "custom" palette that is really a catalog palette (older chat pins) reads as that. */
+export function effectiveWidgetPalette(options: Record<string, unknown> | null | undefined): string | undefined {
+  const palette = options?.colorPalette as string | undefined;
+  if (palette !== 'custom') return palette;
+  return paletteIdForColors(options?.customPalette) ?? palette;
+}

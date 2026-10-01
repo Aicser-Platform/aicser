@@ -1,0 +1,28 @@
+id: forecast_answer_first
+title: Forecast — answer-first over schema
+persona: finance_analyst
+start_path: /chat
+goal: >
+  In the AI chat, ask to forecast weekly order totals (or revenue) for the next
+  few periods using the already-selected retail/demo source if present. Stop when
+  a forecast chart or summary is visible. Do not open the Sources schema tree
+  unless required. Prefer reading the answer over changing model dropdowns.
+max_steps: 40
+tags: [forecast, trust, p0]
+rubric_focus: [answer_first, jargon_control, trust_clarity, progressive_disclosure]
+checks:
+  - kind: url_contains
+    value: /chat
+    severity: blocker
+    why: Stay on chat
+  - kind: text_absent
+    value: "confidence (~0%)"
+    severity: major
+    why: Bare ~0% confidence without explanation is a known UX defect
+  - kind: note
+    value: Human — insights cards non-empty; Actual vs Forecast labelled
+    severity: blocker
+notes_for_devs: >
+  Chart density + model blend names + Sources BIGINT: F-CHAT-02, F-CHAT-03, F-SRC-01.
+  Confidence copy: F-CHAT-04. Backend narrative empty insights: coordinate with EE AI
+  Phase 0 (evidence_insights) but FE must still present fallback cards clearly.

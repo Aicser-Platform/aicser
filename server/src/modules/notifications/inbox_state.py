@@ -92,7 +92,7 @@ def notification_priority(item: Any) -> int:
         return 2
     if kind == "invitation":
         return 3
-    if kind == "feed":
+    if kind in ("feed", "comment"):
         return 4
     if kind == "activity":
         return 5

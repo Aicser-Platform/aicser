@@ -10,7 +10,12 @@ import {
   peerCountFromActiveUsers,
   stampCollabTs,
 } from '@/app/(dashboard)/dashboards/utils/collaborationSync';
-import type { CollabComment, CollabUser, PeerCursor } from '@/app/(dashboard)/dashboards/utils/collaborationTypes';
+import {
+  DASHBOARD_COMMENT_EVENT,
+  type CollabUser,
+  type DashboardCommentEvent,
+  type PeerCursor,
+} from '@/app/(dashboard)/dashboards/utils/collaborationTypes';
 
 type RemoteUpdate =
   | { type: 'widget:update'; id: string; changes: Partial<WidgetInstance>; collabTs: number }
@@ -47,7 +52,6 @@ export function useCollaboration(dashboardId: string) {
   const [activeUsers, setActiveUsers] = useState<CollabUser[]>([]);
   const [peerEditingWidgetId, setPeerEditingWidgetId] = useState<string | null>(null);
   const [peerCursors, setPeerCursors] = useState<PeerCursor[]>([]);
-  const [comments, setComments] = useState<CollabComment[]>([]);
 
   const selfUserId = user?.id ?? null;
 
@@ -68,39 +72,12 @@ export function useCollaboration(dashboardId: string) {
     [applyRemoteUpdate],
   );
 
-  const addComment = useCallback(
-    (text: string, widgetId?: string | null) => {
-      const socket = socketRef.current;
-      if (!socket || !dashboardId || !text.trim()) return;
-      const optimistic: CollabComment = {
-        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        text: text.trim(),
-        widget_id: widgetId ?? null,
-        user: {
-          id: user?.id,
-          user_id: user?.id,
-          username: (user?.user_metadata as { username?: string })?.username || user?.email || undefined,
-          email: user?.email || undefined,
-        },
-        timestamp: new Date().toISOString(),
-      };
-      setComments((prev) => [...prev, optimistic]);
-      socket.emit('comment:add', {
-        dashboard_id: dashboardId,
-        text: text.trim(),
-        widget_id: widgetId ?? null,
-      });
-    },
-    [dashboardId, user],
-  );
-
   useEffect(() => {
     if (!dashboardId) {
       setConnected(false);
       setPeerCount(0);
       setActiveUsers([]);
       setPeerCursors([]);
-      setComments([]);
       setPeerEditingWidgetId(null);
       return;
     }
@@ -112,10 +89,16 @@ export function useCollaboration(dashboardId: string) {
       return;
     }
 
-    const socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000', {
+    // Same origin as the page: the app proxies /socket.io to the server (next.config rewrites),
+    // so this works wherever the app is served, whatever the server's internal address.
+    const socket = io(typeof window !== 'undefined' ? window.location.origin : '', {
       path: '/socket.io',
+      // No trailing slash: the app would redirect '/socket.io/' (308), and a WebSocket upgrade
+      // can't follow a redirect.
+      addTrailingSlash: false,
       transports: ['websocket', 'polling'],
-      query: { token: accessToken },
+      // The token travels in the handshake, not the URL (where proxies and access logs keep it).
+      auth: { token: accessToken },
       autoConnect: true,
       reconnection: true,
     });
@@ -195,9 +178,17 @@ export function useCollaboration(dashboardId: string) {
       });
     });
 
-    socket.on('comment:add', (comment: CollabComment) => {
-      if (!comment?.id) return;
-      setComments((prev) => (prev.some((c) => c.id === comment.id) ? prev : [...prev, comment]));
+    // Saved comment changes (from anyone, via the API) — handed to useDashboardComments, which
+    // owns the comment list whether or not this socket is connected.
+    (['comment:created', 'comment:updated', 'comment:deleted'] as const).forEach((event) => {
+      socket.on(event, (comment: DashboardCommentEvent['comment']) => {
+        if (!comment?.id || typeof window === 'undefined') return;
+        window.dispatchEvent(
+          new CustomEvent<DashboardCommentEvent>(DASHBOARD_COMMENT_EVENT, {
+            detail: { dashboardId, event, comment },
+          }),
+        );
+      });
     });
 
     emitWidgetEditingRef.current = (widgetId: string | null) => {
@@ -323,7 +314,6 @@ export function useCollaboration(dashboardId: string) {
       setPeerCount(0);
       setActiveUsers([]);
       setPeerCursors([]);
-      setComments([]);
       setPeerEditingWidgetId(null);
     };
   }, [dashboardId, user, session?.access_token, selfUserId, applyRemote]);
@@ -333,8 +323,6 @@ export function useCollaboration(dashboardId: string) {
     peerCount,
     activeUsers,
     peerCursors,
-    comments,
-    addComment,
     emitCursorMove: (x: number, y: number, widgetId?: string | null) =>
       emitCursorMoveRef.current(x, y, widgetId),
     emitWidgetEditing: (widgetId: string | null) => emitWidgetEditingRef.current(widgetId),

@@ -38,6 +38,8 @@ import {
   isFeedSnapshotOutdated,
 } from '@/app/(dashboard)/feed/utils/dashboardFeedBridge';
 import { buildDashboardSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
+import { DashboardPaletteProvider } from './widgets/DashboardPaletteContext';
+import { isDateRuntimeFilter } from './utils/filterOperators';
 import { socialFeedService, uploadFeedThumbnail } from '@/services/socialFeedService';
 import { captureElementScreenshot } from '@/utils/captureElementScreenshot';
 import { PermissionGuard } from '@/components/PermissionGuard';
@@ -71,6 +73,7 @@ import {
   isKnownChartPalette,
   type ChartPaletteId,
 } from './utils/chartPaletteCatalog';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { maxLayoutY, findFreeLayoutPosition } from './utils/layoutSanitize';
 import { formatApiValidationError, isValidUuid } from '@/utils/validationErrorMessage';
 import { DashboardPageShell } from '@/components/layout/DashboardPageShell';
@@ -80,7 +83,23 @@ const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
 
-const generateWidgetId = () => `w_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+/** The user's projects. The list is normally loaded by the project picker, so a page opened
+ * straight from a link loads it here from the current organization. */
+async function loadedProjects() {
+  const store = useProjectStore.getState();
+  if (store.projects.length > 0) return store.projects;
+  const orgId = useOrganizationStore.getState().currentOrganization?.id;
+  if (orgId != null) {
+    try {
+      await store.loadProjects(orgId);
+    } catch {
+      /* no list: the caller falls back to opening the link in place */
+    }
+  }
+  return useProjectStore.getState().projects;
+}
+
+const generateWidgetId = () =>`w_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
 // Redundant WidgetPreview removed - uses widgets/WidgetPreview.tsx via DashboardCanvas
 
@@ -276,14 +295,20 @@ export default function NewDashboardStudio() {
     void fetchDashboards();
   }, [hasNewWidgets, liveBuildDashboardId, fetchDashboards]);
 
+  // Phones open a dashboard to read it (as Power BI / Tableau mobile do): the editor's desktop
+  // grid doesn't fit a phone. Once per dashboard, so choosing Edit on a phone still sticks.
+  const phoneViewAppliedRef = React.useRef<string | null>(null);
   useEffect(() => {
     if (!activeDashboardId) return;
+    const isPhone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches;
+    const phoneDefault = isPhone && phoneViewAppliedRef.current !== activeDashboardId ? 'view' : null;
+    if (isPhone) phoneViewAppliedRef.current = activeDashboardId;
     const requestedMode =
       requestedStudioMode === 'edit' || requestedStudioMode === 'view'
         ? requestedStudioMode
         : fromChatMessageId
           ? 'view'
-          : null;
+          : phoneDefault;
     if (requestedMode && studioMode !== requestedMode) {
       setStudioMode(requestedMode);
     }
@@ -295,15 +320,18 @@ export default function NewDashboardStudio() {
     peerCount: collabPeers,
     activeUsers: collabActiveUsers,
     peerCursors: collabPeerCursors,
-    comments: collabComments,
-    addComment: collabAddComment,
     emitCursorMove: collabEmitCursorMove,
     emitWidgetEditing,
     peerEditingWidgetId,
     selfUserId: collabSelfUserId,
   } = useCollaboration(collabRoomId);
 
-  const [collabCommentsOpen, setCollabCommentsOpen] = useState(false);
+  // Notifications link here with ?comments=open.
+  const [collabCommentsOpen, setCollabCommentsOpen] = useState(searchParams?.get('comments') === 'open');
+  const requestedComments = searchParams?.get('comments');
+  useEffect(() => {
+    if (requestedComments === 'open') setCollabCommentsOpen(true);
+  }, [requestedComments, requestedDashboardId]);
 
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const router = useRouter();
@@ -447,16 +475,15 @@ export default function NewDashboardStudio() {
     td,
   ]);
 
-  const handleCollabAddComment = useCallback(
-    (text: string, widgetId?: string | null) => {
-      collabAddComment(text, widgetId);
+  const handleCommentPosted = useCallback(
+    (text: string, widgetId: string | null) => {
       if (!linkedFeedPostId || !text.trim()) return;
       const feedBody = widgetId ? `[Widget] ${text.trim()}` : text.trim();
       void socialFeedService.addComment(linkedFeedPostId, feedBody).catch(() => {
-        /* studio socket comment still visible; feed sync is best-effort */
+        /* the dashboard comment is saved; mirroring to the feed post is best-effort */
       });
     },
-    [collabAddComment, linkedFeedPostId],
+    [linkedFeedPostId],
   );
 
   const studioDefaultPageId =
@@ -519,8 +546,9 @@ export default function NewDashboardStudio() {
   // instead of duplicating the relationship canvas on its own page.
   const selectDataSourceForDeepLink = useDataSourceStore((s) => s.select);
   useEffect(() => {
+    // Older links used "data" for the section now called Data Modeling.
     if (requestedStudioSection === 'modeling' || requestedStudioSection === 'data') {
-      handleSidebarSectionChange(requestedStudioSection);
+      handleSidebarSectionChange('modeling');
     }
     if (requestedStudioSource) {
       selectDataSourceForDeepLink(requestedStudioSource);
@@ -595,9 +623,32 @@ export default function NewDashboardStudio() {
       }
       return;
     }
-    void loadDashboardById(requestedDashboardId).then((loaded) => {
+    void (async () => {
+      // A link to a dashboard in another project opens it in that project (Slack / Notion
+      // switch workspace on a link) — never under the wrong project's name, data and filters.
+      if (isEnterpriseEdition) {
+        try {
+          const info = (await chartService.getDashboard(requestedDashboardId)) as { project_id?: string | null };
+          const pid = info?.project_id ? String(info.project_id) : null;
+          const { currentProjectId: current, selectProject } = useProjectStore.getState();
+          if (pid && pid !== String(current ?? '')) {
+            // On a fresh page load the project list is still loading when the link is handled.
+            const projects = await loadedProjects();
+            const target = projects.find((p) => String(p.id) === pid);
+            if (target) {
+              appliedDashboardIdRef.current = null;
+              selectProject(target);
+              message.info(t('switched_project', { name: target.name }));
+              return; // the dashboard list reloads for that project and this effect opens it
+            }
+          }
+        } catch {
+          /* fall through: loading reports not-found / no access */
+        }
+      }
+      const loaded = await loadDashboardById(requestedDashboardId);
       if (!loaded) message.warning(t('dashboard_not_found'));
-    });
+    })();
   }, [
     hasLoadedDashboards,
     requestedDashboardId,
@@ -914,6 +965,23 @@ export default function NewDashboardStudio() {
     [filterCtx, layout, widgets, t],
   );
 
+  // Filters and Properties side by side leave about half a laptop screen for the canvas. Below
+  // 1600 px, whichever panel was just opened folds the other (Figma / Power BI pane behaviour).
+  const showsPropertiesPanel = isEditMode && !isPropertiesCollapsed;
+  const { filtersPanelOpen, setFiltersPanelOpen } = filterCtx;
+  useEffect(() => {
+    if (showsPropertiesPanel && filtersPanelOpen && window.innerWidth < 1600) setFiltersPanelOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- react to Properties opening only
+  }, [showsPropertiesPanel]);
+  useEffect(() => {
+    if (filtersPanelOpen && showsPropertiesPanel && window.innerWidth < 1600) setPropertiesCollapsed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- react to Filters opening only
+  }, [filtersPanelOpen]);
+
+  const clearDateFilters = useCallback(() => {
+    handleToolbarRuntimeFiltersChange(filterCtx.runtimeFilters.filter((f) => !isDateRuntimeFilter(f)));
+  }, [filterCtx.runtimeFilters, handleToolbarRuntimeFiltersChange]);
+
   const applyStoryStarter = useCallback(
     (starterId: StoryStarterId) => {
       const built = buildStoryStarterLayout(starterId, (key) => t(key));
@@ -987,7 +1055,7 @@ export default function NewDashboardStudio() {
     }
   };
 
-  const isFullPageSection = sidebarSection === 'data' || sidebarSection === 'modeling';
+  const isFullPageSection = sidebarSection === 'modeling';
 
   if (!mounted) return null;
 
@@ -997,7 +1065,6 @@ export default function NewDashboardStudio() {
       <ConfigProvider
         theme={{
           token: {
-            colorPrimary: '#00c2cb',
             borderRadius: 6,
           },
         }}
@@ -1033,7 +1100,6 @@ export default function NewDashboardStudio() {
       <ConfigProvider
         theme={{
           token: {
-            colorPrimary: '#00c2cb',
             borderRadius: 6,
           },
         }}
@@ -1074,7 +1140,6 @@ export default function NewDashboardStudio() {
       <ConfigProvider
         theme={{
           token: {
-            colorPrimary: '#00c2cb',
             borderRadius: 6,
           },
         }}
@@ -1201,7 +1266,6 @@ export default function NewDashboardStudio() {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#00c2cb',
           borderRadius: 6,
         },
       }}
@@ -1260,8 +1324,7 @@ export default function NewDashboardStudio() {
                 collabActiveUsers={collabActiveUsers}
                 collabCommentsOpen={collabCommentsOpen}
                 onCollabCommentsOpenChange={setCollabCommentsOpen}
-                collabComments={collabComments}
-                onCollabAddComment={handleCollabAddComment}
+                onCommentPosted={handleCommentPosted}
                 selectedWidgetId={selectedWidgetId}
                 feedPostId={linkedFeedPostId || null}
                 snapshotOutdated={feedSnapshotOutdated}
@@ -1419,6 +1482,7 @@ export default function NewDashboardStudio() {
                   transport={buildTransport}
                 />
               ) : null}
+              <DashboardPaletteProvider palette={activeDashboard?.config?.default_color_palette as string | undefined}>
               {!isEditMode && activeDashboardId ? (
                 <>
                   <DashboardExecutiveBanner
@@ -1435,6 +1499,7 @@ export default function NewDashboardStudio() {
                     onCrossFilter={filterCtx.handleCrossFilter}
                     onWidgetChartClick={filterCtx.handleWidgetChartClick}
                     onRetryWidget={studioView.handleRetryWidget}
+                    onClearDateFilters={clearDateFilters}
                     refreshing={filterCtx.refreshing}
                   />
                 </>
@@ -1445,6 +1510,7 @@ export default function NewDashboardStudio() {
                 dashboardId={activeDashboardId ?? undefined}
                 runtimeFilters={filterCtx.runtimeFilters}
                 onCrossFilter={filterCtx.handleCrossFilter}
+                onClearDateFilters={clearDateFilters}
                 onWidgetChartClick={filterCtx.handleWidgetChartClick}
                 readOnly={!isEditMode}
                 pages={filterCtx.pages}
@@ -1470,6 +1536,7 @@ export default function NewDashboardStudio() {
                 onLayoutSync={scheduleLayoutSync}
               />
               )}
+              </DashboardPaletteProvider>
             </div>
             </div>
 

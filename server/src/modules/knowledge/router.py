@@ -3,6 +3,8 @@ Knowledge Base REST API — upload, list, detail, delete, and search endpoints.
 
 Mounted at /knowledge prefix in the main API router.
 """
+import asyncio
+import os
 
 import logging
 import uuid
@@ -359,6 +361,12 @@ async def upload_knowledge_document(
     user_id = _get_user_id(current_token)
     await require_permission(user_id, "knowledge:create")
 
+    # The global permission says "may add knowledge somewhere"; this says "may add it here".
+    from src.modules.knowledge.access import can_use_knowledge_source
+
+    if not await can_use_knowledge_source(session, uuid.UUID(_ensure_uuid(user_id)), data_source_id, "contribute"):
+        raise HTTPException(status_code=403, detail="Access denied to this knowledge base")
+
     project_id, organization_id = await _resolve_data_source_scope(data_source_id, session)
     object_key = await _store_uploaded_file(
         file, data_source_id, project_id, user_id, organization_id=organization_id
@@ -405,14 +413,11 @@ async def list_knowledge_documents(
     user_uuid = uuid.UUID(_ensure_uuid(raw_uid))
 
     if data_source_id:
-        from src.modules.knowledge.access import user_can_access_data_source
-        from src.modules.data.models import DataSource
+        from src.modules.knowledge.access import can_use_knowledge_source
 
-        can_access = await user_can_access_data_source(session, user_uuid, data_source_id)
-        if not can_access:
-            ds = await session.scalar(select(DataSource).where(DataSource.id == data_source_id))
-            if not ds or (ds.user_id and ds.user_id != user_uuid):
-                raise HTTPException(status_code=403, detail="Access denied to this data source")
+        # No fallback for unowned sources: that let anyone list them.
+        if not await can_use_knowledge_source(session, user_uuid, data_source_id, "view"):
+            raise HTTPException(status_code=403, detail="Access denied to this data source")
 
         stmt = select(KnowledgeDocument).where(KnowledgeDocument.data_source_id == data_source_id)
     else:
@@ -460,8 +465,8 @@ async def get_knowledge_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    if not await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "view"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return KnowledgeDocumentOut(
@@ -509,8 +514,8 @@ async def download_knowledge_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    if not await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "view"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not doc.object_key:
@@ -562,8 +567,8 @@ async def update_knowledge_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    if not await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "contribute"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     data = payload.model_dump(exclude_unset=True)
@@ -618,8 +623,12 @@ async def delete_knowledge_document(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    # Managers may delete any document; contributors only their own uploads.
+    if not (
+        await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "manage")
+        or (doc.user_id == user_uuid and await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "contribute"))
+    ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete chunks first (CASCADE should handle this, but explicit is safer)
@@ -655,8 +664,8 @@ async def retry_knowledge_document_ingestion(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if doc.user_id != user_uuid and not await user_can_access_data_source(session, user_uuid, doc.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    if not await can_use_knowledge_source(session, user_uuid, doc.data_source_id, "contribute"):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not doc.object_key:
@@ -666,7 +675,7 @@ async def retry_knowledge_document_ingestion(
         )
 
     from src.shared.jobs.client import enqueue_job
-    resolved_proj_id, _ = await _resolve_data_source_scope(session, doc.data_source_id)
+    resolved_proj_id, _ = await _resolve_data_source_scope(str(doc.data_source_id), session)
 
     doc.status = "processing"
     doc.error_message = None
@@ -708,8 +717,8 @@ async def reindex_knowledge_base(
     await require_permission(user_id, "knowledge:write")
     user_uuid = uuid.UUID(_ensure_uuid(user_id))
 
-    from src.modules.knowledge.access import user_can_access_data_source
-    if not await user_can_access_data_source(session, user_uuid, request.data_source_id):
+    from src.modules.knowledge.access import can_use_knowledge_source
+    if not await can_use_knowledge_source(session, user_uuid, request.data_source_id, "manage"):
         raise HTTPException(status_code=403, detail="Access denied to data source")
 
     from src.shared.jobs.client import enqueue_job
@@ -776,10 +785,10 @@ async def search_knowledge_base(
     # data source, same primitive src/modules/data/router.py uses to gate
     # per-source access elsewhere.
     if request.data_source_id:
-        from src.modules.data.services.data_source_access_service import DataSourceAccessService
+        from src.modules.knowledge.access import can_use_knowledge_source
 
-        allowed = await DataSourceAccessService.can_access(
-            user_id, request.data_source_id, "data:view", session=session
+        allowed = await can_use_knowledge_source(
+            session, uuid.UUID(_ensure_uuid(user_id)), request.data_source_id, "view"
         )
         if not allowed:
             raise HTTPException(status_code=403, detail="Not authorized to access this data source")
@@ -787,11 +796,20 @@ async def search_knowledge_base(
     from src.modules.knowledge.services.rag_retrieval_service import RAGRetrievalService
 
     service = RAGRetrievalService(session)
-    chunks = await service.retrieve(
-        query=request.query,
-        data_source_id=request.data_source_id,
-        top_k=request.top_k,
-    )
+    try:
+        # Bounded: an unready embedding model (first minute after a deploy) used to hold this
+        # request open for minutes and the Test search box spun forever.
+        chunks = await asyncio.wait_for(
+            service.retrieve(query=request.query, data_source_id=request.data_source_id, top_k=request.top_k),
+            timeout=float(os.getenv("KNOWLEDGE_SEARCH_TIMEOUT_S", "30")),
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "search_warming_up",
+                    "message": "Document search is starting up. Try again in a minute."},
+            headers={"Retry-After": "30"},
+        )
 
     return KnowledgeSearchResponse(
         success=True,

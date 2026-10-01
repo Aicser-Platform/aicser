@@ -437,7 +437,7 @@ const DataSourcesPage: React.FC = () => {
     return (
         <PermissionGuard
             permission={Permission.DATA_VIEW}
-            loadingFallback={<AppLoadingIndicator variant="inline" />}
+            loadingFallback={<AppLoadingIndicator variant="inline" slowAfterMs={8000} />}
             fallback={
                 <DashboardPageShell maxWidth={720}>
                     <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />

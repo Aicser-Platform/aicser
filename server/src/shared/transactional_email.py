@@ -20,10 +20,13 @@ import ssl
 import json
 import urllib.request
 from email.message import EmailMessage
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+# (filename, bytes, mime type), e.g. a scheduled dashboard's PDF report.
+Attachment = Tuple[str, bytes, str]
 
 def smtp_configured() -> bool:
     import os
@@ -55,6 +58,7 @@ def _send_sync(
     reply_to: str | None = None,
     config: dict | None = None,
     body_html: str | None = None,
+    attachments: "List[Attachment] | None" = None,
 ) -> None:
     import os
 
@@ -94,6 +98,9 @@ def _send_sync(
     msg.set_content(body_text)
     if body_html:
         msg.add_alternative(body_html, subtype="html")
+    for name, data, mime in attachments or []:
+        maintype, _, subtype = (mime or "application/octet-stream").partition("/")
+        msg.add_attachment(data, maintype=maintype, subtype=subtype or "octet-stream", filename=name)
 
     if use_ssl:
         context = ssl.create_default_context()
@@ -123,6 +130,7 @@ def _send_resend_sync(
     reply_to: str | None = None,
     config: dict | None = None,
     body_html: str | None = None,
+    attachments: "List[Attachment] | None" = None,
 ) -> None:
     import os
 
@@ -139,6 +147,12 @@ def _send_resend_sync(
         payload["html"] = body_html
     if reply_to:
         payload["reply_to"] = reply_to
+    if attachments:
+        import base64
+
+        payload["attachments"] = [
+            {"filename": name, "content": base64.b64encode(data).decode("ascii")} for name, data, _ in attachments
+        ]
 
     req = urllib.request.Request(
         "https://api.resend.com/emails",
@@ -161,6 +175,7 @@ async def send_transactional_email(
     *,
     reply_to: str | None = None,
     body_html: str | None = None,
+    attachments: "List[Attachment] | None" = None,
 ) -> bool:
     """
     Send a plain-text email if SMTP or Resend is configured. Returns True if send succeeded.
@@ -189,11 +204,13 @@ async def send_transactional_email(
     try:
         if email_config.get("provider") == "smtp":
             await asyncio.to_thread(
-                _send_sync, to_addrs, subject, body_text, reply_to=reply_to, config=email_config, body_html=body_html
+                _send_sync, to_addrs, subject, body_text, reply_to=reply_to, config=email_config, body_html=body_html,
+                attachments=attachments,
             )
         else:
             await asyncio.to_thread(
-                _send_resend_sync, to_addrs, subject, body_text, reply_to=reply_to, config=email_config, body_html=body_html
+                _send_resend_sync, to_addrs, subject, body_text, reply_to=reply_to, config=email_config, body_html=body_html,
+                attachments=attachments,
             )
         logger.info("Transactional email sent subject=%r to=%s", subject, to_addrs)
         return True

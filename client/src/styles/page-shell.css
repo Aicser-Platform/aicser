@@ -36,6 +36,17 @@
   overflow: hidden !important;
 }
 
+/* ── Side drawers open below the fixed app header ───────────
+   The header (z-index 1001) sits above antd's overlay layer (1000), so a full-height side
+   drawer lost its title and close button under it. Starting side drawers below the header keeps
+   both visible without raising drawers above modals opened from them. Pages without the app
+   header (shared, embed) are untouched. */
+
+body:has(.layout-app-header) .ant-drawer.ant-drawer-right,
+body:has(.layout-app-header) .ant-drawer.ant-drawer-left {
+  top: var(--app-header-height, 64px);
+}
+
 /* ── Fixed sidebar (custom SidebarNav, not Ant Menu) ──────── */
 
 .app-navigation-sider.ant-layout-sider {
@@ -191,6 +202,25 @@
   font-size: 15px;
   line-height: 1;
   padding: 0 6px;
+}
+
+/* The current page, as the last step of the header trail (replaces the breadcrumb row). */
+.header-page-crumb {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ant-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.header-page-crumb--link {
+  color: var(--ant-color-text-secondary);
+}
+.header-page-crumb--link:hover,
+.header-page-crumb--link:focus-visible {
+  color: var(--ant-color-text);
+  text-decoration: underline;
 }
 
 .header-shell-icon-affordance {
@@ -572,3 +602,50 @@ div.page-container,
   }
 }
 
+
+/* Sidebar sections: a small foldable caption over a short flat list (Build, Data…). */
+/* Aligned with the item icons (menu item inline padding). */
+.app-navigation-sider .ant-menu-inline .ant-menu-item-group > .ant-menu-item-group-title {
+  padding-block: 12px 4px;
+  padding-inline: 24px 16px;
+}
+
+.app-navigation-sider .nav-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.app-navigation-sider .nav-section-toggle .anticon {
+  font-size: 9px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.app-navigation-sider .nav-section-toggle:hover,
+.app-navigation-sider .nav-section-toggle:focus-visible {
+  color: var(--ant-color-text-secondary);
+}
+
+.app-navigation-sider .nav-section-toggle:hover .anticon,
+.app-navigation-sider .nav-section-toggle:focus-visible .anticon,
+.app-navigation-sider .nav-section-toggle[aria-expanded='false'] .anticon {
+  opacity: 1;
+}
+
+.app-navigation-sider .nav-section-toggle:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -55,6 +55,10 @@ from src.modules.knowledge.models import (
 
 # ── CE models (always imported) ───────────────────────────────────────────────
 from src.modules.user.models import User
+from src.modules.user.api_keys import PlatformApiKey
+from src.modules.folders.models import AssetFolder
+from src.modules.notebooks.models import Notebook
+from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVersion
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────
 # NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)
@@ -109,6 +113,14 @@ if is_ee_enabled():
         pass
 
     try:
+        from src.modules.ai.decisions.models import DecisionLog
+        from src.modules.ai.decisions.tool_models import AIDecisionDefinition, AIDecisionResult, AIDecisionRun
+        from src.modules.ai.evals.history import AIEvalRun
+        from src.modules.organizations.identity import IdentityGroup, IdentityGroupMember, ScimToken, ScimUserLink
+    except ImportError:
+        pass
+
+    try:
         from src.modules.catalog.models import CatalogAsset
     except ImportError:
         pass
@@ -120,5 +132,20 @@ if is_ee_enabled():
 
     try:
         from src.modules.schedule_email.models import Scheduled_emails
+    except ImportError:
+        pass
+
+    try:
+        from src.modules.warehouse.models import Warehouse, WarehouseQuery
+    except ImportError:
+        pass
+
+    try:
+        from src.modules.mlops.models import MLModel, MLModelVersion, MLPredictionLog
+    except ImportError:
+        pass
+
+    try:
+        from src.modules.notebook_runs.models import NotebookRun, NotebookSchedule
     except ImportError:
         pass

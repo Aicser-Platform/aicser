@@ -22,6 +22,7 @@ SERIES_CHART_TYPES = {
     "funnel",
     "gauge",
     "bullet",
+    "histogram",
     "geo",
 }
 

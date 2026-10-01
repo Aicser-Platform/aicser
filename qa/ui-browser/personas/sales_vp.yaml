@@ -1,0 +1,16 @@
+id: sales_vp
+name: Sales VP
+role: Executive asking why a region dropped
+digital_literacy: medium
+goals:
+  - Understand why EMEA (or a region) changed
+  - Leave with 1–3 actions, not a schema tour
+pains:
+  - Buried answer under dense charts
+  - Specialist nav competing with Ask
+must_not_see:
+  - Query Editor as the implied next step
+success_looks_like:
+  - Drivers or diagnose-style answer in plain language
+  - Suggested actions visible
+  - Certified / metric badge if available

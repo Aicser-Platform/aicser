@@ -3,7 +3,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Table, Typography, Empty } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { formatTableValue } from '../utils/numberFormatter';
+import { formatTableValue, makeCategoryLabelFormatter } from '../utils/numberFormatter';
 import { columnHeaderFromKey } from '@/utils/columnLabels';
 import './TableWidget.css';
 import { useTranslations } from 'next-intl';
@@ -66,6 +66,25 @@ interface TableWidgetProps {
   onCrossFilter?: (value: unknown) => void;
 }
 
+const ADDITIVE_AGGREGATIONS = new Set(['sum', 'count', 'none', '']);
+const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * Whether a column's rows can be added up for the Total row. Averages, minimums, maximums and
+ * distinct counts can't: 0.109 + 0.107 is not an interest rate. The aggregation comes from the
+ * chart's metric (matched by field) or, for compiled SQL, from the alias the planner writes
+ * (avg_/min_/max_…). Unknown columns keep the sum.
+ */
+export function isAdditiveColumn(seriesName: string, query?: TableWidgetProps['query']): boolean {
+  const key = norm(seriesName);
+  const metric = (query?.yMetrics || []).find((m) => {
+    const field = norm(m.field);
+    return field && (key === field || key.endsWith(field));
+  });
+  if (metric) return ADDITIVE_AGGREGATIONS.has(String(metric.aggregation || '').toLowerCase());
+  return !/^(avg|average|mean|min|max|median|distinct)(_|\s|$)/i.test(String(seriesName).trim());
+}
+
 /** Same currency/percent formatting a chart tooltip or Stat KPI would use for this metric,
  * instead of always rendering a plain number regardless of the metric's configured format. */
 export function tableValueFormat(
@@ -117,6 +136,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
   onCrossFilter,
 }) => {
   const t = useTranslations('table_widget');
+  const tCommon = useTranslations('common');
   const {
     showPagination = true,
     pageSize = 10,
@@ -157,6 +177,13 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
   const columns: ColumnsType<any> = [];
 
   const activeSet = new Set(activeCrossFilterValues.map(String));
+  // React renders nothing for true/false, so a yes/no dimension showed as a blank column.
+  const dateLabel = makeCategoryLabelFormatter(data.x as unknown[], undefined, { yes: tCommon('yes'), no: tCommon('no') });
+  const categoryCell = (val: unknown): React.ReactNode => {
+    if (val === null || val === undefined || val === '') return '—';
+    if (typeof val === 'boolean') return val ? t('value_yes') : t('value_no');
+    return dateLabel(val);
+  };
   const xField = String(query?.x || 'x');
 
   type ColEntry = { fieldName: string; column: ColumnsType<any>[number] };
@@ -201,7 +228,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
                   : undefined
               }
             >
-              {val}
+              {record.key === 'total' ? val : categoryCell(val)}
             </Text>
           );
         },
@@ -257,7 +284,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
       // crash the whole designer/dashboard on one malformed series.
       const seriesValues = Array.isArray(s.data) ? s.data : [];
       const sum = seriesValues.reduce((acc, curr) => acc + (typeof curr === 'number' ? curr : 0), 0);
-      totals[s.name] = sum;
+      totals[s.name] = isAdditiveColumn(s.name, query) ? sum : null;
       hasNumericalY = true;
     });
 
@@ -316,7 +343,7 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     }
 
     const sum = (data.y || []).reduce((acc: number, curr: any) => acc + (typeof curr === 'number' ? curr : 0), 0);
-    totals.y = sum;
+    totals.y = isAdditiveColumn(yField, query) ? sum : null;
     hasNumericalY = true;
   }
 
@@ -329,16 +356,30 @@ export const TableWidget: React.FC<TableWidgetProps> = ({
     : colEntries;
   orderedEntries.forEach((e) => columns.push(e.column));
 
-  // Add the total row at the end if we have numerical data
-  if (hasNumericalY && rowCount > 0) {
-    dataSource.push(totals);
-  }
+  // The Total row is a fixed summary footer (Excel / Power BI tables), not a data row: it isn't
+  // paginated, counted in "Showing 1-3 of 3" or scrolled out of view.
+  const showTotals = hasNumericalY && rowCount > 0;
+  const renderTotals = () => (
+    <Table.Summary fixed="bottom">
+      <Table.Summary.Row className="table-row-total">
+        {columns.map((col: any, index) => {
+          const value = totals[col.dataIndex as string];
+          return (
+            <Table.Summary.Cell key={String(col.key ?? index)} index={index} align={col.align}>
+              {col.render ? col.render(value, totals, -1) : value}
+            </Table.Summary.Cell>
+          );
+        })}
+      </Table.Summary.Row>
+    </Table.Summary>
+  );
 
   return (
     <div className="table-widget-container" ref={shouldVirtualize ? measuredHeightRef : undefined}>
       <Table
         dataSource={dataSource}
         columns={columns}
+        summary={showTotals ? renderTotals : undefined}
         virtual={shouldVirtualize}
         pagination={showPagination ? {
           pageSize,

@@ -50,10 +50,13 @@ export function DashboardExecutiveBanner({
 
   const insight = keyInsight?.trim();
   const narrative = storyArc?.trim();
-  const items = widgetInsights.filter((w) => w.insight?.trim());
+  // Per-chart descriptions already sit under each chart's title; repeating them here only
+  // duplicated them. The banner is for the dashboard's own headline and story.
+  void widgetInsights;
+  const items: WidgetInsightItem[] = [];
 
   const storageKey = dashboardId ? `aicser_exec_banner_dismissed_${dashboardId}` : null;
-  const fingerprint = contentFingerprint(insight);
+  const fingerprint = contentFingerprint(insight || narrative);
   const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
     if (!storageKey) return;
@@ -86,6 +89,15 @@ export function DashboardExecutiveBanner({
       className={`dashboard-executive-banner ${className}`.trim()}
       aria-label={t('executive_banner_aria')}
     >
+      {!insight && storageKey ? (
+        <Button
+          type="text"
+          className="icon-only-btn no-print dashboard-executive-banner-close"
+          icon={<CloseOutlined />}
+          onClick={handleDismiss}
+          aria-label={t('executive_banner_dismiss')}
+        />
+      ) : null}
       {insight ? (
         <div className="dashboard-executive-banner-headline">
           <BulbOutlined className="dashboard-executive-banner-icon" aria-hidden />

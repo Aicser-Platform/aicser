@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Input, message, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Input, message, Table, Tag, Typography, Tooltip } from 'antd';
 import { CheckOutlined, EyeInvisibleOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -17,6 +17,7 @@ import {
   roleColor,
   roleLabelKey,
   normalizeSchemaTables,
+  buildTableRef,
   type SchemaFieldColumn,
   type SchemaFieldTable,
 } from '@/utils/schemaFieldHelpers';
@@ -29,21 +30,6 @@ type PreviewState = {
   columns?: string[];
   error?: string;
 };
-
-/** Quote a SQL identifier only when it needs it (spaces, hyphens, leading digit, etc). */
-function quoteIdentifier(id: string): string {
-  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(id) ? id : `"${id}"`;
-}
-
-/** Build a `SELECT * FROM <table> LIMIT n`-safe table reference for a preview query. */
-function buildTableRef(table: SchemaFieldTable, dataSourceType?: string | null): string {
-  const isFile = dataSourceType === 'file';
-  const tableName = isFile ? 'data' : table.name;
-  if (isFile || !table.schema || table.schema === 'public' || table.schema === 'file') {
-    return quoteIdentifier(tableName);
-  }
-  return `${quoteIdentifier(table.schema)}.${quoteIdentifier(tableName)}`;
-}
 
 const PREVIEW_ROW_LIMIT = 20;
 
@@ -258,20 +244,19 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
                   title: t('schema_column_type'),
                   dataIndex: 'type',
                   key: 'type',
+                  // Friendly kind; the database's own type on hover (the two used to run together
+                  // as "NumberBIGINT").
                   render: (value: string) => (
-                    <>
+                    <Tooltip title={value}>
                       <Tag>{normalizeType(value)}</Tag>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {value}
-                      </Text>
-                    </>
+                    </Tooltip>
                   ),
                 },
                 {
                   title: t('schema_column_nullable'),
                   dataIndex: 'nullable',
                   key: 'nullable',
-                  render: (value?: boolean) => <Text type="secondary">{value === false ? 'NOT NULL' : '—'}</Text>,
+                  render: (value?: boolean) => <Text type="secondary">{value === false ? t('schema_required') : '—'}</Text>,
                 },
               ]}
             />

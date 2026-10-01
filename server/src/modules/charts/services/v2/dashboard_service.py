@@ -7,6 +7,18 @@ from sqlalchemy import select
 from src.modules.dashboards.models import Dashboard
 
 
+def next_free_name(name: str, taken: set[str]) -> str:
+    """`name`, or `name (2)`, `name (3)`… — the first one not in `taken` (case-insensitive)."""
+    lowered = {t.strip().lower() for t in taken if t}
+    base = name.strip()
+    if base.lower() not in lowered:
+        return base
+    n = 2
+    while f"{base} ({n})".lower() in lowered:
+        n += 1
+    return f"{base} ({n})"
+
+
 class DashboardService:
     """
     Handles dashboard persistence and business logic.
@@ -25,6 +37,20 @@ class DashboardService:
         if default_name and not normalized.get("name"):
             normalized["name"] = "Untitled Dashboard"
         return normalized
+
+    async def available_name(self, project_id: Optional[UUID], name: str) -> str:
+        """A name no live dashboard in the project uses yet, so repeated builds of the same
+        question don't produce a list of identical names (Power BI keeps names unique too)."""
+        stmt = select(Dashboard.name).where(
+            Dashboard.name.ilike(
+                name.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%",
+                escape="\\",
+            ),
+            Dashboard.is_deleted.isnot(True),
+        )
+        stmt = stmt.where(Dashboard.project_id == project_id) if project_id else stmt.where(Dashboard.project_id.is_(None))
+        taken = set((await self.db.execute(stmt)).scalars().all())
+        return next_free_name(name, taken)
 
     async def create(self, data: Mapping[str, Any]) -> Dashboard:
         dashboard = Dashboard(**self._normalize_data(data, default_name=True))

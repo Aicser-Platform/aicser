@@ -2,6 +2,7 @@ import React from 'react';
 import type { FeedItem } from '@/services/socialFeedService';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
 import { FeedAttachmentList } from '@/components/Feed/FeedAttachmentList';
+import { FeedImages } from '@/components/Feed/FeedImages';
 import FeedCardMedia from '../FeedCardMedia';
 
 interface FeedCardBodyProps {
@@ -24,6 +25,8 @@ const FeedCardBody: React.FC<FeedCardBodyProps> = ({
       <div className={compact ? 'px-3 py-2' : 'px-4 py-2.5'}>
         <FeedPostContent item={item} compactTitle descriptionMaxRows={2} />
       </div>
+
+      <FeedImages images={item.images} compact={compact} />
 
       <FeedAttachmentList attachments={item.attachments} />
 

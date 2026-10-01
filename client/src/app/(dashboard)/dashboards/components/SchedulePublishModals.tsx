@@ -2,22 +2,11 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { Modal, Button, Space, Input, Select, message, Spin, DatePicker, Popconfirm, Tag, Empty, Switch } from 'antd';
-import {
-  PlusOutlined,
-  CalendarOutlined,
-  EyeOutlined,
-  CopyOutlined,
-  EditOutlined,
-  DeleteOutlined,
-} from '@ant-design/icons';
-import {
-  SCHEDULE_TYPE_OPTIONS,
-  EMAIL_REGEX,
-  formatRuleText,
-  normalizeScheduleType,
-} from '../hooks/useAutomationManager';
+import { Modal, Button, Space, Spin, Popconfirm, Tag, Empty, Switch } from 'antd';
+import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { formatRuleText, normalizeScheduleType } from '../hooks/useAutomationManager';
 import { useDataSources } from '@/hooks/useDataSources';
+import { DashboardEmailFields } from './DashboardEmailFields';
 
 interface SchedulePublishModalsProps {
   isAutoSendOpen: boolean;
@@ -31,12 +20,14 @@ interface SchedulePublishModalsProps {
     body: string;
     dataSourceId: string | null;
     refreshDataBeforeSend: boolean;
+    attachPdfReport?: boolean;
   };
   setAutoSendForm: (form: any | ((prev: any) => any)) => void;
   handleSaveAutoSend: () => void;
-  externalRecipientInput: string;
-  setExternalRecipientInput: (value: string) => void;
-  addExternalRecipient: (email: string) => void;
+  /** @deprecated recipients are typed straight into the guided form */
+  externalRecipientInput?: string;
+  setExternalRecipientInput?: (value: string) => void;
+  addExternalRecipient?: (email: string) => void;
   isLoadingOrgMembers: boolean;
   orgMemberEmails: string[];
   orgMemberLabelMap: Record<string, string>;
@@ -67,9 +58,6 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
   autoSendForm,
   setAutoSendForm,
   handleSaveAutoSend,
-  externalRecipientInput,
-  setExternalRecipientInput,
-  addExternalRecipient,
   isLoadingOrgMembers,
   orgMemberEmails,
   orgMemberLabelMap,
@@ -108,195 +96,22 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
         confirmLoading={isSavingAutoSend}
         okButtonProps={{ disabled: autoSendForm.recipients.length === 0 }}
         className="auto-send-modal"
+        width={600}
+        // Long form: header and Save/Cancel stay on screen; only the body scrolls.
+        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
         destroyOnHidden
       >
-        <div className="auto-send-modal-body">
-          <p className="auto-send-note">{t('schedule_modal_note')}</p>
-
-          <div className="auto-send-section-title">{t('schedule_when')}</div>
-          <div className="auto-send-panel">
-            <div className="auto-send-schedule-grid">
-              <div className="auto-send-schedule-field">
-                <div className="auto-send-field-label auto-send-label-with-required">
-                  <span>{t('schedule_send_at')}</span>
-                  <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
-                    *
-                  </span>
-                </div>
-                <DatePicker
-                  showTime={{ format: 'HH:mm' }}
-                  format="YYYY/MM/DD HH:mm"
-                  value={autoSendForm.scheduleAt}
-                  onChange={(value) => {
-                    if (!value) return;
-                    setAutoSendForm((prev: any) => ({ ...prev, scheduleAt: value }));
-                  }}
-                  allowClear={false}
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              <div className="auto-send-schedule-field auto-send-schedule-field-frequency">
-                <div className="auto-send-field-label auto-send-label-with-required">
-                  <span>{t('schedule_repeat')}</span>
-                  <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
-                    *
-                  </span>
-                </div>
-                <Select
-                  value={autoSendForm.frequency}
-                  onChange={(value) => setAutoSendForm((prev: any) => ({ ...prev, frequency: value }))}
-                  options={SCHEDULE_TYPE_OPTIONS}
-                />
-              </div>
-            </div>
-
-            <div className="auto-send-field-label" style={{ marginTop: 12 }}>{t('schedule_data_source')}</div>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              placeholder={t('schedule_data_source_placeholder')}
-              value={autoSendForm.dataSourceId ?? undefined}
-              onChange={(value) =>
-                setAutoSendForm((prev: any) => ({
-                  ...prev,
-                  dataSourceId: value ?? null,
-                  refreshDataBeforeSend: value ? prev.refreshDataBeforeSend : false,
-                }))
-              }
-              options={dataSourceOptions}
-              style={{ width: '100%' }}
-            />
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                marginTop: 10,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div className="auto-send-field-label" style={{ marginBottom: 2 }}>
-                  {t('schedule_refresh_before_send')}
-                </div>
-                <p className="auto-send-field-help" style={{ margin: 0 }}>
-                  {t('schedule_refresh_before_send_hint')}
-                </p>
-              </div>
-              <Switch
-                checked={autoSendForm.refreshDataBeforeSend}
-                disabled={!autoSendForm.dataSourceId}
-                onChange={(checked) => setAutoSendForm((prev: any) => ({ ...prev, refreshDataBeforeSend: checked }))}
-              />
-            </div>
-          </div>
-
-          <div className="auto-send-section-title">{t('schedule_email')}</div>
-          <div className="auto-send-panel">
-            <div className="auto-send-label-row">
-              <div className="auto-send-label-with-icon">
-                <CalendarOutlined />
-                <span>{t('schedule_recipients')}</span>
-              </div>
-              <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
-                *
-              </span>
-            </div>
-            <p className="auto-send-field-help">{t('schedule_recipients_hint')}</p>
-
-            <div className="auto-send-field-label">{t('schedule_dashboard_link')}</div>
-            <div className="auto-send-link-row">
-              <Input value={sharedDashboardUrl} readOnly />
-              <Button icon={<EyeOutlined />} onClick={handlePreviewDashboard}>
-                {t('preview')}
-              </Button>
-              <Button icon={<CopyOutlined />} onClick={handleCopySharedLink}>
-                {t('copy')}
-              </Button>
-            </div>
-
-            <div className="auto-send-field-label auto-send-label-with-required auto-send-inline-label-required">
-              <span>{t('schedule_org_members')}</span>
-              <span className="auto-send-required-indicator" title={t('required_field')} aria-label={t('required_field')}>
-                *
-              </span>
-            </div>
-            <Select
-              mode="multiple"
-              showSearch
-              optionFilterProp="label"
-              optionLabelProp="value"
-              placeholder={t('schedule_org_members_placeholder')}
-              value={autoSendForm.recipients}
-              onChange={(value) => {
-                const normalizedRecipients = value
-                  .map((email: string) => email.trim())
-                  .filter(Boolean)
-                  .filter(
-                    (email: string, index: number, list: string[]) =>
-                      list.findIndex((item) => item.toLowerCase() === email.toLowerCase()) === index
-                  );
-                setAutoSendForm((prev: any) => ({ ...prev, recipients: normalizedRecipients }));
-              }}
-              className="auto-send-recipient-select"
-              maxTagCount={3}
-              maxTagTextLength={18}
-              loading={isLoadingOrgMembers}
-              options={[
-                ...orgMemberEmails.map((email) => ({ value: email, label: orgMemberLabelMap[email] || email })),
-                ...autoSendForm.recipients
-                  .filter(
-                    (email: string) =>
-                      !orgMemberEmails.some((orgEmail) => orgEmail.toLowerCase() === email.toLowerCase())
-                  )
-                  .map((email: string) => ({ value: email, label: `${email} (external)` })),
-              ]}
-              notFoundContent={isLoadingOrgMembers ? <Spin size="small" /> : t('schedule_no_members')}
-            />
-
-            <div className="auto-send-field-label">{t('schedule_external')}</div>
-            <div className="auto-send-external-add-row">
-              <Input
-                value={externalRecipientInput}
-                onChange={(e) => setExternalRecipientInput(e.target.value)}
-                placeholder={t('schedule_external_placeholder')}
-                onPressEnter={(e) => {
-                  e.preventDefault();
-                  addExternalRecipient(externalRecipientInput);
-                }}
-              />
-              <Button
-                type="primary"
-                className="auto-send-add-email-btn"
-                icon={<PlusOutlined />}
-                onClick={() => addExternalRecipient(externalRecipientInput)}
-              >
-                {t('add')}
-              </Button>
-            </div>
-
-            <p className="auto-send-recipient-hint">{t('schedule_external_hint')}</p>
-
-            <div className="auto-send-field-label">{t('schedule_subject')}</div>
-            <Input
-              value={autoSendForm.subject}
-              onChange={(e) => setAutoSendForm((prev: any) => ({ ...prev, subject: e.target.value }))}
-              placeholder={t('schedule_subject_placeholder')}
-              maxLength={255}
-            />
-
-            <div className="auto-send-field-label">{t('schedule_message')}</div>
-            <Input.TextArea
-              className="auto-send-message-input"
-              value={autoSendForm.body}
-              onChange={(e) => setAutoSendForm((prev: any) => ({ ...prev, body: e.target.value }))}
-              placeholder={t('schedule_message_placeholder')}
-              autoSize={{ minRows: 4, maxRows: 8 }}
-            />
-          </div>
-        </div>
+        <DashboardEmailFields
+          form={autoSendForm}
+          setForm={setAutoSendForm}
+          orgMemberEmails={orgMemberEmails}
+          orgMemberLabelMap={orgMemberLabelMap}
+          isLoadingOrgMembers={isLoadingOrgMembers}
+          dataSourceOptions={dataSourceOptions}
+          sharedDashboardUrl={sharedDashboardUrl}
+          onPreview={handlePreviewDashboard}
+          onCopyLink={handleCopySharedLink}
+        />
       </Modal>
 
       <Modal
@@ -305,6 +120,8 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
         onCancel={() => setIsAutomationListOpen(false)}
         footer={null}
         width={720}
+        // Long form: header and Save/Cancel stay on screen; only the body scrolls.
+        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
         destroyOnHidden
       >
         {isLoadingScheduledEmails ? (
@@ -407,8 +224,10 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
       <Modal
         title={t('schedule_edit_title')}
         open={isEditAutomationOpen}
-        width={980}
+        width={600}
         className="edit-automation-modal"
+        // Long form: header and Save/Cancel stay on screen; only the body scrolls.
+        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
         onCancel={() => {
           setIsEditAutomationOpen(false);
           setEditingAutomationForm(null);
@@ -426,176 +245,28 @@ export const SchedulePublishModals: React.FC<SchedulePublishModalsProps> = ({
         destroyOnHidden
       >
         {editingAutomationForm && (
-          <div className="edit-automation-layout">
-            <div className="edit-automation-col">
-              <div className="edit-automation-col-title">{t('schedule_when_col')}</div>
-              <div className="edit-automation-card">
-                <div className="edit-automation-card-title">{t('schedule_at_time')}</div>
-                <div className="edit-automation-trigger-row">
-                  <DatePicker
-                    showTime={{ format: 'HH:mm' }}
-                    format="YYYY/MM/DD HH:mm"
-                    value={editingAutomationForm.scheduleAt}
-                    onChange={(value) => {
-                      if (!value) return;
-                      setEditingAutomationForm((prev: any) => (prev ? { ...prev, scheduleAt: value } : prev));
-                    }}
-                    allowClear={false}
-                  />
-                  <Select
-                    value={editingAutomationForm.frequency}
-                    style={{ minWidth: 130 }}
-                    onChange={(value) =>
-                      setEditingAutomationForm((prev: any) => (prev ? { ...prev, frequency: value } : prev))
-                    }
-                    options={SCHEDULE_TYPE_OPTIONS}
-                  />
-                </div>
-              </div>
-
-              <div className="edit-automation-card">
-                <div className="edit-automation-card-title">{t('schedule_data_source')}</div>
-                <Select
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder={t('schedule_data_source_placeholder')}
-                  value={editingAutomationForm.dataSourceId ?? undefined}
-                  onChange={(value) =>
-                    setEditingAutomationForm((prev: any) =>
-                      prev
-                        ? {
-                            ...prev,
-                            dataSourceId: value ?? null,
-                            refreshDataBeforeSend: value ? prev.refreshDataBeforeSend : false,
-                          }
-                        : prev
-                    )
-                  }
-                  options={dataSourceOptions}
-                  style={{ width: '100%' }}
-                />
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    marginTop: 10,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div className="edit-automation-field-label" style={{ marginBottom: 2 }}>
-                      {t('schedule_refresh_before_send')}
-                    </div>
-                    <p className="auto-send-field-help" style={{ margin: 0 }}>
-                      {t('schedule_refresh_before_send_hint')}
-                    </p>
-                  </div>
-                  <Switch
-                    checked={editingAutomationForm.refreshDataBeforeSend}
-                    disabled={!editingAutomationForm.dataSourceId}
-                    onChange={(checked) =>
-                      setEditingAutomationForm((prev: any) => (prev ? { ...prev, refreshDataBeforeSend: checked } : prev))
-                    }
-                  />
-                </div>
-              </div>
+          <>
+            <DashboardEmailFields
+              form={editingAutomationForm}
+              setForm={(updater) => setEditingAutomationForm((prev: any) => (prev ? updater(prev) : prev))}
+              orgMemberEmails={orgMemberEmails}
+              orgMemberLabelMap={orgMemberLabelMap}
+              isLoadingOrgMembers={isLoadingOrgMembers}
+              dataSourceOptions={dataSourceOptions}
+              sharedDashboardUrl={sharedDashboardUrl}
+              onPreview={handlePreviewDashboard}
+              onCopyLink={handleCopySharedLink}
+            />
+            <div className="edit-automation-enabled-row">
+              <span>{t('schedule_enabled')}</span>
+              <Switch
+                checked={editingAutomationForm.enabled}
+                onChange={(checked) =>
+                  setEditingAutomationForm((prev: any) => (prev ? { ...prev, enabled: checked } : prev))
+                }
+              />
             </div>
-
-            <div className="edit-automation-col">
-              <div className="edit-automation-col-title">{t('schedule_action_col')}</div>
-              <div className="edit-automation-card">
-                <div className="edit-automation-card-title">{t('schedule_send_email')}</div>
-
-                <div className="edit-automation-field-label">{t('schedule_to')}</div>
-                <Select
-                  mode="multiple"
-                  showSearch
-                  optionFilterProp="label"
-                  optionLabelProp="value"
-                  className="edit-automation-recipient-select"
-                  placeholder={t('schedule_to_placeholder')}
-                  value={editingAutomationForm.recipients}
-                  onChange={(value) => {
-                    const normalizedRecipients = value
-                      .map((email: string) => email.trim())
-                      .filter(Boolean)
-                      .filter(
-                        (email: string, index: number, list: string[]) =>
-                          list.findIndex((item) => item.toLowerCase() === email.toLowerCase()) === index
-                      );
-                    setEditingAutomationForm((prev: any) =>
-                      prev ? { ...prev, recipients: normalizedRecipients } : prev
-                    );
-                  }}
-                  options={[
-                    ...orgMemberEmails.map((email) => ({ value: email, label: orgMemberLabelMap[email] || email })),
-                    ...editingAutomationForm.recipients
-                      .filter(
-                        (email: string) =>
-                          !orgMemberEmails.some((orgEmail) => orgEmail.toLowerCase() === email.toLowerCase())
-                      )
-                      .map((email: string) => ({ value: email, label: `${email} (external)` })),
-                  ]}
-                  maxTagCount={3}
-                  loading={isLoadingOrgMembers}
-                />
-
-                <Input
-                  value={externalRecipientInput}
-                  onChange={(e) => setExternalRecipientInput(e.target.value)}
-                  placeholder={t('schedule_external_enter')}
-                  onPressEnter={(e) => {
-                    e.preventDefault();
-                    const email = externalRecipientInput.trim();
-                    if (!EMAIL_REGEX.test(email)) {
-                      message.warning('Please enter a valid email address.');
-                      return;
-                    }
-                    setEditingAutomationForm((prev: any) => {
-                      if (!prev) return prev;
-                      if (prev.recipients.some((item: string) => item.toLowerCase() === email.toLowerCase()))
-                        return prev;
-                      return { ...prev, recipients: [...prev.recipients, email] };
-                    });
-                    setExternalRecipientInput('');
-                  }}
-                />
-
-                <div className="edit-automation-field-label">{t('schedule_subject')}</div>
-                <Input
-                  value={editingAutomationForm.subject}
-                  onChange={(e) =>
-                    setEditingAutomationForm((prev: any) => (prev ? { ...prev, subject: e.target.value } : prev))
-                  }
-                  placeholder={t('schedule_subject_placeholder')}
-                  maxLength={255}
-                />
-
-                <div className="edit-automation-field-label">{t('schedule_message')}</div>
-                <Input.TextArea
-                  className="edit-automation-message-input"
-                  value={editingAutomationForm.body}
-                  onChange={(e) =>
-                    setEditingAutomationForm((prev: any) => (prev ? { ...prev, body: e.target.value } : prev))
-                  }
-                  placeholder={t('schedule_message_placeholder')}
-                  autoSize={{ minRows: 6, maxRows: 12 }}
-                />
-
-                <div className="edit-automation-enabled-row">
-                  <span>{t('schedule_enabled')}</span>
-                  <Switch
-                    checked={editingAutomationForm.enabled}
-                    onChange={(checked) =>
-                      setEditingAutomationForm((prev: any) => (prev ? { ...prev, enabled: checked } : prev))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          </>
         )}
       </Modal>
     </>

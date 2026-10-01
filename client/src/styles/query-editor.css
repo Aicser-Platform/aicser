@@ -49,7 +49,9 @@
   margin: 0 !important;
   margin-bottom: 0 !important;
   border-bottom: var(--qe-zone-border);
-  background: var(--ant-color-bg-container);
+  /* Title sits on the page canvas with the breadcrumb, like every other page; the workspace
+     below it is the white surface. */
+  background: var(--ant-color-bg-layout);
   flex-shrink: 0;
   box-shadow: none !important;
 }
@@ -231,10 +233,11 @@
   background: transparent;
 }
 
+/* Same height and side gutter as the Query Results tab bar, so both panels line up. */
 .query-editor-workspace .query-editor-query-tabs > .ant-tabs-nav {
   margin: 0 !important;
-  padding: 10px 16px !important;
-  min-height: 52px !important;
+  padding: 0 var(--qe-gutter-x) !important;
+  min-height: 40px !important;
   align-items: center !important;
 }
 
@@ -252,10 +255,10 @@
   border: none !important;
   border-bottom: 2px solid transparent !important;
   border-radius: 6px 6px 0 0 !important;
-  padding: 6px 12px !important;
-  margin: 0 2px 0 0 !important;
-  min-height: 32px !important;
-  height: 32px !important;
+  padding: 4px 8px !important;
+  margin: 0 !important;
+  min-height: 30px !important;
+  height: 30px !important;
   line-height: 20px !important;
   transition: background 0.15s ease, color 0.15s ease;
   display: flex !important;
@@ -1463,4 +1466,57 @@
 
 .qe-performance-pane__plan-tree .ant-tree-treenode {
   padding: 1px 0;
+}
+
+/* Tabs that overflow into the "…" menu: name, then its close button. */
+.qe-query-tabs-dropdown .qe-query-tab-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 140px;
+  max-width: 240px;
+}
+.qe-query-tabs-dropdown .qe-query-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qe-query-tabs-dropdown .qe-query-tab-close {
+  border: none;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  cursor: pointer;
+}
+.qe-query-tabs-dropdown .ant-tabs-dropdown-menu {
+  max-height: 320px;
+}
+
+.qe-performance-pane__plan-text {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre;
+  color: var(--ant-color-text);
+}
+
+/* Compact tab labels: icon, title, close — no extra gaps between tabs. */
+.query-editor-workspace .query-editor-query-tabs .ant-tabs-nav-list {
+  gap: 2px;
+}
+
+.query-editor-workspace .query-editor-query-tabs .qe-query-tab-icon {
+  margin-right: 4px !important;
+}
+
+.query-editor-workspace .query-editor-query-tabs .qe-query-tab-close {
+  margin-left: 4px;
+}
+
+.query-editor-workspace .query-editor-query-tabs .qe-query-tab-title {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

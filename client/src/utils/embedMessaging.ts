@@ -1,4 +1,15 @@
-export type EmbedMessageType = 'ready' | 'resize' | 'navigate' | 'error' | 'ping';
+export type EmbedMessageType =
+  | 'ready'
+  | 'resize'
+  | 'navigate'
+  | 'error'
+  | 'ping'
+  // Session lifecycle (useEmbedSession): the host's SDK answers token-expiring with set-token.
+  | 'token-expiring'
+  | 'token-expired'
+  | 'token-updated'
+  // Reply to a host command (set-filters, refresh, set-page, export).
+  | 'command-result';
 
 export interface EmbedMessage<T = unknown> {
   source: 'aicser-embed';

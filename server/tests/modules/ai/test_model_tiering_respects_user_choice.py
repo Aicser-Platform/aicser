@@ -105,3 +105,9 @@ def test_tier_override_fast_beats_insight_node_default():
         "insight_synthesizer", _FakeLiteLLM(), None, tier_override="fast"
     )
     assert resolved == "auto_fast_model"
+
+
+def test_front_door_complex_verdict_starts_insights_on_strong():
+    assert insight_tier_for_state({"execution_metadata": {"front_door": {"difficulty": "complex"}}}) == "strong"
+    assert insight_tier_for_state({"execution_metadata": {"front_door": {"difficulty": "simple"}}}) == "fast"
+    assert insight_tier_for_state({"execution_metadata": {}}) == "fast"

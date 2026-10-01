@@ -46,6 +46,16 @@ from src.shared.jobs.tasks import (
     run_scheduled_report,
     sync_artifacts_after_schema_change,
     refresh_all_active_schemas,
+    forward_audit_events_to_siem,
+    check_decision_calibration,
+    run_ai_decision,
+    run_answer_accuracy_eval,
+    train_ml_model,
+    retrain_scheduled_ml_models,
+    run_notebook,
+    run_due_notebook_schedules,
+    score_scheduled_ml_models,
+    export_report_file,
     reindex_stale_knowledge_chunks,
     classify_data_source_columns,
     ingest_knowledge_document,
@@ -85,6 +95,16 @@ _JOB_FUNCTIONS = [
     refresh_artifact_data,  # on-demand + cron: re-execute widget queries
     sync_artifacts_after_schema_change,  # triggered when data source schema drifts
     refresh_all_active_schemas,      # cron: fans out schema refresh + drift detection to every active source
+    forward_audit_events_to_siem,    # cron: push audit events to the SIEM (no-op unless AUDIT_SIEM_URL)
+    check_decision_calibration,      # cron (nightly): decision-layer calibration vs outcomes (EE)
+    run_ai_decision,                 # on-demand: one AI Decisions run over a query result (EE)
+    run_answer_accuracy_eval,        # cron (nightly, opt-in) + on-demand: golden-set answer accuracy (EE)
+    train_ml_model,                  # on-demand: train one model version (EE Models)
+    retrain_scheduled_ml_models,     # cron (hourly): scheduled model retraining (EE Models)
+    run_notebook,                    # on-demand: one notebook run in the sandboxed runner (EE)
+    run_due_notebook_schedules,      # cron (every minute): queue due notebook schedules (EE)
+    score_scheduled_ml_models,       # cron (hourly): scheduled batch scoring into a refreshed dataset (EE Models)
+    export_report_file,              # on-demand: build a report/deck/workbook for a chat answer (EE exports)
     reindex_stale_knowledge_chunks,  # cron: re-embeds chunks with missing/stale embeddings, bounded batch per run
     classify_data_source_columns,    # on-demand: LLM column classification cache population (see column_semantic_classifier.py)
     ingest_knowledge_document,       # on-demand: parse+chunk+embed one KB upload (see knowledge/router.py's /create, /upload)
@@ -96,6 +116,24 @@ if _AI_JOB_FN is not None:
     _JOB_FUNCTIONS.append(_AI_JOB_FN)
 
 _WRAPPED_FUNCTIONS = wrap_arq_functions(_JOB_FUNCTIONS)
+
+# Jobs that legitimately run longer than the 5-minute default: model training on large tables
+# and full AI analyses (long executive reports take ~8 minutes). Killed at 5 minutes they left
+# work half-done — a model version stuck on "training", a report that never finished. One try:
+# repeating a long job that timed out only doubles the cost.
+_LONG_JOB_TIMEOUTS = {"train_ml_model": 3600, "process_ai_analyze_job": 1800, "export_report_file": 900, "run_notebook": 1900}
+
+
+def _with_long_timeouts(functions):
+    from arq.worker import func as arq_func
+
+    return [
+        arq_func(f, name=f.__name__, timeout=_LONG_JOB_TIMEOUTS[f.__name__], max_tries=1)
+        if getattr(f, "__name__", "") in _LONG_JOB_TIMEOUTS else f
+        for f in functions
+    ]
+
+
 _PIPELINE_RUN_FUNCTION = arq_func(
     wrap_arq_functions([run_pipeline])[0],
     name="run_pipeline",
@@ -114,7 +152,7 @@ _ONBOARDING_FUNCTIONS = [
         timeout=PIPELINE_JOB_TIMEOUT,
     ),
 ]
-_ARQ_FUNCTIONS = [*_WRAPPED_FUNCTIONS, _PIPELINE_RUN_FUNCTION, *_ONBOARDING_FUNCTIONS]
+_ARQ_FUNCTIONS = [*_with_long_timeouts(_WRAPPED_FUNCTIONS), _PIPELINE_RUN_FUNCTION, *_ONBOARDING_FUNCTIONS]
 _FUNCTIONS_BY_NAME = {fn.__name__: fn for fn in _WRAPPED_FUNCTIONS}
 
 
@@ -184,6 +222,25 @@ class WorkerSettings:
             name="schema_refresh_and_drift_check",
         ),
         cron(
+            _FUNCTIONS_BY_NAME["forward_audit_events_to_siem"],
+            minute=set(range(60)),
+            name="audit_siem_forward",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["check_decision_calibration"],
+            hour=3,
+            minute=10,
+            name="decision_calibration_nightly",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_answer_accuracy_eval"],
+            hour=2,
+            minute=40,
+            name="answer_accuracy_nightly",
+            timeout=6 * 3600,  # every golden question goes through the full AI pipeline
+            max_tries=1,
+        ),
+        cron(
             _FUNCTIONS_BY_NAME["reindex_stale_knowledge_chunks"],
             minute={0, 15, 30, 45},
             name="knowledge_chunk_reindex",
@@ -193,5 +250,21 @@ class WorkerSettings:
             _FUNCTIONS_BY_NAME["dispatch_due_pipelines_job"],
             minute=set(range(60)),
             name="pipeline_schedule_dispatch",
-        )
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_due_notebook_schedules"],
+            minute=set(range(60)),
+            name="notebook_schedules",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["retrain_scheduled_ml_models"],
+            minute=25,
+            name="ml_model_scheduled_retrain",
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["score_scheduled_ml_models"],
+            minute=40,  # after retraining, so a same-hour auto-approved version scores
+            name="ml_model_scheduled_scoring",
+            timeout=1800,
+        ),
     ]

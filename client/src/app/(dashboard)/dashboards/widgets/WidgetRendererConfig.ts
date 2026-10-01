@@ -3,22 +3,37 @@
  * Centralized colors, defaults, and chart settings
  */
 
-import { formatAxisLabel, formatNumber } from '../utils/numberFormatter';
+import { formatAxisLabel, formatNumber, makeCategoryLabelFormatter } from '../utils/numberFormatter';
 import type { ConditionalFormattingRule } from '../Properties/ConditionalFormattingEditor';
 
 /** Format a value for axis labels/tooltips based on the widget's valueFormat setting. */
-export function formatByValueFormat(value: unknown, valueFormat?: string): string {
+/** The chart's number settings a format reads: currency symbol and fixed decimals. */
+export type NumberStyle = { currencySymbol?: string; valueDecimals?: number };
+
+export function formatByValueFormat(
+  value: unknown,
+  valueFormat?: string,
+  style?: string | NumberStyle,
+): string {
   const num = Number(value);
   if (isNaN(num)) return String(value ?? '');
+  const opts: NumberStyle = typeof style === 'string' ? { currencySymbol: style } : style || {};
+  const fixed = typeof opts.valueDecimals === 'number' ? opts.valueDecimals : undefined;
   switch (valueFormat) {
-    case 'compact': return formatNumber(num, { compact: true, decimals: 1 });
-    case 'currency': return formatNumber(num, { currency: true, compact: true, decimals: 0 });
+    case 'compact': return formatNumber(num, { compact: true, decimals: fixed ?? 1 });
+    // Any currency: the symbol the chart's author chose ("€", "៛", "CHF "), "$" when none.
+    case 'currency':
+      return formatNumber(num, { currency: true, currencySymbol: opts.currencySymbol || '$', compact: true, decimals: fixed ?? 1 });
     // Delegate to the shared formatter (same as Stat/tooltip formatting) so a percent
     // metric stored as a unit-interval ratio (e.g. 0.15) is scaled to 15% consistently
     // everywhere, instead of this axis/label path alone rendering it as "0.15%".
-    case 'percent': return formatNumber(num, { percent: true, decimals: 1, compact: false });
-    case 'full': return num.toLocaleString();
-    default: return formatAxisLabel(num); // auto-compact
+    case 'percent': return formatNumber(num, { percent: true, decimals: fixed ?? 1, compact: false });
+    case 'full':
+      return fixed === undefined
+        ? num.toLocaleString()
+        : num.toLocaleString(undefined, { minimumFractionDigits: fixed, maximumFractionDigits: fixed });
+    default:
+      return fixed === undefined ? formatAxisLabel(num) : formatNumber(num, { compact: true, decimals: fixed });
   }
 }
 
@@ -323,6 +338,8 @@ export const DEFAULT_CHART_CONFIG = {
 };
 
 export type ChartValueFormat = 'auto' | 'compact' | 'currency' | 'percent' | 'full';
+/** Symbol for the 'currency' value format; '$' when unset. */
+export type CurrencySymbol = string;
 
 /** Solid grey axis grid — used by dashboard widgets (not dashed/dotted). */
 export const CHART_GRID_LINE_STYLE = {
@@ -334,6 +351,10 @@ export const CHART_GRID_LINE_STYLE = {
 import type { ChartDesign } from './chartDesign';
 
 export interface ChartConfig {
+  /** Symbol for the 'currency' value format ("€", "៛", "CHF "); '$' when unset. */
+  currencySymbol?: string;
+  /** Fixed decimal places for values; automatic when unset. */
+  valueDecimals?: number;
   showLegend?: boolean;
   showDataLabel?: boolean;
   showGridline?: boolean;
@@ -358,7 +379,7 @@ export interface ChartConfig {
   stacked?: boolean;
   innerRadius?: number;
   showPoints?: boolean;
-  legendPosition?: 'top' | 'bottom' | 'left' | 'right' | 'hide';
+  legendPosition?: LegendPosition;
   legendFontSize?: number;
   legendFontWeight?: number | string;
   axisLabelFontSize?: number;
@@ -393,6 +414,8 @@ export interface ChartConfig {
   showVAxisLine?: boolean;
 
   showHAxisLabels?: boolean;
+  /** X label angle in degrees (-90…90); wins over hAxisLabelSlant. */
+  hAxisLabelRotate?: number;
   hAxisLabelSlant?: 'none' | 'right-diagonal' | 'left-diagonal' | 'up' | 'down';
   hAxisFontSize?: number;
   hAxisColor?: string;
@@ -474,6 +497,10 @@ export interface ChartData {
   categories?: string[];
   /** Raw heatmap cell tuples [xLabel, yLabel, value] for heatmap charts. */
   heatmap?: Array<[string, string, number]>;
+  /** Histogram value ranges [from, to], one per bar. */
+  bins?: number[][];
+  /** Second measure (bullet target). */
+  y2?: any[];
 }
 
 const applyTextDecorations = (text: string, underline?: boolean, strikethrough?: boolean) => {
@@ -590,6 +617,35 @@ export const getCartesianEmphasis = (
   };
 };
 
+/**
+ * Legend placement: a side (top, bottom, left, right) and where along it (start, center, end).
+ * Older charts saved just a side ("top"), which reads as its first spot (top-left, left-middle).
+ */
+export type LegendPosition =
+  | 'top' | 'bottom' | 'left' | 'right' | 'hide'
+  | 'top-left' | 'top-center' | 'top-right'
+  | 'middle-left' | 'middle-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+export function legendPlacement(position?: string): { side: 'top' | 'bottom' | 'left' | 'right' | 'hide'; align: 'start' | 'center' | 'end' } {
+  switch (position) {
+    case 'hide': return { side: 'hide', align: 'start' };
+    case 'bottom': case 'bottom-left': return { side: 'bottom', align: 'start' };
+    case 'bottom-center': return { side: 'bottom', align: 'center' };
+    case 'bottom-right': return { side: 'bottom', align: 'end' };
+    case 'left': case 'middle-left': return { side: 'left', align: 'center' };
+    case 'right': case 'middle-right': return { side: 'right', align: 'center' };
+    case 'top-center': return { side: 'top', align: 'center' };
+    case 'top-right': return { side: 'top', align: 'end' };
+    default: return { side: 'top', align: 'start' };
+  }
+}
+
+/** The side a legend takes space from, for grid and pie layout ('hide' when off). */
+export function legendSide(config: { showLegend?: boolean; legendPosition?: string } | undefined): string {
+  return config?.showLegend === false ? 'hide' : legendPlacement(config?.legendPosition || 'top').side;
+}
+
 export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: ChartConfig) => {
   // showLegend=false must always win — a leftover/explicit legendPosition
   // shouldn't resurrect a legend the user just turned off (previously
@@ -618,14 +674,22 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
     type: 'scroll',
   };
 
-  const layoutMap = {
-    top: { top: feedPreview ? 0 : 5, left: feedPreview ? 4 : 10, orient: 'horizontal' },
-    bottom: { bottom:5, left: 10, orient: 'horizontal' },
-    left: { left: 5, top: 'middle', orient: 'vertical' },
-    right: { right: 5, top: 'middle', orient: 'vertical' },
-  };
-
-  const layout = layoutMap[position as keyof typeof layoutMap] || layoutMap.top;
+  const { side, align } = legendPlacement(position);
+  const edge = feedPreview ? 4 : 10;
+  const along = align === 'center' ? 'center' : align === 'end' ? undefined : edge;
+  const layout =
+    side === 'top' || side === 'bottom'
+      ? {
+          [side]: side === 'top' ? (feedPreview ? 0 : 5) : 5,
+          ...(align === 'end' ? { right: edge } : { left: along }),
+          orient: 'horizontal',
+        }
+      : {
+          [side]: 5,
+          top: align === 'center' ? 'middle' : align === 'end' ? undefined : 10,
+          ...(align === 'end' ? { bottom: 10 } : {}),
+          orient: 'vertical',
+        };
 
   return {
     ...base,
@@ -636,7 +700,7 @@ export const getBaseLegendConfig = (showLegend: boolean, type: string, config?: 
 export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
   const feedPreview = config.isFeedPreview === true;
-  const legendPos = config.showLegend === false ? 'hide' : (config.legendPosition || 'top');
+  const legendPos = legendSide(config);
   const axisVisibility = resolveAxisVisibility(config);
   const showXAxisLabels = axisVisibility.x;
   const showYAxisLabels = axisVisibility.y;
@@ -644,11 +708,7 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   const hasSecondary = data?.secondarySeries && data.secondarySeries.length > 0;
   const secondaryName = config.yAxisSecondaryLabel !== undefined ? config.yAxisSecondaryLabel : (hasSecondary ? data.secondarySeries?.[0]?.name : '');
 
-  const xAxisLabelSlanted =
-    config.hAxisLabelSlant === 'up' ||
-    config.hAxisLabelSlant === 'down' ||
-    config.hAxisLabelSlant === 'right-diagonal' ||
-    config.hAxisLabelSlant === 'left-diagonal';
+  const xAxisLabelSlanted = xLabelRotate(config) !== 0;
 
   const yAxisLabelSlanted =
     config.vAxisLabelSlant === 'up' ||
@@ -658,10 +718,26 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
 
   // Base distances — slightly leaner in dashboard tiles; containLabel still expands for labels
   const pad = compact ? 4 : 0;
+  // containLabel already makes room for the tick labels; a title needs one line more.
+  const titleRoom = (size: number) => Math.round(size * 1.4) + 8;
   const baseBottom =
-    (legendPos === 'bottom' ? 40 : config.xAxisLabel ? 45 : feedPreview ? 14 : compact ? 22 : 20) + pad;
+    (legendPos === 'bottom'
+      ? 40
+      : config.xAxisLabel
+        ? titleRoom(config.axisLabelFontSize ?? 12)
+        : feedPreview
+          ? 14
+          : compact
+            ? 22
+            : 20) + pad;
   const baseLeft =
-    (legendPos === 'left' ? 80 : config.yAxisLabel ? 50 : compact ? 16 : 20) + pad;
+    (legendPos === 'left'
+      ? 80
+      : config.yAxisLabel
+        ? titleRoom(config.axisLabelFontSize ?? 12)
+        : compact
+          ? 16
+          : 20) + pad;
   const baseTop =
     (legendPos === 'top' ? (feedPreview ? 20 : compact ? 38 : 45) : feedPreview ? 4 : compact ? 14 : 20) + pad;
   const baseRight = (legendPos === 'right' ? 80 : feedPreview ? 6 : compact ? 14 : 20) + pad;
@@ -673,7 +749,14 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
       : Math.max(10, Math.round(yAxisFontSize)) + (compact ? 2 : 0)
     : 0;
 
-  const extraRight = secondaryName && secondaryName !== '' ? 45 : 0;
+  // Values printed past the end of horizontal bars need room beyond the longest bar.
+  const labelsPastBarEnd =
+    config.barChartType === 'horizontal' &&
+    config.showDataLabel === true &&
+    (!(config as { dataLabelPosition?: string }).dataLabelPosition ||
+      (config as { dataLabelPosition?: string }).dataLabelPosition === 'end') &&
+    (config as { design?: { labels?: { valueOnBar?: boolean } } }).design?.labels?.valueOnBar !== true;
+  const extraRight = (secondaryName && secondaryName !== '' ? 45 : 0) + (labelsPastBarEnd ? 56 : 0);
 
   return {
     top: config.gridTop ?? baseTop,
@@ -684,6 +767,71 @@ export const getBaseGridConfig = (config: ChartConfig, data?: ChartData) => {
   };
 };
 
+
+// ── Axis title placement ────────────────────────────────────────────────────
+// An axis title sits just beyond the axis's widest label (Power BI / Excel / Datawrapper), so it
+// never overlaps long labels ("$1,250,000", slanted dates) and doesn't float away when the
+// labels are hidden. Widths are estimated from the labels actually drawn.
+
+/** Rough rendered width of a label: ~0.6em per character in the UI font. */
+export function estimateLabelWidth(text: string, fontSize: number): number {
+  return Math.ceil(String(text).length * fontSize * 0.6);
+}
+
+const SLANT_DEGREES: Record<string, number> = { up: -90, down: 90, 'right-diagonal': 45, 'left-diagonal': -45 };
+
+/** Degrees the axis labels are turned (0 when level). */
+export function labelRotation(slant?: string): number {
+  return (slant && SLANT_DEGREES[slant]) || 0;
+}
+
+/** X label angle: the degrees the author set, else an older named slant. */
+export function xLabelRotate(config: { hAxisLabelRotate?: number; hAxisLabelSlant?: string }): number {
+  return typeof config.hAxisLabelRotate === 'number' ? config.hAxisLabelRotate : labelRotation(config.hAxisLabelSlant);
+}
+
+/**
+ * Distance from the axis line to its title. `extent` is how far the labels reach away from the
+ * axis: their width for a vertical (value) axis, their height for a category axis.
+ */
+export function axisTitleGap(opts: {
+  labelsShown: boolean;
+  labels: string[];
+  fontSize: number;
+  labelMargin: number;
+  rotate: number;
+  vertical: boolean;
+}): number {
+  if (!opts.labelsShown || opts.labels.length === 0) return 12;
+  const widest = Math.max(...opts.labels.map((l) => estimateLabelWidth(l, opts.fontSize)));
+  const rad = (Math.abs(opts.rotate) * Math.PI) / 180;
+  const extent = opts.vertical
+    ? widest * Math.cos(rad) + opts.fontSize * Math.sin(rad)
+    : widest * Math.sin(rad) + opts.fontSize * Math.cos(rad);
+  return Math.ceil(extent + opts.labelMargin + 8);
+}
+
+/** The value-axis tick labels the chart will show, approximated from the data's range. */
+function valueAxisSampleLabels(data: ChartData | undefined, format: (v: number) => string): string[] {
+  const values: number[] = [];
+  for (const s of [...(data?.series || []), ...(data?.secondarySeries || [])]) {
+    for (const v of s?.data || []) {
+      const n = Number(Array.isArray(v) ? v[1] : v);
+      if (Number.isFinite(n)) values.push(n);
+    }
+  }
+  for (const v of data?.y || []) {
+    const n = Number(v);
+    if (Number.isFinite(n)) values.push(n);
+  }
+  if (!values.length) return [];
+  const max = Math.max(...values);
+  const min = Math.min(...values, 0);
+  // A "nice" top tick is at most ~2x the max; format both ends and the rounded top.
+  const top = max === 0 ? 0 : Math.pow(10, Math.ceil(Math.log10(Math.abs(max)))) * Math.sign(max);
+  return [format(max), format(min), format(top)];
+}
+
 export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: string = 'bar') => {
   const compact = config.isDashboardWidget === true;
   const isHorizontalBar = config.barChartType === 'horizontal';
@@ -691,12 +839,31 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
   const isScatter = chartType === 'scatter';
   const hasXAxisTextDecoration = !!(config.hAxisUnderline || config.hAxisStrikethrough);
   const xAxisVisible = resolveAxisVisibility(config).x;
+  const categoryLabel = makeCategoryLabelFormatter(
+    isHorizontalBar || isScatter ? undefined : (data?.x as unknown[]),
+    undefined,
+    (config as { __booleanLabels?: { yes: string; no: string } }).__booleanLabels,
+  );
 
   return {
     type: isHorizontalBar || isScatter ? 'value' : 'category',
     name: config.xAxisLabel,
     nameLocation: 'middle',
-    nameGap: compact ? 22 : 30,
+    nameGap: axisTitleGap({
+      labelsShown: xAxisVisible,
+      labels: isHorizontalBar || isScatter
+        ? valueAxisSampleLabels(data, (v) =>
+            config.valueFormat && config.valueFormat !== 'auto'
+              ? formatByValueFormat(v, config.valueFormat, { ...config, valueDecimals: undefined })
+              : formatAxisLabel(v),
+          )
+        : // Wrapped category labels are at most ~80px wide (see axisLabel.width below).
+          (data?.x || []).map((v: unknown) => categoryLabel(v).slice(0, 14)),
+      fontSize: config.hAxisFontSize ?? config.axisLabelFontSize ?? 11,
+      labelMargin: compact ? 6 : 12,
+      rotate: xLabelRotate(config),
+      vertical: false,
+    }),
     nameTextStyle: {
       color:
         config.axisLabelColor === 'default'
@@ -721,29 +888,32 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
       fontSize: config.hAxisFontSize ?? config.axisLabelFontSize ?? 11,
       fontWeight: config.hAxisBold ? 'bold' : 'normal',
       fontStyle: config.hAxisItalic ? 'italic' : 'normal',
-      rotate:
-        config.hAxisLabelSlant === 'up'
-          ? -90
-          : config.hAxisLabelSlant === 'down'
-            ? 90
-            : config.hAxisLabelSlant === 'right-diagonal'
-              ? 45
-              : config.hAxisLabelSlant === 'left-diagonal'
-                ? -45
-                : 0,
+      rotate: xLabelRotate(config),
       margin: compact ? 6 : 12,
       interval: config.hAxisLabelInterval ?? (isHorizontalBar ? undefined : 'auto'), // Auto-hide labels if they don't fit
-      hideOverlap: config.hAxisLabelInterval !== undefined ? false : !isHorizontalBar, // explicit hide overlap
-      overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : 'break',
-      width: isHorizontalBar ? undefined : hasXAxisTextDecoration ? undefined : compact ? undefined : 80,
+      // Labels that would collide are dropped (a value axis too), never drawn over each other.
+      hideOverlap: config.hAxisLabelInterval === undefined,
+      // A value axis's first and last labels sit inside the plot instead of being cut at the edge.
+      ...(isHorizontalBar || isScatter ? { alignMinLabel: 'left', alignMaxLabel: 'right' } : {}),
+      // Level labels wrap onto two lines; turned labels stay on one line and are cut when long.
+      overflow: isHorizontalBar ? undefined : hasXAxisTextDecoration ? 'none' : xLabelRotate(config) !== 0 ? 'truncate' : 'break',
+      width: isHorizontalBar
+        ? undefined
+        : hasXAxisTextDecoration
+          ? undefined
+          : xLabelRotate(config) !== 0
+            ? 120
+            : compact
+              ? undefined
+              : 80,
       formatter: (value: any) => {
         const baseText = isHorizontalBar
           ? isPercentStacked && typeof value === 'number'
             ? `${value}%`
             : config.valueFormat && config.valueFormat !== 'auto'
-              ? formatByValueFormat(value, config.valueFormat)
+              ? formatByValueFormat(value, config.valueFormat, { ...config, valueDecimals: undefined })
               : formatAxisLabel(value)
-          : `${value ?? ''}`;
+          : categoryLabel(value);
 
         return hasXAxisTextDecoration
           ? applyTextDecorations(baseText, config.hAxisUnderline, config.hAxisStrikethrough)
@@ -763,6 +933,12 @@ export const getXAxisConfig = (data: ChartData, config: ChartConfig, chartType: 
 
 export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
   const compact = config.isDashboardWidget === true;
+  // Horizontal bars put the categories on Y: dates read 'Jun 2024', booleans Yes / No.
+  const yCategoryLabel = makeCategoryLabelFormatter(
+    config.barChartType === 'horizontal' ? (data?.x as unknown[]) : undefined,
+    undefined,
+    (config as { __booleanLabels?: { yes: string; no: string } }).__booleanLabels,
+  );
   const isHorizontalBar = config.barChartType === 'horizontal';
   const isPercentStacked = config.barStackMode === 'stacked-100' || config.lineStackMode === 'stacked-100';
   const hasYAxisTextDecoration = !!(config.vAxisUnderline || config.vAxisStrikethrough);
@@ -771,13 +947,28 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
     config.vAxisLabelSlant === 'down' ||
     config.vAxisLabelSlant === 'right-diagonal' ||
     config.vAxisLabelSlant === 'left-diagonal';
-  const hasYTitle = config.yAxisLabel !== undefined || (data?.series && data.series.length > 0);
 
   return {
     type: isHorizontalBar ? 'category' : 'value',
     name: config.yAxisLabel,
     nameLocation: 'middle',
-    nameGap: isHorizontalBar ? (hasYTitle ? 55 : 45) : compact ? 34 : 42,
+    nameGap: axisTitleGap({
+      labelsShown: (config.showVAxisLabels ?? config.showAxis) !== false,
+      labels: isHorizontalBar
+        ? // Category labels on a horizontal bar are cut at ~50px (axisLabel.width below).
+          (data?.x || []).map((v: unknown) => yCategoryLabel(v).slice(0, compact ? 15 : 20))
+        : valueAxisSampleLabels(data, (v) =>
+            isPercentStacked
+              ? `${v}%`
+              : config.valueFormat && config.valueFormat !== 'auto'
+                ? formatByValueFormat(v, config.valueFormat, { ...config, valueDecimals: undefined })
+                : formatAxisLabel(v),
+          ),
+      fontSize: config.vAxisFontSize ?? config.axisLabelFontSize ?? 11,
+      labelMargin: compact ? 8 : yAxisLabelSlanted ? 16 : 12,
+      rotate: labelRotation(config.vAxisLabelSlant),
+      vertical: true,
+    }),
     nameRotate: 90,
     nameTextStyle: {
       color:
@@ -823,11 +1014,11 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
                 : 0,
       formatter: (value: any) => {
         const baseText = isHorizontalBar
-          ? `${value ?? ''}`
+          ? yCategoryLabel(value)
           : isPercentStacked && typeof value === 'number'
             ? `${value}%`
             : config.valueFormat && config.valueFormat !== 'auto'
-              ? formatByValueFormat(value, config.valueFormat)
+              ? formatByValueFormat(value, config.valueFormat, { ...config, valueDecimals: undefined })
               : formatAxisLabel(value);
 
         return hasYAxisTextDecoration
@@ -838,7 +1029,8 @@ export const getYAxisConfig = (config: ChartConfig, data?: ChartData) => {
       interval: isHorizontalBar ? 0 : undefined, // Show all labels for horizontal bars
       hideOverlap: !isHorizontalBar,
       overflow: isHorizontalBar ? (hasYAxisTextDecoration ? 'none' : 'truncate') : undefined,
-      width: isHorizontalBar ? (hasYAxisTextDecoration ? undefined : 50) : undefined,
+      // Room for 'Sep 2024' or a short name; longer names are cut (full text in the tooltip).
+      width: isHorizontalBar ? (hasYAxisTextDecoration ? undefined : compact ? 90 : 120) : undefined,
     },
     axisTick: { show: false },
   };

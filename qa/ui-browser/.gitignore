@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.uv/
+vendor/
+*.pyc
+reports/runs/*
+!reports/runs/.gitkeep
+!reports/runs/VENDOR_PIN.txt
+reports/artifacts/
+traces/
+screenshots/
+*.trace.json
+*.har
+.DS_Store

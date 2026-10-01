@@ -9,6 +9,12 @@ from ee.modules.ai.services.export_artifacts_service import (
     resolve_artifact,
 )
 
+@pytest.fixture(autouse=True)
+def _saas_deployment(monkeypatch):
+    """Plan gating applies to SaaS; a developer .env with self-host mode must not leak in."""
+    monkeypatch.setenv("AISER_DEPLOYMENT_MODE", "saas")
+
+
 
 @pytest.mark.asyncio
 async def test_generate_docx_from_context(tmp_path, monkeypatch):

@@ -89,10 +89,18 @@ const EMBED_MODE_LABELS: Record<string, string> = {
   business_journey: 'Business OS',
 };
 
-function allowedModeOptions(capabilities: string | undefined): { value: string; label: string }[] {
+function allowedModeOptions(
+  capabilities: string | undefined,
+  tChat?: ((key: any) => string) & { has?: (key: any) => boolean },
+): { value: string; label: string }[] {
   const keys: readonly string[] =
     capabilities === 'full_engine' ? [...RAG_ONLY_MODES, ...FULL_ENGINE_ONLY_MODES] : RAG_ONLY_MODES;
-  return keys.map((value) => ({ value, label: EMBED_MODE_LABELS[value] ?? value }));
+  // Translated from the shared `chat.imc_<mode>_title` messages; English only as a fallback.
+  const label = (value: string) => {
+    const key = `imc_${value}_title`;
+    return tChat && (typeof tChat.has !== 'function' || tChat.has(key)) ? tChat(key) : EMBED_MODE_LABELS[value] ?? value;
+  };
+  return keys.map((value) => ({ value, label: label(value) }));
 }
 
 interface EmbedAssistantModalProps {
@@ -125,6 +133,7 @@ export const EmbedAssistantModal: React.FC<EmbedAssistantModalProps> = ({
   onClose,
 }) => {
   const t = useTranslations('settings');
+  const tChat = useTranslations('chat');
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
   const { libraries, isLoading: librariesLoading } = useKnowledgeLibraries(organizationId);
@@ -146,7 +155,7 @@ export const EmbedAssistantModal: React.FC<EmbedAssistantModalProps> = ({
   const [starters, setStarters] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<EmbedAssistantVisibility>('private');
   const capabilitiesValue = Form.useWatch('capabilities', form);
-  const modeOptions = useMemo(() => allowedModeOptions(capabilitiesValue), [capabilitiesValue]);
+  const modeOptions = useMemo(() => allowedModeOptions(capabilitiesValue, tChat as any), [capabilitiesValue, tChat]);
 
   // Downgrading rag_only <-> full_engine can leave allowed_modes holding a
   // value the new capability doesn't support (e.g. "diagnostic" surviving a

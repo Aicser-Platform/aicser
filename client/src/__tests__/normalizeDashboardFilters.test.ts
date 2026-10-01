@@ -90,3 +90,14 @@ describe('normalizeDashboardFilters', () => {
     expect(filter).toMatchObject({ dataSourceId: 'ds-customers', tableName: 'customers' });
   });
 });
+
+describe('relative date defaults', () => {
+  it('re-evaluates a saved preset instead of the dates frozen beside it', () => {
+    const [filter] = normalizeDashboardFilters([
+      { field: 'order_date', type: 'dateRange', default: 'last_30_days', defaultValue: ['2020-01-01', '2020-01-30'] },
+    ]);
+    const [from, to] = filter.defaultValue as [string, string];
+    expect(from).not.toBe('2020-01-01');
+    expect(new Date(to).getFullYear()).toBeGreaterThanOrEqual(new Date().getFullYear());
+  });
+});

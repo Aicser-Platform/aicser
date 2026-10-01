@@ -55,6 +55,7 @@ export async function fetchWidgetChartData(params: {
     // dropped server-side (e.g. an unsupported raw-SQL filter) rather than
     // applied — the caller decides how to surface this (toast, banner).
     filterWarnings: response.filter_warnings,
+    unappliedFilters: response.unapplied_filters,
   };
 }
 

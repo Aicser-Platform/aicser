@@ -215,6 +215,30 @@ async def test_scalar_count_skips_llm_and_does_not_invent_minmax_insights():
 
 
 @pytest.mark.asyncio
+async def test_multi_row_comparison_narrates_even_when_wording_looked_like_a_kpi():
+    """'How does total X compare across quarters' reads like a KPI lookup (the quiet plan set
+    needs_narrative=False) but returns several rows — it must get a written answer, not a
+    template line or an empty 'Analysis complete'."""
+    from ee.modules.ai.nodes.insight_synthesizer_node import insight_synthesizer_node
+
+    out = await insight_synthesizer_node(
+        {
+            "query": "How does total order amount in 2024 compare across different quarters?",
+            "query_result": [
+                {"quarter": "2024-01-01", "total_order_amount": 812000},
+                {"quarter": "2024-04-01", "total_order_amount": 798500},
+                {"quarter": "2024-07-01", "total_order_amount": 805200},
+                {"quarter": "2024-10-01", "total_order_amount": 820100},
+            ],
+            "execution_metadata": {"needs_narrative": False, "needs_chart": False},
+        },
+        litellm_service=None,
+    )
+    assert not (out.get("execution_metadata") or {}).get("insights_skipped_by_plan")
+    assert (out.get("executive_summary") or out.get("narration") or "").strip()
+
+
+@pytest.mark.asyncio
 async def test_ranking_does_not_skip_narrative_even_if_plan_flag_false():
     """Breakdowns/rankings must narrate — a stale needs_narrative=False must not skip."""
     from ee.modules.ai.nodes.insight_synthesizer_node import insight_synthesizer_node

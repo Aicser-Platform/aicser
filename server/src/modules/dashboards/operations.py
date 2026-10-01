@@ -18,6 +18,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.modules.embed.limits import cap_rows
 from src.modules.charts.services.v2.dashboard_chart_service import DashboardChartService
 from src.modules.charts.services.v2.dashboard_service import DashboardService
 from src.modules.charts.services.v2.chart_service import ChartService
@@ -223,18 +224,22 @@ def merge_runtime_filters(chart_query: dict, runtime_filters: Optional[List[dict
     if not runtime_filters:
         return chart_query
     merged = dict(chart_query or {})
-    existing = list(merged.get("filters") or [])
+    runtime_entries: List[dict] = []
     for rf in runtime_filters:
-        normalized = _normalize_filter_entry(rf)
-        for entry in normalized:
-            field = entry["field"]
-            # Remove ALL existing filters for this field, then append the new one.
-            # We match on field only (not operator) because the replace semantics
-            # require that a runtime filter for "region" supersedes any previously
-            # saved filter on "region", no matter what operator was used.
-            existing = [f for f in existing if f.get("field") != field]
-            existing.append(entry)
-    merged["filters"] = existing
+        for entry in _normalize_filter_entry(rf):
+            # The same field + operator twice: the later one wins. Different operators on one
+            # field are one filter: a date range arrives as ">= from" and "<= to", and both
+            # bounds must apply (keeping only the last left every range open at the start).
+            runtime_entries = [
+                e for e in runtime_entries
+                if not (e.get("field") == entry["field"] and e.get("operator") == entry.get("operator"))
+            ]
+            runtime_entries.append(entry)
+    # The widget's own saved filters on those fields are replaced, whatever their operator:
+    # "region" on the dashboard supersedes the widget's saved "region".
+    runtime_fields = {e["field"] for e in runtime_entries}
+    existing = [f for f in (merged.get("filters") or []) if f.get("field") not in runtime_fields]
+    merged["filters"] = existing + runtime_entries
     return merged
 
 
@@ -407,8 +412,10 @@ async def build_embed_payload(
     page_id: Optional[str] = None,
     runtime_filters: Optional[List[dict]] = None,
     identity: QueryAccess = None,
+    row_cap: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Build embed/share payload from dashboard_charts + saved layout."""
+    """Build embed/share payload from dashboard_charts + saved layout. ``row_cap`` limits what
+    an anonymous viewer receives (embed/limits.py)."""
     import copy
 
     dash_svc = DashboardService(db)
@@ -435,8 +442,8 @@ async def build_embed_payload(
                 exec_chart.chart_query = merge_runtime_filters(
                     copy.deepcopy(chart.chart_query or {}), runtime_filters
                 )
-            chart_data = await chart_svc.chart_service.execute(
-                exec_chart, identity=identity
+            chart_data = cap_rows(
+                await chart_svc.chart_service.execute(exec_chart, identity=identity), row_cap
             )
         except Exception as exec_err:
             exec_error = str(exec_err)[:300]
@@ -503,6 +510,7 @@ async def refresh_dashboard_charts(
     dashboard_id: UUID,
     chart_requests: List[Dict[str, Any]],
     identity: QueryAccess = None,
+    row_cap: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Execute multiple dashboard charts in one request (pooled connections, server-side concurrency cap)."""
     if not chart_requests:
@@ -558,9 +566,13 @@ async def refresh_dashboard_charts(
                             )
                             base_query = apply_drill_context(base_query, drill_context)
                         exec_chart.chart_query = base_query
-                    data = await chart_svc.chart_service.execute(
-                        exec_chart, identity=identity
+                    from src.modules.charts.services.v2.chart_service import track_unapplied_filters
+
+                    unapplied = track_unapplied_filters()
+                    data = cap_rows(
+                        await chart_svc.chart_service.execute(exec_chart, identity=identity), row_cap
                     )
+
                     validation = validate_chart_data(
                         chart.chart_type,
                         data,
@@ -575,6 +587,9 @@ async def refresh_dashboard_charts(
                         }
                         if filter_warnings:
                             result["filter_warnings"] = filter_warnings
+                        if unapplied:
+                            # Structured so the card can say, translated, which filter it ignores.
+                            result["unapplied_filters"] = list(unapplied)
                     else:
                         result = {
                             "chart_id": chart_id,
