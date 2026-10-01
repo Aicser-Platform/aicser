@@ -10098,6 +10098,7 @@
     "model": "Mô hình",
     "semantic_layer": "Lớp ngữ nghĩa",
     "integrations": "Tích hợp",
+    "pipelines": "Pipelines",
     "cat_data": "Dữ liệu & Mô hình",
     "cat_monitor": "Giám sát & Vận hành",
     "more": "Thêm",

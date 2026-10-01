@@ -6128,6 +6128,7 @@
     "model": "模型",
     "semantic_layer": "语义层",
     "integrations": "集成",
+    "pipelines": "数据管道",
     "cat_data": "数据与模型",
     "cat_monitor": "监控与运维",
     "more": "更多",

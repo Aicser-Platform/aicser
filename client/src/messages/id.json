@@ -6128,6 +6128,7 @@
     "model": "Model",
     "semantic_layer": "Lapisan Semantik",
     "integrations": "Integrasi",
+    "pipelines": "Pipelines",
     "cat_data": "Data & Model",
     "cat_monitor": "Pemantauan & Operasi",
     "more": "Lainnya",

@@ -38,7 +38,8 @@ async def test_duckdb_engine_loads_a_lakehouse_iceberg_source_via_iceberg_scan(m
     await engine._load_lakehouse_iceberg(fake_conn, data_source)
 
     assert any("iceberg_scan(" in c for c in calls)
-    assert any(c.startswith("CREATE TABLE data AS") for c in calls)
+    # No lake_object_id to key a local copy on, so it reads remotely
+    assert any(c.startswith("CREATE OR REPLACE TEMP VIEW data AS") and "iceberg_scan(" in c for c in calls)
 
 
 async def test_duckdb_engine_execute_routes_lakehouse_iceberg_to_the_iceberg_loader_not_file_upload(
@@ -62,11 +63,14 @@ async def test_duckdb_engine_execute_routes_lakehouse_iceberg_to_the_iceberg_loa
         def close(self):
             pass
 
-    monkeypatch.setattr("duckdb.connect", lambda *a, **kw: FakeConn())
+    monkeypatch.setattr(
+        "src.modules.pipeline.ingest.lakehouse_serving.serving_connection",
+        lambda: FakeConn(),
+    )
 
     sentinel = "iceberg-branch-entered"
 
-    async def fake_load_lakehouse_iceberg(self, conn, data_source):
+    async def fake_load_lakehouse_iceberg(self, conn, data_source, query=None):
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(
@@ -126,9 +130,9 @@ async def test_duckdb_engine_also_exposes_the_lakehouse_table_under_its_real_nam
         },
     )
 
-    assert any(c.startswith("CREATE TABLE data AS") for c in calls)
+    assert any(c.startswith("CREATE OR REPLACE TEMP VIEW data AS") for c in calls)
     assert any(
-        c == 'CREATE VIEW "orders" AS SELECT * FROM data' for c in calls
+        c.startswith('CREATE OR REPLACE TEMP VIEW "orders" AS') and "iceberg_scan(" in c for c in calls
     ), calls
 
 
@@ -200,5 +204,5 @@ async def test_duckdb_lakehouse_load_without_a_source_table_still_creates_data(
         },
     )
 
-    assert any(c.startswith("CREATE TABLE data AS") for c in calls)
-    assert not any("CREATE VIEW" in c for c in calls)
+    assert any(c.startswith("CREATE OR REPLACE TEMP VIEW data AS") for c in calls)
+    assert not any('VIEW "' in c for c in calls), "no named view without a table name"

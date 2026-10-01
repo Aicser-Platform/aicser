@@ -6128,6 +6128,7 @@
     "model": "モデル",
     "semantic_layer": "セマンティックレイヤー",
     "integrations": "統合",
+    "pipelines": "パイプライン",
     "cat_data": "データとモデル",
     "cat_monitor": "監視と運用",
     "more": "詳細",

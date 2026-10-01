@@ -6128,6 +6128,7 @@
     "model": "Modelo",
     "semantic_layer": "Capa semántica",
     "integrations": "Integraciones",
+    "pipelines": "Pipelines",
     "cat_data": "Datos y Modelo",
     "cat_monitor": "Monitoreo y Ops",
     "more": "Más",

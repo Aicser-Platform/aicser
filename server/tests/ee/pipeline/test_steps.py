@@ -79,3 +79,14 @@ def test_quote_ident_rejects_an_embedded_quote():
 
     with pytest.raises(ValueError, match="invalid identifier"):
         quote_ident('bad"name')
+
+
+def test_join_step_accepts_a_bare_yaml_on_key():
+    """YAML 1.1 parses a bare `on:` key as True; a hand-written join must still build."""
+    import yaml
+
+    from src.modules.pipeline.transform.steps import parse_step
+
+    raw = yaml.safe_load("join:\n  asset: orders\n  how: inner\n  on: {order_id: order_id}\n")
+    step = parse_step(raw)
+    assert step.on == {"order_id": "order_id"}

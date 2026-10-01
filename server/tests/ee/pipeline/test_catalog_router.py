@@ -445,7 +445,7 @@ async def test_catalog_lineage_endpoint(monkeypatch):
         slug="test-crrmmm",
         target_layer="silver",
         source_asset_id="ds-crm",
-        source_table="deals",
+        options={"source_table": "deals"},
         yaml_artifact_id=None,
     )
 
@@ -492,12 +492,13 @@ async def test_catalog_lineage_endpoint(monkeypatch):
 
     assert response.source_name == "crm"
     assert response.source_type == "s3"
-    assert len(response.nodes) == 4
-    assert response.nodes[0].layer == "raw"
-    assert "crm" in response.nodes[0].name
-    assert response.nodes[1].layer == "bronze"
+    # Source -> Bronze (real object) -> Silver (configured by the pipeline, not yet written).
+    # No invented Gold node: nothing produces Gold for this table.
+    assert [n.layer for n in response.nodes] == ["raw", "bronze", "silver"]
+    assert response.nodes[0].name == "crm"
     assert response.nodes[1].row_count == 90
-    assert response.nodes[2].layer == "silver"
+    assert response.nodes[1].lake_object_id == str(lake_bronze.id)
+    assert response.nodes[2].status == "pending"
     assert response.nodes[2].pipeline_name == "Test-crrmmm"
-    assert len(response.edges) == 3
+    assert len(response.edges) == 2
 

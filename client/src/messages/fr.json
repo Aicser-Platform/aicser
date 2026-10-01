@@ -6128,6 +6128,7 @@
     "model": "Modèle",
     "semantic_layer": "Couche sémantique",
     "integrations": "Intégrations",
+    "pipelines": "Pipelines",
     "cat_data": "Données & Modèle",
     "cat_monitor": "Supervision & Ops",
     "more": "Plus",

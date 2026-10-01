@@ -45,7 +45,11 @@ def _timeout_connect_args(conn_uri: str, timeout_seconds: int) -> Dict[str, Any]
     if dialect.startswith("postgresql"):
         return {"options": f"-c statement_timeout={timeout_seconds * 1000}"}
     if dialect.startswith("mysql"):
-        return {"read_timeout": timeout_seconds, "write_timeout": timeout_seconds}
+        return {
+            "connect_timeout": max(timeout_seconds, 30),
+            "read_timeout": max(timeout_seconds, 90),
+            "write_timeout": max(timeout_seconds, 90),
+        }
     return {}
 
 
@@ -81,6 +85,19 @@ def get_sync_engine(data_source: Dict[str, Any], conn_uri: str) -> sa.engine.Eng
 def dispose_engine_for_data_source(data_source_id: str) -> None:
     """Drop cached pool when a data source is removed or credentials change."""
     key = f"ds:{data_source_id}"
+    with _pool_lock:
+        engine = _engines.pop(key, None)
+    if engine is not None:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+        logger.info("Disposed Direct SQL connection pool (key=%s)", key)
+
+
+def dispose_engine(data_source: Dict[str, Any], conn_uri: str) -> None:
+    """Drop cached pool for a specific data source + URI pair."""
+    key = _pool_key(data_source, conn_uri)
     with _pool_lock:
         engine = _engines.pop(key, None)
     if engine is not None:

@@ -67,10 +67,28 @@ def test_quarantine_side_query_selects_failing_rows_with_a_reason():
     step = ValidateStep(not_null=["id"], unique=["id"], on_fail="quarantine")
     sql = step.quarantine_cte("s0", _ctx())
 
-    assert sql.startswith("SELECT *, ")
+    assert sql.startswith("SELECT *")
     assert "_quarantine_reason" in sql
     assert "WHERE NOT (" in sql
     assert "not_null:id" in sql
+
+
+def test_unique_rule_runs_in_duckdb_for_both_sides_of_quarantine():
+    """Window rules can't sit in WHERE; this must execute, not just render."""
+    import duckdb
+
+    from src.modules.pipeline.transform.steps import ValidateStep
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE s0 AS SELECT * FROM (VALUES ('a', 1), ('b', 2), ('b', 3), (NULL, 4)) t(id, v)")
+    step = ValidateStep(not_null=["id"], unique=["id"], on_fail="quarantine")
+
+    kept = con.execute(step.to_cte("s0", _ctx())).fetchall()
+    rejected = con.execute(step.quarantine_cte("s0", _ctx())).fetchall()
+
+    assert kept == [("a", 1)]
+    assert sorted(r[-1] for r in rejected) == ["not_null:id", "unique:id", "unique:id"]
+    assert len(kept[0]) == 2, "helper column must not leak into the output"
 
 
 def test_fail_mode_raises_via_the_error_function():

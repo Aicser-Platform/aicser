@@ -24,6 +24,18 @@ from src.modules.data.services.query_identity import (
 SECURED_SOURCE = {"id": "ds-1", "type": "file", "organization_id": "org-1"}
 
 
+@pytest.fixture(autouse=True)
+def _source_is_not_pipeline_managed(monkeypatch):
+    """File sources consult query routing (a pipeline may serve them from the
+    lakehouse); these tests are about identity enforcement on the source itself."""
+    from src.modules.data.services import query_routing
+
+    async def unmanaged(_ds_id):
+        return None
+
+    monkeypatch.setattr(query_routing, "load_managed_lakehouse", unmanaged)
+
+
 @pytest.fixture
 def service():
     return MultiEngineQueryService()

@@ -1447,6 +1447,22 @@ class DataConnectivityService:
                         else None,
                     }
 
+                    # A pipeline-generated Gold Lakehouse source: its config holds
+                    # storage locations, not credentials — pass it through as-is.
+                    if source.type == "lakehouse_iceberg" and source.connection_config:
+                        import json as _json
+
+                        try:
+                            lake_cfg = (
+                                _json.loads(source.connection_config)
+                                if isinstance(source.connection_config, str)
+                                else dict(source.connection_config)
+                            )
+                        except (TypeError, ValueError):
+                            lake_cfg = {}
+                        source_dict["connection_config"] = lake_cfg
+                        source_dict["config"] = lake_cfg
+
                     # CRITICAL: Include connection_config for database/warehouse/API/sample_duckdb/google_sheets and decrypt credentials
                     if (
                         source.type

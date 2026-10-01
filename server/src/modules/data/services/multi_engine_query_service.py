@@ -66,7 +66,7 @@ _multi_engine_service: Optional["MultiEngineQueryService"] = None
 # is matched, so expressions (CAST(...), col + 1, CURRENT_DATE - INTERVAL ...) are
 # left alone and the rewrite stays idempotent (already-cast args contain parens).
 _DATE_TRUNC_COL_RE = re.compile(
-    r"date_trunc\(\s*('[^']*')\s*,\s*(\"?[A-Za-z_][\w]*\"?)\s*\)",
+    r"date_trunc\(\s*('[^']*')\s*,\s*((?:\"?[A-Za-z_][\w]*\"?\.)?\"?[A-Za-z_][\w]*\"?)\s*\)",
     re.IGNORECASE,
 )
 _DATE_KEYWORDS = {"CURRENT_DATE", "CURRENT_TIMESTAMP", "NOW", "TODAY", "LOCALTIMESTAMP"}
@@ -148,6 +148,9 @@ _SQL_DANGEROUS_PREFIX_PATTERN = re.compile(r'(?:^|[\s,;(])(XP_|SP_)\w+', re.IGNO
 # cancels the in-flight query on timeout rather than merely giving up on
 # waiting for it (DuckDB's own documented cancellation API).
 DUCKDB_STATEMENT_TIMEOUT_SECONDS = int(os.getenv("DUCKDB_STATEMENT_TIMEOUT_SECONDS", "30"))
+# Registering lakehouse tables reads Iceberg metadata from object storage (and
+# fills the local cache on first use), which happens before the statement runs.
+LAKEHOUSE_LOAD_TIMEOUT_SECONDS = int(os.getenv("LAKEHOUSE_LOAD_TIMEOUT_SECONDS", "90"))
 
 
 async def _execute_duckdb_with_timeout(conn: "duckdb.DuckDBPyConnection", query: str) -> list:
@@ -484,6 +487,41 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
         rewritten = rewritten[:start] + replacement + rewritten[end:]
 
     return rewritten, None, translated_refs + fallback_refs
+
+
+def rewrite_lakehouse_table_refs(query: str, data_source: Dict[str, Any]) -> str:
+    """Drop the schema qualifier from refs to served lakehouse tables.
+
+    Served tables are registered unqualified under their real names, so
+    ``FROM main.orders`` or ``FROM "shop"."orders"`` must read ``orders``.
+    Unlike file uploads, nothing is ever redirected to "data": a table that
+    isn't served is left as written and fails loudly instead of silently
+    reading the primary table's rows.
+    """
+    if not query or not isinstance(query, str):
+        return query
+    served = {
+        str(t.get("name") or "").strip().lower(): str(t.get("name") or "").strip()
+        for t in data_source.get("lakehouse_tables") or []
+    }
+    served.pop("", None)
+    if not served:
+        return query
+
+    replacements: List[Tuple[int, int, str]] = []
+    for match in _DUCKDB_TABLE_REF_RE.finditer(query):
+        clean_ref = _normalize_duckdb_table_ref(match.group(2))
+        if "." not in clean_ref:
+            continue
+        bare_name = clean_ref.split(".")[-1]
+        if bare_name in served:
+            quoted = served[bare_name].replace('"', '""')
+            replacements.append((match.start(), match.end(), f'{match.group(1)} "{quoted}"'))
+
+    rewritten = query
+    for start, end, replacement in reversed(replacements):
+        rewritten = rewritten[:start] + replacement + rewritten[end:]
+    return rewritten
 
 
 def cast_date_trunc_args_for_duckdb(query: str) -> str:
@@ -1040,6 +1078,13 @@ class MultiEngineQueryService:
                         "engine": engine_tag,
                         "optimization": optimization,
                         "query": query,
+                        # Which lakehouse snapshot answers the query: a new
+                        # pipeline run lands new objects, so results cached
+                        # against older data (or the pre-pipeline source) miss.
+                        "served": [
+                            [t.get("name"), t.get("lake_object_id")]
+                            for t in data_source.get("lakehouse_tables") or []
+                        ],
                     },
                     sort_keys=True,
                 )
@@ -1062,13 +1107,6 @@ class MultiEngineQueryService:
             # Analyze query and data source
             query_analysis = self._analyze_query(query, data_source)
 
-            # CRITICAL: For file/sheet uploads (DuckDB single-table), validate and optionally rewrite table names
-            # Support naming conventions:
-            # 1. 'data' - backward compatible, single file
-            # 2. 'file_XXXXX' - multi-file support, each file as separate table
-            # 3. Sheet/table names from multi-sheet Excel/CSV (stored in schema.duckdb_tables)
-            #    Keys = logical names (e.g. "dim_customer"), Values = actual DuckDB names (e.g. "sheet_1_dim_customer")
-            # 4. Unrelated tables - rewrite to 'data' for backward compat (fallback)
             if is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 import re
                 rewritten_query, rewrite_error, rewritten_refs = rewrite_file_duckdb_table_refs(query, data_source)
@@ -1100,9 +1138,6 @@ class MultiEngineQueryService:
                             # No duckdb_tables mapping — assume name is used directly
                             _logical_to_duckdb[_k] = _t["name"]
 
-                # Older Excel uploads may have a multi-sheet schema but a compressed
-                # single-table Parquet object in storage. In that case only the first
-                # sheet/fact table is actually loadable as DuckDB's `data` table.
                 _storage_format = ""
                 if isinstance(_ds_schema, dict):
                     _storage_format = str(((_ds_schema.get("storage") or {}).get("format") or "")).lower()
@@ -1222,6 +1257,12 @@ class MultiEngineQueryService:
                     except Exception as _e:
                         logger.error(f"❌ Failed to rewrite query table name: {_e}", exc_info=True)
                         # Don't fail the query, but log the error for debugging
+            elif (data_source.get("type") or "").lower() == "lakehouse_iceberg":
+                rewritten_query = rewrite_lakehouse_table_refs(query, data_source)
+                if rewritten_query != query:
+                    logger.info("✅ Unqualified lakehouse table refs:\nOriginal: %s\nRewritten: %s", query, rewritten_query)
+                    query_analysis["original_query"] = query
+                    query = rewritten_query
 
             # NOTE: pipeline-managed database sources are routed to the lakehouse
             # by ``execute_query`` before row/column security runs, so by the time
@@ -1625,6 +1666,11 @@ class DuckDBEngine(BaseQueryEngine):
                 else:
                     conn = duckdb.connect()
                     logger.warning("⚠️ SAMPLE_DATA_DUCKDB_PATH not set or file missing; sample_duckdb will have no data")
+            elif data_source.get("type") == "lakehouse_iceberg":
+                # Shared serving database: extensions, S3 secret and HTTP
+                # metadata cache persist across queries (see lakehouse_serving)
+                from src.modules.pipeline.ingest.lakehouse_serving import serving_connection
+                conn = serving_connection()
             else:
                 conn = duckdb.connect()
 
@@ -1681,7 +1727,7 @@ class DuckDBEngine(BaseQueryEngine):
                         google_sheets_temp_path = None
                     raise
             elif data_source.get("type") == "lakehouse_iceberg":
-                await self._load_lakehouse_iceberg(conn, data_source)
+                await self._load_lakehouse_iceberg(conn, data_source, query)
             elif is_file_upload_duckdb(data_source.get("type"), data_source.get("format")):
                 # MULTI-FILE SUPPORT: Detect if query references multiple files and load them all
                 detected_file_ids = self._detect_file_references(query)
@@ -2061,30 +2107,60 @@ class DuckDBEngine(BaseQueryEngine):
         # For now, we'll simulate loading data
         pass
 
-    async def _load_lakehouse_iceberg(self, conn, data_source: Dict[str, Any]) -> None:
-        """Load a pipeline-managed source's Gold Iceberg table as the single "data"
-        table — the same convention file/sheet sources use, so no query rewriting
-        or schema-shape special-casing is needed anywhere downstream."""
-        from src.modules.pipeline.ingest.duckdb_s3 import (
-            configure_duckdb_iceberg, configure_duckdb_s3, iceberg_scan_sql)
+    async def _load_lakehouse_iceberg(
+        self, conn, data_source: Dict[str, Any], query: Optional[str] = None
+    ) -> None:
+        """Expose a pipeline-managed source's served (Silver/Gold) Iceberg tables
+        under their real names, plus the primary one as "data" — the same
+        convention file/sheet sources use, so single-table SQL keeps working.
 
-        configure_duckdb_s3(conn)
-        configure_duckdb_iceberg(conn)
+        Only the tables `query` references are registered (all when it's None
+        or unparseable), from a local copy when one is cached. Registering
+        reads remote metadata, so it runs in a worker thread under a timeout
+        rather than blocking the event loop."""
+        from src.modules.pipeline.ingest.lakehouse_serving import register_served_tables
 
-        storage_uri = data_source.get("storage_uri")
+        # A routed source carries these at the top level; a Gold Lakehouse
+        # DataSource record keeps them in its connection_config.
+        cc = data_source.get("connection_config") or {}
+        if isinstance(cc, str):
+            try:
+                cc = json.loads(cc)
+            except (TypeError, ValueError):
+                cc = {}
+        storage_uri = data_source.get("storage_uri") or cc.get("storage_uri")
         if not storage_uri:
             raise ValueError("lakehouse_iceberg source is missing storage_uri")
+        primary_name = data_source.get("source_table") or cc.get("source_table") or "data"
 
-        scan_sql = iceberg_scan_sql(storage_uri)
-        conn.execute(f"CREATE TABLE data AS {scan_sql}")
+        # Every table the pipeline serves, under its real name. Older dicts
+        # carry just the primary table.
+        tables = (
+            data_source.get("lakehouse_tables")
+            or cc.get("lakehouse_tables")
+            or [{"name": primary_name, "storage_uri": storage_uri}]
+        )
+        # "data" is the primary table -- what single-table SQL (and the RLS
+        # alias in _enforce_row_security) refers to.
+        primary = next(
+            (t for t in tables if t.get("name") == primary_name and t.get("storage_uri") == storage_uri),
+            {"name": primary_name, "storage_uri": storage_uri},
+        )
 
-        # SQL generated against the source's real schema (chart_service builds
-        # exactly that) references the pipeline's configured table name, so
-        # expose the same rows under that name too.
-        real_name = data_source.get("source_table")
-        if real_name and real_name != "data":
-            safe_name = real_name.replace('"', '""')
-            conn.execute(f'CREATE VIEW "{safe_name}" AS SELECT * FROM data')
+        loop = asyncio.get_event_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: register_served_tables(conn, tables, primary, query)),
+                timeout=LAKEHOUSE_LOAD_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            try:
+                conn.interrupt()
+            except Exception:
+                pass
+            raise TimeoutError(
+                f"Loading lakehouse tables exceeded the {LAKEHOUSE_LOAD_TIMEOUT_SECONDS}s limit"
+            )
 
 
 class SparkEngine(BaseQueryEngine):
@@ -2679,16 +2755,51 @@ class DirectSQLArrowExecutor:
     async def fetch_arrow(self, sql: str, params: Dict[str, Any]) -> List[Any]:
         import pyarrow as pa
 
-        from src.modules.data.services.direct_sql_pool import get_sync_engine
+        from src.modules.data.services.direct_sql_pool import dispose_engine, get_sync_engine
 
         conn_uri = self._connection_uri()
 
         def run_sync() -> List[Dict[str, Any]]:
-            eng = get_sync_engine(self.data_source, conn_uri)
-            with eng.connect() as conn:
-                result = conn.execute(sa.text(sql), params or {})
-                cols = list(result.keys())
-                return [dict(zip(cols, row)) for row in result.fetchall()]
+            import time
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    eng = get_sync_engine(self.data_source, conn_uri)
+                    with eng.connect() as conn:
+                        result = conn.execute(sa.text(sql), params or {})
+                        cols = list(result.keys())
+                        return [dict(zip(cols, row)) for row in result.fetchall()]
+                except Exception as exc:
+                    err_msg = str(exc).lower()
+                    is_transient = any(
+                        t in err_msg
+                        for t in (
+                            "lost connection",
+                            "connection reset",
+                            "gone away",
+                            "can't connect",
+                            "timeout",
+                            "broken pipe",
+                            "2013",
+                            "2006",
+                        )
+                    )
+                    if attempt < max_retries - 1 and is_transient:
+                        logger.warning(
+                            "Transient DB error during fetch_arrow (attempt %d/%d): %s. Discarding stale pool and reconnecting in %ss...",
+                            attempt + 1,
+                            max_retries,
+                            exc,
+                            attempt + 1,
+                        )
+                        try:
+                            dispose_engine(self.data_source, conn_uri)
+                        except Exception:
+                            pass
+                        time.sleep(attempt + 1)
+                        continue
+                    raise
+            return []
 
         rows = await asyncio.to_thread(run_sync)
         if not rows:

@@ -465,3 +465,63 @@ async def test_resolve_source_raises_a_clear_error_when_a_data_source_has_no_bro
 
     with pytest.raises(ValueError, match="no Bronze object for data source"):
         await resolve_source(session, pipeline)
+
+
+async def test_sheet_ingest_reads_the_original_upload_not_another_tables_bronze():
+    """Reading sheet `orders` out of the newest Bronze object of the source
+    (written for `customers`) copied customers into every table."""
+    from types import SimpleNamespace
+
+    from src.modules.pipeline.ingest.stage import resolve_sheet_file
+
+    staged = SimpleNamespace(storage_uri="s3://b/staging/ds1/upload.xlsx")
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class Session:
+        async def execute(self, _stmt):
+            return Result(staged)
+
+    pipeline = SimpleNamespace(source_asset_id="ds1")
+    assert await resolve_sheet_file(Session(), pipeline, "orders") == "s3://b/staging/ds1/upload.xlsx"
+
+
+async def test_sheet_ingest_falls_back_to_the_same_tables_bronze_only():
+    from types import SimpleNamespace
+
+    import pytest
+
+    from src.modules.pipeline.ingest.stage import resolve_sheet_file
+
+    answers = iter([None, SimpleNamespace(file_path=None), SimpleNamespace(storage_uri="s3://b/bronze/orders/p.parquet")])
+
+    class Result:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one_or_none(self):
+            return self.value
+
+    class Session:
+        async def execute(self, stmt):
+            # The Bronze lookup must be scoped to the requested table
+            if "source_table" in str(stmt):
+                assert "data_lake_objects.source_table" in str(stmt)
+            return Result(next(answers))
+
+    pipeline = SimpleNamespace(source_asset_id="ds1")
+    assert await resolve_sheet_file(Session(), pipeline, "orders") == "s3://b/bronze/orders/p.parquet"
+
+    empty = iter([None, None, None])
+
+    class Empty(Session):
+        async def execute(self, stmt):
+            return Result(next(empty))
+
+    with pytest.raises(ValueError, match="no uploaded file"):
+        await resolve_sheet_file(Empty(), pipeline, "orders")
