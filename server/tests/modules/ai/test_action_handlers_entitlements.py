@@ -15,6 +15,12 @@ from ee.modules.ai.services.action_handlers import (
     handle_generate_pptx,
 )
 
+@pytest.fixture(autouse=True)
+def _saas_deployment(monkeypatch):
+    """Plan gating applies to SaaS; a developer .env with self-host mode must not leak in."""
+    monkeypatch.setenv("AISER_DEPLOYMENT_MODE", "saas")
+
+
 
 @pytest.mark.asyncio
 async def test_create_alert_denied_on_free_plan():

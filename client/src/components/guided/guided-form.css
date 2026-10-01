@@ -1,0 +1,37 @@
+.guided-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.guided-form__step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.guided-form__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.guided-form__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+  flex-shrink: 0;
+}
+.guided-form__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-inline-start: 28px;
+}
+.guided-form__hint {
+  font-size: 12px;
+}

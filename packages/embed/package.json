@@ -1,16 +1,25 @@
 {
   "name": "@aicser/embed",
-  "version": "0.2.1",
-  "description": "Embed Aicser dashboards, charts, and chat in iframes with postMessage helpers and SSO-ready JWT tokens",
+  "version": "0.3.1",
+  "description": "Embed Aicser dashboards, charts, reports and the AI assistant: iframe SDK with token renewal, host commands, a React wrapper and a server-side signing helper",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     }
   },
   "files": [
@@ -19,17 +28,26 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "vitest run --environment jsdom"
   },
   "devDependencies": {
     "@sentry/browser": "^8.55.2",
-    "typescript": "^5.4.0"
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.4.0",
+    "jsdom": "^26.0.0",
+    "vitest": "^4.1.0"
   },
   "peerDependencies": {
-    "@sentry/browser": "^8.0.0"
+    "@sentry/browser": "^8.0.0",
+    "react": ">=17"
   },
   "peerDependenciesMeta": {
     "@sentry/browser": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
@@ -39,14 +57,23 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/aicser/aicser.git",
+    "url": "git+https://github.com/Aicser-Platform/aicser.git",
     "directory": "packages/embed"
+  },
+  "homepage": "https://github.com/Aicser-Platform/aicser/tree/main/packages/embed#readme",
+  "bugs": {
+    "url": "https://github.com/Aicser-Platform/aicser/issues"
   },
   "keywords": [
     "aicser",
     "embed",
     "iframe",
     "analytics",
-    "dashboard"
-  ]
+    "dashboard",
+    "react",
+    "embedded-analytics"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
 }

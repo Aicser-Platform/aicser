@@ -86,3 +86,16 @@ def test_report_insights_from_sections():
     assert len(cards) == 1
     assert cards[0]["title"] == "Revenue"
     assert "12%" in cards[0]["what"]
+
+
+def test_contributor_ranking_score_not_given_to_model():
+    """The engine's ranking score is not a business number; the model echoed it as '(magnitude 1.9)'."""
+    block = format_verified_stats_for_prompt(
+        "diagnostic",
+        {"top_contributors": [{"factor": "Branch 2", "direction": "negative", "magnitude": 1.9,
+                               "explanation": "Branch 2 (branch): -18.1% from average"}]},
+    )
+    assert "1.9" not in block
+    assert "size" not in block
+    assert "pulls the metric down" in block
+    assert "-18.1% from average" in block

@@ -19,6 +19,55 @@ logger = logging.getLogger(__name__)
 _WIDGET_ID_PREFIX = re.compile(r"^widget-")
 
 
+async def dashboard_scope(db: Any, dashboard_id: Any) -> Dict[str, Optional[str]]:
+    """The organization and project a dashboard belongs to, so permission checks are made
+    there — not against whatever role the user holds in some other organization."""
+    from sqlalchemy import literal, select
+
+    from src.modules.dashboards.models import Dashboard
+
+    try:  # projects/organizations are Enterprise modules; Community dashboards have neither
+        from src.modules.project.models import Project
+
+        query = (select(Dashboard.project_id, Project.organization_id)
+                 .outerjoin(Project, Project.id == Dashboard.project_id))
+    except ImportError:
+        query = select(Dashboard.project_id, literal(None))
+    row = (await db.execute(query.where(Dashboard.id == UUID(str(dashboard_id))))).first()
+    if row is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    return {
+        "organization_id": str(row[1]) if row[1] else None,
+        "project_id": str(row[0]) if row[0] else None,
+    }
+
+
+async def can_join_dashboard(user: Optional[Mapping[str, Any]], dashboard_id: str) -> bool:
+    """Whether this signed-in person may see a dashboard's live edits and comments: view
+    permission in the dashboard's own organization/project (public dashboards don't count —
+    their live editing room isn't public)."""
+    user_id = resolve_socket_user_id(user)
+    if not user_id:
+        return False
+    try:
+        from src.db.session import AsyncSessionLocal
+        from src.modules.authentication.rbac.guard import require_permission
+        from src.shared.access_control import check_dashboard_access
+
+        async with AsyncSessionLocal() as db:
+            scope = await dashboard_scope(db, dashboard_id)
+        if scope["organization_id"] or scope["project_id"]:
+            await require_permission(user_id, "dashboard:view", **scope)
+        else:
+            await check_dashboard_access({"id": user_id, "user_id": user_id, "sub": user_id}, str(dashboard_id))
+        return True
+    except Exception as exc:
+        logger.info("Collaboration join refused for dashboard %s: %s", dashboard_id, exc)
+        return False
+
+
 def resolve_socket_user_id(user: Optional[Mapping[str, Any]]) -> Optional[str]:
     if not user:
         return None
@@ -89,7 +138,7 @@ async def persist_widget_update(
         chart_uuid = UUID(str(chart_id))
 
         async with AsyncSessionLocal() as db:
-            await require_permission(user_id, "chart:edit")
+            await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
             await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
             await enforce_publish_owner_chart_edit(db, chart_uuid, {"id": user_id})
 
@@ -127,7 +176,7 @@ async def persist_widget_add(
         dash_uuid = UUID(str(dashboard_id))
 
         async with AsyncSessionLocal() as db:
-            await require_permission(user_id, "chart:edit")
+            await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
             await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
 
             service = DashboardChartService(db)
@@ -163,7 +212,7 @@ async def persist_widget_remove(
         chart_uuid = UUID(str(chart_id))
 
         async with AsyncSessionLocal() as db:
-            await require_permission(user_id, "chart:delete")
+            await require_permission(user_id, "chart:delete", **(await dashboard_scope(db, dash_uuid)))
             await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
 
             service = DashboardChartService(db)
@@ -200,7 +249,7 @@ async def persist_layout_update(
         dash_uuid = UUID(str(dashboard_id))
 
         async with AsyncSessionLocal() as db:
-            await require_permission(user_id, "chart:edit")
+            await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
             await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
 
             service = DashboardChartService(db)

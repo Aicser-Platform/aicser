@@ -48,7 +48,12 @@ COPY requirements.txt .
 # chart/dashboard PNG export. Browser system libraries belong in the runner
 # stage; installing them here only inflates the build cache because this stage
 # copies out the venv and Playwright cache, not apt-installed packages.
+# PyTorch (pulled in by sentence-transformers for local embeddings) runs on CPU here; the
+# default PyPI wheel bundles ~4 GB of CUDA libraries a CPU server never uses. Set
+# TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130 to build a GPU image instead.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN pip install --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch==2.14.0 \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
@@ -136,7 +141,8 @@ RUN set -eux; \
       fontconfig \
       fonts-liberation \
       fonts-noto-color-emoji \
-      fonts-freefont-ttf; \
+      fonts-freefont-ttf \
+      gosu; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
       amd64) url="${ODBC18_DEB_AMD64}" ;; \
@@ -149,13 +155,21 @@ RUN set -eux; \
     rm -f /tmp/msodbcsql18.deb; \
     rm -rf /var/lib/apt/lists/*
 
-# Copy installed Python environment and Playwright browsers
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /root/.cache/ms-playwright /root/.cache/ms-playwright
+# Runs as an unprivileged user (uid 1001): the entrypoint only fixes ownership of mounted
+# volumes as root, then drops to `aiser` for the app itself.
+RUN groupadd --system --gid 1001 aiser \
+    && useradd --system --uid 1001 --gid aiser --home-dir /app --no-create-home aiser
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    HF_HOME=/app/.cache/huggingface
+
+# Copy installed Python environment and Playwright browsers (owned by the app user up front:
+# a later chown -R would duplicate these multi-GB layers).
+COPY --from=builder --chown=aiser:aiser /app/.venv /app/.venv
+COPY --from=builder --chown=aiser:aiser /root/.cache/ms-playwright /ms-playwright
 
 # Copy application files. Use a single context copy so CE-only checkouts that
 # do not include optional ee/ or scripts/ directories still build.
-COPY . .
+COPY --chown=aiser:aiser . .
 RUN mkdir -p ee scripts
 RUN if [ "$EDITION" = "community" ] || [ "$EDITION" = "ce" ]; then \
       echo "EDITION=$EDITION -- stripping ee/ from the CE image"; \
@@ -164,12 +178,22 @@ RUN if [ "$EDITION" = "community" ] || [ "$EDITION" = "ce" ]; then \
 
 # Generate the sample DuckDB file with this image's pinned duckdb version,
 # so it can never drift out of sync with the runtime that reads it.
+# /app is the app user's home: tools keep settings there (matplotlib, duckdb extensions).
+RUN mkdir -p /app/uploads /app/.cache/huggingface /app/.config /app/.duckdb \
+    && chown aiser:aiser /app && chown -R aiser:aiser /app/uploads /app/.cache /app/.config /app/.duckdb
+USER aiser
 RUN python -m src.shared.sample_data.ensure
+# DuckDB extensions for location analysis and the warehouse (see src/shared/duckdb_extensions.py),
+# installed now so a running server never downloads code.
+RUN python -c "import duckdb; c = duckdb.connect(); [c.execute(s) for s in ('INSTALL spatial', 'INSTALL iceberg', 'INSTALL httpfs', 'INSTALL h3 FROM community')]" \
+    || echo "WARNING: DuckDB extensions not preinstalled; they will be installed on first use"
+USER root
 
 # Remove Python cache
 RUN find . -name "__pycache__" -type d -exec rm -rf {} + || true
-RUN chmod +x /app/scripts/railway-start.sh /app/scripts/railway-worker-start.sh 2>/dev/null || chmod +x /app/scripts/*.sh
+RUN chmod +x /app/scripts/railway-start.sh /app/scripts/railway-worker-start.sh /app/scripts/docker-entrypoint.sh 2>/dev/null || chmod +x /app/scripts/*.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["/app/scripts/railway-start.sh"]

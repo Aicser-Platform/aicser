@@ -11,6 +11,7 @@ import { PropertiesPanel } from '../../dashboards/Properties/PropertiesPanel';
 import DashboardCanvas from '../../dashboards/Canvas/DashboardCanvas';
 import { ChartDesignerSidebar } from './ChartDesignerSidebar';
 import { ChartDesignerToolbar } from './ChartDesignerToolbar';
+import { ChartDataTable } from './ChartDataTable';
 import { useChartDesignerStore, type ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
@@ -209,6 +210,10 @@ export default function ChartDesignerStudio() {
     [widgets, selectedWidgetId]
   );
 
+  // Chart or the table of its data; each newly opened chart starts on the chart.
+  const [canvasView, setCanvasView] = React.useState<'chart' | 'data'>('chart');
+  useEffect(() => setCanvasView('chart'), [selectedWidgetId]);
+
   const selectedWidgetLayout = useMemo(() => {
     if (!selectedWidgetId) return [];
 
@@ -236,7 +241,6 @@ export default function ChartDesignerStudio() {
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#00c2cb',
           borderRadius: 6,
         },
       }}
@@ -248,10 +252,12 @@ export default function ChartDesignerStudio() {
 
           {/* Canvas Area */}
           <main className="studio-canvas-area designer-canvas">
-            <ChartDesignerToolbar selectedWidget={selectedWidget} />
+            <ChartDesignerToolbar selectedWidget={selectedWidget} view={canvasView} onViewChange={setCanvasView} />
             <div className="designer-fullscreen-canvas">
               <div className="designer-canvas-container">
-                {selectedWidget ? (
+                {selectedWidget && canvasView === 'data' ? (
+                  <ChartDataTable widget={selectedWidget} />
+                ) : selectedWidget ? (
                   <DashboardCanvas
                     widgets={[selectedWidget]}
                     layout={selectedWidgetLayout}

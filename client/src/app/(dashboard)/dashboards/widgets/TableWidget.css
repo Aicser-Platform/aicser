@@ -42,6 +42,10 @@
   flex: 1 !important;
   border: none !important;
   box-shadow: none !important;
+  /* Flex, so the container below can shrink to the card and only the rows scroll. */
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
 }
 
 .table-widget-container .ant-table-container {
@@ -56,9 +60,28 @@
   overflow: hidden !important;
 }
 
+/* Header and pinned Total keep their height; the rows area takes what's left. */
+.table-widget-container .ant-table-container > .ant-table-sticky-holder {
+  flex: none;
+}
+
 .table-widget-container .ant-table-body {
   overflow-y: auto !important;
   flex: 1 !important;
+}
+
+/* Without scroll.y antd renders rows in .ant-table-content: make it the card's scroller so rows
+   past the card's height can be reached, and pin the Total footer to its bottom edge. */
+.table-widget-container .ant-table-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto !important;
+}
+
+.table-widget-container .ant-table-summary > tr > td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 /* Header — same surface as body (Linear/Notion); weight + bottom rule for hierarchy */

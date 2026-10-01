@@ -1,95 +1,148 @@
 # @aicser/embed
 
-Lightweight JavaScript helpers for embedding Aicser dashboards, charts, and chat in third-party apps (Teams, SharePoint, intranet pages).
-
-## Install
+Embed Aicser dashboards, charts, executive reports and the AI assistant in your app or website. The package includes:
+- an iframe SDK with session renewal and host commands;
+- a React wrapper;
+- a server-side helper that signs per-customer links.
 
 ```bash
 npm install @aicser/embed
 ```
 
-## Create an embed token
+## Two ways to embed
 
-1. Open **Settings → Embed** in Aicser.
-2. Create a token with the scopes you need (`dashboard`, `chart`, `chat`).
-3. Copy the JWT or iframe snippet.
+| | Public link | Signed link (per customer) |
+| --- | --- | --- |
+| **For** | A public website, an intranet page, a blog | A SaaS app showing each customer their own data |
+| **Made in** | Settings → Embed | Your server, per page view (`@aicser/embed/server`, `aicser-embed` for Python, or `POST /api/embed/sign`) |
+| **Who can open it** | Anyone with the link, until it expires or is revoked | One page view: the link opens once and becomes a session |
+| **Rows shown** | Everything the dashboard shows | Only the rows the link's locked filters allow, enforced by Aicser on every query |
 
-Alternatively, call `POST /api/embed/tokens` from your backend using a user session.
+Both kinds of link support:
+- **Allowed sites:** browsers refuse to show the embed on any other site (`frame-ancestors`), and the embed checks the site showing it when it opens.
+- **Download setting:** visitors can save nothing (the default), a picture or PDF, or each chart's data as CSV.
 
-## Vanilla usage
+Every anonymous view is capped at 2,000 rows per chart (`EMBED_MAX_ROWS` on the server).
 
-```html
-<div id="dashboard"></div>
-<script type="module">
-  import { embedDashboard } from '@aicser/embed';
+## Signed embed (recommended for SaaS)
 
-  embedDashboard(document.getElementById('dashboard'), 'YOUR_DASHBOARD_ID', {
-    baseUrl: 'https://app.aicser.com',
-    token: 'YOUR_EMBED_JWT',
-    onReady: () => console.log('embed ready'),
-    onResize: (height) => console.log('resize', height),
-    onError: (message) => console.error(message),
+On your server:
+
+```ts
+import { signEmbedUrl } from '@aicser/embed/server';
+
+app.get('/analytics-token', async (req, res) => {
+  const { token } = await signEmbedUrl({
+    baseUrl: 'https://api.aicser.com',
+    apiKey: process.env.AICSER_API_KEY!,        // never ship this to the browser
+    dashboardId: 'b4b3…',
+    lockedFilters: [{ field: 'tenant_id', value: req.user.tenantId }],
+    expiresInMinutes: 60,
+    allowedDomains: ['app.example.com'],
   });
-</script>
+  res.json({ token });
+});
 ```
+
+For a chart or report, pass `scope` and `resourceId` instead of `dashboardId`
+(`resourceId` for reports is `conversationId:messageId`).
+
+In the browser:
+
+```ts
+import { embedDashboard } from '@aicser/embed';
+
+const dashboard = embedDashboard(document.getElementById('analytics')!, 'b4b3…', {
+  baseUrl: 'https://app.aicser.com',
+  // Called for the first token, before the session runs out, and after a reload.
+  getToken: () => fetch('/analytics-token').then((r) => r.json()).then((d) => d.token),
+  filters: [{ field: 'region', operator: 'equals', value: 'EU' }],
+  onFilterChange: (filters) => console.log('viewer filtered', filters),
+});
+
+await dashboard.setFilters([{ field: 'region', operator: 'equals', value: 'APAC' }]);
+await dashboard.refresh();
+```
+
+## React
+
+```tsx
+import { useRef } from 'react';
+import { AicserDashboard } from '@aicser/embed/react';
+import type { EmbedHandle } from '@aicser/embed';
+
+export function Analytics({ region }: { region: string }) {
+  const ref = useRef<EmbedHandle>(null);
+  return (
+    <>
+      <button onClick={() => ref.current?.exportImage('pdf')}>Download PDF</button>
+      <AicserDashboard
+        ref={ref}
+        baseUrl="https://app.aicser.com"
+        dashboardId="b4b3…"
+        getToken={() => fetch('/analytics-token').then((r) => r.json()).then((d) => d.token)}
+        filters={[{ field: 'region', operator: 'equals', value: region }]}  // controlled: updates without a reload
+      />
+    </>
+  );
+}
+```
+
+`AicserChart` (`chartId`), `AicserChat` (the AI assistant, Enterprise Edition) and `AicserReport` (`reportId` = `conversationId:messageId`, Enterprise Edition) take the same props.
+
+## Public link
+
+```ts
+embedDashboard(el, 'b4b3…', { baseUrl: 'https://app.aicser.com', token: 'PUBLIC_LINK_TOKEN' });
+```
+
+Or paste the iframe snippet from Settings → Embed.
 
 ## API
 
-### `embedDashboard(container, dashboardId, options)`
-
-Embeds a read-only dashboard at `/embed/dashboard/{id}?token=...`.
-
-### `embedChart(container, slug, options)`
-
-Embeds a chart at `/embed/chart/{slug}?token=...`.
-
-### `embedChat(container, options)`
-
-Embeds the minimal chat UI at `/embed/chat?token=...` (requires Enterprise Edition).
+`embedDashboard(container, dashboardId, options)`, `embedChart(container, chartId, options)`, `embedChat(container, options)` and `embedReport(container, reportId, options)` each return a handle.
 
 ### Options
 
 | Option | Description |
 | --- | --- |
 | `baseUrl` | Aicser app origin (required) |
-| `token` | Signed JWT from Settings → Embed (required) |
-| `className` | Optional iframe CSS class |
-| `style` | Optional iframe inline styles |
-| `targetOrigin` | postMessage origin filter (defaults to `baseUrl`) |
-| `onReady` | Fired when embed sends `ready` |
-| `onResize` | Fired when embed requests height change |
-| `onError` | Fired on embed errors |
+| `token` | A public link token or a signed token |
+| `getToken` | `() => Promise<string>`: fetch a fresh signed token from your server; enables silent renewal |
+| `filters`, `pageId` | Initial filters and page |
+| `autoResize` | Grow the iframe to its content (default `true`) |
+| `onReady`, `onResize`, `onFilterChange`, `onError` | Events from the embed |
+| `onTokenExpired` | The session ran out and couldn't be renewed |
+| `className`, `style`, `targetOrigin`, `observability` | iframe styling, postMessage origin, optional Sentry |
 
-### Return value
+### Handle
 
-Each function returns `{ iframe, destroy }`. Call `destroy()` to remove listeners and the iframe.
+| Method | Description |
+| --- | --- |
+| `setFilters(filters)` | Replace the viewer's filters. Locked filters still apply on the server. |
+| `refresh()` | Re-run every chart |
+| `setPage(pageId)` | Show another page |
+| `exportImage('png' \| 'pdf')` | Download what's on screen; only works when the link's download setting allows it |
+| `setToken(token)` | Hand over a token yourself instead of using `getToken` |
+| `on(type, handler)` | Listen to any embed message; returns an unsubscribe function |
+| `destroy()` | Remove the iframe and its listeners |
+
+Commands return promises: each one resolves when the embed confirms it, or rejects with `EmbedCommandError`.
 
 ## postMessage protocol
 
-Child embed pages emit messages shaped as:
+**Embed → host:**
 
 ```json
-{ "source": "aicser-embed", "type": "ready", "payload": {} }
+{ "source": "aicser-embed", "type": "…", "payload": {} }
 ```
 
-Supported types: `ready`, `resize`, `navigate`, `error`, `ping`.
+The types are `ready`, `resize`, `navigate` (`{ filters }`), `error`, `token-expiring`, `token-expired`, `token-updated` and `command-result`.
 
-## SSO and server-side token minting (v0.2)
+**Host → embed:** messages are sent only from the page framing the embed, and only from an allowed site:
 
-For intranet and Teams integrations, mint embed JWTs from your backend after SSO:
+```json
+{ "source": "aicser-host", "type": "…", "payload": {} }
+```
 
-1. Authenticate the user (OIDC/SAML/session cookie).
-2. Call `POST /api/embed/tokens` with scopes and optional `allowed_domains`.
-3. Pass the JWT to `@aicser/embed` or an iframe `?token=` URL.
-
-Set `EMBED_JWT_ONLY=true` on the server to reject legacy DB embed tokens.
-
-## Teams sample
-
-See [`samples/teams-tab/`](../../samples/teams-tab/) for a Microsoft Teams static tab manifest and setup steps.
-
-## Security notes
-
-- Tokens are signed with `JWT_SECRET_KEY` and can be revoked from Settings → Embed.
-- Optionally restrict hostnames via **Allowed domains** when creating a token.
-- Never expose long-lived tokens in public client-side code; prefer server-side token minting for production integrations.
+The types are `set-token`, `set-filters`, `refresh`, `set-page` and `export`.

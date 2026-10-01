@@ -1,10 +1,14 @@
-/** Route → submenu keys that auto-expand for the active page. */
+/** Route → the sidebar section holding it, so the section opens on that page. */
 export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
-  '/dashboards': ['dashboard-studio'],
-  '/chart-designer': ['dashboard-studio'],
-  '/data': ['grp-data'],
-  '/knowledge': ['grp-data'],
-  '/alerts': ['grp-operate'],
+  '/query-editor': ['sec-analyze'],
+  '/notebooks': ['sec-analyze'],
+  '/sheets': ['sec-analyze'],
+  '/spatial': ['sec-analyze'],
+  '/models': ['sec-predict'],
+  '/ai-decisions': ['sec-predict'],
+  '/data': ['sec-data'],
+  '/knowledge': ['sec-data'],
+  '/warehouse': ['sec-data'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -13,8 +17,14 @@ export const NAV_ROUTES: Record<string, string> = {
   feed: '/feed',
   'chart-designer': '/chart-designer',
   'query-editor': '/query-editor',
+  notebooks: '/notebooks',
+  sheets: '/sheets',
+  spatial: '/spatial',
+  warehouse: '/warehouse',
+  models: '/models',
   data: '/data',
   knowledge: '/knowledge',
+  'ai-decisions': '/ai-decisions',
   alerts: '/alerts',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
@@ -22,32 +32,64 @@ export const NAV_ROUTES: Record<string, string> = {
 
 /**
  * Single source of truth for nav-item display labels (keys into the `nav` i18n namespace).
- * Shared by the sidebar (Navigation.tsx) and PageBreadcrumb so labels never drift apart.
+ * Shared by the sidebar (Navigation.tsx) and the header's page crumb (HeaderPageCrumb) so labels never drift apart.
  */
 export const NAV_LABEL_KEYS: Record<string, string> = {
   chat: 'ai_engine',
-  'query-editor': 'query_editor',
   feed: 'feed',
-  'dashboard-studio': 'dashboard_studio',
-  dashboards: 'dashboards',
+  dashboards: 'dashboard_studio',
   'chart-designer': 'chart_designer',
-  'grp-data': 'cat_data',
+  alerts: 'alerts',
+  'sec-analyze': 'cat_analyze',
+  'query-editor': 'query_editor',
+  notebooks: 'notebooks',
+  sheets: 'sheets',
+  spatial: 'spatial',
+  'sec-predict': 'cat_ai',
+  models: 'models',
+  'ai-decisions': 'ai_decisions',
+  'sec-data': 'cat_data',
   data: 'data',
   knowledge: 'knowledge_libraries',
-  'grp-operate': 'cat_monitor',
-  alerts: 'alerts',
+  warehouse: 'warehouse',
   settings: 'settings',
   billing: 'billing',
 };
 
-/** Nav key → parent group key, for breadcrumb trails (e.g. Data & Model > Semantic layer).
- * Flat top-level pages (Chat, Query Editor, Dashboards, Chart Designer) intentionally
- * omit parents so we don't duplicate the page heading with a one-level crumb trail.
- */
+/** Nav key → its section, for breadcrumb trails (Predict & decide > Prediction models).
+ * Everyday pages (Ask, Shared insights, Dashboards…) have no section and no crumb trail. */
 export const NAV_PARENT_GROUP: Record<string, string> = {
-  data: 'grp-data',
-  knowledge: 'grp-data',
-  alerts: 'grp-operate',
+  'query-editor': 'sec-analyze',
+  notebooks: 'sec-analyze',
+  sheets: 'sec-analyze',
+  spatial: 'sec-analyze',
+  models: 'sec-predict',
+  'ai-decisions': 'sec-predict',
+  data: 'sec-data',
+  knowledge: 'sec-data',
+  warehouse: 'sec-data',
+};
+
+/** One-line hover hints: what each page is for, in plain words (technical names kept
+ * findable for power users, e.g. "AI analytics engine", "formerly Query Editor"). */
+export const NAV_HINT_KEYS: Record<string, string> = {
+  chat: 'hint_ask',
+  feed: 'hint_feed',
+  dashboards: 'hint_dashboards',
+  'chart-designer': 'hint_chart_library',
+  alerts: 'hint_alerts',
+  'query-editor': 'hint_sql_editor',
+  notebooks: 'hint_notebooks',
+  sheets: 'hint_sheets',
+  spatial: 'hint_maps',
+  models: 'hint_models',
+  'ai-decisions': 'hint_ai_decisions',
+  data: 'hint_data_sources',
+  knowledge: 'hint_documents',
+  warehouse: 'hint_warehouse',
+  'sec-analyze': 'hint_analyze',
+  'sec-predict': 'hint_ai',
+  'sec-data': 'hint_my_data',
 };
 
 export interface NavLinkDef {
@@ -62,9 +104,12 @@ export interface NavGroupDef {
   children: NavLinkDef[];
 }
 
+/** Sidebar entries. A section is a small, foldable heading over a short flat list — one
+ * level of nesting at most, so every page is one click away once its section is open. */
 export type NavItemDef =
   | { kind: 'link'; key: string; labelKey: string; href: string }
   | { kind: 'group'; key: string; labelKey: string; children: NavLinkDef[] }
+  | { kind: 'section'; key: string; labelKey: string; children: NavLinkDef[] }
   | { kind: 'divider' };
 
 export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
@@ -72,56 +117,56 @@ export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
   for (const item of items) {
     if (item.kind === 'link') {
       links.push({ key: item.key, labelKey: item.labelKey, href: item.href });
-    } else if (item.kind === 'group') {
+    } else if (item.kind === 'group' || item.kind === 'section') {
       links.push(...item.children);
     }
   }
   return links;
 }
 
+/** Maps (/spatial) is switched off until it's ready; NEXT_PUBLIC_FEATURE_MAPS=true brings it back. */
+export const MAPS_ENABLED = process.env.NEXT_PUBLIC_FEATURE_MAPS === 'true';
+const analyzeTools = (): string[] => ['query-editor', 'sheets', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
+
+const link = (key: string): NavLinkDef => ({ key, labelKey: NAV_LABEL_KEYS[key], href: NAV_ROUTES[key] });
+const top = (key: string): NavItemDef => ({ kind: 'link', ...link(key) });
+const section = (key: string, children: string[]): NavItemDef => ({
+  kind: 'section', key, labelKey: NAV_LABEL_KEYS[key], children: children.map(link),
+});
+
 export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
+  // Everyday work first and always open (ask, see what the team shared, dashboards, alerts);
+  // then what builders use — analysis tools, predictions and decisions — and the data itself.
+  // Builder sections fold by default for people who only consume (see defaultFoldedSections).
   return [
-    { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
-    ...(showAiNav ? [{ kind: 'link' as const, key: 'chat', labelKey: NAV_LABEL_KEYS.chat, href: NAV_ROUTES.chat }] : []),
-    { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
-    {
-      kind: 'group',
-      key: 'dashboard-studio',
-      labelKey: NAV_LABEL_KEYS['dashboard-studio'],
-      children: [
-        { key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
-        { key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
-      ],
-    },
-    { kind: 'divider' },
-    {
-      kind: 'group',
-      key: 'grp-data',
-      labelKey: NAV_LABEL_KEYS['grp-data'],
-      children: [
-        { key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-        { key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
-      ],
-    },
-    // {
-    //   kind: 'group',
-    //   key: 'grp-operate',
-    //   labelKey: NAV_LABEL_KEYS['grp-operate'],
-    //   children: [
-    //     { key: 'alerts', labelKey: NAV_LABEL_KEYS.alerts, href: NAV_ROUTES.alerts },
-    //   ],
-    // },
+    ...(showAiNav ? [top('chat')] : []),
+    top('feed'),
+    top('dashboards'),
+    top('chart-designer'),
+    top('alerts'),
+    section('sec-analyze', analyzeTools()),
+    ...(showAiNav ? [section('sec-predict', ['models', 'ai-decisions'])] : [section('sec-predict', ['models'])]),
+    section('sec-data', ['data', 'knowledge', 'warehouse']),
   ];
 }
 
 export function buildCommunitySidebarItems(): NavItemDef[] {
   return [
-    { kind: 'link', key: 'dashboards', labelKey: NAV_LABEL_KEYS.dashboards, href: NAV_ROUTES.dashboards },
-    { kind: 'link', key: 'chart-designer', labelKey: NAV_LABEL_KEYS['chart-designer'], href: NAV_ROUTES['chart-designer'] },
-    { kind: 'link', key: 'feed', labelKey: NAV_LABEL_KEYS.feed, href: NAV_ROUTES.feed },
-    { kind: 'link', key: 'query-editor', labelKey: NAV_LABEL_KEYS['query-editor'], href: NAV_ROUTES['query-editor'] },
-    { kind: 'link', key: 'data', labelKey: NAV_LABEL_KEYS.data, href: NAV_ROUTES.data },
-    { kind: 'link', key: 'knowledge', labelKey: NAV_LABEL_KEYS.knowledge, href: NAV_ROUTES.knowledge },
+    top('dashboards'),
+    top('chart-designer'),
+    top('feed'),
+    section('sec-analyze', analyzeTools()),
+    section('sec-data', ['data', 'knowledge']),
+  ];
+}
+
+/** Sections folded when someone first opens the app: builder tools for people who only
+ * view, data plumbing for everyone but those who connect data or run the organization.
+ * Their own folding choices then win (remembered per browser). */
+export function defaultFoldedSections(access: { canBuild: boolean; canManageData: boolean }): string[] {
+  return [
+    ...(access.canBuild ? [] : ['sec-analyze', 'sec-predict']),
+    ...(access.canManageData ? [] : ['sec-data']),
   ];
 }
 
@@ -132,7 +177,7 @@ export function openKeysForPathname(pathname: string | null): string[] {
       return keys;
     }
   }
-  if (pathname.includes('/semantic')) return ['grp-data'];
+  if (pathname.includes('/semantic')) return ['sec-data'];
   return [];
 }
 
@@ -141,6 +186,7 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'knowledge';
+  if (pathname === '/ai-decisions') return 'ai-decisions';
   if (pathname.startsWith('/settings')) {
     const tab = search ? new URLSearchParams(search).get('tab') : null;
     return tab === 'billing-subscription' ? 'billing' : 'settings';
@@ -150,5 +196,9 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
   if (pathname === '/alerts') return 'alerts';
+  // Pages added later were missing here, so the sidebar highlighted nothing on them.
+  for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards'] as const) {
+    if (pathname === NAV_ROUTES[key] || pathname.startsWith(`${NAV_ROUTES[key]}/`)) return key;
+  }
   return '';
 }

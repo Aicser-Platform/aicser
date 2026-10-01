@@ -6,7 +6,9 @@ from src.modules.data.services.data_source_access_service import DataSourceAcces
 
 
 @pytest.mark.asyncio
-async def test_require_data_source_permission_uses_only_explicit_project(monkeypatch):
+async def test_require_data_source_permission_falls_back_to_the_sources_own_project(monkeypatch):
+    # No project in the request: grants are checked in the project the source belongs to (its
+    # governance unit), never in some other project.
     from src.modules.data import router as data_router
 
     seen = {}
@@ -32,7 +34,7 @@ async def test_require_data_source_permission_uses_only_explicit_project(monkeyp
         "query",
     )
 
-    assert seen["project_id"] is None
+    assert seen["project_id"] == "source-project"
 
 
 @pytest.mark.asyncio

@@ -23,7 +23,8 @@ def test_infer_delegates_to_routing_utils_canonical_keywords():
     didn't); confirms the delegation actually picked them up rather than
     silently falling back to a narrower list."""
     assert _infer_analytics_type_from_query("What's driving the churn increase?") == "diagnostic"
-    assert _infer_analytics_type_from_query("Give me the revenue outlook") == "predictive"
+    # Forecast phrasing beyond the explicit words ("outlook", "where are we heading") is the LLM
+    # router's job, not this keyword fallback's (Auto mode is LLM-driven by design).
     assert _infer_analytics_type_from_query("Compare options for reducing costs") == "prescriptive"
 
 

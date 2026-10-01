@@ -1,0 +1,29 @@
+{
+  "cookies": [
+    {
+      "name": "auth_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI4Y2YxMDJhOC1mZDkzLTQwZDEtYmVkMy01MGU0MjE1OGQ2MmEiLCJlbWFpbCI6Im1ha2FyYS5zb2tAZGF0YXRpY29uLmNvbSIsImV4cCI6MTc5MDkyMzg5NiwiaWF0IjoxNzkwMzE5MDk2LCJqdGkiOiIzZWE3NmM2ZDA3NzY0NmM4YTU0NWQxMzBiNjVhMTBmYiJ9.3lTHtFL6KTmVoQjmCNVO1EydKpIo4ucoLEzkhUkr3wA",
+      "domain": "localhost",
+      "path": "/",
+      "expires": 1790923896.295992,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://localhost:3001",
+      "localStorage": [
+        {
+          "name": "aiser_locale",
+          "value": "en"
+        },
+        {
+          "name": "darkMode",
+          "value": "false"
+        }
+      ]
+    }
+  ]
+}

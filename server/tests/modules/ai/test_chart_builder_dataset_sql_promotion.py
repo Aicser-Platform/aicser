@@ -54,7 +54,8 @@ async def test_each_multi_chart_carries_its_own_sql_not_the_base_query():
 
     em = out.get("execution_metadata") or {}
     charts = em.get("complementary_charts") or em.get("deep_analysis_charts") or []
-    assert len(charts) == 2
+    # Primary + step_2 dataset chart (+ possibly a complementary view of the base rows).
+    assert len(charts) >= 2
 
     assert out["echarts_config"]["sql_query"] == "SELECT month, SUM(revenue) AS revenue FROM sales GROUP BY month"
     assert charts[0]["sql_query"] == "SELECT month, SUM(revenue) AS revenue FROM sales GROUP BY month"

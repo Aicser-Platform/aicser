@@ -2,15 +2,8 @@
 
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  DatabaseOutlined,
-  MessageOutlined,
-  SettingOutlined,
-  DashboardOutlined,
-  CodeOutlined,
-  AppstoreOutlined,
-  AreaChartOutlined,
-  BookOutlined,
-  BellOutlined,
+  AlertOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, RobotOutlined, ReadOutlined,
+  TableOutlined, SettingOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -19,6 +12,8 @@ import AicserLogo from '@/components/ui/Logo/AicserLogo';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useTranslations } from 'next-intl';
 import { isAiFrontendEnabled } from '@/utils/aiAvailability';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
 import {
   NAV_ROUTES,
   NAV_LABEL_KEYS,
@@ -26,6 +21,7 @@ import {
   selectedKeyForPathname,
   buildEnterpriseSidebarItems,
   buildCommunitySidebarItems,
+  defaultFoldedSections,
   type NavItemDef,
 } from './navConfig';
 import SidebarNav, { RAIL_WIDTH, type SidebarNavHandle, type SidebarNavIconMap } from './SidebarNav';
@@ -46,17 +42,24 @@ interface NavigationProps {
 
 const ENTERPRISE_ICONS: SidebarNavIconMap = {
   chat: <MessageOutlined />,
-  'query-editor': <CodeOutlined />,
   feed: <AppstoreOutlined />,
-  'dashboard-studio': <DashboardOutlined />,
   dashboards: <DashboardOutlined />,
   'chart-designer': <AreaChartOutlined />,
-  'grp-data': <DatabaseOutlined />,
+  alerts: <AlertOutlined />,
+  'query-editor': <CodeOutlined />,
+  notebooks: <ReadOutlined />,
+  sheets: <TableOutlined />,
+  spatial: <EnvironmentOutlined />,
+  models: <ExperimentOutlined />,
+  'ai-decisions': <ThunderboltOutlined />,
   data: <DatabaseOutlined />,
-  knowledge: <BookOutlined />,
-  'grp-operate': <BellOutlined />,
-  alerts: <BellOutlined />,
+  knowledge: <FileSearchOutlined />,
+  warehouse: <ClusterOutlined />,
   settings: <SettingOutlined />,
+  // Section icons, shown on the collapsed rail.
+  'sec-analyze': <FundProjectionScreenOutlined />,
+  'sec-predict': <RobotOutlined />,
+  'sec-data': <DatabaseOutlined />,
 };
 
 const COMMUNITY_ICONS: SidebarNavIconMap = {
@@ -64,9 +67,14 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   'chart-designer': <AreaChartOutlined />,
   feed: <AppstoreOutlined />,
   'query-editor': <CodeOutlined />,
+  notebooks: <ReadOutlined />,
+  sheets: <TableOutlined />,
+  spatial: <EnvironmentOutlined />,
   data: <DatabaseOutlined />,
-  knowledge: <BookOutlined />,
+  knowledge: <FileSearchOutlined />,
   settings: <SettingOutlined />,
+  'sec-analyze': <FundProjectionScreenOutlined />,
+  'sec-data': <DatabaseOutlined />,
 };
 
 function buildSettingsItems(_enterprise: boolean): NavItemDef[] {
@@ -133,6 +141,17 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
     []
   );
 
+  // Builder sections fold for people who only view; data plumbing for all but those who
+  // connect data or run the organization. Until permissions load nothing is folded.
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const defaultFolded = React.useMemo(
+    () => (permissionsLoading ? [] : defaultFoldedSections({
+      canBuild: hasPermission(Permission.QUERY_SAVE) || hasPermission(Permission.CHART_EDIT),
+      canManageData: hasPermission(Permission.DATA_CONNECT) || hasPermission(Permission.ORG_EDIT),
+    })),
+    [permissionsLoading, hasPermission],
+  );
+
   const isMobile = props.isBreakpoint;
   const isRailMode = props.collapsed && !isMobile;
   const sidebarWidth = isRailMode ? RAIL_WIDTH : EXPANDED_WIDTH;
@@ -182,6 +201,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
             onNavigate={onNavigate}
             icons={isEnterpriseEdition ? ENTERPRISE_ICONS : COMMUNITY_ICONS}
             theme={isDarkMode ? 'dark' : 'light'}
+            defaultFolded={defaultFolded}
           />
         </div>
 

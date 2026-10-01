@@ -1,0 +1,14 @@
+id: data_engineer
+name: Data engineer
+role: Connects sources, cares about schema correctness
+digital_literacy: high
+goals:
+  - Open Data & Model / Sources and verify tables
+  - Hand off a clean source to analysts
+pains:
+  - Schema refresh stale
+  - Ambiguous source pill vs industry filter
+must_not_see: []
+success_looks_like:
+  - Sources panel lists expected tables
+  - Types visible when exploring schema (acceptable for this persona)

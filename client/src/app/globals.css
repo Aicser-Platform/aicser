@@ -504,3 +504,40 @@ body:has(.executive-report-fullpage)::-webkit-scrollbar-thumb:hover {
     scrollbar-width: thin;
   }
 }
+
+/* antd 6 renamed the Select's inner parts (.ant-select-input, .ant-select-content-item), so the
+   class-based exemptions above stopped matching and the global *:focus-visible ring drew a
+   second, inner border around the typed text inside fields that already show their own focus
+   ring ("two borders"). Scoped by the control rather than its internal class names, so the
+   next rename can't bring it back: the native text box inside an antd control is never ringed —
+   the control's own border/shadow is the one focus indicator. */
+.ant-select input,
+.ant-select input:focus,
+.ant-select input:focus-visible,
+.ant-cascader input:focus,
+.ant-cascader input:focus-visible,
+.ant-tree-select input:focus,
+.ant-tree-select input:focus-visible,
+.ant-input-number input:focus,
+.ant-input-number input:focus-visible,
+.ant-picker input:focus,
+.ant-picker input:focus-visible,
+.ant-input-affix-wrapper input:focus,
+.ant-input-affix-wrapper input:focus-visible,
+.ant-mentions textarea:focus,
+.ant-mentions textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+}
+
+/* A plain Input/TextArea draws its focus ring as its own box-shadow — keep that, drop only
+   the extra global outline. */
+.ant-input:focus-visible,
+textarea.ant-input:focus-visible {
+  outline: none !important;
+}
+
+.ant-select input {
+  background: transparent !important;
+  border: none !important;
+}

@@ -1,3 +1,4 @@
+import pytest
 """Unit tests for the computed (ratio) metric compiler in the v2 chart engine.
 
 Covers both the SQL path (DB sources) and the pandas path (file sources), plus
@@ -36,7 +37,7 @@ def test_build_metric_sql_ratio_with_filter():
     }
     sql = svc._build_metric_sql(ym)
     assert sql == (
-        'SUM("outstanding_balance_usd") FILTER (WHERE "max_days_late" >= 30) '
+        'SUM(CASE WHEN "max_days_late" >= 30 THEN "outstanding_balance_usd" END) * 1.0 '
         '/ NULLIF(SUM("outstanding_balance_usd"), 0) * 100'
     )
 
@@ -52,7 +53,7 @@ def test_build_metric_sql_ratio_no_multiplier():
         },
     }
     sql = svc._build_metric_sql(ym)
-    assert sql == 'SUM("total_repaid_usd") / NULLIF(SUM("loan_amount_usd"), 0)'
+    assert sql == 'SUM("total_repaid_usd") * 1.0 / NULLIF(SUM("loan_amount_usd"), 0)'
 
 
 def test_build_metric_sql_plain_falls_back():
@@ -102,7 +103,7 @@ def test_computed_metric_clamps_bad_multiplier():
         },
     }
     # multiplier not in {1, 100} → clamped to 1 (no '* N' suffix), never errors
-    assert svc._build_metric_sql(ym) == 'SUM("a") / NULLIF(SUM("b"), 0)'
+    assert svc._build_metric_sql(ym) == 'SUM("a") * 1.0 / NULLIF(SUM("b"), 0)'
 
 
 # ---------------------------------------------------------------------------
@@ -157,3 +158,26 @@ def test_compute_metric_pandas_ratio_ungrouped():
     out = svc._compute_metric_pandas(df, ym, group_by=[])
     # 200 / 400 * 100 = 50
     assert round(out["collection_rate"].iloc[0]) == 50
+
+
+
+@pytest.mark.parametrize("op,expected", [
+    ("difference", '(SUM("a")) - (SUM("b"))'),
+    ("sum", '(SUM("a")) + (SUM("b"))'),
+    ("product", '(SUM("a")) * (SUM("b"))'),
+    ("change", '((SUM("a")) - (SUM("b"))) * 1.0 / NULLIF(SUM("b"), 0) * 100'),
+])
+def test_point_and_click_operations(op, expected):
+    from src.modules.charts.services.v2.chart_service import ChartService
+
+    svc = ChartService(None)
+    ym = {"field": "m", "computed": {"type": op, "multiplier": 100,
+          "numerator": {"field": "a", "aggregation": "sum"}, "denominator": {"field": "b", "aggregation": "sum"}}}
+    assert svc._build_metric_sql(ym) == expected
+
+
+def test_unknown_operation_is_dropped():
+    from src.modules.charts.services.v2.chart_service import ChartService
+
+    ym = {"field": "m", "computed": {"type": "power", "numerator": {"field": "a"}, "denominator": {"field": "b"}}}
+    assert ChartService(None)._build_metric_sql(ym) is None

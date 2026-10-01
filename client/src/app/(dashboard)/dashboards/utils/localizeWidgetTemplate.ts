@@ -18,6 +18,8 @@ const TYPE_KEYS: Record<string, { name: string; desc: string; bestFor?: string }
   treemap: { name: 'type_treemap', desc: 'desc_treemap', bestFor: 'best_for_treemap' },
   waterfall: { name: 'type_waterfall', desc: 'desc_waterfall', bestFor: 'best_for_waterfall' },
   bullet: { name: 'type_bullet', desc: 'desc_bullet', bestFor: 'best_for_bullet' },
+  sankey: { name: 'type_sankey', desc: 'desc_sankey', bestFor: 'best_for_sankey' },
+  histogram: { name: 'type_histogram', desc: 'desc_histogram', bestFor: 'best_for_histogram' },
   divider: { name: 'type_divider', desc: 'desc_divider', bestFor: 'best_for_divider' },
   image: { name: 'type_image', desc: 'desc_image', bestFor: 'best_for_image' },
   geo: { name: 'type_geo', desc: 'desc_geo', bestFor: 'best_for_geo' },

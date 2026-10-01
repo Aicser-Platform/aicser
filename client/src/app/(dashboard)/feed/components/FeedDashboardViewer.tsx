@@ -9,6 +9,8 @@ import { DashboardFilterPanel } from '@/app/(dashboard)/dashboards/components/Da
 import { DashboardPageTabs } from '@/app/(dashboard)/dashboards/components/DashboardPageTabs';
 import { DashboardViewerGrid } from '@/app/(dashboard)/dashboards/components/viewer/DashboardViewerGrid';
 import { FeedDashboardPreviewGrid } from './FeedDashboardPreviewGrid';
+import { isDateRuntimeFilter } from '@/app/(dashboard)/dashboards/utils/filterOperators';
+import { DashboardPaletteProvider } from '@/app/(dashboard)/dashboards/widgets/DashboardPaletteContext';
 import { FEED_DASHBOARD_PREVIEW_MAX } from '../utils/feedDashboardPreviewLayout';
 import '@/app/(dashboard)/dashboards/DashboardStudio.css';
 
@@ -73,11 +75,13 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
             <span>{t('card_filters_available', { count: viewer.combinedFiltersConfig.length })}</span>
           </div>
         ) : null}
-        <FeedDashboardPreviewGrid
-          widgets={widgets}
-          maxWidgets={cardLimit}
-          totalWidgetCount={viewer.visibleWidgets.length}
-        />
+        <DashboardPaletteProvider palette={viewer.meta?.colorPalette}>
+          <FeedDashboardPreviewGrid
+            widgets={widgets}
+            maxWidgets={cardLimit}
+            totalWidgetCount={viewer.visibleWidgets.length}
+          />
+        </DashboardPaletteProvider>
       </div>
     );
   }
@@ -120,6 +124,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         </div>
       )}
 
+      <DashboardPaletteProvider palette={viewer.meta?.colorPalette}>
       <DashboardViewerGrid
         widgets={widgets}
         layout={layout}
@@ -127,12 +132,14 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         runtimeFilters={viewer.runtimeFilters}
         onCrossFilter={viewer.handleCrossFilter}
         onRetryWidget={viewer.handleRetryWidget}
+        onClearDateFilters={() => viewer.handleRuntimeChange(viewer.runtimeFilters.filter((f) => !isDateRuntimeFilter(f)))}
         refreshing={viewer.refreshing}
         canvasMinHeight="auto"
         layoutMode="auto"
         hideInteractionHint
         eagerMount
       />
+      </DashboardPaletteProvider>
     </div>
   );
 }

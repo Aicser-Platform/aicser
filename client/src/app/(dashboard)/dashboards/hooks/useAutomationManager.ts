@@ -27,6 +27,7 @@ export interface ScheduledEmail {
   updated_at: string;
   data_source_id?: string | null;
   refresh_data_before_send?: boolean;
+  attach_pdf_report?: boolean;
 }
 
 export interface AutomationFormState {
@@ -40,6 +41,7 @@ export interface AutomationFormState {
   body: string;
   dataSourceId: string | null;
   refreshDataBeforeSend: boolean;
+  attachPdfReport: boolean;
 }
 
 export type ScheduleType = 'once' | 'daily' | 'weekly' | 'monthly';
@@ -102,6 +104,7 @@ export const useAutomationManager = ({
     body: string;
     dataSourceId: string | null;
     refreshDataBeforeSend: boolean;
+    attachPdfReport: boolean;
   }>({
     scheduleAt: getDefaultScheduleAt(),
     frequency: 'daily',
@@ -111,6 +114,7 @@ export const useAutomationManager = ({
     body: `Automated dashboard delivery for ${activeDashboardName || 'Dashboard'} (daily).`,
     dataSourceId: null,
     refreshDataBeforeSend: false,
+    attachPdfReport: false,
   });
 
   // Automation list modal state
@@ -291,6 +295,7 @@ export const useAutomationManager = ({
           enabled: true,
           data_source_id: autoSendForm.dataSourceId,
           refresh_data_before_send: autoSendForm.refreshDataBeforeSend && !!autoSendForm.dataSourceId,
+          attach_pdf_report: autoSendForm.attachPdfReport,
         }),
       });
 
@@ -357,6 +362,7 @@ export const useAutomationManager = ({
       body: schedule.body || `Automated dashboard delivery for ${activeDashboardName || 'Dashboard'} (${frequency}).`,
       dataSourceId: schedule.data_source_id ?? null,
       refreshDataBeforeSend: Boolean(schedule.refresh_data_before_send),
+      attachPdfReport: Boolean(schedule.attach_pdf_report),
     });
     setIsEditAutomationOpen(true);
   };
@@ -405,6 +411,7 @@ export const useAutomationManager = ({
           data_source_id: editingAutomationForm.dataSourceId,
           refresh_data_before_send:
             editingAutomationForm.refreshDataBeforeSend && !!editingAutomationForm.dataSourceId,
+          attach_pdf_report: editingAutomationForm.attachPdfReport,
         }),
       });
 
@@ -442,6 +449,7 @@ export const useAutomationManager = ({
           enabled,
           data_source_id: schedule.data_source_id ?? null,
           refresh_data_before_send: Boolean(schedule.refresh_data_before_send),
+          attach_pdf_report: Boolean(schedule.attach_pdf_report),
         }),
       });
       await refreshScheduledEmails();

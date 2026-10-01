@@ -214,3 +214,134 @@ async def test_the_builder_binds_the_dialect_itself_not_only_its_caller(monkeypa
 
     assert engine.queries
     assert '"' not in engine.queries[0], engine.queries[0]
+
+
+@pytest.mark.asyncio
+async def test_scatter_reads_the_charts_own_table(monkeypatch):
+    """Scatter used the schema's first table; on a multi-table source that was the wrong one."""
+    source = _source(
+        "postgresql",
+        schema={"tables": [
+            {"name": "inventory", "columns": [{"name": "sku"}]},
+            {"name": "orders", "columns": [{"name": "order_total"}, {"name": "quantity"}]},
+        ]},
+    )
+    sql = await _run(
+        monkeypatch,
+        source,
+        {
+            "tableName": "orders",
+            "xMetrics": [{"field": "quantity", "aggregation": "none"}],
+            "yMetrics": [{"field": "order_total", "aggregation": "none"}],
+        },
+        chart_type="scatter",
+    )
+
+    assert "orders" in sql and "inventory" not in sql, sql
+
+
+@pytest.mark.asyncio
+async def test_map_points_group_by_place_with_average_position(monkeypatch):
+    source = _source(
+        "postgresql",
+        schema={"tables": [{"name": "shops", "columns": [{"name": "town"}, {"name": "lat"}, {"name": "lng"}, {"name": "sales"}]}]},
+    )
+    sql = await _run(
+        monkeypatch,
+        source,
+        {
+            "tableName": "shops",
+            "x": "town",
+            "latitude": "lat",
+            "longitude": "lng",
+            "yMetrics": [{"field": "sales", "aggregation": "sum"}],
+        },
+        chart_type="geo",
+    )
+    assert 'AVG("lat") as lat' in sql and 'AVG("lng") as lon' in sql
+    assert 'GROUP BY "town"' in sql
+    assert '"lat" IS NOT NULL' in sql and '"shops"' in sql
+
+
+def test_kpi_compares_periods_only_for_rows_over_time():
+    from src.modules.charts.services.v2 import chart_service as cs
+
+    svc = cs.ChartService(_Session(None))
+    by_province = SimpleNamespace(chart_query={"x": "province", "yMetrics": [{"field": "sales", "aggregation": "sum"}]})
+    out = svc._normalize_stat_timeseries_result(by_province, {"x": ["Kep", "Pailin"], "y": [10, 20]})
+    assert out["value"] == 30 and "comparisonValue" not in out
+
+    by_month = SimpleNamespace(chart_query={"x": "order_date", "xGrain": "month", "yMetrics": [{"field": "sales", "aggregation": "sum"}]})
+    out = svc._normalize_stat_timeseries_result(by_month, {"x": ["2024-01-01", "2024-02-01"], "y": [10, 20]})
+    assert out["comparisonValue"] == 10 and out["currentPeriodValue"] == 20
+
+
+# ── Histogram and scatter "Dot for each" ─────────────────────────────────────
+
+def test_histogram_bins_are_round_and_cover_the_range():
+    from src.modules.charts.services.v2.chart_service import ChartService
+
+    start, width, count = ChartService.histogram_bins(12.0, 4819.76, 178)
+    assert (start, width) == (0, 500)
+    assert start + count * width > 4819.76 and start + (count - 1) * width <= 4819.76
+    # The author's bin count wins; a maximum sitting on an edge gets its own bin.
+    s, w, c = ChartService.histogram_bins(0, 100, 50, requested=4)
+    assert (s, w) == (0, 25) and s + c * w > 100
+    # One distinct value still draws one bar around it.
+    assert ChartService.histogram_bins(7, 7, 3)[2] == 1
+
+
+class _HistogramEngine:
+    def __init__(self):
+        self.queries = []
+
+    async def execute_query(self, query, _data_source, **_kwargs):
+        self.queries.append(query)
+        if "MIN(" in query:
+            return {"success": True, "data": [{"lo": 0, "hi": 95, "n": 6}]}
+        return {"success": True, "data": [{"b": 0, "n": 3}, {"b": 9, "n": 2}, {"b": 10, "n": 1}]}
+
+
+@pytest.mark.asyncio
+async def test_histogram_counts_every_row_in_sql_and_keeps_empty_ranges(monkeypatch):
+    from src.modules.charts.services.v2 import chart_service as cs
+
+    engine = _HistogramEngine()
+    monkeypatch.setattr(cs, "get_multi_engine_query_service", lambda: engine)
+    source = _source("postgresql", schema={"tables": [{"name": "bills", "columns": [{"name": "total"}]}]})
+    chart = SimpleNamespace(
+        chart_type="histogram",
+        chart_query={"tableName": "bills", "yMetrics": [{"field": "total", "aggregation": "sum"}], "bins": 10},
+        chart_options={},
+        data_source_id="ds-1",
+        user_id="author-9",
+    )
+    out = await cs.ChartService(_Session(source)).execute(chart)
+
+    stats_sql, bucket_sql = engine.queries
+    assert '"total" IS NOT NULL' in stats_sql and "LIMIT" not in bucket_sql
+    assert "FLOOR" in bucket_sql and "GROUP BY" in bucket_sql
+    assert out["bins"][0] == [0, 10] and len(out["y"]) == len(out["bins"])
+    assert out["y"][0] == 3 and 0 in out["y"]  # gaps are part of the shape
+    assert sum(out["y"]) == 6  # the maximum lands in the last range, not outside
+
+
+@pytest.mark.asyncio
+async def test_scatter_dot_for_each_groups_by_that_column(monkeypatch):
+    source = _source(
+        "postgresql",
+        schema={"tables": [{"name": "bills", "columns": [{"name": "vendor"}, {"name": "total"}, {"name": "days"}]}]},
+    )
+    sql = await _run(
+        monkeypatch,
+        source,
+        {
+            "tableName": "bills",
+            "detail": "vendor",
+            "xMetrics": [{"field": "total", "aggregation": "none"}],
+            "yMetrics": [{"field": "days", "aggregation": "avg"}],
+        },
+        chart_type="scatter",
+    )
+    assert '"vendor" as name' in sql and 'GROUP BY "vendor"' in sql, sql
+    assert 'SUM("total")' in sql, sql  # a raw axis is summed per dot

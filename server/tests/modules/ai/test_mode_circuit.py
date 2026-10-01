@@ -19,12 +19,8 @@ def test_sql_grain_per_mode():
     assert engine_sql_grain("descriptive") == "descriptive"
 
 
-def test_decide_on_actions_root_cause_does_not_run_forecast():
-    rows = [
-        {"month": "2024-01-01", "amount": 400_000},
-        {"month": "2024-06-01", "amount": 700_000},
-        {"month": "2025-01-01", "amount": 500_000},
-    ]
+def test_pinned_decide_forecasts_timeseries_for_the_outlook():
+    rows = [{"month": f"2024-{m:02d}-01", "amount": 400_000 + m * 1000} for m in range(1, 13)]
     sel = di_engine_selection(
         "What actions would fix this root cause?",
         pinned=True,
@@ -32,7 +28,7 @@ def test_decide_on_actions_root_cause_does_not_run_forecast():
     )
     assert sel["needs_diagnostic"] is True
     assert sel["needs_prescriptive"] is True
-    assert sel["needs_predictive"] is False
+    assert sel["needs_predictive"] is True  # a decision is about the future
 
 
 def test_decide_forecast_question_keeps_predictive_on_timeseries():
@@ -155,3 +151,15 @@ def test_actions_plus_root_cause_routes_to_decide():
 
 def test_expected_close_is_not_forecast():
     assert infer_analysis_mode_from_query("Show expected close this month by stage") != "predictive"
+
+
+def test_unpinned_composite_without_future_words_skips_forecast():
+    rows = [{"month": f"2024-{m:02d}-01", "amount": 100 + m} for m in range(1, 13)]
+    sel = di_engine_selection("Why did amount drop and what should we do?", pinned=False, query_result=rows)
+    assert sel["needs_predictive"] is False
+
+
+def test_pinned_decide_skips_forecast_without_time_series():
+    rows = [{"branch": f"B{i}", "amount": 100 + i} for i in range(8)]
+    sel = di_engine_selection("Should we expand at our top branch?", pinned=True, query_result=rows)
+    assert sel["needs_predictive"] is False

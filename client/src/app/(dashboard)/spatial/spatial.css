@@ -1,0 +1,68 @@
+.spatial-panel .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.spatial-step {
+  display: block;
+  margin: 14px 0 8px;
+  font-size: 13px;
+}
+
+.spatial-step:first-child {
+  margin-top: 0;
+}
+
+.spatial-questions.ant-radio-group {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.spatial-questions .spatial-question.ant-radio-button-wrapper {
+  height: auto;
+  padding: 8px 12px;
+  line-height: 1.35;
+  border-radius: var(--ant-border-radius, 6px);
+  border-inline-start-width: 1px;
+}
+
+.spatial-questions .spatial-question.ant-radio-button-wrapper::before {
+  display: none;
+}
+
+.spatial-question > span:last-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.spatial-question__icon {
+  font-size: 16px;
+  color: var(--ant-color-primary);
+  padding-top: 2px;
+}
+
+.spatial-question__title {
+  display: block;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.spatial-question__desc {
+  display: block;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  white-space: normal;
+}
+
+.spatial-headline {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+@media (min-width: 992px) {
+  .spatial-panel {
+    position: sticky;
+    top: 12px;
+  }
+}

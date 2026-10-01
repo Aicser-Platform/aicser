@@ -14,5 +14,11 @@ os.environ.setdefault('PYTEST_CURRENT_TEST', '1')
 os.environ.setdefault('ALLOW_UNVERIFIED_JWT_IN_DEV', 'true')
 os.environ.setdefault('ALLOW_DEV_AUTH_BYPASS', 'true')
 os.environ.setdefault('ENVIRONMENT', 'development')
+# Tests never write generated files (exports, model files) into the real, shared storage —
+# inside the app container that is the uploads volume other people's downloads live on.
+import tempfile as _tempfile
+
+os.environ['AISER_ARTIFACTS_DIR'] = _tempfile.mkdtemp(prefix='aicser-test-artifacts-')
+os.environ['ML_MODEL_DIR'] = _tempfile.mkdtemp(prefix='aicser-test-models-')
 
 

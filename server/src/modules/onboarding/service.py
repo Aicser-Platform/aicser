@@ -534,28 +534,29 @@ class OnboardingService:
 
             await self.db.commit()
 
-            # ── 6. Provision trial subscription if requested ─────────────
-            enable_pro_trial = bool(plan_selection.get("enableProTrial", False))
-            enable_team_trial = plan_selection.get("enableTeamTrial")
-            if enable_team_trial is None and selected_plan == "team":
-                enable_team_trial = True
-            else:
-                enable_team_trial = bool(enable_team_trial)
-            trial_plan = None
-            if enable_pro_trial:
-                trial_plan = "pro"
-            elif enable_team_trial:
-                trial_plan = "team"
+            # ── 6. Free trial — only when the user opted in, once per organization ──
+            # (src/shared/trial_grant.py: never over a paid plan, never a second time).
+            enable_pro_trial = plan_selection.get("enableProTrial") is True
+            enable_team_trial = plan_selection.get("enableTeamTrial") is True
+            trial_plan = "pro" if enable_pro_trial else ("team" if enable_team_trial else None)
 
             requires_checkout = False
             checkout_plan = None
-            if trial_plan:
-                await self.provision_trial_subscription(
-                    organization_id=organization_id,
-                    plan_slug=trial_plan,
-                )
+            trial_outcome = None
+            if trial_plan and organization_id:
+                from src.shared.trial_grant import ALREADY_USED, GRANTED, HAS_PAID_PLAN, grant_trial_once
+
+                grant = await grant_trial_once(self.db, organization_id, trial_plan)
+                trial_outcome = grant["outcome"]
                 await self.db.commit()
-                selected_plan = trial_plan
+                if trial_outcome == GRANTED:
+                    selected_plan = trial_plan
+                elif trial_outcome == HAS_PAID_PLAN:
+                    selected_plan = grant.get("plan_slug") or selected_plan
+                elif trial_outcome == ALREADY_USED:
+                    # Trial spent earlier: they can still buy the plan they picked.
+                    requires_checkout = True
+                    checkout_plan = trial_plan
             elif selected_plan in ("pro", "team"):
                 # User picked a paid plan without a trial — signal frontend to go to Stripe
                 requires_checkout = True
@@ -570,6 +571,7 @@ class OnboardingService:
                 "welcome_message": quick_start.get("welcome_message", {}),
                 "requires_checkout": requires_checkout,
                 "checkout_plan": checkout_plan,
+                "trial_outcome": trial_outcome,
             }
 
         except Exception as e:
@@ -871,51 +873,6 @@ class OnboardingService:
         # Add short user ID to ensure uniqueness
         short_id = str(user_id)[:8]
         return f"{slug}-{short_id}"
-
-    async def provision_trial_subscription(
-        self,
-        organization_id: Any,
-        plan_slug: str,
-    ) -> None:
-        """
-        Upsert an in-app trialing subscription for the given org.
-        No Stripe involved — status='trialing', provider='internal', 14 days from now.
-        Called from complete_onboarding() when the user enables a trial toggle.
-        """
-        from datetime import timedelta
-
-        trial_ends = datetime.utcnow() + timedelta(days=14)
-
-        plan_row = await self.db.execute(
-            text("SELECT id FROM subscription_plans WHERE slug = :slug LIMIT 1"),
-            {"slug": plan_slug},
-        )
-        plan = plan_row.fetchone()
-        if not plan:
-            logger.warning(f"provision_trial_subscription: plan '{plan_slug}' not found — skipping")
-            return
-
-        await self.db.execute(
-            text("""
-                INSERT INTO organization_subscriptions
-                    (organization_id, plan_id, status, trial_ends_at, trial_expiring_soon, provider)
-                VALUES
-                    (:org_id, :plan_id, 'trialing', :trial_ends, false, 'internal')
-                ON CONFLICT (organization_id) DO UPDATE
-                    SET plan_id              = EXCLUDED.plan_id,
-                        status               = 'trialing',
-                        trial_ends_at        = EXCLUDED.trial_ends_at,
-                        trial_expiring_soon  = false,
-                        provider             = 'internal',
-                        provider_subscription_id = NULL,
-                        provider_customer_id     = NULL
-            """),
-            {"org_id": organization_id, "plan_id": plan.id, "trial_ends": trial_ends},
-        )
-        logger.info(
-            "Provisioned %s trial for org %s until %s",
-            plan_slug, organization_id, trial_ends.isoformat(),
-        )
 
     @staticmethod
     async def mark_completed(user_id: str, db: AsyncSession) -> None:

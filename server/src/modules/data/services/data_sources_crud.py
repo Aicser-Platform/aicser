@@ -493,7 +493,7 @@ class DataSourcesCRUD:
             except Exception:
                 pass
             incoming = update_data.connection_config
-            sensitive_keys = {'password', 'pass', 'api_key', 'secret_key', 'secret', 'credentials', 'token', 'secret_access_key', 'access_key_id'}
+            sensitive_keys = {'password', 'pass', 'api_key', 'secret_key', 'secret', 'credentials', 'token', 'secret_access_key', 'access_key_id', 'credentials_json', 'service_account_json'}
             merged = dict(existing)
             for k, v in (incoming or {}).items():
                 if k in sensitive_keys and (v is None or (isinstance(v, str) and not v.strip())):

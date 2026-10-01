@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import stableStringify from 'fast-json-stable-stringify';
+import { useTranslations } from 'next-intl';
 import { useDataSources, useDataSourceSchema } from '@/hooks/useDataSources';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDashboardStore } from '../stores/useDashboardStore';
@@ -12,7 +13,9 @@ import {
   inferChartMapping,
   wrapSqlAsSubquery,
 } from '../utils/queryBindBridge';
-import { preserveChartQueryOnTypeChange, normalizeChartOptionsOnTypeChange } from '../utils/chartTypeMappingPreserve';
+import { autoTitlePatch } from '../utils/widgetAutoTitle';
+import { chartTypeChangePatch } from '../utils/chartTypeChange';
+import { fieldDisplayName, friendlyName } from '@/utils/schemaFieldHelpers';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { stripPinFreezeOptions } from '@/components/charts/chartDesignerBridge';
 
@@ -33,6 +36,11 @@ export const useWidgetProperties = ({
   setWidgets: _setWidgets,
   isDesigner = false,
 }: UseWidgetPropertiesParams) => {
+  const tAuto = useTranslations('dashboards_page');
+  const placeholderTitles = useMemo(
+    () => ['story_slot_kpi', 'story_slot_trend', 'story_slot_compare', 'story_slot_share', 'story_slot_detail'].map((k) => tAuto(k)),
+    [tAuto],
+  );
   const normalizedDataSourceId =
     selectedWidget?.dataSourceId !== undefined && selectedWidget?.dataSourceId !== null
       ? String(selectedWidget.dataSourceId)
@@ -70,7 +78,12 @@ export const useWidgetProperties = ({
 
   const updateLocalAndStore = (patch: Partial<any>) => {
     if (!selectedWidgetId) return;
-    const updatedWidget = { ...selectedWidget, ...patch };
+    let updatedWidget = { ...selectedWidget, ...patch };
+    // A title the user never typed follows the data and the chart type (never a pie titled "KPI").
+    if (selectedWidget && !('title' in patch) && ('chartQuery' in patch || 'chartType' in patch)) {
+      const retitle = autoTitlePatch(selectedWidget, updatedWidget, tAuto, placeholderTitles);
+      if (retitle) updatedWidget = { ...updatedWidget, ...retitle };
+    }
     // Only update via the store — the store already keeps `widgets` in sync.
     // Calling setWidgets() here in addition caused a second render cycle that
     // fed back into the loop (store update → re-render → new refs → effects rerun).
@@ -401,6 +414,22 @@ export const useWidgetProperties = ({
   const selectedTableName = selectedChartQuery?.tableName;
   const selectedJoinsKey = JSON.stringify(selectedChartQuery?.joins || []);
 
+  // The table the Build fields come from: the chosen one (matched by bare name, so
+  // "inventory" and "retail.inventory" agree), else 'data' or the first usable table. The
+  // table picker shows this same table, so it never reads "Select table" over loaded fields.
+  const columnSourceTable = useMemo(() => {
+    const tables = selectedSchemaInfo?.tables || [];
+    if (!tables.length) return null;
+    const bare = (table?: string) => table?.split('.').pop()?.trim() || table?.trim();
+    const wanted = bare(selectedTableName);
+    return (
+      (wanted ? tables.find((t: any) => bare(t.name) === wanted) : null) ||
+      tables.find((t: any) => t.name === 'data') ||
+      tables.find((t: any) => t.columns && t.columns.length > 0) ||
+      tables[0]
+    );
+  }, [selectedSchemaInfo, selectedTableName]);
+
   const selectedTableColumns = useMemo(() => {
     // SQL / saved-query mode: columns come from the SQL result shape, not base tables.
     const sqlMode =
@@ -410,7 +439,7 @@ export const useWidgetProperties = ({
         selectedWidget.chartOptions.sample_sql.trim());
     if (sqlMode && savedQueryColumns.length > 0) {
       return savedQueryColumns.map((c) => ({
-        label: c.name,
+        label: fieldDisplayName(c),
         value: c.name,
         type: c.type || 'unknown',
       }));
@@ -428,16 +457,11 @@ export const useWidgetProperties = ({
       return tables.find((t: any) => bareTableName(t.name) === bare);
     };
 
-    // Find the specific table if selected, else default to 'data' or the first usable one
-    const table =
-      (selectedTableName ? findSchemaTable(selectedTableName) : null) ||
-      tables.find((t: any) => t.name === 'data') ||
-      tables.find((t: any) => t.columns && t.columns.length > 0) ||
-      tables[0];
+    const table = columnSourceTable;
 
     const baseColumns =
       table?.columns?.map((c: any) => ({
-        label: c.name || c,
+        label: fieldDisplayName(c),
         value: c.name || c,
         type: c.type || 'string',
       })) ?? [];
@@ -451,7 +475,7 @@ export const useWidgetProperties = ({
             const columnName = c.name || c;
             const qualifiedName = `${alias}.${columnName}`;
             return {
-              label: qualifiedName,
+              label: `${friendlyName(String(alias))} · ${fieldDisplayName(c)}`,
               value: qualifiedName,
               type: c.type || 'string',
             };
@@ -462,7 +486,7 @@ export const useWidgetProperties = ({
     return [...baseColumns, ...relatedColumns];
   }, [
     selectedSchemaInfo,
-    selectedTableName,
+    columnSourceTable,
     selectedJoinsKey,
     selectedChartQuery?.saved_query_id,
     selectedChartQuery?.query_snapshot_id,
@@ -476,6 +500,21 @@ export const useWidgetProperties = ({
 
   // Debounce for chartOptions API update
   const chartOptionsDebounce = useRef<NodeJS.Timeout | null>(null);
+  // A source with a single table (every uploaded file) needs no choice: bind it. The panel
+  // already showed that table, but a chart without it stored stayed "Not connected", and
+  // re-picking the shown table changed nothing.
+  const onlyTable = selectedSchemaInfo?.tables?.length === 1 ? selectedSchemaInfo.tables[0]?.name : undefined;
+  const sqlBoundForTable =
+    Boolean(selectedChartQuery?.saved_query_id) ||
+    Boolean(selectedChartQuery?.query_snapshot_id) ||
+    Boolean(selectedWidget?.chartOptions?.sample_sql);
+  useEffect(() => {
+    if (!selectedWidget?.dataSourceId || !onlyTable || sqlBoundForTable) return;
+    if (selectedChartQuery?.tableName) return;
+    updateChartQuery('tableName', onlyTable);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the widget, source or its table changes
+  }, [selectedWidget?.id, selectedWidget?.dataSourceId, onlyTable, sqlBoundForTable, selectedChartQuery?.tableName]);
+
   const updateWidgetRoot = (key: string, value: any) => {
     // If chartOptions (UI only), update UI instantly and debounce API update
     if (key === 'chartOptions') {
@@ -495,16 +534,8 @@ export const useWidgetProperties = ({
 
     // Switching chart type: preserve compatible mappings; trim by destination maxCount / XOR.
     if (key === 'chartType' && selectedWidget) {
-      const nextQuery = preserveChartQueryOnTypeChange(selectedWidget, String(value));
-      const nextOptions = normalizeChartOptionsOnTypeChange(
-        String(value),
-        (selectedWidget.chartOptions || {}) as Record<string, unknown>,
-      );
-      updateLocalAndStore({
-        chartType: value,
-        chartQuery: ensureChartQueryDefaults(nextQuery),
-        chartOptions: nextOptions,
-      });
+      const patch = chartTypeChangePatch(selectedWidget, String(value), tAuto, placeholderTitles);
+      updateLocalAndStore({ ...patch, chartQuery: ensureChartQueryDefaults(patch.chartQuery) });
       return;
     }
 
@@ -522,6 +553,8 @@ export const useWidgetProperties = ({
     let nextQuery = ensureChartQueryDefaults({
       ...(selectedWidget.chartQuery || {}),
       ...(key === 'pivotSwap' ? {} : { [key]: value }),
+      // A sort the person picks is theirs: no longer the pie's automatic largest-first.
+      ...(key === 'sortBy' || key === 'sortOrder' ? { sortAuto: undefined } : {}),
     });
 
     // Atomic Rows ↔ Columns swap (Tableau/Power BI pivot)
@@ -542,6 +575,10 @@ export const useWidgetProperties = ({
 
     if (key === 'tableName') {
       nextQuery = ensureChartQueryDefaults(sanitizeQueryForTable(nextQuery, value));
+    }
+    // Fields picked from the table shown by default belong to it: record it on the query.
+    else if (!nextQuery.tableName && !isSqlBoundWidget && columnSourceTable?.name) {
+      nextQuery = { ...nextQuery, tableName: columnSourceTable.name };
     }
 
     // Clear date grain when X axis is cleared; soft-suggest grain for date-like X
@@ -1124,6 +1161,7 @@ export const useWidgetProperties = ({
     dataSources,
     selectedTableColumns,
     availableTables: selectedSchemaInfo?.tables?.map((t: any) => t.name) || [],
+    effectiveTableName: (columnSourceTable?.name as string | undefined) ?? undefined,
     hasChart: !!selectedWidget?.chartId,
     isLoading,
     schemaLoading,

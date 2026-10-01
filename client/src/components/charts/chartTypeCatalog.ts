@@ -28,6 +28,8 @@ export const DASHBOARD_EXTENDED_CHART_TYPES = [
   'waterfall',
   'bullet',
   'geo',
+  'sankey',
+  'histogram',
 ] as const;
 
 /** Full Build → chart type switcher list (chat core first, then dashboard extensions). */
@@ -109,6 +111,8 @@ const SHORT_LABELS: Record<string, string> = {
   waterfall: 'Waterfall',
   bullet: 'Bullet',
   geo: 'Geo',
+  sankey: 'Sankey',
+  histogram: 'Histogram',
   bar_race: 'Bar race',
   line_race: 'Line race',
 };

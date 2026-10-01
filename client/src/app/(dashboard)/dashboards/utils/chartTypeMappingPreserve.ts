@@ -10,6 +10,7 @@ const SINGLE_METRIC_TYPES = new Set([
   'bullet',
   'geo',
   'heatmap',
+  'sankey',
 ]);
 
 function metricListMaxCount(chartType: string, fieldKey: string): number | undefined {
@@ -33,6 +34,20 @@ export function preserveChartQueryOnTypeChange(
   // Drop secondary axis when leaving bar/line/area (and combo)
   if (!['bar', 'line', 'area', 'bullet'].includes(nextType)) {
     q.yMetricsSecondary = [];
+  }
+
+  // Slices read largest-first (the pie / donut convention); only replaces the untouched default
+  // "by category" order, never a sort the user chose.
+  if (['pie', 'donut'].includes(nextType) && (!q.sortBy || q.sortBy === 'x') && !q.sortOrder) {
+    q.sortBy = 'y';
+    q.sortOrder = 'desc';
+    q.sortAuto = true;
+  }
+  // Leaving a pie undoes its automatic sort, so a date axis reads in date order again.
+  if (!['pie', 'donut'].includes(nextType) && q.sortAuto) {
+    delete q.sortBy;
+    delete q.sortOrder;
+    delete q.sortAuto;
   }
 
   // Entering scatter: seed xMetrics from x if needed

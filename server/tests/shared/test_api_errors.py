@@ -44,15 +44,10 @@ def test_error_body_validation():
     assert body["details"]
 
 
-def test_raw_http_exception_with_sibling_extras_silently_drops_them():
-    """Documents a real gotcha this codebase hit twice (ai_credits_exhausted,
-    data_source_limit_reached, ai_mode_upgrade_required): raising a raw
-    HTTPException(detail={"error":..., "message":..., "current_used":...})
-    with extra fields as SIBLINGS of error/message - not nested under
-    "details" - loses them at the global exception handler, because
-    _normalize_detail only extracts extras from a "details" key. Any code
-    that needs extra fields on the wire MUST use raise_http() (see the test
-    below), not a raw HTTPException with ad-hoc extra keys."""
+def test_raw_http_exception_sibling_extras_are_preserved_under_details():
+    """Extra fields raised as siblings of error/message used to be dropped by the global
+    handler — a gotcha hit three times (ai_credits_exhausted, data_source_limit_reached, the
+    upgrade prompt). They now survive under "details", same as raise_http()."""
     exc = HTTPException(
         status_code=429,
         detail={"error": "ai_credits_exhausted", "message": "Out of credits", "current_used": 100, "limit": 100},
@@ -61,8 +56,7 @@ def test_raw_http_exception_with_sibling_extras_silently_drops_them():
     body = json.loads(resp.body.decode())
     assert body["error"] == "ai_credits_exhausted"
     assert body["message"] == "Out of credits"
-    assert "current_used" not in body
-    assert "details" not in body or "current_used" not in (body.get("details") or {})
+    assert body["details"] == {"current_used": 100, "limit": 100}
 
 
 def test_raise_http_preserves_extra_fields_under_details():
@@ -80,3 +74,11 @@ def test_raise_http_preserves_extra_fields_under_details():
     assert body["error"] == "ai_credits_exhausted"
     assert body["message"] == "Out of credits"
     assert body["details"] == {"current_used": 100, "limit": 100, "cost": 5}
+
+
+def test_structured_fields_survive_alongside_message():
+    code, msg, details = _normalize_detail({
+        "error": "upgrade_required", "message": "Needs Pro", "upgrade_required": True, "required_plan": "pro",
+    })
+    assert code == "upgrade_required" and msg == "Needs Pro"
+    assert details == {"upgrade_required": True, "required_plan": "pro"}

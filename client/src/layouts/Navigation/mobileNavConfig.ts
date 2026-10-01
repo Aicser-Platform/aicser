@@ -1,5 +1,5 @@
 import type { NavItemDef } from './navConfig';
-import { NAV_ROUTES } from './navConfig';
+import { MAPS_ENABLED, NAV_LABEL_KEYS, NAV_ROUTES } from './navConfig';
 
 export type MobileTabDef = {
   key: string;
@@ -8,11 +8,12 @@ export type MobileTabDef = {
 };
 
 /** Primary bottom tabs — max 4 + More (industry standard). */
+// Same job labels and order as the desktop rail (QA S-ASK-09): Ask first; short group names on tabs.
 export const EE_MOBILE_TABS: MobileTabDef[] = [
-  { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
   { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
-  { key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
-  { key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
+  { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+  { key: 'dashboards', labelKey: 'dashboard_studio', href: NAV_ROUTES.dashboards },
+  { key: 'data', labelKey: 'cat_data', href: NAV_ROUTES.data },
 ];
 
 export const CE_MOBILE_TABS: MobileTabDef[] = [
@@ -37,21 +38,36 @@ export function isMoreNavActive(selectedKey: string, isEnterprise: boolean, aiEn
   return !primaryMobileTabKeys(isEnterprise, aiEnabled).includes(selectedKey);
 }
 
+const moreLink = (key: string): NavItemDef => ({ kind: 'link', key, labelKey: NAV_LABEL_KEYS[key], href: NAV_ROUTES[key] });
+
+/** Everything not on a tab, in the sidebar's order and sections. */
 export function enterpriseMoreNavItems(): NavItemDef[] {
   return [
-    { kind: 'link', key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
-    { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
-    { kind: 'link', key: 'knowledge', labelKey: 'knowledge_libraries', href: NAV_ROUTES.knowledge },
-    { kind: 'link', key: 'alerts', labelKey: 'alerts', href: NAV_ROUTES.alerts },
+    moreLink('chart-designer'),
+    moreLink('alerts'),
     { kind: 'divider' },
-    { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
+    moreLink('query-editor'),
+    moreLink('sheets'),
+    moreLink('notebooks'),
+    ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
+    { kind: 'divider' },
+    moreLink('models'),
+    moreLink('ai-decisions'),
+    { kind: 'divider' },
+    moreLink('knowledge'),
+    moreLink('warehouse'),
+    { kind: 'divider' },
+    moreLink('settings'),
   ];
 }
 
 export function communityMoreNavItems(): NavItemDef[] {
   return [
-    { kind: 'link', key: 'chart-designer', labelKey: 'chart_designer', href: NAV_ROUTES['chart-designer'] },
-    { kind: 'link', key: 'knowledge', labelKey: 'knowledge_libraries', href: NAV_ROUTES.knowledge },
+    moreLink('chart-designer'),
+    moreLink('sheets'),
+    moreLink('notebooks'),
+    ...(MAPS_ENABLED ? [moreLink('spatial')] : []),
+    moreLink('knowledge'),
     { kind: 'divider' },
     { kind: 'link', key: 'settings', labelKey: 'settings', href: NAV_ROUTES.settings },
   ];

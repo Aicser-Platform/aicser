@@ -1,5 +1,6 @@
 'use client';
 
+import { anchorRelativeDateDefaults } from '../utils/anchorDateDefaults';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { message } from 'antd';
@@ -268,7 +269,17 @@ export function useDashboardFilterContext(projectId?: string | number | null) {
           }
         } else {
           const activePage = pageList.find((p) => p.id === (resolvedPageId || defaultPageIdRef.current));
-          const defaults = mergeFilterDefaults(cfgFilters, activePage?.filters || []);
+          const defaults = await anchorRelativeDateDefaults(
+            [...cfgFilters, ...(activePage?.filters || [])],
+            mergeFilterDefaults(cfgFilters, activePage?.filters || []),
+            (f) =>
+              f.dataSourceId
+                ? chartService
+                    .getFilterFieldStats(String(activeDashboardId), f.field, String(f.dataSourceId), { tableName: f.tableName })
+                    .then((r) => (r.max != null ? String(r.max) : null))
+                : Promise.resolve(null),
+          );
+          if (cancelled) return;
           if (defaults.length) {
             setRuntimeFilters(defaults);
             prevFiltersRef.current = defaults;

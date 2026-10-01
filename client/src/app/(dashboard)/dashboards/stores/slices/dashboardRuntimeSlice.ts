@@ -154,6 +154,7 @@ export const createDashboardRuntimeSlice: StateCreator<
           data?: ChartData;
           error?: string;
           filter_warnings?: string[];
+          unapplied_filters?: string[];
         }>,
       ) => {
         const byWidget = new Map<string, (typeof results)[number]>();
@@ -174,6 +175,7 @@ export const createDashboardRuntimeSlice: StateCreator<
               ...w,
               chartData: processedData,
               filterWarnings: result.filter_warnings,
+              unappliedFilters: result.unapplied_filters,
               isLoading: false,
               error: null,
             };

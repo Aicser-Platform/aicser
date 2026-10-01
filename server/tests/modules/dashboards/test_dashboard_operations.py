@@ -230,3 +230,61 @@ def test_apply_drill_context_overrides_x_and_filters():
     merged = apply_drill_context(base, ctx)
     assert merged["x"] == "quarter"
     assert any(f["field"] == "year" and f["value"] == "2024" for f in merged["filters"])
+
+
+def test_runtime_date_range_keeps_both_bounds():
+    from src.modules.dashboards.operations import merge_runtime_filters
+
+    query = {"filters": [{"field": "order_date", "operator": ">=", "value": "2020-01-01"}]}
+    merged = merge_runtime_filters(
+        query,
+        [
+            {"field": "order_date", "operator": ">=", "value": "2026-08-27", "type": "date"},
+            {"field": "order_date", "operator": "<=", "value": "2026-09-25", "type": "date"},
+        ],
+    )
+    bounds = {(f["operator"], f["value"]) for f in merged["filters"]}
+    assert (">=", "2026-08-27") in bounds and ("<=", "2026-09-25") in bounds
+    # The widget's own saved filter on that field is replaced, not AND-ed.
+    assert (">=", "2020-01-01") not in bounds
+
+
+def test_runtime_repeat_of_same_operator_last_wins():
+    from src.modules.dashboards.operations import merge_runtime_filters
+
+    merged = merge_runtime_filters(
+        {},
+        [
+            {"field": "region", "operator": "=", "value": "US"},
+            {"field": "region", "operator": "=", "value": "EU"},
+        ],
+    )
+    assert [f["value"] for f in merged["filters"] if f["field"] == "region"] == ["EU"]
+
+
+def test_count_defaults_are_not_a_structured_mapping():
+    from src.modules.charts.services.v2.chart_service import has_structured_mapping, runs_own_sql
+
+    compiled = {"tableName": "loans", "x": None, "yMetrics": [], "yMetric": "count", "aggregate": "count",
+                "compiled_semantic_sql": "SELECT 1"}
+    assert has_structured_mapping("table", compiled) is False
+    assert runs_own_sql("table", compiled) is True
+    assert has_structured_mapping("stat", {"tableName": "loans", "aggregate": "count"}) is True
+    assert has_structured_mapping("bar", {"tableName": "loans", "x": "region"}) is True
+    assert runs_own_sql("bar", {"tableName": "loans", "x": "region", "compiled_semantic_sql": "SELECT 1"}) is False
+    assert runs_own_sql("area", {"saved_query_id": "3"}) is True
+
+
+
+def test_sql_bound_chart_reports_filters_it_could_not_apply():
+    from src.modules.charts.services.v2.chart_service import ChartService, track_unapplied_filters
+
+    svc = ChartService.__new__(ChartService)
+    seen = track_unapplied_filters()
+    kept = svc._filters_projected_by_saved_sql(
+        [{"field": "week", "operator": ">=", "value": "2024-01-01"},
+         {"field": "disbursement_date", "operator": ">=", "value": "2026-01-01"}],
+        "SELECT week, SUM(x) AS total FROM t GROUP BY week",
+    )
+    assert [f["field"] for f in kept] == ["week"]
+    assert seen == ["disbursement_date"]

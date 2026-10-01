@@ -147,3 +147,25 @@ def test_decode_without_cache_available_skips_revocation_check(monkeypatch):
     token = service.create_access_token("user-1", "a@example.com")
     payload = service.decode_access_token(token)
     assert payload["sub"] == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_revoked_session_is_not_rescued_by_other_decoders(fake_cache, monkeypatch):
+    """A revoked Aicser session must be refused by the request guard itself — even when a
+    deployment sets JWT_SECRET to the same value as SECRET_KEY, where the Supabase HS256
+    fallback would otherwise accept the aud-less token (python-jose skips the audience
+    check when "aud" is missing)."""
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    from src.core.config import settings
+    from src.modules.authentication.deps import auth_bearer
+
+    monkeypatch.setattr(settings, "JWT_SECRET", settings.SECRET_KEY, raising=False)
+    token = service.create_access_token("user-1", "a@example.com")
+    service.revoke_access_token(token)
+    req = Request({"type": "http", "headers": [(b"authorization", f"Bearer {token}".encode())],
+                   "method": "GET", "path": "/", "query_string": b""})
+    with pytest.raises(HTTPException) as err:
+        await auth_bearer.JWTCookieBearer()(req)
+    assert err.value.status_code == 401

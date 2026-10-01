@@ -71,6 +71,8 @@ export function BrandThemeProvider({ children }: ProviderProps) {
 
 // ── Page stubs ───────────────────────────────────────────────────────────────
 export const AlertsPage              = (): null => null;
+export const WarehousePage           = (): null => null;
+export const ModelsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;

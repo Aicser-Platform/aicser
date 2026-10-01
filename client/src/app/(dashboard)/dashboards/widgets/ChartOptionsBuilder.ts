@@ -6,6 +6,9 @@ import {
   ChartConfig,
   ChartData,
   type ChartValueFormat,
+  formatByValueFormat,
+  legendSide,
+  type NumberStyle,
   CHART_COLORS,
   DEFAULT_CHART_CONFIG,
   getBaseTooltipConfig,
@@ -20,9 +23,31 @@ import { getPieLayout } from './chartLayoutUtils';
 import { resolveChartPaletteId } from '../utils/chartPaletteCatalog';
 import { orientDataForHorizontalBar } from '@/components/charts/normalizeMultiMetricChartQuery';
 import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
+import { DEFAULT_PIE_MAX_SLICES, groupSmallSlices } from '../utils/pieSlices';
+import { columnHeaderFromKey } from '@/utils/columnLabels';
+import { applyColorOverrides, type ColorOverrides } from './colorOverrides';
+import { makeCategoryLabelFormatter } from '../utils/numberFormatter';
+import { applyDataLabelPosition, applyValueAxisRange } from './dataLabelPosition';
+import { applyTextStyles, type TextStyleConfig } from './textStyles';
+import { applyAnnotations, makeAxisTitlesClickable, type ChartAnnotation } from './chartNotes';
+import {
+  DEFAULT_CHART_TEXT,
+  type ChartText,
+  bulletParts,
+  funnelLabels,
+  heatmapScale,
+  histogramParts,
+  primaryValues,
+  sankeyParts,
+  treemapLabels,
+  waterfallParts,
+} from './extendedCharts';
+
+/** Reference / average line labels: plain muted text, never the bars' white-on-color outline. */
+const MARK_LABEL = { color: CHART_COLORS.text.secondary, textBorderWidth: 0, fontWeight: 'normal' as const };
 
 /** Format a numeric value according to the widget's configured valueFormat. */
-function fmtVal(v: unknown, valueFormat?: string): string {
+function fmtVal(v: unknown, valueFormat?: string, style?: NumberStyle): string {
   const num = Number(v);
   if (isNaN(num)) return String(v ?? '');
   switch (valueFormat) {
@@ -33,25 +58,49 @@ function fmtVal(v: unknown, valueFormat?: string): string {
       if (abs >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
       return num.toLocaleString();
     }
-    case 'currency':
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+    case 'currency': {
+      // Tooltips show the full amount in the chart's own currency symbol.
+      const d = style?.valueDecimals;
+      const amount = Math.abs(num).toLocaleString(
+        undefined,
+        d === undefined ? { maximumFractionDigits: 2 } : { minimumFractionDigits: d, maximumFractionDigits: d },
+      );
+      return `${num < 0 ? '-' : ''}${style?.currencySymbol || '$'}${amount}`;
+    }
     case 'percent':
-      return `${num.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
-    case 'full':
-      return num.toLocaleString();
-    default:
-      return num.toLocaleString();
+      // Same scaling as axes and labels: a 0.15 ratio reads 15%.
+      return formatByValueFormat(num, 'percent', style);
+    default: {
+      // Tooltips read the exact value; fixed decimals when the author set them.
+      const d = style?.valueDecimals;
+      return d === undefined
+        ? num.toLocaleString()
+        : num.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
   }
 }
 
 function valueFormatForSeries(config: ChartConfig, seriesName?: string): ChartValueFormat | undefined {
-  const seriesFormat = seriesName ? config.metricFormats?.[seriesName] : undefined;
+  // Series may be shown with a humanised name ("Total Principal Amount") while formats are
+  // keyed by the raw field ("total_principal_amount"): match either.
+  const seriesFormat = seriesName
+    ? config.metricFormats?.[seriesName] ??
+      Object.entries(config.metricFormats || {}).find(([k]) => columnHeaderFromKey(k) === seriesName)?.[1]
+    : undefined;
   const metricFormats = config.metricFormats ? Object.values(config.metricFormats) : [];
   const format = seriesFormat || (metricFormats.length === 1 ? metricFormats[0] : undefined) || config.valueFormat;
   return format && format !== 'auto' ? format : undefined;
 }
 
 export const buildChartOptions = (type: string, data: ChartData, config: Partial<ChartConfig> = {}): any => {
+  if (type === 'pie' || type === 'donut') {
+    const max = (config as { pieMaxSlices?: number }).pieMaxSlices;
+    data = groupSmallSlices(
+      data,
+      typeof max === 'number' ? max : DEFAULT_PIE_MAX_SLICES,
+      (config as { __otherLabel?: string }).__otherLabel || 'Other',
+    );
+  }
   const isDesigner = (config as any).isDesigner;
   const isDashboardWidget = (config as any).isDashboardWidget ?? !isDesigner;
   // Merge with defaults
@@ -68,8 +117,11 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   // Auto-detect axis labels for scatter charts
   if (type === 'scatter') {
-    if (!finalConfig.xAxisLabel && (data as any).xAxisLabel) finalConfig.xAxisLabel = (data as any).xAxisLabel;
-    if (!finalConfig.yAxisLabel && (data as any).yAxisLabel) finalConfig.yAxisLabel = (data as any).yAxisLabel;
+    // "Sum of total_usd" → "Sum of Total Usd": the server names axes by column.
+    const readable = (label?: string) =>
+      label ? label.replace(/^(\w+) of (\S+)$/, (_, agg, col) => `${agg} of ${columnHeaderFromKey(col)}`).replace(/^([a-z0-9_]+)$/, (col) => columnHeaderFromKey(col)) : label;
+    if (!finalConfig.xAxisLabel && (data as any).xAxisLabel) finalConfig.xAxisLabel = readable((data as any).xAxisLabel);
+    if (!finalConfig.yAxisLabel && (data as any).yAxisLabel) finalConfig.yAxisLabel = readable((data as any).yAxisLabel);
 
     if (data.series && data.series.length > 0) {
       const firstSeries = data.series[0];
@@ -85,7 +137,10 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
   // Calculate total number of categorical items to ensure unique colors
   const seriesCount = (data.series?.length || 0) + (data.secondarySeries?.length || 0);
   // If only one series, check if it's colored by data (like a single series bar chart)
-  const isSingleSeriesCategorical = seriesCount <= 1 && data.x && data.x.length > 0 && ['bar', 'pie', 'donut', 'funnel', 'scatter'].includes(type);
+  const perCategoryColors =
+    ['pie', 'donut', 'funnel', 'scatter'].includes(type) ||
+    (type === 'bar' && (config as { varyColors?: boolean }).varyColors === true);
+  const isSingleSeriesCategorical = seriesCount <= 1 && data.x && data.x.length > 0 && perCategoryColors;
   const colorCount = isSingleSeriesCategorical ? data.x.length : Math.max(seriesCount, 1);
 
   // Resolve palette: widget override → dashboard default → brand palette
@@ -101,6 +156,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   // If a custom generated palette is picked, use it
   if (
+    paletteName === 'custom' &&
     (config as any).customPalette &&
     Array.isArray((config as any).customPalette) &&
     (config as any).customPalette.length > 0
@@ -111,6 +167,16 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     const custom = (config as any).customColor;
     chartColors = [custom, ...chartColors.filter((c) => c !== custom)];
   }
+
+  // Tooltip titles read like the axis ("Jun 2024", "Yes"), never a raw timestamp.
+  const categoryName = (() => {
+    const fmt = makeCategoryLabelFormatter(
+      data?.x as unknown[],
+      undefined,
+      (config as { __booleanLabels?: { yes: string; no: string } }).__booleanLabels,
+    );
+    return (v: unknown) => (v == null ? '' : fmt(v));
+  })();
 
   // Enhanced tooltip with better number formatting
   const appendTooltipToBody = isDashboardWidget || Boolean((finalConfig as any).isDesigner);
@@ -128,7 +194,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       formatter: (params: any) => {
         const percentage = total > 0 ? ((params.value / total) * 100).toFixed(2) : '0.00';
         const rawValue = typeof params.value === 'number'
-          ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+          ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName), finalConfig)
           : params.value;
         const marker = params.marker || '';
         return `${marker} <strong>${params.name}</strong><br/>Value: ${rawValue}<br/>Share: ${percentage}%`;
@@ -161,7 +227,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       formatter: (params: any) => {
         if (Array.isArray(params) && params.length > 0) {
           // Multiple series for stacked charts
-          let tooltip = `<strong>${params[0].name || ''}</strong><br/>`;
+          let tooltip = `<strong>${categoryName(params[0].name)}</strong><br/>`;
           // Calculate totals for percentage calculation from original raw data
           const seriesData = data.series || [];
           const dataIndex = params[0].dataIndex;
@@ -174,7 +240,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
             const rawValue = seriesData.find((s) => s.name === param.seriesName)?.data?.[dataIndex] || 0;
             const percentage = rawTotal > 0 ? ((rawValue / rawTotal) * 100).toFixed(2) : '0.00';
             const formattedRawValue = typeof rawValue === 'number'
-              ? fmtVal(rawValue, valueFormatForSeries(finalConfig, param.seriesName))
+              ? fmtVal(rawValue, valueFormatForSeries(finalConfig, param.seriesName), finalConfig)
               : rawValue;
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${formattedRawValue} (${percentage}%)<br/>`;
           });
@@ -197,19 +263,19 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       ...tooltipConfig,
       formatter: (params: any) => {
         if (Array.isArray(params) && params.length > 0) {
-          let tooltip = `<strong>${params[0].name || ''}</strong><br/>`;
+          let tooltip = `<strong>${categoryName(params[0].name)}</strong><br/>`;
           params.forEach((param: any) => {
             const rawValue = typeof param.value === 'number'
-              ? fmtVal(param.value, valueFormatForSeries(finalConfig, param.seriesName))
+              ? fmtVal(param.value, valueFormatForSeries(finalConfig, param.seriesName), finalConfig)
               : (param.value ?? '');
             tooltip += `${param.marker || ''} ${param.seriesName || ''}: ${rawValue}<br/>`;
           });
           return tooltip;
         } else if (params && !Array.isArray(params)) {
           const rawValue = typeof params.value === 'number'
-            ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName))
+            ? fmtVal(params.value, valueFormatForSeries(finalConfig, params.seriesName), finalConfig)
             : (params.value ?? '');
-          return `<strong>${params.name || ''}</strong><br/>${params.marker || ''} ${params.seriesName || ''}: ${rawValue}`;
+          return `<strong>${categoryName(params.name)}</strong><br/>${params.marker || ''} ${params.seriesName || ''}: ${rawValue}`;
         }
         return '';
       },
@@ -223,6 +289,13 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   const series = buildSeriesForType(type, seriesRenderData, finalConfig, chartColors);
   let seriesArray = Array.isArray(series) ? series : [series];
+  // Series named after a raw SQL alias ("total_principal_amount") read as words in the legend
+  // and tooltip; names someone typed (with spaces) are left as they are.
+  seriesArray = seriesArray.map((s: any) =>
+    s && typeof s.name === 'string' && /^[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+$/.test(s.name)
+      ? { ...s, name: columnHeaderFromKey(s.name) }
+      : s,
+  );
 
   // ─── Legend series sort & limit ───────────────────────────────────────────
   const legendSort: string | undefined = (config as any).legendSort;   // 'asc' | 'desc' | undefined
@@ -273,14 +346,18 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     const xCats = data.x || [];
 
     // Configurable reference lines (array of { value, label, color, type })
+    // Lines sit on the value axis: Y, or X on a horizontal bar. A scatter line can name its axis.
+    const valueAxisKey = type === 'bar' && finalConfig.barChartType === 'horizontal' ? 'xAxis' : 'yAxis';
     const refLines: any[] = (config as any).referenceLines || [];
     refLines.forEach((ref: any) => {
-      if (ref.value != null) {
+      if (ref.value != null && Number.isFinite(Number(ref.value))) {
+        const axisKey = type === 'scatter' && ref.axis === 'x' ? 'xAxis' : valueAxisKey;
+        const shown = fmtVal(ref.value, valueFormatForSeries(finalConfig), finalConfig);
         markLineData.push({
-          yAxis: ref.value,
+          [axisKey]: Number(ref.value),
           name: ref.label || '',
           lineStyle: { color: ref.color || '#faad14', type: ref.style || 'dashed', width: 1.5 },
-          label: { formatter: ref.label ? `${ref.label}: ${ref.value}` : String(ref.value), position: 'end', fontSize: 11 },
+          label: { formatter: ref.label ? `${ref.label}: ${shown}` : shown, position: 'insideEndTop', fontSize: 11, ...MARK_LABEL },
         });
       }
     });
@@ -289,10 +366,10 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     if ((config as any).showAverageLine && allY.length > 0) {
       const avg = allY.reduce((a: number, b: number) => a + b, 0) / allY.length;
       markLineData.push({
-        yAxis: avg,
+        [valueAxisKey]: avg,
         name: 'Avg',
         lineStyle: { color: '#52c41a', type: 'dashed', width: 1.5 },
-        label: { formatter: `Avg: ${fmtVal(avg, valueFormatForSeries(finalConfig))}`, position: 'end', fontSize: 11 },
+        label: { formatter: `Avg: ${fmtVal(avg, valueFormatForSeries(finalConfig), finalConfig)}`, position: 'insideEndTop', fontSize: 11, ...MARK_LABEL },
       });
     }
 
@@ -397,7 +474,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
             tooltip: {
               formatter: (p: any) => {
                 const val = Array.isArray(p?.value) ? p.value[p.value.length - 1] : p?.value;
-                return `<strong>Outlier</strong><br/>Value: ${fmtVal(val, valueFormatForSeries(finalConfig, p?.seriesName))}`;
+                return `<strong>Outlier</strong><br/>Value: ${fmtVal(val, valueFormatForSeries(finalConfig, p?.seriesName), finalConfig)}`;
               },
             },
           },
@@ -419,11 +496,13 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
         const yVal = item.data[1];
         const xLabel = finalConfig.xAxisLabel || 'X';
         const yLabel = finalConfig.yAxisLabel || 'Y';
-        const xStr = typeof xVal === 'number' ? xVal.toLocaleString() : (xVal ?? '');
-        const yStr = typeof yVal === 'number' ? yVal.toLocaleString() : (yVal ?? '');
-
-        const seriesHeader = showSeriesName ? `<strong>${item.seriesName || ''}</strong><br/>` : '';
-        return `${seriesHeader}${xLabel}: ${xStr}<br/>${yLabel}: ${yStr}`;
+        const xStr = typeof xVal === 'number' ? fmtVal(xVal, finalConfig.valueFormat, finalConfig) : (xVal ?? '');
+        const yStr = typeof yVal === 'number' ? fmtVal(yVal, valueFormatForSeries(finalConfig), finalConfig) : (yVal ?? '');
+        const esc = (v: unknown) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string);
+        // The dot's own name ("Dot for each") leads; the colour group follows when there are several.
+        const dotName = item.data[3] != null ? `<strong>${esc(item.data[3])}</strong><br/>` : '';
+        const seriesHeader = showSeriesName ? (dotName ? `${esc(item.seriesName)}<br/>` : `<strong>${esc(item.seriesName)}</strong><br/>`) : '';
+        return `${dotName}${seriesHeader}${esc(xLabel)}: ${esc(xStr)}<br/>${esc(yLabel)}: ${esc(yStr)}`;
       },
     };
   }
@@ -445,9 +524,14 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
     series: seriesArray,
   };
 
-  const nonCartesianTypes = ['pie', 'donut', 'funnel', 'heatmap'];
+  // Formatting shared by the extended charts: compact on the chart, exact in tooltips.
+  const labelFmt = (v: number) => formatByValueFormat(v, valueFormatForSeries(finalConfig), finalConfig);
+  const tipFmt = (v: number) => fmtVal(v, valueFormatForSeries(finalConfig), finalConfig);
+  const chartText: ChartText = { ...DEFAULT_CHART_TEXT, ...((config as { __chartText?: Partial<ChartText> }).__chartText || {}) };
+
+  const nonCartesianTypes = ['pie', 'donut', 'funnel', 'heatmap', 'sankey', 'treemap'];
   if (type === 'pie' || type === 'donut') {
-    const legendPos = finalConfig.legendPosition || (finalConfig.showLegend !== false ? 'top' : 'hide');
+    const legendPos = legendSide(finalConfig);
     const { center } = getPieLayout(legendPos, isDashboardWidget);
     baseOptions.series = seriesArray.map((s: { center?: string[]; radius?: string | string[] }) => ({
       ...s,
@@ -542,7 +626,7 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       {
         type: 'category',
         data: xLabels,
-        splitArea: { show: true },
+        splitArea: { show: false },
         axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 },
       },
     ];
@@ -550,17 +634,22 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       {
         type: 'category',
         data: yLabels,
-        splitArea: { show: true },
+        splitArea: { show: false },
         axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 },
       },
     ];
+    const scale = heatmapScale(primaryValues(data), labelFmt);
     baseOptions.visualMap = {
-      min: Math.min(...(data.y || [0])),
-      max: Math.max(...(data.y || [100])),
-      calculable: true,
+      min: scale.min,
+      max: scale.max,
+      // Plain end labels, no drag handles: handles collide with the labels on small cards.
+      calculable: false,
+      formatter: scale.formatter,
+      textStyle: { color: CHART_COLORS.text.secondary, fontSize: 11 },
+      itemHeight: 120,
       orient: 'horizontal',
       left: 'center',
-      bottom: '5%',
+      bottom: 0,
       inRange: {
         color: [
           (config as any).colorFrom || '#e0f3f8',
@@ -569,6 +658,72 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
         ],
       },
     };
+    baseOptions.grid = { ...(baseOptions.grid as object), bottom: 44, containLabel: true };
+    baseOptions.legend = { show: false }; // the colour scale is the legend
+    baseOptions.series = (baseOptions.series as Array<Record<string, unknown>>).map((sr) => ({
+      ...sr,
+      label: {
+        ...(sr.label as object),
+        color: '#ffffff',
+        textBorderColor: 'rgba(0,0,0,0.45)',
+        textBorderWidth: 2,
+        formatter: (p: { value: number[] }) => labelFmt(Number(p.value?.[2])),
+      },
+    }));
+    baseOptions.tooltip = {
+      ...(baseOptions.tooltip as object),
+      trigger: 'item',
+      formatter: (p: { value: number[] }) => {
+        const [xi, yi, v] = p.value || [];
+        return `${xLabels[xi] ?? ''} · ${yLabels[yi] ?? ''}<br/><strong>${tipFmt(Number(v))}</strong>`;
+      },
+    };
+  }
+
+  // ─── Sankey ───────────────────────────────────────────────────────────────
+  if (type === 'sankey') {
+    const parts = sankeyParts(data, chartColors, tipFmt, chartText);
+    Object.assign(baseOptions, parts, { tooltip: { ...(baseOptions.tooltip as object), ...(parts.tooltip as object) } });
+    delete baseOptions.xAxis;
+    delete baseOptions.yAxis;
+    delete baseOptions.grid;
+    return finalizeChartOptions(baseOptions, finalConfig, type);
+  }
+
+  // ─── Histogram ────────────────────────────────────────────────────────────
+  if (type === 'histogram') {
+    const { categories, ...parts } = histogramParts(data, chartColors[0], labelFmt, chartText);
+    const labels = categories as string[];
+    baseOptions.xAxis = [{ ...getXAxisConfig({ ...data, x: labels }, finalConfig, 'bar'), data: labels }];
+    // Counts of rows: whole numbers, never the measured column's currency or percent format.
+    const yBase = getYAxisConfig(finalConfig, data) as { axisLabel?: object };
+    baseOptions.yAxis = [{
+      ...yBase,
+      minInterval: 1,
+      axisLabel: { ...(yBase.axisLabel || {}), formatter: (v: number) => formatByValueFormat(v, 'compact') },
+    }];
+    Object.assign(baseOptions, parts, { tooltip: { ...(baseOptions.tooltip as object), ...(parts.tooltip as object) } });
+    if (finalConfig.showDataLabel) {
+      (baseOptions.series as Array<Record<string, unknown>>)[0].label = { show: true, position: 'top', fontSize: 11, color: CHART_COLORS.text.secondary };
+    }
+    return finalizeChartOptions(baseOptions, finalConfig, type);
+  }
+
+  // ─── Funnel: each stage's share of the top one ────────────────────────────
+  if (type === 'funnel' && Array.isArray(baseOptions.series) && baseOptions.series[0]) {
+    const f = funnelLabels(data, labelFmt, chartText);
+    const first = baseOptions.series[0] as Record<string, unknown>;
+    // Labels outside with leader lines: small stages are too narrow to hold text.
+    baseOptions.series = [{
+      ...first,
+      data: f.data,
+      width: '62%',
+      left: '6%',
+      label: { ...(first.label as object), ...(f.label as object), position: 'right', color: CHART_COLORS.text.secondary },
+      labelLine: { show: true, length: 12, lineStyle: { width: 1 } },
+    }];
+    baseOptions.legend = { ...(baseOptions.legend as object), show: false }; // each stage is labelled
+    baseOptions.tooltip = { ...(baseOptions.tooltip as object), ...(f.tooltip as object) };
   }
 
   // ─── Gauge chart ──────────────────────────────────────────────────────────
@@ -628,16 +783,23 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
       : Array.isArray(data.series) && data.series[0]
         ? data.series[0].data.map((v: number, i: number) => ({ name: String(data.categories?.[i] ?? data.x?.[i] ?? i), value: Number(v) }))
         : [];
+    const t = treemapLabels(treemapData.map((d) => d.value), labelFmt, chartText);
     baseOptions.series = [{
       type: 'treemap',
       roam: false,
-      leafDepth: 2,
-      label: { show: true, formatter: '{b}: {c}' },
-      upperLabel: { show: true, height: 30 },
+      nodeClick: false,
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      label: t.label,
       itemStyle: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)', gapWidth: 2 },
-      data: treemapData,
+      // One colour per box, from the chart's palette (not ECharts' default level colours).
+      data: treemapData.map((d, i) => ({ ...d, itemStyle: { color: chartColors[i % chartColors.length] } })),
       breadcrumb: { show: false },
     }];
+    baseOptions.tooltip = { ...(baseOptions.tooltip as object), ...(t.tooltip as object) };
+    baseOptions.legend = { show: false };
     delete baseOptions.xAxis;
     delete baseOptions.yAxis;
     delete baseOptions.grid;
@@ -646,121 +808,65 @@ export const buildChartOptions = (type: string, data: ChartData, config: Partial
 
   // ─── Waterfall chart ──────────────────────────────────────────────────────
   if (type === 'waterfall') {
-    const cats = data.x || [];
-    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
-    const vals = Array.isArray(data.y) && data.y.length > 0
-      ? data.y.map(Number)
-      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
-    // Build invisible + positive + negative series for waterfall
-    let running = 0;
-    const base: number[] = [];
-    const pos: number[] = [];
-    const neg: number[] = [];
-    vals.forEach((v) => {
-      if (v >= 0) { base.push(running); pos.push(v); neg.push(0); }
-      else { base.push(running + v); pos.push(0); neg.push(-v); }
-      running += v;
-    });
-    baseOptions.xAxis = [{ type: 'category', data: cats, axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 } }];
-    baseOptions.yAxis = [{ type: 'value', axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 } }];
-    baseOptions.series = [
-      { type: 'bar', stack: 'wf', itemStyle: { color: 'transparent', borderColor: 'transparent' }, data: base, silent: true },
-      { name: 'Increase', type: 'bar', stack: 'wf', itemStyle: { color: chartColors[0] }, data: pos },
-      { name: 'Decrease', type: 'bar', stack: 'wf', itemStyle: { color: chartColors[1] || '#ff4d4f' }, data: neg },
-    ];
-    baseOptions.legend = { show: finalConfig.showLegend ?? true, data: ['Increase', 'Decrease'] };
+    const { categories, ...parts } = waterfallParts(
+      data,
+      {
+        up: chartColors[0],
+        down: (config as { waterfallDecreaseColor?: string }).waterfallDecreaseColor || '#e5534b',
+        total: (config as { waterfallTotalColor?: string }).waterfallTotalColor || CHART_COLORS.text.secondary,
+      },
+      labelFmt,
+      chartText,
+      {
+        showTotal: (config as { waterfallShowTotal?: boolean }).waterfallShowTotal !== false,
+        showLabels: finalConfig.showDataLabel === true,
+      },
+    );
+    const labels = categories as string[];
+    baseOptions.xAxis = [{ ...getXAxisConfig({ ...data, x: labels }, finalConfig, 'bar'), data: labels }];
+    baseOptions.yAxis = [{ ...getYAxisConfig(finalConfig, data) }];
+    Object.assign(baseOptions, parts, { tooltip: { ...(baseOptions.tooltip as object), ...(parts.tooltip as object) } });
+    baseOptions.legend = {
+      ...(baseOptions.legend as object),
+      show: finalConfig.showLegend ?? true,
+      data: (parts.series as Array<{ name: string }>).map((x) => x.name),
+    };
     return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
   // ─── Bullet chart ─────────────────────────────────────────────────────────
-  // Shows actual vs target in a compact horizontal bar with threshold bands.
+  // Actual vs target per row over bands measured as a share of that row's target.
   if (type === 'bullet') {
-    const categories = Array.isArray(data.x) ? data.x : [];
-    // Fall back to series[0].data when data.y is empty (data.y is deprecated)
-    const actuals: number[] = Array.isArray(data.y) && data.y.length > 0
-      ? data.y.map(Number)
-      : Array.isArray(data.series?.[0]?.data) ? data.series![0].data.map(Number) : [];
-    // Target values: legacy format uses series[0], new format uses series[1]
-    const hasLegacyY = Array.isArray(data.y) && data.y.length > 0;
-    const targets: number[] = hasLegacyY
-      // Legacy: data.y = actuals, series[0] = targets
-      ? (Array.isArray(data.series?.[0]?.data)
-          ? data.series![0].data.map(Number)
-          : actuals.map(() => (config as any).bulletTarget ?? 0))
-      // New format: series[0] = actuals, series[1] = targets
-      : (Array.isArray(data.series?.[1]?.data)
-          ? data.series![1].data.map(Number)
-          : actuals.map(() => (config as any).bulletTarget ?? 0));
-
-    const bulletThresholdWarn: number = (config as any).bulletThresholdWarn ?? 60;
-    const bulletThresholdOk: number = (config as any).bulletThresholdOk ?? 80;
-    const bulletMax: number = (config as any).bulletMax
-      ?? Math.max(...actuals, ...targets, 100) * 1.1;
-
-    const bandColors = ['rgba(255,77,79,0.12)', 'rgba(250,173,20,0.14)', 'rgba(82,196,26,0.14)'];
-
+    const c = config as {
+      bulletThresholdWarn?: number;
+      bulletThresholdOk?: number;
+      bulletMax?: number;
+      bulletTarget?: number;
+      bulletActualLabel?: string;
+    };
+    const { categories, valueMax, ...parts } = bulletParts(data, chartColors[0], labelFmt, chartText, {
+      warnPct: c.bulletThresholdWarn ?? 60,
+      okPct: c.bulletThresholdOk ?? 80,
+      max: c.bulletMax,
+      fixedTarget: c.bulletTarget,
+      actualLabel: c.bulletActualLabel,
+    });
     baseOptions.xAxis = [{
       type: 'value',
       min: 0,
-      max: bulletMax,
-      axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11 },
-      splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } },
+      max: valueMax as number,
+      axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 11, formatter: (v: number) => labelFmt(v) },
+      splitLine: { lineStyle: { color: 'rgba(128,128,128,0.12)' } },
     }];
     baseOptions.yAxis = [{
       type: 'category',
-      data: categories.map(String),
+      data: categories as string[],
+      inverse: true, // first row on top, as in a table
       axisLabel: { color: CHART_COLORS.text.secondary, fontSize: 12 },
       axisTick: { show: false },
     }];
-    // Band series (invisible stacked bars to show threshold regions)
-    const band1Data = categories.map(() => bulletThresholdWarn);
-    const band2Data = categories.map(() => bulletThresholdOk - bulletThresholdWarn);
-    const band3Data = categories.map(() => bulletMax - bulletThresholdOk);
-    // Actual series
-    const actualSeries = {
-      name: (config as any).bulletActualLabel || 'Actual',
-      type: 'bar' as const,
-      z: 3,
-      barWidth: '35%',
-      barGap: '-100%',
-      data: actuals,
-      itemStyle: { color: chartColors[0] },
-      label: {
-        show: true,
-        position: 'right' as const,
-        formatter: (p: { value: number }) => p.value.toLocaleString(),
-        fontSize: 11,
-        color: CHART_COLORS.text.secondary,
-      },
-    };
-    // Target markLine per series
-    const markLines = {
-      silent: true,
-      symbol: ['none', 'none'],
-      data: targets.map((t, i) => ([
-        { coord: [t, i - 0.4], lineStyle: { color: '#faad14', width: 3, type: 'solid' as const } },
-        { coord: [t, i + 0.4] },
-      ])),
-    };
-
-    baseOptions.series = [
-      // Background bands
-      { type: 'bar', stack: 'bullet-bg', z: 1, barWidth: '70%', barGap: '-100%', data: band1Data, itemStyle: { color: bandColors[0], borderRadius: 0 }, silent: true, legendHoverLink: false, label: { show: false } },
-      { type: 'bar', stack: 'bullet-bg', z: 1, barWidth: '70%', barGap: '-100%', data: band2Data, itemStyle: { color: bandColors[1], borderRadius: 0 }, silent: true, legendHoverLink: false, label: { show: false } },
-      { type: 'bar', stack: 'bullet-bg', z: 1, barWidth: '70%', barGap: '-100%', data: band3Data, itemStyle: { color: bandColors[2], borderRadius: 0 }, silent: true, legendHoverLink: false, label: { show: false } },
-      // Actual bar
-      { ...actualSeries, markLine: markLines },
-    ];
-
-    baseOptions.legend = { show: false };
-    baseOptions.grid = {
-      ...(baseOptions.grid as object || {}),
-      left: 90,
-      right: 60,
-      top: 12,
-      bottom: 24,
-      containLabel: false,
-    };
+    Object.assign(baseOptions, parts, { tooltip: { ...(baseOptions.tooltip as object), ...(parts.tooltip as object) } });
+    baseOptions.grid = { ...(baseOptions.grid as object || {}), left: 8, right: 56, top: 12, bottom: 24, containLabel: true };
     return finalizeChartOptions(baseOptions, finalConfig, type);
   }
 
@@ -774,6 +880,18 @@ function finalizeChartOptions(
   chartType: string,
 ): Record<string, unknown> {
   const design = normalizeChartDesign(config.design);
-  if (!design) return option;
-  return compileDesignToEcharts(option, design, { chartType });
+  const designed = design ? compileDesignToEcharts(option, design, { chartType }) : option;
+  const placed = applyValueAxisRange(
+    applyDataLabelPosition(designed, chartType, config as Parameters<typeof applyDataLabelPosition>[2]),
+    config as Parameters<typeof applyValueAxisRange>[1],
+  );
+  const texted = makeAxisTitlesClickable(
+    applyAnnotations(
+      applyTextStyles(placed, config as TextStyleConfig),
+      (config as { annotations?: ChartAnnotation[] }).annotations,
+      { dataLabels: config.showDataLabel === true },
+    ),
+  );
+  // Single colours the author picked win over the palette and design styles.
+  return applyColorOverrides(texted, (config as { colorOverrides?: ColorOverrides }).colorOverrides);
 }

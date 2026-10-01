@@ -1,13 +1,14 @@
 :root {
-  /* Use Aiser Branding */
-  --studio-primary: #00c2cb;
-  --studio-primary-hover: #058990;
-  --studio-primary-active: #1e777c;
+  /* The theme's primary (readable shade of the brand colour per mode; see colorContrast.ts) */
+  --studio-primary: var(--ant-color-primary, #007a80);
+  --studio-primary-hover: var(--ant-color-primary-hover, #006b71);
+  --studio-primary-active: var(--ant-color-primary-active, #005e63);
   --studio-primary-light: rgba(0, 194, 203, 0.08);
 
   /* Hierarchy Colors */
-  --studio-bg: #f3f4f6;
-  --studio-sidebar-bg: #f8f9fa;
+  /* Studio canvas and side rails sit on the same page canvas as every other page */
+  --studio-bg: var(--ant-color-bg-layout, #f0f2f5);
+  --studio-sidebar-bg: var(--ant-color-bg-layout, #f0f2f5);
   --studio-card-bg: #ffffff;
   /* WCAG 1.4.11 (>=3:1 non-text); the old rgba(0,0,0,0.06) effectively
      rendered ~1.06:1 against a white/near-white card, invisible in practice.

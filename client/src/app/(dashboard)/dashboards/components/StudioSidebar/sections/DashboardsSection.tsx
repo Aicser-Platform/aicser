@@ -35,7 +35,7 @@ import {
   StarOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { getChatHref } from '@/utils/appPaths';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { chartService, type DashboardTemplate } from '../../../services/chartService';
@@ -73,6 +73,21 @@ export function DashboardsSection() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [items, setItems] = useState<DashboardLibraryItem[]>([]);
+  const locale = useLocale();
+  // Names used by more than one dashboard (older repeated AI builds): those rows also show when
+  // each was made, so they can be told apart.
+  const sharedNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of items) {
+      const key = String(d.title || d.name || '').trim().toLowerCase();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return new Set([...counts].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [items]);
+  const createdLabel = useMemo(
+    () => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    [locale],
+  );
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const offsetRef = useRef(0);
@@ -467,9 +482,16 @@ export function DashboardsSection() {
         ) : (
           <div className="dashboard-drawer-row-main" title={name}>
             <span className="dashboard-drawer-row-title">{name}</span>
-            {typeof dashboard.chartCount === 'number' ? (
+            {typeof dashboard.chartCount === 'number' || (sharedNames.has(name.trim().toLowerCase()) && dashboard.created_at) ? (
               <span className="dashboard-drawer-row-meta">
-                {t('charts_count', { count: dashboard.chartCount })}
+                {[
+                  typeof dashboard.chartCount === 'number' ? t('charts_count', { count: dashboard.chartCount }) : null,
+                  sharedNames.has(name.trim().toLowerCase()) && dashboard.created_at
+                    ? createdLabel.format(new Date(dashboard.created_at))
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             ) : null}
           </div>

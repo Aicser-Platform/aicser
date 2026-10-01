@@ -8,6 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from src.modules.embed.limits import embed_row_cap
 from src.db.session import get_async_session
 from src.core.edition import is_ee_enabled
 from src.modules.charts.services.v2.dashboard_service import DashboardService
@@ -24,6 +25,7 @@ from src.modules.authentication.rbac.guard import require_permission, user_id_fr
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.dashboards.pages_router import router as pages_router
 from src.modules.dashboards.versions_router import router as versions_router
+from src.modules.dashboards.comments_router import router as comments_router
 from src.modules.dashboards import operations as dash_ops
 from src.modules.data.services.query_identity import QueryIdentity
 
@@ -31,6 +33,7 @@ router = APIRouter()
 
 router.include_router(pages_router, prefix="/{dashboard_id}/pages", tags=["dashboard-pages"])
 router.include_router(versions_router, prefix="/{dashboard_id}/versions", tags=["dashboard-versions"])
+router.include_router(comments_router, prefix="/{dashboard_id}/comments", tags=["dashboard-comments"])
 
 
 def _normalize_dashboard_config(config: Any) -> dict[str, Any]:
@@ -87,9 +90,35 @@ def _query_identity_from_current_user(
     )
 
 
+def _embed_query_identity(embed_token: Optional[str], dashboard: Any) -> Optional[QueryIdentity]:
+    """An embedded view (no signed-in viewer): the token's creator, in the dashboard's project,
+    carrying the token's locked filters so every query is pinned to the host's end customer.
+    The token was already verified by verify_dashboard_read_access."""
+    if not embed_token:
+        return None
+    from types import MappingProxyType
+
+    from src.modules.embed.service import decode_embed_token
+
+    try:
+        payload = decode_embed_token(embed_token)
+    except Exception:
+        return None
+    if not payload.get("sub"):
+        return None
+    project_id = getattr(dashboard, "project_id", None)
+    return QueryIdentity(
+        user_id=str(payload["sub"]),
+        organization_id=str(payload["org_id"]) if payload.get("org_id") else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=MappingProxyType({"embed_locked_filters": list(payload.get("locked_filters") or [])}),
+    )
+
+
 def _dashboard_query_identity(
     current_user: Optional[dict],
     dashboard: Any,
+    embed_token: Optional[str] = None,
 ) -> Optional[QueryIdentity]:
     """The viewer's identity, scoped to the project the dashboard lives in.
 
@@ -97,6 +126,8 @@ def _dashboard_query_identity(
     a project matches no grant and comes back unfiltered. The token carries no
     project; the dashboard is where that context lives.
     """
+    if not current_user and embed_token:
+        return _embed_query_identity(embed_token, dashboard)
     project_id = getattr(dashboard, "project_id", None)
     return _query_identity_from_current_user(
         current_user,
@@ -451,7 +482,7 @@ async def dashboard_filter_options(
         table_name=table_name,
         runtime_filters=parsed_filters,
         exclude_field=field,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
     )
     return {"values": values if isinstance(values, list) else []}
 
@@ -488,7 +519,7 @@ async def dashboard_filter_field_stats(
         data_source_id,
         table_name=table_name,
         runtime_filters=parsed_filters,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
     )
     return stats
 
@@ -559,7 +590,8 @@ async def refresh_dashboard(
         db,
         dashboard_id,
         charts,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
+        row_cap=None if current_user else embed_row_cap(),
     )
 
 
@@ -598,7 +630,8 @@ async def get_dashboard_embed(
         dashboard_id,
         page_id=page_id,
         runtime_filters=parsed_filters or None,
-        identity=_dashboard_query_identity(current_user, dashboard),
+        identity=_dashboard_query_identity(current_user, dashboard, token),
+        row_cap=None if current_user else embed_row_cap(),
     )
 
 

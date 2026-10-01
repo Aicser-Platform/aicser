@@ -68,8 +68,11 @@ describe('data source grantee options', () => {
     });
   });
 
-  it('keeps unsupported group grants out of the create picker', () => {
-    expect(GRANTEE_TYPES).toEqual(['project', 'user', 'org_role', 'project_role']);
+  it('offers directory groups (SCIM) as grantees alongside people and roles', () => {
+    expect(GRANTEE_TYPES).toEqual(['project', 'user', 'group', 'org_role', 'project_role']);
+    const groups = toGranteeOptions('group', { ...directory, groups: [{ id: 'g1', name: 'Finance', members: 12 }] });
+    expect(groups[0]).toMatchObject({ value: 'g1', label: 'Finance', type: 'group' });
+    expect(toGranteeOptions('group', directory)).toEqual([]); // CE / no directory: nothing to offer
   });
   it('tags every option with its grantee type so one Select can list all four', () => {
     expect(toGranteeOptions('project', directory)[0].type).toBe('project');

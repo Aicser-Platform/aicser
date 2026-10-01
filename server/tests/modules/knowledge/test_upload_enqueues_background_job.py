@@ -57,6 +57,7 @@ async def test_upload_knowledge_document_enqueues_job_instead_of_blocking():
     current_token = {"id": str(uuid.uuid4())}
 
     with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)), \
          patch(
              "src.modules.data.services.upload_datasource_storage_service.UploadDatasourceStorageService"
          ) as mock_storage_cls, \
@@ -102,6 +103,7 @@ async def test_create_knowledge_base_enqueues_job_per_file_instead_of_blocking()
     current_token = {"id": str(uuid.uuid4())}
 
     with patch("src.modules.knowledge.router.require_permission", new=AsyncMock(return_value=True)), \
+         patch("src.modules.knowledge.access.can_use_knowledge_source", new=AsyncMock(return_value=True)), \
          patch(
              "src.modules.knowledge.router._create_kb_data_source",
              new=AsyncMock(return_value="ds-new-1"),

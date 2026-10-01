@@ -4,6 +4,7 @@ import type {
   LayoutItem,
 } from '@/app/(dashboard)/chart-designer/stores/useChartDesignerStore';
 import { rawChartConfig } from '@/components/charts/hydrateChartConfig';
+import { paletteIdForColors } from '@/app/(dashboard)/dashboards/utils/chartPaletteCatalog';
 import { removeWatermarkFromChart } from '@/utils/watermark';
 import {
   buildChatChartPinPayload,
@@ -154,9 +155,16 @@ export function extractDesignerOptionsFromConfig(config: unknown): Record<string
   designerOptions.showGridline = true;
 
   if (Array.isArray(cfg.color) && cfg.color.length > 0) {
-    designerOptions.colorPalette = 'custom';
-    designerOptions.customPalette = cfg.color;
-    designerOptions.customColor = cfg.color[0];
+    // The chat's own default colours are not a choice: map known palettes to their id (the
+    // default follows the dashboard's theme); only unknown colours stay custom.
+    const known = paletteIdForColors(cfg.color);
+    if (known) {
+      designerOptions.colorPalette = known;
+    } else {
+      designerOptions.colorPalette = 'custom';
+      designerOptions.customPalette = cfg.color;
+      designerOptions.customColor = cfg.color[0];
+    }
   } else if (series[0]?.itemStyle && typeof (series[0].itemStyle as Record<string, unknown>).color === 'string') {
     designerOptions.colorPalette = 'custom';
     designerOptions.customColor = (series[0].itemStyle as Record<string, unknown>).color;

@@ -148,6 +148,42 @@ def _extract_dashboard_id_from_embed_path(path: str) -> Optional[str]:
     return None
 
 
+def client_ip(request: Request) -> str:
+    """The visitor's address. Behind Aicser's own proxy (Next.js, a load balancer) every request
+    arrives from a private address, so without this every visitor shares one rate-limit bucket.
+    X-Forwarded-For is trusted only when the direct peer is private/internal: a caller on the
+    internet reaches us from a public address and can't spoof its way into another bucket.
+    Within the header, the address nearest us that isn't one of our own proxies is the visitor:
+    each proxy appends what it saw, so entries to the left of it are whatever the visitor sent."""
+    import ipaddress
+
+    def _internal(value: str) -> bool:
+        try:
+            ip = ipaddress.ip_address(value)
+        except ValueError:
+            return False
+        return ip.is_private or ip.is_loopback
+
+    peer = request.client.host if request.client else ""
+    forwarded = request.headers.get("x-forwarded-for") or ""
+    if _internal(peer) and forwarded:
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        for hop in reversed(hops):
+            try:
+                ipaddress.ip_address(hop)
+            except ValueError:
+                break
+            if not _internal(hop):
+                return hop
+        if hops:
+            try:
+                ipaddress.ip_address(hops[0])
+                return hops[0]
+            except ValueError:
+                pass
+    return peer or "unknown"
+
+
 class ApiRouteRateLimitMiddleware(BaseHTTPMiddleware):
     """Per-IP rate limits for auth, query execution, and file uploads."""
 
@@ -167,18 +203,41 @@ class ApiRouteRateLimitMiddleware(BaseHTTPMiddleware):
         ("/auth/reset-password", 10, 60),
         ("/auth/change-password", 10, 60),
         ("/data/query/execute", 40, 60),
+        # Opening an embed (a metered view); a page opens one session, so this is generous.
+        ("/api/embed/session", 30, 60),
+        # Location analysis reads whole tables and may call the routing service.
+        ("/api/spatial/analyze", 20, 60),
+        # Real-time predictions: generous per caller address; each call carries up to 1,000 rows.
+        ("/predict", 600, 60),
         ("/data/upload", 25, 60),
         ("/knowledge/upload", 25, 60),
     )
 
+    # Anonymous embedded / public dashboards: every visitor's widget loads hit these with a token
+    # and no login. Per-IP ceiling so one visitor (or bot) can't hammer the customer's warehouse;
+    # signed-in users are unaffected, and the 30-minute result cache absorbs normal repeat views.
+    _EMBED_DATA_PATH = re.compile(
+        r"^/api/dashboards/[^/]+/(charts/[^/]+/data|refresh|filter-options|filter-field-stats|embed)$"
+    )
+    EMBED_DATA_LIMIT = (240, 60)
+
+    def _embed_rule(self, request: Request, path: str):
+        if "token" not in request.query_params:
+            return None
+        if request.headers.get("authorization") or request.cookies.get("auth_token"):
+            return None
+        if self._EMBED_DATA_PATH.match(path):
+            return ("embed-data", *self.EMBED_DATA_LIMIT)
+        return None
+
     async def dispatch(self, request: Request, call_next):
         path = (request.url.path or "").rstrip("/")
-        rule = self._match_rule(path)
+        rule = self._match_rule(path) or self._embed_rule(request, path)
         if not rule:
             return await call_next(request)
 
         _prefix, limit, window = rule
-        identifier = request.client.host if request.client else "unknown"
+        identifier = client_ip(request)
         allowed, remaining, reset_epoch, retry_after = self._check(
             f"api:{_prefix}:{identifier}", limit, window
         )
@@ -329,8 +388,14 @@ def _normalize_host(value: str) -> str:
     return value.split("/")[0].split(":")[0]
 
 
-def _check_embed_domain(request: Request, allowed_domains: list) -> Optional[JSONResponse]:
-    if not allowed_domains:
+def _check_embed_domain(
+    request: Request, allowed_domains: list, *, session: bool = False
+) -> Optional[JSONResponse]:
+    """Referer/Origin check for a request made with a raw embed link. A session token was
+    checked against the embedding site when the page opened it (embed/service.py
+    open_embed_session); its data requests come from Aicser's own page, so their Referer is
+    Aicser, not the host site, and checking it again would wrongly refuse them."""
+    if not allowed_domains or session:
         return None
     origin = request.headers.get("origin") or request.headers.get("referer") or ""
     host = _normalize_host(origin)
@@ -436,7 +501,7 @@ class EmbedTokenMiddleware(BaseHTTPMiddleware):
                     )
 
             allowed_domains = verified.get("allowed_domains") or []
-            domain_err = _check_embed_domain(request, allowed_domains)
+            domain_err = _check_embed_domain(request, allowed_domains, session=bool(verified.get("session")))
             if domain_err:
                 return domain_err
 

@@ -70,3 +70,57 @@
 .new-post-composer-attach {
   font-weight: 600;
 }
+
+.new-post-composer-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.new-post-composer-image {
+  position: relative;
+  width: 120px;
+  height: 88px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-fill-quaternary);
+}
+
+.new-post-composer-image--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+}
+
+.new-post-composer-image-remove.ant-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
+}
+
+.feed-image--failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  background: var(--ant-color-fill-quaternary);
+}
+
+/* Audience: a compact dropdown in the action row (the feed's scope filter above is the one
+   segmented control on the page). */
+.new-post-composer-audience {
+  min-width: 132px;
+}
+
+.new-post-composer-audience-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

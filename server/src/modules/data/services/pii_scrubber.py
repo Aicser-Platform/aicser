@@ -92,6 +92,14 @@ _TO_DATE_PHRASE_RE = re.compile(
 # matches by shape alone, applied to whichever type Presidio happened to
 # assign. Live-reproduced: an executive-report summary's "Total H1
 # consumption..." was scrubbed to "Total <US_DRIVER_LICENSE> consumption...".
+# Weak pattern recognizers: a US driver's licence, passport, bank-account or ITIN "number" is
+# just letters-plus-digits, so Presidio scores a bare match at 0.3 and only raises it when context
+# words ("license", "passport", "account") are nearby. Taken at face value they masked every
+# product code and customer id ("C0012" → <US_DRIVER_LICENSE>), which left AI Decisions reading
+# placeholders. Kept only when the context confirmed them.
+_WEAK_PATTERN_ENTITIES = frozenset({"US_DRIVER_LICENSE", "US_PASSPORT", "US_BANK_NUMBER", "US_ITIN"})
+_WEAK_PATTERN_MIN_SCORE = 0.5
+
 _PERIOD_CODE_RE = re.compile(r"^(h[12]|q[1-4])$", re.IGNORECASE)
 
 # Same false-positive class, LOCATION shape: short measurement-unit abbreviations
@@ -684,12 +692,13 @@ class PiiScrubber:
     the data structure without seeing the actual sensitive value.
     """
 
-    def scrub_text(self, text: str) -> str:
-        """Replace PII in free text with typed placeholders."""
+    def scrub_text(self, text: str, keep_entities: frozenset = frozenset()) -> str:
+        """Replace PII in free text with typed placeholders. ``keep_entities`` lists NER
+        entity types a caller needs as context (e.g. LOCATION when classifying places)."""
         if not text or not isinstance(text, str):
             return text
         if _presidio_analyzer and _presidio_anonymizer:
-            return _scrub_dates_of_birth(self._scrub_with_presidio(text))
+            return _scrub_dates_of_birth(self._scrub_with_presidio(text, keep_entities))
         return _scrub_dates_of_birth(self._scrub_with_regex(text))
 
     def scrub_value(self, value: Any, column_name: str = "") -> Any:
@@ -776,11 +785,12 @@ class PiiScrubber:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _scrub_with_presidio(self, text: str) -> str:
+    def _scrub_with_presidio(self, text: str, keep_entities: frozenset = frozenset()) -> str:
         """Use Presidio + custom recognizers. Falls back to regex on any error."""
         try:
             # Try with English first; could be extended to detect language and pass it
             results = _presidio_analyzer.analyze(text=text, language="en")
+            results = [r for r in results if r.entity_type not in keep_entities]
             results = [r for r in results if not (
                 r.entity_type == "DATE_TIME" and (
                     _DURATION_PHRASE_RE.fullmatch(text[r.start:r.end])
@@ -790,6 +800,9 @@ class PiiScrubber:
                 )
             )]
             results = [r for r in results if not _PERIOD_CODE_RE.fullmatch(text[r.start:r.end])]
+            results = [r for r in results if not (
+                r.entity_type in _WEAK_PATTERN_ENTITIES and (r.score or 0) < _WEAK_PATTERN_MIN_SCORE
+            )]
             results = [r for r in results if not (
                 r.entity_type == "LOCATION"
                 and _UNIT_ABBREVIATION_RE.fullmatch(text[r.start:r.end])

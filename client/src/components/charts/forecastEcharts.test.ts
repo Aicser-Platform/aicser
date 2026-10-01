@@ -76,4 +76,56 @@ describe('forecastEcharts', () => {
     const xAxis = polished.xAxis as { axisLabel?: { formatter?: (v: string) => string } };
     expect(xAxis.axisLabel?.formatter?.('2024-11-01')).toBe('Nov 2024');
   });
+
+  it('shows the 80% and 95% ranges and hides both band helpers', () => {
+    const html = forecastTooltipHtml([
+      {
+        seriesName: 'Forecast',
+        marker: 'o',
+        data: { value: 130, lower: 100, upper: 170, lower_80: 115, upper_80: 150 },
+        axisValue: '2025-02-01',
+      },
+      { seriesName: '_ci80_lower', marker: '', value: 115, axisValue: '2025-02-01' },
+      { seriesName: '80% interval', marker: '', value: 35, axisValue: '2025-02-01' },
+    ]);
+    expect(html).toContain('80% interval: 115 – 150');
+    expect(html).toContain('95% interval: 100 – 170');
+    expect(html).not.toContain('_ci80_lower');
+    expect(html.match(/80% interval/g)?.length).toBe(1);
+  });
+
+  it('labels the in-progress point with its completeness', () => {
+    const html = forecastTooltipHtml([
+      { seriesName: 'In progress', marker: 'o', data: { value: 1295, coverage_pct: 30 }, axisValue: '2025-06-01' },
+    ]);
+    expect(html).toContain('In progress (30% complete)');
+    expect(html).toContain('1,295');
+  });
+
+  it('keeps the inner band on its own stack and lists it in the legend', () => {
+    const polished = polishForecastEchartsOption({
+      ...forecastCfg,
+      legend: { data: [] },
+      series: [
+        ...forecastCfg.series,
+        { name: '_ci_lower', type: 'line', stack: 'ci', data: [] },
+        { name: '95% interval', type: 'line', stack: 'ci', data: [] },
+        { name: '_ci80_lower', type: 'line', stack: 'ci80', data: [] },
+        { name: '80% interval', type: 'line', stack: 'ci80', data: [] },
+        { name: 'In progress', type: 'scatter', data: [] },
+      ],
+    });
+    const series = polished.series as Array<{ name: string; stack?: string }>;
+    expect(series.find((x) => x.name === '80% interval')?.stack).toBe('ci80');
+    expect(series.find((x) => x.name === '_ci80_lower')?.stack).toBe('ci80');
+    expect(series.find((x) => x.name === '95% interval')?.stack).toBe('ci');
+    const legend = (polished.legend as { data: Array<string | { name: string }> }).data.map((d) =>
+      typeof d === 'string' ? d : d.name,
+    );
+    expect(legend).toEqual(['Historical', 'Forecast', '80% interval', '95% interval', 'In progress']);
+  });
+
+  it('formats hourly axis labels with the time', () => {
+    expect(formatForecastAxisDate('2025-03-04 14:00', false)).toBe('4 Mar 14:00');
+  });
 });

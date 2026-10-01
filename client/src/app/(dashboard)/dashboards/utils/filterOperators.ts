@@ -29,13 +29,20 @@ export function getCrossFilterValues(runtimeFilters: RuntimeFilter[], field?: st
 export function resolveRuntimeFiltersForWidget(
   runtimeFilters: RuntimeFilter[],
   globalFilterConfig: DashboardFilter[],
-  widget: { id: string; chartId?: string }
+  widget: { id: string; chartId?: string; chartQuery?: Record<string, unknown> | null }
 ): RuntimeFilter[] {
   if (!runtimeFilters.length) return runtimeFilters;
   const configByField = new Map(globalFilterConfig.filter((f) => f.field).map((f) => [f.field, f]));
   const widgetKeys = new Set([widget.id, widget.chartId].filter(Boolean) as string[]);
+  // A chart grouped by the clicked field keeps every category and highlights the selection
+  // (Power BI cross-highlight); only the other widgets narrow. Filtering the chart you clicked
+  // down to one bar made it look like the data had changed.
+  const bare = (f: unknown) => String(f ?? '').split('.').pop()?.toLowerCase() || '';
+  const q = widget.chartQuery || {};
+  const ownGroupings = new Set([q.x, q.groupField, q.legend].map(bare).filter(Boolean));
 
   return runtimeFilters.filter((rf) => {
+    if (rf.crossFilter && ownGroupings.has(bare(rf.field))) return false;
     const cfg = configByField.get(rf.field);
     if (!cfg) return true;
     const scope = cfg.affects;
@@ -90,7 +97,16 @@ export type RuntimeFilter = {
   operator: string;
   value: unknown;
   type?: string;
+  /** Set by clicking a chart (cross-filter), not by a filter control. */
+  crossFilter?: boolean;
 };
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}/;
+
+/** A runtime filter on a date (from a date/date-range control or an ISO-date bound). */
+export function isDateRuntimeFilter(f: RuntimeFilter): boolean {
+  return f.type === 'date' || f.type === 'dateRange' || (typeof f.value === 'string' && ISO_DAY.test(f.value));
+}
 
 const BACKEND_OPERATORS = new Set([
   '=',

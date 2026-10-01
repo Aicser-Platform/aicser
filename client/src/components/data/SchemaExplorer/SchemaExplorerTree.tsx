@@ -16,6 +16,8 @@ interface SchemaExplorerTreeProps {
   onColumnClick?: (tableName: string, columnName: string, schemaName: string, dataSource: ContextDataSource) => void;
   /** @deprecated use filterText; compact hides tags only */
   compact?: boolean;
+  /** Show SQL type labels next to column names. Off for business users; the type stays in the hover. */
+  showTypes?: boolean;
 }
 
 function columnMetaTooltip(
@@ -44,6 +46,7 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
   onTableClick,
   onColumnClick,
   compact = true,
+  showTypes = false,
 }) => {
   const t = useTranslations('schema_tree');
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
@@ -79,7 +82,9 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
             <Tooltip title={columnMetaTooltip(col, t)}>
               <span className="schema-explorer-name">{col.name}</span>
             </Tooltip>
-            <span className="schema-explorer-type-label">({abbreviateSqlType(col.type || '')})</span>
+            {showTypes ? (
+              <span className="schema-explorer-type-label">({abbreviateSqlType(col.type || '')})</span>
+            ) : null}
           </div>
         ),
         isLeaf: true,
@@ -202,7 +207,7 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
     }
 
     return { treeData: nodes, allExpandableKeys: expandableKeys };
-  }, [compact, dataSource, filter, onColumnClick, onTableClick, schema, t]);
+  }, [compact, showTypes, dataSource, filter, onColumnClick, onTableClick, schema, t]);
 
   useEffect(() => {
     if (filter) {
@@ -215,12 +220,9 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
 
     const keys: string[] = [];
     const firstNode = treeData[0];
-    if (firstNode?.key) {
+    // Open the schema level only: a business user scans table names first; columns are a click away.
+    if (firstNode?.key && firstNode.children?.some((c) => c.children?.length)) {
       keys.push(String(firstNode.key));
-      const firstTable = firstNode.children?.[0];
-      if (firstTable?.key && firstTable.children?.length) {
-        keys.push(String(firstTable.key));
-      }
     }
 
     autoExpandedMarkerRef.current = marker;
@@ -230,7 +232,7 @@ const SchemaExplorerTree: React.FC<SchemaExplorerTreeProps> = ({
   if (!treeData.length) {
     return (
       <div className="schema-explorer-empty">
-        {filter ? 'No matching tables or columns' : t('tables_views')}
+        {filter ? t('no_match') : t('tables_views')}
       </div>
     );
   }

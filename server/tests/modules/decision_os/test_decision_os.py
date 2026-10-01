@@ -41,7 +41,7 @@ def test_confidence_policy_evaluate_hitl():
 def test_fallback_brief():
     brief = fallback_brief("Why did revenue drop?", {})
     assert brief["executive_decision"]
-    assert brief["confidence_score"] == 0.55
+    assert brief["confidence_score"] == 0.35  # no engine evidence -> low confidence
 
 
 def test_apply_brief_to_state():
@@ -50,7 +50,7 @@ def test_apply_brief_to_state():
     brief["options"] = [{"label": "Base", "recommended": True, "description": "Do X"}]
     apply_brief_to_state(state, brief)
     assert state["decision_brief"] == brief
-    assert state["confidence_score"] == 0.55
+    assert state["confidence_score"] == 0.35
     assert state["insights"]
 
 

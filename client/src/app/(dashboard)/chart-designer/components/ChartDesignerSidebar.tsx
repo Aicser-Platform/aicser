@@ -1,5 +1,6 @@
 'use client';
 
+import { ADD_TO_DASHBOARD_EVENT } from './chartDesignerEvents';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Input,
@@ -162,6 +163,22 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
     void loadPage(true);
   }, [loadPage]);
 
+  // A chart built on the canvas is saved to the library by the store (createChartAndFetchData),
+  // but this list was only loaded on mount, so it kept saying "0 charts" (QA F-CHART-01).
+  // Reload when a chart id appears that the list hasn't seen.
+  const canvasChartIds = widgets
+    .map((w) => (w.chartId ? String(w.chartId) : ''))
+    .filter(Boolean)
+    .sort()
+    .join(',');
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  useEffect(() => {
+    if (!canvasChartIds) return;
+    const known = new Set(itemsRef.current.map((it) => String(it.id)));
+    if (canvasChartIds.split(',').some((id) => !known.has(id))) void loadPage(true);
+  }, [canvasChartIds, loadPage]);
+
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
@@ -302,6 +319,17 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
     setTargetDashboardId(useDashboardStore.getState().activeDashboardId ?? dashboards[0]?.id ?? null);
     setAddToDashboardOpen(true);
   };
+
+  // The designer header's "Add to dashboard" opens this same dialog.
+  useEffect(() => {
+    const onRequest = (e: Event) => {
+      const chartId = (e as CustomEvent<{ chartId?: string }>).detail?.chartId;
+      if (chartId) void openAddToDashboard(chartId);
+    };
+    window.addEventListener(ADD_TO_DASHBOARD_EVENT, onRequest);
+    return () => window.removeEventListener(ADD_TO_DASHBOARD_EVENT, onRequest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openAddToDashboard reads latest state via the store
+  }, [dashboards]);
 
   const handleAddToDashboard = async () => {
     if (!addToDashboardChartId || !targetDashboardId) {

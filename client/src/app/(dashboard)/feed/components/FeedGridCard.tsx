@@ -29,6 +29,7 @@ import {
   isFeedPostAuthor,
 } from '@/components/Feed/feedPostDisplay';
 import { FeedPostContent } from '@/components/Feed/FeedPostContent';
+import { FeedImages } from '@/components/Feed/FeedImages';
 import FeedCardMedia from './FeedCardMedia';
 import { reactionOptions } from './FeedCard/constants';
 import ReactionBreakdownTooltip from './FeedCard/ReactionBreakdownTooltip';
@@ -549,6 +550,10 @@ const FeedGridCard: React.FC<FeedGridCardProps> = ({
             descriptionMaxRows={3}
             variant="card"
           />
+        </div>
+
+        <div onClick={stopPropagation}>
+          <FeedImages images={item.images} compact />
         </div>
 
         <div className={`min-w-0 flex-1 px-3.5 sm:px-4 pb-2.5 ${maxPreviews <= 1 ? 'min-h-[220px]' : ''}`}>

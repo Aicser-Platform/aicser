@@ -1,0 +1,21 @@
+id: cross_page_dashboard_studio
+title: Cross-page — Dashboard Studio discoverability
+persona: sales_vp
+start_path: /
+goal: >
+  From the app shell, find Dashboards / Dashboard Studio without using Query Editor.
+  Stop when a dashboards list or studio canvas is visible.
+max_steps: 25
+tags: [nav, dashboards, p1]
+rubric_focus: [nav_jobs, orientation]
+checks:
+  - kind: url_contains
+    value: /dashboard
+    severity: major
+    why: Should reach dashboards routes
+  - kind: note
+    value: Human — was "Studio" naming clear for an executive?
+    severity: minor
+notes_for_devs: >
+  navConfig dashboard-studio group. Consider job label "Dashboards" at top level for
+  exec personas (F-NAV-02).

@@ -10,6 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiser_password}
     volumes:
       - postgres_ce_data:/var/lib/postgresql/data
+    restart: unless-stopped
     ports:
       - "5432:5432"
     healthcheck:
@@ -27,11 +28,40 @@ services:
     container_name: aiser-redis-ce
     volumes:
       - redis_ce_data:/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Drive-time and routing for location analysis: Valhalla (MIT) on OpenStreetMap roads
+  # (© OpenStreetMap contributors, ODbL). The first start downloads the region below and builds
+  # its road graph (minutes for one country; larger regions need more memory and time); later
+  # starts reuse the built tiles. Change ROUTING_OSM_PBF_URL to cover your region, e.g. several
+  # comma-separated Geofabrik extracts, then remove the volume to rebuild.
+  routing:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:3.5.1
+    container_name: aiser-routing-ce
+    environment:
+      tile_urls: ${ROUTING_OSM_PBF_URL:-https://download.geofabrik.de/asia/cambodia-latest.osm.pbf}
+      serve_tiles: "True"
+      build_elevation: "False"
+      build_admins: "True"
+      build_time_zones: "False"
+      build_transit: "False"
+      force_rebuild: "False"
+      use_tiles_ignore_pbf: "True"
+      server_threads: ${ROUTING_THREADS:-4}
+    volumes:
+      - routing_ce_tiles:/custom_files
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8002/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    restart: unless-stopped
 
   server:
     build:
@@ -41,6 +71,7 @@ services:
         EDITION: community
     container_name: aiser-server-ce
     environment:
+      ROUTING_URL: ${ROUTING_URL:-http://routing:8002}
       AISER_EDITION: CE
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD:-aiser_password}@postgres:5432/${POSTGRES_DB:-aiser}
       POSTGRES_SERVER: postgres
@@ -76,6 +107,8 @@ services:
       redis:
         condition: service_healthy
     entrypoint:
+      # Fix volume ownership as root, then run everything below as the unprivileged app user.
+      - /app/scripts/docker-entrypoint.sh
       - /bin/sh
       - -c
       - |
@@ -115,6 +148,7 @@ volumes:
   postgres_ce_data:
   redis_ce_data:
   server_ce_uploads:
+  routing_ce_tiles:
 
 networks:
   default:

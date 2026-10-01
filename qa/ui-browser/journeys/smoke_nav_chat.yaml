@@ -1,0 +1,26 @@
+id: smoke_nav_chat
+title: Smoke — reach AI chat from shell
+persona: first_time_nontech
+start_path: /
+goal: >
+  From the Aicser app, open the main AI / chat experience (often labelled AI Engine
+  or Chat). Stop when the chat composer or "Aicser AI Analytics" header is visible.
+  Do not open Query Editor or Data settings.
+max_steps: 20
+tags: [smoke, nav, p0]
+rubric_focus: [nav_jobs, orientation, composer_clarity]
+checks:
+  - kind: url_contains
+    value: /chat
+    severity: blocker
+    why: Primary ask surface should land on /chat
+  - kind: text_present
+    value: Aicser
+    severity: major
+    why: Brand/header should be visible
+  - kind: note
+    value: Human — confirm composer is obvious without scrolling past schema
+    severity: minor
+notes_for_devs: >
+  Nav label "AI Engine" vs job "Ask" is tracked in reports/04-UI-FINDINGS-BACKLOG.md F-NAV-01.
+  Files: navConfig.ts, messages nav.ai_engine, chat/page.tsx.

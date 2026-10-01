@@ -14,6 +14,11 @@ from src.core.licensing.dependencies import require_valid_license
 from src.modules.authentication.router import router as auth_api_router
 from src.modules.charts.router import router as visual_charts_router
 from src.modules.charts.router import standalone_chart_router
+from src.modules.charts.geo_router import geo_router
+from src.modules.spatial.router import router as spatial_router
+from src.modules.folders.router import router as folders_router
+from src.modules.notebooks.router import router as notebooks_router
+from src.modules.workbooks.router import router as workbooks_router
 from src.modules.data.router import router as data_router
 from src.modules.dashboards.router import router as dashboards_router
 from src.modules.dashboards.charts.router import router as charts_router
@@ -56,6 +61,11 @@ api_router.include_router(feed_router, prefix="/api/feed", tags=["feed"])
 api_router.include_router(charts_router, prefix="/api/dashboards/{dashboard_id}/charts", tags=["charts"])
 api_router.include_router(dashboards_router, prefix="/api/dashboards", tags=["dashboards"])
 api_router.include_router(standalone_chart_router, prefix="/api/chart", tags=["charts"])
+api_router.include_router(geo_router, prefix="/api/geo", tags=["maps"])
+api_router.include_router(spatial_router, prefix="/api/spatial", tags=["location analysis"])
+api_router.include_router(folders_router, prefix="/api/folders", tags=["folders"])
+api_router.include_router(notebooks_router, prefix="/api/notebooks", tags=["notebooks"])
+api_router.include_router(workbooks_router, prefix="/api/workbooks", tags=["workbooks"])
 api_router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(media_router, prefix="/api/media/feed-thumbnails", tags=["media"])
 api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
@@ -254,6 +264,82 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Admin config router not loaded: %s", _err)
+
+    try:
+        from ee.modules.ai.decisions.router import router as decisions_router
+        api_router.include_router(
+            decisions_router, prefix="/api/ai/decisions", tags=["ai-decisions"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Decision layer router not loaded: %s", _err)
+
+    try:
+        from ee.modules.ai.decisions.tool_router import router as ai_decisions_router
+        api_router.include_router(
+            ai_decisions_router, prefix="/api/ai-decisions", tags=["ai-decisions-tool"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("AI Decisions router not loaded: %s", _err)
+
+    try:
+        from ee.modules.ai.evals.router import router as ai_accuracy_router
+        api_router.include_router(
+            ai_accuracy_router, prefix="/api/ai/accuracy", tags=["ai-accuracy"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("AI accuracy router not loaded: %s", _err)
+
+    try:
+        from ee.modules.ai.formula_router import router as formula_router
+        api_router.include_router(
+            formula_router, prefix="/api/ai/formula", tags=["ai-formula"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("AI formula router not loaded: %s", _err)
+
+    try:
+        from ee.modules.organizations.scim import scim_router, token_router as scim_token_router
+        # IdPs call /scim/v2 with an org SCIM token (no session, no license header needed
+        # beyond the instance license); admins manage tokens and group roles under /api/scim.
+        api_router.include_router(
+            scim_router, prefix="/scim/v2", tags=["scim"],
+            dependencies=[Depends(require_valid_license)],
+        )
+        # Same SCIM endpoints under /api/scim/v2: the web app forwards /api/* to this server, so
+        # the Identity page can show "<your app address>/api/scim/v2" — an address an identity
+        # provider can reach — instead of the backend's internal host.
+        api_router.include_router(
+            scim_router, prefix="/api/scim/v2", tags=["scim"], include_in_schema=False,
+            dependencies=[Depends(require_valid_license)],
+        )
+        api_router.include_router(
+            scim_token_router, prefix="/api/scim", tags=["scim-admin"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("SCIM router not loaded: %s", _err)
+
+    try:
+        from ee.modules.organizations.residency_router import router as residency_router
+        api_router.include_router(
+            residency_router, prefix="/api/ai-residency", tags=["ai-residency"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("AI residency router not loaded: %s", _err)
+
+    try:
+        from ee.modules.mcp_server.router import router as mcp_router
+        api_router.include_router(
+            mcp_router, prefix="/mcp", tags=["mcp"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("MCP server router not loaded: %s", _err)
 
     try:
         from src.modules.embed.router import router as embed_router

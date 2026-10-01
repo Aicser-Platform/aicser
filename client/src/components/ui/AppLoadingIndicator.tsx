@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { Spin } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Button, Space, Spin } from 'antd';
+import { useTranslations } from 'next-intl';
 import type { SpinProps } from 'antd';
 
 export type AppLoadingIndicatorProps = {
@@ -16,7 +17,29 @@ export type AppLoadingIndicatorProps = {
    */
   variant?: 'full' | 'inline' | 'minimal';
   className?: string;
+  /**
+   * full/inline only: after this many ms, add a calm "taking longer than usual" line with
+   * Reload and Back, so a stuck load never leaves the user with a spinner and no way out.
+   */
+  slowAfterMs?: number;
 };
+
+function SlowLoadingHint() {
+  const t = useTranslations('common');
+  return (
+    <div className="app-loading-indicator__slow" style={{ marginTop: 12, textAlign: 'center' }}>
+      <div style={{ color: 'var(--ant-color-text-secondary)', marginBottom: 8 }}>{t('loading_slow')}</div>
+      <Space>
+        <Button size="small" onClick={() => window.location.reload()}>
+          {t('reload')}
+        </Button>
+        <Button size="small" type="text" onClick={() => window.history.back()}>
+          {t('go_back')}
+        </Button>
+      </Space>
+    </div>
+  );
+}
 
 const MARK_SIZE_CLASS = {
   small: 'app-loading-indicator__mark--small',
@@ -35,7 +58,15 @@ export function AppLoadingIndicator({
   size,
   variant = 'inline',
   className = '',
+  slowAfterMs,
 }: AppLoadingIndicatorProps) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!slowAfterMs || variant === 'minimal') return;
+    const id = window.setTimeout(() => setSlow(true), slowAfterMs);
+    return () => window.clearTimeout(id);
+  }, [slowAfterMs, variant]);
+
   if (variant === 'minimal') {
     return (
       <span
@@ -69,6 +100,7 @@ export function AppLoadingIndicator({
         <img src="/aiser-logo.png" alt="" className="app-loading-indicator__logo" aria-hidden="true" />
       </div>
       {tip ? <div className="app-loading-indicator__tip">{tip}</div> : null}
+      {slow ? <SlowLoadingHint /> : null}
     </div>
   );
 }

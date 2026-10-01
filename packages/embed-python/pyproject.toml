@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicser-embed"
+version = "0.3.1"
+description = "Mint signed, single-use Aicser embed links from your server"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.8"
+dependencies = []
+
+[project.urls]
+Source = "https://github.com/Aicser-Platform/aicser/tree/main/packages/embed-python"
+
+[tool.setuptools]
+packages = ["aicser_embed"]

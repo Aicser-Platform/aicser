@@ -13,12 +13,14 @@ import {
   RobotOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import MarkdownRenderer from '@/components/ui/markdown/MarkdownRenderer';
 import { useTranslations } from 'next-intl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize, parseEmbedErrorDetail } from '@/utils/embedMessaging';
 import { getOrCreateEmbedVisitorId } from '@/utils/embedVisitorId';
 import { useEmbedTheme } from '@/hooks/useEmbedTheme';
+import { useEmbedSession, type EmbedSessionState } from '@/hooks/useEmbedSession';
+import { EmbedSessionGate } from '@/components/embed/EmbedSessionGate';
+import { resolveEmbedToken } from '@/utils/embedSession';
 import { EmbedBrandingFooter } from '@/components/embed/EmbedBrandingFooter';
 import { resolveChatChartDisplay, withChartAnimationDefaults } from '@/components/charts/resolveChatChart';
 import {
@@ -118,13 +120,22 @@ function buildAssistantPatch(
 const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
 function EmbedChatContent() {
+  const session = useEmbedSession('chat');
+  return (
+    <EmbedSessionGate session={session}>
+      <EmbedChatView session={session} />
+    </EmbedSessionGate>
+  );
+}
+
+function EmbedChatView({ session }: { session: EmbedSessionState }) {
   const tEmbed = useTranslations('embed_chat');
   const tChatPage = useTranslations('chat_page');
   const searchParams = useSearchParams();
-  const token = searchParams?.get('token') || '';
+  const token = session.token;
   const assistantId = searchParams?.get('assistant_id') || '';
   const libraryIdsParam = searchParams?.get('library_ids') || '';
-  const { theme, themeStyle, dataTheme } = useEmbedTheme(token);
+  const { theme, themeStyle, dataTheme } = useEmbedTheme(session.theme);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState('');
@@ -185,7 +196,7 @@ function EmbedChatContent() {
     // admin-session-gated lookup below, which is what the same-origin
     // logged-in Settings > Embed preview relies on.
     const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
+    if (token) headers.Authorization = `Bearer ${resolveEmbedToken(token)}`;
     fetch(`/api/ai/embed/${assistantId}/config`, { headers })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -270,8 +281,9 @@ function EmbedChatContent() {
           Accept: 'text/event-stream',
         };
         if (token) {
-          h.Authorization = `Bearer ${token}`;
-          h['X-Embed-Token'] = token;
+          const current = resolveEmbedToken(token);
+          h.Authorization = `Bearer ${current}`;
+          h['X-Embed-Token'] = current;
         }
         if (useEmbed) {
           h['X-Embed-Visitor-Id'] = visitorIdRef.current;
@@ -727,48 +739,7 @@ function EmbedChatContent() {
                     )}
 
                     {msg.content ? (
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          p: ({ children }) => <p style={{ margin: '0 0 8px' }}>{children}</p>,
-                          ul: ({ children }) => (
-                            <ul style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ul>
-                          ),
-                          ol: ({ children }) => (
-                            <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>{children}</ol>
-                          ),
-                          li: ({ children }) => <li style={{ marginBottom: 2 }}>{children}</li>,
-                          code: ({ children, className }) => {
-                            const isBlock = className?.includes('language-');
-                            return isBlock ? (
-                              <pre
-                                style={{
-                                  background: 'var(--ant-color-fill-quaternary, #f5f5f5)',
-                                  borderRadius: 6,
-                                  padding: '8px 12px',
-                                  overflowX: 'auto',
-                                  fontSize: 12,
-                                }}
-                              >
-                                <code>{children}</code>
-                              </pre>
-                            ) : (
-                              <code
-                                style={{
-                                  background: 'var(--ant-color-fill-quaternary, #f5f5f5)',
-                                  borderRadius: 3,
-                                  padding: '1px 5px',
-                                  fontSize: 12,
-                                }}
-                              >
-                                {children}
-                              </code>
-                            );
-                          },
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                      <MarkdownRenderer content={msg.content} className="markdown-compact" />
                     ) : null}
 
                     {msg.streaming && (

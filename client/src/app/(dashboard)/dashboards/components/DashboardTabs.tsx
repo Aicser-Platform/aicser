@@ -1,5 +1,6 @@
 'use client';
 
+import { fetchApiBlob } from '@/utils/api';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,7 +20,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   ExclamationCircleOutlined,
-  EyeOutlined,
+  CheckOutlined,
   StarOutlined,
   StarFilled,
   CopyOutlined,
@@ -98,11 +99,10 @@ type DashboardTabsProps = {
   collabConnected?: boolean;
   collabPeerCount?: number;
   collabActiveUsers?: CollabUser[];
-  /** Live comments — toolbar trigger (not fixed on canvas). */
+  /** Saved dashboard comments — toolbar trigger (not fixed on canvas); view and edit mode. */
   collabCommentsOpen?: boolean;
   onCollabCommentsOpenChange?: (open: boolean) => void;
-  collabComments?: import('../utils/collaborationTypes').CollabComment[];
-  onCollabAddComment?: (text: string, widgetId?: string | null) => void;
+  onCommentPosted?: (body: string, widgetId: string | null) => void;
   selectedWidgetId?: string | null;
   /** Feed snapshot — when set, shows an icon button next to + Add instead of a banner. */
   feedPostId?: string | null;
@@ -127,8 +127,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
   collabActiveUsers = [],
   collabCommentsOpen = false,
   onCollabCommentsOpenChange,
-  collabComments = [],
-  onCollabAddComment,
+  onCommentPosted,
   selectedWidgetId = null,
   feedPostId,
   snapshotOutdated = false,
@@ -571,6 +570,31 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     if (exportBusy) return;
     const title = titleDraft.trim() || activeDashboard?.name || 'Dashboard';
     const subtitle = subtitleDraft.trim() || undefined;
+    if (format === 'pdf_report') {
+      // Paginated document rendered on the server: cover, KPIs, one chart per page.
+      const hideReport = message.loading(td('export_preparing_report'), 0);
+      setExportBusy(true);
+      try {
+        const { blob } = await fetchApiBlob(`charts/dashboards/${activeDashboardId}/export`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dashboard_id: activeDashboardId, format: 'pdf', layout: 'report' }),
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title.replace(/[\\/:*?"<>|]+/g, '_')} - report.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        message.success(td('toast_export_pdf_ok'));
+      } catch (error) {
+        message.error(error instanceof Error && error.message ? error.message : td('toast_export_failed'));
+      } finally {
+        hideReport();
+        setExportBusy(false);
+      }
+      return;
+    }
     const isPdf = format === 'pdf';
     const hide = message.loading(isPdf ? td('export_preparing_pdf') : td('export_preparing_png'), 0);
     setExportBusy(true);
@@ -1255,7 +1279,7 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             aria-pressed={isEditMode}
             aria-label={isEditMode ? t('mode_view_action') : t('mode_edit_action')}
           >
-            {isEditMode ? <EyeOutlined /> : <EditOutlined />}
+            {isEditMode ? <CheckOutlined /> : <EditOutlined />}
             <span>{isEditMode ? t('mode_view_action') : t('mode_edit_action')}</span>
           </button>
 
@@ -1307,15 +1331,16 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             </AddBlockPopover>
           )}
 
-          {isEditMode && collabConnected && onCollabCommentsOpenChange && onCollabAddComment ? (
+          {activeDashboardId && onCollabCommentsOpenChange ? (
             <DashboardCollabCommentsPanel
               variant="toolbar"
+              dashboardId={activeDashboardId}
               open={collabCommentsOpen}
               onOpenChange={onCollabCommentsOpenChange}
-              comments={collabComments}
-              selectedWidgetId={selectedWidgetId}
-              onAddComment={onCollabAddComment}
-              connected={collabConnected}
+              selectedWidgetId={isEditMode ? selectedWidgetId : null}
+              widgetTitle={(id) => widgets.find((w) => w.id === id)?.title}
+              canModerate={isEditMode}
+              onCommentPosted={onCommentPosted}
             />
           ) : null}
 

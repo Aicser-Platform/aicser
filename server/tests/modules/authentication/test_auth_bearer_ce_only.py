@@ -128,10 +128,10 @@ async def test_jwtcookiebearer_ignores_supabase_ssr_cookie_in_ce(monkeypatch):
 
     cookie_value = quote('{"access_token": "sb-raw-token"}')
     request = make_request(headers={"Cookie": f"sb-project-auth-token={cookie_value}"})
-    bearer = auth_bearer.JWTCookieBearer(auto_error=False)
-
+    # Optional auth (auto_error=False) returns "nobody" rather than raising; required auth
+    # still raises 401. Either way the Supabase cookie is never read and nobody is logged in.
+    assert await auth_bearer.JWTCookieBearer(auto_error=False)(request) is None
     with pytest.raises(HTTPException) as exc_info:
-        await bearer(request)
-
+        await auth_bearer.JWTCookieBearer()(request)
     assert exc_info.value.status_code == 401
     assert calls == []

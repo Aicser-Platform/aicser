@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Suspense, useEffect, type ComponentType } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Modal, Spin } from 'antd';
 import { useTranslations } from 'next-intl';
@@ -26,10 +26,7 @@ function ChatPageFallback() {
 const EEChatPage = dynamic(
   () =>
     import('../../../ee/chat-page').then((m) =>
-      asDynamicModule(
-        (m as { default?: ComponentType }).default ?? (m as ComponentType),
-        ChatPageFallback,
-      ),
+      asDynamicModule(m, ChatPageFallback),
     ),
   {
     ssr: false,

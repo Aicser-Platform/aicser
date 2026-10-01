@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { DataSourceGrantGranteeType } from '@/api/dataSources';
 import type { OrganizationMember } from '@/api/organizations';
@@ -7,8 +7,13 @@ import { useProjects } from '@/hooks/useProjects';
 import { useRoleStore } from '@/stores/useRoleStore';
 import type { Project } from '@/types/project';
 import type { Role } from '@/types/roles';
+import { fetchApi } from '@/utils/api';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
-export type SupportedGranteeType = Exclude<DataSourceGrantGranteeType, 'group'>;
+export type SupportedGranteeType = DataSourceGrantGranteeType;
+
+/** Directory (identity-provider) group, EE only — see Settings → Identity. */
+export type DirectoryGroup = { id: string; name: string; members: number };
 
 export type GranteeOption = {
   value: string;
@@ -30,7 +35,7 @@ export const decodeGranteeValue = (value: string): { type: SupportedGranteeType;
   };
 };
 
-export const GRANTEE_TYPES: SupportedGranteeType[] = ['project', 'user', 'org_role', 'project_role'];
+export const GRANTEE_TYPES: SupportedGranteeType[] = ['project', 'user', 'group', 'org_role', 'project_role'];
 
 const roleLabel = (role: Role) => role.display_name || role.name || role.id;
 
@@ -44,8 +49,18 @@ export const toGranteeOptions = (
     members: OrganizationMember[];
     orgRoles: Role[];
     projectRoles: Role[];
+    groups?: DirectoryGroup[];
   }
 ): GranteeOption[] => {
+  if (granteeType === 'group') {
+    return (data.groups || []).map((group) => ({
+      value: group.id,
+      label: group.name,
+      secondary: String(group.members),
+      type: granteeType,
+    }));
+  }
+
   if (granteeType === 'project') {
     return data.projects.map((project) => ({
       value: String(project.id),
@@ -120,21 +135,44 @@ export const useGranteeDirectory = ({
   const { members, isLoading: membersLoading } = useOrganizationMembers(organizationId, enabled);
   const { orgRoles, projectRoles, loading: rolesLoading, fetchOrgRoles, fetchProjectRoles } = useRoleStore();
 
+  const [groups, setGroups] = useState<DirectoryGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+
   useEffect(() => {
     if (!enabled) return;
     void fetchOrgRoles();
     void fetchProjectRoles();
   }, [enabled, fetchOrgRoles, fetchProjectRoles]);
 
-  const optionsByType = useMemo(
-    () => ({
-      project: toGranteeOptions('project', { projects, members, orgRoles, projectRoles }),
-      user: toGranteeOptions('user', { projects, members, orgRoles, projectRoles }),
-      org_role: toGranteeOptions('org_role', { projects, members, orgRoles, projectRoles }),
-      project_role: toGranteeOptions('project_role', { projects, members, orgRoles, projectRoles }),
-    }),
-    [members, orgRoles, projectRoles, projects]
-  );
+  useEffect(() => {
+    if (!enabled || !organizationId || !isEnterpriseEdition()) return;
+    let cancelled = false;
+    setGroupsLoading(true);
+    fetchApi<{ groups?: DirectoryGroup[] }>('api/scim/groups')
+      .then((res) => {
+        if (!cancelled) setGroups(Array.isArray(res?.groups) ? res.groups : []);
+      })
+      .catch(() => {
+        if (!cancelled) setGroups([]);
+      })
+      .finally(() => {
+        if (!cancelled) setGroupsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, organizationId]);
+
+  const optionsByType = useMemo(() => {
+    const data = { projects, members, orgRoles, projectRoles, groups };
+    return {
+      project: toGranteeOptions('project', data),
+      user: toGranteeOptions('user', data),
+      group: toGranteeOptions('group', data),
+      org_role: toGranteeOptions('org_role', data),
+      project_role: toGranteeOptions('project_role', data),
+    };
+  }, [groups, members, orgRoles, projectRoles, projects]);
 
   const flatOptions = useMemo(
     () => GRANTEE_TYPES.flatMap((type) => optionsByType[type]),
@@ -144,6 +182,7 @@ export const useGranteeDirectory = ({
   const isLoadingByType = {
     project: projectsLoading,
     user: membersLoading,
+    group: groupsLoading,
     org_role: rolesLoading,
     project_role: rolesLoading,
   };

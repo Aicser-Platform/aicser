@@ -1,0 +1,29 @@
+.basemap-map {
+  position: relative;
+  width: 100%;
+  border-radius: var(--ant-border-radius-lg, 8px);
+  overflow: hidden;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.basemap-map__canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.basemap-map__failed {
+  position: absolute;
+  inset: auto 12px 12px 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ant-color-bg-elevated);
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.basemap-popup {
+  font-size: 13px;
+  line-height: 1.45;
+  color: #15212b;
+  white-space: pre-line;
+}

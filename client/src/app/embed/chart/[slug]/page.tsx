@@ -2,10 +2,13 @@
 
 import React, { Suspense, useEffect, useState } from 'react';
 import nextDynamic from 'next/dynamic';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Alert, Spin, Typography } from 'antd';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize, parseEmbedErrorDetail } from '@/utils/embedMessaging';
 import { useEmbedTheme } from '@/hooks/useEmbedTheme';
+import { useEmbedHostCommands, useEmbedSession, type EmbedSessionState } from '@/hooks/useEmbedSession';
+import { EmbedSessionGate } from '@/components/embed/EmbedSessionGate';
+import { resolveEmbedToken } from '@/utils/embedSession';
 import { EmbedBrandingFooter } from '@/components/embed/EmbedBrandingFooter';
 import { buildChartOptions } from '@/app/(dashboard)/dashboards/widgets/ChartOptionsBuilder';
 
@@ -33,9 +36,19 @@ type EmbedChart = {
 };
 
 function EmbedChartContent({ slug }: { slug: string }) {
-  const searchParams = useSearchParams();
-  const token = searchParams?.get('token') || '';
-  const { theme, themeStyle, dataTheme } = useEmbedTheme(token);
+  const session = useEmbedSession('chart');
+  return (
+    <EmbedSessionGate session={session}>
+      <EmbedChartView slug={slug} session={session} />
+    </EmbedSessionGate>
+  );
+}
+
+function EmbedChartView({ slug, session }: { slug: string; session: EmbedSessionState }) {
+  const token = session.token;
+  const { theme, themeStyle, dataTheme } = useEmbedTheme(session.theme);
+  const [reloadKey, setReloadKey] = useState(0);
+  useEmbedHostCommands(session.allowedOrigins, { refresh: () => setReloadKey((k) => k + 1) });
 
   const [chart, setChart] = useState<EmbedChart | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +71,7 @@ function EmbedChartContent({ slug }: { slug: string }) {
         // which is meant to be a Docker-internal hostname for server-side use
         // and isn't reachable from a visitor's actual browser. See
         // embedDashboard.ts's fetchEmbedDashboardPayload for the same fix.
-        const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+        const qs = token ? `?token=${encodeURIComponent(resolveEmbedToken(token))}` : '';
         const res = await fetch(`/api/charts/embed/${encodeURIComponent(slug)}${qs}`);
         if (!res.ok) {
           const detail = await res.json().catch(() => ({}));
@@ -77,7 +90,7 @@ function EmbedChartContent({ slug }: { slug: string }) {
     };
 
     void load();
-  }, [slug, token]);
+  }, [slug, token, reloadKey]);
 
   useEffect(() => {
     if (!loading && chart) notifyEmbedResize(520);

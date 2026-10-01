@@ -22,6 +22,8 @@ export type WidgetType =
   | 'treemap'
   | 'waterfall'
   | 'bullet'
+  | 'sankey'
+  | 'histogram'
   | 'divider'
   | 'image'
   | 'geo'
@@ -111,6 +113,8 @@ export type WidgetInstance = {
    * filter on the same field" — surfaced as a small indicator, not an error
    * state (chartData is still valid and rendered). */
   filterWarnings?: string[] | null;
+  /** Dashboard filter fields this widget's own SQL couldn't apply. */
+  unappliedFilters?: string[] | null;
   lastFetchedQueryHash?: string;
   isLocked?: boolean;
   /** Client-only LWW timestamp for collaborative edits */

@@ -28,7 +28,7 @@ class NotificationItem(BaseModel):
     # fail entirely - the router's outer try/except then swallowed it and
     # returned an EMPTY inbox, silently hiding every other notification
     # (including firing alerts) too, with no error shown to the user.
-    kind: Literal["alert", "invitation", "ai", "activity", "feed"]
+    kind: Literal["alert", "invitation", "ai", "activity", "feed", "comment"]
     title: str
     message: str
     severity: str = "info"

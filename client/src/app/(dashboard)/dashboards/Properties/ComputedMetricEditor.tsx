@@ -1,28 +1,27 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Modal, Select, Radio, Input, Space, Divider, Typography } from 'antd';
-import type { ComputedMetricSide, ComputedMetric, MetricValueFormat } from './PropertiesPanelConfig';
+import { App, Button, Divider, Input, Modal, Radio, Segmented, Select, Space, Typography } from 'antd';
+import { ThunderboltOutlined } from '@ant-design/icons';
+import { useLocale, useTranslations } from 'next-intl';
+import { fetchApi } from '@/utils/api';
+import { isEnterpriseEdition } from '@/utils/appPaths';
+import type { ComputedMetricSide, ComputedMetric, ComputedOperation, MetricValueFormat } from './PropertiesPanelConfig';
 import type { MetricItem } from './FormFields';
 
 const { Text } = Typography;
 
-const AGG_OPTIONS: { label: string; value: ComputedMetricSide['aggregation'] }[] = [
-  { label: 'Sum', value: 'sum' },
-  { label: 'Count', value: 'count' },
-  { label: 'Count Distinct', value: 'distinct_count' },
-  { label: 'Average', value: 'avg' },
-  { label: 'Min', value: 'min' },
-  { label: 'Max', value: 'max' },
-];
+/**
+ * Formula builder without SQL (Tableau / Power BI style): pick two numbers and how to combine
+ * them — A ÷ B, change %, A − B, A + B, A × B — or describe the metric and let AI fill it in.
+ * Every formula runs on the server as one safe, portable SQL expression.
+ */
 
-const FORMAT_OPTIONS: { label: string; value: MetricValueFormat }[] = [
-  { label: 'Auto', value: 'auto' },
-  { label: 'Percent (%)', value: 'percent' },
-  { label: 'Compact (1.2K)', value: 'compact' },
-  { label: 'Currency ($)', value: 'currency' },
-  { label: 'Full number', value: 'full' },
-];
+const AGGS: ComputedMetricSide['aggregation'][] = ['sum', 'count', 'distinct_count', 'avg', 'min', 'max'];
+const FORMATS: MetricValueFormat[] = ['auto', 'percent', 'compact', 'currency', 'full'];
+const OPS: ComputedOperation[] = ['ratio', 'change', 'difference', 'sum', 'product'];
+const SYMBOL: Record<ComputedOperation, string> = { ratio: '÷', change: '→ %', difference: '−', sum: '+', product: '×' };
+const PERCENT_OPS = new Set<ComputedOperation>(['ratio', 'change']);
 
 interface Props {
   open: boolean;
@@ -32,77 +31,121 @@ interface Props {
   onCancel: () => void;
 }
 
-interface SideEditorProps {
+const defaultSide = (): ComputedMetricSide => ({ field: '', aggregation: 'sum' });
+
+function SideEditor({
+  title,
+  value,
+  onChange,
+  options,
+}: {
   title: string;
   value: ComputedMetricSide;
   onChange: (v: ComputedMetricSide) => void;
-  stringOptions: { label: string; value: string }[];
+  options: { label: string; value: string }[];
+}) {
+  const t = useTranslations('formula_editor');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Text style={{ fontSize: 11, fontWeight: 600 }}>{title}</Text>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <Select
+          size="small"
+          style={{ flex: 1 }}
+          placeholder={t('pick_field')}
+          value={value.field || undefined}
+          onChange={(v: string) => onChange({ ...value, field: v })}
+          options={options}
+          showSearch
+          filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+        />
+        <Select
+          size="small"
+          style={{ width: 128 }}
+          value={value.aggregation}
+          onChange={(v: ComputedMetricSide['aggregation']) => onChange({ ...value, aggregation: v })}
+          options={AGGS.map((a) => ({ value: a, label: t(`agg_${a}` as never) }))}
+        />
+      </div>
+    </div>
+  );
 }
 
-const defaultSide = (): ComputedMetricSide => ({ field: '', aggregation: 'sum' });
-
-const SideEditor: React.FC<SideEditorProps> = ({ title, value, onChange, stringOptions }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-    <Text style={{ fontSize: 11, fontWeight: 600 }}>{title}</Text>
-    <div style={{ display: 'flex', gap: 6 }}>
-      <Select
-        size="small"
-        style={{ flex: 1 }}
-        placeholder="Field"
-        value={value.field || undefined}
-        onChange={(v: string) => onChange({ ...value, field: v })}
-        options={stringOptions}
-        showSearch
-        filterOption={(input, option) =>
-          String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-        }
-      />
-      <Select
-        size="small"
-        style={{ width: 110 }}
-        value={value.aggregation}
-        onChange={(v: ComputedMetricSide['aggregation']) => onChange({ ...value, aggregation: v })}
-        options={AGG_OPTIONS}
-      />
-    </div>
-  </div>
-);
-
 export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onCancel }: Props) {
-  const existingComputed = initial?.computed;
-  const [label, setLabel] = useState(initial?.label ?? initial?.field ?? '');
-  const [numerator, setNumerator] = useState<ComputedMetricSide>(
-    existingComputed?.numerator ?? defaultSide()
-  );
-  const [denominator, setDenominator] = useState<ComputedMetricSide>(
-    existingComputed?.denominator ?? defaultSide()
-  );
-  const [multiplier, setMultiplier] = useState<1 | 100>(existingComputed?.multiplier ?? 1);
-  const [valueFormat, setValueFormat] = useState<MetricValueFormat>(
-    initial?.valueFormat || existingComputed?.format || (existingComputed?.multiplier === 100 ? 'percent' : 'auto')
-  );
+  const t = useTranslations('formula_editor');
+  const locale = useLocale();
+  const { message } = App.useApp();
+  const existing = initial?.computed;
+  const [label, setLabel] = useState('');
+  const [op, setOp] = useState<ComputedOperation>('ratio');
+  const [a, setA] = useState<ComputedMetricSide>(defaultSide());
+  const [b, setB] = useState<ComputedMetricSide>(defaultSide());
+  const [multiplier, setMultiplier] = useState<1 | 100>(1);
+  const [valueFormat, setValueFormat] = useState<MetricValueFormat>('auto');
+  const [describe, setDescribe] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    const nextComputed = initial?.computed;
     setLabel(initial?.label ?? initial?.field ?? '');
-    setNumerator(nextComputed?.numerator ?? defaultSide());
-    setDenominator(nextComputed?.denominator ?? defaultSide());
-    setMultiplier(nextComputed?.multiplier ?? 1);
-    setValueFormat(
-      initial?.valueFormat || nextComputed?.format || (nextComputed?.multiplier === 100 ? 'percent' : 'auto')
-    );
+    setOp((existing?.type as ComputedOperation) || 'ratio');
+    setA(existing?.numerator ?? defaultSide());
+    setB(existing?.denominator ?? defaultSide());
+    setMultiplier(existing?.multiplier ?? 1);
+    setValueFormat(initial?.valueFormat || existing?.format || (existing?.multiplier === 100 ? 'percent' : 'auto'));
+    setDescribe('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial, open]);
 
-  const isValid = !!numerator.field && !!denominator.field && !!label.trim();
+  const options = columnOptions.map((o) => ({ label: typeof o.label === 'string' ? o.label : String(o.value), value: String(o.value) }));
+  const nameOf = (field: string) => options.find((o) => o.value === field)?.label || field;
+  const isValid = !!a.field && !!b.field && !!label.trim();
+  const percentable = PERCENT_OPS.has(op);
 
-  const handleSave = () => {
+  const setOperation = (next: ComputedOperation) => {
+    setOp(next);
+    if (!PERCENT_OPS.has(next)) {
+      setMultiplier(1);
+      if (valueFormat === 'percent') setValueFormat('auto');
+    } else if (next === 'change') {
+      setMultiplier(100);
+      if (valueFormat === 'auto') setValueFormat('percent');
+    }
+  };
+
+  const suggest = async () => {
+    if (!describe.trim()) return;
+    setSuggesting(true);
+    try {
+      const f = await fetchApi<ComputedMetric & { label?: string }>('api/ai/formula/suggest', {
+        method: 'POST',
+        body: JSON.stringify({
+          description: describe.trim(),
+          columns: columnOptions.map((c) => ({ name: String(c.value), type: c.type })),
+          locale,
+        }),
+      });
+      setOp(f.type);
+      setA(f.numerator);
+      setB(f.denominator);
+      setMultiplier(f.multiplier ?? 1);
+      setValueFormat(f.format || (f.multiplier === 100 ? 'percent' : 'auto'));
+      if (!label.trim() && f.label) setLabel(f.label);
+      message.success(t('suggest_ok'));
+    } catch (e) {
+      message.error(e instanceof Error && e.message ? e.message : t('suggest_failed'));
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const save = () => {
     if (!isValid) return;
     const computed: ComputedMetric = {
-      type: 'ratio',
-      numerator,
-      denominator,
-      multiplier,
+      type: op,
+      numerator: a,
+      denominator: b,
+      multiplier: percentable ? multiplier : 1,
       format: valueFormat,
     };
     onSave({
@@ -114,100 +157,95 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
     });
   };
 
-  const handleMultiplierChange = (nextMultiplier: 1 | 100) => {
-    setMultiplier(nextMultiplier);
-    if (nextMultiplier === 100 && valueFormat === 'auto') {
-      setValueFormat('percent');
-    }
-  };
-
-  const stringOptions = columnOptions.map((opt) => ({
-    label: typeof opt.label === 'string' ? opt.label : String(opt.value),
-    value: String(opt.value),
-  }));
+  const sideText = (s: ComputedMetricSide) => (s.field ? `${t(`agg_${s.aggregation}` as never)} ${nameOf(s.field)}` : '…');
+  const preview =
+    op === 'change'
+      ? t('preview_change', { a: sideText(a), b: sideText(b) })
+      : `${sideText(a)} ${SYMBOL[op]} ${sideText(b)}${percentable && multiplier === 100 ? ' × 100' : ''}`;
 
   return (
     <Modal
-      title="fx Computed metric (ratio)"
+      title={t('title')}
       open={open}
-      onOk={handleSave}
+      onOk={save}
       onCancel={onCancel}
-      okText="Add Metric"
+      okText={initial?.computed ? t('save') : t('add')}
       okButtonProps={{ disabled: !isValid }}
-      width={420}
+      width={580}
       destroyOnHidden
     >
-      <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--ant-color-text-secondary)' }}>
-        Ratio only: (numerator ÷ denominator), optionally ×100 for a percent. Not free-form math.
-      </div>
-      <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        {isEnterpriseEdition() ? (
+          <div>
+            <Text style={{ fontSize: 11, fontWeight: 600 }}>{t('describe')}</Text>
+            <Space.Compact style={{ width: '100%', marginTop: 4 }}>
+              <Input
+                size="small"
+                id="formula-describe"
+                value={describe}
+                onChange={(e) => setDescribe(e.target.value)}
+                onPressEnter={() => void suggest()}
+                placeholder={t('describe_placeholder')}
+              />
+              <Button size="small" icon={<ThunderboltOutlined />} loading={suggesting} onClick={() => void suggest()}>
+                {t('suggest')}
+              </Button>
+            </Space.Compact>
+          </div>
+        ) : null}
+
         <div>
-          <Text style={{ fontSize: 11, fontWeight: 600 }}>Metric Name</Text>
-          <Input
-            size="small"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Profit Margin"
-            style={{ marginTop: 4 }}
-          />
+          <Text style={{ fontSize: 11, fontWeight: 600 }}>{t('name')}</Text>
+          <Input size="small" id="formula-name" value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('name_placeholder')} style={{ marginTop: 4 }} />
         </div>
 
-        <Divider
-          style={{ margin: '4px 0', fontSize: 11 }}
-          titlePlacement="left"
-          styles={{ content: { margin: 0 } }}
-        >
-          Formula: Numerator ÷ Denominator
+        <Divider style={{ margin: '4px 0', fontSize: 11 }} titlePlacement="left" styles={{ content: { margin: 0 } }}>
+          {t('formula')}
         </Divider>
 
-        <SideEditor title="Numerator" value={numerator} onChange={setNumerator} stringOptions={stringOptions} />
-        <SideEditor title="Denominator" value={denominator} onChange={setDenominator} stringOptions={stringOptions} />
+        <SideEditor title={t('first_number')} value={a} onChange={setA} options={options} />
+        <Segmented
+          block
+          size="small"
+          value={op}
+          onChange={(v) => setOperation(v as ComputedOperation)}
+          options={OPS.map((o) => ({ value: o, label: t(`op_${o}` as never) }))}
+        />
+        <SideEditor title={t('second_number')} value={b} onChange={setB} options={options} />
+
+        {percentable ? (
+          <div>
+            <Text style={{ fontSize: 11, fontWeight: 600 }}>{t('result')}</Text>
+            <Radio.Group
+              value={multiplier}
+              onChange={(e) => {
+                const m = e.target.value as 1 | 100;
+                setMultiplier(m);
+                if (m === 100 && valueFormat === 'auto') setValueFormat('percent');
+              }}
+              style={{ display: 'flex', gap: 12, marginTop: 4 }}
+              size="small"
+            >
+              <Radio value={1}>{t('result_ratio')}</Radio>
+              <Radio value={100}>{t('result_percent')}</Radio>
+            </Radio.Group>
+          </div>
+        ) : null}
 
         <div>
-          <Text style={{ fontSize: 11, fontWeight: 600 }}>Result type</Text>
-          <Radio.Group
-            value={multiplier}
-            onChange={(e) => handleMultiplierChange(e.target.value as 1 | 100)}
-            style={{ display: 'flex', gap: 12, marginTop: 4 }}
-            size="small"
-          >
-            <Radio value={1}>Ratio (0–1)</Radio>
-            <Radio value={100}>Percentage (×100)</Radio>
-          </Radio.Group>
-        </div>
-
-        <div>
-          <Text style={{ fontSize: 11, fontWeight: 600 }}>Display format</Text>
+          <Text style={{ fontSize: 11, fontWeight: 600 }}>{t('format')}</Text>
           <Select
             size="small"
             style={{ width: '100%', marginTop: 4 }}
             value={valueFormat}
             onChange={(v: MetricValueFormat) => setValueFormat(v)}
-            options={FORMAT_OPTIONS}
+            options={FORMATS.map((f) => ({ value: f, label: t(`format_${f}` as never) }))}
           />
         </div>
 
-        <div
-          style={{
-            background: 'var(--ant-color-bg-layout)',
-            borderRadius: 4,
-            padding: '6px 10px',
-            fontSize: 11,
-          }}
-        >
-          <Text type="secondary">
-            Preview:{' '}
-            {numerator.field
-              ? `${numerator.aggregation}(${numerator.field})`
-              : '…'}{' '}
-            /{' '}
-            {denominator.field
-              ? `${denominator.aggregation}(${denominator.field})`
-              : '…'}
-            {multiplier === 100 ? ' × 100' : ''}
-            {' · '}
-            Format: {FORMAT_OPTIONS.find((option) => option.value === valueFormat)?.label || 'Auto'}
-          </Text>
+        <div style={{ background: 'var(--ant-color-fill-quaternary)', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+          <Text type="secondary">{t('preview')}: </Text>
+          <Text>{preview}</Text>
         </div>
       </Space>
     </Modal>

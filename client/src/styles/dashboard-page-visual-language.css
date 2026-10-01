@@ -137,16 +137,22 @@
   min-height: 0 !important;
   width: 100% !important;
   padding: 0 !important;
-  margin: 0 !important;
+  /* A page with a max width sits centred in the content pane (DashboardPageShell maxWidth);
+     forcing margin 0 here left it hugging the left with an empty band on the right. */
+  margin: 0 auto !important;
   box-sizing: border-box !important;
 }
 
 .page-wrapper .page-header,
-.page-wrapper .page-body,
-.page-wrapper .page-shell-inner {
+.page-wrapper .page-body {
   padding-left: 0 !important;
   padding-right: 0 !important;
   margin-left: 0 !important;
+}
+
+.page-wrapper .page-shell-inner {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 .page-wrapper .page-toolbar {
@@ -448,6 +454,11 @@
 
 .page-wrapper .ant-segmented-item {
   color: var(--ant-color-text-secondary) !important;
+}
+
+.page-wrapper .ant-segmented-item:not(.ant-segmented-item-selected):not(.ant-segmented-item-disabled):hover {
+  color: var(--ant-color-text) !important;
+  background: var(--ant-color-fill-secondary);
 }
 
 .page-wrapper .ant-segmented-item-selected {

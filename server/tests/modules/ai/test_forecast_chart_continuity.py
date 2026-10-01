@@ -60,7 +60,9 @@ def test_forecast_chart_drops_overlapping_months_and_plots_ci_band():
     assert 0 not in ci_base["data"]
     assert ci_base["data"][3] == 110
     assert ci_span["data"][3] == 50
-    assert "95% CI" in ((chart.get("title") or {}).get("subtext") or "")
+    # Band levels are method detail (Advanced view), not headline jargon (QA F-CHAT-11).
+    assert "95% CI" not in ((chart.get("title") or {}).get("subtext") or "")
+    assert any("95%" in n for n in chart.get("aiserForecastDetails") or [])
 
 
 def test_forecast_chart_daily_keeps_same_month_after_last_day():

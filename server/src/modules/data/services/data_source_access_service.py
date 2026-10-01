@@ -167,10 +167,16 @@ class DataSourceAccessService:
     ) -> list[str]:
         """Resolve workspace group IDs for data-source grants.
 
-        No first-class workspace group membership model exists in CE today. EE can
-        override or extend this once a concrete groups/teams domain model lands.
+        CE has no group model; EE provides identity groups (SCIM / directory groups)
+        through the organizations package, so a grant to a group reaches its members.
         """
-        return []
+        if not is_ee_enabled():
+            return []
+        try:
+            from src.modules.organizations.identity import resolve_group_ids
+        except Exception:
+            return []
+        return await resolve_group_ids(user_id, organization_id, session=session)
 
     @staticmethod
     async def get_data_source(
@@ -218,7 +224,9 @@ class DataSourceAccessService:
         if not is_ee_enabled():
             owner_id = getattr(data_source, "user_id", None)
             if owner_id is None:
-                return True
+                # Unowned rows (built-in samples, legacy imports) stay readable so they remain
+                # usable, but nobody may edit, share, manage or delete what they don't own.
+                return permission in {DATA_SOURCE_PERMISSION_VIEW, DATA_SOURCE_PERMISSION_QUERY}
             if str(owner_id) == str(user_id):
                 return True
             try:
@@ -295,7 +303,26 @@ class DataSourceAccessService:
         )
         result = await session.execute(query)
         grants = result.scalars().all()
-        return any(_grant_allows(grant.permissions, permission) for grant in grants)
+        if any(_grant_allows(grant.permissions, permission) for grant in grants):
+            return True
+        if group_ids is not None:
+            return False
+        # Group grants (directory / SCIM groups): consulted only when nothing above allowed
+        # access, so the common path costs no extra query.
+        resolved = await DataSourceAccessService.resolve_user_group_ids(
+            user_id, organization_id, session=session,
+        )
+        if not resolved:
+            return False
+        group_query = select(DataSourceAccessGrant).where(
+            DataSourceAccessGrant.data_source_id == data_source_id,
+            DataSourceAccessGrant.is_active == True,
+            DataSourceAccessGrant.is_deleted == False,
+            DataSourceAccessGrant.grantee_type == "group",
+            DataSourceAccessGrant.grantee_id.in_([str(g) for g in resolved]),
+        )
+        group_grants = (await session.execute(group_query)).scalars().all()
+        return any(_grant_allows(grant.permissions, permission) for grant in group_grants)
 
     @staticmethod
     async def get_applicable_grants(

@@ -22,8 +22,11 @@ def _normalize_detail(detail: Any) -> tuple[str, str, Optional[Any]]:
             or "An error occurred"
         )
         extra = detail.get("details")
-        if extra is None and "message" not in detail and "error" not in detail:
-            extra = {k: v for k, v in detail.items() if k not in ("error", "code", "message", "detail")}
+        if extra is None:
+            # Keep structured fields (e.g. upgrade_required / required_plan / feature on a 402)
+            # even when a message is present — dropping them is why the client's upgrade
+            # prompt never fired and users saw a bare "error".
+            extra = {k: v for k, v in detail.items() if k not in ("error", "code", "message", "detail", "msg")}
             if not extra:
                 extra = None
         return code, message, extra

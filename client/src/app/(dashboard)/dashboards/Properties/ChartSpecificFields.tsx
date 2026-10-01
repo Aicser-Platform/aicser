@@ -1,5 +1,5 @@
 import React from 'react';
-import { Divider, Alert, Button, Tooltip, Collapse, ColorPicker } from 'antd';
+import { Divider, Alert, Button, Tooltip, Collapse, ColorPicker, Segmented } from 'antd';
 import { SwapOutlined } from '@ant-design/icons';
 import {
   SelectField,
@@ -13,6 +13,9 @@ import {
   CheckboxField,
   InputField,
 } from './FormFields';
+import { AdvancedCollapse } from './AdvancedCollapse';
+import { ItemColorsField } from './ItemColorsField';
+import { MapAreaFields } from './MapAreaFields';
 import { PpLabel } from './PpLabel';
 import {
   CHART_TYPE_CONFIGS,
@@ -27,6 +30,7 @@ import { useTranslations } from 'next-intl';
 import { useDashboardStore } from '../stores/useDashboardStore';
 import { WIDGET_PALETTE_INHERIT } from '../utils/chartPaletteCatalog';
 import { ConditionalFormattingEditor } from './ConditionalFormattingEditor';
+import { DEFAULT_PIE_MAX_SLICES } from '../utils/pieSlices';
 import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 import { TableColumnManager } from './TableColumnManager';
 import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
@@ -48,17 +52,52 @@ interface ChartFieldsProps {
   onUpdateChartOption?: (key: string, value: any) => void;
   onUpdateChartOptions?: (updates: Record<string, any>) => void;
   onFieldDrop?: (targetKey: string, field: DashboardFieldDragPayload) => void;
-  mode?: 'mapping' | 'customize' | 'colors' | 'sort' | 'filters';
+  mode?: 'mapping' | 'customize' | 'colors' | 'sort' | 'interact' | 'filters';
   dashboardPages?: { id: string; name: string }[];
   fetchDistinctValues?: (field: string) => Promise<Array<{ label: string; value: string }>>;
   /** Saved / custom SQL card — new metrics default to Don't summarize */
   sqlBound?: boolean;
+  /** Rendered in the Chart Designer (no dashboard card around the chart). */
+  isDesigner?: boolean;
 }
 
 /**
  * Dynamically renders chart-specific fields based on chart type configuration
  * Reduces code duplication and makes adding new chart types easier
  */
+const SHELF_LABEL_KEYS: Record<string, string> = {
+  Category: 'shelf_group_by',
+  'Slice by': 'shelf_group_by',
+  'Row grouping': 'shelf_group_by',
+  Stages: 'shelf_group_by',
+  'Category / Stage': 'shelf_group_by',
+  'Split by': 'shelf_color_by',
+  'Color by': 'shelf_color_by',
+  Numbers: 'shelf_numbers',
+  Metric: 'shelf_number',
+  Value: 'shelf_number',
+  'Value (delta)': 'shelf_change',
+  'Actual Value': 'shelf_actual',
+  'Target Value': 'shelf_target',
+  Size: 'shelf_size',
+  'Horizontal (X)': 'shelf_x',
+  'Vertical (Y)': 'shelf_y',
+  'Across (columns)': 'shelf_columns',
+  'Down (rows)': 'shelf_rows',
+  'Country / Region (names)': 'shelf_country',
+  'Date grouping': 'shelf_date_grouping',
+  'Drill-down levels': 'shelf_drill_levels',
+  'Second measure (line)': 'shelf_second_measure',
+  'Second measure': 'shelf_second_measure',
+  'Filter field': 'shelf_filter_field',
+  Latitude: 'shelf_latitude',
+  From: 'shelf_from',
+  To: 'shelf_to',
+  Flow: 'shelf_flow',
+  'Dot for each': 'shelf_dot_for_each',
+  Longitude: 'shelf_longitude',
+};
+
 export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
   chartType,
   chartQuery,
@@ -74,21 +113,40 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
   dashboardPages = [],
   fetchDistinctValues,
   sqlBound = false,
+  isDesigner = false,
 }) => {
   const t = useTranslations('chart_specific_fields');
+  /** One vocabulary on every chart: what each bar / slice / row is ("Group by"), what splits it
+   * into colored series ("Color by"), and what is measured ("Numbers"). */
+  const shelfLabel = (field: { key: string; label: string }): string => {
+    // On the Filters tab the buttons say what they add ("Add a condition", "Only show groups
+    // whose total…"); a "Filters" / "Keep totals…" caption above them only repeated that.
+    if (field.key === 'filters' || field.key === 'metricFilters') return '';
+    const key = SHELF_LABEL_KEYS[field.label];
+    if (!key) return field.label;
+    if (key === 'shelf_color_by' && chartType === 'table') return t('shelf_columns_by');
+    return t(key as never);
+  };
   const td = useTranslations('dashboards');
   const propertyProfile = getWidgetPropertyProfile(chartType);
-  const chipStyle: React.CSSProperties = {
-    padding: '2px 8px',
-    borderRadius: 4,
-    background: 'var(--ant-color-fill-tertiary)',
-    border: '1px solid var(--ant-color-border-secondary)',
-  };
+  /** Style choices in the reader's language: `opt_<group>_<value>`, English label as fallback. */
+  const opts = (group: string, list: Array<{ label: string; value: string | boolean }>) =>
+    list.map((o) => {
+      const key = `opt_${group}_${String(o.value).replace(/-/g, '_')}`;
+      return { ...o, label: t.has(key as never) ? t(key as never) : o.label };
+    });
+  /** More than one series (a Color by, or several numbers): only then do stacking and the
+   * series order / limit mean anything. */
+  const hasSeries =
+    Boolean(chartQuery.groupField || chartQuery.legend) ||
+    (Array.isArray(chartQuery.yMetrics) && chartQuery.yMetrics.length > 1);
   const dashboardDefaultPalette = useDashboardStore((s) => {
     const dash = s.dashboards.find((d) => d.id === s.activeDashboardId);
     return dash?.config?.default_color_palette as string | undefined;
   });
   const config = CHART_TYPE_CONFIGS[chartType] || CHART_TYPE_CONFIGS.bar;
+  // A trend or an anomaly only means something along an ordered axis (time, or scatter's numeric
+  // x). Across categories (stores, products) the order is arbitrary, so the line would mislead.
   const isAggregate = chartType !== 'scatter';
 
   const metricIssues = React.useMemo(
@@ -177,69 +235,6 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
         </div>
       )}
 
-      {mode === 'mapping' && (chartQuery.x || chartQuery.yMetrics?.length || chartQuery.groupField) && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 6,
-            marginBottom: 12,
-            fontSize: 11,
-            color: 'var(--ant-color-text-secondary)',
-          }}
-        >
-          {chartQuery.x ? (
-            <span style={chipStyle}>
-              {t('chip_category')}: {chartQuery.x}
-              {chartQuery.xGrain ? ` · ${chartQuery.xGrain}` : ''}
-            </span>
-          ) : null}
-          {(chartQuery.yMetrics || []).slice(0, 4).map((m: { field?: string; aggregation?: string }) => (
-            <span key={`y-${m.field}`} style={chipStyle}>
-              {t('chip_numbers')}: {m.field}
-              {m.aggregation && m.aggregation !== 'none' ? ` (${m.aggregation})` : ''}
-            </span>
-          ))}
-          {(chartQuery.yMetrics || []).length > 4 ? (
-            <span style={chipStyle}>+{(chartQuery.yMetrics || []).length - 4} more</span>
-          ) : null}
-          {chartQuery.groupField || chartQuery.legend ? (
-            <span style={chipStyle}>
-              {t('chip_series')}: {chartQuery.groupField || chartQuery.legend}
-            </span>
-          ) : null}
-          {(chartQuery.drillPath || []).length > 0 ? (
-            <span style={chipStyle}>Drill: {(chartQuery.drillPath || []).join(' → ')}</span>
-          ) : null}
-          {['bar', 'line', 'area', 'heatmap'].includes(chartType) &&
-            chartQuery.x &&
-            (chartQuery.groupField || chartQuery.legend) &&
-            (chartQuery.yMetrics?.length || 0) <= 1 && (
-              <Tooltip title={t('swap_rows_columns_hint')}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<SwapOutlined />}
-                  style={{ fontSize: 11, height: 22 }}
-                  onClick={() => {
-                    const rows = chartQuery.groupField || chartQuery.legend;
-                    const cols = chartQuery.x;
-                    onUpdateChartQuery('pivotSwap', { x: rows, groupField: cols });
-                    if (chartType === 'bar' && onUpdateChartOption) {
-                      const nextOrient =
-                        chartOptions?.barChartType === 'horizontal' ? 'vertical' : 'horizontal';
-                      onUpdateChartOption('barChartType', nextOrient);
-                    }
-                  }}
-                >
-                  {t('swap_rows_columns')}
-                </Button>
-              </Tooltip>
-            )}
-        </div>
-      )}
-
       {mode === 'mapping' && (() => {
         const mappingFields = config.fields.filter((f) => !f.key.toLowerCase().includes('filter'));
         const basicFields = mappingFields.filter((f) => !f.advanced);
@@ -261,7 +256,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               return (
                 <SelectField
                   key={field.key}
-                  label={field.label}
+                  label={shelfLabel(field)}
                   required={field.required}
                   value={
                     field.key === 'xGrain'
@@ -292,8 +287,9 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   }}
                   onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
                   options={
-                    field.options ||
-                    (field.key === 'yMetric' ? METRIC_OPTIONS : selectedTableColumns)
+                    field.key === 'xGrain'
+                      ? (field.options || []).map((o) => ({ ...o, label: t(`grain_${o.value || 'none'}` as never) }))
+                      : field.options || (field.key === 'yMetric' ? METRIC_OPTIONS : selectedTableColumns)
                   }
                   placeholder={
                     field.key === 'xGrain'
@@ -343,7 +339,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               return (
                 <MetricListField
                   key={field.key}
-                  label={field.label}
+                  label={shelfLabel(field)}
                   required={field.required}
                   metrics={chartQuery[field.key] || []}
                   onChange={(val) => onUpdateChartQuery(field.key, val)}
@@ -361,7 +357,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   maxItems={field.maxCount}
                   excludeFields={excludeFields}
                   chartType={chartType}
-                  defaultAggregation={sqlBound || chartType === 'scatter' ? 'none' : undefined}
+                  defaultAggregation={sqlBound || chartType === 'scatter' || chartType === 'histogram' ? 'none' : undefined}
                 />
               );
             }
@@ -370,7 +366,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               return (
                 <ToggleField
                   key={field.key}
-                  label={field.label}
+                  label={shelfLabel(field)}
                   checked={field.key === 'aggregate' ? isAggregate : !!chartQuery[field.key]}
                   onChange={(val) => {
                     if (field.key === 'aggregate') {
@@ -387,7 +383,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
               return (
                 <SegmentedField
                   key={field.key}
-                  label={field.label}
+                  label={shelfLabel(field)}
                   value={chartQuery[field.key] || 'x'}
                   onChange={(val) => onUpdateChartQuery(field.key, val)}
                   options={field.options || []}
@@ -497,162 +493,96 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 label={t('chart_orientation')}
                 value={chartOptions?.barChartType || 'vertical'}
                 onChange={(value) => onUpdateChartOption('barChartType', value)}
-                options={BAR_CHART_TYPE_SELECT_OPTIONS}
+                options={opts('orientation', BAR_CHART_TYPE_SELECT_OPTIONS)}
                 showSearch={false}
               />
 
-              <SelectField
-                label={t('stacking')}
-                value={chartOptions?.barStackMode || 'none'}
-                onChange={(value) => onUpdateChartOption('barStackMode', value)}
-                options={BAR_STACK_MODE_OPTIONS}
-                showSearch={false}
-              />
+              {hasSeries || (chartOptions?.barStackMode && chartOptions.barStackMode !== 'none') || (chartOptions?.lineStackMode && chartOptions.lineStackMode !== 'none') ? (
+                <SelectField
+                  label={t('stacking')}
+                  value={chartOptions?.barStackMode || 'none'}
+                  onChange={(value) => onUpdateChartOption('barStackMode', value)}
+                  options={opts('stack', BAR_STACK_MODE_OPTIONS)}
+                  showSearch={false}
+                />
+              ) : null}
 
               {chartOptions?.barChartType === 'combo-line' && (
                 <SelectField
                   label={t('line_style')}
                   value={chartOptions?.lineChartType || 'line'}
                   onChange={(value) => onUpdateChartOption('lineChartType', value)}
-                  options={LINE_CHART_TYPE_OPTIONS}
+                  options={opts('line', LINE_CHART_TYPE_OPTIONS)}
                   showSearch={false}
                 />
               )}
 
-              <PpLabel>{t('conditional_formatting')}</PpLabel>
-              <ConditionalFormattingEditor
-                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
-                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
-                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
-                  label: c.label,
-                  value: c.value,
-                })) ?? []}
-              />
+              <AdvancedCollapse
+                title={t('conditional_formatting')}
+                active={((chartOptions?.conditionalFormatting as unknown[]) ?? []).length > 0}
+              >
+                <ConditionalFormattingEditor
+                  rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                  onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                  columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                    label: c.label,
+                    value: c.value,
+                  })) ?? []}
+                />
+              </AdvancedCollapse>
             </>
           )}
 
           {(chartType === 'line' || chartType === 'area') && onUpdateChartOption && (
             <>
-              <SelectField
-                label={t('stacking')}
-                value={chartOptions?.lineStackMode || 'none'}
-                onChange={(value) => onUpdateChartOption('lineStackMode', value)}
-                options={chartType === 'area' ? AREA_STACK_MODE_OPTIONS : LINE_STACK_MODE_OPTIONS}
-                showSearch={false}
-              />
+              {hasSeries || (chartOptions?.barStackMode && chartOptions.barStackMode !== 'none') || (chartOptions?.lineStackMode && chartOptions.lineStackMode !== 'none') ? (
+                <SelectField
+                  label={t('stacking')}
+                  value={chartOptions?.lineStackMode || 'none'}
+                  onChange={(value) => onUpdateChartOption('lineStackMode', value)}
+                  options={opts('stack', chartType === 'area' ? AREA_STACK_MODE_OPTIONS : LINE_STACK_MODE_OPTIONS)}
+                  showSearch={false}
+                />
+              ) : null}
 
               <SelectField
                 label={t('line_style')}
                 value={chartOptions?.lineChartType || 'line'}
                 onChange={(value) => onUpdateChartOption('lineChartType', value)}
-                options={LINE_CHART_TYPE_OPTIONS}
+                options={opts('line', LINE_CHART_TYPE_OPTIONS)}
                 showSearch={false}
               />
 
-              <PpLabel>{t('conditional_formatting')}</PpLabel>
-              <ConditionalFormattingEditor
-                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
-                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
-                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
-                  label: c.label,
-                  value: c.value,
-                })) ?? []}
-              />
-            </>
-          )}
-
-          {propertyProfile.showValueFormat && onUpdateChartOption && (
-            <SelectField
-              label={t('value_format')}
-              value={chartOptions?.valueFormat || 'auto'}
-              onChange={(v) => onUpdateChartOption('valueFormat', v === 'auto' ? undefined : v)}
-              options={[
-                { label: 'Auto (compact K/M)', value: 'auto' },
-                { label: 'Full numbers (1,234,567)', value: 'full' },
-                { label: 'Compact (1.2K / 3.4M)', value: 'compact' },
-                { label: 'Currency ($1,234)', value: 'currency' },
-                { label: 'Percentage (12.3%)', value: 'percent' },
-              ]}
-              showSearch={false}
-            />
-          )}
-
-          {propertyProfile.showOverlays &&
-            ['line', 'area', 'bar', 'scatter'].includes(chartType) &&
-            onUpdateChartOption && (
-            <>
-              <PpLabel>{t('overlays')}</PpLabel>
-              <div className="pp-options-grid">
-                <CheckboxField
-                  label={t('show_trend_line')}
-                  checked={chartOptions?.showTrendLine === true}
-                  onChange={(v) => onUpdateChartOption('showTrendLine', v)}
-                />
-                <CheckboxField
-                  label={t('show_average_line')}
-                  checked={chartOptions?.showAverageLine === true}
-                  onChange={(v) => onUpdateChartOption('showAverageLine', v)}
-                />
-                <CheckboxField
-                  label={t('highlight_anomalies')}
-                  checked={chartOptions?.showAnomalies === true}
-                  onChange={(v) => onUpdateChartOption('showAnomalies', v)}
-                />
-              </div>
-              <PpLabel>{t('reference_lines')}</PpLabel>
-              {(chartOptions?.referenceLines || []).map((ref: any, idx: number) => (
-                <div key={idx} className="pp-ref-line-row">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <InputField
-                      label={`Line ${idx + 1} value`}
-                      type="number"
-                      value={ref.value ?? ''}
-                      placeholder="e.g. 1000"
-                      onChange={(val) => {
-                        const next = [...(chartOptions.referenceLines || [])];
-                        next[idx] = { ...next[idx], value: val !== undefined && val !== '' ? Number(val) : undefined };
-                        onUpdateChartOption('referenceLines', next.filter((r: any) => r.value != null));
-                      }}
-                    />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <InputField
-                      label={t('ref_line_label')}
-                      value={ref.label || ''}
-                      placeholder="Goal"
-                      onChange={(val) => {
-                        const next = [...(chartOptions.referenceLines || [])];
-                        next[idx] = { ...next[idx], label: val };
-                        onUpdateChartOption('referenceLines', next);
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="pp-ref-line-remove"
-                    onClick={() => {
-                      const next = (chartOptions.referenceLines || []).filter((_: any, i: number) => i !== idx);
-                      onUpdateChartOption('referenceLines', next);
-                    }}
-                    title="Remove"
-                  >✕</button>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="pp-text-action"
-                onClick={() => {
-                  const next = [...(chartOptions?.referenceLines || []), { value: undefined, label: 'Goal', color: '#faad14' }];
-                  onUpdateChartOption('referenceLines', next);
-                }}
+              <AdvancedCollapse
+                title={t('conditional_formatting')}
+                active={((chartOptions?.conditionalFormatting as unknown[]) ?? []).length > 0}
               >
-                + Add reference line
-              </button>
+                <ConditionalFormattingEditor
+                  rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                  onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                  columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                    label: c.label,
+                    value: c.value,
+                  })) ?? []}
+                />
+              </AdvancedCollapse>
             </>
           )}
+
 
           {(chartType === 'pie' || chartType === 'donut') && onUpdateChartOption && (
             <>
+              <SelectField
+                label={t('pie_slices')}
+                value={typeof chartOptions?.pieMaxSlices === 'number' ? chartOptions.pieMaxSlices : DEFAULT_PIE_MAX_SLICES}
+                onChange={(value) => onUpdateChartOption('pieMaxSlices', value === DEFAULT_PIE_MAX_SLICES ? undefined : value)}
+                options={[
+                  { label: t('pie_slices_top', { count: 5 }), value: 6 },
+                  { label: t('pie_slices_top', { count: 9 }), value: 10 },
+                  { label: t('pie_slices_all'), value: 0 },
+                ]}
+                showSearch={false}
+              />
               <SelectField
                 label={t('donut_hole')}
                 value={chartOptions?.innerRadius ?? (chartType === 'donut' ? 40 : 0)}
@@ -661,15 +591,19 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 showSearch={false}
               />
 
-              <PpLabel>{t('conditional_formatting')}</PpLabel>
-              <ConditionalFormattingEditor
-                rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
-                onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
-                columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
-                  label: c.label,
-                  value: c.value,
-                })) ?? []}
-              />
+              <AdvancedCollapse
+                title={t('conditional_formatting')}
+                active={((chartOptions?.conditionalFormatting as unknown[]) ?? []).length > 0}
+              >
+                <ConditionalFormattingEditor
+                  rules={(chartOptions?.conditionalFormatting as ConditionalFormattingRule[]) ?? []}
+                  onChange={(rules) => onUpdateChartOption('conditionalFormatting', rules)}
+                  columnOptions={selectedTableColumns?.slice(0, 20).map((c: { label: string; value: string }) => ({
+                    label: c.label,
+                    value: c.value,
+                  })) ?? []}
+                />
+              </AdvancedCollapse>
             </>
           )}
 
@@ -777,59 +711,95 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
           )}
 
           {chartType === 'heatmap' && onUpdateChartOption && (
-            <>
-              <PpLabel>{t('heatmap_color_scale')}</PpLabel>
-              <InputField
-                label={t('low_color')}
+            <div className="pp-map-colors">
+              <span>{t('heatmap_color_scale')}</span>
+              <ColorPicker
+                size="small"
                 value={chartOptions?.colorFrom || '#e0f3f8'}
-                placeholder="#e0f3f8"
-                onChange={(v) => onUpdateChartOption('colorFrom', v)}
+                onChangeComplete={(c) => onUpdateChartOption('colorFrom', c.toHexString())}
+                aria-label={t('low_color')}
               />
-              <InputField
-                label={t('mid_color')}
-                value={chartOptions?.colorMid || ''}
-                placeholder={t('mid_color_placeholder')}
-                onChange={(v) => onUpdateChartOption('colorMid', v || undefined)}
-              />
-              <InputField
-                label={t('high_color')}
+              <span className="pp-map-colors-arrow" aria-hidden>→</span>
+              <ColorPicker
+                size="small"
                 value={chartOptions?.colorTo || '#004a4d'}
-                placeholder="#004a4d"
-                onChange={(v) => onUpdateChartOption('colorTo', v)}
+                onChangeComplete={(c) => {
+                  // Two stops read cleanly; a leftover middle colour would bend the scale.
+                  onUpdateChartOption('colorTo', c.toHexString());
+                  if (chartOptions?.colorMid) onUpdateChartOption('colorMid', undefined);
+                }}
+                aria-label={t('high_color')}
               />
+            </div>
+          )}
+
+          {chartType === 'histogram' && (
+            <SelectField
+              label={t('histogram_bins')}
+              hint={t('histogram_bins_hint')}
+              value={chartQuery?.bins ? String(chartQuery.bins) : 'auto'}
+              onChange={(v) => onUpdateChartQuery('bins', v === 'auto' ? undefined : Number(v))}
+              options={[
+                { label: t('histogram_bins_auto'), value: 'auto' },
+                ...[5, 10, 20, 30, 50].map((n) => ({ label: String(n), value: String(n) })),
+              ]}
+            />
+          )}
+
+          {chartType === 'waterfall' && onUpdateChartOption && (
+            <>
+              <CheckboxField
+                label={t('waterfall_show_total')}
+                checked={chartOptions?.waterfallShowTotal !== false}
+                onChange={(v) => onUpdateChartOption('waterfallShowTotal', v)}
+              />
+              <div className="pp-map-colors">
+                <span>{t('waterfall_decrease_color')}</span>
+                <ColorPicker
+                  size="small"
+                  value={chartOptions?.waterfallDecreaseColor || '#e5534b'}
+                  onChangeComplete={(c) => onUpdateChartOption('waterfallDecreaseColor', c.toHexString())}
+                  aria-label={t('waterfall_decrease_color')}
+                />
+              </div>
             </>
           )}
 
           {chartType === 'bullet' && onUpdateChartOption && (
             <>
-              <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 12, margin: '8px 0 4px' }}>
-                {t('bullet_thresholds')}
-              </Divider>
+              <PpLabel>{t('bullet_bands')}</PpLabel>
               <InputField
-                label={t('warn_threshold')}
+                label={t('bullet_poor_below')}
                 type="number"
                 value={chartOptions?.bulletThresholdWarn ?? 60}
                 placeholder="60"
                 onChange={(v) => onUpdateChartOption('bulletThresholdWarn', v === undefined ? 60 : Number(v))}
               />
               <InputField
-                label={t('ok_threshold')}
+                label={t('bullet_good_from')}
                 type="number"
                 value={chartOptions?.bulletThresholdOk ?? 80}
                 placeholder="80"
                 onChange={(v) => onUpdateChartOption('bulletThresholdOk', v === undefined ? 80 : Number(v))}
               />
               <InputField
+                label={t('bullet_fixed_target')}
+                type="number"
+                value={chartOptions?.bulletTarget}
+                placeholder={t('bullet_fixed_target_placeholder')}
+                onChange={(v) => onUpdateChartOption('bulletTarget', v === undefined ? undefined : Number(v))}
+              />
+              <InputField
                 label={t('max_value_cap')}
                 type="number"
                 value={chartOptions?.bulletMax}
-                placeholder="Auto"
+                placeholder={t('auto')}
                 onChange={(v) => onUpdateChartOption('bulletMax', v === undefined ? undefined : Number(v))}
               />
               <InputField
                 label={t('actual_label')}
                 value={chartOptions?.bulletActualLabel || ''}
-                placeholder="Actual"
+                placeholder={t('bullet_actual_placeholder')}
                 onChange={(v) => onUpdateChartOption('bulletActualLabel', v)}
               />
             </>
@@ -837,42 +807,54 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
 
           {chartType === 'geo' && onUpdateChartOption && (
             <>
-              <Divider titlePlacement="left" styles={{ content: { margin: 0 } }} style={{ fontSize: 12, margin: '8px 0 4px' }}>
-                {t('geo_map_options')}
-              </Divider>
+              <MapAreaFields
+                area={chartOptions?.mapArea}
+                level={chartOptions?.mapLevel}
+                onChange={(patch) =>
+                  onUpdateChartOptions
+                    ? onUpdateChartOptions(patch)
+                    : Object.entries(patch).forEach(([k, v]) => onUpdateChartOption(k, v))
+                }
+              />
               <InputField
                 label={t('value_label')}
                 value={chartOptions?.valueLabel || ''}
                 placeholder="Value"
                 onChange={(v) => onUpdateChartOption('valueLabel', v)}
               />
-              <InputField
-                label={t('low_color')}
-                value={chartOptions?.colorFrom || '#b7e4f9'}
-                placeholder="#b7e4f9"
-                onChange={(v) => onUpdateChartOption('colorFrom', v)}
-              />
-              <InputField
-                label={t('high_color')}
-                value={chartOptions?.colorTo || '#004a80'}
-                placeholder="#004a80"
-                onChange={(v) => onUpdateChartOption('colorTo', v)}
-              />
+              <div className="pp-map-colors">
+                <span>{t('map_color_scale')}</span>
+                <ColorPicker
+                  size="small"
+                  value={chartOptions?.colorFrom || '#cfe8f3'}
+                  onChangeComplete={(c) => onUpdateChartOption('colorFrom', c.toHexString())}
+                  aria-label={t('low_color')}
+                />
+                <span className="pp-map-colors-arrow" aria-hidden>→</span>
+                <ColorPicker
+                  size="small"
+                  value={chartOptions?.colorTo || '#0b5c8a'}
+                  onChangeComplete={(c) => onUpdateChartOption('colorTo', c.toHexString())}
+                  aria-label={t('high_color')}
+                />
+              </div>
               <CheckboxField
                 label={t('allow_zoom_pan')}
-                checked={chartOptions?.roam === true}
+                checked={chartOptions?.roam !== false}
                 onChange={(v) => onUpdateChartOption('roam', v)}
               />
-              <CheckboxField
-                label={t('show_country_labels')}
-                checked={chartOptions?.showLabels === true}
-                onChange={(v) => onUpdateChartOption('showLabels', v)}
-              />
-              <InputField
-                label={t('custom_geojson_url')}
-                value={chartOptions?.geoJsonUrl || ''}
-                placeholder="https://… (optional)"
-                onChange={(v) => onUpdateChartOption('geoJsonUrl', v || undefined)}
+              <SelectField
+                label={t('map_labels')}
+                value={chartOptions?.mapLabel ?? (chartOptions?.showLabels ? 'name' : 'none')}
+                onChange={(v) => onUpdateChartOption('mapLabel', v)}
+                options={[
+                  { label: t('map_labels_none'), value: 'none' },
+                  { label: t('map_labels_name'), value: 'name' },
+                  { label: t('map_labels_short'), value: 'short' },
+                  { label: t('map_labels_value'), value: 'value' },
+                  { label: t('map_labels_both'), value: 'both' },
+                ]}
+                showSearch={false}
               />
             </>
           )}
@@ -881,7 +863,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
       )}
 
       {/* Legend sort / limit — only for types with multi-series legends */}
-      {mode === 'customize' && propertyProfile.showLegendSeriesControls && onUpdateChartOption && (
+      {mode === 'customize' && propertyProfile.showLegendSeriesControls && hasSeries && onUpdateChartOption && (
         <div className="pp-format-section">
           <PpLabel>{t('legend_series')}</PpLabel>
           <div className="pp-format-stack">
@@ -911,7 +893,9 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
         </div>
       )}
 
+      {/* The icon sits in a dashboard card's header; the Designer shows no card header. */}
       {mode === 'customize' &&
+        !isDesigner &&
         propertyProfile.kind !== 'content' &&
         propertyProfile.kind !== 'control' &&
         chartType !== 'stat' &&
@@ -1122,114 +1106,139 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   }}
                 />
               )}
+              {chartType === 'bar' && (
+                <CheckboxField
+                  label={t('vary_colors')}
+                  checked={chartOptions?.varyColors === true}
+                  onChange={(v) => onUpdateChartOption('varyColors', v || undefined)}
+                />
+              )}
+              <ItemColorsField
+                chartType={chartType}
+                chartData={(selectedWidget as { chartData?: { x?: unknown[]; series?: Array<{ name?: string }> } })?.chartData}
+                chartOptions={chartOptions || {}}
+                dashboardDefaultPalette={dashboardDefaultPalette}
+                onChange={(v) => onUpdateChartOption('colorOverrides', v)}
+              />
               </div>
             </>
           )}
         </div>
       )}
 
-      {mode === 'sort' && (
-        <>
-          {propertyProfile.showSortControls ? (
-            <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Sort sits with the data in Build (Datawrapper / Looker); nothing to sort on a single value. */}
+      {mode === 'sort' && propertyProfile.showSortControls && (
+        <div className="pp-format-section">
+          <PpLabel>{t('sort_section')}</PpLabel>
+          <div className="pp-format-stack">
+            <SelectField
+              label=""
+              value={chartQuery.sortBy === 'record_order' ? undefined : chartQuery.sortBy}
+              onChange={(val) => onUpdateChartQuery('sortBy', val || 'record_order')}
+              options={dynamicSortOptions}
+              placeholder={t('default_order')}
+              showSearch={false}
+            />
+            {chartQuery.sortBy && chartQuery.sortBy !== 'record_order' ? (() => {
+              // Directions named for what is sorted: dates by time, text by alphabet, numbers by size.
+              const sortsByGroup = chartQuery.sortBy === 'x';
+              const xType = String(selectedTableColumns.find((c) => c.value === chartQuery.x)?.type || '');
+              const kind = !sortsByGroup
+                ? 'number'
+                : chartQuery.xGrain || /(date|time)/i.test(xType)
+                  ? 'date'
+                  : /(int|float|double|decimal|numeric|number|real)/i.test(xType)
+                    ? 'number'
+                    : 'text';
+              const labels = {
+                date: [t('sort_oldest'), t('sort_newest')],
+                text: [t('sort_a_z'), t('sort_z_a')],
+                number: [t('sort_asc'), t('sort_desc')],
+              }[kind];
+              return (
+                <Segmented
+                  size="small"
+                  block
+                  value={chartQuery.sortOrder === 'desc' ? 'desc' : 'asc'}
+                  options={[
+                    { label: labels[0], value: 'asc' },
+                    { label: labels[1], value: 'desc' },
+                  ]}
+                  onChange={(v) => onUpdateChartQuery('sortOrder', v)}
+                />
+              );
+            })() : null}
+            <InputField
+              label={t('row_limit')}
+              hint={t('row_limit_tip')}
+              type="number"
+              value={chartQuery.limit}
+              placeholder={t('row_limit_all')}
+              onChange={(val) => {
+                onUpdateChartQuery('limit', val === undefined ? undefined : Math.max(1, Number(val)));
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* What a click on the chart does: on the Filters tab, next to the filters it sets. */}
+      {mode === 'interact' && ((chartQuery.drillPath?.length ?? 0) > 0 || dashboardPages.length > 1) && (
+        <div className="pp-format-section">
+          <PpLabel>{t('on_click')}</PpLabel>
+          <div className="pp-format-stack">
+            {(chartQuery.drillPath?.length ?? 0) > 0 ? (
               <SelectField
-                label={t('sort_by')}
-                value={chartQuery.sortBy === 'record_order' ? undefined : chartQuery.sortBy}
-                onChange={(val) => onUpdateChartQuery('sortBy', val || 'record_order')}
-                options={dynamicSortOptions}
-                placeholder={t('default_order')}
+                label={t('interaction_mode')}
+                hint={t('drill_shift_hint')}
+                value={chartQuery.interactionMode || 'drill'}
+                onChange={(val) => onUpdateChartQuery('interactionMode', val)}
+                options={[
+                  { label: t('interaction_drill'), value: 'drill' },
+                  { label: t('interaction_cross_filter'), value: 'cross_filter' },
+                ]}
                 showSearch={false}
               />
-
-              {chartQuery.sortBy && chartQuery.sortBy !== 'record_order' && (
-                <div style={{ marginTop: -8, marginBottom: 8 }}>
-                  <CheckboxField
-                    label={t('sort_ascending')}
-                    checked={chartQuery.sortOrder === 'asc'}
-                    onChange={(checked) => onUpdateChartQuery('sortOrder', checked ? 'asc' : 'desc')}
-                  />
-                </div>
-              )}
-
-              <InputField
-                label={t('row_limit')}
-                type="number"
-                value={chartQuery.limit}
-                placeholder="Default (5000)"
-                onChange={(val) => {
-                  const numVal = Math.max(1, Number(val));
-                  onUpdateChartQuery('limit', val === undefined ? undefined : numVal);
+            ) : null}
+            {dashboardPages.length > 1 ? (
+              <SelectField
+                label={t('drill_through_target_page')}
+                hint={t('drill_through_hint')}
+                value={chartQuery.drillThrough?.targetPageId || undefined}
+                onChange={(pageId) => {
+                  if (!pageId) {
+                    onUpdateChartQuery('drillThrough', undefined);
+                    return;
+                  }
+                  onUpdateChartQuery('drillThrough', {
+                    ...(chartQuery.drillThrough || {}),
+                    targetPageId: pageId,
+                  });
                 }}
+                options={dashboardPages.map((p) => ({ label: p.name, value: p.id }))}
+                placeholder={t('drill_through_none')}
+                showSearch={false}
+                allowClear
               />
-            </div>
-          ) : (
-            <div className="panel-section" style={{ color: 'var(--ant-color-text-quaternary)', fontSize: 12 }}>
-              {t('sort_not_applicable')}
-            </div>
-          )}
-
-          {(chartQuery.drillPath?.length ?? 0) > 0 ? (
-            <>
-              <Divider className="panel-divider" style={{ margin: '16px 0' }} />
-              <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <SelectField
-                  label={t('interaction_mode')}
-                  hint={t('drill_shift_hint')}
-                  value={chartQuery.interactionMode || 'drill'}
-                  onChange={(val) => onUpdateChartQuery('interactionMode', val)}
-                  options={[
-                    { label: t('interaction_drill'), value: 'drill' },
-                    { label: t('interaction_cross_filter'), value: 'cross_filter' },
-                  ]}
-                  showSearch={false}
-                />
-              </div>
-            </>
-          ) : null}
-
-          {dashboardPages.length > 1 && (
-            <>
-              <Divider className="panel-divider" style={{ margin: '16px 0' }} />
-              <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <SelectField
-                  label={t('drill_through_target_page')}
-                  hint={t('drill_through_hint')}
-                  value={chartQuery.drillThrough?.targetPageId || undefined}
-                  onChange={(pageId) => {
-                    if (!pageId) {
-                      onUpdateChartQuery('drillThrough', undefined);
-                      return;
-                    }
-                    onUpdateChartQuery('drillThrough', {
-                      ...(chartQuery.drillThrough || {}),
-                      targetPageId: pageId,
-                    });
-                  }}
-                  options={dashboardPages.map((p) => ({ label: p.name, value: p.id }))}
-                  placeholder={t('drill_through_none')}
-                  showSearch={false}
-                  allowClear
-                />
-                {chartQuery.drillThrough?.targetPageId ? (
-                  <SelectField
-                    label={t('drill_through_filter_field')}
-                    value={chartQuery.drillThrough?.filterField || undefined}
-                    onChange={(val) =>
-                      onUpdateChartQuery('drillThrough', {
-                        ...chartQuery.drillThrough,
-                        filterField: val || undefined,
-                      })
-                    }
-                    options={selectedTableColumns}
-                    placeholder={chartQuery.x || t('choose_column')}
-                    showSearch
-                    allowClear
-                  />
-                ) : null}
-              </div>
-            </>
-          )}
-        </>
+            ) : null}
+            {chartQuery.drillThrough?.targetPageId ? (
+              <SelectField
+                label={t('drill_through_filter_field')}
+                value={chartQuery.drillThrough?.filterField || undefined}
+                onChange={(val) =>
+                  onUpdateChartQuery('drillThrough', {
+                    ...chartQuery.drillThrough,
+                    filterField: val || undefined,
+                  })
+                }
+                options={selectedTableColumns}
+                placeholder={chartQuery.x || t('choose_column')}
+                showSearch
+                allowClear
+              />
+            ) : null}
+          </div>
+        </div>
       )}
 
       {/* Visual filters live on the Filters tab (industry standard: Build ≠ Filters) */}
@@ -1245,9 +1254,9 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
         // more accurate explanation for each.
         const hiddenReason =
           filterFields.length > 0 && visibleFilterFields.length === 0
-            ? 'This widget was generated from AI-written SQL and doesn’t support visual-level filters.'
+            ? t('filters_unavailable_sql')
             : filterFields.length === 0
-              ? 'This widget type does not support visual-level filters.'
+              ? t('filters_unavailable_type')
               : null;
         return (
         <div className="panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1262,7 +1271,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   return (
                     <FilterListField
                       key={field.key}
-                      label={field.label}
+                      label={shelfLabel(field)}
                       required={field.required}
                       filters={chartQuery[field.key] || []}
                       onChange={(val) => onUpdateChartQuery(field.key, val)}
@@ -1304,7 +1313,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   return (
                     <MetricFilterListField
                       key={field.key}
-                      label={field.label}
+                      label={shelfLabel(field)}
                       required={field.required}
                       filters={chartQuery[field.key] || []}
                       onChange={(val) => onUpdateChartQuery(field.key, val)}

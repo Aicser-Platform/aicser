@@ -18,6 +18,19 @@ export function LazyWidgetMount({ children, rootMargin = '400px 0px' }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
+  // Export, print (including the browser's own Ctrl+P) and PDF need every widget drawn,
+  // not just the ones scrolled into view.
+  useEffect(() => {
+    if (isVisible) return;
+    const mountAll = () => setIsVisible(true);
+    window.addEventListener('aicser:dashboard-export-prepare', mountAll);
+    window.addEventListener('beforeprint', mountAll);
+    return () => {
+      window.removeEventListener('aicser:dashboard-export-prepare', mountAll);
+      window.removeEventListener('beforeprint', mountAll);
+    };
+  }, [isVisible]);
+
   useEffect(() => {
     if (isVisible) return;
     const node = containerRef.current;

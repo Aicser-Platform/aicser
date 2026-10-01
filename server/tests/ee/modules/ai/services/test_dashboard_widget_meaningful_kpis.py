@@ -87,11 +87,29 @@ def test_sum_of_additive_column_on_stat_card_is_unaffected():
     assert kept[0]["chart_query"]["yMetrics"][0]["aggregation"] == "sum"
 
 
-def test_breakdown_chart_sum_of_non_additive_column_is_unaffected():
-    """Scoped to stat/kpi cards only - a grouped SUM (e.g. "total delay by
-    carrier") is a legitimate comparative aggregate even for a non-additive-
-    looking column name; only the bare, ungrouped headline number is
-    unambiguously meaningless."""
+def test_breakdown_chart_keeps_a_grouped_sum_of_an_additive_column():
+    """A grouped SUM ("total revenue by grade letter", "total delay by carrier") is a
+    legitimate comparative aggregate and is left alone."""
+    widgets = [
+        {
+            "name": "Revenue by Grade Letter",
+            "chart_type": "bar",
+            "chart_query": {
+                "tableName": "grades",
+                "x": "grade_letter",
+                "yMetrics": [{"field": "revenue_usd", "aggregation": "sum"}],
+            },
+        }
+    ]
+    kept, dropped = validate_widgets(widgets, _SCHEMA)
+
+    assert not dropped
+    assert kept[0]["chart_query"]["yMetrics"][0]["aggregation"] == "sum"
+
+
+def test_breakdown_chart_averages_an_intensive_column():
+    """Scores, rates and ratios don't add up: summed per group they read as a number nobody
+    measured, so a grouped SUM of one becomes an AVG."""
     widgets = [
         {
             "name": "Score by Grade Letter",
@@ -106,7 +124,7 @@ def test_breakdown_chart_sum_of_non_additive_column_is_unaffected():
     kept, dropped = validate_widgets(widgets, _SCHEMA)
 
     assert not dropped
-    assert kept[0]["chart_query"]["yMetrics"][0]["aggregation"] == "sum"
+    assert kept[0]["chart_query"]["yMetrics"][0]["aggregation"] == "avg"
 
 
 def test_duplicate_kpi_cards_from_independent_producers_are_deduped():

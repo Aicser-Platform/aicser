@@ -249,6 +249,37 @@ export const WIDGET_TEMPLATES = [
     description: 'Bullet chart — actual vs target with performance bands.',
   },
   {
+    id: 't-sankey',
+    type: 'sankey',
+    name: 'Sankey',
+    icon: (
+      <div className="anticon">
+        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
+          <path d="M128 160h64v288h-64zm0 384h64v320h-64zm704-384h64v224h-64zm0 288h64v416h-64z" />
+          <path d="M192 176c320 0 320 64 640 64v96c-320 0-320-64-640-64zM192 560c320 0 320-160 640-160v96c-280 0-280 160-640 160zm0 160c320 0 320 96 640 96v80c-320 0-320-96-640-96z" opacity="0.45" />
+        </svg>
+      </div>
+    ),
+    category: 'Visuals',
+    defaultSize: { w: 8, h: 6 },
+    description: 'Sankey — how amounts flow from one group to another.',
+  },
+  {
+    id: 't-histogram',
+    type: 'histogram',
+    name: 'Histogram',
+    icon: (
+      <div className="anticon">
+        <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor">
+          <path d="M128 832h768v64H128zM160 608h128v224H160zm128-224h128v448H288zm128-192h128v640H416zm128 128h128v512H544zm128 192h128v320H672zm128 128h64v192h-64z" />
+        </svg>
+      </div>
+    ),
+    category: 'Visuals',
+    defaultSize: { w: 6, h: 5 },
+    description: 'Histogram — how the values of one number are spread.',
+  },
+  {
     id: 't-divider',
     type: 'divider',
     name: 'Section',

@@ -27,6 +27,7 @@ import {
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { getAiProviderLogo } from '@/config/aiProviders';
 import { fetchApi } from '@/utils/api';
+import { getBackendUrl } from '@/utils/backendUrl';
 import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -602,6 +603,20 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                   <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
                     {t('platform_api_keys_desc')}
                   </Text>
+                  {process.env.NEXT_PUBLIC_EDITION === 'enterprise' && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 14 }}
+                      message={t('platform_api_keys_mcp_title')}
+                      description={
+                        <>
+                          {t('platform_api_keys_mcp_desc')}{' '}
+                          <Text code copyable>{`${getBackendUrl()}/mcp`}</Text>
+                        </>
+                      }
+                    />
+                  )}
                   <Table
                     dataSource={apiKeys}
                     columns={apiKeyColumns}

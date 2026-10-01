@@ -1,0 +1,103 @@
+/* Knowledge: master–detail. Libraries on the left, the selected library's documents on the
+   right; test search and sync are folded sections under the documents. */
+.kb-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.kb-layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.kb-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--ant-color-border-secondary);
+  padding-right: 12px;
+  min-height: 240px;
+}
+.kb-library-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.kb-library-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ant-color-text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.kb-library-item:hover {
+  background: var(--ant-color-fill-tertiary);
+}
+.kb-library-item:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 1px;
+}
+.kb-library-item--active {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary-text);
+  font-weight: 600;
+}
+.kb-library-item__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-library-item__count {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+.kb-library-select {
+  display: none;
+}
+.kb-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.kb-detail__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.kb-more {
+  margin-top: 16px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+.kb-more .ant-collapse-header {
+  padding-left: 0 !important;
+}
+
+@media (max-width: 768px) {
+  .kb-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kb-library-list {
+    display: none;
+  }
+  .kb-library-select {
+    display: block;
+    width: 100%;
+  }
+}

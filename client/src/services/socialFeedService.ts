@@ -163,6 +163,8 @@ export interface FeedItem {
    * `restricted: true` entries have no title/thumbnail and should render a
    * placeholder rather than the real card. */
   attachments?: FeedAttachmentPayload[];
+  /** Images uploaded into the post; `url` is an authorised API path (load with FeedImage). */
+  images?: FeedImage[];
   /** User ids @mentioned in the post body. */
   mentions?: string[];
   editedAt?: string;
@@ -331,6 +333,14 @@ export interface FeedUpdatePostResult {
   item: FeedItem;
 }
 
+export interface FeedImage {
+  id: string;
+  url: string;
+  width?: number | null;
+  height?: number | null;
+  alt?: string | null;
+}
+
 export interface PublishAssetRequest {
   asset_type: AssetType;
   asset_id?: string;
@@ -356,6 +366,8 @@ export interface PublishAssetRequest {
   thumbnail_url?: string;
   /** Text-post-only fields (both no-op for dashboard/chart/insight/query). */
   attachments?: AttachmentRef[];
+  /** Ids returned by uploadImage, in display order (max 4). */
+  images?: string[];
   mentioned_users?: string[];
 }
 
@@ -863,6 +875,14 @@ class SocialFeedService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+  }
+
+  /** Upload an image for a post (stored in the org's object storage; private until published). */
+  async uploadImage(file: File, alt?: string): Promise<FeedImage> {
+    const form = new FormData();
+    form.append('file', file);
+    if (alt) form.append('alt', alt);
+    return this.request<FeedImage>('feed/images', { method: 'POST', body: form });
   }
 
   async publishAsset(payload: PublishAssetRequest): Promise<PublishAssetResponse> {

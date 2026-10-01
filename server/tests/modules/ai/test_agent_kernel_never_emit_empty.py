@@ -31,7 +31,10 @@ async def test_exception_sets_a_real_fallback_message():
     assert (out.get("message") or "").strip()
     assert (out.get("narration") or "").strip()
     assert (out.get("executive_summary") or "").strip()
-    assert "provider rate limit exceeded" in out["message"]
+    # Users get a plain explanation, never the provider's raw error text; the raw text stays in
+    # `error` for diagnostics.
+    assert "provider rate limit exceeded" not in out["message"]
+    assert "provider rate limit exceeded" in str(out["error"])
 
 
 @pytest.mark.asyncio

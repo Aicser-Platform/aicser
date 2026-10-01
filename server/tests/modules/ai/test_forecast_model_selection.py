@@ -153,3 +153,14 @@ def test_humanize_forecast_model_avoids_jargon_brands():
     phrase = forecast_accuracy_phrase("good", 88)
     assert "mape" not in phrase.lower()
     assert "88" in phrase
+
+
+def test_reliability_phrase_reads_in_a_sentence_and_low_says_why():
+    from ee.modules.ai.utils.display_labels import forecast_accuracy_phrase
+
+    good = forecast_accuracy_phrase("good", 89, {"accuracy_basis": "per_period"})
+    assert good.startswith("about 89% reliable") and "reliable (" not in good
+    low = forecast_accuracy_phrase("low", 0, {"validation": "one_step_short_history", "data_points": 8})
+    assert "~0%" not in low and "only 8 periods" in low and "add more history" in low
+    volatile = forecast_accuracy_phrase("low", 35, {"demand_pattern": {"volatile": True}})
+    assert "swings" in volatile

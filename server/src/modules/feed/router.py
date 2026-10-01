@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.edition import is_ee_enabled
@@ -443,6 +444,58 @@ async def remove_collection_item(
 ) -> DeleteCollectionResponse:
     service = FeedService(db)
     return await service.remove_collection_item(collection_id, item_id, _normalize_user_payload(current_user))
+
+
+@router.post("/images", status_code=status.HTTP_201_CREATED)
+async def upload_feed_image(
+    request: Request,
+    file: UploadFile = File(...),
+    alt: Optional[str] = Form(default=None),
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> Dict[str, Any]:
+    """Upload an image for a post (PNG/JPEG/WebP/GIF, up to 10 MB). Stored in object storage,
+    visible only to you until you publish the post that uses it."""
+    from src.modules.feed.image_service import image_url, store_upload
+
+    payload = _normalize_user_payload(current_user)
+    service = FeedService(db)
+    user_id = service.resolve_user_id(payload)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to upload images")
+    org_id = request.headers.get("X-Organization-Id") or payload.get("organization_id") or payload.get("org_id")
+    raw = await file.read()
+    row = await store_upload(db, raw, file.content_type or "", user_id, org_id, alt_text=alt)
+    await db.commit()
+    return {"id": str(row.id), "url": image_url(row.id), "width": row.width, "height": row.height}
+
+
+def _image_response(content: bytes) -> Response:
+    # private: per-viewer authorisation, so shared caches must not keep it.
+    return Response(content=content, media_type="image/webp",
+                    headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/images/{image_id}")
+async def get_feed_image(
+    image_id: UUID,
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> Response:
+    from src.modules.feed.image_service import read_image
+
+    service = FeedService(db)
+    viewer = service.resolve_user_id(_normalize_user_payload(current_user))
+    return _image_response(await read_image(db, image_id, viewer, service._can_view_post))
+
+
+@router.get("/public/images/{image_id}")
+async def get_public_feed_image(image_id: UUID, db: AsyncSession = Depends(get_async_session)) -> Response:
+    """Images of approved public posts, for signed-out readers (same rule as /public/{item_id})."""
+    from src.modules.feed.image_service import read_image
+
+    service = FeedService(db)
+    return _image_response(await read_image(db, image_id, None, service._can_view_post))
 
 
 @router.post("/publications", response_model=PublishAssetResponse, status_code=status.HTTP_201_CREATED)

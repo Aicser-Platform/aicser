@@ -2,9 +2,121 @@
 @import './styles/dashboard-grid.css';
 @import './styles/dashboard-filters.css';
 @import './styles/dashboard-chrome.css';
+@import './styles/comments.css';
 
 /* ── Studio sidebar layout variables ─────────────────────────────────────── */
 :root {
   --studio-sidebar-rail-width: 48px;
   --studio-sidebar-panel-width: 280px;
+}
+
+/* Text edited in place on the card (description, source). */
+.inline-text {
+  cursor: text;
+  border-radius: 4px;
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+}
+
+.inline-text:hover,
+.inline-text:focus-visible {
+  outline-color: var(--ant-color-border);
+}
+
+.inline-text-empty {
+  font-style: italic;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.widget-card:hover .inline-text-empty,
+.widget-card.selected .inline-text-empty,
+.inline-text-empty:focus-visible,
+.chart-designer-toolbar .inline-text-empty {
+  opacity: 0.55;
+}
+
+.inline-text-input {
+  width: 100%;
+  padding: 0 4px;
+  border: 1px solid var(--ant-color-primary);
+  border-radius: 4px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font: inherit;
+  resize: none;
+}
+
+.chart-data-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 4px;
+  overflow: hidden;
+}
+
+.chart-data-table-count {
+  font-size: 12px;
+}
+
+.chart-data-table-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--ant-color-text-tertiary);
+}
+
+/* Map widget: messages over the map, and a quiet footer (places found, boundary credit). */
+.geo-map-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.geo-map-shell .widget-chart-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.geo-map-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.geo-map-hint {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.geo-map-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 6px 0;
+  font-size: 10.5px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.geo-map-unmatched {
+  cursor: help;
+  text-decoration: underline dotted;
+}
+
+.geo-map-credit-icon {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 12px;
+  color: var(--ant-color-text-quaternary);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: help;
+}
+
+.widget-card:hover .geo-map-credit-icon,
+.geo-map-shell:hover .geo-map-credit-icon,
+.geo-map-credit-icon:focus-visible {
+  opacity: 1;
 }

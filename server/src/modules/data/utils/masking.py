@@ -2,7 +2,7 @@ import os
 import re
 from typing import Dict, Any, Iterable, List, Tuple
 
-SENSITIVE_KEYS = {"password", "api_key", "token", "secret_access_key", "access_key_id", "connection_string", "credentials"}
+SENSITIVE_KEYS = {"password", "api_key", "token", "secret_access_key", "access_key_id", "connection_string", "credentials", "credentials_json", "service_account_json", "uri"}
 SENSITIVE_RESULT_KEYS = {
     "access_key",
     "access_key_id",
