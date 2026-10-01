@@ -9,7 +9,6 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/data': ['sec-data'],
   '/knowledge': ['sec-data'],
   '/warehouse': ['sec-data'],
-  '/data-platform': ['sec-data'],
   '/pipelines': ['sec-data'],
   '/catalog': ['sec-data'],
 };
@@ -29,7 +28,6 @@ export const NAV_ROUTES: Record<string, string> = {
   knowledge: '/knowledge',
   'ai-decisions': '/ai-decisions',
   alerts: '/alerts',
-  'platform-services': '/data-platform',
   pipelines: '/pipelines',
   catalog: '/catalog',
   settings: '/settings',
@@ -58,7 +56,6 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   data: 'data',
   knowledge: 'knowledge_libraries',
   warehouse: 'warehouse',
-  'platform-services': 'integrations',
   pipelines: 'pipelines',
   catalog: 'catalog',
   settings: 'settings',
@@ -77,7 +74,6 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   data: 'sec-data',
   knowledge: 'sec-data',
   warehouse: 'sec-data',
-  'platform-services': 'sec-data',
   pipelines: 'sec-data',
   catalog: 'sec-data',
 };
@@ -209,7 +205,6 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
-  if (pathname.startsWith('/data-platform')) return 'platform-services';
   if (pathname.startsWith('/pipelines')) return 'pipelines';
   if (pathname.startsWith('/catalog')) return 'catalog';
   if (pathname === '/alerts') return 'alerts';

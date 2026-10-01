@@ -106,7 +106,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await expect(pageShell).toBeVisible();
 
     // 2. Step 1: Source
-    await expect(page.getByText('Choose Source Data System')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Choose Source' })).toBeVisible();
 
     // Click "Continue to Destination"
     const toDestinationBtn = page.getByRole('button', { name: 'Continue to Destination' });
@@ -114,10 +114,10 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await toDestinationBtn.click();
 
     // 3. Step 2: Destination
-    await expect(page.getByText('Select Lakehouse Storage & Destination')).toBeVisible();
-    await expect(page.getByText('Medallion Lakehouse (Railway S3 + DuckDB)')).toBeVisible();
-    await expect(page.getByText('Selected Destination')).toBeVisible();
-    await expect(page.getByText('Data Safety Guarantee Active')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select Storage Destination' })).toBeVisible();
+    await expect(page.getByText('S3 Lakehouse', { exact: true })).toBeVisible();
+    await expect(page.getByText('Storage & Security Configuration')).toBeVisible();
+    await expect(page.getByText('Encrypted at rest (AES-256)')).toBeVisible();
 
     // Click "Discover Catalog & Next"
     const toScheduleBtn = page.getByRole('button', { name: 'Discover Catalog & Next' });
@@ -133,7 +133,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await landBronzeAndContinue(page);
 
     // 5. Step 4: Transformation (dbt)
-    await expect(page.getByText('dbt Transformation & Automated Data Quality')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Transformation & Data Quality' })).toBeVisible();
     await expect(page.getByText('Auto-Mask Sensitive Data (PII)')).toBeVisible();
     await expect(page.getByText('Quarantine Corrupted Rows')).toBeVisible();
 
@@ -152,7 +152,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await toSemanticBtn.click();
 
     // 6. Step 5: Semantic Layer (MetricFlow)
-    await expect(page.getByText('MetricFlow Semantic Layer & AI Agent Serving')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
     await expect(page.getByText('Hallucination-Proof AI Analytics')).toBeVisible();
 
     // Test AI Prompt Context Preview toggle
@@ -243,7 +243,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
 
     // Step 4 -> Step 5: Semantic Layer
     await page.getByRole('button', { name: 'Continue to Semantic Layer' }).click();
-    await expect(page.getByText('MetricFlow Semantic Layer & AI Agent Serving')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
 
     // Check fact table is initially deals (candidate fact table)
     await expect(page.getByRole('strong').filter({ hasText: 'fact_deals' })).toBeVisible();
@@ -310,7 +310,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
 
     // Continue to Semantic Layer and verify the Metrics Workbook + YAML model editor
     await page.getByRole('button', { name: 'Continue to Semantic Layer' }).click();
-    await expect(page.getByText('MetricFlow Semantic Layer & AI Agent Serving')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
 
     await expect(page.getByRole('tab', { name: /Cube Data Slice/i })).toHaveCount(0);
     const workbookTab = page.getByRole('tab', { name: /Metrics Workbook/i });

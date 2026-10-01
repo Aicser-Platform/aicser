@@ -55,7 +55,6 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   data: <DatabaseOutlined />,
   knowledge: <FileSearchOutlined />,
   warehouse: <ClusterOutlined />,
-  'platform-services': <AppstoreOutlined />,
   pipelines: <NodeIndexOutlined />,
   catalog: <ApartmentOutlined />,
   settings: <SettingOutlined />,
