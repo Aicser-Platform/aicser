@@ -56,6 +56,8 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
     { kind: 'divider' },
     moreLink('knowledge'),
     moreLink('warehouse'),
+    moreLink('pipelines'),
+    moreLink('catalog'),
     { kind: 'divider' },
     moreLink('settings'),
   ];
