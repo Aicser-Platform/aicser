@@ -44,19 +44,23 @@ const renderPage = (props: { dataSourceId: string; policyId?: string }) =>
     </NextIntlClientProvider>
   );
 
+import { Modal } from 'antd';
+
 describe('PolicyEditorPage', () => {
   it(
     'warns before discarding unsaved edits',
     async () => {
+      const confirmSpy = vi.spyOn(Modal, 'confirm');
       renderPage({ dataSourceId: 'ds-1' });
 
       fireEvent.change(screen.getByLabelText(/policy name/i), { target: { value: 'Customer ID' } });
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
-      // rc-motion's transition-based mount can be slow under a fully loaded
-      // test run (many suites competing for the event loop), so this uses a
-      // generous find timeout rather than the RTL default.
-      expect((await screen.findAllByText(/unsaved changes/i, {}, { timeout: 8000 })).length).toBeGreaterThan(0);
+      expect(confirmSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Unsaved changes',
+        })
+      );
       expect(mockRouter.push).not.toHaveBeenCalled();
     },
     15000

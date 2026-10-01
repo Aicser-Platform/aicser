@@ -47,3 +47,10 @@ def test_skips_current_date_keyword():
 def test_no_date_trunc_is_noop():
     sql = "SELECT product_type, SUM(term_months) FROM \"data\" GROUP BY product_type"
     assert cast_date_trunc_args_for_duckdb(sql) == sql
+
+
+def test_wraps_table_qualified_column():
+    # Multi-table (lakehouse) SQL qualifies the date column with its alias
+    sql = 'SELECT date_trunc(\'month\', t."order_date") AS period FROM "orders" t GROUP BY 1'
+    out = cast_date_trunc_args_for_duckdb(sql)
+    assert 'date_trunc(\'month\', TRY_CAST(t."order_date" AS TIMESTAMP))' in out

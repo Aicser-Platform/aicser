@@ -39,10 +39,10 @@ export const useDataSource = (id: string | null) => {
   return { dataSource: data ?? null, error, isLoading };
 };
 
-export const useDataSourceSchema = (id: string | null) => {
+export const useDataSourceSchema = (id: string | null, origin: 'serving' | 'source' = 'serving') => {
   const { data, error, isLoading } = useQuery({
-    queryKey: dataSourceKeys.schema(id!),
-    queryFn: () => api.getDataSourceSchema(id!),
+    queryKey: origin === 'source' ? [...dataSourceKeys.schema(id!), 'source'] : dataSourceKeys.schema(id!),
+    queryFn: () => api.getDataSourceSchema(id!, origin),
     enabled: !!id,
     retry: (failureCount, err) => {
       if (err instanceof ApiError && [400, 401, 403, 404].includes(err.status)) {

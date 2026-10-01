@@ -7,6 +7,8 @@
     "prebuild": "node scripts/generate-pwa-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "predev": "node scripts/setup-ee.js",
     "predev:light": "node scripts/setup-ee.js",
     "predev:turbo": "node scripts/setup-ee.js",
@@ -69,6 +71,7 @@
     "html2canvas": "^1.4.1",
     "immer": "^10.1.1",
     "js-cookie": "^3.0.8",
+    "js-yaml": "^4.1.0",
     "jspdf": "4.2.1",
     "less": "^4.2.1",
     "lodash": "^4.17.21",
@@ -98,6 +101,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/js-cookie": "^3.0.6",
@@ -130,7 +134,7 @@
     "form-data": "^4.0.6",
     "linkify-it": "^6.1.0",
     "fast-uri": "^4.1.1",
-    "js-yaml": "^5.2.2",
+    "js-yaml": "^4.1.0",
     "markdown-it": "^14.3.0",
     "protobufjs": "^8.7.1",
     "@opentelemetry/core": "2.10.0",

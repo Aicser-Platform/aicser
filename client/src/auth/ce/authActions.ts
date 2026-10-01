@@ -1,6 +1,7 @@
 import type { AuthActions, SignupResult } from '@/auth/types';
 import { setCeBearerToken, clearCeBearerToken } from '@/auth/ce/bearerToken';
 import { parseAuthResponseError } from '@/auth/parseAuthResponseError';
+import { clearLocalStorageOnLogout } from '@/utils/resetWorkspaceScope';
 
 type AuthJson = {
   detail?: string | { message?: string };
@@ -77,6 +78,7 @@ export const ceAuthActions: AuthActions = {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } finally {
       clearCeBearerToken();
+      clearLocalStorageOnLogout();
     }
   },
 };

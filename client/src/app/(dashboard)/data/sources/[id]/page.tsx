@@ -7,6 +7,7 @@ import { Button, Empty, Tabs, Typography } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ApiError } from '@/utils/api';
 import { useDataSource, useDataSourceAccessGrants } from '@/hooks/useDataSources';
 import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import DataSourceOverviewTab from './_components/DataSourceOverviewTab';
@@ -48,7 +49,13 @@ export default function DataSourceDetailPage() {
     return (
       <DataSourceDetailFrame>
         <div className={styles.emptyState}>
-          <Empty description={t('not_found')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
+          <Empty
+            description={
+              // A 403 is "you can't see it", not "it's gone" — say which
+              error instanceof ApiError && error.status === 403 ? t('no_access') : t('not_found')
+            }
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
             <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/data')}>
               {t('back_to_data')}
             </Button>

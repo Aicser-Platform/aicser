@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import LoadingScreen from '@/components/LoadingScreen/LoadingScreen';
 import { resetServiceWorkerCaches } from '@/components/pwa/serviceWorkerReset';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
+import { clearLocalStorageOnLogout } from '@/utils/resetWorkspaceScope';
 import { useLayoutEffect } from 'react';
 
 export default function LogoutPage() {
@@ -19,6 +20,7 @@ export default function LogoutPage() {
                 // Still leave the user on the login screen if the best-effort
                 // server-side logout call fails.
             } finally {
+                clearLocalStorageOnLogout();
                 await resetServiceWorkerCaches();
                 if (active) window.location.replace('/login');
             }

@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Empty, Input, Select, Spin, Tag, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import { LakehouseLayerTag, LakehouseServingNotice } from '@/components/data/LakehouseServing';
 import {
   CheckOutlined,
   DatabaseOutlined,
@@ -108,6 +109,8 @@ export function DataSection() {
   const tables = useMemo(() => normalizeSchemaTables(schema), [schema]);
   const businessMetadata = useMemo(() => getBusinessMetadata(schema), [schema]);
   const activeTable = tables.find((table) => table.id === activeTableId) ?? tables[0] ?? null;
+  // Layer/freshness of a lakehouse-served table (raw schema keeps those fields)
+  const servingInfo = (name?: string | null) => schema?.tables?.find((tbl) => tbl.name === name);
   const selectedColumn =
     activeTable?.columns.find((column) => column.name === selectedColumnName) ??
     activeTable?.columns[0] ??
@@ -243,6 +246,7 @@ export function DataSection() {
             options={dataSources.map((source) => ({ value: source.id, label: source.name }))}
             style={{ width: '100%' }}
           />
+          <LakehouseServingNotice servedFrom={schema?.served_from} />
         </div>
 
         <div className="data-workbench-sidebar-section">
@@ -274,6 +278,7 @@ export function DataSection() {
                 >
                   <TableOutlined />
                   <span>{table.id}</span>
+                  <LakehouseLayerTag layer={servingInfo(table.name)?.layer} refreshedAt={servingInfo(table.name)?.refreshed_at} />
                 </button>
               ))}
             </div>
@@ -292,6 +297,11 @@ export function DataSection() {
                 {activeTable.rowCount !== null && activeTable.rowCount !== undefined ? (
                   <Tag>{t('data_rows_count', { count: activeTable.rowCount })}</Tag>
                 ) : null}
+                <LakehouseLayerTag
+                  layer={servingInfo(activeTable.name)?.layer}
+                  refreshedAt={servingInfo(activeTable.name)?.refreshed_at}
+                  showFreshness
+                />
               </div>
             ) : null}
           </div>

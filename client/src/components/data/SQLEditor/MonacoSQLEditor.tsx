@@ -203,6 +203,7 @@ const resolveLanguage = (language?: string | null): QueryLanguage => (language =
 
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDataSourceSchema, useDataSources } from '@/hooks/useDataSources';
+import { LakehouseServingNotice } from '@/components/data/LakehouseServing';
 import { useFormatUserError } from '@/hooks/useFormatUserError';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
@@ -817,7 +818,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     if (trimmed !== DEFAULT_SQL_SNIPPET.trim()) return; // leave user's query as-is
     const tables = schema.tables;
     if (!tables || tables.length === 0) return;
-    const isFile = selectedDataSource?.type === 'file';
+    // A lakehouse-served file source exposes real table names, not "data"
+    const isFile = selectedDataSource?.type === 'file' && !schema.served_from;
     const firstTable = tables[0];
     const tableName = isFile ? 'data' : firstTable?.name || 'data';
     const schemaName = isFile ? undefined : firstTable?.schema || 'public';
@@ -3048,6 +3050,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 tabBarExtraContent={{
                   right: (
                   <Space size={4} className="icon-toolbar qe-tab-toolbar">
+                    <LakehouseServingNotice servedFrom={schema?.served_from} variant="tag" />
                     {isExecuting ? (
                       <Tooltip title={t('cancel_query_tooltip')}>
                         <Button
@@ -3719,7 +3722,20 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               onTableClick={(tableName, schemaName) => {
                 const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
                 const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
-                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT}`);
+                const current = (latestEditorContentRef.current || sqlQuery).trim();
+                // Only a starter query is replaced; inside a real query, clicking a
+                // table inserts its name (a whole SELECT mid-query is invalid SQL).
+                const isStarter =
+                  !current ||
+                  current === DEFAULT_SQL_SNIPPET.trim() ||
+                  /^SELECT \* FROM [^\s;]+ LIMIT \d+;?$/i.test(current);
+                if (isStarter) {
+                  const starterSql = `SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT};`;
+                  setSqlQuery(starterSql);
+                  setQueryTabs((prev) => prev.map((tab) => (tab.key === activeQueryKey ? { ...tab, sql: starterSql } : tab)));
+                } else {
+                  editorInsertRef.current?.insertTextAtCursor(fromRef);
+                }
               }}
               onColumnClick={(tableName, columnName, schemaName) => {
                 const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;

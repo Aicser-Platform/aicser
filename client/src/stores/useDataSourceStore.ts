@@ -55,6 +55,10 @@ export interface SchemaInfo {
     schema?: string;
     description?: string;
     rowCount?: number | null;
+    /** Set when the table is served from the lakehouse (pipeline-managed source) */
+    layer?: 'silver' | 'gold';
+    refreshed_at?: string | null;
+    lake_object_id?: string | null;
     columns: Array<{
       name: string;
       type: string;
@@ -67,6 +71,12 @@ export interface SchemaInfo {
   }>;
   /** Cube.js cube definitions */
   cubes?: unknown;
+  /**
+   * Where queries against this source are answered: "lakehouse" once an
+   * enabled pipeline serves it (tables are its Silver/Gold output),
+   * "lakehouse_pending" while that pipeline hasn't produced data yet.
+   */
+  served_from?: 'lakehouse' | 'lakehouse_pending';
   /** Named schema list (for multi-schema databases) */
   schemas?: string[];
   /** View definitions (optional, mirrors tables shape) */
