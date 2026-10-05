@@ -19,6 +19,8 @@ from src.modules.dashboards.operations import (
     verify_dashboard_read_access,
     detect_unsupported_runtime_filters,
     detect_filter_overrides,
+    embed_filter_columns,
+    restrict_to_exposed,
 )
 from src.modules.data.services.query_identity import QueryIdentity
 
@@ -370,7 +372,12 @@ async def _execute_chart_data(
     drill_context: Optional[dict] = None,
     identity: Optional[QueryIdentity] = None,
     row_cap: Optional[int] = None,
+    embed_columns: Optional[set] = None,
 ) -> dict:
+    """embed_columns (anonymous/embed viewers): see refresh_dashboard_charts."""
+    narrow_only = embed_columns is not None
+    if narrow_only:
+        runtime_filters = restrict_to_exposed(runtime_filters, embed_columns)
     service = DashboardChartService(db)
     chart = await service.get_chart(dashboard_id, chart_id)
     if not chart:
@@ -390,13 +397,14 @@ async def _execute_chart_data(
         base_query = copy.deepcopy(chart.chart_query or {})
         if runtime_filters:
             filter_warnings.extend(detect_unsupported_runtime_filters(runtime_filters))
-            filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
-            base_query = merge_runtime_filters(base_query, runtime_filters)
+            if not narrow_only:
+                filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
+            base_query = merge_runtime_filters(base_query, runtime_filters, narrow_only=narrow_only)
         if drill_context:
             filter_warnings.extend(
                 detect_unsupported_runtime_filters(drill_context.get("drill_filters"))
             )
-            base_query = apply_drill_context(base_query, drill_context)
+            base_query = apply_drill_context(base_query, drill_context, narrow_only=narrow_only)
         exec_chart.chart_query = base_query
 
     from src.modules.charts.services.v2.chart_service import track_unapplied_filters
@@ -449,6 +457,7 @@ async def execute_chart(
         db,
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
+        embed_columns=None if current_user else await embed_filter_columns(db, dashboard),
     )
 
 
@@ -477,6 +486,7 @@ async def execute_chart_with_filters(
         drill_context=drill_context,
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
+        embed_columns=None if current_user else await embed_filter_columns(db, dashboard),
     )
 
 

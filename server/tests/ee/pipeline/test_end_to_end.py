@@ -143,12 +143,25 @@ async def test_load_stage_records_the_pipeline_source_table(bronze_parquet, loca
     added = []
     session = AsyncMock()
     session.add = MagicMock(side_effect=added.append)
+    # Every lookup finds nothing: no earlier version, no existing Gold source
+    nothing = MagicMock()
+    nothing.scalar_one_or_none.return_value = None
+    nothing.scalars.return_value.first.return_value = None
+    nothing.first.return_value = None
+    session.execute = AsyncMock(return_value=nothing)
 
     import uuid
 
     org_id = uuid.uuid4()
-    local_catalog.create_namespace(namespace_for(org_id))
-    monkeypatch.setattr("src.modules.pipeline.load.catalog.get_catalog", lambda: local_catalog)
+    local_catalog.create_namespace(namespace_for(org_id, 'gold'))
+    monkeypatch.setattr("src.modules.pipeline.load.catalog.get_catalog", lambda *a, **kw: local_catalog)
+    from src.modules.pipeline.load.destination import S3Target
+
+    async def platform(*a, **kw):
+        return S3Target(bucket="test-bucket", prefix="", region="us-east-1", endpoint_url="",
+                        access_key_id="k", secret_access_key="s")
+
+    monkeypatch.setattr("src.modules.pipeline.load.destination.resolve_target", platform)
     # LoadStage always builds a real s3:// location for catalog.create_table,
     # which the other e2e tests in this file avoid by calling load_to_iceberg
     # directly (no location kwarg -> falls back to the local warehouse). This
@@ -159,9 +172,10 @@ async def test_load_stage_records_the_pipeline_source_table(bronze_parquet, loca
         "src.modules.pipeline.load.iceberg_loader.load_to_iceberg",
         lambda *a, **kw: {
             "created": True,
-            "identifier": f"{namespace_for(org_id)}.sales_by_region",
+            "identifier": f"{namespace_for(org_id, 'gold')}.sales_by_region",
             "location": "s3://test-bucket/fake",
             "rows_written": table.num_rows,
+            "byte_size": 4096,
         },
     )
 
@@ -186,9 +200,12 @@ async def test_load_stage_records_the_pipeline_source_table(bronze_parquet, loca
 
     await LoadStage().execute(ctx)
 
-    assert len(added) == 1
-    assert added[0].data_source_id == "db_mysql_1"
-    assert added[0].source_table == "orders"
+    lake_objects = [o for o in added if type(o).__name__ == "DataLakeObject"]
+    assert len(lake_objects) == 1
+    assert lake_objects[0].data_source_id == "db_mysql_1"
+    assert lake_objects[0].source_table == "orders"
+    assert lake_objects[0].object_key == f"{namespace_for(org_id, 'gold')}.sales_by_region"
+    assert lake_objects[0].byte_size == 4096
 
 
 def test_lineage_is_captured_from_the_compiled_sql(bronze_parquet):

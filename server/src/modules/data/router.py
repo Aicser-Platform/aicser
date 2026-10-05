@@ -6152,6 +6152,16 @@ async def test_delta_iceberg_connection(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _uuid_or_none(value):
+    """An organization id as stored, or None for the "user-<id>" stand-in of org-less users."""
+    import uuid as _uuid
+
+    try:
+        return _uuid.UUID(str(value)) if value else None
+    except (ValueError, TypeError):
+        return None
+
+
 @router.post("/delta-iceberg/connect")
 async def connect_delta_iceberg(
     request: Dict[str, Any],
@@ -6265,7 +6275,7 @@ async def connect_delta_iceberg(
             schema_json = json.dumps(connect_result.get("schema", []))
 
             # Encrypt credentials
-            from src.modules.data.utils.encryption import encrypt_credentials
+            from src.modules.data.utils.credentials import encrypt_credentials
 
             safe_credentials = encrypt_credentials(credentials)
 
@@ -6284,11 +6294,11 @@ async def connect_delta_iceberg(
                 """
                 INSERT INTO data_sources 
                 (id, name, type, format, db_type, size, row_count, schema, 
-                 connection_config, metadata, user_id, is_active, 
+                 connection_config, metadata, user_id, organization_id, is_active, 
                  created_at, updated_at, last_accessed, file_path)
                 VALUES 
                 (:id, :name, :type, :format, :db_type, :size, :row_count, :schema,
-                 :connection_config, :metadata, :user_id, :is_active,
+                 :connection_config, :metadata, :user_id, :organization_id, :is_active,
                  :created_at, :updated_at, :last_accessed, :file_path)
             """
             )
@@ -6315,6 +6325,8 @@ async def connect_delta_iceberg(
                         }
                     ),
                     "user_id": user_id,
+                    # The org, so its members can pick this connection (e.g. as a pipeline destination)
+                    "organization_id": _uuid_or_none(organization_id),
                     "is_active": True,
                     "created_at": datetime.now(),
                     "updated_at": datetime.now(),

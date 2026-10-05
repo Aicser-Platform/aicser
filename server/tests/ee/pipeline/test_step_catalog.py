@@ -24,12 +24,8 @@ def test_every_registered_step_declares_group_and_label():
 
 
 def test_step_catalog_route_is_registered_before_the_id_route():
-    # `router.routes` can't be introspected directly here: FastAPI 0.140's
-    # `include_router` (used for the mounted formula sub-router) wraps entries in a
-    # lazy `_IncludedRouter` that has no `.path` until something forces full
-    # resolution. `app.openapi()` does that resolution and preserves route
-    # registration order in `schema["paths"]`, so it verifies the same thing
-    # test_formula_router.py's mount test does.
+    # `app.openapi()` resolves every route and preserves registration order in
+    # `schema["paths"]`, so it shows whether the static path wins over the id route.
     from fastapi import FastAPI
 
     from src.modules.pipeline.router import router

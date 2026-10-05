@@ -281,6 +281,10 @@ export default function ChartDesignerStudio() {
                     onLayoutSync={(newLayout) => {
                       newLayout.forEach((l) => {
                         const widget = widgets.find((w) => w.id === l.i);
+                        // Only sizes are kept here (x/y stay put), so only a resize is worth saving —
+                        // the canvas's overlap heal on open moved x/y and saved every chart.
+                        const before = layout.find((o) => o.i === l.i);
+                        if (before && before.w === l.w && before.h === l.h) return;
                         if (widget?.chartId) {
                           updateChartLayout(widget.id);
                         }

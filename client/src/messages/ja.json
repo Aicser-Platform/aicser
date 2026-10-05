@@ -6395,6 +6395,8 @@
     "refreshed_ok": "「{name}」を更新しました"
   },
   "monaco_sql_editor": {
+    "run": "実行",
+    "cancel": "キャンセル",
     "label_language": "言語:",
     "label_row_limit": "行制限:",
     "run_sql": "SQLを実行",

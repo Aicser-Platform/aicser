@@ -100,14 +100,20 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner
       setCollapsed(true);
       return;
     }
+    // On tablet landscape and compact screens (<1200px, e.g. iPad mini / 1024px),
+    // default to collapsed rail (64px) so the workspace has sufficient breathing room.
+    if (!screens.xl) {
+      setCollapsed(true);
+      return;
+    }
     setCollapsed(getStoredLayoutSidebarCollapsed());
   }, [screens]);
 
   React.useEffect(() => {
-    if (!isBreakpoint) {
+    if (!isBreakpoint && screens.xl) {
       setStoredLayoutSidebarCollapsed(collapsed);
     }
-  }, [collapsed, isBreakpoint]);
+  }, [collapsed, isBreakpoint, screens.xl]);
 
   const sidebarOffset = React.useMemo(
     () => (isBreakpoint ? 0 : collapsed ? RAIL_WIDTH : EXPANDED_WIDTH),

@@ -330,7 +330,7 @@ async def test_sample_reads_a_bronze_parquet_object_via_bronze_scan_sql(monkeypa
     monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
     captured = {}
 
-    def fake_read_sample(scan_sql, *, limit, use_iceberg):
+    def fake_read_sample(scan_sql, *, limit, use_iceberg, location=""):
         captured["scan_sql"] = scan_sql
         captured["use_iceberg"] = use_iceberg
         return module.LakeObjectSampleResponse(
@@ -371,7 +371,7 @@ async def test_sample_reads_a_gold_iceberg_object_via_iceberg_scan_sql(monkeypat
     monkeypatch.setattr(module, "_org_id", lambda payload: uuid.uuid4())
     captured = {}
 
-    def fake_read_sample(scan_sql, *, limit, use_iceberg):
+    def fake_read_sample(scan_sql, *, limit, use_iceberg, location=""):
         captured["scan_sql"] = scan_sql
         captured["use_iceberg"] = use_iceberg
         return module.LakeObjectSampleResponse(columns=[], rows=[], total_row_count=0)

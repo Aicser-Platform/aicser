@@ -7,9 +7,12 @@ import {
   buildEmbedChatUrl,
   buildEmbedDashboardUrl,
   pickPrimaryEmbedUrl,
+  withDashboardView,
 } from '@/utils/embedSnippet';
 
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
+
+export type EmbedDownload = 'none' | 'image' | 'data';
 
 export type EmbedTheme = {
   primary_color?: string;
@@ -33,6 +36,9 @@ type CreateEmbedCodeOptions = {
   assistantId?: string;
   expiresInHours?: number;
   theme?: EmbedTheme;
+  /** Sites allowed to show the embed (hostnames); empty allows any. */
+  allowedDomains?: string[];
+  download?: EmbedDownload;
 };
 
 type EmbedCodeResult = {
@@ -43,41 +49,42 @@ type EmbedCodeResult = {
 export function useEmbedCode() {
   const [loading, setLoading] = useState(false);
 
+  // Errors (no permission, plan, bad input) reach the caller: a link built without a token
+  // would only show "Not connected" on the customer's site.
   const createEmbedCode = useCallback(async (options: CreateEmbedCodeOptions): Promise<EmbedCodeResult> => {
     setLoading(true);
     try {
-      let token: string | undefined;
-      let embedUrl = '';
-
-      try {
-        const created = await fetchApi<EmbedTokenCreated>('/api/embed/tokens', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: options.name || `Embed: ${options.resourceId || options.scope}`,
-            scopes: [options.scope],
-            resource_id: options.resourceId || undefined,
-            expires_in_hours: options.expiresInHours ?? 720,
-            theme: options.theme || undefined,
-          }),
-        });
-        token = created.token;
-        embedUrl = pickPrimaryEmbedUrl(created.embed_urls);
-      } catch {
-        // Public resources may work without a token — build URL without it.
-      }
+      const created = await fetchApi<EmbedTokenCreated>('/api/embed/tokens', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: (options.name || `Embed: ${options.resourceId || options.scope}`).slice(0, 120),
+          scopes: [options.scope],
+          resource_id: options.resourceId || undefined,
+          expires_in_hours: options.expiresInHours ?? 720,
+          allowed_domains: options.allowedDomains ?? [],
+          download: options.download ?? 'none',
+          theme: options.theme || undefined,
+        }),
+      });
+      const token = created.token;
+      let embedUrl = created.embed_urls?.[options.scope] || pickPrimaryEmbedUrl(created.embed_urls);
 
       if (!embedUrl) {
         if (options.scope === 'dashboard' && options.resourceId) {
-          embedUrl = buildEmbedDashboardUrl(options.resourceId, {
-            token,
-            pageId: options.pageId,
-            filters: options.filters,
-          });
+          embedUrl = buildEmbedDashboardUrl(options.resourceId, { token });
         } else if (options.scope === 'chart' && options.resourceId) {
           embedUrl = buildEmbedChartUrl(options.resourceId, token);
         } else if (options.scope === 'chat') {
           embedUrl = buildEmbedChatUrl({ token, assistantId: options.assistantId });
         }
+      }
+      if (embedUrl && options.scope === 'dashboard') {
+        embedUrl = withDashboardView(embedUrl, options.pageId, options.filters);
+      }
+      if (embedUrl && options.scope === 'chat' && options.assistantId) {
+        const url = new URL(embedUrl);
+        url.searchParams.set('assistant_id', options.assistantId);
+        embedUrl = url.toString();
       }
 
       return { embedUrl, token };

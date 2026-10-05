@@ -18,11 +18,12 @@ def test_sync_catalog_uri_converts_asyncpg_to_psycopg2():
     assert sync_catalog_uri("postgresql://u:p@h/db") == "postgresql+psycopg2://u:p@h/db"
 
 
-def test_namespace_is_org_prefixed_hex():
+def test_namespace_is_org_prefixed_hex_per_layer():
     from src.modules.pipeline.load.catalog import namespace_for
 
     org = uuid.UUID("11111111-2222-3333-4444-555555555555")
-    assert namespace_for(org) == "org_11111111222233334444555555555555"
+    assert namespace_for(org, "gold") == "org_11111111222233334444555555555555_gold"
+    assert namespace_for(str(org), "silver") == "org_11111111222233334444555555555555_silver"
 
 
 @pytest.fixture
@@ -66,6 +67,24 @@ def test_append_creates_the_table_on_first_run(local_catalog):
     assert res["rows_written"] == 2
     assert res["created"] is True
     assert local_catalog.load_table("org_x.orders").scan().to_arrow().num_rows == 2
+
+
+def test_reports_the_data_file_bytes_of_the_current_snapshot(local_catalog):
+    """byte_size feeds the Warehouse's scan-size guard: it must cover every data
+    file a full scan reads, not just the files this load added."""
+    import os
+
+    from src.modules.pipeline.load.iceberg_loader import load_to_iceberg
+
+    local_catalog.create_namespace("org_x")
+    kwargs = dict(namespace="org_x", table_name="orders", write_mode="append", primary_key=[])
+    first = load_to_iceberg(local_catalog, table=_table([1, 2], [10.0, 20.0]), **kwargs)
+    second = load_to_iceberg(local_catalog, table=_table([3], [30.0]), **kwargs)
+
+    files = local_catalog.load_table("org_x.orders").inspect.files().column("file_path").to_pylist()
+    on_disk = sum(os.path.getsize(f.removeprefix("file://")) for f in files)
+    assert first["byte_size"] > 0
+    assert second["byte_size"] == on_disk > first["byte_size"]
 
 
 def test_upsert_is_idempotent(local_catalog):
@@ -281,3 +300,27 @@ def test_appending_small_precision_decimal_rows_does_not_raise(local_catalog):
     assert result["rows_written"] == 79
     out = local_catalog.load_table("org_decimal.customers_silver").scan().to_arrow()
     assert out.num_rows == 80
+
+
+def test_rebuild_replaces_a_changed_column_type_and_the_rows(local_catalog):
+    """A Silver table that stored price as text (the old "Replace NULLs → Unknown") can be
+    rebuilt as decimal when the user asks; without asking it still fails loudly."""
+    from decimal import Decimal
+
+    from src.modules.pipeline.load.iceberg_loader import SchemaConflict, load_to_iceberg
+
+    local_catalog.create_namespace("org_x")
+    kwargs = dict(namespace="org_x", table_name="products", primary_key=["id"])
+    old = pa.table({"id": pa.array([1, 2], pa.int64()), "price": pa.array(["362.68", "Unknown"])})
+    load_to_iceberg(local_catalog, table=old, write_mode="merge", **kwargs)
+
+    new = pa.table({"id": pa.array([1, 2], pa.int64()), "price": pa.array([Decimal("362.68"), None], pa.decimal128(18, 2))})
+    with pytest.raises(SchemaConflict):
+        load_to_iceberg(local_catalog, table=new, write_mode="merge", **kwargs)
+
+    res = load_to_iceberg(local_catalog, table=new, write_mode="merge", replace_schema=True, **kwargs)
+
+    out = local_catalog.load_table("org_x.products").scan().to_arrow()
+    assert res["rows_written"] == 2
+    assert pa.types.is_decimal(out.schema.field("price").type)
+    assert sorted(out.column("price").to_pylist(), key=str) == sorted([Decimal("362.68"), None], key=str)

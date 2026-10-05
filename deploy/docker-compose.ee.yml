@@ -247,6 +247,9 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      CUTLUY_ENABLED: ${CUTLUY_ENABLED:-false}
+      CUTLUY_API_KEY: ${CUTLUY_API_KEY:-}
+      CUTLUY_WEBHOOK_SECRET: ${CUTLUY_WEBHOOK_SECRET:-}
       # Observability: tracing/error reporting are fully-built (see
       # src/shared/observability/) but off unless set here — previously not
       # even present in this file, so operators had no visible knob to turn

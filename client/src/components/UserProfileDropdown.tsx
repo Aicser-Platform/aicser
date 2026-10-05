@@ -54,7 +54,6 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
     true;
   const { profile, fetchProfile } = useProfileStore();
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
   const { isDarkMode, setIsDarkMode } = useThemeMode();
   const currentLocale = useLocale();
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEnterpriseEdition });
@@ -161,20 +160,12 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
     ? (subLoading ? '...' : t('plan_display', { plan: getPlanDisplayName(planType) }))
     : (user?.email || t('user'));
 
-  const handleUpgrade = async (planType: string, isYearly: boolean) => {
-    setUpgradeLoading(true);
-    try {
-      // This modal only renders in EE (gated by isEnterpriseEdition below), so the real
-      // billing service is always present at this path. Previously this just closed the
-      // modal and did nothing — a second, silently-broken "Upgrade" button sitting next
-      // to the real one in Settings → Billing (see BillingSubscriptionTab.tsx).
-      const { billingService } = await import('@/ee/services/billingService');
-      const checkoutUrl = await billingService.createCheckout(planType, isYearly ? 'yearly' : 'monthly');
-      window.location.href = checkoutUrl;
-    } catch {
-      message.error(t('failed_upgrade_plan'));
-      setUpgradeLoading(false);
-    }
+  // PricingModal runs the trial / card / KHQR checkout itself and calls onUpgrade only to
+  // notify. Starting a Stripe checkout here too sent "Start Free Trial" clicks to Stripe and
+  // raced the KHQR redirect.
+  const handleUpgrade = () => {
+    setPricingModalVisible(false);
+    void refresh();
   };
 
   const creditsPercentage = aiCreditsLimit === Infinity ? 0 : (aiCreditsUsed / aiCreditsLimit) * 100;
@@ -486,7 +477,6 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           onClose={() => setPricingModalVisible(false)}
           onUpgrade={handleUpgrade}
           currentPlan={planType}
-          loading={upgradeLoading}
         />
       )}
     </>

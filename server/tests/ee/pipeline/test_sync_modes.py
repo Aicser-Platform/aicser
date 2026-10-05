@@ -152,3 +152,62 @@ async def test_get_bronze_job_rejects_unfinished_or_full_runs():
 
     with pytest.raises(ValueError, match="required"):
         await SyncService._get_bronze_job(None, uuid.uuid4(), _DB(None))
+
+
+async def test_new_pipeline_gets_a_free_slug_when_a_renamed_one_holds_it():
+    """A pipeline renamed in the wizard keeps its slug; a new one under the old name used to
+    fail with uq_data_pipeline_org_slug."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.modules.pipeline.sync.service import SyncService
+
+    taken = MagicMock()
+    taken.scalars.return_value.all.return_value = ["production-analytics-pipeline", "production-analytics-pipeline-2"]
+    db = AsyncMock()
+    db.execute.return_value = taken
+
+    import uuid
+
+    assert await SyncService._unique_slug(db, uuid.uuid4(), "production-analytics-pipeline") == "production-analytics-pipeline-3"
+
+    taken.scalars.return_value.all.return_value = []
+    assert await SyncService._unique_slug(db, uuid.uuid4(), "fresh") == "fresh"
+
+
+def test_wizard_state_is_stored_without_anything_credential_like():
+    from src.modules.pipeline.sync.service import _without_secrets
+
+    state = {
+        "pipelineName": "commerce",
+        "destinationConfig": {"destination_type": "postgresql", "connection_config": {"password": "p"}},
+        "catalog": [{"name": "t", "columns": [{"name": "password_hint"}]}],
+        "nested": [{"api_key": "k", "keep": 1}],
+    }
+
+    out = _without_secrets(state)
+
+    assert "connection_config" not in out["destinationConfig"]
+    assert out["nested"] == [{"keep": 1}]
+    assert out["catalog"][0]["columns"][0]["name"] == "password_hint"  # values are kept, keys are judged
+
+
+async def test_redeploying_an_edited_pipeline_resumes_from_its_current_bronze():
+    """No step-3 Bronze job when editing: each table starts at Transform on the Bronze it holds."""
+    import uuid
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.modules.pipeline.sync.service import SyncService
+
+    found = SimpleNamespace(id=uuid.uuid4(), storage_uri="s3://b/bronze/products/load_id=1/p.parquet", row_count=40)
+    hit, miss = MagicMock(), MagicMock()
+    hit.scalar_one_or_none.return_value = found
+    miss.scalar_one_or_none.return_value = None
+    db = AsyncMock()
+    db.execute.side_effect = [hit, miss]
+
+    seed = await SyncService._lake_bronze_seed(db, SimpleNamespace(source_asset_id="ds-1"), ["products", "new_table"])
+
+    assert seed == {"products": {"checkpoint": {"stage": "ingest", "outputs": {
+        "bronze_object_id": str(found.id), "storage_uri": found.storage_uri, "row_count": 40,
+    }}}}  # new_table has no Bronze: it is ingested by the run

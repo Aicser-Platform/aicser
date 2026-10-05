@@ -396,21 +396,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
         headers['content-type'] = 'application/json';
       } else {
-        // For non-JSON bodies, pass through as-is
-        if (req.body) {
-          if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) {
-            fetchOptions.body = req.body;
-          } else {
-            // Try to read stream
-            const chunks: Buffer[] = [];
-            req.on('data', (chunk: Buffer) => chunks.push(chunk));
-            await new Promise<void>((resolve, reject) => {
-              req.on('end', resolve);
-              req.on('error', reject);
-            });
-            if (chunks.length > 0) {
-              fetchOptions.body = Buffer.concat(chunks);
-            }
+        // For non-JSON bodies (e.g. multipart .xlsx imports), pass through as-is.
+        // bodyParser is off, so req.body is unset and the raw stream must be read.
+        if (typeof req.body === 'string' || Buffer.isBuffer(req.body)) {
+          fetchOptions.body = req.body;
+        } else {
+          const chunks: Buffer[] = [];
+          req.on('data', (chunk: Buffer) => chunks.push(chunk));
+          await new Promise<void>((resolve, reject) => {
+            req.on('end', resolve);
+            req.on('error', reject);
+          });
+          if (chunks.length > 0) {
+            fetchOptions.body = Buffer.concat(chunks);
           }
         }
         if (req.headers['content-type']) {

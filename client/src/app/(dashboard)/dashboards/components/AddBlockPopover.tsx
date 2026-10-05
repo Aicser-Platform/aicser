@@ -2,7 +2,16 @@
 
 import React, { useMemo, useState } from 'react';
 import { Popover, Input, Tabs, Button, Space } from 'antd';
-import { SearchOutlined, AppstoreOutlined, FilterOutlined, LayoutOutlined } from '@ant-design/icons';
+import {
+  SearchOutlined,
+  AppstoreOutlined,
+  FilterOutlined,
+  LayoutOutlined,
+  RobotOutlined,
+  SendOutlined,
+} from '@ant-design/icons';
+import Link from 'next/link';
+import { getChatHref } from '@/utils/appPaths';
 import { useTranslations } from 'next-intl';
 import { WidgetBlockPicker } from './WidgetBlockPicker';
 import { FilterPresetPicker } from './FilterPresetPicker';
@@ -39,11 +48,34 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState('blocks');
+  const [aiPrompt, setAiPrompt] = useState('');
 
   const closeAndReset = () => {
     setVisible(false);
     setSearch('');
     setTab('blocks');
+    setAiPrompt('');
+  };
+
+  const handleAiGenerate = () => {
+    const p = aiPrompt.trim().toLowerCase();
+    if (!p) return;
+    if (p.includes('kpi') || p.includes('metric') || p.includes('stat')) {
+      onSelect('stat');
+    } else if (p.includes('trend') || p.includes('line') || p.includes('time')) {
+      onSelect('line');
+    } else if (p.includes('pie') || p.includes('share')) {
+      onSelect('pie');
+    } else if (p.includes('donut')) {
+      onSelect('donut');
+    } else if (p.includes('divider') || p.includes('section') || p.includes('group')) {
+      onSelect('divider');
+    } else if (p.includes('table') || p.includes('list')) {
+      onSelect('table');
+    } else {
+      onSelect('bar');
+    }
+    closeAndReset();
   };
 
   const tabItems = useMemo(
@@ -100,8 +132,99 @@ export const AddBlockPopover: React.FC<AddBlockPopoverProps> = ({
           />
         ),
       },
+      {
+        key: 'ai',
+        label: (
+          <span>
+            <RobotOutlined /> {t('add_drawer_ai')}
+          </span>
+        ),
+        children: (
+          <div className="flex flex-col gap-2.5 p-2 text-left">
+            <div className="text-xs text-text-secondary leading-snug">
+              {td('ai_assistant_desc')}
+            </div>
+            <Input.TextArea
+              rows={2}
+              placeholder={td('ai_assistant_prompt_placeholder')}
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              className="!text-xs !rounded-md"
+              onPressEnter={(e) => {
+                if (e.shiftKey) return;
+                e.preventDefault();
+                handleAiGenerate();
+              }}
+            />
+            <div className="flex items-center gap-1.5 justify-between">
+              <Button
+                type="primary"
+                size="small"
+                icon={<SendOutlined />}
+                disabled={!aiPrompt.trim()}
+                onClick={handleAiGenerate}
+                className="flex-1"
+              >
+                {td('ai_assistant_create_chart')}
+              </Button>
+              <Link href={getChatHref({ mode: 'dashboard' })}>
+                <Button size="small" type="default" icon={<RobotOutlined />}>
+                  Chat
+                </Button>
+              </Link>
+            </div>
+            <div className="border-t border-border-light pt-2 mt-1">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mb-1.5">
+                {td('ai_assistant_quick_actions')}
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  className="text-left text-xs py-1 px-1.5 rounded hover:bg-brand-subtle hover:text-brand transition-colors text-text-secondary"
+                  onClick={() => {
+                    onSelect('divider');
+                    closeAndReset();
+                  }}
+                >
+                  📑 {td('ai_action_section')} (Group charts)
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-xs py-1 px-1.5 rounded hover:bg-brand-subtle hover:text-brand transition-colors text-text-secondary"
+                  onClick={() => {
+                    onSelect('stat');
+                    closeAndReset();
+                  }}
+                >
+                  🎯 {td('ai_action_kpi')}
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-xs py-1 px-1.5 rounded hover:bg-brand-subtle hover:text-brand transition-colors text-text-secondary"
+                  onClick={() => {
+                    onSelect('line');
+                    closeAndReset();
+                  }}
+                >
+                  📈 {td('ai_action_trend')}
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-xs py-1 px-1.5 rounded hover:bg-brand-subtle hover:text-brand transition-colors text-text-secondary"
+                  onClick={() => {
+                    onSelect('bar');
+                    closeAndReset();
+                  }}
+                >
+                  📊 {td('ai_action_group')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ),
+      },
     ],
-    [onAddFilterPreset, onApplyLayoutPreset, onOpenFilterManager, onSelect, search, t, widgets],
+    [aiPrompt, onAddFilterPreset, onApplyLayoutPreset, onOpenFilterManager, onSelect, search, t, td, widgets],
   );
 
   const content = (

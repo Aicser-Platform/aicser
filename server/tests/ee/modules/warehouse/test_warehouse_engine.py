@@ -97,3 +97,39 @@ def test_embedded_engine_reads_parquet_views(tmp_path, monkeypatch):
     )
     assert out["columns"] == ["grp", "n"]
     assert [tuple(r) for r in out["rows"]] == [(0, 334), (1, 333), (2, 333)]
+
+
+def test_gold_tables_are_named_as_people_call_them():
+    """Not the storage key (gold_22794e2009bf_products): the table's own name, qualified with
+    its pipeline only when two pipelines publish a table of that name."""
+    rows = [
+        {"identifier": "org_x_gold.gold_22794e2009bf_products", "source_table": "products", "pipeline": "commerce"},
+        {"identifier": "org_x_gold.gold_22794e2009bf_products_pb869c9e9", "source_table": "products", "pipeline": "EC-Gold"},
+        {"identifier": "org_x_gold.gold_22794e2009bf_orders", "source_table": "orders", "pipeline": "commerce"},
+        {"identifier": "org_x_gold.departments", "source_table": None, "pipeline": None},
+        {"identifier": "org_x_gold.gold_c9906adc25b8_sales_order_lines_d1a2b3c4d", "source_table": None, "pipeline": "Mart"},
+    ]
+
+    names = catalog.readable_names(rows)
+
+    assert names["org_x_gold.gold_22794e2009bf_orders"] == "orders"
+    assert names["org_x_gold.gold_22794e2009bf_products"] == "commerce__products"
+    assert names["org_x_gold.gold_22794e2009bf_products_pb869c9e9"] == "ec_gold__products"
+    assert names["org_x_gold.departments"] == "departments"
+    assert catalog.readable_base(None, "org_x_gold.gold_c9906adc25b8_sales_order_lines_pb869c9e9") == "sales_order_lines"
+    assert len(set(names.values())) == len(names)
+
+
+def test_a_query_by_the_old_storage_name_still_runs():
+    """Charts saved before readable names keep working: the old name is an alias, and the
+    table comes back under the name the query used (engines create their views by it)."""
+    table = {"name": "products", "aliases": ["gold_22794e2009bf_products"], "identifier": "org_x_gold.gold_22794e2009bf_products"}
+
+    names, used = engine.resolve_tables("select count(*) from gold_22794e2009bf_products", [table])
+    assert names == ["gold_22794e2009bf_products"] and used[0]["name"] == "gold_22794e2009bf_products"
+
+    names, used = engine.resolve_tables("select count(*) from products", [table])
+    assert used[0]["name"] == "products" and used[0]["identifier"] == table["identifier"]
+
+    with pytest.raises(engine.WarehouseError, match="isn't a Gold table"):
+        engine.resolve_tables("select * from nope", [table])

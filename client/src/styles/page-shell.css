@@ -534,6 +534,10 @@ div.page-container,
 /* ── Mobile ───────────────────────────────────────────────── */
 
 @media (max-width: 991.98px) {
+  :root {
+    --app-header-height: 52px;
+  }
+
   .layout-app-shell > .layout-main-column {
     margin-left: 0 !important;
     width: 100% !important;
@@ -599,6 +603,60 @@ div.page-container,
   .page-container:not(.page-wrapper--full-bleed) {
     --app-shell-gutter: 16px;
     padding: 16px !important;
+  }
+}
+
+@media (max-width: 575.98px) {
+  :root {
+    --app-header-height: 48px;
+  }
+
+  .layout-app-header.ant-layout-header,
+  .ant-layout-header.layout-app-header {
+    padding: 0 10px !important;
+  }
+
+  .page-wrapper:not(.page-wrapper--full-bleed),
+  .page-container:not(.page-wrapper--full-bleed) {
+    --app-shell-gutter: 12px;
+    padding: 12px !important;
+  }
+
+  /* On phones, collapse org text so the active project name has ample space to display */
+  .header-shell-chip.header-org-chip .header-shell-chip-label,
+  .header-shell-chip.header-org-chip .header-shell-chip-chevron {
+    display: none !important;
+  }
+
+  .header-shell-chip.header-org-chip {
+    padding: 0 4px !important;
+    min-width: 28px !important;
+    max-width: 32px !important;
+    justify-content: center !important;
+  }
+
+  .header-shell-chip.header-project-btn.ant-btn {
+    height: 32px !important;
+    min-height: 32px !important;
+    max-height: 32px !important;
+    padding: 0 8px !important;
+    gap: 4px !important;
+    max-width: 46vw !important;
+    font-size: 13px !important;
+  }
+
+  .layout-app-header .header-right {
+    gap: 4px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-shell-chip.header-project-btn.ant-btn {
+    max-width: 38vw !important;
+  }
+
+  .header-workspace-separator {
+    display: none !important;
   }
 }
 

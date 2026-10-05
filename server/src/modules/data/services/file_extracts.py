@@ -24,6 +24,8 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _ATTACH_AS = "aicser_extract"
+# Views of the loaded database (e.g. "data" over an Excel file's first sheet), kept as SQL
+_VIEWS_TABLE = "__aicser_views"
 _SAFE_ID = re.compile(r"[^A-Za-z0-9_-]")
 
 
@@ -56,7 +58,8 @@ def _quote(name: str) -> str:
 
 
 def attach(conn: Any, path: str) -> List[str]:
-    """Expose every table of an extract as a view in the main schema; returns the table names."""
+    """Expose every table of an extract as a view in the main schema, then recreate the views
+    the load had made over them; returns all the names."""
     safe = path.replace("'", "''")
     conn.execute(f"ATTACH '{safe}' AS {_ATTACH_AS} (READ_ONLY)")
     names = [
@@ -65,11 +68,29 @@ def attach(conn: Any, path: str) -> List[str]:
             f"SELECT table_name FROM duckdb_tables() WHERE database_name = '{_ATTACH_AS}' AND schema_name = 'main'"
         ).fetchall()
     ]
+    has_views = _VIEWS_TABLE in names
+    names = [n for n in names if n != _VIEWS_TABLE]
     if not names:
         raise ValueError("empty extract")
     for name in names:
         conn.execute(f"CREATE OR REPLACE VIEW {_quote(name)} AS SELECT * FROM {_ATTACH_AS}.main.{_quote(name)}")
+    if has_views:
+        for name, sql in conn.execute(f"SELECT name, sql FROM {_ATTACH_AS}.main.{_VIEWS_TABLE}").fetchall():
+            # Their names resolve to the table views just made in main
+            conn.execute(re.sub(r"^\s*CREATE\s+VIEW\b", "CREATE OR REPLACE VIEW", sql, flags=re.I))
+            names.append(name)
     return names
+
+
+def detach(conn: Any) -> None:
+    """Undo attach(): drop the views it made in main and detach the extract, so the upload can
+    be loaded into the same connection under the same names."""
+    for (name,) in conn.execute(
+        "SELECT view_name FROM duckdb_views() WHERE database_name = current_database() "
+        "AND schema_name = 'main' AND NOT internal"
+    ).fetchall():
+        conn.execute(f"DROP VIEW IF EXISTS {_quote(name)}")
+    conn.execute(f"DETACH DATABASE IF EXISTS {_ATTACH_AS}")
 
 
 def write(conn: Any, path: str) -> None:
@@ -82,12 +103,19 @@ def write(conn: Any, path: str) -> None:
     ]
     if not names:
         return
+    views = conn.execute(
+        "SELECT view_name, sql FROM duckdb_views() "
+        "WHERE database_name = current_database() AND schema_name = 'main' AND NOT internal"
+    ).fetchall()
     tmp = f"{path}.{uuid.uuid4().hex}.tmp"
     safe = tmp.replace("'", "''")
     conn.execute(f"ATTACH '{safe}' AS aicser_extract_out")
     try:
         for name in names:
             conn.execute(f"CREATE TABLE aicser_extract_out.main.{_quote(name)} AS SELECT * FROM main.{_quote(name)}")
+        if views:
+            conn.execute(f"CREATE TABLE aicser_extract_out.main.{_VIEWS_TABLE} (name VARCHAR, sql VARCHAR)")
+            conn.executemany(f"INSERT INTO aicser_extract_out.main.{_VIEWS_TABLE} VALUES (?, ?)", views)
     finally:
         conn.execute("DETACH aicser_extract_out")
     os.replace(tmp, path)  # atomic: a reader never sees a half-written extract

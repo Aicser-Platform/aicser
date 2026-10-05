@@ -57,3 +57,26 @@ def test_detects_shared_key_fact_dimension_relationships():
         "shared_key",
     ) in keys
 
+
+
+def test_pipeline_audit_columns_are_not_join_keys():
+    """Every pipeline Silver/Gold table carries _load_id; matching on it joined
+    order_items to customers by load batch, and the served tables don't have it."""
+    from src.modules.data.model_service import _detect_relationship_candidates
+
+    audit = [{"name": "_load_id", "type": "varchar"}, {"name": "_ingested_at", "type": "timestamp"}]
+    schema = {
+        "tables": [
+            {"name": "order_items", "columns": [
+                {"name": "order_id", "type": "int"}, {"name": "quantity", "type": "int"}, *audit]},
+            {"name": "orders", "columns": [
+                {"name": "order_id", "type": "int"}, {"name": "order_date", "type": "date"}, *audit]},
+            {"name": "customers", "columns": [
+                {"name": "customer_id", "type": "int"}, {"name": "first_name", "type": "varchar"}, *audit]},
+        ]
+    }
+
+    relationships = _detect_relationship_candidates(schema)
+
+    assert not any("_load_id" in (r["from_column"], r["to_column"]) for r in relationships)
+    assert {(r["from_table"], r["to_table"]) for r in relationships} == {("order_items", "orders")}

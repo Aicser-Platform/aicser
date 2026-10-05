@@ -292,7 +292,7 @@ def cap_query_row_limit(query: str, db_type: str, cap: int = HARD_ROW_LIMIT_CAP)
         import sqlglot
         from sqlglot import exp
 
-        parsed = sqlglot.parse_one(query)
+        parsed = sqlglot.parse_one(query, read=dialect) if dialect else sqlglot.parse_one(query)
         if not isinstance(parsed, (exp.Select, exp.Union, exp.With)):
             return query
         existing = parsed.args.get("limit") if hasattr(parsed, "args") else None
@@ -1045,7 +1045,14 @@ class MultiEngineQueryService:
         # `optimization`), since it's a resource-protection backstop, not a
         # performance rewrite, and RLS/CLS-filtered queries need it just as
         # much as any other. See cap_query_row_limit's docstring.
-        query = cap_query_row_limit(query, self._data_source_db_type(data_source))
+        # Sources queried with DuckDB have no db_type; without one the cap re-wrote the SQL in
+        # sqlglot's generic dialect (DuckDB lists ['a', 'b'] became ARRAY('a', 'b'), a parse error)
+        cap_dialect_key = (
+            "duckdb"
+            if str(data_source.get("type") or "").lower() in ("file", "google_sheets", "sample_duckdb", "warehouse", "lakehouse_iceberg")
+            else self._data_source_db_type(data_source)
+        )
+        query = cap_query_row_limit(query, cap_dialect_key)
 
         if str(data_source.get("type") or "").lower() == "warehouse":
             # Enterprise warehouse over the lakehouse's Gold tables (its own queue, limits,
@@ -2024,12 +2031,16 @@ class DuckDBEngine(BaseQueryEngine):
         path = file_extracts.extract_path(data_source) if file_extracts.enabled() else None
         if path and os.path.isfile(path):
             try:
-                file_extracts.attach(conn, path)
+                names = file_extracts.attach(conn, path)
+                # Extracts saved before views were kept lack "data" (an Excel upload's
+                # first sheet): every query needs it, so parse the upload again
+                if "data" not in names:
+                    raise ValueError("extract has no 'data' table")
                 return
             except Exception as exc:
                 logger.warning("File extract unusable, re-parsing the upload: %s", exc)
                 try:
-                    conn.execute("DETACH IF EXISTS aicser_extract")
+                    file_extracts.detach(conn)
                     os.remove(path)
                 except Exception:
                     pass

@@ -12,7 +12,7 @@ const EEModelsPage = dynamic(() => import('@/ee').then((m) => ({ default: m.Mode
 function ModelsCEFallback() {
   const t = useTranslations('models');
   return (
-    <DashboardPageShell maxWidth={900}>
+    <DashboardPageShell className="models-page">
       <DashboardPageHeader icon={<ExperimentOutlined />} title={t('title')} />
       <Result
         icon={<ExperimentOutlined style={{ color: 'var(--ant-color-primary)' }} />}

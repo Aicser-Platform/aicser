@@ -12,7 +12,7 @@ const EEWarehousePage = dynamic(() => import('@/ee').then((m) => ({ default: m.W
 function WarehouseCEFallback() {
   const t = useTranslations('warehouse');
   return (
-    <DashboardPageShell maxWidth={900}>
+    <DashboardPageShell className="warehouse-page">
       <DashboardPageHeader icon={<ClusterOutlined />} title={t('title')} />
       <Result
         icon={<ClusterOutlined style={{ color: 'var(--ant-color-primary)' }} />}

@@ -6395,6 +6395,8 @@
     "refreshed_ok": "Menyegarkan {name}"
   },
   "monaco_sql_editor": {
+    "run": "Jalankan",
+    "cancel": "Batal",
     "label_language": "Bahasa:",
     "label_row_limit": "Batas Baris:",
     "run_sql": "Jalankan SQL",

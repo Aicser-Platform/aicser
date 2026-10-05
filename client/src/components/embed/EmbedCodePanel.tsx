@@ -22,6 +22,8 @@ export type EmbedCodePanelProps = {
   iframeHeight?: number;
   showPreview?: boolean;
   hint?: string;
+  /** False when the link only opens inside the sites it was made for. */
+  openable?: boolean;
 };
 
 export function EmbedCodePanel({
@@ -32,6 +34,7 @@ export function EmbedCodePanel({
   iframeHeight = 480,
   showPreview = true,
   hint,
+  openable = true,
 }: EmbedCodePanelProps) {
   const t = useTranslations('embed_modal');
   const [view, setView] = useState<'iframe' | 'url' | 'preview'>('iframe');
@@ -100,9 +103,11 @@ export function EmbedCodePanel({
             <Button type="primary" icon={<CopyOutlined />} onClick={() => void copy(iframeCode, 'embed_snippet_copied')}>
               {t('embed_copy_iframe')}
             </Button>
-            <Button icon={<ExportOutlined />} href={embedUrl} target="_blank" rel="noopener noreferrer">
-              {t('embed_open_preview')}
-            </Button>
+            {openable ? (
+              <Button icon={<ExportOutlined />} href={embedUrl} target="_blank" rel="noopener noreferrer">
+                {t('embed_open_preview')}
+              </Button>
+            ) : null}
           </div>
         </>
       ) : null}

@@ -1,5 +1,6 @@
 /* Workspace: canvas + filter panel side-by-side */
 .dashboard-workspace {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;

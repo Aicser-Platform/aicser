@@ -193,26 +193,29 @@ const FeedFilters: React.FC<FeedFiltersProps> = ({
             />
           ) : null}
         </div>
-        <Input
-          allowClear
-          placeholder={t('search_feed')}
-          value={value.search || ''}
-          onChange={(event) => update({ search: event.target.value })}
-          prefix={<SearchOutlined className="text-[var(--ant-color-text-tertiary)]" />}
-          className="page-panel-toolbar__search"
-        />
-        <div className="page-panel-toolbar__actions">
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            open={filtersOpen}
-            onOpenChange={setFiltersOpen}
-            content={moreFilters}
-          >
-            <Badge count={activeFilterCount} size="small" offset={[-2, 2]}>
-              <Button icon={<FilterOutlined />}>{t('more_filters')}</Button>
-            </Badge>
-          </Popover>
+        <div className="flex items-center gap-2 w-full md:w-auto flex-1 min-w-0 md:justify-end">
+          <Input
+            allowClear
+            placeholder={t('search_feed')}
+            value={value.search || ''}
+            onChange={(event) => update({ search: event.target.value })}
+            prefix={<SearchOutlined className="text-[var(--ant-color-text-tertiary)]" />}
+            className="page-panel-toolbar__search"
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          <div className="page-panel-toolbar__actions shrink-0">
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              open={filtersOpen}
+              onOpenChange={setFiltersOpen}
+              content={moreFilters}
+            >
+              <Badge count={activeFilterCount} size="small" offset={[-2, 2]}>
+                <Button icon={<FilterOutlined />}>{t('more_filters')}</Button>
+              </Badge>
+            </Popover>
+          </div>
         </div>
       </div>
     </div>

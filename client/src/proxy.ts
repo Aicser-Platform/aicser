@@ -32,12 +32,32 @@ function isPublic(pathname: string): boolean {
   return false;
 }
 
-function corsHeaders(origin: string): Record<string, string> {
+/**
+ * Origins allowed to call /api/* from a browser with the user's cookies: this app itself, its
+ * public URL, and any listed in CORS_ALLOWED_ORIGINS (comma-separated). Every other site gets no
+ * CORS headers, so the browser won't let it read responses (the login cookie is SameSite=Lax,
+ * but sibling subdomains are same-site and would otherwise be let in). Embeds don't need CORS:
+ * their pages are served from this origin.
+ */
+export function allowedCorsOrigin(origin: string | null, ownOrigin: string): string | null {
+  if (!origin) return null;
+  const normalize = (o: string) => o.trim().replace(/\/+$/, '').toLowerCase();
+  const allowed = new Set(
+    [ownOrigin, process.env.NEXT_PUBLIC_APP_URL || '', ...(process.env.CORS_ALLOWED_ORIGINS || '').split(',')]
+      .map(normalize)
+      .filter(Boolean)
+  );
+  return allowed.has(normalize(origin)) ? origin : null;
+}
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  if (!origin) return {};
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Allow-Credentials': 'true',
+    Vary: 'Origin',
   };
 }
 
@@ -80,7 +100,7 @@ function embedFrameAncestors(token: string | null): string[] {
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const origin = request.headers.get('origin') ?? '*';
+  const origin = allowedCorsOrigin(request.headers.get('origin'), request.nextUrl.origin);
 
   if (request.method === 'OPTIONS' && pathname.startsWith('/api/')) {
     return new NextResponse(null, {

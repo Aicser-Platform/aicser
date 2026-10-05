@@ -6395,6 +6395,8 @@
     "refreshed_ok": "已刷新 {name}"
   },
   "monaco_sql_editor": {
+    "run": "运行",
+    "cancel": "取消",
     "label_language": "语言：",
     "label_row_limit": "行数限制：",
     "run_sql": "运行 SQL",

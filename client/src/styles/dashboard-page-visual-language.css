@@ -574,6 +574,8 @@
     max-width: none;
     width: 100%;
     margin-left: 0 !important;
+    flex: 0 0 auto !important;
+    height: 36px !important;
   }
 
   .page-panel-toolbar__filters {

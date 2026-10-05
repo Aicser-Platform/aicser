@@ -98,6 +98,21 @@ def test_semantic_block_comes_from_the_fact_table_yaml():
     assert semantic_block({"orders": "version: 1\n"}) is None
 
 
+def test_semantic_block_gathers_measures_from_every_table():
+    """Measures are defined per table: a pipeline with measures on orders and customers shows
+    both, not just the first table's."""
+    from src.modules.pipeline.overview import semantic_block
+
+    orders = 'semantic:\n  fact_table: "orders"\n  time_grain: day\n  metrics: [{"name": "rev", "type": "sum", "column": "total"}, {"name": "n_orders", "type": "count", "column": "order_id"}]\n'
+    customers = 'semantic:\n  fact_table: "customers"\n  metrics: [{"name": "n_customers", "type": "count", "column": "customer_id"}]\n'
+
+    block = semantic_block({"orders": orders, "customers": customers, "products": "version: 1\n"})
+
+    assert [m["name"] for m in block["metrics"]] == ["rev", "n_orders", "n_customers"]
+    assert [m["table"] for m in block["metrics"]] == ["orders", "orders", "customers"]
+    assert block["tables"] == ["orders", "customers"] and block["time_grain"] == "day"
+
+
 def test_registry_metrics_back_the_semantic_tab_when_yaml_has_none():
     from src.modules.pipeline.overview import registry_semantic
 

@@ -54,6 +54,10 @@ async def test_ingest_stage_writes_bronze_and_records_the_lake_object(
     added = []
     session = AsyncMock()
     session.add = MagicMock(side_effect=added.append)
+    # Lookups find nothing: no earlier Bronze for this table
+    nothing = MagicMock()
+    nothing.scalar_one_or_none.return_value = None
+    session.execute = AsyncMock(return_value=nothing)
 
     org_id = uuid.uuid4()
     ctx = RunContext(
@@ -350,6 +354,9 @@ async def test_ingest_stage_reads_an_existing_bronze_object_for_a_file_upload_da
     added = []
     session = AsyncMock()
     session.add = MagicMock(side_effect=added.append)
+    nothing = MagicMock()
+    nothing.scalar_one_or_none.return_value = None
+    session.execute = AsyncMock(return_value=nothing)
 
     org_id = uuid.uuid4()
     ctx = RunContext(

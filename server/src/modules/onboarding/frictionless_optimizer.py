@@ -147,11 +147,12 @@ class FrictionlessOptimizer:
                 "experienceLevel": "intermediate",  # Safe default
             }
         
-        # Set smart defaults for plan
+        # Default plan is Free with no trial: a trial is only ever started when the
+        # user opts in (src/shared/trial_grant.py), never by a missing field.
         if "plan" not in onboarding_data:
             onboarding_data["plan"] = {
-                "selectedPlan": "team",
-                "enableTeamTrial": True,
+                "selectedPlan": "free",
+                "enableTeamTrial": False,
                 "enableProTrial": False,
                 "trialStarted": False,
             }

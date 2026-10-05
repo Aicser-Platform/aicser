@@ -6395,6 +6395,8 @@
     "refreshed_ok": "รีเฟรช {name} แล้ว"
   },
   "monaco_sql_editor": {
+    "run": "เรียกใช้",
+    "cancel": "ยกเลิก",
     "label_language": "ภาษา:",
     "label_row_limit": "จำกัดจำนวนแถว:",
     "run_sql": "รัน SQL",

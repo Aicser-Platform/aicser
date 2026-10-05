@@ -5,6 +5,7 @@ connector runtime jobs, and query history.
 """
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -316,7 +317,7 @@ class DataLakeObject(BaseModel):
     partition_values = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     checksum = Column(String(128), nullable=True)
     row_count = Column(Integer, nullable=True)
-    byte_size = Column(Integer, nullable=True)
+    byte_size = Column(BigInteger, nullable=True)
     status = Column(
         Enum(
             "active",
@@ -330,6 +331,9 @@ class DataLakeObject(BaseModel):
         index=True,
     )
     created_by_job_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    # The saved S3 connection (data_sources.id) this object was written to; NULL means the
+    # platform lakehouse. Readers use it to find the keys for that bucket.
+    storage_destination_id = Column(String, nullable=True, index=True)
 
     __table_args__ = (
         UniqueConstraint("object_key", "version", name="uq_data_lake_object_version"),

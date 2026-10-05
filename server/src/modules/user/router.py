@@ -6,6 +6,7 @@ Mounted at /api/users in core/api.py.
 
 import json
 import logging
+import os
 import uuid as _uuid
 import base64
 from datetime import datetime
@@ -235,6 +236,38 @@ async def get_profile(
         profile["avatar_url"] = await _resolve_avatar_display_url(profile["avatar_url"])
 
     return profile
+
+
+@router.get("/featurebase-token")
+async def get_featurebase_token(
+    current_token: dict = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """Short-lived JWT that signs the user into the Featurebase portal (secure installation).
+
+    The support portal is a cross-origin iframe, so the browser SDK's identify call can't sign
+    the user in there (its own /api/v1/user calls answered 401). Featurebase accepts a JWT
+    signed with the workspace's secret instead. Returns {"token": null} unless
+    FEATUREBASE_JWT_SECRET is configured, so the portal keeps working anonymously.
+    """
+    secret = os.getenv("FEATUREBASE_JWT_SECRET", "").strip()
+    if not secret:
+        return {"token": None}
+    user_id = _require_user_id(current_token)
+    profile = await UserService(db).get_profile(user_id)
+    if profile is None or not profile.get("email"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    import jwt as pyjwt
+
+    name = " ".join(p for p in (profile.get("first_name"), profile.get("last_name")) if p) or profile.get("username")
+    claims = {
+        "email": profile["email"],
+        "userId": str(profile.get("id") or user_id),
+        "exp": int(datetime.utcnow().timestamp()) + 300,
+    }
+    if name:
+        claims["name"] = name
+    return {"token": pyjwt.encode(claims, secret, algorithm="HS256")}
 
 
 @router.put("/profile", response_model=UserProfileResponse)

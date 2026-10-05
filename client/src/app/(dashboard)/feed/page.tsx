@@ -504,10 +504,10 @@ const SocialFeedPage: React.FC = () => {
   }, [items, streamView]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-4 sm:px-6 text-[var(--ant-color-text)]">
-      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-4 pb-3">
+    <div className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-x-hidden overflow-y-auto bg-[var(--ant-color-bg-layout)] px-3 sm:px-6 text-[var(--ant-color-text)]">
+      <div className="sticky top-0 z-40 bg-[var(--ant-color-bg-layout)] pt-3 sm:pt-4 pb-2 sm:pb-3">
         <div className="mx-auto w-full max-w-[1100px]">
-          <div className="page-section-card content-card rounded-[10px] border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-4 py-3">
+          <div className="page-section-card content-card rounded-[10px] border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] px-3 py-2.5 sm:px-4 sm:py-3">
             <FeedFilters
               value={filters}
               options={filterOptions}

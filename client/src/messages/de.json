@@ -6395,6 +6395,8 @@
     "refreshed_ok": "„{name}“ aktualisiert"
   },
   "monaco_sql_editor": {
+    "run": "Ausführen",
+    "cancel": "Abbrechen",
     "label_language": "Sprache:",
     "label_row_limit": "Zeilenlimit:",
     "run_sql": "SQL ausführen",

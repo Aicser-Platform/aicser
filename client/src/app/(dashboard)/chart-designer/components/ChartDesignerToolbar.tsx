@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Dropdown, Input, Modal, Segmented, Tooltip, message } from 'antd';
+import { Button, Dropdown, Input, Segmented, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ShareAltOutlined,
@@ -23,8 +23,7 @@ import { formatFeedPublishError } from '@/components/Feed/feedPublishUtils';
 import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
-import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
-import { useEmbedCode } from '@/hooks/useEmbedCode';
+import { EmbedDialog } from '@/components/embed/EmbedDialog';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
 import { chartDescription, chartSource } from '../../dashboards/utils/chartAnnotations';
@@ -57,7 +56,6 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
   const saveChart = useChartDesignerStore((s) => s.saveChart);
   const updateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
-  const { createEmbedCode, loading: embedLoading } = useEmbedCode();
 
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishChartId, setPublishChartId] = useState<string | undefined>();
@@ -66,9 +64,7 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
   const [publishSnapshotPayload, setPublishSnapshotPayload] = useState<Record<string, unknown> | undefined>();
   const [publishCaptureSelector, setPublishCaptureSelector] = useState<string | undefined>();
   const [preparing, setPreparing] = useState(false);
-  const [embedOpen, setEmbedOpen] = useState(false);
-  const [embedUrl, setEmbedUrl] = useState('');
-  const [embedToken, setEmbedToken] = useState<string | undefined>();
+  const [embedChartId, setEmbedChartId] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState('');
 
   useEffect(() => {
@@ -167,28 +163,15 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
       message.warning(t('share_select_chart'));
       return;
     }
-    setEmbedOpen(true);
-    setEmbedUrl('');
-    setEmbedToken(undefined);
+    // An embed shows the saved chart, so save it first
     setPreparing(true);
     try {
       const chartId = await ensureChartId();
-      if (!chartId) {
-        setEmbedOpen(false);
-        return;
-      }
-      const title = selectedWidget.title?.trim() || t('untitled_chart');
-      const result = await createEmbedCode({
-        scope: 'chart',
-        resourceId: chartId,
-        name: `Embed: ${title}`,
-      });
-      setEmbedUrl(result.embedUrl);
-      setEmbedToken(result.token);
+      if (chartId) setEmbedChartId(String(chartId));
     } finally {
       setPreparing(false);
     }
-  }, [createEmbedCode, ensureChartId, selectedWidget, t]);
+  }, [ensureChartId, selectedWidget, t]);
 
   const shareMenuItems: MenuProps['items'] = [
     {
@@ -346,22 +329,14 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
         />
       )}
 
-      <Modal
-        title={te('embed_get_code')}
-        open={embedOpen}
-        onCancel={() => setEmbedOpen(false)}
-        width={720}
-        footer={null}
-        destroyOnHidden
-      >
-        <EmbedCodePanel
-          embedUrl={embedUrl}
-          loading={embedLoading || preparing}
-          token={embedToken}
-          title={title}
-          iframeHeight={400}
-        />
-      </Modal>
+      <EmbedDialog
+        open={Boolean(embedChartId)}
+        onClose={() => setEmbedChartId(null)}
+        scope="chart"
+        resourceId={embedChartId}
+        name={title}
+        iframeHeight={400}
+      />
     </>
   );
 }
