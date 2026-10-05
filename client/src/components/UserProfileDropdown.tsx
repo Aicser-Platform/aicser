@@ -15,6 +15,9 @@ import {
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import { getPlanRemaining } from '@/utils/planRemaining';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
 import { useOnboardingStore, useOnboarding } from '@/stores/useOnboardingStore';
 import { useProfileStore } from '@/stores/useProfileStore';
 import PricingModal from '@/components/PricingModal';
@@ -139,7 +142,17 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   };
 
   const isTrial = subscription?.is_trial === true;
-  const trialDaysRemaining = (subscription?.trial_days_remaining as number | null) ?? null;
+  // Days left until the plan (or trial) ends; same rule and wording as Settings > Billing.
+  const tBilling = useTranslations('billing_tab');
+  // Upgrading is the owner's (org:manage_billing); admins can open billing read-only.
+  const { hasPermission, hasAnyPermission } = usePermissions();
+  const canManageBilling = hasPermission(Permission.ORG_MANAGE_BILLING);
+  const canViewBilling = hasAnyPermission([Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING]);
+  const [nowMs] = useState(() => Date.now());
+  const remaining = getPlanRemaining(subscription as Parameters<typeof getPlanRemaining>[0], nowMs);
+  const remainingDate = remaining ? remaining.end.toLocaleDateString(currentLocale) : '';
+  // A plan about to end (not renew) gets the warning colour in its last week.
+  const remainingUrgent = Boolean(remaining && remaining.kind !== 'renews' && remaining.daysLeft <= 7);
 
   const getPlanBadgeColor = (plan: string) => {
     if (isTrial) return 'orange';
@@ -217,7 +230,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
             key: 'plan-info',
             label: (
               <div style={{ padding: '12px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isTrial ? '4px' : '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: remaining ? '4px' : '10px' }}>
                   <span className="text-sm text-gray-900 dark:text-gray-100" style={{ fontWeight: 500 }}>
                     {t('current_plan')}
                   </span>
@@ -227,10 +240,23 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                     style={{ fontSize: '11px', padding: '2px 8px' }}
                   />
                 </div>
-                {isTrial && trialDaysRemaining !== null && (
-                  <div style={{ marginBottom: '10px' }}>
-                    <span className="text-xs" style={{ color: '#fa8c16' }}>
-                      {t('trial_days_remaining', { count: trialDaysRemaining })}
+                {!subLoading && remaining && (
+                  <div style={{ marginBottom: '10px' }} className="text-xs">
+                    <span
+                      style={{ fontWeight: 600, color: remainingUrgent ? 'var(--ant-color-warning, #fa8c16)' : undefined }}
+                      className={remainingUrgent ? undefined : 'text-gray-900 dark:text-gray-100'}
+                    >
+                      {remaining.daysLeft === 0
+                        ? tBilling('plan_ends_today')
+                        : tBilling('plan_days_left', { count: remaining.daysLeft })}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {' · '}
+                      {remaining.kind === 'trial'
+                        ? tBilling('plan_trial_ends_on', { date: remainingDate })
+                        : remaining.kind === 'renews'
+                          ? tBilling('plan_renews_on', { date: remainingDate })
+                          : tBilling('plan_ends_on', { date: remainingDate })}
                     </span>
                   </div>
                 )}
@@ -300,32 +326,36 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                   )}
                 </div>
 
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<CrownOutlined />}
-                  block
-                  onClick={() => setPricingModalVisible(true)}
-                  style={{
-                    background: 'var(--color-brand-primary, #00c2cb)',
-                    borderColor: 'var(--color-brand-primary, #00c2cb)',
-                  }}
-                >
-                  {t('upgrade_plan')}
-                </Button>
-                <Button
-                  type="link"
-                  size="small"
-                  block
-                  icon={<CreditCardOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push('/settings?tab=billing-subscription');
-                  }}
-                  style={{ marginTop: 4, paddingLeft: 0 }}
-                >
-                  {t('manage_billing')}
-                </Button>
+                {canManageBilling && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<CrownOutlined />}
+                    block
+                    onClick={() => setPricingModalVisible(true)}
+                    style={{
+                      background: 'var(--color-brand-primary, #00c2cb)',
+                      borderColor: 'var(--color-brand-primary, #00c2cb)',
+                    }}
+                  >
+                    {t('upgrade_plan')}
+                  </Button>
+                )}
+                {canViewBilling && (
+                  <Button
+                    type="link"
+                    size="small"
+                    block
+                    icon={<CreditCardOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push('/settings?tab=billing-subscription');
+                    }}
+                    style={{ marginTop: 4, paddingLeft: 0 }}
+                  >
+                    {t('manage_billing')}
+                  </Button>
+                )}
               </div>
             ),
             onClick: () => setPricingModalVisible(true),

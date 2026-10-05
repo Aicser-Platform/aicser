@@ -5,6 +5,8 @@ export enum Permission {
   ORG_DELETE = 'org:delete',
   ORG_MANAGE_USERS = 'org:manage_users',
   ORG_MANAGE_BILLING = 'org:manage_billing',
+  /** See plan, usage and invoices without changing them (org_admin). */
+  ORG_VIEW_BILLING = 'org:view_billing',
   ORG_VIEW_ANALYTICS = 'org:view_analytics',
 
   PROJECT_VIEW = 'project:view',

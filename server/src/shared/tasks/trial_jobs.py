@@ -46,7 +46,8 @@ async def revert_expired_trials() -> None:
                             status               = 'active',
                             trial_ends_at        = NULL,
                             trial_expiring_soon  = false,
-                            provider             = NULL
+                            provider             = NULL,
+                            period_starts_at     = NULL
                         WHERE status = 'trialing'
                           AND provider = 'internal'
                           AND trial_ends_at IS NOT NULL

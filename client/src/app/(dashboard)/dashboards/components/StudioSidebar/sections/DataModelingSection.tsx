@@ -124,10 +124,8 @@ export function DataModelingSection({
   const t = useTranslations('dashboards_page');
   const queryClient = useQueryClient();
   const { dataSources, isLoading: dsLoading } = useDataSources();
-  // Shared with the Data tab (DataSection.tsx) via the same global store,
-  // instead of its own disconnected local selection - previously switching
-  // the source here had no effect on Data and vice versa, despite both
-  // being "about my data" one click apart in the same sidebar.
+  // The global data source store, not a disconnected local selection, so the
+  // source picked here is the one the rest of the app uses.
   const globalSelectedId = useDataSourceStore((s) => s.selectedId);
   const selectGlobalDataSource = useDataSourceStore((s) => s.select);
   const [activeSourceId, setActiveSourceIdState] = useState<string | null>(globalSelectedId);

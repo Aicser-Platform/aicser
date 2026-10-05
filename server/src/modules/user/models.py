@@ -47,6 +47,9 @@ class User(BaseModel):
     onboarding_progress = Column(JSONB, nullable=True)
     onboarding_started_at = Column(DateTime(timezone=True), nullable=True)
     onboarding_completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Set once, the first time this user starts a free trial in any organization
+    # (src/shared/trial_grant.py); never cleared, so the trial is once per user.
+    trial_used_at = Column(DateTime(timezone=True), nullable=True)
     phone_number = Column(String(20), nullable=True)
     company = Column(String(255), nullable=True)
     location = Column(String(255), nullable=True)

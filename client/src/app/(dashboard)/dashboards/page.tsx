@@ -60,7 +60,6 @@ import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { StudioSidebarRail, type SidebarSection } from './components/StudioSidebar/StudioSidebarRail';
 import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
 import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
-import { DataSection } from './components/StudioSidebar/sections/DataSection';
 import { DataModelingSection } from './components/StudioSidebar/sections/DataModelingSection';
 import { InsertSection } from './components/StudioSidebar/sections/InsertSection';
 import { AiChatSection } from './components/StudioSidebar/sections/AiChatSection';
@@ -521,8 +520,10 @@ export default function NewDashboardStudio() {
     try {
       const saved = localStorage.getItem('studio_sidebar_state');
       if (saved) {
-        const { section, open } = JSON.parse(saved) as { section: SidebarSection; open: boolean };
-        return open ? section : null;
+        const { section, open } = JSON.parse(saved) as { section: SidebarSection | 'data'; open: boolean };
+        if (!open) return null;
+        // The Data tab was removed; a state saved on it opens Data Modeling instead.
+        return section === 'data' ? 'modeling' : section;
       }
     } catch {
       // ignore parse errors
@@ -1057,7 +1058,7 @@ export default function NewDashboardStudio() {
     }
   };
 
-  const isFullPageSection = sidebarSection === 'modeling' || sidebarSection === 'data';
+  const isFullPageSection = sidebarSection === 'modeling';
 
   if (!mounted) return null;
 
@@ -1297,7 +1298,6 @@ export default function NewDashboardStudio() {
             >
               {sidebarSection === 'dashboards' && <DashboardsSection />}
               {sidebarSection === 'charts' && <InsertSection />}
-              {sidebarSection === 'data' && <DataSection />}
               {sidebarSection === 'modeling' && (
                 <DataModelingSection
                   onRelationshipSelect={setSelectedRelationship}

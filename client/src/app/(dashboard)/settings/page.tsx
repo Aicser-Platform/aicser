@@ -241,7 +241,8 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Billing',
         icon: <CreditCardOutlined />,
         eeOnly: true,
-        requiredPermission: Permission.ORG_MANAGE_BILLING,
+        // Admins can view; changing the plan or paying stays with org:manage_billing (owner).
+        requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
         component: SubscriptionTab,
         description: 'Plan, usage, invoices',
       },

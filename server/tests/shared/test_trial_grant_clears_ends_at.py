@@ -38,13 +38,29 @@ async def test_trial_over_an_ended_subscription_clears_ends_at():
     assert "ends_at = NULL" in update_sql
 
 
-def test_gate_treats_a_trial_with_a_stale_ends_at_as_ended():
-    """Why the row must be cleaned: this is the gate's rule the stale value tripped."""
+def test_gate_ends_a_trial_by_trial_ends_at_not_a_stale_ends_at():
+    """A leftover ends_at from the previous subscription no longer ends a running trial."""
     from src.modules.pricing.feature_gate import _subscription_inactive
 
     now = datetime.now(timezone.utc)
-    stale = SimpleNamespace(status="trialing", trial_ends_at=now + timedelta(days=13), ends_at=now - timedelta(days=27))
-    clean = SimpleNamespace(status="trialing", trial_ends_at=now + timedelta(days=13), ends_at=None)
+    stale = SimpleNamespace(status="trialing", trial_ends_at=now + timedelta(days=13),
+                            ends_at=now - timedelta(days=27), provider="internal")
+    over = SimpleNamespace(status="trialing", trial_ends_at=now - timedelta(days=1),
+                           ends_at=None, provider="internal")
 
-    assert _subscription_inactive(stale) is True
-    assert _subscription_inactive(clean) is False
+    assert _subscription_inactive(stale) is False
+    assert _subscription_inactive(over) is True
+
+
+def test_gate_keeps_a_past_due_or_renewing_stripe_plan():
+    """Billing shows these as the paid plan; the gate must not quietly treat them as Free."""
+    from src.modules.pricing.feature_gate import _subscription_inactive
+
+    now = datetime.now(timezone.utc)
+    past_due = SimpleNamespace(status="past_due", trial_ends_at=None, ends_at=now + timedelta(days=20), provider="stripe")
+    renewing = SimpleNamespace(status="active", trial_ends_at=None, ends_at=now - timedelta(hours=6), provider="stripe")
+    lapsed_khqr = SimpleNamespace(status="active", trial_ends_at=None, ends_at=now - timedelta(days=1), provider="khqr")
+
+    assert _subscription_inactive(past_due) is False
+    assert _subscription_inactive(renewing) is False
+    assert _subscription_inactive(lapsed_khqr) is True
