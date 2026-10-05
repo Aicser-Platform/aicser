@@ -17,7 +17,6 @@ interface StudioSidebarPanelProps {
 const SECTION_LABEL_KEYS: Record<SidebarSection, string> = {
   dashboards: 'rail_dashboards',
   charts: 'rail_charts',
-  data: 'rail_data',
   modeling: 'rail_modeling',
   ai: 'rail_ai',
 };

@@ -2,10 +2,8 @@
  * Shared schema-field helpers: semantic role inference, friendly naming, and
  * default aggregation suggestions for a table column.
  *
- * Extracted from the dashboard builder's field panel
- * (dashboards/components/StudioSidebar/sections/DataSection.tsx) so the Data
- * Source detail page's schema browser can offer the same quality of
- * role-inference / friendly names instead of a bare column list.
+ * Used by the Data Source detail page's schema browser for role inference and
+ * friendly names instead of a bare column list.
  */
 
 export type SemanticRole = 'dimension' | 'measure' | 'date' | 'id';

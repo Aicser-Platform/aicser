@@ -8,6 +8,16 @@ export const getBackendUrl = (): string => {
   return raw.replace(/\/$/, '');
 };
 
+/**
+ * Public MCP endpoint shown to users for AI assistants (Claude, ChatGPT, Cursor).
+ * Set NEXT_PUBLIC_MCP_URL where MCP has its own public host (production:
+ * https://mcp.aicser.com/mcp); otherwise it is the API URL's /mcp path.
+ */
+export const getMcpUrl = (): string => {
+  const explicit = (process.env.NEXT_PUBLIC_MCP_URL || '').trim();
+  return explicit ? explicit.replace(/\/$/, '') : `${getBackendUrl()}/mcp`;
+};
+
 /** Used by API route proxy (server-side). Prefer API_TARGET for Docker (chat2chart-server). */
 export const getBackendUrlForApi = (): string => {
   const raw =
