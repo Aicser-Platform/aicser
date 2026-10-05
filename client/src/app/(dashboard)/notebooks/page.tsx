@@ -117,7 +117,7 @@ function NotebooksList() {
   };
 
   return (
-    <DashboardPageShell maxWidth={1200}>
+    <DashboardPageShell className="notebooks-page">
       <DashboardPageHeader
         icon={<BookOutlined />}
         title={t('title')}
@@ -171,7 +171,7 @@ function NotebooksList() {
         ) : (
         <Row gutter={[12, 12]}>
           {shown.map((nb) => (
-            <Col key={nb.id} xs={24} sm={12} lg={8}>
+            <Col key={nb.id} xs={24} sm={12} md={8} lg={8} xl={6}>
               <Card
                 size="small"
                 className="nb-card"

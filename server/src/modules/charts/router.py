@@ -1006,7 +1006,7 @@ async def generate_chart(
                 # Get user's organization
                 result = await db.execute(
                     text("""
-                        SELECT o.id, o.plan_type
+                        SELECT o.id
                         FROM organizations o
                         JOIN user_roles ur ON o.id = ur.organization_id
                         WHERE ur.user_id = :user_id
@@ -1018,7 +1018,10 @@ async def generate_chart(
                 org = result.fetchone()
                 if org:
                     org_id = org.id
-                    plan_type = org.plan_type
+                    # The subscription decides the plan (and so the watermark), not the
+                    # never-updated organizations.plan_type column.
+                    from src.modules.pricing.feature_gate import get_organization_plan
+                    plan_type = await get_organization_plan(str(org_id), db) or "free"
                     
                     # Check AI credits (all plans have credits, free plan has 10/month)
                     from src.modules.pricing.rate_limiter import RateLimiter

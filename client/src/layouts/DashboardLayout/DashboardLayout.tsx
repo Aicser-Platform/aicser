@@ -48,9 +48,10 @@ const { Content } = Layout;
 
 interface CustomLayoutProps {
   children: React.ReactNode;
+  banner?: React.ReactNode;
 }
 
-const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
+const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children, banner }) => {
     const t = useTranslations('layout');
   const [collapsed, setCollapsed] = useState(() => getStoredLayoutSidebarCollapsed());
   const [isBreakpoint, setIsBreakpoint] = useState(false);
@@ -99,14 +100,20 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
       setCollapsed(true);
       return;
     }
+    // On tablet landscape and compact screens (<1200px, e.g. iPad mini / 1024px),
+    // default to collapsed rail (64px) so the workspace has sufficient breathing room.
+    if (!screens.xl) {
+      setCollapsed(true);
+      return;
+    }
     setCollapsed(getStoredLayoutSidebarCollapsed());
   }, [screens]);
 
   React.useEffect(() => {
-    if (!isBreakpoint) {
+    if (!isBreakpoint && screens.xl) {
       setStoredLayoutSidebarCollapsed(collapsed);
     }
-  }, [collapsed, isBreakpoint]);
+  }, [collapsed, isBreakpoint, screens.xl]);
 
   const sidebarOffset = React.useMemo(
     () => (isBreakpoint ? 0 : collapsed ? RAIL_WIDTH : EXPANDED_WIDTH),
@@ -194,6 +201,7 @@ const CustomLayout: React.FC<CustomLayoutProps> = React.memo(({ children }) => {
           highlightConnectData={!dataSourcesLoading && dataSources.length === 0}
           failedDataSourcesCount={failedDataSourcesCount}
         />
+        {banner}
         <Content
           id="main-content"
           tabIndex={-1}

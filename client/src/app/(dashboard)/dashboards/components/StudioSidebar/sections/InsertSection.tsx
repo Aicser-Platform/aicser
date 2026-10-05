@@ -3,9 +3,16 @@
 import React from 'react';
 import {
   BarChartOutlined,
+  LineChartOutlined,
+  AreaChartOutlined,
+  PieChartOutlined,
+  DotChartOutlined,
+  FireOutlined,
+  DashboardOutlined,
   NumberOutlined,
   TableOutlined,
   FontSizeOutlined,
+  BorderHorizontalOutlined,
   FilterOutlined,
   GlobalOutlined,
 } from '@ant-design/icons';
@@ -23,14 +30,46 @@ import { maxLayoutY } from '../../../utils/layoutSanitize';
 
 const { Text } = Typography;
 
-/** Primary insert palette — one filter control (not Slicer + Filter duplicates). */
-const WIDGET_ITEMS: { type: WidgetType; labelKey: string; icon: React.ReactNode }[] = [
-  { type: 'bar', labelKey: 'insert_chart', icon: <BarChartOutlined /> },
-  { type: 'stat', labelKey: 'insert_kpi', icon: <NumberOutlined /> },
-  { type: 'table', labelKey: 'insert_table', icon: <TableOutlined /> },
-  { type: 'text', labelKey: 'insert_text', icon: <FontSizeOutlined /> },
-  { type: 'slicer', labelKey: 'insert_filter_control', icon: <FilterOutlined /> },
-  { type: 'embed', labelKey: 'insert_embed', icon: <GlobalOutlined /> },
+interface PaletteCategory {
+  titleKey: string;
+  items: { type: WidgetType; labelKey: string; icon: React.ReactNode }[];
+}
+
+const CATEGORIES: PaletteCategory[] = [
+  {
+    titleKey: 'insert_category_visuals',
+    items: [
+      { type: 'bar', labelKey: 'insert_chart', icon: <BarChartOutlined /> },
+      { type: 'line', labelKey: 'insert_line', icon: <LineChartOutlined /> },
+      { type: 'area', labelKey: 'insert_area', icon: <AreaChartOutlined /> },
+      { type: 'pie', labelKey: 'insert_pie', icon: <PieChartOutlined /> },
+      { type: 'donut', labelKey: 'insert_donut', icon: <PieChartOutlined /> },
+      { type: 'scatter', labelKey: 'insert_scatter', icon: <DotChartOutlined /> },
+      { type: 'heatmap', labelKey: 'desc_heatmap', icon: <FireOutlined /> },
+      { type: 'gauge', labelKey: 'insert_gauge', icon: <DashboardOutlined /> },
+    ],
+  },
+  {
+    titleKey: 'insert_category_kpi',
+    items: [
+      { type: 'stat', labelKey: 'insert_kpi', icon: <NumberOutlined /> },
+      { type: 'table', labelKey: 'insert_table', icon: <TableOutlined /> },
+    ],
+  },
+  {
+    titleKey: 'insert_category_grouping',
+    items: [
+      { type: 'divider', labelKey: 'insert_divider', icon: <BorderHorizontalOutlined /> },
+      { type: 'text', labelKey: 'insert_text', icon: <FontSizeOutlined /> },
+      { type: 'embed', labelKey: 'insert_embed', icon: <GlobalOutlined /> },
+    ],
+  },
+  {
+    titleKey: 'insert_category_filters',
+    items: [
+      { type: 'slicer', labelKey: 'insert_filter_control', icon: <FilterOutlined /> },
+    ],
+  },
 ];
 
 function buildChartOptionsForType(type: WidgetType, templateName: string): Record<string, unknown> {
@@ -41,7 +80,7 @@ function buildChartOptionsForType(type: WidgetType, templateName: string): Recor
     case 'filter':
       return { slicerLabel: templateName };
     case 'divider':
-      return { sectionTitle: '', uppercase: true };
+      return { sectionTitle: 'Section Overview', uppercase: true };
     case 'image':
       return { imageUrl: '', objectFit: 'contain' };
     case 'gauge':
@@ -113,57 +152,78 @@ export function InsertSection() {
   };
 
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.45 }}>
         {t('insert_hint')}
       </Text>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 8,
-        }}
-      >
-        {WIDGET_ITEMS.map(({ type, labelKey, icon }) => (
-          <button
-            key={type}
-            type="button"
-            onClick={() => handleAdd(type)}
+
+      {CATEGORIES.map((cat) => (
+        <div key={cat.titleKey} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div
             style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 6,
-              padding: '12px 8px',
-              border: '1px solid var(--ant-color-border)',
-              borderRadius: 8,
-              background: 'var(--ant-color-bg-container)',
-              cursor: 'pointer',
-              fontSize: 12,
-              color: 'var(--ant-color-text)',
-              transition: 'border-color 0.15s, background 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                'var(--ant-color-primary)';
-              (e.currentTarget as HTMLButtonElement).style.background =
-                'var(--ant-color-primary-bg)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                'var(--ant-color-border)';
-              (e.currentTarget as HTMLButtonElement).style.background =
-                'var(--ant-color-bg-container)';
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--ant-color-text-tertiary)',
             }}
           >
-            <span style={{ fontSize: 20, color: 'var(--ant-color-primary)' }}>{icon}</span>
-            <span>{t(labelKey)}</span>
-          </button>
-        ))}
-      </div>
+            {t(cat.titleKey as never) ?? cat.titleKey}
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 6,
+            }}
+          >
+            {cat.items.map(({ type, labelKey, icon }) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => handleAdd(type)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '10px 6px',
+                  border: '1px solid var(--ant-color-border-secondary)',
+                  borderRadius: 6,
+                  background: 'var(--ant-color-bg-container)',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  color: 'var(--ant-color-text)',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                    'var(--ant-color-primary)';
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    'var(--ant-color-primary-bg)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor =
+                    'var(--ant-color-border-secondary)';
+                  (e.currentTarget as HTMLButtonElement).style.background =
+                    'var(--ant-color-bg-container)';
+                }}
+              >
+                <span style={{ fontSize: 18, color: 'var(--ant-color-primary)' }}>{icon}</span>
+                <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {t(labelKey as never) ?? labelKey}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
       <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.4 }}>
         {t('insert_filter_tip')}
       </Text>
     </div>
   );
 }
+
+export default InsertSection;

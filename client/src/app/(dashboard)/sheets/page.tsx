@@ -119,7 +119,7 @@ function WorkbooksList() {
   };
 
   return (
-    <DashboardPageShell maxWidth={1200}>
+    <DashboardPageShell className="sheets-page">
       <DashboardPageHeader
         icon={<TableOutlined />}
         title={t('title')}
@@ -156,7 +156,7 @@ function WorkbooksList() {
         ) : (
         <Row gutter={[12, 12]}>
           {shown.map((wb) => (
-            <Col key={wb.id} xs={24} sm={12} lg={8}>
+            <Col key={wb.id} xs={24} sm={12} md={8} lg={8} xl={6}>
               <Card
                 size="small"
                 title={<Link href={`/sheets/${wb.id}`} className="wb-card__title">{wb.title}</Link>}

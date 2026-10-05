@@ -56,3 +56,9 @@
   background: var(--ant-color-fill-quaternary, #f6f8fa);
   border: 1px dashed var(--ant-color-border, #e1e4e8);
 }
+
+.embed-dialog__steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  line-height: 1.7;
+}

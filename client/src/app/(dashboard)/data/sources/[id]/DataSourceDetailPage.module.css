@@ -71,5 +71,22 @@
   .headerTop {
     align-items: flex-start;
     flex-direction: column;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 576px) {
+  .content {
+    padding: 12px;
+  }
+
+  .headerTop {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .title {
+    font-size: 20px !important;
   }
 }

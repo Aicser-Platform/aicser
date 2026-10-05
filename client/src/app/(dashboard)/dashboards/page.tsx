@@ -62,6 +62,8 @@ import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPane
 import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
 import { DataSection } from './components/StudioSidebar/sections/DataSection';
 import { DataModelingSection } from './components/StudioSidebar/sections/DataModelingSection';
+import { InsertSection } from './components/StudioSidebar/sections/InsertSection';
+import { AiChatSection } from './components/StudioSidebar/sections/AiChatSection';
 import type { DataModelRelationship } from '@/api/dataModel';
 import { RelationshipDetailsPanel } from './components/ERDCanvas/RelationshipDetailsPanel';
 import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
@@ -1055,7 +1057,7 @@ export default function NewDashboardStudio() {
     }
   };
 
-  const isFullPageSection = sidebarSection === 'modeling';
+  const isFullPageSection = sidebarSection === 'modeling' || sidebarSection === 'data';
 
   if (!mounted) return null;
 
@@ -1294,11 +1296,36 @@ export default function NewDashboardStudio() {
               onCollapse={() => handleSidebarSectionChange(null)}
             >
               {sidebarSection === 'dashboards' && <DashboardsSection />}
-              {/* {sidebarSection === 'data' && <DataSection />} */}
+              {sidebarSection === 'charts' && <InsertSection />}
+              {sidebarSection === 'data' && <DataSection />}
               {sidebarSection === 'modeling' && (
                 <DataModelingSection
                   onRelationshipSelect={setSelectedRelationship}
                   selectedRelationshipId={selectedRelationship?.id ?? null}
+                />
+              )}
+              {sidebarSection === 'ai' && (
+                <AiChatSection
+                  activeDashboardId={activeDashboardId}
+                  activeDashboardName={dashboards.find((d) => d.id === activeDashboardId)?.name}
+                  widgetCount={widgets.length}
+                  onAddDivider={() => {
+                    const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === 'divider');
+                    if (template) void addWidget(template);
+                  }}
+                  onAddKpi={() => {
+                    const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === 'stat');
+                    if (template) void addWidget(template);
+                  }}
+                  onAddNewPage={async () => {
+                    if (!activeDashboardId) return;
+                    const page = await chartService.createPage(activeDashboardId, 'New Section');
+                    filterCtx.setPages((prev) => [...prev, page]);
+                    filterCtx.setActivePageId(page.id);
+                  }}
+                  onOpenChartImport={() => {
+                    chartImport.setTargetDashboardId(activeDashboardId ?? null);
+                  }}
                 />
               )}
             </StudioSidebarPanel>

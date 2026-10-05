@@ -11,6 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.data.services.upload_datasource_storage_service import UploadDatasourceStorageService
+from src.modules.pricing.feature_gate import get_organization_plan
 from src.modules.pricing.plans import get_plan_limits
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,9 @@ class DataRetentionService:
 
             for org in org_rows:
                 org_id = str(org.id)
-                plan_type = org.plan_type or "free"
+                # The subscription decides the plan; organizations.plan_type is never updated when
+                # an org upgrades, so reading it applied the free 7-day window to paying orgs.
+                plan_type = await get_organization_plan(org_id, self.db) or "free"
                 limits = get_plan_limits(plan_type)
                 days = limits.get("data_history_days")
 
@@ -162,7 +165,9 @@ class DataRetentionService:
 
             for org in org_rows:
                 org_id = str(org.id)
-                plan_type = org.plan_type or "free"
+                # The subscription decides the plan; organizations.plan_type is never updated when
+                # an org upgrades, so reading it applied the free 7-day window to paying orgs.
+                plan_type = await get_organization_plan(org_id, self.db) or "free"
                 limits = get_plan_limits(plan_type)
                 days = limits.get("data_history_days")
 

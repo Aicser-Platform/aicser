@@ -105,6 +105,6 @@ async function handleConnectorsRequest(
         details: error instanceof Error ? error.stack : String(error),
       },
       { status: 500 }
-    )
+    );
   }
 }

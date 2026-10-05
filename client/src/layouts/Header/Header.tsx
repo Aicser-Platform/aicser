@@ -497,7 +497,7 @@ export const LayoutHeader: React.FC<Props> = ({
               </Badge>
             </Tooltip>
           )}
-          {isEnterpriseEdition && (
+          {!isBreakpoint && isEnterpriseEdition && (
             <Tooltip title={t('customize_theme')}>
               <Button
                 type="text"

@@ -51,6 +51,8 @@ def encrypt_credentials(config: Dict[str, Any]) -> Dict[str, Any]:
         "client_secret", "access_token", "refresh_token",
         # Warehouse secrets: a BigQuery service-account key, and a full URL that can embed a password.
         "credentials_json", "service_account_json", "uri",
+        # Object-storage keys as the S3/Azure/GCS connection form sends them (/data/delta-iceberg/connect).
+        "access_key", "secret_key", "account_key", "sas_token", "service_account_key",
     }
     out = dict(config)
     for k in list(out.keys()):

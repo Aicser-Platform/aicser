@@ -316,6 +316,7 @@ const NAV_GROUPS: NavGroup[] = [
         eeOnly: true,
         component: EmbedTab,
         description: 'Embed charts in your apps',
+        requiredFeature: 'embed_analytics',
       },
       {
         key: 'audit',

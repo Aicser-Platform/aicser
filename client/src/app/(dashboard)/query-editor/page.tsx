@@ -230,7 +230,6 @@ export default function QueryEditorPage() {
                   {dataSources.length === 0 && (
                     <Button
                       type="primary"
-                      size="small"
                       icon={<DatabaseOutlined />}
                       onClick={() => {
                         window.dispatchEvent(new CustomEvent('query-editor-open-connect-data'));
@@ -243,7 +242,6 @@ export default function QueryEditorPage() {
                   {['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
                     <Button
                       type="default"
-                      size="small"
                       icon={<MessageOutlined />}
                       onClick={() => router.push('/chat')}
                     >
@@ -254,7 +252,6 @@ export default function QueryEditorPage() {
                   {savedQueryId ? (
                     <Button
                       type="default"
-                      size="small"
                       icon={<ShareAltOutlined />}
                       onClick={() => setPublishOpen(true)}
                     >
@@ -356,7 +353,7 @@ export default function QueryEditorPage() {
                     placement="bottomRight"
                     overlayStyle={{ maxWidth: '360px' }}
                   >
-                    <Button type="default" size="small" icon={<BulbOutlined />}>
+                    <Button type="default" icon={<BulbOutlined />}>
                       {t('query_templates')}
                     </Button>
                   </Popover>
@@ -364,14 +361,14 @@ export default function QueryEditorPage() {
           }
         />
 
-        <NarrowViewportNotice message={tCommon('desktop_recommended')} storageKey="query-editor" />
+        <NarrowViewportNotice message={tCommon('desktop_recommended')} storageKey="query-editor" breakpoint={576} />
 
         {showWelcome && (
-          <div style={{ padding: '8px 12px', margin: 0 }}>
+          <div style={{ padding: '4px 12px', margin: 0 }} className="qe-welcome-banner">
             <Alert
               message={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: 'var(--ant-color-text)', lineHeight: '1.6' }}>
-                  <InfoCircleOutlined style={{ color: 'var(--ant-color-primary)', fontSize: '18px', flexShrink: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--ant-color-text)', lineHeight: '1.4' }}>
+                  <InfoCircleOutlined style={{ color: 'var(--ant-color-primary)', fontSize: '16px', flexShrink: 0 }} />
                   <span>{t('welcome_alert')}</span>
                   <Popover
                     title={t('show_tips')}
@@ -382,7 +379,7 @@ export default function QueryEditorPage() {
                     }
                     trigger="click"
                   >
-                    <Button type="link" size="small" style={{ padding: 0, height: 'auto' }}>
+                    <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontSize: 13 }}>
                       {t('show_tips')}
                     </Button>
                   </Popover>
@@ -395,8 +392,8 @@ export default function QueryEditorPage() {
               style={{ 
                 marginTop: 0,
                 marginBottom: 0,
-                borderRadius: '8px',
-                padding: '14px 18px'
+                borderRadius: '6px',
+                padding: '8px 12px'
               }}
             />
           </div>

@@ -544,21 +544,23 @@ class OnboardingService:
             checkout_plan = None
             trial_outcome = None
             if trial_plan and organization_id:
-                from src.shared.trial_grant import ALREADY_USED, GRANTED, HAS_PAID_PLAN, grant_trial_once
+                from src.shared.trial_grant import GRANTED, HAS_PAID_PLAN, grant_trial_once
 
-                grant = await grant_trial_once(self.db, organization_id, trial_plan)
+                grant = await grant_trial_once(self.db, organization_id, trial_plan, user_id=user_id)
                 trial_outcome = grant["outcome"]
                 await self.db.commit()
                 if trial_outcome == GRANTED:
                     selected_plan = trial_plan
                 elif trial_outcome == HAS_PAID_PLAN:
                     selected_plan = grant.get("plan_slug") or selected_plan
-                elif trial_outcome == ALREADY_USED:
-                    # Trial spent earlier: they can still buy the plan they picked.
-                    requires_checkout = True
-                    checkout_plan = trial_plan
+                else:
+                    # Trial already used (or unavailable): they asked for a free trial, not a
+                    # purchase, so stay on Free and let the frontend say so -- never send
+                    # them to a payment page they didn't choose.
+                    selected_plan = "free"
             elif selected_plan in ("pro", "team"):
-                # User picked a paid plan without a trial — signal frontend to go to Stripe
+                # User picked a paid plan without a trial: the frontend opens the plan
+                # picker so they choose how to pay (card or KHQR).
                 requires_checkout = True
                 checkout_plan = selected_plan
 

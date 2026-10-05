@@ -213,7 +213,9 @@ def _build_cascade_where(runtime_filters: Optional[List[dict]], exclude_field: O
     return " AND ".join(clauses)
 
 
-def merge_runtime_filters(chart_query: dict, runtime_filters: Optional[List[dict]]) -> dict:
+def merge_runtime_filters(
+    chart_query: dict, runtime_filters: Optional[List[dict]], *, narrow_only: bool = False
+) -> dict:
     """Merge dashboard-level runtime filters into chart_query.filters.
 
     Runtime filters *replace* any existing filter on the same field — regardless
@@ -236,11 +238,48 @@ def merge_runtime_filters(chart_query: dict, runtime_filters: Optional[List[dict
             ]
             runtime_entries.append(entry)
     # The widget's own saved filters on those fields are replaced, whatever their operator:
-    # "region" on the dashboard supersedes the widget's saved "region".
+    # "region" on the dashboard supersedes the widget's saved "region". An embed visitor's
+    # filters only narrow (narrow_only): the saved ones all stay, so a filter sent from an
+    # iframe can't undo a restriction the author built into the chart.
     runtime_fields = {e["field"] for e in runtime_entries}
-    existing = [f for f in (merged.get("filters") or []) if f.get("field") not in runtime_fields]
+    existing = [
+        f for f in (merged.get("filters") or []) if narrow_only or f.get("field") not in runtime_fields
+    ]
     merged["filters"] = existing + runtime_entries
     return merged
+
+
+def _column_of(field: Any) -> str:
+    return str(field or "").strip().split(".")[-1].strip('"`[]').lower()
+
+
+def exposed_filter_columns(dashboard: Any, pages: Optional[List[Any]] = None) -> set:
+    """Columns a dashboard lets viewers filter on: its global filters and its pages' filters."""
+    config = dashboard.config if isinstance(getattr(dashboard, "config", None), dict) else {}
+    filters = list(config.get("global_filters") or [])
+    for page in pages or []:
+        page_filters = getattr(page, "filters", None)
+        if isinstance(page_filters, list):
+            filters.extend(page_filters)
+    return {_column_of(f.get("field")) for f in filters if isinstance(f, dict) and f.get("field")}
+
+
+def restrict_to_exposed(runtime_filters: Optional[List[dict]], allowed: set) -> Optional[List[dict]]:
+    """An embed visitor's filters, minus any on a column the dashboard doesn't expose as a filter."""
+    if not runtime_filters:
+        return runtime_filters
+    kept = [f for f in runtime_filters if isinstance(f, dict) and _column_of(f.get("field")) in allowed]
+    return kept or None
+
+
+async def embed_filter_columns(db: AsyncSession, dashboard: Any) -> set:
+    """exposed_filter_columns, loading the dashboard's pages."""
+    from src.modules.dashboards.models import DashboardPage
+
+    pages = (
+        await db.execute(select(DashboardPage).where(DashboardPage.dashboard_id == dashboard.id))
+    ).scalars().all()
+    return exposed_filter_columns(dashboard, list(pages))
 
 
 def detect_filter_overrides(chart_query: dict, runtime_filters: Optional[List[dict]]) -> List[str]:
@@ -308,12 +347,17 @@ def detect_unsupported_runtime_filters(runtime_filters: Optional[List[dict]]) ->
     return warnings
 
 
-def apply_drill_context(chart_query: dict, drill_context: Optional[dict]) -> dict:
-    """Apply hierarchical drill-down: override x dimension and merge drill filters."""
+def apply_drill_context(chart_query: dict, drill_context: Optional[dict], *, narrow_only: bool = False) -> dict:
+    """Apply hierarchical drill-down: override x dimension and merge drill filters.
+
+    narrow_only (embed visitors): only the chart's own saved drill path counts — a path sent in
+    the request could group by any column of the table — drill filters must be on that path's
+    columns, and they only narrow the saved filters."""
     if not drill_context:
         return chart_query
     merged = dict(chart_query or {})
-    drill_path = drill_context.get("drill_path") or merged.get("drillPath") or []
+    saved_path = merged.get("drillPath") or []
+    drill_path = saved_path if narrow_only else (drill_context.get("drill_path") or saved_path)
     if not drill_path:
         return merged
     level = int(drill_context.get("level") or 0)
@@ -323,8 +367,11 @@ def apply_drill_context(chart_query: dict, drill_context: Optional[dict]) -> dic
         level = len(drill_path) - 1
     merged["x"] = drill_path[level]
     drill_filters = drill_context.get("drill_filters")
+    if drill_filters and narrow_only:
+        on_path = {_column_of(c) for c in drill_path}
+        drill_filters = restrict_to_exposed(drill_filters, on_path)
     if drill_filters:
-        merged = merge_runtime_filters(merged, drill_filters)
+        merged = merge_runtime_filters(merged, drill_filters, narrow_only=narrow_only)
     return merged
 
 
@@ -413,15 +460,19 @@ async def build_embed_payload(
     runtime_filters: Optional[List[dict]] = None,
     identity: QueryAccess = None,
     row_cap: Optional[int] = None,
+    anonymous: bool = False,
 ) -> Dict[str, Any]:
     """Build embed/share payload from dashboard_charts + saved layout. ``row_cap`` limits what
-    an anonymous viewer receives (embed/limits.py)."""
+    an anonymous viewer receives (embed/limits.py); an anonymous viewer's filters only narrow,
+    and only on columns the dashboard exposes as filters (see refresh_dashboard_charts)."""
     import copy
 
     dash_svc = DashboardService(db)
     dashboard = await dash_svc.get_by_id(dashboard_id)
     if not dashboard:
         raise HTTPException(status_code=404, detail="Dashboard not found")
+    if anonymous and runtime_filters:
+        runtime_filters = restrict_to_exposed(runtime_filters, await embed_filter_columns(db, dashboard))
 
     config = dashboard.config if isinstance(dashboard.config, dict) else {}
     chart_svc = DashboardChartService(db)
@@ -440,7 +491,7 @@ async def build_embed_payload(
             exec_chart = copy.deepcopy(chart)
             if runtime_filters:
                 exec_chart.chart_query = merge_runtime_filters(
-                    copy.deepcopy(chart.chart_query or {}), runtime_filters
+                    copy.deepcopy(chart.chart_query or {}), runtime_filters, narrow_only=anonymous
                 )
             chart_data = cap_rows(
                 await chart_svc.chart_service.execute(exec_chart, identity=identity), row_cap
@@ -511,8 +562,13 @@ async def refresh_dashboard_charts(
     chart_requests: List[Dict[str, Any]],
     identity: QueryAccess = None,
     row_cap: Optional[int] = None,
+    embed_columns: Optional[set] = None,
 ) -> Dict[str, Any]:
-    """Execute multiple dashboard charts in one request (pooled connections, server-side concurrency cap)."""
+    """Execute multiple dashboard charts in one request (pooled connections, server-side concurrency cap).
+
+    embed_columns (anonymous/embed viewers): the columns the dashboard exposes as filters —
+    other filters are dropped and the rest only narrow each chart (see merge_runtime_filters)."""
+    narrow_only = embed_columns is not None
     if not chart_requests:
         return {"results": [], "ok": 0, "failed": 0, "total": 0}
 
@@ -525,6 +581,8 @@ async def refresh_dashboard_charts(
         widget_id = req.get("widget_id")
         runtime_filters = req.get("runtime_filters")
         drill_context = req.get("drill_context")
+        if narrow_only:
+            runtime_filters = restrict_to_exposed(runtime_filters, embed_columns)
         if not chart_id:
             return {
                 "chart_id": chart_id,
@@ -558,13 +616,14 @@ async def refresh_dashboard_charts(
                         base_query = copy.deepcopy(chart.chart_query or {})
                         if runtime_filters:
                             filter_warnings.extend(detect_unsupported_runtime_filters(runtime_filters))
-                            filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
-                            base_query = merge_runtime_filters(base_query, runtime_filters)
+                            if not narrow_only:
+                                filter_warnings.extend(detect_filter_overrides(base_query, runtime_filters))
+                            base_query = merge_runtime_filters(base_query, runtime_filters, narrow_only=narrow_only)
                         if drill_context:
                             filter_warnings.extend(
                                 detect_unsupported_runtime_filters(drill_context.get("drill_filters"))
                             )
-                            base_query = apply_drill_context(base_query, drill_context)
+                            base_query = apply_drill_context(base_query, drill_context, narrow_only=narrow_only)
                         exec_chart.chart_query = base_query
                     from src.modules.charts.services.v2.chart_service import track_unapplied_filters
 

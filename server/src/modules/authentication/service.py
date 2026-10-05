@@ -67,6 +67,10 @@ def create_access_token(user_id: str, email: str) -> str:
 def decode_access_token(token: str) -> dict:
     """Raise JWTError if invalid, expired, or revoked."""
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+    # An embed token (src/modules/embed) is never a login, even if the two signing secrets
+    # are ever configured to the same value.
+    if payload.get("type") == "embed":
+        raise JWTError("Embed tokens can't sign in")
     if _is_revoked(payload):
         raise JWTError("Token has been revoked")
     return payload

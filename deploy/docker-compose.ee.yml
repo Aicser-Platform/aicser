@@ -247,6 +247,9 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      CUTLUY_ENABLED: ${CUTLUY_ENABLED:-false}
+      CUTLUY_API_KEY: ${CUTLUY_API_KEY:-}
+      CUTLUY_WEBHOOK_SECRET: ${CUTLUY_WEBHOOK_SECRET:-}
       # Observability: tracing/error reporting are fully-built (see
       # src/shared/observability/) but off unless set here — previously not
       # even present in this file, so operators had no visible knob to turn
@@ -366,11 +369,6 @@ services:
     restart: unless-stopped
     networks: [default, runner]
 
-  # ARQ background worker — evaluates alert rules (cron, every minute), runs
-  # scheduled reports/BI sync/retention cleanup (see src/shared/jobs/worker.py).
-  # Reuses the exact server image/env (same code must run both sides) instead of
-  # a second build definition — server's /health worker heartbeat check depends
-  # on this actually running, which it never was in this compose file before.
   worker:
     build: *server-build
     image: aiser-ee-server

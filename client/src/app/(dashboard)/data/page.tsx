@@ -483,25 +483,25 @@ const DataSourcesPage: React.FC = () => {
             {stats.total > 0 ? (
             <Row gutter={[16, 16]} className="page-stat-grid">
 
-                <Col xs={24} lg={6}>
+                <Col xs={24} sm={12} lg={6}>
                     <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_total_sources')} value={stats.total} prefix={<DatabaseOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_in_project')}</Text>
                     </Card>
                 </Col>
-                <Col xs={24} lg={6}>
+                <Col xs={24} sm={12} lg={6}>
                     <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_connected')} value={stats.connected} prefix={<CheckCircleOutlined />} valueStyle={{ color: 'var(--ant-color-success)' }} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_healthy_connections')}</Text>
                     </Card>
                 </Col>
-                <Col xs={24} lg={6}>
+                <Col xs={24} sm={12} lg={6}>
                     <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_databases')} value={stats.databases} prefix={<CloudServerOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_sql_transactional')}</Text>
                     </Card>
                 </Col>
-                <Col xs={24} lg={6}>
+                <Col xs={24} sm={12} lg={6}>
                     <Card className="page-stat-tile" size="small" variant="borderless">
                         <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} prefix={<FileTextOutlined />} />
                         <Text type="secondary" className="page-stat-tile__hint">{t('stat_flat_files_services')}</Text>

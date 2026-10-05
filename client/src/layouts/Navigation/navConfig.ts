@@ -9,6 +9,8 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/data': ['sec-data'],
   '/knowledge': ['sec-data'],
   '/warehouse': ['sec-data'],
+  '/pipelines': ['sec-data'],
+  '/catalog': ['sec-data'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -26,6 +28,8 @@ export const NAV_ROUTES: Record<string, string> = {
   knowledge: '/knowledge',
   'ai-decisions': '/ai-decisions',
   alerts: '/alerts',
+  pipelines: '/pipelines',
+  catalog: '/catalog',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
 };
@@ -52,6 +56,8 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   data: 'data',
   knowledge: 'knowledge_libraries',
   warehouse: 'warehouse',
+  pipelines: 'pipelines',
+  catalog: 'catalog',
   settings: 'settings',
   billing: 'billing',
 };
@@ -68,6 +74,8 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   data: 'sec-data',
   knowledge: 'sec-data',
   warehouse: 'sec-data',
+  pipelines: 'sec-data',
+  catalog: 'sec-data',
 };
 
 /** One-line hover hints: what each page is for, in plain words (technical names kept
@@ -87,6 +95,8 @@ export const NAV_HINT_KEYS: Record<string, string> = {
   data: 'hint_data_sources',
   knowledge: 'hint_documents',
   warehouse: 'hint_warehouse',
+  pipelines: 'hint_pipelines',
+  catalog: 'hint_catalog',
   'sec-analyze': 'hint_analyze',
   'sec-predict': 'hint_ai',
   'sec-data': 'hint_my_data',
@@ -146,7 +156,7 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
     top('alerts'),
     section('sec-analyze', analyzeTools()),
     ...(showAiNav ? [section('sec-predict', ['models', 'ai-decisions'])] : [section('sec-predict', ['models'])]),
-    section('sec-data', ['data', 'knowledge', 'warehouse']),
+    section('sec-data', ['data', 'knowledge', 'warehouse', 'pipelines', 'catalog']),
   ];
 }
 
@@ -195,6 +205,8 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/query-editor') return 'query-editor';
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
+  if (pathname.startsWith('/pipelines')) return 'pipelines';
+  if (pathname.startsWith('/catalog')) return 'catalog';
   if (pathname === '/alerts') return 'alerts';
   // Pages added later were missing here, so the sidebar highlighted nothing on them.
   for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards'] as const) {

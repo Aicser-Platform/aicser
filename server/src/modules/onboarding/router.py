@@ -61,6 +61,8 @@ class OnboardingCompletionResponse(BaseModel):
     project_id: Optional[str] = None
     requires_checkout: bool = False
     checkout_plan: Optional[str] = None
+    # granted | already_used | has_paid_plan | not_available; None when no trial was requested
+    trial_outcome: Optional[str] = None
 
 
 @router.post("/complete", response_model=OnboardingCompletionResponse)
@@ -105,6 +107,7 @@ async def complete_onboarding(
             project_id=result.get("project_id"),
             requires_checkout=result.get("requires_checkout", False),
             checkout_plan=result.get("checkout_plan"),
+            trial_outcome=result.get("trial_outcome"),
         )
 
     except HTTPException:

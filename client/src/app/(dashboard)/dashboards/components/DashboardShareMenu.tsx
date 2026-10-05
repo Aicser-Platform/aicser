@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Dropdown, Button, Modal, message, Tooltip } from 'antd';
+import { Dropdown, Button, message, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ShareAltOutlined,
@@ -21,8 +21,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { chartService } from '../services/chartService';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
-import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
-import { useEmbedCode } from '@/hooks/useEmbedCode';
+import { EmbedDialog } from '@/components/embed/EmbedDialog';
 import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescription';
 
 type Props = {
@@ -67,9 +66,6 @@ export function DashboardShareMenu({
   const t = useTranslations('dashboards');
   const tt = useTranslations('dashboard_tabs');
   const [embedOpen, setEmbedOpen] = useState(false);
-  const [embedUrl, setEmbedUrl] = useState('');
-  const [embedToken, setEmbedToken] = useState<string | undefined>();
-  const { createEmbedCode, loading: embedLoading } = useEmbedCode();
 
   const copyLink = async () => {
     const url = buildShareUrl();
@@ -77,21 +73,8 @@ export function DashboardShareMenu({
     message.success(t('share_link_copied'));
   };
 
-  const showEmbed = async () => {
-    if (!dashboardId) return;
-    setEmbedOpen(true);
-    setEmbedUrl('');
-    setEmbedToken(undefined);
-
-    const result = await createEmbedCode({
-      scope: 'dashboard',
-      resourceId: dashboardId,
-      name: dashboardName ? `Embed: ${dashboardName}` : 'Dashboard embed',
-      pageId: activePageId,
-      filters: runtimeFilters,
-    });
-    setEmbedUrl(result.embedUrl);
-    setEmbedToken(result.token);
+  const showEmbed = () => {
+    if (dashboardId) setEmbedOpen(true);
   };
 
   const runPrint = () => {
@@ -129,7 +112,7 @@ export function DashboardShareMenu({
       key: 'embed',
       icon: <CodeOutlined />,
       label: t('share_embed_snippet'),
-      onClick: () => void showEmbed(),
+      onClick: showEmbed,
     },
     ...(isEditMode && dashboardId
       ? [
@@ -230,22 +213,16 @@ export function DashboardShareMenu({
           </Button>
         </Tooltip>
       </Dropdown>
-      <Modal
-        title={t('share_embed_snippet')}
+      <EmbedDialog
         open={embedOpen}
-        onCancel={() => setEmbedOpen(false)}
-        width={720}
-        footer={null}
-        destroyOnHidden
-      >
-        <EmbedCodePanel
-          embedUrl={embedUrl}
-          loading={embedLoading}
-          token={embedToken}
-          title={dashboardName}
-          iframeHeight={420}
-        />
-      </Modal>
+        onClose={() => setEmbedOpen(false)}
+        scope="dashboard"
+        resourceId={dashboardId}
+        name={dashboardName}
+        pageId={activePageId}
+        filters={runtimeFilters}
+        iframeHeight={420}
+      />
     </>
   );
 }

@@ -82,12 +82,28 @@ def _build_payload(
     }
 
 
+def _embed_signing_key() -> str:
+    """A key only embed tokens use, derived from JWT_SECRET_KEY: even where that secret is
+    configured to the same value as a sign-in secret (JWT_SECRET, SECRET_KEY), an embed token
+    can't verify as a sign-in token."""
+    import hashlib
+    import hmac
+
+    return hmac.new(settings.JWT_SECRET_KEY.encode(), b"aicser-embed-token-v1", hashlib.sha256).hexdigest()
+
+
 def sign_embed_token(payload: Dict[str, Any]) -> str:
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=EMBED_ALGORITHM)
+    return jwt.encode(payload, _embed_signing_key(), algorithm=EMBED_ALGORITHM)
 
 
 def decode_embed_token(token: str) -> Dict[str, Any]:
-    payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[EMBED_ALGORITHM])
+    try:
+        payload = jwt.decode(token, _embed_signing_key(), algorithms=[EMBED_ALGORITHM])
+    except JWTError as exc:
+        if "expired" in str(exc).lower():
+            raise
+        # Links created before the derived key keep working until they expire or are revoked
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[EMBED_ALGORITHM])
     if payload.get("type") != EMBED_TOKEN_TYPE:
         raise JWTError("Invalid embed token type")
     return payload

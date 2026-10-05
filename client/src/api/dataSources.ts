@@ -268,11 +268,19 @@ export const updateDataSource = (id: string, data: Partial<DataSource>): Promise
 
 export const deleteDataSource = (id: string): Promise<void> => fetchApi(`/data/sources/${id}`, { method: 'DELETE' });
 
-export const getDataSourceSchema = (id: string): Promise<{ schema: SchemaInfo }> =>
-  fetchApi(`/data/sources/${id}/schema`).then((res) => ({
-    ...res,
-    schema: normalizeSchema(res?.schema ?? res?.data_source?.schema),
-  }));
+/**
+ * `origin: 'source'` returns the raw source's schema even when a pipeline
+ * serves the source from the lakehouse (the pipeline builder needs that);
+ * the default is the schema queries actually run against.
+ */
+export const getDataSourceSchema = (
+  id: string,
+  origin: 'serving' | 'source' = 'serving'
+): Promise<{ schema: SchemaInfo; served_from?: SchemaInfo['served_from']; pipeline?: { id: string; name?: string | null } }> =>
+  fetchApi(`/data/sources/${id}/schema${origin === 'source' ? '?origin=source' : ''}`).then((res) => {
+    const schema = normalizeSchema(res?.schema ?? res?.data_source?.schema);
+    return { ...res, schema: { ...schema, served_from: res?.served_from ?? schema.served_from } };
+  });
 
 /**
  * Update business metadata (column descriptions, measures, dimensions,

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.charts.models import Chart
 from src.modules.data.models import DataModelRelationship, DataSource
+from src.modules.data.services.query_routing import PIPELINE_AUDIT_COLUMNS
 
 
 def _serialize_relationship(rel: DataModelRelationship) -> dict:
@@ -58,6 +59,10 @@ def _column_name(col: Any) -> Optional[str]:
 
 def _relationship_key_suffix(column_name: str) -> Optional[str]:
     name = str(column_name or "").strip().lower()
+    # Pipeline bookkeeping (_load_id is on every Silver/Gold table) is never a business
+    # key: matching on it joins unrelated tables, and served tables don't carry it.
+    if name in PIPELINE_AUDIT_COLUMNS:
+        return None
     if name.endswith("_id") and len(name) > 3:
         return "_id"
     if name.endswith("_key") and len(name) > 4:

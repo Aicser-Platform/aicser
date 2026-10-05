@@ -521,7 +521,8 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
     } catch (error) {
       get().updateWidget(widgetId, {
         isLoading: false,
-        error: 'Failed to fetch data',
+        // Keep the API's reason (e.g. another project's source) so the widget explains the fix.
+        error: error instanceof Error && error.message ? error.message : 'Failed to fetch data',
         lastFetchedQueryHash: widget.lastFetchedQueryHash,
       });
     } finally {

@@ -4612,10 +4612,100 @@ async def create_data_source_snapshot(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _lakehouse_schema_response(data_source: Any) -> Optional[Dict[str, Any]]:
+    """The schema queries against this source actually hit, when an enabled
+    pipeline manages it: its served Silver/Gold tables. None when unmanaged."""
+    from src.modules.data.services.query_routing import (
+        ROUTABLE_TYPES,
+        load_managed_lakehouse,
+        resolve_gold_source,
+    )
+
+    source_type = (data_source.type or "").lower()
+    if source_type == "lakehouse_iceberg":
+        # A pipeline's Gold Lakehouse source: describe its live tables
+        resolved = await resolve_gold_source(
+            {"id": data_source.id, "type": source_type, "connection_config": data_source.connection_config}
+        )
+        tables = resolved.get("lakehouse_tables") or []
+        if not tables:
+            return None
+        return _serving_schema_payload(
+            tables,
+            {"id": data_source.id, "name": data_source.name, "type": data_source.type},
+            None,
+        )
+    if source_type not in ROUTABLE_TYPES:
+        return None
+    managed = await load_managed_lakehouse(str(data_source.id))
+    if managed is None:
+        return None
+    pipeline = managed["pipeline"]
+    pipeline_info = {"id": str(pipeline.id), "name": getattr(pipeline, "name", None)}
+    source_info = {"id": data_source.id, "name": data_source.name, "type": data_source.type}
+
+    if not managed["tables"]:
+        # Queries are blocked until the first Silver/Gold lands; show the
+        # source's stored schema so the panel isn't empty, flagged as pending.
+        stored = data_source.schema
+        if isinstance(stored, str):
+            try:
+                stored = json.loads(stored)
+            except json.JSONDecodeError:
+                stored = {}
+        return {
+            "success": True,
+            "schema": _strip_schema_sample_data(stored or {"tables": []}),
+            "served_from": "lakehouse_pending",
+            "pipeline": pipeline_info,
+            "data_source": {**source_info, "served_from": "lakehouse_pending"},
+        }
+
+    return _serving_schema_payload(managed["tables"], source_info, pipeline_info)
+
+
+def _serving_schema_payload(
+    served: List[Dict[str, Any]],
+    source_info: Dict[str, Any],
+    pipeline_info: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Schema response for lakehouse-served tables (layer + freshness per table)."""
+    tables = []
+    for t in served:
+        columns = [
+            {"name": c.get("name"), "type": c.get("type"), "data_type": c.get("type")}
+            for c in (t.get("schema") or {}).get("columns") or []
+            if isinstance(c, dict) and c.get("name")
+        ]
+        tables.append(
+            {
+                "name": t["name"],
+                "columns": columns,
+                "row_count": t.get("row_count"),
+                "rowCount": t.get("row_count"),
+                "layer": t.get("layer"),
+                "lake_object_id": t.get("lake_object_id"),
+                "refreshed_at": t.get("created_at"),
+            }
+        )
+    return {
+        "success": True,
+        "schema": {"tables": tables, "served_from": "lakehouse"},
+        "served_from": "lakehouse",
+        "pipeline": pipeline_info,
+        "data_source": {
+            **source_info,
+            "served_from": "lakehouse",
+            "row_count": sum(t["row_count"] or 0 for t in tables),
+        },
+    }
+
+
 @router.get("/sources/{data_source_id}/schema")
 async def get_data_source_schema(
     data_source_id: str,
     refresh: bool = False,
+    origin: str = "serving",
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
     """Get schema information for a specific data source. Requires authentication and ownership (creator or project member)."""
@@ -4643,6 +4733,14 @@ async def get_data_source_schema(
                 data_source_id,
                 DATA_SOURCE_PERMISSION_VIEW,
             )
+
+            # A pipeline-managed source is queried from the lakehouse, so show
+            # those tables -- unless the caller needs the raw source itself
+            # (?origin=source, e.g. the pipeline builder).
+            if origin != "source":
+                lakehouse = await _lakehouse_schema_response(data_source)
+                if lakehouse is not None:
+                    return lakehouse
 
             # If it's a database or warehouse, get live schema (uses stored connection_config for this data source)
             if data_source.type == "database" or data_source.type == "warehouse":
@@ -6054,6 +6152,16 @@ async def test_delta_iceberg_connection(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _uuid_or_none(value):
+    """An organization id as stored, or None for the "user-<id>" stand-in of org-less users."""
+    import uuid as _uuid
+
+    try:
+        return _uuid.UUID(str(value)) if value else None
+    except (ValueError, TypeError):
+        return None
+
+
 @router.post("/delta-iceberg/connect")
 async def connect_delta_iceberg(
     request: Dict[str, Any],
@@ -6167,7 +6275,7 @@ async def connect_delta_iceberg(
             schema_json = json.dumps(connect_result.get("schema", []))
 
             # Encrypt credentials
-            from src.modules.data.utils.encryption import encrypt_credentials
+            from src.modules.data.utils.credentials import encrypt_credentials
 
             safe_credentials = encrypt_credentials(credentials)
 
@@ -6186,11 +6294,11 @@ async def connect_delta_iceberg(
                 """
                 INSERT INTO data_sources 
                 (id, name, type, format, db_type, size, row_count, schema, 
-                 connection_config, metadata, user_id, is_active, 
+                 connection_config, metadata, user_id, organization_id, is_active, 
                  created_at, updated_at, last_accessed, file_path)
                 VALUES 
                 (:id, :name, :type, :format, :db_type, :size, :row_count, :schema,
-                 :connection_config, :metadata, :user_id, :is_active,
+                 :connection_config, :metadata, :user_id, :organization_id, :is_active,
                  :created_at, :updated_at, :last_accessed, :file_path)
             """
             )
@@ -6217,6 +6325,8 @@ async def connect_delta_iceberg(
                         }
                     ),
                     "user_id": user_id,
+                    # The org, so its members can pick this connection (e.g. as a pipeline destination)
+                    "organization_id": _uuid_or_none(organization_id),
                     "is_active": True,
                     "created_at": datetime.now(),
                     "updated_at": datetime.now(),

@@ -21,7 +21,7 @@ describe('job-first navigation', () => {
     expect(sections).toEqual([
       ['sec-analyze', ['query-editor', 'sheets', 'notebooks']], // Maps is off by default (NEXT_PUBLIC_FEATURE_MAPS)
       ['sec-predict', ['models', 'ai-decisions']],
-      ['sec-data', ['data', 'knowledge', 'warehouse']],
+      ['sec-data', ['data', 'knowledge', 'warehouse', 'pipelines', 'catalog']],
     ]);
     // One level of nesting at most: no groups inside sections.
     expect(items.some((i) => i.kind === 'group')).toBe(false);

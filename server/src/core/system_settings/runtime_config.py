@@ -14,6 +14,7 @@ import boto3
 from botocore.config import Config
 
 from src.modules.data.utils.credentials import decrypt_credentials, encrypt_credentials
+from src.core.config import strip_env_value
 from src.core.system_settings.repository import SystemSettingRepository
 
 EMAIL_SETTING_KEY = "runtime.email"
@@ -90,12 +91,12 @@ def _storage_from_env() -> dict[str, Any]:
         "enabled": True,
         "source": "env",
         "backend": backend,
-        "provider": os.getenv("S3_PROVIDER", "aws").strip() or "aws",
-        "endpoint_url": os.getenv("S3_ENDPOINT_URL", "").strip(),
-        "access_key_id": os.getenv("S3_ACCESS_KEY_ID", "").strip(),
-        "secret_access_key": os.getenv("S3_SECRET_ACCESS_KEY", "").strip(),
-        "bucket_name": os.getenv("S3_BUCKET_NAME", "").strip(),
-        "region": os.getenv("S3_REGION", "us-east-1").strip() or "us-east-1",
+        "provider": strip_env_value(os.getenv("S3_PROVIDER", "aws")) or "aws",
+        "endpoint_url": strip_env_value(os.getenv("S3_ENDPOINT_URL", "")),
+        "access_key_id": strip_env_value(os.getenv("S3_ACCESS_KEY_ID", "")),
+        "secret_access_key": strip_env_value(os.getenv("S3_SECRET_ACCESS_KEY", "")),
+        "bucket_name": strip_env_value(os.getenv("S3_BUCKET_NAME", "")),
+        "region": strip_env_value(os.getenv("S3_REGION", "us-east-1")) or "us-east-1",
     }
     configured = _storage_configured(config)
     return {**config, "configured": configured, "enabled": configured}

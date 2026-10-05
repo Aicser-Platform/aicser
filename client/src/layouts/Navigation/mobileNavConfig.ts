@@ -11,14 +11,14 @@ export type MobileTabDef = {
 // Same job labels and order as the desktop rail (QA S-ASK-09): Ask first; short group names on tabs.
 export const EE_MOBILE_TABS: MobileTabDef[] = [
   { key: 'chat', labelKey: 'ai_engine', href: NAV_ROUTES.chat },
-  { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+  { key: 'feed', labelKey: 'feed_mobile', href: NAV_ROUTES.feed },
   { key: 'dashboards', labelKey: 'dashboard_studio', href: NAV_ROUTES.dashboards },
   { key: 'data', labelKey: 'cat_data', href: NAV_ROUTES.data },
 ];
 
 export const CE_MOBILE_TABS: MobileTabDef[] = [
   { key: 'dashboards', labelKey: 'dashboards', href: NAV_ROUTES.dashboards },
-  { key: 'feed', labelKey: 'feed', href: NAV_ROUTES.feed },
+  { key: 'feed', labelKey: 'feed_mobile', href: NAV_ROUTES.feed },
   { key: 'data', labelKey: 'data', href: NAV_ROUTES.data },
   { key: 'query-editor', labelKey: 'query_editor', href: NAV_ROUTES['query-editor'] },
 ];
@@ -56,6 +56,8 @@ export function enterpriseMoreNavItems(): NavItemDef[] {
     { kind: 'divider' },
     moreLink('knowledge'),
     moreLink('warehouse'),
+    moreLink('pipelines'),
+    moreLink('catalog'),
     { kind: 'divider' },
     moreLink('settings'),
   ];

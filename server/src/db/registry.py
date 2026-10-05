@@ -7,36 +7,54 @@ CE models are always imported. EE models are imported only when is_ee_enabled()
 so that CE migrations only create CE tables.
 """
 from src.core.edition import is_ee_enabled
-
-# ── CE models (always imported) ───────────────────────────────────────────────
-from src.modules.user.models import User
+from src.core.licensing.models import LicenseStateRecord
+from src.core.system_settings.models import SystemSetting
+from src.modules.authentication.models import PasswordResetToken
+from src.modules.charts.models import Chart, QueryPattern
+from src.modules.dashboards.models import Dashboard, DashboardChart
 from src.modules.data.models import (
+    ConnectorRuntimeJob,
+    DataAssetProfile,
+    DataCDCState,
+    DataIngestionJob,
+    DataLakeObject,
+    DataLineageEdge,
+    DataLineageNode,
+    DataOnboardingSession,
+    DataPipeline,
     DataSource,
     DataSourceAccessGrant,
     DataSourceRLSPolicy,
     DataSourceRLSRule,
-    DataIngestionJob,
-    DataLakeObject,
-    DataCDCState,
-    SemanticLayerArtifact,
-    ProjectDataSource,
     FileStorage,
-    ConnectorRuntimeJob,
-)
-from src.modules.dashboards.models import Dashboard, DashboardChart
-from src.modules.charts.models import Chart, QueryPattern
-from src.modules.knowledge.models import (
-    KnowledgeDocument, DocumentChunk, SchemaTableIndex, SchemaColumnIndex
+    ProjectDataSource,
+    SemanticLayerArtifact,
 )
 from src.modules.feed.models import (
-    FeedPost, FeedComment, FeedCommentReaction, FeedInteraction,
-    FeedAuthorFollow, FeedEvent, FeedView, FeedCollection,
-    FeedCollectionItem, FeedNotification, FeedShare, FeedSnapshot,
-    FeedChatDraft, FeedDigestSubscription,
+    FeedAuthorFollow,
+    FeedChatDraft,
+    FeedCollection,
+    FeedCollectionItem,
+    FeedComment,
+    FeedCommentReaction,
+    FeedDigestSubscription,
+    FeedEvent,
+    FeedInteraction,
+    FeedNotification,
+    FeedPost,
+    FeedShare,
+    FeedSnapshot,
+    FeedView,
 )
-from src.core.licensing.models import LicenseStateRecord
-from src.core.system_settings.models import SystemSetting
-from src.modules.authentication.models import PasswordResetToken
+from src.modules.knowledge.models import (
+    DocumentChunk,
+    KnowledgeDocument,
+    SchemaColumnIndex,
+    SchemaTableIndex,
+)
+
+# ── CE models (always imported) ───────────────────────────────────────────────
+from src.modules.user.models import User
 from src.modules.user.api_keys import PlatformApiKey
 from src.modules.folders.models import AssetFolder
 from src.modules.notebooks.models import Notebook
@@ -48,13 +66,19 @@ from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVers
 if is_ee_enabled():
     try:
         from src.modules.billing.models import (
-            SubscriptionPlan, OrganizationSubscription, OrganizationUsage, PaymentHistory
+            OrganizationSubscription,
+            OrganizationUsage,
+            PaymentHistory,
+            SubscriptionPlan,
         )
     except ImportError:
         pass
 
     try:
-        from src.modules.organizations.models import Organization, OrganizationKpiDefinition
+        from src.modules.organizations.models import (
+            Organization,
+            OrganizationKpiDefinition,
+        )
     except ImportError:
         pass
 
@@ -64,7 +88,12 @@ if is_ee_enabled():
         pass
 
     try:
-        from src.modules.authentication.rbac.models import Role, Permission, RolePermission, UserRole
+        from src.modules.authentication.rbac.models import (
+            Permission,
+            Role,
+            RolePermission,
+            UserRole,
+        )
     except ImportError:
         pass
 

@@ -25,9 +25,15 @@ export function buildEmbedDashboardUrl(
 ): string {
   const url = new URL(`${getEmbedOrigin()}/embed/dashboard/${dashboardId}`);
   if (opts.token) url.searchParams.set('token', opts.token);
-  if (opts.pageId) url.searchParams.set('page', opts.pageId);
-  if (opts.filters) {
-    url.searchParams.set('filters', encodeURIComponent(JSON.stringify(opts.filters)));
+  return withDashboardView(url.toString(), opts.pageId, opts.filters);
+}
+
+/** The page and starting filters a dashboard embed opens on (visitors may only narrow them). */
+export function withDashboardView(embedUrl: string, pageId?: string | null, filters?: unknown): string {
+  const url = new URL(embedUrl);
+  if (pageId) url.searchParams.set('page', pageId);
+  if (Array.isArray(filters) ? filters.length : filters) {
+    url.searchParams.set('filters', encodeURIComponent(JSON.stringify(filters)));
   }
   return url.toString();
 }
@@ -53,4 +59,66 @@ export function pickPrimaryEmbedUrl(embedUrls?: Record<string, string>): string 
 
 export async function copyEmbedText(text: string): Promise<void> {
   await navigator.clipboard.writeText(text);
+}
+
+export type SignedEmbedSnippets = { node: string; python: string; curl: string };
+
+/** Server code that signs a per-customer embed of one chart or dashboard (Developer → API keys). */
+export function buildSignedEmbedSnippets(opts: {
+  baseUrl: string;
+  scope: 'dashboard' | 'chart';
+  resourceId: string;
+}): SignedEmbedSnippets {
+  const { baseUrl, scope, resourceId } = opts;
+  const node = `import { signEmbedUrl } from '@aicser/embed/server';
+
+// On your server, once per page view. Never send the API key to the browser.
+const { url } = await signEmbedUrl({
+  baseUrl: '${baseUrl}',
+  apiKey: process.env.AICSER_API_KEY,
+  scope: '${scope}',
+  resourceId: '${resourceId}',
+  // Each customer sees only their own rows (use your column and value)
+  lockedFilters: [{ field: 'customer_id', value: customer.id }],
+  allowedDomains: ['app.example.com'],
+  expiresInMinutes: 60,
+});
+// Put url in an <iframe src="…">`;
+  const python = `from aicser_embed import sign_embed_url
+
+# On your server, once per page view. Never send the API key to the browser.
+signed = sign_embed_url(
+    base_url="${baseUrl}",
+    api_key=os.environ["AICSER_API_KEY"],
+    scope="${scope}",
+    resource_id="${resourceId}",
+    # Each customer sees only their own rows (use your column and value)
+    locked_filters=[{"field": "customer_id", "value": customer.id}],
+    allowed_domains=["app.example.com"],
+    expires_in_minutes=60,
+)
+# Put signed.url in an <iframe src="…">`;
+  const curl = `curl -X POST '${baseUrl}/api/embed/sign' \\
+  -H "Authorization: Bearer $AICSER_API_KEY" \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "scope": "${scope}",
+    "resource_id": "${resourceId}",
+    "locked_filters": [{"field": "customer_id", "value": "acme"}],
+    "allowed_domains": ["app.example.com"],
+    "expires_in_minutes": 60
+  }'
+# The response's "url" opens once: sign a new one for each page view`;
+  return { node, python, curl };
+}
+
+/** "app.example.com" from whatever was typed or pasted ("https://App.example.com/page"). */
+export function normalizeEmbedDomain(value: string): string {
+  const raw = value.trim().toLowerCase();
+  if (!raw) return '';
+  try {
+    return new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
+  } catch {
+    return raw.replace(/\/.*$/, '');
+  }
 }

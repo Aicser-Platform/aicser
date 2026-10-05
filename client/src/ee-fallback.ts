@@ -75,6 +75,12 @@ export const WarehousePage           = (): null => null;
 export const ModelsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
+export const DataPlatformPage        = (): null => null;
+export const PipelinesPage           = (): null => null;
+export const NewPipelinePage         = (): null => null;
+export const PipelineBuilderPage     = (): null => null;
+export const CatalogPage             = (): null => null;
+export const OnboardingPage          = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;
 export const InviteSetPasswordPageEE = (): null => null;
 
@@ -224,8 +230,21 @@ export function useConversationStore() {
     setCurrentConversationId: (_id?: string | null) => {},
     sendMessage: async (..._args: unknown[]) => {},
     resetStore: () => {},
+    reset: () => {},
   };
 }
+(useConversationStore as any).getState = () => ({
+  conversations: [] as unknown[],
+  currentConversationId: null as string | null,
+  messages: new Map<string, unknown[]>(),
+  isLoading: false,
+  loadConversations: async () => {},
+  createConversation: async (_payload?: unknown) => null,
+  setCurrentConversationId: (_id?: string | null) => {},
+  sendMessage: async (..._args: unknown[]) => {},
+  resetStore: () => {},
+  reset: () => {},
+});
 export function useOnboardingStore() {
   return {
     status: null,

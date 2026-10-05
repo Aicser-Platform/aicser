@@ -35,11 +35,11 @@
     display: flex;
     align-items: stretch;
     justify-content: space-between;
-    margin: 0;
-    padding: 0 2px;
+    margin: 0 auto;
+    padding: 0 4px;
     list-style: none;
     height: 56px;
-    max-width: 100%;
+    max-width: 560px;
     width: 100%;
     box-sizing: border-box;
   }

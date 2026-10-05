@@ -357,6 +357,11 @@ export const useWidgetProperties = ({
                 lastFetchedQueryHash: currentQueryHash,
               });
             }
+          } else if (selectedWidget.lastFetchedQueryHash === undefined) {
+            // A saved chart just opened, never fetched: load its data. Going through
+            // updateChartAndFetchData saved every opened chart (with editor defaults) first.
+            updateWidget(selectedWidgetId, { lastFetchedQueryHash: currentQueryHash });
+            await fetchChartData(selectedWidgetId);
           } else {
             await updateChartAndFetchData(selectedWidgetId, {
               dataSourceId: selectedWidget.dataSourceId,

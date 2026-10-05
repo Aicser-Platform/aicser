@@ -592,6 +592,7 @@ async def refresh_dashboard(
         charts,
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
+        embed_columns=None if current_user else await dash_ops.embed_filter_columns(db, dashboard),
     )
 
 
@@ -632,6 +633,7 @@ async def get_dashboard_embed(
         runtime_filters=parsed_filters or None,
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
+        anonymous=current_user is None,
     )
 
 

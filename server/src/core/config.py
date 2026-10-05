@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import Dict, Optional
 from functools import lru_cache
@@ -5,6 +6,11 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def strip_env_value(value: str) -> str:
+    """Trim whitespace and stray wrapping quotes from an env value."""
+    return value.strip().strip("\"'").strip()
 
 
 class Settings(BaseSettings):
@@ -53,6 +59,7 @@ class Settings(BaseSettings):
     # File Upload Settings
     UPLOAD_TYPE: str = os.getenv("UPLOAD_TYPE", "local")
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "uploads")
+    LAKE_ROOT: str = os.getenv("LAKE_ROOT", "lake")
     MAX_UPLOAD_SIZE: int = int(
         os.getenv("MAX_UPLOAD_SIZE", str(10485760))  # 10 * 1024 * 1024
     )  # 10MB
@@ -231,6 +238,12 @@ class Settings(BaseSettings):
     STRIPE_PRICE_TEAM_YEARLY: str = os.getenv("STRIPE_PRICE_TEAM_YEARLY", "")
     STRIPE_ENABLED: bool = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
+    # CutLuy KHQR Settings (Cambodian bank QR payments, one-time USD charges)
+    CUTLUY_ENABLED: bool = os.getenv("CUTLUY_ENABLED", "false").lower() == "true"
+    CUTLUY_API_KEY: str = os.getenv("CUTLUY_API_KEY", "")
+    CUTLUY_WEBHOOK_SECRET: str = os.getenv("CUTLUY_WEBHOOK_SECRET", "")
+    CUTLUY_API_BASE: str = os.getenv("CUTLUY_API_BASE", "https://cutluy.com/v1")
+
     # S3-compatible Object Storage (EE — alternative to Azure Blob Storage)
     # Set STORAGE_BACKEND=s3 to activate. Leave S3_ENDPOINT_URL empty for AWS S3.
     STORAGE_BACKEND: str = os.getenv("STORAGE_BACKEND", "")  # "s3" | "azure_blob" | "postgresql"
@@ -240,6 +253,16 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str = os.getenv("S3_SECRET_ACCESS_KEY", "")
     S3_BUCKET_NAME: str = os.getenv("S3_BUCKET_NAME", "")
     S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
+
+    @field_validator(
+        "S3_PROVIDER", "S3_ENDPOINT_URL", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY",
+        "S3_BUCKET_NAME", "S3_REGION", mode="before",
+    )
+    @classmethod
+    def _strip_s3_value(cls, value):
+        # Dashboards like Railway keep quotes pasted around a value ("https://...");
+        # DuckDB then builds https://"host/... and every s3:// read fails.
+        return strip_env_value(value) if isinstance(value, str) else value
 
     # Telegram Bot Settings
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

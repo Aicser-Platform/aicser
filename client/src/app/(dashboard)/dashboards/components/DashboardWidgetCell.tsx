@@ -18,6 +18,7 @@ import {
 import { hasDrillThrough } from '../utils/drillThroughHelpers';
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 import { isEmptyDataWidget } from '../utils/bindEmptyWidgets';
+import { hasRenderableChartData } from '@/components/charts/chartDesignerBridge';
 import { inferFilterLabel } from '../utils/filterInference';
 import { isDateRuntimeFilter, type RuntimeFilter } from '../utils/filterOperators';
 import type { WidgetInstance } from '../stores/useDashboardStore';
@@ -119,7 +120,8 @@ export function DashboardWidgetCell({
   const friendlyError = getFriendlyWidgetError(widget.error, t);
   // A data widget with no source/table is "not connected yet" whatever the fetch said — the
   // batch refresh returns a generic "No result" for it, which read as "Couldn't load data".
-  const notConnected = isEmptyDataWidget(widget as never);
+  // Unless it already carries data: feed snapshots keep only the captured chartData.
+  const notConnected = isEmptyDataWidget(widget as never) && !hasRenderableChartData(widget.chartData);
 
   const chartReady =
     interactive && (onCrossFilter || onWidgetChartClick || chartInteractionMode === 'drill')

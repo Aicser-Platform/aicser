@@ -92,14 +92,14 @@
 
 .query-editor-page .page-header-actions .ant-btn,
 .query-editor-page .qe-page-actions .ant-btn {
-  height: var(--qe-control-h) !important;
-  min-height: var(--qe-control-h) !important;
-  padding-inline: 12px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding-inline: 15px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  font-size: 13px !important;
-  line-height: 1.2 !important;
+  font-size: 14px !important;
+  line-height: 1.5714 !important;
   border-radius: 6px !important;
 }
 
@@ -337,21 +337,69 @@
 }
 
 .query-editor-workspace .qe-tab-toolbar.ant-space {
-  gap: 2px !important;
+  gap: 3px !important;
 }
 
 /* Icon-only toolbar buttons (format, duplicate tab, close, etc.) get squeezed
    to a small square — but this selector's specificity (3 classes) beats
    .qe-run-btn's (1 class) regardless of source order, so without this
    exclusion it was also squeezing the Run/Cancel button down to a 28x28
-   icon-only box, clipping its "Run SQL"/"Cancel" label entirely. */
-.query-editor-workspace .qe-tab-toolbar .ant-btn:not(.qe-run-btn):not(.qe-cancel-btn) {
+   icon-only box, clipping its "Run SQL"/"Cancel" label entirely.
+   We also exclude .qe-sources-toggle-btn so its label and badge fit properly. */
+.query-editor-workspace .qe-tab-toolbar .ant-btn:not(.qe-run-btn):not(.qe-cancel-btn):not(.qe-sources-toggle-btn) {
   width: 28px !important;
   min-width: 28px !important;
   max-width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
   margin: 0 !important;
+}
+
+.query-editor-workspace .qe-tab-toolbar .ant-btn.qe-sources-toggle-btn {
+  width: auto !important;
+  min-width: auto !important;
+  max-width: none !important;
+  height: 28px !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  border-radius: 6px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  transition: all 0.2s ease;
+}
+
+.query-editor-workspace .qe-tab-toolbar .ant-btn.qe-sources-toggle-btn--icon-only {
+  width: 28px !important;
+  min-width: 28px !important;
+  max-width: 28px !important;
+  padding: 0 !important;
+}
+
+.query-editor-workspace .qe-sources-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  background-color: var(--ant-color-primary, #00897b);
+  color: #fff;
+  margin-left: 2px;
+}
+
+.query-editor-workspace .qe-sources-toggle-btn--active .qe-sources-count-badge {
+  background-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
 }
 
 .query-editor-workspace .qe-tab-toolbar .ant-btn .anticon {
@@ -1520,3 +1568,182 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Responsive View Mode & Data Panel Toggle ── */
+
+.query-editor-workspace .qe-view-mode-segmented.ant-segmented {
+  background: var(--ant-color-fill-tertiary, rgba(0, 0, 0, 0.04));
+  padding: 2px;
+  border-radius: 6px;
+}
+
+.query-editor-workspace .qe-view-mode-segmented .ant-segmented-item {
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.query-editor-workspace .qe-view-mode-segmented .ant-segmented-item-selected {
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-primary, #00897b);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.query-editor-workspace .qe-sources-toggle-btn--active {
+  box-shadow: 0 1px 4px rgba(0, 137, 123, 0.25) !important;
+}
+
+/* Sources Drawer for Mobile & Compact Screens (< 992px) */
+.qe-sources-drawer .ant-drawer-header {
+  padding: 10px 16px !important;
+  border-bottom: 1px solid var(--ant-color-border-secondary) !important;
+}
+
+.qe-sources-drawer .ant-drawer-body {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+.qe-sources-drawer .data-panel,
+.qe-sources-drawer .enhanced-data-panel {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+.qe-sources-drawer .data-content,
+.qe-sources-drawer .data-content-with-tree {
+  flex: 1 !important;
+  overflow-y: auto !important;
+}
+
+/* Responsive Media Queries */
+@media (max-width: 991px) {
+  .query-editor-page .page-header {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .query-editor-workspace .query-editor-query-tabs > .ant-tabs-nav {
+    padding: 0 8px !important;
+    min-height: 38px !important;
+  }
+
+  .query-editor-workspace .qe-tab-toolbar {
+    gap: 4px !important;
+  }
+
+  .query-editor-workspace .qe-run-btn {
+    min-width: 78px !important;
+    padding-inline: 10px !important;
+    font-size: 12px !important;
+    height: 28px !important;
+  }
+
+  .query-editor-workspace .qe-results-footer {
+    padding: 6px 12px !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .query-editor-workspace .qe-results-table-host .ant-table-body {
+    overflow-x: auto !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .query-editor-page .page-header {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .query-editor-page .page-header-top {
+    min-height: 40px !important;
+  }
+
+  .query-editor-page .page-title {
+    font-size: 15px !important;
+  }
+
+  .query-editor-page .qe-page-actions {
+    gap: 4px !important;
+  }
+
+  .query-editor-page .qe-page-actions .ant-btn {
+    padding-inline: 8px !important;
+    font-size: 12px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+  }
+
+  .query-editor-page .qe-welcome-banner {
+    padding: 4px 8px !important;
+  }
+
+  .query-editor-workspace .qe-ai-bar {
+    padding: 6px 8px !important;
+  }
+
+  .query-editor-workspace .query-editor-query-tabs > .ant-tabs-nav {
+    padding: 0 4px !important;
+    min-height: 36px !important;
+  }
+
+  .query-editor-workspace .query-editor-query-tabs .ant-tabs-tab {
+    padding: 2px 6px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+  }
+
+  .query-editor-workspace .query-editor-query-tabs .qe-query-tab-title {
+    max-width: 80px;
+    font-size: 12px !important;
+  }
+
+  .query-editor-workspace .qe-tab-toolbar {
+    gap: 3px !important;
+  }
+
+  .query-editor-workspace .qe-run-btn {
+    min-width: 48px !important;
+    padding-inline: 6px !important;
+    font-size: 11px !important;
+    height: 26px !important;
+  }
+
+  .query-editor-workspace .qe-tab-toolbar .ant-btn.qe-sources-toggle-btn--icon-only,
+  .query-editor-workspace .qe-tab-toolbar .ant-btn:not(.qe-run-btn):not(.qe-cancel-btn):not(.qe-sources-toggle-btn) {
+    width: 26px !important;
+    min-width: 26px !important;
+    max-width: 26px !important;
+    height: 26px !important;
+  }
+
+  .query-editor-workspace .qe-sources-toggle-btn {
+    height: 26px !important;
+    padding: 0 6px !important;
+    font-size: 11px !important;
+  }
+
+  .query-editor-workspace .qe-view-mode-segmented .ant-segmented-item {
+    padding: 2px 4px !important;
+    font-size: 11px !important;
+  }
+
+  .query-editor-workspace .qe-results-footer {
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+  }
+
+  .query-editor-workspace .qe-run-control-group {
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+}
+

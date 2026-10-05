@@ -2,7 +2,7 @@
 
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  AlertOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, RobotOutlined, ReadOutlined,
+  AlertOutlined, ApartmentOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined,
   TableOutlined, SettingOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
@@ -55,6 +55,8 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   data: <DatabaseOutlined />,
   knowledge: <FileSearchOutlined />,
   warehouse: <ClusterOutlined />,
+  pipelines: <NodeIndexOutlined />,
+  catalog: <ApartmentOutlined />,
   settings: <SettingOutlined />,
   // Section icons, shown on the collapsed rail.
   'sec-analyze': <FundProjectionScreenOutlined />,

@@ -25,6 +25,10 @@ import {
   Form,
   Grid,
   Pagination,
+  Drawer,
+  Segmented,
+  Badge,
+  type MenuProps,
 } from 'antd';
 import { useTranslations } from 'next-intl';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
@@ -52,6 +56,8 @@ import {
   MoreOutlined,
   CaretRightOutlined,
   LineChartOutlined,
+  SplitCellsOutlined,
+  CodeOutlined,
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { enhancedDataService } from '@/services/enhancedDataService';
@@ -204,6 +210,7 @@ const resolveLanguage = (language?: string | null): QueryLanguage => (language =
 
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
 import { useDataSourceSchema, useDataSources } from '@/hooks/useDataSources';
+import { LakehouseServingNotice } from '@/components/data/LakehouseServing';
 import { useFormatUserError } from '@/hooks/useFormatUserError';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
@@ -220,9 +227,8 @@ import {
 
 const DEFAULT_SQL_SNIPPET = `SELECT * FROM data LIMIT ${DEFAULT_QUERY_LIMIT};`;
 const MIN_EDITOR_HEIGHT = 100;
-const RUN_BAR_HEIGHT = 44;
-const TABS_ROW_HEIGHT = 32;
-const MIN_TOP_SECTION_HEIGHT = TABS_ROW_HEIGHT + MIN_EDITOR_HEIGHT + RUN_BAR_HEIGHT; // tabs + editor + run bar
+const TABS_ROW_HEIGHT = 36;
+const MIN_TOP_SECTION_HEIGHT = TABS_ROW_HEIGHT + MIN_EDITOR_HEIGHT; // tabs + editor
 // Results pane's minimum footprint — kept small since it's the resizable floor,
 // not its default (the results pane still gets whatever space is left over).
 const MIN_RESULTS_PANE_HEIGHT = 90;
@@ -243,10 +249,8 @@ const computeMaxEditorHeight = (workspaceHeight?: number) => {
       ? document.querySelector('.qe-workspace-main')?.clientHeight
       : undefined) ||
     window.innerHeight;
-  // Chrome above the resizable split (page header + AI assist bar) — tightened
-  // from an earlier, over-generous estimate that was silently capping the
-  // editor's default height well below what the viewport actually allowed.
-  const reserved = 140;
+  // Chrome above the resizable split (page header + AI assist bar)
+  const reserved = 100;
   const available = Math.max(MIN_TOP_SECTION_HEIGHT, base - reserved);
   return Math.max(MIN_TOP_SECTION_HEIGHT, available - MIN_RESULTS_PANE_HEIGHT);
 };
@@ -366,18 +370,37 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [openTableTabs, setOpenTableTabs] = useState<string[]>([]);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [showTableSchema, setShowTableSchema] = useState(true);
+  const [windowWidth, setWindowWidth] = useState<number>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1200
+  );
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const screens = Grid.useBreakpoint();
+  const isDesktopLayout = screens.lg !== undefined ? screens.lg : windowWidth >= 992;
+  const isCompactScreen = !isDesktopLayout;
+  const isSmallScreen = windowWidth < 768;
+
+  const [viewMode, setViewMode] = useState<'code' | 'split' | 'results'>('split');
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         const stored = window.localStorage.getItem('sidebarCollapsed');
-        if (stored === null) return !defaultSidebarOpen; // first visit: open if defaultSidebarOpen
-        return stored === 'true';
+        if (stored !== null) return stored === 'true';
+        if (window.innerWidth < 992) return true; // on mobile/compact, start collapsed
+        return !defaultSidebarOpen;
       }
     } catch {
       // ignore
     }
     return !defaultSidebarOpen;
   });
+
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   // Row-level security silently drops rows; the results toolbar has to say so.
   const [rlsApplied, setRlsApplied] = useState(false);
@@ -404,10 +427,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const importHandledRef = useRef(false);
 
-  const screens = Grid.useBreakpoint();
-  const isDesktopLayout = screens.lg ?? false;
-  const isStackedLayout = !isDesktopLayout;
-  const effectiveSidebarCollapsed = isStackedLayout ? false : sidebarCollapsed;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [viewMode]);
 
   const [dataPanelWidth, setDataPanelWidth] = useState<number>(() => {
     if (typeof window === 'undefined') return DATA_PANEL_DEFAULT;
@@ -826,6 +851,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     const trimmed = sqlQuery.trim();
     const tables = schema.tables;
     if (!tables || tables.length === 0) return;
+    // A lakehouse-served file source exposes real table names, not "data"
+    const isFile = selectedDataSource?.type === 'file' && !schema.served_from;
     // Replace only the default snippet, or a starter written for another source (an untouched
     // "SELECT * FROM <table> LIMIT n" whose table this source doesn't have). A user's own query
     // is never touched.
@@ -833,11 +860,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     const bare = (ref: string) => ref.replace(/"/g, '').split('.').pop()?.toLowerCase();
     const staleStarter =
       starter &&
-      selectedDataSource?.type !== 'file' &&
+      !isFile &&
       !tables.some((t: { name?: string }) => bare(String(t.name ?? '')) === bare(starter[1]));
-    const staleFileStarter = starter && selectedDataSource?.type === 'file' && bare(starter[1]) !== 'data';
+    const staleFileStarter = starter && isFile && bare(starter[1]) !== 'data';
     if (trimmed !== DEFAULT_SQL_SNIPPET.trim() && !staleStarter && !staleFileStarter) return;
-    const isFile = selectedDataSource?.type === 'file';
     const firstTable = tables[0];
     const tableName = isFile ? 'data' : firstTable?.name || 'data';
     const schemaName = isFile ? undefined : firstTable?.schema || 'public';
@@ -2556,6 +2582,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           setResolvedEngine(resolvedEngineValue);
           setExecutionStatus('Python script completed successfully');
           setActiveTab('results');
+          if (isCompactScreen && viewMode === 'code') {
+            setViewMode('results');
+          }
 
           if (onQueryResult) {
             onQueryResult({
@@ -2583,6 +2612,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       console.error('❌ Python execution error:', err);
       setError(errorMessage);
       setExecutionStatus('Python execution failed');
+      setActiveTab('results');
+      if (isCompactScreen && viewMode === 'code') {
+        setViewMode('results');
+      }
       message.error(formatError({ message: errorMessage }, 'generic', t('python_exec_failed')));
     } finally {
       setExecuting(false);
@@ -2742,6 +2775,9 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
         // Switch to results tab to show the results (even if empty, so user can see the status)
         setActiveTab('results');
+        if (isCompactScreen && viewMode === 'code') {
+          setViewMode('results');
+        }
 
         if (onQueryResult) {
           onQueryResult({
@@ -2806,6 +2842,10 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       setSelectedEngine('unknown');
       setError(errorMessage);
       setLoading(false);
+      setActiveTab('results');
+      if (isCompactScreen && viewMode === 'code') {
+        setViewMode('results');
+      }
       // Highlight error line in Monaco if position info is present
       highlightSQLError(errorMessage);
       console.error('Query execution error:', error);
@@ -2865,6 +2905,115 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       handleExecuteQuery();
     }
   }, [sqlQuery]);
+
+  const handleTableClick = useCallback(
+    (tableName: string, schemaName?: string) => {
+      const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
+      const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
+      const current = (latestEditorContentRef.current || sqlQuery).trim();
+      const isStarter =
+        !current ||
+        current === DEFAULT_SQL_SNIPPET.trim() ||
+        /^SELECT \* FROM [^\s;]+ LIMIT \d+;?$/i.test(current);
+      if (isStarter) {
+        const starterSql = `SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT};`;
+        setSqlQuery(starterSql);
+        latestEditorContentRef.current = starterSql;
+        setQueryTabs((prev) =>
+          prev.map((tab) => (tab.key === activeQueryKey ? { ...tab, sql: starterSql } : tab))
+        );
+      } else {
+        editorInsertRef.current?.insertTextAtCursor(fromRef);
+      }
+    },
+    [sqlQuery, activeQueryKey]
+  );
+
+  const handleColumnClick = useCallback(
+    (tableName: string, columnName: string, schemaName?: string) => {
+      const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
+      editorInsertRef.current?.insertTextAtCursor(text);
+    },
+    []
+  );
+
+  const compactMenuItems = useMemo(() => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'save',
+        label: t('save_top'),
+        icon: <SaveOutlined />,
+        onClick: async () => {
+          const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+          const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+          const name = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
+          const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+          if (!content) {
+            message.warning(t('no_query_to_save'));
+            return;
+          }
+          try {
+            await persistSavedQueryForTab({
+              name,
+              sql: content,
+              tabKey: tab?.key ?? activeQueryKey,
+              language: resolveLanguage(tab?.language ?? editorLanguage),
+              savedQueryId: tab?.savedQueryId,
+            });
+            message.success(t('saved_to_list', { name }));
+            setShowSavedModal(true);
+          } catch (e: unknown) {
+            message.error(formatError(e as { message?: string }, 'save_failed', t('save_failed_name_exists')));
+          }
+        },
+      },
+      {
+        key: 'download',
+        label: editorLanguage === 'python' ? t('tooltip_download_py') : t('tooltip_download_sql'),
+        icon: <DownloadOutlined />,
+        disabled: !sqlQuery.trim(),
+        onClick: downloadCurrentQueryAsFile,
+      },
+      {
+        key: 'saved-queries',
+        label: t('tooltip_saved_queries_snapshots'),
+        icon: <UnorderedListOutlined />,
+        onClick: () => setShowSavedModal(true),
+      },
+    ];
+
+    if (editorLanguage === 'sql') {
+      items.push({
+        key: 'visualize',
+        label: t('visualize'),
+        icon: <LineChartOutlined />,
+        disabled: !sqlQuery.trim() || !selectedDataSourceId,
+        onClick: openVisualizeModal,
+      });
+    }
+
+    if (IS_EE && aiAvailable && editorLanguage === 'sql') {
+      items.push(
+        { type: 'divider' },
+        {
+          key: 'explain',
+          label: t('explain_sql_title'),
+          icon: <QuestionCircleOutlined />,
+          disabled: !sqlQuery.trim() || !selectedDataSourceId || aiExplaining,
+          onClick: () => void handleAIExplainSQL(),
+        },
+        {
+          key: 'optimize',
+          label: t('optimize_sql_title'),
+          icon: <ScissorOutlined />,
+          disabled: !sqlQuery.trim() || !selectedDataSourceId || aiOptimizing,
+          onClick: () => void handleAIOptimizeSQL(),
+        }
+      );
+    }
+
+    return items;
+  }, [activeQueryKey, queryTabs, sqlQuery, editorLanguage, selectedDataSourceId, aiAvailable, aiExplaining, aiOptimizing, t, downloadCurrentQueryAsFile, openVisualizeModal]);
 
   const resultsTabItems = useMemo(
     () => [
@@ -2962,15 +3111,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     >
       {/* Top Bar removed per UX request */}
 
-      {/* Main Content - Two Column Layout - Match AI Chat page design */}
+      {/* Main Content - SQL Editor, Results, and Data Panel */}
       <div
         style={{
           flex: 1,
           display: 'flex',
-          flexDirection: isStackedLayout ? 'column' : 'row',
-          gap: isStackedLayout ? 16 : 0,
+          flexDirection: 'row',
           overflow: 'hidden',
           minHeight: 0,
+          position: 'relative',
         }}
       >
         {/* Main Panel - SQL Editor & Results */}
@@ -2981,7 +3130,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           overflow: 'hidden',
           minHeight: 0,
           height: '100%',
-          maxHeight: '100%'
+          maxHeight: '100%',
+          width: '100%',
         }}>
           {IS_EE && aiAvailable && (
           <div className="qe-ai-bar">
@@ -3096,14 +3246,19 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             className="qe-workspace-main"
             ref={workspaceMainRef}
           >
-            {/* Top panel: Tabs + Editor + Run (fixed height, flexShrink: 0 - never goes under results) */}
+            {/* Top panel: Tabs + Editor + Run */}
             <div
-              className="qe-editor-top-panel"
+              className={`qe-editor-top-panel qe-view-${viewMode}`}
               style={{
-              height: editorHeight,
-              minHeight: MIN_TOP_SECTION_HEIGHT,
-              maxHeight: maxEditorHeight,
-            }}>
+                height: viewMode === 'code' ? '100%' : viewMode === 'results' ? 'auto' : editorHeight,
+                flex: viewMode === 'code' ? 1 : 'none',
+                minHeight: viewMode === 'results' ? 'auto' : MIN_TOP_SECTION_HEIGHT,
+                maxHeight: viewMode === 'split' ? maxEditorHeight : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+            >
             {/* Query Tabs - inside top panel so they move with editor+run */}
             <div className="qe-query-tabs-row">
               <Tabs
@@ -3115,6 +3270,26 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 tabBarExtraContent={{
                   right: (
                   <Space size={4} className="icon-toolbar qe-tab-toolbar">
+                    {/* Lakehouse Serving notice: hide on small screens (< 768px) to save space for tabs */}
+                    {!isSmallScreen && (
+                      <LakehouseServingNotice servedFrom={schema?.served_from} variant="tag" />
+                    )}
+
+                    {/* View Mode Switcher: Code | Split | Results */}
+                    <Segmented
+                      size="small"
+                      value={viewMode}
+                      onChange={(val) => setViewMode(val as 'code' | 'split' | 'results')}
+                      options={[
+                        { value: 'code', label: isSmallScreen ? undefined : t('view_code'), icon: <CodeOutlined />, title: t('view_code') },
+                        { value: 'split', label: isSmallScreen ? undefined : t('view_split'), icon: <SplitCellsOutlined />, title: t('view_split') },
+                        { value: 'results', label: isSmallScreen ? undefined : t('view_results'), icon: <TableOutlined />, title: t('view_results') },
+                      ]}
+                      className="qe-view-mode-segmented"
+                    />
+
+                    {!isSmallScreen && <Divider orientation="vertical" style={{ margin: '0 2px' }} />}
+
                     {/* Always visible, however many tabs are open (tabs that don't fit go to the ⋯ menu). */}
                     <Tooltip title={t('new_query_tab')}>
                       <Button type="text" size="small" icon={<PlusOutlined />} className="qe-tab-add-btn"
@@ -3130,7 +3305,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                           className="qe-run-btn qe-cancel-btn"
                           onClick={handleCancelQuery}
                         >
-                          {t('cancel_query')}
+                          {isSmallScreen ? t('cancel') : t('cancel_query')}
                         </Button>
                       </Tooltip>
                     ) : (
@@ -3142,91 +3317,157 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                         onClick={() => runHandlerRef.current?.()}
                         disabled={isLoadingSchema || !sqlQuery.trim() || !selectedDataSourceId}
                       >
-                        {editorLanguage === 'python'
-                          ? t('run_python')
-                          : isPromqlDataSource
-                            ? t('run_promql')
-                            : hasEditorSelection
-                              ? t('run_selection')
-                              : t('run_sql')}
+                        {isSmallScreen
+                          ? t('run')
+                          : editorLanguage === 'python'
+                            ? t('run_python')
+                            : isPromqlDataSource
+                              ? t('run_promql')
+                              : hasEditorSelection
+                                ? t('run_selection')
+                                : t('run_sql')}
                       </Button>
                     )}
-                    <Divider orientation="vertical" style={{ margin: '0 4px' }} />
-                    <Tooltip title={t('tooltip_save_query_script')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<SaveOutlined />}
-                        aria-label={t('aria_save_to_saved_queries')}
-                        onClick={async () => {
-                          const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
-                          const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
-                          const name = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
-                          const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
-                          if (!content) {
-                            message.warning(t('no_query_to_save'));
-                            return;
-                          }
-                          try {
-                            await persistSavedQueryForTab({
-                              name,
-                              sql: content,
-                              tabKey: tab?.key ?? activeQueryKey,
-                              language: resolveLanguage(tab?.language ?? editorLanguage),
-                              savedQueryId: tab?.savedQueryId,
-                            });
-                            message.success(t('saved_to_list', { name }));
-                            setShowSavedModal(true);
-                          } catch (e: unknown) {
-                            message.error(formatError(e as { message?: string }, 'save_failed', t('save_failed_name_exists')));
-                          }
-                        }}
-                      />
-                    </Tooltip>
-                    <Tooltip title={editorLanguage === 'python' ? t('tooltip_download_py') : t('tooltip_download_sql')}>
-                      <Button type="text" size="small" icon={<DownloadOutlined />} aria-label={t('aria_download_tab_as_file')} onClick={downloadCurrentQueryAsFile} disabled={!sqlQuery.trim()} />
-                    </Tooltip>
-                    <Tooltip title={t('tooltip_saved_queries_snapshots')}>
-                      <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
-                    </Tooltip>
-                    {editorLanguage === 'sql' && (
-                      <Tooltip title={t('visualize_tooltip')}>
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<LineChartOutlined />}
-                          disabled={!sqlQuery.trim() || !selectedDataSourceId}
-                          onClick={openVisualizeModal}
-                          aria-label={t('visualize')}
-                        />
+
+                    {/* Sources Toggle Button: only needed on compact / mobile screens (< 992px) as Drawer toggle; on big screen (>= 992px) the right sidebar is already present */}
+                    {isCompactScreen && (
+                      <Tooltip title={sidebarCollapsed ? t('expand_data_panel') : t('collapse_data_panel')}>
+                        {isSmallScreen ? (
+                          <Badge count={contextDataSources.length} size="small" offset={[-2, 2]}>
+                            <Button
+                              type={!sidebarCollapsed ? 'primary' : 'default'}
+                              size="small"
+                              icon={<DatabaseOutlined />}
+                              className={`qe-sources-toggle-btn qe-sources-toggle-btn--icon-only ${!sidebarCollapsed ? 'qe-sources-toggle-btn--active' : ''}`}
+                              onClick={() => {
+                                const next = !sidebarCollapsed;
+                                setSidebarCollapsed(next);
+                                try {
+                                  window.localStorage.setItem('sidebarCollapsed', next ? 'true' : 'false');
+                                  window.dispatchEvent(
+                                    new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: next } })
+                                  );
+                                } catch {}
+                              }}
+                              aria-label={t('sources_toggle')}
+                            />
+                          </Badge>
+                        ) : (
+                          <Button
+                            type={!sidebarCollapsed ? 'primary' : 'default'}
+                            size="small"
+                            icon={<DatabaseOutlined />}
+                            className={`qe-sources-toggle-btn ${!sidebarCollapsed ? 'qe-sources-toggle-btn--active' : ''}`}
+                            onClick={() => {
+                              const next = !sidebarCollapsed;
+                              setSidebarCollapsed(next);
+                              try {
+                                window.localStorage.setItem('sidebarCollapsed', next ? 'true' : 'false');
+                                window.dispatchEvent(
+                                  new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: next } })
+                                );
+                              } catch {}
+                            }}
+                          >
+                            <span>{t('sources_toggle')}</span>
+                            {contextDataSources.length > 0 && (
+                              <span className="qe-sources-count-badge">
+                                {contextDataSources.length}
+                              </span>
+                            )}
+                          </Button>
+                        )}
                       </Tooltip>
                     )}
-                    {IS_EE && aiAvailable && editorLanguage === 'sql' && (
+
+                    {/* On Desktop: Show direct action buttons */}
+                    {!isCompactScreen ? (
                       <>
-                        <Divider orientation="vertical" style={{ margin: '0 2px' }} />
-                        <Tooltip title={t('explain_sql_tooltip')}>
+                        <Divider orientation="vertical" style={{ margin: '0 4px' }} />
+                        <Tooltip title={t('tooltip_save_query_script')}>
                           <Button
                             type="text"
                             size="small"
-                            icon={<QuestionCircleOutlined />}
-                            loading={aiExplaining}
-                            disabled={!sqlQuery.trim() || !selectedDataSourceId}
-                            onClick={() => void handleAIExplainSQL()}
-                            aria-label={t('explain_sql_title')}
+                            icon={<SaveOutlined />}
+                            aria-label={t('aria_save_to_saved_queries')}
+                            onClick={async () => {
+                              const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
+                              const idx = queryTabs.findIndex((qt) => qt.key === activeQueryKey);
+                              const name = resolveQueryTabSaveName(tab?.title, idx >= 0 ? idx + 1 : queryTabs.length);
+                              const content = latestEditorContentRef.current?.trim() || sqlQuery?.trim() || '';
+                              if (!content) {
+                                message.warning(t('no_query_to_save'));
+                                return;
+                              }
+                              try {
+                                await persistSavedQueryForTab({
+                                  name,
+                                  sql: content,
+                                  tabKey: tab?.key ?? activeQueryKey,
+                                  language: resolveLanguage(tab?.language ?? editorLanguage),
+                                  savedQueryId: tab?.savedQueryId,
+                                });
+                                message.success(t('saved_to_list', { name }));
+                                setShowSavedModal(true);
+                              } catch (e: unknown) {
+                                message.error(formatError(e as { message?: string }, 'save_failed', t('save_failed_name_exists')));
+                              }
+                            }}
                           />
                         </Tooltip>
-                        <Tooltip title={t('optimize_sql_tooltip')}>
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<ScissorOutlined />}
-                            loading={aiOptimizing}
-                            disabled={!sqlQuery.trim() || !selectedDataSourceId}
-                            onClick={() => void handleAIOptimizeSQL()}
-                            aria-label={t('optimize_sql_title')}
-                          />
+                        <Tooltip title={editorLanguage === 'python' ? t('tooltip_download_py') : t('tooltip_download_sql')}>
+                          <Button type="text" size="small" icon={<DownloadOutlined />} aria-label={t('aria_download_tab_as_file')} onClick={downloadCurrentQueryAsFile} disabled={!sqlQuery.trim()} />
                         </Tooltip>
+                        <Tooltip title={t('tooltip_saved_queries_snapshots')}>
+                          <Button type="text" size="small" icon={<UnorderedListOutlined />} aria-label={t('aria_saved_queries_snapshots')} onClick={() => { setShowSavedModal(true); }} />
+                        </Tooltip>
+                        {editorLanguage === 'sql' && (
+                          <Tooltip title={t('visualize_tooltip')}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<LineChartOutlined />}
+                              disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                              onClick={openVisualizeModal}
+                              aria-label={t('visualize')}
+                            />
+                          </Tooltip>
+                        )}
+                        {IS_EE && aiAvailable && editorLanguage === 'sql' && (
+                          <>
+                            <Divider orientation="vertical" style={{ margin: '0 2px' }} />
+                            <Tooltip title={t('explain_sql_tooltip')}>
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<QuestionCircleOutlined />}
+                                loading={aiExplaining}
+                                disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                                onClick={() => void handleAIExplainSQL()}
+                                aria-label={t('explain_sql_title')}
+                              />
+                            </Tooltip>
+                            <Tooltip title={t('optimize_sql_tooltip')}>
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<ScissorOutlined />}
+                                loading={aiOptimizing}
+                                disabled={!sqlQuery.trim() || !selectedDataSourceId}
+                                onClick={() => void handleAIOptimizeSQL()}
+                                aria-label={t('optimize_sql_title')}
+                              />
+                            </Tooltip>
+                          </>
+                        )}
                       </>
+                    ) : (
+                      /* On Compact / Mobile screens: Group actions into a dropdown */
+                      <Dropdown menu={{ items: compactMenuItems }} trigger={['click']} placement="bottomRight">
+                        <Tooltip title={t('more_actions')}>
+                          <Button type="text" size="small" icon={<MoreOutlined />} className="icon-only-btn" />
+                        </Tooltip>
+                      </Dropdown>
                     )}
                   </Space>
                   ),
@@ -3359,7 +3600,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   flex: 1,
                   minHeight: 0,
                   overflow: 'hidden',
-                  display: 'flex',
+                  display: viewMode === 'results' ? 'none' : 'flex',
                   flexDirection: 'column',
                 }}
               >
@@ -3422,7 +3663,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               </div>
 
               {/* Query Parameters bar — shown only when {{params}} are detected */}
-              {detectedQueryParams.length > 0 && (
+              {viewMode !== 'results' && detectedQueryParams.length > 0 && (
                 <div className="qe-query-params-bar">
                   <Text style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', whiteSpace: 'nowrap' }}>
                     {t('query_params_title')}:
@@ -3448,13 +3689,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             </div>
 
             {/* Resize handle: border between Run button and Query Results - drag to split */}
-            <div
-              className="qe-split-handle"
-              onMouseDown={startEditorResize}
-              title={t('tooltip_drag_resize')}
-            >
-              <div className="qe-split-handle-grip" />
-            </div>
+            {viewMode === 'split' && (
+              <div
+                className="qe-split-handle"
+                onMouseDown={startEditorResize}
+                title={t('tooltip_drag_resize')}
+              >
+                <div className="qe-split-handle-grip" />
+              </div>
+            )}
 
             {/* Error Display - tight to control bar */}
             {error && (
@@ -3481,7 +3724,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             {/* Results - directly under Run / errors, no extra gap */}
             <div
               className="qe-results-pane"
-              style={{ flex: 1, minHeight: MIN_RESULTS_PANE_HEIGHT, display: 'flex', flexDirection: 'column' }}
+              style={{
+                flex: viewMode === 'results' ? 1 : viewMode === 'code' ? 0 : 1,
+                minHeight: viewMode === 'code' ? 0 : MIN_RESULTS_PANE_HEIGHT,
+                display: viewMode === 'code' ? 'none' : 'flex',
+                flexDirection: 'column',
+                height: viewMode === 'results' ? '100%' : undefined,
+              }}
             >
               <Tabs
                 activeKey={activeTab}
@@ -3690,111 +3939,159 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     />
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Pagination
                     current={currentPage}
                     pageSize={pageSize}
                     total={results.length}
                     onChange={(page, size) => { setCurrentPage(page); setPageSize(size); }}
-                    showSizeChanger
+                    showSizeChanger={!isSmallScreen}
+                    simple={isSmallScreen}
                     size="small"
-                    showTotal={(total, range) => t('rows_range_total', { from: range[0], to: range[1], total })}
+                    showTotal={!isSmallScreen ? (total, range) => t('rows_range_total', { from: range[0], to: range[1], total }) : undefined}
                   />
                 </div>
               </div>
             </div>
           </div>
         </div>
-        {!isStackedLayout && !effectiveSidebarCollapsed ? (
-          <div
-            className="qe-panel-resize-handle"
-            onMouseDown={handleDataPanelDragStart}
-            title={t('tooltip_drag_resize')}
-            aria-hidden
-          >
-            <div />
-          </div>
-        ) : null}
-        {/* Data Sources Panel on Right */}
-        <div
-          style={{
-            width: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
-            minWidth: isStackedLayout ? '100%' : effectiveSidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
-            minHeight: isStackedLayout ? 'auto' : '100%',
-            borderLeft:
-              !isStackedLayout && !effectiveSidebarCollapsed
-                ? `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
-                : 'none',
-            borderTop: isStackedLayout
-              ? `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
-              : 'none',
-            background: 'var(--ant-color-bg-layout)',
-            transition: 'all 0.3s ease',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            marginTop: isStackedLayout ? 16 : 0,
-            order: isStackedLayout ? 2 : 0,
-          }}
-        >
-          {!isStackedLayout && effectiveSidebarCollapsed ? (
-            <div className="qe-sources-collapsed">
-              <Tooltip title={t('expand_data_panel')} placement="left">
-                <Button
-                  type="text"
-                  size="small"
-                  className="icon-only-btn qe-sources-collapsed-btn"
-                  icon={<ExpandOutlined />}
-                  onClick={() => {
-                    setSidebarCollapsed(false);
+
+        {/* Desktop Data Sources Panel on Right (>= 992px) */}
+        {!isCompactScreen && (
+          <>
+            {!sidebarCollapsed ? (
+              <div
+                className="qe-panel-resize-handle"
+                onMouseDown={handleDataPanelDragStart}
+                title={t('tooltip_drag_resize')}
+                aria-hidden
+              >
+                <div />
+              </div>
+            ) : null}
+            <div
+              style={{
+                width: sidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
+                minWidth: sidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
+                height: '100%',
+                borderLeft: !sidebarCollapsed
+                  ? `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
+                  : 'none',
+                background: 'var(--ant-color-bg-layout)',
+                transition: 'width 0.25s ease, min-width 0.25s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }}
+            >
+              {sidebarCollapsed ? (
+                <div className="qe-sources-collapsed">
+                  <Tooltip title={t('expand_data_panel')} placement="left">
+                    <Button
+                      type="text"
+                      size="small"
+                      className="icon-only-btn qe-sources-collapsed-btn"
+                      icon={<ExpandOutlined />}
+                      onClick={() => {
+                        setSidebarCollapsed(false);
+                        try {
+                          window.localStorage.setItem('sidebarCollapsed', 'false');
+                        } catch {}
+                        try {
+                          window.dispatchEvent(
+                            new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: false } })
+                          );
+                        } catch {}
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title={t('add_data_source')} placement="left">
+                    <Button
+                      type="text"
+                      size="small"
+                      className="icon-only-btn qe-sources-collapsed-btn"
+                      icon={<PlusOutlined />}
+                      onClick={() => setShowConnectDataModal(true)}
+                    />
+                  </Tooltip>
+                  <Tooltip title={t('data_sources')} placement="left">
+                    <DatabaseOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
+                  </Tooltip>
+                </div>
+              ) : (
+                <EnhancedDataPanel
+                  onCollapse={() => {
+                    setSidebarCollapsed(true);
                     try {
-                      window.localStorage.setItem('sidebarCollapsed', 'false');
-                    } catch {}
-                    try {
+                      window.localStorage.setItem('sidebarCollapsed', 'true');
                       window.dispatchEvent(
-                        new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: false } })
+                        new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } })
                       );
                     } catch {}
                   }}
+                  onTableClick={handleTableClick}
+                  onColumnClick={handleColumnClick}
+                  schemaTreeCompact
                 />
-              </Tooltip>
-              <Tooltip title={t('add_data_source')} placement="left">
-                <Button
-                  type="text"
-                  size="small"
-                  className="icon-only-btn qe-sources-collapsed-btn"
-                  icon={<PlusOutlined />}
-                  onClick={() => setShowConnectDataModal(true)}
-                />
-              </Tooltip>
-              <Tooltip title={t('data_sources')} placement="left">
-                <DatabaseOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
-              </Tooltip>
+              )}
             </div>
-          ) : (
+          </>
+        )}
+
+        {/* Mobile / Tablet Drawer for Data Sources (< 992px) */}
+        {isCompactScreen && (
+          <Drawer
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <Space size={8}>
+                  <DatabaseOutlined style={{ color: 'var(--ant-color-primary)' }} />
+                  <span style={{ fontWeight: 600 }}>{t('data_sources')}</span>
+                  {contextDataSources.length > 0 && <Tag>{contextDataSources.length}</Tag>}
+                </Space>
+              </div>
+            }
+            placement="right"
+            open={!sidebarCollapsed}
+            onClose={() => {
+              setSidebarCollapsed(true);
+              try {
+                window.localStorage.setItem('sidebarCollapsed', 'true');
+                window.dispatchEvent(
+                  new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } })
+                );
+              } catch {}
+            }}
+            width={isSmallScreen ? '92vw' : Math.min(420, windowWidth * 0.85)}
+            styles={{
+              body: { padding: 0, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' },
+              header: { padding: '10px 16px', borderBottom: '1px solid var(--ant-color-border-secondary)' },
+            }}
+            className="qe-sources-drawer"
+          >
             <EnhancedDataPanel
               onCollapse={() => {
                 setSidebarCollapsed(true);
                 try {
                   window.localStorage.setItem('sidebarCollapsed', 'true');
+                  window.dispatchEvent(
+                    new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } })
+                  );
                 } catch {}
-                try {
-                  window.dispatchEvent(new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: true } }));
-                } catch { }
               }}
               onTableClick={(tableName, schemaName) => {
-                const ident = schemaName && schemaName !== 'public' ? `${schemaName}.${tableName}` : tableName;
-                const fromRef = /[\s"]/.test(ident) ? `"${ident.replace(/"/g, '""')}"` : ident;
-                editorInsertRef.current?.insertTextAtCursor(`SELECT * FROM ${fromRef} LIMIT ${DEFAULT_QUERY_LIMIT}`);
+                handleTableClick(tableName, schemaName);
+                if (isSmallScreen) {
+                  setSidebarCollapsed(true);
+                  try {
+                    window.localStorage.setItem('sidebarCollapsed', 'true');
+                  } catch {}
+                }
               }}
-              onColumnClick={(tableName, columnName, schemaName) => {
-                const text = /[\s"]/.test(columnName) ? `"${columnName.replace(/"/g, '""')}"` : columnName;
-                editorInsertRef.current?.insertTextAtCursor(text);
-              }}
+              onColumnClick={handleColumnClick}
               schemaTreeCompact
             />
-          )}
-        </div>
+          </Drawer>
+        )}
       </div>
 
       {/* Connect Data Modal */}
