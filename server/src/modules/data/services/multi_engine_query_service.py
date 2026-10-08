@@ -3124,6 +3124,12 @@ class PandasEngine(BaseQueryEngine):
 
                         if df is not None and not df.empty and source_id:
                             async with _api_cache_lock:
+                                # Expired entries are otherwise only dropped when the same
+                                # source is read again, holding up to API_MAX_ROWS_DEFAULT
+                                # rows per idle source for the life of the process.
+                                _now = time.monotonic()
+                                for _sid in [k for k, (exp, _) in API_RESPONSE_CACHE.items() if exp <= _now]:
+                                    del API_RESPONSE_CACHE[_sid]
                                 API_RESPONSE_CACHE[source_id] = (
                                     time.monotonic() + API_RESPONSE_CACHE_TTL_SEC,
                                     df,

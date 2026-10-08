@@ -76,31 +76,22 @@ async def _singleton_lease_heartbeat(name: str) -> None:
             logger.debug("Singleton lease renewal for '%s' failed (non-fatal): %s", name, e)
 
 
-def _import_module_quiet(name: str) -> None:
-    """Import optional heavy deps without noisy optional-dependency warnings (e.g. Prophet→plotly)."""
-    import io
-    import sys
-
-    buf_out, buf_err = io.StringIO(), io.StringIO()
-    old_out, old_err = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = buf_out, buf_err
-    try:
-        __import__(name)
-    finally:
-        sys.stdout, sys.stderr = old_out, old_err
-
-
 def _check_predictive_deps() -> dict:
-    """Check availability of prophet, pmdarima, statsmodels."""
+    """Check availability of prophet, pmdarima, statsmodels.
+
+    Uses find_spec rather than importing them: this also backs /health, and importing
+    the forecasting stack just to report it held ~150 MB in every process.
+    """
     if not is_ee_enabled():
         return {}
+
+    import importlib.util
 
     out = {}
     for name in ("prophet", "pmdarima", "statsmodels"):
         try:
-            _import_module_quiet(name)
-            out[name] = True
-        except ImportError:
+            out[name] = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):
             out[name] = False
     return out
 
@@ -289,22 +280,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # the background per process so the first search after a deploy doesn't wait ~90 s.
             # Import via src.modules (the canonical path): the ee.* path is a *separate* module
             # object behind the CE shim, with its own model cache that search never reads.
-            try:
-                from src.modules.ai.utils.embedding_service import warm_local_model
-                from src.modules.knowledge.services.rag_retrieval_service import warm_reranker
+            # AISER_WARM_MODELS=false skips this so the models (~1 GB+ with torch) load only
+            # when first used -- for memory-billed hosts where most processes never need them.
+            if os.getenv("AISER_WARM_MODELS", "true").strip().lower() in ("0", "false", "no"):
+                logger.info("AISER_WARM_MODELS=false: search/PII models will load on first use")
+            else:
+                try:
+                    from src.modules.ai.utils.embedding_service import warm_local_model
+                    from src.modules.knowledge.services.rag_retrieval_service import warm_reranker
 
-                async def _warm_search_models() -> None:
-                    await warm_local_model()
-                    await warm_reranker()
-                    # The PII scrubber loads its NER model on import (~20 s); without this the
-                    # first AI Decisions preview or scrubbed chat answer pays for it.
-                    import importlib
+                    async def _warm_search_models() -> None:
+                        await warm_local_model()
+                        await warm_reranker()
+                        # The PII scrubber loads its NER model on first use (~20 s); without this
+                        # the first AI Decisions preview or scrubbed chat answer pays for it.
+                        from src.modules.data.services.pii_scrubber import _ensure_presidio
 
-                    await asyncio.to_thread(importlib.import_module, "src.modules.data.services.pii_scrubber")
+                        await asyncio.to_thread(_ensure_presidio)
 
-                app.state.search_warmup_task = asyncio.create_task(_warm_search_models())
-            except Exception as e:
-                logger.warning("Search model warm-up not scheduled: %s", e)
+                    app.state.search_warmup_task = asyncio.create_task(_warm_search_models())
+                except Exception as e:
+                    logger.warning("Search model warm-up not scheduled: %s", e)
 
             # Trial lifecycle jobs (EE) — one container-wide instance; see
             # _try_acquire_singleton_lease's docstring for why this needs a lease.
