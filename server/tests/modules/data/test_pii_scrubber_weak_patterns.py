@@ -4,7 +4,7 @@ import pytest
 
 from src.modules.data.services import pii_scrubber as P
 
-pytestmark = pytest.mark.skipif(P._presidio_analyzer is None, reason="Presidio not installed")
+pytestmark = pytest.mark.skipif(not P._ensure_presidio(), reason="Presidio not installed")
 
 
 def test_bare_codes_are_kept():

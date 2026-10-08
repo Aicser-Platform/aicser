@@ -25,7 +25,9 @@ what was removed (prevents confusing the model about data types).
 from __future__ import annotations
 
 import logging
+import os
 import re
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -162,97 +164,119 @@ _NER_ENTITY_TYPES_PRONE_TO_IDENTIFIER_FALSE_POSITIVES = frozenset(
 # organization name in ordinary prose is unaffected.
 
 # ── Presidio bootstrap ────────────────────────────────────────────────────────
-_presidio_analyzer = None
-_presidio_anonymizer = None
+# Loaded on first use, not on import: spaCy's NER model costs ~500 MB of RAM per
+# process, and many modules import this file only for _is_pii_column_name.
+# _UNLOADED marks "not tried yet"; None means Presidio is unavailable (regex fallback).
+_UNLOADED: Any = object()
+_presidio_analyzer: Any = _UNLOADED
+_presidio_anonymizer: Any = _UNLOADED
+_presidio_lock = threading.Lock()
 
-try:
-    from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
-    from presidio_analyzer.nlp_engine import NlpEngineProvider
-    from presidio_anonymizer import AnonymizerEngine
-    from presidio_anonymizer.entities import OperatorConfig
 
-    # Presidio's own AnalyzerEngine() default (no config) hardcodes
-    # en_core_web_lg (~590MB) via its packaged default.yaml. Its actual NER
-    # tagging quality -- the only thing Presidio's spaCy recognizer consumes
-    # -- is published as very close to en_core_web_md's (~40MB); the lg/md
-    # gap is mostly in static word-vector table size, used for similarity
-    # tasks Presidio never calls. Explicit engine config, matching the
-    # smaller model Dockerfile.prod now downloads, buys back ~550MB of image
-    # size for a NER-quality difference too small to be worth it here.
-    _nlp_engine = NlpEngineProvider(
-        nlp_configuration={
-            "nlp_engine_name": "spacy",
-            "models": [{"lang_code": "en", "model_name": "en_core_web_md"}],
-        }
-    ).create_engine()
-    _base_analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
+def _load_presidio() -> Tuple[Any, Any]:
+    """Build the Presidio analyzer + anonymizer, or (None, None) when unavailable."""
+    # AISER_PII_NER=false keeps the regex + column-name tiers but skips the NER model
+    # (~500 MB RSS measured): free-text names/places are then no longer detected.
+    if os.getenv("AISER_PII_NER", "true").strip().lower() in ("0", "false", "no"):
+        logger.info("ℹ️  PII scrubber: AISER_PII_NER=false — using global regex fallback (60+ patterns)")
+        return None, None
+    try:
+        from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
+        from presidio_analyzer.nlp_engine import NlpEngineProvider
+        from presidio_anonymizer import AnonymizerEngine
 
-    # ── Custom regional recognizers not in Presidio's built-ins ──────────────
-    _CUSTOM_RECOGNIZERS: List[PatternRecognizer] = [
-        # India
-        PatternRecognizer("IN_AADHAAR",  patterns=[Pattern("Aadhaar",  r"\b\d{4}\s\d{4}\s\d{4}\b", 0.85)]),
-        PatternRecognizer("IN_PAN",      patterns=[Pattern("PAN",      r"\b[A-Z]{5}\d{4}[A-Z]\b", 0.8)]),
-        PatternRecognizer("IN_PHONE",    patterns=[Pattern("IN_Phone", r"(?:\+91[-\s]?|0)?[6-9]\d{9}\b", 0.75)]),
-        PatternRecognizer("IN_UPI",      patterns=[Pattern("UPI",      r"\b[\w.\-]{2,256}@[a-zA-Z]{2,64}\b", 0.65)]),
-        # China
-        PatternRecognizer("CN_ID",   patterns=[Pattern("CN_ID",    r"\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b", 0.9)]),
-        PatternRecognizer("CN_PHONE",patterns=[Pattern("CN_Phone", r"(?:\+86[-\s]?)?1[3-9]\d{9}\b", 0.8)]),
-        # South Korea
-        PatternRecognizer("KR_RRN",  patterns=[Pattern("KR_RRN",  r"\b\d{6}-[1-4]\d{6}\b", 0.9)]),
-        PatternRecognizer("KR_PHONE",patterns=[Pattern("KR_Phone",r"(?:\+82[-\s]?)?0?1[0-9]-?\d{3,4}-?\d{4}\b", 0.75)]),
-        # Japan
-        PatternRecognizer("JP_MY_NUMBER", patterns=[Pattern("MyNumber", r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", 0.7)]),
-        PatternRecognizer("JP_PHONE",     patterns=[Pattern("JP_Phone", r"(?:\+81[-\s]?)?0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{4}\b", 0.7)]),
-        # Singapore
-        PatternRecognizer("SG_NRIC", patterns=[Pattern("NRIC", r"\b[STFGM]\d{7}[A-Z]\b", 0.9)]),
-        # Malaysia
-        PatternRecognizer("MY_NRIC", patterns=[Pattern("MY_NRIC", r"\b\d{6}-\d{2}-\d{4}\b", 0.85)]),
-        # Indonesia
-        PatternRecognizer("ID_NIK",  patterns=[Pattern("NIK", r"\b[1-9]\d{15}\b", 0.7)]),
-        # Thailand
-        PatternRecognizer("TH_ID",   patterns=[Pattern("TH_ID", r"\b\d{13}\b", 0.6)]),
-        # Australia
-        PatternRecognizer("AU_TFN",      patterns=[Pattern("AU_TFN",  r"\b\d{3}\s?\d{3}\s?\d{3}\b", 0.7)]),
-        PatternRecognizer("AU_MEDICARE", patterns=[Pattern("Medicare", r"\b[2-6]\d{9}\b", 0.65)]),
-        # UAE
-        PatternRecognizer("AE_EMIRATESID", patterns=[Pattern("EmiratesID", r"\b784-\d{4}-\d{7}-\d\b", 0.95)]),
-        # Saudi Arabia
-        PatternRecognizer("SA_NID", patterns=[Pattern("SA_NID", r"\b[12]\d{9}\b", 0.7)]),
-        # Turkey
-        PatternRecognizer("TR_TC", patterns=[Pattern("TC_Kimlik", r"\b[1-9]\d{10}\b", 0.7)]),
-        # Pakistan
-        PatternRecognizer("PK_CNIC", patterns=[Pattern("CNIC", r"\b\d{5}-\d{7}-\d\b", 0.95)]),
-        # Israel
-        PatternRecognizer("IL_ID", patterns=[Pattern("IL_ID", r"\b\d{9}\b", 0.6)]),
-        # South Africa
-        PatternRecognizer("ZA_ID", patterns=[Pattern("ZA_ID", r"\b\d{13}\b", 0.7)]),
-        # Brazil
-        PatternRecognizer("BR_CPF",  patterns=[Pattern("CPF",  r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", 0.9)]),
-        PatternRecognizer("BR_CNPJ", patterns=[Pattern("CNPJ", r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", 0.9)]),
-        # Mexico
-        PatternRecognizer("MX_CURP", patterns=[Pattern("CURP", r"\b[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z\d]\d\b", 0.95)]),
-        PatternRecognizer("MX_RFC",  patterns=[Pattern("RFC",  r"\b[A-Z&Ñ]{3,4}\d{6}[A-Z\d]{3}\b", 0.85)]),
-        # Argentina
-        PatternRecognizer("AR_CUIL", patterns=[Pattern("CUIL", r"\b\d{2}-\d{7,8}-\d\b", 0.9)]),
-        # Chile
-        PatternRecognizer("CL_RUT", patterns=[Pattern("RUT", r"\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dKk]\b", 0.85)]),
-        # UK National Insurance
-        PatternRecognizer("UK_NINO", patterns=[Pattern("NINO", r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b", 0.9)]),
-        # Germany Steuer-ID
-        PatternRecognizer("DE_STEUER", patterns=[Pattern("Steuer-ID", r"\b[1-9]\d{10}\b", 0.65)]),
-    ]
+        # Presidio's own AnalyzerEngine() default (no config) hardcodes
+        # en_core_web_lg (~590MB) via its packaged default.yaml. Its actual NER
+        # tagging quality -- the only thing Presidio's spaCy recognizer consumes
+        # -- is published as very close to en_core_web_md's (~40MB); the lg/md
+        # gap is mostly in static word-vector table size, used for similarity
+        # tasks Presidio never calls. Explicit engine config, matching the
+        # smaller model Dockerfile.prod now downloads, buys back ~550MB of image
+        # size for a NER-quality difference too small to be worth it here.
+        _nlp_engine = NlpEngineProvider(
+            nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_md"}],
+            }
+        ).create_engine()
+        _base_analyzer = AnalyzerEngine(nlp_engine=_nlp_engine)
 
-    for recognizer in _CUSTOM_RECOGNIZERS:
-        _base_analyzer.registry.add_recognizer(recognizer)
+        # ── Custom regional recognizers not in Presidio's built-ins ──────────────
+        _CUSTOM_RECOGNIZERS: List[PatternRecognizer] = [
+            # India
+            PatternRecognizer("IN_AADHAAR",  patterns=[Pattern("Aadhaar",  r"\b\d{4}\s\d{4}\s\d{4}\b", 0.85)]),
+            PatternRecognizer("IN_PAN",      patterns=[Pattern("PAN",      r"\b[A-Z]{5}\d{4}[A-Z]\b", 0.8)]),
+            PatternRecognizer("IN_PHONE",    patterns=[Pattern("IN_Phone", r"(?:\+91[-\s]?|0)?[6-9]\d{9}\b", 0.75)]),
+            PatternRecognizer("IN_UPI",      patterns=[Pattern("UPI",      r"\b[\w.\-]{2,256}@[a-zA-Z]{2,64}\b", 0.65)]),
+            # China
+            PatternRecognizer("CN_ID",   patterns=[Pattern("CN_ID",    r"\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b", 0.9)]),
+            PatternRecognizer("CN_PHONE",patterns=[Pattern("CN_Phone", r"(?:\+86[-\s]?)?1[3-9]\d{9}\b", 0.8)]),
+            # South Korea
+            PatternRecognizer("KR_RRN",  patterns=[Pattern("KR_RRN",  r"\b\d{6}-[1-4]\d{6}\b", 0.9)]),
+            PatternRecognizer("KR_PHONE",patterns=[Pattern("KR_Phone",r"(?:\+82[-\s]?)?0?1[0-9]-?\d{3,4}-?\d{4}\b", 0.75)]),
+            # Japan
+            PatternRecognizer("JP_MY_NUMBER", patterns=[Pattern("MyNumber", r"\b\d{4}[-\s]?\d{4}[-\s]?\d{4}\b", 0.7)]),
+            PatternRecognizer("JP_PHONE",     patterns=[Pattern("JP_Phone", r"(?:\+81[-\s]?)?0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{4}\b", 0.7)]),
+            # Singapore
+            PatternRecognizer("SG_NRIC", patterns=[Pattern("NRIC", r"\b[STFGM]\d{7}[A-Z]\b", 0.9)]),
+            # Malaysia
+            PatternRecognizer("MY_NRIC", patterns=[Pattern("MY_NRIC", r"\b\d{6}-\d{2}-\d{4}\b", 0.85)]),
+            # Indonesia
+            PatternRecognizer("ID_NIK",  patterns=[Pattern("NIK", r"\b[1-9]\d{15}\b", 0.7)]),
+            # Thailand
+            PatternRecognizer("TH_ID",   patterns=[Pattern("TH_ID", r"\b\d{13}\b", 0.6)]),
+            # Australia
+            PatternRecognizer("AU_TFN",      patterns=[Pattern("AU_TFN",  r"\b\d{3}\s?\d{3}\s?\d{3}\b", 0.7)]),
+            PatternRecognizer("AU_MEDICARE", patterns=[Pattern("Medicare", r"\b[2-6]\d{9}\b", 0.65)]),
+            # UAE
+            PatternRecognizer("AE_EMIRATESID", patterns=[Pattern("EmiratesID", r"\b784-\d{4}-\d{7}-\d\b", 0.95)]),
+            # Saudi Arabia
+            PatternRecognizer("SA_NID", patterns=[Pattern("SA_NID", r"\b[12]\d{9}\b", 0.7)]),
+            # Turkey
+            PatternRecognizer("TR_TC", patterns=[Pattern("TC_Kimlik", r"\b[1-9]\d{10}\b", 0.7)]),
+            # Pakistan
+            PatternRecognizer("PK_CNIC", patterns=[Pattern("CNIC", r"\b\d{5}-\d{7}-\d\b", 0.95)]),
+            # Israel
+            PatternRecognizer("IL_ID", patterns=[Pattern("IL_ID", r"\b\d{9}\b", 0.6)]),
+            # South Africa
+            PatternRecognizer("ZA_ID", patterns=[Pattern("ZA_ID", r"\b\d{13}\b", 0.7)]),
+            # Brazil
+            PatternRecognizer("BR_CPF",  patterns=[Pattern("CPF",  r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b", 0.9)]),
+            PatternRecognizer("BR_CNPJ", patterns=[Pattern("CNPJ", r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", 0.9)]),
+            # Mexico
+            PatternRecognizer("MX_CURP", patterns=[Pattern("CURP", r"\b[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z\d]\d\b", 0.95)]),
+            PatternRecognizer("MX_RFC",  patterns=[Pattern("RFC",  r"\b[A-Z&Ñ]{3,4}\d{6}[A-Z\d]{3}\b", 0.85)]),
+            # Argentina
+            PatternRecognizer("AR_CUIL", patterns=[Pattern("CUIL", r"\b\d{2}-\d{7,8}-\d\b", 0.9)]),
+            # Chile
+            PatternRecognizer("CL_RUT", patterns=[Pattern("RUT", r"\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dKk]\b", 0.85)]),
+            # UK National Insurance
+            PatternRecognizer("UK_NINO", patterns=[Pattern("NINO", r"\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b", 0.9)]),
+            # Germany Steuer-ID
+            PatternRecognizer("DE_STEUER", patterns=[Pattern("Steuer-ID", r"\b[1-9]\d{10}\b", 0.65)]),
+        ]
 
-    _presidio_analyzer = _base_analyzer
-    _presidio_anonymizer = AnonymizerEngine()
-    logger.info("✅ PII scrubber: Presidio loaded with %d custom regional recognizers", len(_CUSTOM_RECOGNIZERS))
+        for recognizer in _CUSTOM_RECOGNIZERS:
+            _base_analyzer.registry.add_recognizer(recognizer)
 
-except ImportError:
-    logger.info("ℹ️  PII scrubber: Presidio not installed — using global regex fallback (60+ patterns)")
-except Exception as exc:
-    logger.warning("PII scrubber: Presidio init failed (%s) — using regex fallback", exc)
+        logger.info("✅ PII scrubber: Presidio loaded with %d custom regional recognizers", len(_CUSTOM_RECOGNIZERS))
+        return _base_analyzer, AnonymizerEngine()
+
+    except ImportError:
+        logger.info("ℹ️  PII scrubber: Presidio not installed — using global regex fallback (60+ patterns)")
+    except Exception as exc:
+        logger.warning("PII scrubber: Presidio init failed (%s) — using regex fallback", exc)
+    return None, None
+
+
+def _ensure_presidio() -> bool:
+    """Load Presidio once per process (thread-safe). True when it is usable."""
+    global _presidio_analyzer, _presidio_anonymizer
+    if _presidio_analyzer is _UNLOADED:
+        with _presidio_lock:
+            if _presidio_analyzer is _UNLOADED:
+                _presidio_analyzer, _presidio_anonymizer = _load_presidio()
+    return bool(_presidio_analyzer and _presidio_anonymizer)
 
 
 # ── Global regex pattern bank ─────────────────────────────────────────────────
@@ -697,7 +721,7 @@ class PiiScrubber:
         entity types a caller needs as context (e.g. LOCATION when classifying places)."""
         if not text or not isinstance(text, str):
             return text
-        if _presidio_analyzer and _presidio_anonymizer:
+        if _ensure_presidio():
             return _scrub_dates_of_birth(self._scrub_with_presidio(text, keep_entities))
         return _scrub_dates_of_birth(self._scrub_with_regex(text))
 
@@ -788,6 +812,8 @@ class PiiScrubber:
     def _scrub_with_presidio(self, text: str, keep_entities: frozenset = frozenset()) -> str:
         """Use Presidio + custom recognizers. Falls back to regex on any error."""
         try:
+            from presidio_anonymizer.entities import OperatorConfig
+
             # Try with English first; could be extended to detect language and pass it
             results = _presidio_analyzer.analyze(text=text, language="en")
             results = [r for r in results if r.entity_type not in keep_entities]

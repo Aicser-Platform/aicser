@@ -80,6 +80,13 @@ REDIS_SETTINGS = RedisSettings.from_dsn(REDIS_URL)
 # Pipeline runs stream large tables; the global job_timeout (300s) is far too short.
 PIPELINE_JOB_TIMEOUT = 3600
 
+# Concurrent jobs in this one process. Each in-flight job can hold a query result or
+# document in memory, so a small staging worker can run with ARQ_MAX_JOBS=1 or 2.
+ARQ_MAX_JOBS = max(1, int(os.getenv("ARQ_MAX_JOBS", "10").strip() or "10"))
+# WORKER_CRONS_ENABLED=false runs on-demand jobs only (no per-minute alert/pipeline/notebook
+# polling) -- for staging, where nothing needs to fire on a schedule.
+WORKER_CRONS_ENABLED = os.getenv("WORKER_CRONS_ENABLED", "true").strip().lower() not in ("0", "false", "no")
+
 
 def get_redis_settings() -> RedisSettings:
     return REDIS_SETTINGS
@@ -170,6 +177,11 @@ async def _write_heartbeat() -> None:
         logger.debug("worker heartbeat write failed: %s", exc)
 
 
+async def worker_heartbeat(ctx: dict) -> None:
+    """Cron stand-in for evaluate_alert_rules' heartbeat renewal when WORKER_CRONS_ENABLED=false."""
+    await _write_heartbeat()
+
+
 async def startup(ctx: dict) -> None:
     from src.shared.observability.setup import setup_observability
 
@@ -194,7 +206,7 @@ class WorkerSettings:
     on_shutdown = shutdown
 
     redis_settings = REDIS_SETTINGS
-    max_jobs = 10
+    max_jobs = ARQ_MAX_JOBS
     job_timeout = 300  # 5 minutes max per job
     keep_result = 3600  # Keep results for 1 hour
     # Task functions now re-raise on failure (instead of swallowing exceptions
@@ -203,7 +215,8 @@ class WorkerSettings:
     # persistently-failing job doesn't retry forever.
     max_tries = 3
 
-    cron_jobs = [
+    # Crons off still renews the heartbeat, or /health reports the worker as down.
+    cron_jobs = [cron(worker_heartbeat, minute=set(range(60)), name="worker_heartbeat")] if not WORKER_CRONS_ENABLED else [
         cron(
             _FUNCTIONS_BY_NAME["run_data_retention_cleanup"],
             hour=2,
