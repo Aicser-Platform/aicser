@@ -61,4 +61,34 @@ describe('pivot', () => {
     const p = pivot(columns, rows, { rows: ['region'], values: ['sales'], agg: 'avg' });
     expect(p.totals[0]).toBeCloseTo(42 / 4);
   });
+
+  it('applies page filters before aggregating', () => {
+    const p = pivot(columns, rows, {
+      rows: ['region'],
+      values: ['sales'],
+      agg: 'sum',
+      filters: ['year'],
+      filterValues: { year: ['2024'] },
+    });
+    expect(p.body.find((b) => b.keys[0] === 'North')?.cells[0]).toBe(10);
+    expect(p.totals[0]).toBe(22);
+  });
+
+  it('supports different aggregations per value field', () => {
+    const wide = ['region', 'sales', 'units'];
+    const wideRows = [
+      ['North', 10, 2],
+      ['South', 5, 1],
+    ];
+    const p = pivot(wide, wideRows, {
+      rows: ['region'],
+      values: ['sales', 'units'],
+      agg: 'sum',
+      valueAggs: { sales: 'sum', units: 'max' },
+    });
+    const north = p.body.find((b) => b.keys[0] === 'North')!;
+    expect(north.cells).toEqual([10, 2]);
+    const south = p.body.find((b) => b.keys[0] === 'South')!;
+    expect(south.cells).toEqual([5, 1]);
+  });
 });

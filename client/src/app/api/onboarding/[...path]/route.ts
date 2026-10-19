@@ -46,6 +46,7 @@ async function handleOnboardingRequest(
     }
 
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
     const responseContentType = response.headers.get('content-type') || '';
 
     if (!response.ok) {
@@ -82,6 +83,11 @@ async function handleOnboardingRequest(
 export async function GET(request: NextRequest, context: { params?: any }) {
   return handleOnboardingRequest(request, context, 'GET');
 }
+
+export async function DELETE(request: NextRequest, context: { params?: any }) {
+  return handleOnboardingRequest(request, context, 'DELETE');
+}
+
 
 export async function POST(request: NextRequest, context: { params?: any }) {
   return handleOnboardingRequest(request, context, 'POST');

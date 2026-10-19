@@ -111,8 +111,9 @@ export function SemanticMetricFields({
               const metric = metrics.find((m) => m.id === id);
               onChange({
                 semantic_metric_id: id,
+                // The metric's calculation already aggregates (SUM(amount)); never wrap it again.
                 yMetrics: metric?.expression
-                  ? [{ field: metric.expression, aggregation: 'sum' }]
+                  ? [{ field: metric.expression, aggregation: 'none', label: metric.name }]
                   : chartQuery?.yMetrics,
                 aggregate: true,
               });

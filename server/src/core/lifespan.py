@@ -112,7 +112,7 @@ def _check_ai_capabilities() -> dict:
 
     caps = {}
     try:
-        from ee.modules.data.services.semantic_schema_service import SemanticSchemaService  # noqa: F401
+        from src.enterprise.modules.data.services.semantic_schema_service import SemanticSchemaService  # noqa: F401
         caps["semantic_schema"] = True
     except ImportError:
         caps["semantic_schema"] = False
@@ -209,7 +209,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Register EE's auth provider so CE's router resolves login/register
             # through it instead of importing ee.modules.auth by name.
             try:
-                from ee.modules.auth import EEAuthProviderAdapter
+                from src.enterprise.modules.auth import EEAuthProviderAdapter
                 from src.modules.authentication.provider import register_auth_provider
                 register_auth_provider(EEAuthProviderAdapter())
                 logger.info("EE auth provider registered")
@@ -235,7 +235,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 async with async_session() as _db:
                     count = (await _db.execute(select(func.count()).select_from(Role))).scalar() or 0
                 logger.info("RBAC roles table has %d role(s) — running seed_rbac to backfill any missing ones...", count)
-                from ee.scripts.seed_rbac import seed_permissions, seed_roles
+                from src.enterprise.scripts.seed_rbac import seed_permissions, seed_roles
                 await seed_permissions()
                 await seed_roles()
                 logger.info("RBAC seed complete")
@@ -265,7 +265,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     ).scalar() or 0
 
                 logger.info("Subscription plans table has %d plan(s) — reconciling with PLAN_CONFIGS...", plan_count)
-                from ee.scripts.seed_subscription_plans import seed_plans
+                from src.enterprise.scripts.seed_subscription_plans import seed_plans
 
                 await seed_plans(force=True)
                 logger.info("Subscription plans seed complete")

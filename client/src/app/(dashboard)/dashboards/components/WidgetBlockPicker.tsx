@@ -15,6 +15,7 @@ import {
 } from '../utils/localizeWidgetTemplate';
 import { STORY_STARTERS, type StoryStarterId } from '../utils/storyStarters';
 import Link from 'next/link';
+import { endCanvasDrag, startCanvasDrag } from '../utils/canvasDrag';
 
 const { Text } = Typography;
 
@@ -39,7 +40,19 @@ type Props = {
   onApplyStoryStarter?: (id: StoryStarterId) => void;
   search?: string;
   hintText?: string;
+  /** Heading above the canvas picker; `null` hides it (the host page has its own). */
+  title?: string | null;
+  /** A standalone chart (Chart library): visuals, indicators and tables only, all shown at once —
+   * no text, image or filter blocks, which only make sense on a board. */
+  chartsOnly?: boolean;
+  /** Tiles can also be dragged onto the dashboard canvas, landing where they're dropped. */
+  draggable?: boolean;
+  /** Only the heading and story starters (the blocks live in the Add panel). */
+  hideBlocks?: boolean;
 };
+
+/** Blocks that only exist on a dashboard (layout, content, filters). */
+const BOARD_ONLY_TYPES = new Set(['text', 'divider', 'image', 'embed', 'slicer', 'filter']);
 
 function BlockTooltipContent({
   name,
@@ -70,11 +83,13 @@ function WidgetBlockTile({
   variant,
   onSelect,
   bestForLabel,
+  draggable = false,
 }: {
   item: WidgetTemplate & { bestFor?: string };
   variant: WidgetBlockPickerVariant;
   onSelect: (template: WidgetTemplate) => void;
   bestForLabel: string;
+  draggable?: boolean;
 }) {
   return (
     <Tooltip
@@ -98,6 +113,9 @@ function WidgetBlockTile({
         }
         onClick={() => onSelect(item)}
         aria-label={item.name}
+        draggable={draggable}
+        onDragStart={draggable ? (e) => startCanvasDrag(e, { kind: 'block', type: item.type, w: item.defaultSize?.w ?? 6, h: item.defaultSize?.h ?? 5 }) : undefined}
+        onDragEnd={draggable ? endCanvasDrag : undefined}
       >
         <span className={`flex items-center justify-center leading-none text-brand ${variant === 'popover' ? 'text-lg' : 'text-[22px]'}`}>
           {item.icon}
@@ -120,6 +138,10 @@ export function WidgetBlockPicker({
   onApplyStoryStarter,
   search = '',
   hintText,
+  title,
+  chartsOnly = false,
+  draggable = false,
+  hideBlocks = false,
 }: Props) {
   const t = useTranslations('dashboards_page');
   const tc = useTranslations('chart_designer');
@@ -128,8 +150,10 @@ export function WidgetBlockPicker({
   const normalizedSearch = search.trim().toLowerCase();
 
   const allTemplates = useMemo(
-    () => WIDGET_TEMPLATES.map((item) => localizeWidgetTemplate(item, tc as never)),
-    [tc],
+    () => WIDGET_TEMPLATES
+      .filter((item) => !chartsOnly || !BOARD_ONLY_TYPES.has(item.type))
+      .map((item) => localizeWidgetTemplate(item, tc as never)),
+    [tc, chartsOnly],
   );
 
   const featuredTemplates = useMemo(() => {
@@ -166,7 +190,7 @@ export function WidgetBlockPicker({
     );
   }, [featuredTemplates, normalizedSearch]);
 
-  const showExpanded = expanded || Boolean(normalizedSearch);
+  const showExpanded = expanded || chartsOnly || Boolean(normalizedSearch);
   const bestForLabel = t('block_best_for');
 
   if (variant === 'popover') {
@@ -185,6 +209,7 @@ export function WidgetBlockPicker({
                   variant={variant}
                   onSelect={onSelect}
                   bestForLabel={bestForLabel}
+                  draggable={draggable}
                 />
               ))}
             </div>
@@ -214,6 +239,7 @@ export function WidgetBlockPicker({
                     variant={variant}
                     onSelect={onSelect}
                     bestForLabel={bestForLabel}
+                  draggable={draggable}
                   />
                 ))}
               </div>
@@ -237,12 +263,16 @@ export function WidgetBlockPicker({
 
   return (
     <div className="w-full max-w-[720px] mx-auto text-center">
-      <Text strong className="!block !mb-1.5 text-lg text-text">
-        {t('empty_state_title')}
-      </Text>
-      <Text type="secondary" className="!block !mb-5 text-sm opacity-85 leading-relaxed">
-        {hintText ?? t('empty_state_hint')}
-      </Text>
+      {title !== null ? (
+        <>
+          <Text strong className="!block !mb-1.5 text-lg text-text">
+            {title ?? t('empty_state_title')}
+          </Text>
+          <Text type="secondary" className="!block !mb-5 text-sm opacity-85 leading-relaxed">
+            {hintText ?? t('empty_state_hint')}
+          </Text>
+        </>
+      ) : null}
       {onApplyStoryStarter && !normalizedSearch ? (
         <Text type="secondary" className="!block !mb-4 text-xs">
           <Link href="/chart-designer" className="text-brand hover:underline">
@@ -274,20 +304,25 @@ export function WidgetBlockPicker({
         </div>
       ) : null}
 
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {filteredFeatured.map((item) => (
-          <WidgetBlockTile
-            key={item.id}
-            item={item}
-            variant={variant}
-            onSelect={onSelect}
-            bestForLabel={bestForLabel}
-          />
-        ))}
-      </div>
+      {/* The short list, until "Show all" — then every block once, by section (not both). */}
+      {!showExpanded && !hideBlocks ? (
+        <>
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {filteredFeatured.map((item) => (
+              <WidgetBlockTile
+                key={item.id}
+                item={item}
+                variant={variant}
+                onSelect={onSelect}
+                bestForLabel={bestForLabel}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
 
-      {!normalizedSearch && !showExpanded ? (
+      {!normalizedSearch && !showExpanded && !hideBlocks ? (
         <div className="mt-4">
           <Button type="default" icon={<DownOutlined />} onClick={() => setExpanded(true)}>
             {t('blocks_show_all')}
@@ -295,7 +330,7 @@ export function WidgetBlockPicker({
         </div>
       ) : null}
 
-      {showExpanded &&
+      {showExpanded && !hideBlocks &&
         filteredSections.map((section) => (
           <div key={section.title} className="mt-1">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
@@ -309,13 +344,14 @@ export function WidgetBlockPicker({
                   variant={variant}
                   onSelect={onSelect}
                   bestForLabel={bestForLabel}
+                  draggable={draggable}
                 />
               ))}
             </div>
           </div>
         ))}
 
-      {!normalizedSearch && showExpanded ? (
+      {!normalizedSearch && showExpanded && !chartsOnly ? (
         <div className="mt-4">
           <Button type="link" icon={<UpOutlined />} onClick={() => setExpanded(false)}>
             {t('blocks_show_less')}

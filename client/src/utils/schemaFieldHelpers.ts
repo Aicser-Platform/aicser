@@ -1,3 +1,4 @@
+import type { ColumnMetadata } from '@/constants/columnRoles';
 /**
  * Shared schema-field helpers: semantic role inference, friendly naming, and
  * default aggregation suggestions for a table column.
@@ -5,8 +6,6 @@
  * Used by the Data Source detail page's schema browser for role inference and
  * friendly names instead of a bare column list.
  */
-
-export type SemanticRole = 'dimension' | 'measure' | 'date' | 'id';
 
 export type SchemaFieldColumn = {
   name: string;
@@ -24,11 +23,8 @@ export type SchemaFieldTable = {
   columns: SchemaFieldColumn[];
 };
 
-export type SchemaFieldBusinessMetadata = {
-  measures?: Array<{ name?: string; expression?: string; description?: string }>;
-  dimensions?: Array<{ name?: string; description?: string }>;
-  column_descriptions?: Record<string, string>;
-};
+/** Column facts on a connection; metrics and dimensions themselves live in the semantic model. */
+export type SchemaFieldBusinessMetadata = ColumnMetadata;
 
 /** Coarse, human-facing type bucket for a raw SQL/backend column type string. */
 export function normalizeType(type: string): string {
@@ -68,52 +64,12 @@ export function fieldKey(table: { id?: string } | null, column: { name?: string 
 export function getBusinessMetadata(schema: unknown): SchemaFieldBusinessMetadata {
   const raw = ((schema as { business_metadata?: SchemaFieldBusinessMetadata } | null)?.business_metadata ??
     {}) as SchemaFieldBusinessMetadata;
+  const obj = <T,>(v: T | undefined) => (v && typeof v === 'object' ? v : ({} as T));
   return {
-    measures: Array.isArray(raw.measures) ? raw.measures : [],
-    dimensions: Array.isArray(raw.dimensions) ? raw.dimensions : [],
-    column_descriptions:
-      raw.column_descriptions && typeof raw.column_descriptions === 'object' ? raw.column_descriptions : {},
+    column_descriptions: obj(raw.column_descriptions),
+    column_roles: obj(raw.column_roles),
+    personal_columns: Array.isArray(raw.personal_columns) ? raw.personal_columns : [],
   };
-}
-
-/** Best-effort semantic role for a column, using business metadata when available. */
-export function inferSemanticRole(column: SchemaFieldColumn, metadata: SchemaFieldBusinessMetadata): SemanticRole {
-  const name = column.name.toLowerCase();
-  const normalizedType = normalizeType(column.type);
-  const isMeasure = metadata.measures?.some((m) => m.name === column.name || m.expression === column.name);
-  const isDimension = metadata.dimensions?.some((d) => d.name === column.name);
-  if (isMeasure) return 'measure';
-  if (isDimension) return 'dimension';
-  if (column.primary_key || /(^id$|_id$|id$|key$|uuid$)/.test(name)) return 'id';
-  if (normalizedType === 'Date' || /(date|time|month|year|quarter|week|day)/.test(name)) return 'date';
-  if (normalizedType === 'Number' || normalizedType === 'Decimal') return 'measure';
-  return 'dimension';
-}
-
-/** Suggested default aggregation for a column given its inferred role. */
-export function defaultAggregation(column: SchemaFieldColumn, role: SemanticRole): string {
-  const name = column.name.toLowerCase();
-  if (role === 'measure') {
-    if (/(rate|ratio|percent|pct|margin|score|price|unit_price|avg|average)/.test(name)) return 'avg';
-    if (/(min|max)/.test(name)) return name.includes('min') ? 'min' : 'max';
-    return 'sum';
-  }
-  if (role === 'id') return 'count distinct';
-  return 'count';
-}
-
-export function roleColor(role: SemanticRole): string {
-  if (role === 'measure') return 'green';
-  if (role === 'date') return 'blue';
-  if (role === 'id') return 'purple';
-  return 'cyan';
-}
-
-export function roleLabelKey(role: SemanticRole): 'data_role_dimension' | 'data_role_measure' | 'data_role_date' | 'data_role_id' {
-  if (role === 'measure') return 'data_role_measure';
-  if (role === 'date') return 'data_role_date';
-  if (role === 'id') return 'data_role_id';
-  return 'data_role_dimension';
 }
 
 export function tableId(table: { name?: string; schema?: string }): string {

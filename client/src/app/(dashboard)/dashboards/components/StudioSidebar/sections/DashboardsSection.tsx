@@ -48,6 +48,7 @@ import {
 } from '../../../services/dashboardLibraryService';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { LibraryCollectionControls } from '@/components/library/LibraryCollectionControls';
+import { useImpactConfirm } from '@/components/impact/impact';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase(),
@@ -55,6 +56,7 @@ const isEnterpriseEdition = ['enterprise', 'ee'].includes(
 
 export function DashboardsSection() {
   const t = useTranslations('dashboard_tabs');
+  const confirmWithImpact = useImpactConfirm();
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
   const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const loadDashboardById = useDashboardStore((s) => s.loadDashboardById);
@@ -318,11 +320,13 @@ export function DashboardsSection() {
   };
 
   const confirmRemove = (id: string, name: string) => {
-    Modal.confirm({
+    void confirmWithImpact({
+      kind: 'dashboard',
+      id,
       title: t('trash_dashboard_title'),
       content: t('trash_dashboard_confirm', { name }),
       okText: t('move_to_trash'),
-      okType: 'danger',
+      danger: true,
       onOk: async () => {
         try {
           await removeDashboard(id);
@@ -349,11 +353,13 @@ export function DashboardsSection() {
   };
 
   const handlePurge = (id: string, name: string) => {
-    Modal.confirm({
+    void confirmWithImpact({
+      kind: 'dashboard',
+      id,
       title: t('purge_dashboard_title'),
       content: t('purge_dashboard_confirm', { name }),
       okText: t('delete_permanently'),
-      okType: 'danger',
+      danger: true,
       onOk: async () => {
         try {
           await dashboardLibraryService.purge(id);

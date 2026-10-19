@@ -12,9 +12,6 @@ import {
     Tag,
     Modal,
     message,
-    Row,
-    Col,
-    Statistic,
     Typography,
     Divider,
     Tooltip,
@@ -27,22 +24,23 @@ import {
 } from 'antd';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
+    consumePipelineWizardReturn,
+    parsePipelineExportPreset,
+} from '@/ee/components/pipeline-wizard/pipelineWizardReturn';
+import {
     PlusOutlined,
     DatabaseOutlined,
     EditOutlined,
     SafetyCertificateOutlined,
     DeleteOutlined,
-    ReloadOutlined,
     SearchOutlined,
     ArrowUpOutlined,
     BellOutlined,
     BarChartOutlined,
-    CheckCircleOutlined,
-    CloudServerOutlined,
     CodeOutlined,
     ExclamationCircleOutlined,
-    FileTextOutlined,
     ApartmentOutlined,
+    NodeIndexOutlined,
     SafetyOutlined,
     ScanOutlined,
     RocketOutlined,
@@ -63,7 +61,14 @@ import { PermissionGuard } from '@/components/PermissionGuard';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import PricingModal from '@/components/PricingModal';
 import { type DataSource } from '@/stores/useDataSourceStore';
+import { countDuplicateFileSources, workbookIdFromDataSource } from '@/utils/workbookDataSource';
+import { isLakehouseComputeDataSource } from '@/utils/lakehouseComputeSource';
+import { isModelEligibleDataSource } from '@/components/data/modelEligible';
+import { fetchApi } from '@/utils/api';
+import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSources, useDeleteDataSource, dataSourceKeys } from '@/hooks/useDataSources';
+import { OtherProjectConnections } from './_components/OtherProjectConnections';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import { getDataSource } from '@/api/dataSources';
 import { useFormatUserError } from '@/hooks/useFormatUserError';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
@@ -73,9 +78,10 @@ import { useSubscriptionStore as useSubscription } from '@/stores/useSubscriptio
 import { useCanManageDataAccess } from '@/hooks/access/useCanManageDataAccess';
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { useImpactConfirm } from '@/components/impact/impact';
 import { useTranslations } from 'next-intl';
-import { DataModelRelationships } from '@/components/data/DataModelRelationships';
 import { BypassIndicator } from './_components/BypassIndicator';
+import { semanticLayerStudioHref } from './sources/[id]/_components/tabParam';
 
 const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
@@ -104,18 +110,17 @@ const normalizeConnectionStatus = (
 const DataSourcesPage: React.FC = () => {
     const canManageAccess = useCanManageDataAccess();
     const t = useTranslations('data_page');
+    const tLake = useTranslations('lakehouse_compute_source');
     const formatError = useFormatUserError();
-    const { usage } = useSubscription();
+    const { usage, refresh } = useSubscription();
     const searchParams = useSearchParams();
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedDataSource, setSelectedDataSource] = useState<DataSource | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<'all' | NormalizedConnectionStatus>('all');
     const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>('all');
     const [pricingModalVisible, setPricingModalVisible] = useState(false);
-    const [modelDataSource, setModelDataSource] = useState<DataSource | null>(null);
     const [wizardSource, setWizardSource] = useState<DataSource | null>(null);
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
@@ -132,9 +137,37 @@ const DataSourcesPage: React.FC = () => {
     };
     const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 });
     const { dataSources, isLoading } = useDataSources();
+    const projectSourceIds = useMemo(
+        () => new Set((dataSources || []).map((ds) => String(ds.id))),
+        [dataSources],
+    );
+    const currentProjectId = useProjectStore((s) => s.currentProjectId);
+    const [dedupeBusy, setDedupeBusy] = useState(false);
+    const duplicateFileCount = useMemo(
+        () => countDuplicateFileSources(dataSources || []),
+        [dataSources],
+    );
     const { mutateAsync: deleteDataSource } = useDeleteDataSource();
+    const confirmWithImpact = useImpactConfirm();
     const qc = useQueryClient();
     const refreshDataSources = () => qc.invalidateQueries({ queryKey: ['data-sources'] });
+
+    const handleDedupeFileSources = async () => {
+        setDedupeBusy(true);
+        try {
+            const q = currentProjectId ? `?project_id=${encodeURIComponent(String(currentProjectId))}` : '';
+            const res = await fetchApi<{ deactivated_count?: number }>(`/api/workbooks/dedupe-file-sources${q}`, {
+                method: 'POST',
+            });
+            const n = Number(res?.deactivated_count) || 0;
+            message.success(n > 0 ? t('dedupe_file_sources_ok', { count: n }) : t('dedupe_file_sources_none'));
+            refreshDataSources();
+        } catch (err) {
+            message.error(formatError(err));
+        } finally {
+            setDedupeBusy(false);
+        }
+    };
     const authenticatedFetch = useAuthenticatedFetch();
     const { hasPermission, loading: permissionsLoading } = usePermissions();
     const canManageDataSettings =
@@ -169,13 +202,10 @@ const DataSourcesPage: React.FC = () => {
         const ds = dataSources.find((d) => d.id === modelId);
         if (ds) {
             openedModelIdRef.current = modelId;
-            setModelDataSource(ds);
-            router.replace('/data', { scroll: false });
+            router.replace(semanticLayerStudioHref(ds.id), { scroll: false });
         }
     }, [modelId, dataSources, router]);
 
-    const isModelEligible = (ds: DataSource) =>
-        ['database', 'warehouse', 'cube', 'file'].includes((ds.type || '').toLowerCase());
 
     
     const handleAddDataSource = () => {
@@ -215,11 +245,13 @@ const DataSourcesPage: React.FC = () => {
 
     // Handle delete with confirmation modal
     const handleDeleteDataSource = async (dataSource: DataSource) => {
-        Modal.confirm({
+        await confirmWithImpact({
+            kind: 'data_source',
+            id: String(dataSource.id),
             title: t('delete_data_source'),
             content: t('delete_confirm_content', { name: dataSource.name }),
             okText: t('delete'),
-            okType: 'danger',
+            danger: true,
             cancelText: t('cancel'),
             onOk: async () => {
                 try {
@@ -255,17 +287,40 @@ const DataSourcesPage: React.FC = () => {
             key: 'name',
             ellipsis: true,
             minWidth: 220,
-            render: (text: string, record: DataSource) => (
-                <Space>
+            render: (text: string, record: DataSource) => {
+                const workbookId = workbookIdFromDataSource(record);
+                return (
+                // One line: icon, the name (a long one truncates, full name on hover), its tags.
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                     <DataSourceIcon type={record.type} dbType={record.db_type} size={18} style={{ opacity: 0.9, flexShrink: 0 }} />
                     <a
                         onClick={() => router.push(`/data/sources/${record.id}`)}
-                        style={{ color: 'inherit', cursor: 'pointer' }}
+                        style={{ color: 'inherit', cursor: 'pointer', minWidth: 0, flex: '0 1 auto', display: 'flex' }}
                     >
-                        <Text strong ellipsis>{text}</Text>
+                        <Text strong ellipsis={{ tooltip: text }}>{text}</Text>
                     </a>
-                </Space>
-            ),
+                    {workbookId ? (
+                        <Tag
+                            bordered
+                            color="blue"
+                            className="page-table-tag"
+                            style={{ cursor: 'pointer', margin: 0, flexShrink: 0 }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/sheets/${workbookId}`);
+                            }}
+                        >
+                            {t('linked_sheet')}
+                        </Tag>
+                    ) : null}
+                    {isLakehouseComputeDataSource(record) ? (
+                        <Tag bordered className="page-table-tag" color="purple" style={{ margin: 0, flexShrink: 0 }}>
+                            {tLake('badge')}
+                        </Tag>
+                    ) : null}
+                </div>
+                );
+            },
         },
         {
             title: t('col_type'),
@@ -323,10 +378,22 @@ const DataSourcesPage: React.FC = () => {
                 {
                     title: t('col_actions'),
                     key: 'actions',
-                    width: canManageAccess ? 200 : 160,
+                    width: canManageAccess ? 240 : 200,
                     align: 'right' as const,
                     render: (_: any, record: DataSource) => (
                         <Space size={0}>
+                            {isEEEdition && isModelEligibleDataSource(record.type) ? (
+                                <Tooltip title={t('open_model')}>
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        className="icon-only-btn"
+                                        icon={<NodeIndexOutlined />}
+                                        aria-label={t('open_model')}
+                                        onClick={() => router.push(semanticLayerStudioHref(record.id))}
+                                    />
+                                </Tooltip>
+                            ) : null}
                             {canManageAccess ? (
                                 <Tooltip title={t('manage_access')}>
                                     <Button
@@ -335,7 +402,7 @@ const DataSourcesPage: React.FC = () => {
                                         className="icon-only-btn"
                                         icon={<SafetyCertificateOutlined />}
                                         aria-label={t('manage_access')}
-                                        onClick={() => router.push(`/data/sources/${record.id}?tab=permissions`)}
+                                        onClick={() => router.push(`/data/sources/${record.id}?tab=access`)}
                                     />
                                 </Tooltip>
                             ) : null}
@@ -370,25 +437,16 @@ const DataSourcesPage: React.FC = () => {
     const filteredDataSources = useMemo(() => {
         return dataSources.filter((ds) => {
             const matchesSearch = ds.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesStatus = statusFilter === 'all' || normalizeConnectionStatus(ds.connection_status) === statusFilter;
             const matchesType = typeFilter === 'all' || ds.type === typeFilter;
-            return matchesSearch && matchesStatus && matchesType;
+            return matchesSearch && matchesType;
         });
-    }, [dataSources, searchTerm, statusFilter, typeFilter]);
+    }, [dataSources, searchTerm, typeFilter]);
 
     const planCountableDataSources = useMemo(
         () => dataSources.filter((ds) => !isSampleDataSource(ds)),
         [dataSources],
     );
 
-    const stats = {
-        total: dataSources.length,
-        connected: dataSources.filter(ds => ds.connection_status === 'connected').length,
-        databases: dataSources.filter(ds => ds.type === 'database').length,
-        files: dataSources.filter(ds => ds.type === 'file').length,
-        apis: dataSources.filter(ds => ds.type === 'api').length,
-        warehouses: dataSources.filter(ds => ds.type === 'warehouse' || ds.type === 'cube').length,
-    };
 
     // Use real subscription limits from SubscriptionContext
     const dsUsage = usage?.data_sources_count;
@@ -399,6 +457,12 @@ const DataSourcesPage: React.FC = () => {
 
     // Activity inbox / deep links: /data?openDataSource=1 opens the add-data-source modal (same as Connect)
     const openDataSourceParam = searchParams?.get('openDataSource');
+    const connectPreset = searchParams?.get('preset');
+    const [connectModalPreset, setConnectModalPreset] = React.useState<{
+        type: 'database' | 'warehouse' | 'google_sheets' | 'file';
+        databaseType?: string;
+        purpose?: 'pipeline_lake' | 'pipeline_export';
+    } | null>(null);
     const openedDataSourceFromQueryRef = React.useRef(false);
     useEffect(() => {
         if (openDataSourceParam !== '1') {
@@ -422,10 +486,27 @@ const DataSourcesPage: React.FC = () => {
             return;
         }
         setSelectedDataSource(null);
+        const exportDb = parsePipelineExportPreset(connectPreset);
+        if (connectPreset === 'lake_s3' || connectPreset === 'pipeline_lake_s3') {
+            setConnectModalPreset({ type: 'warehouse', databaseType: 's3_parquet', purpose: 'pipeline_lake' });
+        } else if (exportDb === 'google_sheets') {
+            setConnectModalPreset({ type: 'google_sheets', purpose: 'pipeline_export' });
+        } else if (exportDb === 'csv' || exportDb === 'parquet' || exportDb === 'excel') {
+            setConnectModalPreset({
+                type: 'file',
+                databaseType: exportDb === 'excel' ? 'xlsx' : exportDb,
+                purpose: 'pipeline_export',
+            });
+        } else if (exportDb) {
+            setConnectModalPreset({ type: 'database', databaseType: exportDb, purpose: 'pipeline_export' });
+        } else {
+            setConnectModalPreset(null);
+        }
         setModalVisible(true);
         router.replace('/data', { scroll: false });
     }, [
         openDataSourceParam,
+        connectPreset,
         isLoading,
         canAddDataSource,
         dataSourcesUsedCount,
@@ -479,49 +560,34 @@ const DataSourcesPage: React.FC = () => {
                 }
             />
             <div className="page-body">
-            {/* Statistics & quick actions — hide empty chrome until first source exists */}
-            {stats.total > 0 ? (
-            <Row gutter={[16, 16]} className="page-stat-grid">
-
-                <Col xs={24} sm={12} lg={6}>
-                    <Card className="page-stat-tile" size="small" variant="borderless">
-                        <Statistic title={t('stat_total_sources')} value={stats.total} prefix={<DatabaseOutlined />} />
-                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_in_project')}</Text>
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card className="page-stat-tile" size="small" variant="borderless">
-                        <Statistic title={t('stat_connected')} value={stats.connected} prefix={<CheckCircleOutlined />} valueStyle={{ color: 'var(--ant-color-success)' }} />
-                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_healthy_connections')}</Text>
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card className="page-stat-tile" size="small" variant="borderless">
-                        <Statistic title={t('stat_databases')} value={stats.databases} prefix={<CloudServerOutlined />} />
-                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_sql_transactional')}</Text>
-                    </Card>
-                </Col>
-                <Col xs={24} sm={12} lg={6}>
-                    <Card className="page-stat-tile" size="small" variant="borderless">
-                        <Statistic title={t('stat_files_apis')} value={stats.files + stats.apis} prefix={<FileTextOutlined />} />
-                        <Text type="secondary" className="page-stat-tile__hint">{t('stat_flat_files_services')}</Text>
-                    </Card>
-                </Col>
-            </Row>
+            {duplicateFileCount > 0 && canManageDataSettings ? (
+                <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={t('dedupe_file_sources_banner', { count: duplicateFileCount })}
+                    action={
+                        <Button size="small" loading={dedupeBusy} onClick={() => void handleDedupeFileSources()}>
+                            {t('dedupe_file_sources_action')}
+                        </Button>
+                    }
+                />
             ) : null}
-
             <Card className="content-card page-section-card">
+                {/* One row: find a connection by name or narrow by kind. */}
                 <div className="page-panel-toolbar">
                     <div className="page-panel-toolbar__row">
-                        <div className="page-panel-toolbar__actions">
-                            <Button
-                                icon={<ReloadOutlined />}
-                                onClick={() => refreshDataSources()}
-                                loading={isLoading}
-                            >
-                                {t('refresh')}
-                            </Button>
-                        </div>
+                        <Segmented
+                            value={typeFilter}
+                            onChange={(value) => setTypeFilter(value as typeof typeFilter)}
+                            options={[
+                                { label: t('filter_all_types'), value: 'all' },
+                                { label: t('filter_databases'), value: 'database' },
+                                { label: t('filter_files'), value: 'file' },
+                                { label: t('filter_apis'), value: 'api' },
+                                { label: t('filter_documents'), value: 'knowledge_base' },
+                            ]}
+                        />
                         <Input
                             className="page-panel-toolbar__search"
                             allowClear
@@ -531,32 +597,9 @@ const DataSourcesPage: React.FC = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <div className="page-panel-toolbar__filters">
-                        <Segmented
-                            value={statusFilter}
-                            onChange={(value) => setStatusFilter(value as typeof statusFilter)}
-                            size="small"
-                            options={[
-                                { label: t('filter_all_statuses'), value: 'all' },
-                                { label: t('filter_connected'), value: 'connected' },
-                                { label: t('filter_disconnected'), value: 'unknown' },
-                                { label: t('filter_error'), value: 'failed' },
-                            ]}
-                        />
-                        <Segmented
-                            value={typeFilter}
-                            onChange={(value) => setTypeFilter(value as typeof typeFilter)}
-                            size="small"
-                            options={[
-                                { label: t('filter_all_types'), value: 'all' },
-                                { label: t('filter_databases'), value: 'database' },
-                                { label: t('filter_files'), value: 'file' },
-                                { label: t('filter_apis'), value: 'api' },
-                            ]}
-                        />
-                    </div>
                 </div>
                 <Divider className="page-divider" />
+                {isEnterpriseEdition && <OtherProjectConnections projectSourceIds={projectSourceIds} />}
                 <div>
                     <Table
                         className="page-data-table"
@@ -569,12 +612,12 @@ const DataSourcesPage: React.FC = () => {
                                 <Empty
                                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                                     description={
-                                        searchTerm || statusFilter !== 'all' || typeFilter !== 'all'
+                                        searchTerm || typeFilter !== 'all'
                                             ? t('empty_filtered')
                                             : t('empty_none')
                                     }
                                 >
-                                    {!searchTerm && statusFilter === 'all' && typeFilter === 'all' && canManageDataSettings && (
+                                    {!searchTerm && typeFilter === 'all' && canManageDataSettings && (
                                         <Button
                                             type="primary"
                                             icon={<PlusOutlined />}
@@ -605,14 +648,23 @@ const DataSourcesPage: React.FC = () => {
             <UniversalDataSourceModal
                 isOpen={modalVisible}
                 onClose={handleModalClose}
+                initialDataSourceType={connectModalPreset?.type}
+                initialDatabaseType={connectModalPreset?.databaseType}
+                connectionPurpose={connectModalPreset?.purpose}
                 onDataSourceCreated={async (created) => {
                     handleModalClose();
+                    setConnectModalPreset(null);
                     await refreshDataSources();
+                    const returnTo = consumePipelineWizardReturn();
+                    if (returnTo) {
+                        router.push(returnTo);
+                        return;
+                    }
                     if (created?.id) {
-                        setWizardSource(created as DataSource);
-                        const isModelEligible = ['database', 'warehouse', 'cube', 'file'].includes(
-                            (created.type || '').toLowerCase(),
-                        );
+                        const isModelEligible = isModelEligibleDataSource(created.type);
+                        if (isModelEligible) {
+                            setWizardSource(created as DataSource);
+                        }
                         message.success(
                             <span>
                                 {t('connected_success', { name: created.name || t('unknown') })}{' '}
@@ -621,7 +673,7 @@ const DataSourcesPage: React.FC = () => {
                                         type="link"
                                         size="small"
                                         style={{ padding: 0 }}
-                                        onClick={() => router.push(`/data/sources/${created.id}/semantic`)}
+                                        onClick={() => router.push(semanticLayerStudioHref(created.id))}
                                     >
                                         {t('open_model')}
                                     </Button>
@@ -631,7 +683,7 @@ const DataSourcesPage: React.FC = () => {
                                     type="link"
                                     size="small"
                                     style={{ padding: 0 }}
-                                    onClick={() => router.push('/chat')}
+                                    onClick={() => router.push(`/chat?data_source_id=${encodeURIComponent(created.id)}`)}
                                 >
                                     {t('open_ai_engine')}
                                 </Button>
@@ -646,23 +698,10 @@ const DataSourcesPage: React.FC = () => {
             {wizardSource && isEEEdition && (
                 <ConnectModelVisualizeWizard
                     open={!!wizardSource}
-                    dataSourceId={wizardSource.id}
-                    dataSourceName={wizardSource.name}
+                    sources={[{ id: wizardSource.id, name: wizardSource.name, type: wizardSource.type }]}
                     onClose={() => setWizardSource(null)}
                 />
             )}
-            <Drawer
-                title={modelDataSource ? t('data_model_title', { name: modelDataSource.name }) : t('data_model')}
-                open={!!modelDataSource}
-                onClose={() => setModelDataSource(null)}
-                size={720}
-                destroyOnHidden
-            >
-                {modelDataSource && (
-                    <DataModelRelationships dataSourceId={modelDataSource.id} />
-                )}
-            </Drawer>
-
             {/* Data Profile + PII Drawer */}
             <Drawer
                 title={
@@ -802,7 +841,10 @@ const DataSourcesPage: React.FC = () => {
             <PricingModal
                 visible={pricingModalVisible}
                 onClose={() => setPricingModalVisible(false)}
-                onUpgrade={() => {}}
+                onUpgrade={() => {
+                    setPricingModalVisible(false);
+                    void refresh();
+                }}
                 currentPlan={'free'}
                 loading={false}
             />

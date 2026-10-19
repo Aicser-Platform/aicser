@@ -80,3 +80,74 @@ def test_pipeline_audit_columns_are_not_join_keys():
 
     assert not any("_load_id" in (r["from_column"], r["to_column"]) for r in relationships)
     assert {(r["from_table"], r["to_table"]) for r in relationships} == {("order_items", "orders")}
+
+
+def test_schema_qualified_banking_entity_pk():
+    schema = {
+        "tables": [
+            {
+                "name": "banking.customers",
+                "row_count": 500,
+                "columns": [
+                    {"name": "id", "type": "int"},
+                    {"name": "full_name", "type": "varchar"},
+                ],
+            },
+            {
+                "name": "banking.loans",
+                "row_count": 5000,
+                "columns": [
+                    {"name": "loan_id", "type": "int"},
+                    {"name": "customer_id", "type": "int"},
+                    {"name": "branch_id", "type": "int"},
+                ],
+            },
+            {
+                "name": "banking.branches",
+                "row_count": 40,
+                "columns": [
+                    {"name": "branch_id", "type": "int"},
+                    {"name": "name", "type": "varchar"},
+                ],
+            },
+        ]
+    }
+    relationships = _detect_relationship_candidates(schema)
+    pairs = {(r["from_table"], r["from_column"], r["to_table"], r["to_column"]) for r in relationships}
+    assert ("banking.loans", "customer_id", "banking.customers", "id") in pairs
+    assert ("banking.loans", "branch_id", "banking.branches", "branch_id") in pairs
+
+
+def test_cross_source_same_key_column():
+    from src.modules.data.model_service import _detect_cross_source_candidates
+
+    sources = [
+        (
+            "ds-enrollment",
+            {
+                "tables": [
+                    {
+                        "name": "enrollment",
+                        "row_count": 1000,
+                        "columns": [{"name": "student_id", "type": "int"}, {"name": "status", "type": "varchar"}],
+                    }
+                ]
+            },
+        ),
+        (
+            "ds-students",
+            {
+                "tables": [
+                    {
+                        "name": "students",
+                        "row_count": 200,
+                        "columns": [{"name": "student_id", "type": "int"}, {"name": "name", "type": "varchar"}],
+                    }
+                ]
+            },
+        ),
+    ]
+    cross = _detect_cross_source_candidates(sources)
+    assert any(
+        r["from_column"] == "student_id" and r["to_column"] == "student_id" for r in cross
+    )

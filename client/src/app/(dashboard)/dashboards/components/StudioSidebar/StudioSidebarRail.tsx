@@ -4,14 +4,13 @@ import React from 'react';
 import { Tooltip } from 'antd';
 import {
   AppstoreOutlined,
-  BarChartOutlined,
   ApartmentOutlined,
   RobotOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import './StudioSidebar.css';
 
-export type SidebarSection = 'dashboards' | 'charts' | 'modeling' | 'ai';
+export type SidebarSection = 'dashboards' | 'modeling' | 'ai';
 
 interface StudioSidebarRailProps {
   activeSection: SidebarSection | null;
@@ -22,7 +21,6 @@ export function StudioSidebarRail({ activeSection, onSectionChange }: StudioSide
   const t = useTranslations('dashboards_page');
   const sections: { key: SidebarSection; icon: React.ReactNode; label: string }[] = [
     { key: 'dashboards', icon: <AppstoreOutlined />, label: t('rail_dashboards') },
-    { key: 'charts', icon: <BarChartOutlined />, label: t('rail_charts') },
     { key: 'modeling', icon: <ApartmentOutlined />, label: t('rail_modeling') },
     { key: 'ai', icon: <RobotOutlined />, label: t('rail_ai') },
   ];

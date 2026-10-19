@@ -1,9 +1,15 @@
 'use client';
 
 import React from 'react';
-import { Card, Descriptions, Tag, Tooltip } from 'antd';
+import { Button, Card, Descriptions, Space, Tag, Tooltip } from 'antd';
+import { ExperimentOutlined, NodeIndexOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import type { DataSource } from '@/stores/useDataSourceStore';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
+import { workbookIdFromDataSource } from '@/utils/workbookDataSource';
+import { semanticLayerStudioHref } from './tabParam';
+import { isModelEligibleDataSource } from '@/components/data/modelEligible';
 
 const formatBytes = (size?: number): string | null => {
   if (!size) return null;
@@ -69,6 +75,8 @@ export const DataSourceOverviewTab: React.FC<{
 }> = ({ dataSource, banner }) => {
   const t = useTranslations('data_source_detail');
   const locale = useLocale();
+  const router = useRouter();
+  const workbookId = dataSource ? workbookIdFromDataSource(dataSource) : null;
 
   // Plain type: engine name for databases, what it is for everything else (never an enum).
   const type = dataSource?.type;
@@ -100,9 +108,38 @@ export const DataSourceOverviewTab: React.FC<{
   return (
     <>
       {banner}
-      <Card size="small" title={t('tab_overview')}>
+      {(workbookId || (isEnterpriseEdition && dataSource?.id)) ? (
+        <Space wrap style={{ marginBottom: 12 }}>
+          {workbookId ? (
+            <Button size="small" onClick={() => router.push(`/sheets/${workbookId}`)}>
+              {t('overview_open_sheet')}
+            </Button>
+          ) : null}
+          {isEnterpriseEdition && dataSource?.id && isModelEligibleDataSource(dataSource.type) ? (
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon={<NodeIndexOutlined />}
+              onClick={() => router.push(semanticLayerStudioHref(dataSource.id))}
+            >
+              {t('overview_open_semantic')}
+            </Button>
+          ) : null}
+          {isEnterpriseEdition && dataSource?.id ? (
+            <>
+              <Button size="small" icon={<ExperimentOutlined />} onClick={() => router.push(`/models?new=1&source=${encodeURIComponent(dataSource.id)}`)}>
+                {t('overview_predict')}
+              </Button>
+              <Button size="small" icon={<ThunderboltOutlined />} onClick={() => router.push(`/ai-decisions?new=1&source=${encodeURIComponent(dataSource.id)}`)}>
+                {t('overview_decide')}
+              </Button>
+            </>
+          ) : null}
+        </Space>
+      ) : null}
+      <Card size="small" className="page-section-card">
         <Descriptions column={{ xs: 1, sm: 2 }} size="small">
-          <Descriptions.Item label={t('overview_name')}>{dataSource?.name ?? '—'}</Descriptions.Item>
           <Descriptions.Item label={t('overview_type')}>{typeLabel}</Descriptions.Item>
           <Descriptions.Item label={t('overview_status')}>
             <Tag color={statusColor}>{t(`overview_status_${statusKey}` as never)}</Tag>

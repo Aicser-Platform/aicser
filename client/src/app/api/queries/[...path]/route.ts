@@ -13,6 +13,14 @@ export async function GET(
   return handleQueriesRequest(request, context, 'GET');
 }
 
+export async function PATCH(
+  request: NextRequest,
+  context: { params?: any }
+) {
+  return handleQueriesRequest(request, context, 'PATCH');
+}
+
+
 export async function POST(
   request: NextRequest,
   context: { params?: any }
@@ -69,7 +77,7 @@ async function handleQueriesRequest(
     };
     
     // Add body for POST/PUT requests
-    if (method === 'POST' || method === 'PUT') {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
       try {
         const body = await request.text();
         if (body) {
@@ -81,6 +89,7 @@ async function handleQueriesRequest(
     }
     
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
     
     // Handle response
     const contentType = response.headers.get('content-type') || '';

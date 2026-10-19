@@ -19,6 +19,10 @@ from src.modules.spatial.router import router as spatial_router
 from src.modules.folders.router import router as folders_router
 from src.modules.notebooks.router import router as notebooks_router
 from src.modules.workbooks.router import router as workbooks_router
+from src.modules.prep.router import router as prep_router
+from src.modules.semantic_domains.router import router as semantic_domains_router
+from src.modules.governance.router import router as governance_router
+from src.modules.impact.router import router as impact_router
 from src.modules.data.router import router as data_router
 from src.modules.dashboards.router import router as dashboards_router
 from src.modules.dashboards.charts.router import router as charts_router
@@ -66,6 +70,10 @@ api_router.include_router(spatial_router, prefix="/api/spatial", tags=["location
 api_router.include_router(folders_router, prefix="/api/folders", tags=["folders"])
 api_router.include_router(notebooks_router, prefix="/api/notebooks", tags=["notebooks"])
 api_router.include_router(workbooks_router, prefix="/api/workbooks", tags=["workbooks"])
+api_router.include_router(prep_router, prefix="/api/prep", tags=["prepare"])
+api_router.include_router(semantic_domains_router, prefix="/api/semantic-domains", tags=["semantic"])
+api_router.include_router(governance_router, prefix="/api/governance", tags=["governance"])
+api_router.include_router(impact_router, prefix="/api/impact", tags=["impact"])
 api_router.include_router(knowledge_router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(media_router, prefix="/api/media/feed-thumbnails", tags=["media"])
 api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
@@ -121,9 +129,9 @@ async def delete_data_source_proxy(
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
 if is_ee_enabled():
     try:
-        from ee.modules.chats.router import router as chat_module_router
-        from ee.modules.chats.conversations.router import router as conversation_router
-        from ee.modules.chats.assets.router import router as assets_router
+        from src.modules.chats.router import router as chat_module_router
+        from src.modules.chats.conversations.router import router as conversation_router
+        from src.modules.chats.assets.router import router as assets_router
         api_router.include_router(
             chat_module_router, prefix="/chats", tags=["chats"],
             dependencies=[Depends(require_valid_license)],
@@ -140,8 +148,8 @@ if is_ee_enabled():
         logger.warning("Chats router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.router import router as ai_router
-        from ee.modules.ai.api_streaming import router as ai_streaming_router
+        from src.modules.ai.router import router as ai_router
+        from src.modules.ai.api_streaming import router as ai_streaming_router
         api_router.include_router(
             ai_streaming_router, prefix="/ai", tags=["ai-streaming"],
             dependencies=[Depends(require_valid_license)],
@@ -154,7 +162,7 @@ if is_ee_enabled():
         logger.warning("AI router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.reports.router import router as reports_router
+        from src.modules.ai.reports.router import router as reports_router
         # require_valid_license checks this server instance's own license
         # state (src/core/licensing/state.py), not the caller's session - it
         # applies just as well to the unauthenticated /embed endpoint (used
@@ -170,7 +178,7 @@ if is_ee_enabled():
         logger.warning("Reports router not loaded: %s", _err)
 
     try:
-        from ee.modules.alerts.router import router as alerts_router
+        from src.modules.alerts.router import router as alerts_router
         api_router.include_router(
             alerts_router, prefix="/api/alerts", tags=["alerts"],
             dependencies=[Depends(require_valid_license)],
@@ -179,7 +187,7 @@ if is_ee_enabled():
         logger.warning("Alerts router not loaded: %s", _err)
 
     try:
-        from ee.modules.decision_os.router import router as decision_os_router
+        from src.modules.decision_os.router import router as decision_os_router
         api_router.include_router(
             decision_os_router, prefix="/api/decision-os", tags=["decision-os"],
             dependencies=[Depends(require_valid_license)],
@@ -188,13 +196,13 @@ if is_ee_enabled():
         logger.warning("DecisionOS router not loaded: %s", _err)
 
     try:
-        from ee.modules.authentication.router import router as ee_auth_router
+        from src.enterprise.modules.authentication.router import router as ee_auth_router
         api_router.include_router(ee_auth_router, prefix="", tags=["auth"])
     except Exception as _err:
         logger.warning("EE auth token exchange not loaded: %s", _err)
 
     try:
-        from ee.modules.authentication.rbac.router import router as rbac_router
+        from src.enterprise.modules.authentication.rbac.router import router as rbac_router
         api_router.include_router(
             rbac_router, prefix="/api/rbac", tags=["RBAC"],
             dependencies=[Depends(require_valid_license)],
@@ -203,7 +211,7 @@ if is_ee_enabled():
         logger.warning("RBAC router not loaded: %s", _err)
 
     try:
-        from ee.modules.organizations.router import router as organizations_router
+        from src.modules.organizations.router import router as organizations_router
         api_router.include_router(
             organizations_router, prefix="/api/organizations", tags=["organizations"],
             dependencies=[Depends(require_valid_license)],
@@ -212,7 +220,7 @@ if is_ee_enabled():
         logger.warning("Organizations router not loaded: %s", _err)
 
     try:
-        from ee.modules.invitations.router import router as invitations_router
+        from src.modules.invitations.router import router as invitations_router
         api_router.include_router(
             invitations_router, prefix="/api/invitations", tags=["invitations"],
             dependencies=[Depends(require_valid_license)],
@@ -221,7 +229,7 @@ if is_ee_enabled():
         logger.warning("Invitations router not loaded: %s", _err)
 
     try:
-        from ee.modules.project.router import router as project_router
+        from src.modules.project.router import router as project_router
         api_router.include_router(
             project_router, prefix="/api/projects", tags=["projects"],
             dependencies=[Depends(require_valid_license)],
@@ -230,7 +238,7 @@ if is_ee_enabled():
         logger.warning("Projects router not loaded: %s", _err)
 
     try:
-        from ee.modules.platform.router import router as platform_intelligence_router
+        from src.modules.platform.router import router as platform_intelligence_router
         api_router.include_router(
             platform_intelligence_router, prefix="/api", tags=["platform-intelligence"],
             dependencies=[Depends(require_valid_license)],
@@ -248,15 +256,6 @@ if is_ee_enabled():
         logger.warning("Pipeline router not loaded: %s", _err)
 
     try:
-        from src.modules.pipeline.onboarding.router import router as onboarding_router
-        api_router.include_router(
-            onboarding_router, prefix="/api", tags=["data-onboarding"],
-            dependencies=[Depends(require_valid_license)],
-        )
-    except Exception as _err:
-        logger.warning("Onboarding router not loaded: %s", _err)
-
-    try:
         from src.modules.pipeline.catalog.router import router as catalog_router
         api_router.include_router(
             catalog_router, prefix="/api", tags=["data-catalog"],
@@ -264,6 +263,15 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Catalog router not loaded: %s", _err)
+
+    try:
+        from src.modules.ontology.router import router as ontology_router
+        api_router.include_router(
+            ontology_router, prefix="/api", tags=["ontology"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Ontology router not loaded: %s", _err)
 
     try:
         from src.modules.pipeline.connectors.router import router as connectors_router
@@ -302,7 +310,7 @@ if is_ee_enabled():
         logger.warning("dbt and MetricFlow router not loaded: %s", _err)
 
     try:
-        from ee.modules.schedule_email.router import router as schedule_email_router
+        from src.modules.schedule_email.router import router as schedule_email_router
         api_router.include_router(
             schedule_email_router, prefix="/api/schedule-email", tags=["schedule-email"],
             dependencies=[Depends(require_valid_license)],
@@ -311,7 +319,7 @@ if is_ee_enabled():
         logger.warning("Schedule email router not loaded: %s", _err)
 
     try:
-        from ee.modules.admin_config.router import router as admin_config_router
+        from src.enterprise.modules.admin_config.router import router as admin_config_router
         api_router.include_router(
             admin_config_router, prefix="/api/admin", tags=["admin-config"],
             dependencies=[Depends(require_valid_license)],
@@ -320,7 +328,7 @@ if is_ee_enabled():
         logger.warning("Admin config router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.decisions.router import router as decisions_router
+        from src.modules.ai.decisions.router import router as decisions_router
         api_router.include_router(
             decisions_router, prefix="/api/ai/decisions", tags=["ai-decisions"],
             dependencies=[Depends(require_valid_license)],
@@ -329,7 +337,7 @@ if is_ee_enabled():
         logger.warning("Decision layer router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.decisions.tool_router import router as ai_decisions_router
+        from src.modules.ai.decisions.tool_router import router as ai_decisions_router
         api_router.include_router(
             ai_decisions_router, prefix="/api/ai-decisions", tags=["ai-decisions-tool"],
             dependencies=[Depends(require_valid_license)],
@@ -338,7 +346,7 @@ if is_ee_enabled():
         logger.warning("AI Decisions router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.evals.router import router as ai_accuracy_router
+        from src.modules.ai.evals.router import router as ai_accuracy_router
         api_router.include_router(
             ai_accuracy_router, prefix="/api/ai/accuracy", tags=["ai-accuracy"],
             dependencies=[Depends(require_valid_license)],
@@ -347,7 +355,7 @@ if is_ee_enabled():
         logger.warning("AI accuracy router not loaded: %s", _err)
 
     try:
-        from ee.modules.ai.formula_router import router as formula_router
+        from src.modules.ai.formula_router import router as formula_router
         api_router.include_router(
             formula_router, prefix="/api/ai/formula", tags=["ai-formula"],
             dependencies=[Depends(require_valid_license)],
@@ -356,7 +364,7 @@ if is_ee_enabled():
         logger.warning("AI formula router not loaded: %s", _err)
 
     try:
-        from ee.modules.organizations.scim import scim_router, token_router as scim_token_router
+        from src.modules.organizations.scim import scim_router, token_router as scim_token_router
         # IdPs call /scim/v2 with an org SCIM token (no session, no license header needed
         # beyond the instance license); admins manage tokens and group roles under /api/scim.
         api_router.include_router(
@@ -378,7 +386,7 @@ if is_ee_enabled():
         logger.warning("SCIM router not loaded: %s", _err)
 
     try:
-        from ee.modules.organizations.residency_router import router as residency_router
+        from src.modules.organizations.residency_router import router as residency_router
         api_router.include_router(
             residency_router, prefix="/api/ai-residency", tags=["ai-residency"],
             dependencies=[Depends(require_valid_license)],
@@ -387,7 +395,7 @@ if is_ee_enabled():
         logger.warning("AI residency router not loaded: %s", _err)
 
     try:
-        from ee.modules.mcp_server.router import router as mcp_router
+        from src.enterprise.modules.mcp_server.router import router as mcp_router
         api_router.include_router(
             mcp_router, prefix="/mcp", tags=["mcp"],
             dependencies=[Depends(require_valid_license)],
@@ -405,7 +413,7 @@ if is_ee_enabled():
         logger.warning("Embed router not loaded: %s", _err)
 
     try:
-        from ee.modules.embed.assistant_router import router as embed_assistant_router
+        from src.enterprise.modules.embed.assistant_router import router as embed_assistant_router
         api_router.include_router(
             embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"],
             dependencies=[Depends(require_valid_license)],
@@ -418,7 +426,7 @@ if is_ee_enabled():
         # NOT session-gated. require_valid_license here checks this server
         # instance's own license state, same as the analogous unauthenticated
         # report-embed endpoint above; it applies fine to anonymous visitors.
-        from ee.modules.embed.chat_router import router as embed_chat_router
+        from src.enterprise.modules.embed.chat_router import router as embed_chat_router
         api_router.include_router(
             embed_chat_router, prefix="/ai/embed", tags=["embed-chat"],
             dependencies=[Depends(require_valid_license)],
@@ -427,7 +435,7 @@ if is_ee_enabled():
         logger.warning("Embed chat router not loaded: %s", _err)
 
     try:
-        from ee.modules.knowledge.library_router import router as knowledge_library_router
+        from src.enterprise.modules.knowledge.library_router import router as knowledge_library_router
         api_router.include_router(
             knowledge_library_router, prefix="/knowledge/libraries", tags=["knowledge-libraries"],
             dependencies=[Depends(require_valid_license)],
@@ -437,7 +445,7 @@ if is_ee_enabled():
 
     try:
         # Router already prefixes /knowledge/connectors — mount at root like oauth connectors.
-        from ee.modules.knowledge_connectors.router import router as knowledge_connectors_router
+        from src.modules.knowledge_connectors.router import router as knowledge_connectors_router
         api_router.include_router(
             knowledge_connectors_router,
             tags=["knowledge-connectors"],
@@ -447,10 +455,37 @@ if is_ee_enabled():
         logger.warning("Knowledge connectors router not loaded: %s", _err)
 
     try:
-        from ee.modules.telegram.router import router as telegram_router
+        from src.modules.telegram.router import router as telegram_router
         api_router.include_router(
             telegram_router, prefix="/api/v1",
             dependencies=[Depends(require_valid_license)],
         )
     except Exception as _err:
         logger.warning("Telegram router not loaded: %s", _err)
+
+    try:
+        from src.modules.teams.router import router as teams_router
+        api_router.include_router(
+            teams_router, prefix="/api",
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Teams router not loaded: %s", _err)
+
+    try:
+        from src.enterprise.modules.slack.router import router as slack_router
+        api_router.include_router(
+            slack_router, prefix="/api",
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Slack router not loaded: %s", _err)
+
+    try:
+        from src.modules.ai.domain_templates.router import router as industry_packs_router
+        api_router.include_router(
+            industry_packs_router, prefix="/api",
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Industry packs router not loaded: %s", _err)

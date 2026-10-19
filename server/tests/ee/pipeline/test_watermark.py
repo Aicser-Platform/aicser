@@ -144,9 +144,9 @@ async def test_changes_queries_strictly_after_the_checkpoint():
         pass
 
     sql, params = issued[0]
-    assert "public.orders" in sql
-    assert "updated_at > " in sql
-    assert "ORDER BY updated_at" in sql
+    assert '"public"."orders"' in sql  # names are quoted
+    assert "\"updated_at\" > " in sql
+    assert "ORDER BY \"updated_at\"" in sql
     assert params["since"] == "2026-08-01 00:00:00+00:00"
 
 
@@ -162,6 +162,10 @@ async def test_build_watermark_source_raises_when_the_table_is_not_in_the_schema
         async def get_source_schema(self, source_id):
             return {"success": True, "schema": {"tables": [{"name": "customers", "columns": []}]}}
 
+        async def get_database_schema(self, source_id, force_refresh=False):
+            # Read live too (the table may be new): still not there.
+            return {"success": True, "schema": {"tables": [{"name": "customers", "columns": []}]}}
+
     monkeypatch.setattr(
         "src.modules.data.services.data_connectivity_service.DataConnectivityService",
         FakeDataConnectivityService,
@@ -171,3 +175,38 @@ async def test_build_watermark_source_raises_when_the_table_is_not_in_the_schema
 
     with pytest.raises(ValueError, match="not found in the source schema"):
         await build_watermark_source(ctx, "orders")
+
+
+async def test_a_new_connection_without_a_stored_schema_is_read_live(monkeypatch):
+    """A connection made in the pipeline wizard has no stored schema yet; the first sync used
+    to fail with "could not read schema"."""
+    from src.modules.pipeline.ingest.watermark_source import _find_table, build_watermark_source
+
+    calls = []
+
+    class FreshConnection:
+        async def get_data_source_by_id(self, source_id):
+            return {"id": source_id, "type": "database"}
+
+        async def get_source_schema(self, source_id):
+            return {"success": False, "error": "No schema available"}
+
+        async def get_database_schema(self, source_id, force_refresh=False):
+            calls.append(force_refresh)
+            return {"success": True, "schema": {"tables": [
+                {"name": "orders", "schema": "sales", "columns": [{"name": "id", "type": "integer", "is_primary_key": True}]}]}}
+
+    monkeypatch.setattr(
+        "src.modules.data.services.data_connectivity_service.DataConnectivityService", FreshConnection
+    )
+    ctx = type("Ctx", (), {"pipeline": type("P", (), {"source_asset_id": "ds-1", "options": {}, "ingest_mode": "snapshot"})()})()
+    try:
+        await build_watermark_source(ctx, "sales.orders")
+    except ValueError as exc:  # the executor may need a real connection past this point
+        assert "could not read schema" not in str(exc) and "not found in the source schema" not in str(exc)
+    except Exception:  # noqa: BLE001 - past the schema lookup, which is what this covers
+        pass
+    assert calls == [True]
+    assert _find_table([{"name": "orders", "schema": "sales"}], '"sales.orders"') is not None
+    assert _find_table([{"name": "sales.orders"}], "sales.orders") is not None
+    assert _find_table([{"name": "orders", "schema": "sales"}], "orders") is not None

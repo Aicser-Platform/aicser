@@ -46,8 +46,12 @@ ENV PATH="/venv/bin:$PATH"
 
 
 COPY requirements.txt ./
+# Match Dockerfile.prod: install CPU torch before requirements.txt so pip does not
+# pull multi-GB CUDA wheels from PyPI during dev builds.
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel \
+    && pip install --index-url "$TORCH_INDEX_URL" torch==2.14.0 \
     && pip install -r requirements.txt
 
 # Fail the image build if Telegram deps are missing (avoids uvicorn crash at import time)

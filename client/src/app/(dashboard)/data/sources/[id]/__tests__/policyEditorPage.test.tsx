@@ -53,7 +53,7 @@ describe('PolicyEditorPage', () => {
       const confirmSpy = vi.spyOn(Modal, 'confirm');
       renderPage({ dataSourceId: 'ds-1' });
 
-      fireEvent.change(screen.getByLabelText(/policy name/i), { target: { value: 'Customer ID' } });
+      fireEvent.change(screen.getByLabelText(/rule name/i), { target: { value: 'Customer ID' } });
       fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
       expect(confirmSpy).toHaveBeenCalledWith(
@@ -72,6 +72,6 @@ describe('PolicyEditorPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/data/sources/ds-1?tab=row-filters');
+    expect(mockRouter.push).toHaveBeenCalledWith('/data/sources/ds-1?tab=access&access=row-filters');
   });
 });

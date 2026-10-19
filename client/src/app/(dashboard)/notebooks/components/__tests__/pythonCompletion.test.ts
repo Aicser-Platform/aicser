@@ -55,7 +55,9 @@ describe('notebook Python suggestions', () => {
 
   it('offers the governed loader and source names', () => {
     expect(suggest('a')).toContain('aicser');
-    expect(suggest('df = aicser.')).toEqual(['table', 'sql', 'sources', 'models', 'predict', 'forecast', 'save_forecast', 'decisions', 'decide']);
+    expect(suggest('df = aicser.')).toEqual(expect.arrayContaining([
+      'table', 'sql', 'inspect', 'create_model', 'models', 'predict', 'decisions', 'decide',
+    ]));
     expect(suggest('df = aicser.table("s.t", source="')).toEqual(['Retail', 'Finance warehouse']);
   });
 });

@@ -1,0 +1,98 @@
+/* Add panel: shares the Properties panel's slot and chrome (.properties-panel). */
+.add-panel__hint {
+  display: block;
+  padding: 0 12px 6px;
+  font-size: 12px;
+}
+
+.add-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 12px;
+}
+
+.add-panel__charts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.add-panel__chart-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.add-panel__chart {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: grab;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.add-panel__chart:hover:not(:disabled) {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.add-panel__chart:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 1px;
+}
+
+.add-panel__chart:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.add-panel__grip {
+  color: var(--ant-color-text-quaternary);
+}
+
+.add-panel__chart-icon {
+  color: var(--ant-color-primary);
+}
+
+.add-panel__chart-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The Add popover from the toolbar. */
+.add-popover {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  max-height: min(560px, 70vh);
+}
+
+.add-popover .ant-tabs-content-holder {
+  max-height: min(440px, 56vh);
+  overflow-y: auto;
+}
+
+.add-popover__footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+/* Dragging a block or chart out: the popover fades so the drop spot on the board shows. */
+.add-popover-root--dragging {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}

@@ -32,6 +32,7 @@ import type { ApiKey } from '../types';
 import { useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { asDynamicComponent } from '@/utils/asDynamicModule';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
 const ModelSelectorFallback = () => null;
 const ModelSelector = dynamic(
@@ -603,7 +604,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
                   <Text type="secondary" style={{ display: 'block', marginBottom: 14, fontSize: 13 }}>
                     {t('platform_api_keys_desc')}
                   </Text>
-                  {process.env.NEXT_PUBLIC_EDITION === 'enterprise' && (
+                  {isEnterpriseEdition() && (
                     <Alert
                       type="info"
                       showIcon

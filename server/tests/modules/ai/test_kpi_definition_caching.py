@@ -1,4 +1,4 @@
-"""KPI definitions (org-scoped, change rarely) were re-queried from Postgres
+"""KPI definitions (certified semantic metrics; org-scoped, change rarely) were re-queried from Postgres
 on every single conversational/NL2SQL turn - a real, avoidable cost at
 multi-tenant scale. Confirms the raw per-org fetch is now cached, and that
 saving/deleting a definition invalidates the cache immediately rather than
@@ -49,7 +49,8 @@ async def test_raw_fetch_is_cached_across_calls(monkeypatch):
     fake_cache = _FakeCache()
     monkeypatch.setattr("src.core.cache.cache", fake_cache)
 
-    session = _FakeSession([("mrr", "MRR", "recurring revenue", "SUM(amount)", [], [], 3)])
+    # name, title, synonyms, expression, connection, usage, description, id (certified semantic metrics)
+    session = _FakeSession([("mrr", "MRR", ["recurring revenue"], "SUM(amount)", "ds-1", 3, None, "m1")])
 
     first = await kpi_memory_service._fetch_raw_org_definitions(session, "org-1")
     second = await kpi_memory_service._fetch_raw_org_definitions(session, "org-1")
@@ -63,8 +64,8 @@ async def test_different_orgs_do_not_share_a_cache_entry(monkeypatch):
     fake_cache = _FakeCache()
     monkeypatch.setattr("src.core.cache.cache", fake_cache)
 
-    session_a = _FakeSession([("mrr", "MRR", "", "SUM(amount)", [], [], 1)])
-    session_b = _FakeSession([("churn", "Churn", "", "COUNT(*)", [], [], 1)])
+    session_a = _FakeSession([("mrr", "MRR", [], "SUM(amount)", "ds-a", 1, None, "m1")])
+    session_b = _FakeSession([("churn", "Churn", [], "COUNT(*)", "ds-b", 1, None, "m2")])
 
     result_a = await kpi_memory_service._fetch_raw_org_definitions(session_a, "org-a")
     result_b = await kpi_memory_service._fetch_raw_org_definitions(session_b, "org-b")

@@ -6,7 +6,7 @@
 import { fetchApi } from '@/utils/api';
 
 const IS_ENTERPRISE_EDITION =
-  process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
+  ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase());
 
 export type DashboardLibraryFacet = 'all' | 'recent' | 'favorites' | 'unfiled' | 'trash';
 

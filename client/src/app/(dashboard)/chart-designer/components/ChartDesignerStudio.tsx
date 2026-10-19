@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { ConfigProvider, Spin, Typography, message } from 'antd';
+import { createPortal } from 'react-dom';
+import { Button, ConfigProvider, Segmented, Spin, Typography, message } from 'antd';
+import { CloseOutlined } from '@ant-design/icons';
+import { SharedChartRenderer } from '@/components/charts/SharedChartRenderer';
+import { usePanelCollapsed } from '@/components/layout/SidePanel';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import '../../dashboards/DashboardStudio.css';
@@ -15,7 +19,6 @@ import { ChartDataTable } from './ChartDataTable';
 import { useChartDesignerStore, type ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSourceStore } from '@/stores/useDataSourceStore';
@@ -32,18 +35,67 @@ import type { WidgetTemplate } from '../../dashboards/widgetTemplates';
 const generateWidgetId = () => `w_designer_${Date.now()}`;
 const DESIGNER_DEFAULT_CHART_HEIGHT = 24;
 
+/** No chart open: one heading, the chart types once, and the latest charts to pick up again. */
 function EmptyDesignerState({ onSelect }: { onSelect: (template: any) => void }) {
   const t = useTranslations('chart_designer');
   return (
     <div className="canvas-empty">
-      <div className="canvas-empty-content animate-in">
-        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          {t('studio_primary_hint')}{' '}
-          <Link href="/dashboards">{t('open_studio')}</Link>
+      <div className="canvas-empty-content animate-in chart-designer-empty">
+        <Typography.Title level={4} style={{ marginBottom: 4 }}>{t('empty_title')}</Typography.Title>
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 20 }}>
+          {t('empty_subtitle')}
         </Typography.Text>
-        <WidgetBlockPicker variant="canvas" onSelect={onSelect} hintText={t('empty_state_hint')} />
+        <WidgetBlockPicker variant="canvas" chartsOnly title={null} onSelect={onSelect} />
       </div>
     </div>
+  );
+}
+
+type PreviewWidth = 'desktop' | 'tablet' | 'phone';
+const PREVIEW_WIDTHS: Record<PreviewWidth, number | null> = { desktop: null, tablet: 768, phone: 390 };
+
+/** The chart as viewers see it — full width, or at a tablet or phone width — without the editor around it. */
+function ChartPreview({ widget, onClose }: { widget: ChartDesignerWidget; onClose: () => void }) {
+  const t = useTranslations('chart_designer');
+  const [size, setSize] = React.useState<PreviewWidth>('desktop');
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  const width = PREVIEW_WIDTHS[size];
+  const subtitle = typeof widget.chartOptions?.subtitle === 'string' ? widget.chartOptions.subtitle : '';
+  // Rendered on <body>: inside the studio it would sit under the app header (stacking context).
+  return createPortal(
+    <div className="chart-designer-preview" role="dialog" aria-modal="true" aria-label={t('full_screen')}>
+      <div className="chart-designer-preview__bar">
+        <Segmented
+          size="small"
+          value={size}
+          onChange={(v) => setSize(v as PreviewWidth)}
+          options={(['desktop', 'tablet', 'phone'] as PreviewWidth[]).map((k) => ({ value: k, label: t(`preview_${k}`) }))}
+        />
+        <Button icon={<CloseOutlined />} onClick={onClose}>{t('preview_close')}</Button>
+      </div>
+      <div className="chart-designer-preview__stage">
+        <article className="chart-designer-preview__frame" style={width ? { width } : undefined}>
+          <Typography.Title level={4} style={{ margin: 0 }}>{widget.title || t('untitled_chart')}</Typography.Title>
+          {subtitle ? <Typography.Text type="secondary">{subtitle}</Typography.Text> : null}
+          <div className="chart-designer-preview__chart">
+            <SharedChartRenderer
+              chartType={widget.chartType}
+              chartData={widget.chartData}
+              chartOptions={{ ...(widget.chartOptions || {}), hideTitle: true }}
+              chartQuery={widget.chartQuery}
+              isLoading={widget.isLoading}
+              error={widget.error}
+              minHeight={size === 'phone' ? 320 : 460}
+            />
+          </div>
+        </article>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -64,7 +116,6 @@ export default function ChartDesignerStudio() {
   const fetchCharts = useChartDesignerStore((state) => state.fetchCharts);
   const deleteChart = useChartDesignerStore((state) => state.deleteChart);
   const updateChartLayout = useChartDesignerStore((state) => state.updateChartLayout);
-  const setSidebarCollapsed = useChartDesignerStore((state) => state.setSidebarCollapsed);
 
   const { user, isAuthenticated } = useAuth();
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
@@ -83,11 +134,7 @@ export default function ChartDesignerStudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, user?.id, currentProjectId]);
 
-  // Keep both side panels always open for now.
-  useEffect(() => {
-    setSidebarCollapsed(false);
-    setPropertiesCollapsed(false);
-  }, [setSidebarCollapsed, setPropertiesCollapsed]);
+  const [propertiesFolded, setPropertiesFolded] = usePanelCollapsed('designer.properties');
 
   // Query Editor → chart designer bind (AFTER fetchCharts finishes — avoids wipe race)
   useEffect(() => {
@@ -213,6 +260,7 @@ export default function ChartDesignerStudio() {
   // Chart or the table of its data; each newly opened chart starts on the chart.
   const [canvasView, setCanvasView] = React.useState<'chart' | 'data'>('chart');
   useEffect(() => setCanvasView('chart'), [selectedWidgetId]);
+  const [previewing, setPreviewing] = React.useState(false);
 
   const selectedWidgetLayout = useMemo(() => {
     if (!selectedWidgetId) return [];
@@ -245,14 +293,17 @@ export default function ChartDesignerStudio() {
         },
       }}
     >
-      <div className="studio-wrapper designer-theme designer-simplified" id="designer-wrapper">
+      <div className="studio-wrapper designer-theme designer-simplified chart-designer-studio" id="designer-wrapper">
         <div className="studio-body">
           {/* Left Sidebar - Chart List */}
           <ChartDesignerSidebar onAddTemplate={handleAddTemplate} />
 
           {/* Canvas Area */}
           <main className="studio-canvas-area designer-canvas">
-            <ChartDesignerToolbar selectedWidget={selectedWidget} view={canvasView} onViewChange={setCanvasView} />
+            {selectedWidget ? (
+              <ChartDesignerToolbar selectedWidget={selectedWidget} view={canvasView} onViewChange={setCanvasView}
+                onPreview={() => setPreviewing(true)} />
+            ) : null}
             <div className="designer-fullscreen-canvas">
               <div className="designer-canvas-container">
                 {selectedWidget && canvasView === 'data' ? (
@@ -298,17 +349,22 @@ export default function ChartDesignerStudio() {
             </div>
           </main>
 
-          {/* Right Sidebar - Properties */}
+          {/* Right Sidebar - Properties (only while a chart is open: nothing to edit otherwise) */}
+          {selectedWidget ? (
           <PropertiesPanel
             selectedWidget={selectedWidget as any}
             selectedWidgetId={selectedWidgetId}
             widgets={widgets as any[]}
             setWidgets={setWidgets as any}
             removeWidget={deleteChart}
-            isCollapsed={false}
+            isCollapsed={propertiesFolded}
+            onCollapse={() => setPropertiesFolded(true)}
+            onExpand={() => setPropertiesFolded(false)}
             isDesigner={true}
           />
+          ) : null}
         </div>
+        {previewing && selectedWidget ? <ChartPreview widget={selectedWidget} onClose={() => setPreviewing(false)} /> : null}
       </div>
     </ConfigProvider>
   );

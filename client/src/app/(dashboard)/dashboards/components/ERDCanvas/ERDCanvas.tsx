@@ -15,8 +15,9 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import { useTranslations } from 'next-intl';
-import { Button, Input, Segmented } from 'antd';
+import { Button, Empty, Input, Segmented, Typography } from 'antd';
 import { ApartmentOutlined, RadarChartOutlined, SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { RelationshipDetailsPanel } from './RelationshipDetailsPanel';
 import { TableNode, type TableNodeData } from './TableNode';
 import { RelationshipEdge, type RelationshipEdgeData } from './RelationshipEdge';
 import type { DataModelRelationship } from '@/api/dataModel';
@@ -148,6 +149,10 @@ export interface ERDCanvasProps {
   selectedRelationshipId: string | null;
   onDetectRelationships?: () => void;
   isDetectingRelationships?: boolean;
+  /** Tighter toolbar for embedded semantic relationship step. */
+  compactToolbar?: boolean;
+  /** Called after a relationship is updated or deleted from the Details panel. */
+  onRelationshipsChanged?: () => void;
 }
 
 export function ERDCanvas({
@@ -159,11 +164,18 @@ export function ERDCanvas({
   selectedRelationshipId,
   onDetectRelationships,
   isDetectingRelationships,
+  compactToolbar = false,
+  onRelationshipsChanged,
 }: ERDCanvasProps) {
   const t = useTranslations('dashboards_page');
   const { isDarkMode } = useThemeMode();
+  const [canvasView, setCanvasView] = useState<'relationships' | 'details'>('relationships');
   const [search, setSearch] = useState('');
   const [pendingColumn, setPendingColumn] = useState<PendingColumnConnection | null>(null);
+  const selectedRelationship = useMemo(
+    () => relationships.find((r) => r.id === selectedRelationshipId) ?? null,
+    [relationships, selectedRelationshipId],
+  );
   const normalizedSearch = search.trim().toLowerCase();
 
   const filteredTables = useMemo(
@@ -294,6 +306,7 @@ export function ERDCanvas({
             onSelect: (id: string) => {
               const found = relationships.find((r) => r.id === id) ?? null;
               onRelationshipSelect(found);
+              if (found) setCanvasView('details');
             },
           } satisfies RelationshipEdgeData,
         };
@@ -400,12 +413,16 @@ export function ERDCanvas({
   }, [nodes, edges, setNodes, persistPositions]);
 
   return (
-    <div className="erd-canvas-wrapper">
+    <div
+      className={`erd-canvas-wrapper${compactToolbar ? ' erd-canvas-wrapper--compact' : ''}`}
+      style={compactToolbar ? { flex: 1, minHeight: 0 } : undefined}
+    >
       <div className="erd-toolbar">
         <div className="erd-toolbar-left">
           <Segmented
             size="small"
-            value="relationships"
+            value={canvasView}
+            onChange={(v) => setCanvasView(v as 'relationships' | 'details')}
             options={[
               { value: 'relationships', label: t('erd_relationship_view') },
               { value: 'details', label: t('erd_details') },
@@ -441,12 +458,53 @@ export function ERDCanvas({
           className="erd-search"
         />
       </div>
-      {filteredTables.length === 0 ? (
+      {canvasView === 'details' ? (
+        <div className="erd-details-pane">
+          <div className="erd-details-list">
+            <Typography.Text type="secondary" className="erd-details-list__title">
+              {t('erd_details_join_list')}
+            </Typography.Text>
+            {relationships.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('no_relationships')} />
+            ) : (
+              relationships.map((rel) => (
+                <button
+                  key={rel.id}
+                  type="button"
+                  className={`erd-details-list__item${rel.id === selectedRelationshipId ? ' erd-details-list__item--active' : ''}`}
+                  onClick={() => onRelationshipSelect(rel)}
+                >
+                  <span className="erd-details-list__from">
+                    {rel.from_table}.{rel.from_column}
+                  </span>
+                  <span className="erd-details-list__arrow" aria-hidden>→</span>
+                  <span className="erd-details-list__to">
+                    {rel.to_table}.{rel.to_column}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="erd-details-editor">
+            {selectedRelationship ? (
+              <RelationshipDetailsPanel
+                relationship={selectedRelationship}
+                onClose={() => onRelationshipSelect(null)}
+                onChanged={onRelationshipsChanged}
+              />
+            ) : (
+              <Empty description={t('erd_select_relationship')} style={{ marginTop: 48 }} />
+            )}
+          </div>
+        </div>
+      ) : null}
+      {canvasView === 'relationships' && filteredTables.length === 0 ? (
         <div className="erd-empty-state">
           <TableOutlined />
           <span>{t('erd_no_matching_tables')}</span>
         </div>
       ) : null}
+      {canvasView === 'relationships' ? (
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -466,6 +524,7 @@ export function ERDCanvas({
         <Background />
         <Controls />
       </ReactFlow>
+      ) : null}
     </div>
   );
 }

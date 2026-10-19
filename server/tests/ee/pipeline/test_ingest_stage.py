@@ -94,8 +94,8 @@ async def test_ingest_stage_writes_bronze_and_records_the_lake_object(
         "src.modules.pipeline.ingest.stage.resolve_source",
         new=AsyncMock(return_value=("orders", str(path))),
     ), patch(
-        "src.modules.pipeline.ingest.stage.get_object_store",
-        return_value=FakeS3(),
+        "src.modules.pipeline.ingest.stage.get_object_store_async",
+        new=AsyncMock(return_value=FakeS3()),
     ):
         result = await IngestStage().execute(ctx)
 
@@ -142,6 +142,9 @@ async def test_ingest_stage_uses_the_persisted_watermark_for_incremental_runs():
     )
 
     class FakeSource:
+        # Like a real watermark source: incremental runs advance by this column.
+        watermark_column = "id"
+
         def __init__(self):
             self.since_received = None
 
@@ -159,7 +162,7 @@ async def test_ingest_stage_uses_the_persisted_watermark_for_incremental_runs():
             return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
 
     with patch(
-        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+        "src.modules.pipeline.ingest.stage.get_object_store_async", new=AsyncMock(return_value=FakeS3())
     ), patch(
         "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
         new=AsyncMock(return_value=fake_source),
@@ -270,7 +273,7 @@ async def test_ingest_stage_first_run_snapshot_does_not_require_an_existing_bron
             return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
 
     with patch(
-        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+        "src.modules.pipeline.ingest.stage.get_object_store_async", new=AsyncMock(return_value=FakeS3())
     ), patch(
         "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
         new=AsyncMock(return_value=FakeSource()),
@@ -328,7 +331,7 @@ async def test_ingest_stage_bronze_object_records_the_data_source_id():
             return {"success": True, "object_key": object_key, "storage_uri": f"s3://b/{object_key}"}
 
     with patch(
-        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+        "src.modules.pipeline.ingest.stage.get_object_store_async", new=AsyncMock(return_value=FakeS3())
     ), patch(
         "src.modules.pipeline.ingest.watermark_source.build_watermark_source",
         new=AsyncMock(return_value=FakeSource()),
@@ -392,13 +395,13 @@ async def test_ingest_stage_reads_an_existing_bronze_object_for_a_file_upload_da
 
     resolve_mock = AsyncMock(return_value=("orders", "s3://lake/bronze/orders.parquet"))
 
-    def _fake_file_source(*, path, source_table):
+    def _fake_file_source(*, path, source_table, **_options):  # sheet, projection… as FileSource takes them
         assert path == "s3://lake/bronze/orders.parquet"
         assert source_table == "orders"
         return FakeSource()
 
     with patch(
-        "src.modules.pipeline.ingest.stage.get_object_store", return_value=FakeS3()
+        "src.modules.pipeline.ingest.stage.get_object_store_async", new=AsyncMock(return_value=FakeS3())
     ), patch(
         "src.modules.pipeline.ingest.stage.resolve_source", new=resolve_mock
     ), patch(

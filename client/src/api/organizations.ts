@@ -30,6 +30,9 @@ export const deleteOrganization = (id: string): Promise<void> => fetchApi(`/orga
 
 export type WorkspaceConfig = {
   mode: 'saas' | 'self_host';
+  edition?: 'community' | 'enterprise';
+  billing_surface?: 'hosted' | 'license' | 'none';
+  usage_analytics?: boolean;
   allows_multi_org: boolean;
   allows_create_org: boolean;
   default_org_name: string;

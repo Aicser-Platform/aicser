@@ -29,6 +29,9 @@ export type ChartSpec = {
   rows?: string[];
   columns?: string[];
   values?: string[];
+  filters?: string[];
+  filterValues?: Record<string, string[]>;
+  valueAggs?: Record<string, 'sum' | 'avg' | 'count' | 'min' | 'max' | 'none'>;
 };
 
 export type NotebookCell = {
@@ -56,7 +59,45 @@ export type NotebookSummary = {
   updated_at?: string | null;
 };
 
-export type Notebook = NotebookSummary & { cells: NotebookCell[] };
+export type NotebookParameterDef = {
+  name: string;
+  label?: string | null;
+  type: 'string' | 'number' | 'boolean' | 'date';
+  default?: unknown;
+  required?: boolean;
+};
+
+export type NotebookSettings = {
+  parameters: NotebookParameterDef[];
+  compute_profile: 'browser' | 'server';
+  git: {
+    remote_url?: string | null;
+    branch?: string;
+    last_export_at?: string | null;
+    last_commit_message?: string | null;
+    auto_export_on_save?: boolean;
+  };
+  visual_embeds?: {
+    id: string;
+    kind: 'chart' | 'image';
+    sheet_index: number;
+    row: number;
+    column: number;
+    width: number;
+    height: number;
+    payload: Record<string, unknown>;
+  }[];
+  certification: {
+    status: 'draft' | 'in_review' | 'approved' | 'rejected';
+    submitted_by?: string | null;
+    certified_by?: string | null;
+    certified_at?: string | null;
+    note?: string | null;
+    locks_edits?: boolean;
+  };
+};
+
+export type Notebook = NotebookSummary & { cells: NotebookCell[]; settings?: NotebookSettings };
 
 export type NotebookVersionSummary = {
   id: string;
@@ -95,10 +136,54 @@ export const notebookService = {
       `${base}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`),
   restoreVersion: (id: string, versionId: string) =>
     fetchApi<Notebook>(`${base}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' }),
-  saveDataset: (name: string, columns: string[], rows: unknown[][], projectId?: string | null) =>
+  saveDataset: (
+    name: string,
+    columns: string[],
+    rows: unknown[][],
+    projectId?: string | null,
+    opts?: { notebookId?: string; upstreamDataSourceIds?: string[] },
+  ) =>
     fetchApi<{ success: boolean; data_source?: { id: string; name: string } }>(`${base}/save-dataset`, {
       method: 'POST',
-      body: JSON.stringify({ name, columns, rows, project_id: projectId || undefined }),
+      body: JSON.stringify({
+        name,
+        columns,
+        rows,
+        project_id: projectId || undefined,
+        notebook_id: opts?.notebookId,
+        upstream_data_source_ids: opts?.upstreamDataSourceIds,
+      }),
+    }),
+  getSettings: (id: string) => fetchApi<{ settings: NotebookSettings }>(`${base}/${encodeURIComponent(id)}/settings`),
+  putSettings: (id: string, patch: Partial<NotebookSettings>) =>
+    fetchApi<{ settings: NotebookSettings }>(`${base}/${encodeURIComponent(id)}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
+  lintSecrets: (id: string) =>
+    fetchApi<{ findings: Array<{ cell_id?: string; kind: string; message: string }>; ok: boolean }>(
+      `${base}/${encodeURIComponent(id)}/lint-secrets`,
+      { method: 'POST' },
+    ),
+  audit: (id: string) => fetchApi<{ items: Array<{ id: string; action: string; created_at?: string; metadata?: Record<string, unknown> }> }>(
+    `${base}/${encodeURIComponent(id)}/audit`,
+  ),
+  gitExport: (id: string) =>
+    fetchApi<{ manifest: Record<string, unknown>; ipynb: Record<string, unknown> }>(
+      `${base}/${encodeURIComponent(id)}/git/export`,
+      { method: 'POST' },
+    ),
+  certifySubmit: (id: string) =>
+    fetchApi<{ settings: NotebookSettings }>(`${base}/${encodeURIComponent(id)}/certification/submit`, { method: 'POST' }),
+  certifyApprove: (id: string, body: { note?: string; lock_edits?: boolean }) =>
+    fetchApi<{ settings: NotebookSettings }>(`${base}/${encodeURIComponent(id)}/certification/approve`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  certifyReject: (id: string, body: { note?: string }) =>
+    fetchApi<{ settings: NotebookSettings }>(`${base}/${encodeURIComponent(id)}/certification/reject`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };
 

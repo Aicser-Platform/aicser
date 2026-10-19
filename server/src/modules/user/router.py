@@ -905,7 +905,7 @@ async def get_brand_config(
     """Get the user's brand configuration (colors, fonts, logo, PPTX template)."""
     user_id = _require_user_id(current_token)
     try:
-        from ee.modules.ai.services.brand_config_service import BrandConfig
+        from src.modules.ai.services.brand_config_service import BrandConfig
         org_id = None
         if isinstance(current_token, dict):
             org_id = current_token.get("organization_id") or current_token.get("org_id")
@@ -923,7 +923,7 @@ async def save_brand_config(
     """Save user brand configuration."""
     user_id = _require_user_id(current_token)
     try:
-        from ee.modules.ai.services.brand_config_service import save_brand_config as _save
+        from src.modules.ai.services.brand_config_service import save_brand_config as _save
         await _save(user_id, body)
         return {"success": True, "message": "Brand configuration saved."}
     except Exception as e:

@@ -64,6 +64,8 @@ const AICSER: Array<[string, string, string]> = [
   ['table', 'aicser.table("schema.table", source="…")', 'table(${1:"schema.table"}, source=${2:"source"})'],
   ['sql', 'aicser.sql("SELECT …", source="…")', 'sql(${1:"SELECT "}, source=${2:"source"})'],
   ['sources', 'the data sources you can load from', 'sources()'],
+  ['inspect', 'profile a table for modeling (column kinds, target stats)', 'inspect(${1:"schema.table"}, target=${2:"label"}, source=${3:"source"})'],
+  ['create_model', 'train a guided model on a feature table', 'create_model(${1:"name"}, table=${2:"schema.table"}, target=${3:"label"}, features=${4:[]}, source=${5:"source"})'],
   ['models', 'prediction and forecast models you can use', 'models()'],
   ['predict', 'aicser.predict("model", df) · adds its prediction', 'predict(${1:"model"}, ${2:df})'],
   ['forecast', 'aicser.forecast(df, time=…, value=…) or a forecast model', 'forecast(${1:df}, time=${2:"date"}, value=${3:"value"}, periods=${4:12})'],

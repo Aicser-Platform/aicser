@@ -1,5 +1,9 @@
 import React, { useEffect } from 'react';
-import { Card, Form, Button, message, Divider, Typography } from 'antd';
+import { Card, Form, Button, message, Divider, Typography, Alert } from 'antd';
+import { useRouter } from 'next/navigation';
+import { isEnterpriseEdition } from '@/utils/appPaths';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
 import { SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -10,6 +14,9 @@ const { Title, Text } = Typography;
 
 export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings');
+  const router = useRouter();
+  const { hasPermission } = usePermissions();
+  const showOutboundHint = isEnterpriseEdition() && hasPermission(Permission.ORG_EDIT);
   const [form] = Form.useForm();
   const { notificationSettings, loading, updateNotificationSettings } = useSettingsStore();
 
@@ -55,6 +62,25 @@ export const NotificationsTab: React.FC<TabComponentProps> = ({ onSetAction }) =
       <NotificationForm form={form} onFinish={handleSubmit} />
 
       <Divider />
+
+      {showOutboundHint ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t('notifications_outbound_hint_title')}
+          description={t('notifications_outbound_hint_desc')}
+          action={
+            <Button
+              size="small"
+              type="link"
+              onClick={() => router.push('/settings?tab=integrations&section=outbound-email')}
+            >
+              {t('notifications_outbound_link')}
+            </Button>
+          }
+        />
+      ) : null}
 
       <Text type="secondary" style={{ fontSize: '12px' }}>
         {t('notifications_critical_note')}

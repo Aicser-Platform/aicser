@@ -101,12 +101,17 @@ cp .env.example .env
 # Community Edition: Postgres, Redis, server, and one client
 docker compose -f docker-compose.dev.ce.yml up
 
-# Enterprise Edition: the same core stack plus Keycloak
+# Enterprise Edition: live-reload dev (slow on WSL — webpack + volume mounts)
 make -C deploy dev-ee
+
+# Enterprise Edition: production-like images (faster day-to-day; rebuild on code change)
+# UI http://localhost:3001 · API http://localhost:8001 · copy deploy/.env.example → deploy/.env.ee
+make -C deploy ee
 ```
 
-Both editions use `http://localhost:3000` for the client and
-`http://localhost:8000` for the API. CE and EE use separate Compose projects,
+**Dev (`dev-ee`)** uses `http://localhost:3000` (client) and `http://localhost:8000` (API).
+**Built EE (`make ee`)** uses **3001** / **8001** and includes the ARQ **worker** by default.
+CE and EE use separate Compose projects,
 networks, and named volumes, so their dependency and Next.js caches do not
 overwrite each other.
 
@@ -120,6 +125,20 @@ docker compose -f docker-compose.dev.ce.yml down
 # Rebuild images only when dependencies or Dockerfiles change
 docker compose -f docker-compose.dev.ce.yml build
 make -C deploy dev-ee-build
+```
+
+If **`make ee` fails mid-build** (WSL memory, pip timeouts, or Next OOM):
+
+```bash
+# Build one service at a time (recommended on 8–16 GB RAM)
+make -C deploy ee-serial
+
+# Or stepwise: server image (API + ARQ worker), then client
+make -C deploy ee-build-server
+make -C deploy ee-client-light   # lower Next.js memory during build
+make -C deploy ee-up             # start without rebuilding
+
+# Give Docker Desktop / WSL ≥ 8 GB RAM; server pip layer is ~5 GB with CPU torch (not CUDA).
 ```
 
 Optional services stay stopped during normal development:

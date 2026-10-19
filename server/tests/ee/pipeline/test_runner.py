@@ -211,6 +211,10 @@ async def test_multi_sheet_run_executes_each_sheet_independently_and_survives_on
     with patch(
         "src.modules.pipeline.stages.build_stages",
         lambda view: [OneStage()],
+    ), patch(
+        # Storage settings aren't what these tests are about.
+        "src.modules.pipeline.lakehouse_settings.get_org_lakehouse_settings",
+        new=AsyncMock(return_value={}),
     ):
         status = await run_pipeline_job(session, uuid.uuid4())
 
@@ -284,6 +288,9 @@ async def test_multi_sheet_run_resume_skips_already_succeeded_sheets():
     with patch(
         "src.modules.pipeline.stages.build_stages",
         lambda view: [TrackingStage()],
+    ), patch(
+        "src.modules.pipeline.lakehouse_settings.get_org_lakehouse_settings",
+        new=AsyncMock(return_value={}),
     ):
         status = await run_pipeline_job(session, uuid.uuid4())
 

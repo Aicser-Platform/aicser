@@ -45,6 +45,7 @@ import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
 import { useHeaderStore } from '@/stores/useHeaderStore';
 import { useConversationStore } from '@/stores/useConversationStore';
 import { useRouter } from 'next/navigation';
+import { getChatHref } from '@/utils/appPaths';
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
 );
@@ -278,7 +279,7 @@ export const LayoutHeader: React.FC<Props> = ({
           title: t('new_conversation'),
         } as any);
         if (conversation) {
-          router.push('/chat');
+          router.push(getChatHref());
         }
       }
     } catch (error: any) {

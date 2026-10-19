@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   App,
   Modal,
@@ -54,6 +53,7 @@ import {
   missingWarehouseFields,
   warehouseRequest,
 } from './WarehouseConnectionFields';
+import { s3ProviderPreset, s3ProviderSelectOptions } from '@/constants/s3CompatibleProviders';
 const { Option } = Select;
 const { Panel } = Collapse;
 const { Title, Text } = Typography;
@@ -74,11 +74,66 @@ function parseGoogleSheetUrl(url: string): { sheetId: string | null; gid: string
   };
 }
 
+function s3InteropStorageUri(uri: string, provider: string): boolean {
+  const u = (uri || '').trim();
+  const p = (provider || 'aws').toLowerCase();
+  if (u.startsWith('s3://')) return true;
+  if (p === 'azure' && (u.startsWith('azure://') || u.startsWith('abfss://'))) return true;
+  if (p === 'gcp' && (u.startsWith('gs://') || u.startsWith('gcs://'))) return true;
+  return false;
+}
+
+function hasS3CompatibleCredentials(
+  selectedDatabaseType: string,
+  connectionConfig: ConnectionConfig,
+): boolean {
+  if (selectedDatabaseType === 's3_parquet') {
+    const provider = connectionConfig.storageProvider || 'aws';
+    return Boolean(
+      connectionConfig.accessKey &&
+        connectionConfig.secretKey &&
+        s3InteropStorageUri(connectionConfig.storageUri || '', provider),
+    );
+  }
+  if (selectedDatabaseType === 'azure_blob') {
+    const uri = connectionConfig.storageUri || '';
+    return Boolean(
+      connectionConfig.accessKey &&
+        connectionConfig.secretKey &&
+        (uri.startsWith('azure://') || uri.startsWith('abfss://')),
+    );
+  }
+  if (selectedDatabaseType === 'gcp_cloud_storage') {
+    const uri = connectionConfig.storageUri || '';
+    return Boolean(
+      connectionConfig.accessKey &&
+        connectionConfig.secretKey &&
+        (uri.startsWith('gs://') || uri.startsWith('gcs://')),
+    );
+  }
+  if (connectionConfig.storageUri?.startsWith('s3://')) {
+    return Boolean(connectionConfig.accessKey && connectionConfig.secretKey);
+  }
+  return false;
+}
+
 interface UniversalDataSourceModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDataSourceCreated: (dataSource: any) => void;
-  initialDataSourceType?: 'file' | 'database' | 'warehouse' | 'api' | 'knowledge_base' | 'sample_duckdb' | '';
+  initialDataSourceType?:
+    | 'file'
+    | 'database'
+    | 'warehouse'
+    | 'api'
+    | 'knowledge_base'
+    | 'sample_duckdb'
+    | 'google_sheets'
+    | '';
+  /** When set with warehouse type, opens directly on the S3 / lake connection form. */
+  initialDatabaseType?: string;
+  /** pipeline_lake: S3 bucket for medallion pipelines; pipeline_export: Gold export destination DB. */
+  connectionPurpose?: 'pipeline_lake' | 'pipeline_export';
   isChatIntegration?: boolean;
   /** When set, modal opens in edit mode: form pre-filled and save calls PUT to update */
   existingDataSource?: {
@@ -102,6 +157,8 @@ const normalizeInitialDataSourceType = (
   type: UniversalDataSourceModalProps['initialDataSourceType'],
 ): DataSourceConfig['type'] => {
   if (!type || (!IS_EE && hiddenDataSourceTypes.has(type))) return 'file';
+  // A Google Sheet is a file source here, with the Google Sheet option chosen.
+  if (type === 'google_sheets') return 'file';
   return type;
 };
 
@@ -138,6 +195,8 @@ interface ConnectionConfig {
 
   // Cloud storage and data lake fields
   storageUri?: string;
+  /** S3-compatible vendor when db type is s3_parquet (aws, azure, gcp, minio, …). */
+  storageProvider?: string;
   accessKey?: string;
   secretKey?: string;
   region?: string;
@@ -169,12 +228,13 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   onClose,
   onDataSourceCreated,
   initialDataSourceType = 'file',
+  initialDatabaseType,
+  connectionPurpose,
   isChatIntegration = false,
   existingDataSource = null,
 }) => {
   const t = useTranslations('data_source_modal');
   const { message } = App.useApp();
-  const router = useRouter();
   const screens = useBreakpoint();
   const isCompactViewport = !screens.md;
   const authenticatedFetch = useAuthenticatedFetch();
@@ -220,6 +280,14 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   };
 
   // Connection configuration
+  const [lakeAuthMode, setLakeAuthMode] = useState<'native' | 's3_interop'>('s3_interop');
+
+  useEffect(() => {
+    if (isOpen && connectionPurpose === 'pipeline_lake') {
+      setLakeAuthMode('s3_interop');
+    }
+  }, [isOpen, connectionPurpose]);
+
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({
     host: '',
     port: 5432,
@@ -234,6 +302,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     trustServerCertificate: true,
     // Cloud storage fields
     storageUri: '',
+    storageProvider: 'aws',
     accessKey: '',
     secretKey: '',
     region: 'us-east-1',
@@ -266,6 +335,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
   // Google Sheets (when fileSourceKind === 'google_sheet'): URL and optional GID
   const [googleSheetUrl, setGoogleSheetUrl] = useState<string>('');
   const [googleSheetGid, setGoogleSheetGid] = useState<string>('');
+  const [googleServiceAccountJson, setGoogleServiceAccountJson] = useState<string>('');
   const SAMPLE_DOMAINS = [
     { value: 'banking', label: t('sample_domain_banking') },
     { value: 'education', label: t('sample_domain_education') },
@@ -819,17 +889,26 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
         setTestResult(null);
         setUploadedFile(null);
       } else {
-        setCurrentStep(0);
+        const normalizedType = normalizeInitialDataSourceType(initialDataSourceType);
         setDataSourceConfig({
           name: '',
-          type: normalizeInitialDataSourceType(initialDataSourceType),
+          type: normalizedType,
           description: '',
         });
+        setFileSourceKind(initialDataSourceType === 'google_sheets' ? 'google_sheet' : 'upload');
+        if (initialDatabaseType && normalizedType === 'warehouse') {
+          setSelectedDatabaseType(initialDatabaseType);
+          setCurrentStep(1);
+        } else if (initialDataSourceType === 'google_sheets') {
+          setCurrentStep(1);
+        } else {
+          setCurrentStep(0);
+        }
         setTestResult(null);
         setUploadedFile(null);
       }
     }
-  }, [isOpen, initialDataSourceType, existingDataSource?.id]);
+  }, [isOpen, initialDataSourceType, initialDatabaseType, existingDataSource?.id]);
 
   // Update port when database type changes (skip when editing so we keep pre-filled port)
   useEffect(() => {
@@ -898,23 +977,22 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
     }
 
     // Auto-preview the file
-    // Small delay to ensure state is updated
-    setTimeout(() => {
-      handlePreviewFile();
-    }, 100);
+    // Immediate preview with the selected file handle (avoids async state closure bug)
+    handlePreviewFile(file, true);
 
     return false; // Prevent auto upload
   };
 
-  const handlePreviewFile = async (skipSave: boolean = true) => {
-    if (!uploadedFile) return;
+  const handlePreviewFile = async (fileToPreview?: File, skipSave: boolean = true) => {
+    const targetFile = fileToPreview || uploadedFile;
+    if (!targetFile) return;
 
     setLoading(true);
     try {
       // Create a preview request to get file structure
       // Note: This uploads the file but we can skip saving to data sources if skipSave is true
       const formData = new FormData();
-      formData.append('file', uploadedFile);
+      formData.append('file', targetFile);
       if (currentProject?.id) formData.append('project_id', currentProject.id.toString());
       formData.append('include_preview', 'true');
       if (delimiter) formData.append('delimiter', delimiter);
@@ -935,19 +1013,24 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
             if (response.ok) {
                 const result = await response.json();
-                if (result.data_source?.preview_data) {
-                    setFilePreview(result.data_source.preview_data);
+                const ds = result.data_source || {};
+                const previewRows = ds.preview_data || ds.preview || result.preview || result.data || [];
+                if (previewRows && previewRows.length > 0) {
+                    setFilePreview(previewRows);
                     setShowHeaderAssist(false);
                     // Extract sheet names if available
-                    if (result.data_source.sheets) {
-                        setAvailableSheets(result.data_source.sheets);
-                        if (result.data_source.sheets.length > 0 && !selectedSheet) {
-                            setSelectedSheet(result.data_source.sheets[0]);
+                    const sheets =
+                      ds.sheets ||
+                      (ds.schema?.all_sheets ? Object.keys(ds.schema.all_sheets) : []) ||
+                      (ds.schema?.tables ? ds.schema.tables.map((t: any) => t.name).filter(Boolean) : []);
+                    if (sheets && sheets.length > 0) {
+                        setAvailableSheets(sheets);
+                        if (!selectedSheet) {
+                            setSelectedSheet(sheets[0]);
                         }
                     }
                     setTestResult({ success: true, message: t('preview_loaded_successfully') });
                 } else if (result.success) {
-                    // If no preview_data but success, try to extract from data_source
                     setTestResult({ success: true, message: t('file_processed_successfully') });
                 }
             } else {
@@ -1232,8 +1315,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           return;
         }
 
-        const hasS3Creds =
-          connectionConfig.storageUri.startsWith('s3://') && connectionConfig.accessKey && connectionConfig.secretKey;
+        const hasS3Creds = hasS3CompatibleCredentials(selectedDatabaseType, connectionConfig);
         const hasAzureCreds =
           connectionConfig.storageUri.startsWith('azure://') &&
           connectionConfig.accountName &&
@@ -1259,9 +1341,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             format_type: formatType,
             storage_uri: connectionConfig.storageUri.trim(),
             credentials: {
+              ...(connectionConfig.storageProvider && { provider: connectionConfig.storageProvider }),
               ...(connectionConfig.accessKey && { access_key: connectionConfig.accessKey }),
               ...(connectionConfig.secretKey && { secret_key: connectionConfig.secretKey }),
               ...(connectionConfig.region && { region: connectionConfig.region }),
+              ...(connectionConfig.endpoint && { endpoint: connectionConfig.endpoint }),
               ...(connectionConfig.accountName && { account_name: connectionConfig.accountName }),
               ...(connectionConfig.accountKey && { account_key: connectionConfig.accountKey }),
               ...(connectionConfig.sasToken && { sas_token: connectionConfig.sasToken }),
@@ -1269,6 +1353,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             ...(connectionConfig.version && { version: connectionConfig.version }),
             ...(connectionConfig.timestamp && { timestamp: connectionConfig.timestamp }),
             ...(connectionConfig.snapshotId && { snapshot_id: connectionConfig.snapshotId }),
+            ...(connectionPurpose === 'pipeline_lake' && { purpose: 'pipeline_lake' }),
           };
 
           const result = await fetchApi('/api/data/delta-iceberg/test', {
@@ -1492,7 +1577,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           const connectionConfigSheets = {
             sheet_url: sheetUrl,
             ...(googleSheetGid?.trim() ? { gid: googleSheetGid.trim() } : {}),
+            ...(connectionPurpose === 'pipeline_export' && googleServiceAccountJson.trim()
+              ? { service_account_json: googleServiceAccountJson.trim() }
+              : {}),
           };
+          if (connectionPurpose === 'pipeline_export' && !googleServiceAccountJson.trim()) {
+            message.error(t('google_export_sa_required'));
+            setLoading(false);
+            return;
+          }
           if (!existingDataSource?.id && !currentProject?.id) {
             message.error(t('err_select_project'));
             setLoading(false);
@@ -1634,10 +1727,6 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             onClose();
             message.success(t('file_uploaded_saved'));
             setLoading(false);
-            const onboardingSessionId = dataSource?.schema?.storage?.onboarding?.onboarding_session_id;
-            if (onboardingSessionId) {
-              router.push(`/data/onboarding/${onboardingSessionId}`);
-            }
             return;
           } else {
             const errorMessage = result.error || result.detail || 'Failed to upload file';
@@ -1899,6 +1988,15 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
         // Handle data lake types (Delta/Iceberg) and cloud storage (S3/Azure/GCP) FIRST
         if (['delta_lake', 'iceberg', 's3_parquet', 'azure_blob', 'gcp_cloud_storage'].includes(selectedDatabaseType)) {
+          if (
+            connectionPurpose === 'pipeline_lake' &&
+            ['azure_blob', 'gcp_cloud_storage'].includes(selectedDatabaseType) &&
+            lakeAuthMode === 'native'
+          ) {
+            setTestResult({ success: false, error: t('pipeline_lake_requires_s3_interop') });
+            message.error(t('pipeline_lake_requires_s3_interop'));
+            return;
+          }
           // Validate cloud storage fields
           if (!connectionConfig.storageUri || connectionConfig.storageUri.trim() === '') {
             setTestResult({ success: false, error: t('storage_uri_required') });
@@ -1906,18 +2004,28 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             return;
           }
 
-          const hasS3Creds =
-            connectionConfig.storageUri.startsWith('s3://') && connectionConfig.accessKey && connectionConfig.secretKey;
+          const hasS3Creds = hasS3CompatibleCredentials(selectedDatabaseType, connectionConfig);
           const hasAzureCreds =
             (connectionConfig.storageUri.startsWith('azure://') ||
               connectionConfig.storageUri.startsWith('abfss://')) &&
             connectionConfig.accountName &&
             (connectionConfig.accountKey || connectionConfig.sasToken);
+          const hasAzureInterop =
+            selectedDatabaseType === 'azure_blob' &&
+            connectionConfig.accessKey &&
+            connectionConfig.secretKey &&
+            (connectionConfig.storageUri.startsWith('azure://') ||
+              connectionConfig.storageUri.startsWith('abfss://'));
           const hasGCPCreds =
             (connectionConfig.storageUri.startsWith('gcs://') || connectionConfig.storageUri.startsWith('gs://')) &&
             connectionConfig.gcpCredentials;
+          const hasGcpInterop =
+            selectedDatabaseType === 'gcp_cloud_storage' &&
+            connectionConfig.accessKey &&
+            connectionConfig.secretKey &&
+            (connectionConfig.storageUri.startsWith('gcs://') || connectionConfig.storageUri.startsWith('gs://'));
 
-          if (!hasS3Creds && !hasAzureCreds && !hasGCPCreds) {
+          if (!hasS3Creds && !hasAzureCreds && !hasAzureInterop && !hasGCPCreds && !hasGcpInterop) {
             setTestResult({
               success: false,
               error: t('cloud_credentials_required'),
@@ -1958,6 +2066,11 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                       : 'gcp_cloud_storage',
             storage_uri: connectionConfig.storageUri.trim(),
             credentials: {
+              ...(connectionConfig.storageProvider && { provider: connectionConfig.storageProvider }),
+              ...(selectedDatabaseType === 'azure_blob' &&
+                connectionConfig.accessKey && { provider: 'azure' }),
+              ...(selectedDatabaseType === 'gcp_cloud_storage' &&
+                connectionConfig.accessKey && { provider: 'gcp' }),
               ...(connectionConfig.accessKey && { access_key: connectionConfig.accessKey }),
               ...(connectionConfig.secretKey && { secret_key: connectionConfig.secretKey }),
               ...(connectionConfig.region && { region: connectionConfig.region }),
@@ -1973,6 +2086,9 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             ...(connectionConfig.version && { version: connectionConfig.version }),
             ...(connectionConfig.timestamp && { timestamp: connectionConfig.timestamp }),
             ...(connectionConfig.snapshotId && { snapshot_id: connectionConfig.snapshotId }),
+            // A pipeline lake bucket starts empty: the server checks it can write there instead
+            // of reading tables that don't exist yet.
+            ...(connectionPurpose === 'pipeline_lake' && { purpose: 'pipeline_lake' }),
           };
         } else {
           // Regular database / NoSQL / warehouse connection
@@ -2314,6 +2430,23 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                 />
               </Form.Item>
             </Col>
+            {connectionPurpose === 'pipeline_export' && (
+              <Col span={24}>
+                <Form.Item
+                  label={t('google_export_sa_label')}
+                  required
+                  help={t('google_export_sa_help')}
+                >
+                  <Input.TextArea
+                    rows={5}
+                    value={googleServiceAccountJson}
+                    onChange={(e) => setGoogleServiceAccountJson(e.target.value)}
+                    placeholder='{"type": "service_account", "project_id": "...", ...}'
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
+                </Form.Item>
+              </Col>
+            )}
           </Row>
           </div>
         </div>
@@ -2454,7 +2587,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                     }
                   }}
                 />
-                <Button onClick={() => handlePreviewFile(true)} loading={loading}>
+                <Button onClick={() => handlePreviewFile(undefined, true)} loading={loading}>
                   {t('retry_preview')}
                 </Button>
               </Space>
@@ -2465,7 +2598,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
       {uploadedFile && (
         <Form.Item>
-          <Button onClick={() => handlePreviewFile(true)} loading={loading}>
+          <Button onClick={() => handlePreviewFile(undefined, true)} loading={loading}>
             {t('refresh_preview')}
           </Button>
         </Form.Item>
@@ -3145,7 +3278,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             : isIceberg
               ? 'Apache Iceberg Configuration'
               : isS3
-                ? 'Amazon S3 Configuration'
+                ? t('title_s3_compatible_config')
                 : isAzure
                   ? 'Azure Blob Storage Configuration'
                   : isGCP
@@ -3183,6 +3316,7 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
                       maxConnections: 10,
                       connectionTimeout: 30,
                       storageUri: '',
+                      storageProvider: 'aws',
                       accessKey: '',
                       secretKey: '',
                       region: 'us-east-1',
@@ -3296,6 +3430,68 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
           {isS3 && (
             <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={t('alert_cloud_provider_title')}
+                description={
+                  connectionPurpose === 'pipeline_lake'
+                    ? t('desc_pipeline_lake_s3_interop')
+                    : t('desc_cloud_provider_credentials')
+                }
+              />
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item label={t('label_cloud_provider')} required>
+                    <Select
+                      value={connectionConfig.storageProvider || 'aws'}
+                      onChange={(value) => {
+                        const preset = s3ProviderPreset(value);
+                        setConnectionConfig((prev) => {
+                          let storageUri = prev.storageUri || '';
+                          if (value === 'azure' && !storageUri.startsWith('azure://') && !storageUri.startsWith('abfss://')) {
+                            storageUri = 'azure://';
+                          } else if (
+                            value === 'gcp' &&
+                            !storageUri.startsWith('gs://') &&
+                            !storageUri.startsWith('gcs://')
+                          ) {
+                            storageUri = 'gs://';
+                          } else if (value === 'aws' && storageUri && !storageUri.startsWith('s3://')) {
+                            storageUri = 's3://';
+                          } else if (!storageUri && value === 'aws') {
+                            storageUri = 's3://';
+                          }
+                          return {
+                            ...prev,
+                            storageProvider: value,
+                            storageUri,
+                            region: preset?.defaultRegion ?? prev.region,
+                            endpoint: preset?.defaultEndpoint ?? prev.endpoint ?? '',
+                          };
+                        });
+                      }}
+                      options={s3ProviderSelectOptions()}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label={t('label_endpoint_url_optional')}
+                    help={s3ProviderPreset(connectionConfig.storageProvider)?.help}
+                  >
+                    <Input
+                      value={connectionConfig.endpoint || ''}
+                      onChange={(e) => setConnectionConfig((prev) => ({ ...prev, endpoint: e.target.value }))}
+                      placeholder={
+                        s3ProviderPreset(connectionConfig.storageProvider)?.endpointPlaceholder ??
+                        'https://s3.amazonaws.com'
+                      }
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Row gutter={16}>
                 <Col span={12}>
                   <Form.Item label={t('label_access_key_id')} required>
@@ -3332,74 +3528,197 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
 
           {isAzure && (
             <>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label={t('label_storage_account_name')} required>
-                    <Input
-                      value={connectionConfig.accountName || ''}
-                      onChange={(e) => setConnectionConfig((prev) => ({ ...prev, accountName: e.target.value }))}
-                      placeholder={t('ph_storage_account')}
-                    />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label={t('label_account_key_or_sas')} required>
-                    <Input.Password
-                      value={connectionConfig.accountKey || connectionConfig.sasToken || ''}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        // Auto-detect if it's a SAS token (starts with ?)
-                        if (value.startsWith('?')) {
-                          setConnectionConfig((prev) => ({ ...prev, sasToken: value, accountKey: '' }));
-                        } else {
-                          setConnectionConfig((prev) => ({ ...prev, accountKey: value, sasToken: '' }));
-                        }
-                      }}
-                      placeholder={t('ph_account_key_or_sas')}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {connectionPurpose === 'pipeline_lake' && (
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item label={t('lake_auth_mode_label')}>
+                      <Radio.Group
+                        value={lakeAuthMode}
+                        onChange={(e) => setLakeAuthMode(e.target.value)}
+                      >
+                        <Radio value="s3_interop">{t('lake_auth_s3_interop')}</Radio>
+                        <Radio value="native">{t('lake_auth_native')}</Radio>
+                      </Radio.Group>
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+              {connectionPurpose === 'pipeline_lake' && lakeAuthMode === 's3_interop' ? (
+                <>
+                  <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('desc_pipeline_lake_s3_interop')} />
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label={t('label_storage_account_name')}>
+                        <Input
+                          value={connectionConfig.accountName || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, accountName: e.target.value }))}
+                          placeholder={t('ph_storage_account')}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label={t('label_endpoint_url_optional')}>
+                        <Input
+                          value={connectionConfig.endpoint || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, endpoint: e.target.value }))}
+                          placeholder="https://<account>.blob.core.windows.net"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label={t('label_access_key_id')} required>
+                        <Input
+                          value={connectionConfig.accessKey || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, accessKey: e.target.value }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label={t('label_secret_access_key')} required>
+                        <Input.Password
+                          value={connectionConfig.secretKey || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, secretKey: e.target.value }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item label={t('label_storage_account_name')} required>
+                      <Input
+                        value={connectionConfig.accountName || ''}
+                        onChange={(e) => setConnectionConfig((prev) => ({ ...prev, accountName: e.target.value }))}
+                        placeholder={t('ph_storage_account')}
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item label={t('label_account_key_or_sas')} required>
+                      <Input.Password
+                        value={connectionConfig.accountKey || connectionConfig.sasToken || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value.startsWith('?')) {
+                            setConnectionConfig((prev) => ({ ...prev, sasToken: value, accountKey: '' }));
+                          } else {
+                            setConnectionConfig((prev) => ({ ...prev, accountKey: value, sasToken: '' }));
+                          }
+                        }}
+                        placeholder={t('ph_account_key_or_sas')}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
             </>
           )}
 
           {isGCP && (
             <>
-              <Alert
-                message={t('alert_gcp_auth_title')}
-                description={t('desc_gcp_service_account')}
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-              />
-              <Row gutter={16}>
-                <Col span={24}>
-                  <Form.Item
-                    label={t('label_service_account_json_key')}
-                    required
-                    help={t('gcp_json_help')}
-                  >
-                    <Input.TextArea
-                      rows={6}
-                      value={connectionConfig.gcpCredentials || ''}
-                      onChange={(e) => setConnectionConfig((prev) => ({ ...prev, gcpCredentials: e.target.value }))}
-                      placeholder='{"type": "service_account", "project_id": "...", "private_key_id": "...", ...}'
-                      style={{ fontFamily: 'monospace', fontSize: '12px' }}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item label={t('label_project_id_optional')}>
-                    <Input
-                      value={connectionConfig.gcpProjectId || ''}
-                      onChange={(e) => setConnectionConfig((prev) => ({ ...prev, gcpProjectId: e.target.value }))}
-                      placeholder={t('ph_my_gcp_project')}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
+              {connectionPurpose === 'pipeline_lake' && (
+                <Row gutter={16}>
+                  <Col span={24}>
+                    <Form.Item label={t('lake_auth_mode_label')}>
+                      <Radio.Group
+                        value={lakeAuthMode}
+                        onChange={(e) => setLakeAuthMode(e.target.value)}
+                      >
+                        <Radio value="s3_interop">{t('lake_auth_s3_interop')}</Radio>
+                        <Radio value="native">{t('lake_auth_native')}</Radio>
+                      </Radio.Group>
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+              {connectionPurpose === 'pipeline_lake' && lakeAuthMode === 's3_interop' ? (
+                <>
+                  <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('desc_pipeline_lake_s3_interop')} />
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label={t('label_access_key_id')} required help={t('gcp_hmac_help')}>
+                        <Input
+                          value={connectionConfig.accessKey || ''}
+                          onChange={(e) =>
+                            setConnectionConfig((prev) => ({
+                              ...prev,
+                              accessKey: e.target.value,
+                              storageProvider: 'gcp',
+                            }))
+                          }
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label={t('label_secret_access_key')} required>
+                        <Input.Password
+                          value={connectionConfig.secretKey || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, secretKey: e.target.value }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label={t('label_endpoint_url_optional')}>
+                        <Input
+                          value={connectionConfig.endpoint || 'https://storage.googleapis.com'}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, endpoint: e.target.value }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label={t('label_region')} required>
+                        <Input
+                          value={connectionConfig.region || 'auto'}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, region: e.target.value }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <>
+                  <Alert
+                    message={t('alert_gcp_auth_title')}
+                    description={t('desc_gcp_service_account')}
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Row gutter={16}>
+                    <Col span={24}>
+                      <Form.Item
+                        label={t('label_service_account_json_key')}
+                        required
+                        help={t('gcp_json_help')}
+                      >
+                        <Input.TextArea
+                          rows={6}
+                          value={connectionConfig.gcpCredentials || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, gcpCredentials: e.target.value }))}
+                          placeholder='{"type": "service_account", "project_id": "...", "private_key_id": "...", ...}'
+                          style={{ fontFamily: 'monospace', fontSize: '12px' }}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label={t('label_project_id_optional')}>
+                        <Input
+                          value={connectionConfig.gcpProjectId || ''}
+                          onChange={(e) => setConnectionConfig((prev) => ({ ...prev, gcpProjectId: e.target.value }))}
+                          placeholder={t('ph_my_gcp_project')}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              )}
             </>
           )}
 
@@ -4025,12 +4344,17 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
             </>
           );
         } else if (dataSourceConfig.type === 'warehouse') {
+          const pipelineContextBanner =
+            connectionPurpose === 'pipeline_lake' ? (
+              <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('pipeline_lake_banner')} />
+            ) : null;
           // Check if it's a data lake or cloud storage type (Delta/Iceberg/S3/Azure/GCP)
           if (
             ['delta_lake', 'iceberg', 's3_parquet', 'azure_blob', 'gcp_cloud_storage'].includes(selectedDatabaseType)
           ) {
             return (
               <>
+                {pipelineContextBanner}
                 {renderCloudStorageConfiguration()}
                 {renderTestAndSave()}
               </>
@@ -4041,16 +4365,27 @@ const UniversalDataSourceModal: React.FC<UniversalDataSourceModalProps> = ({
           }
           return (
             <>
+              {pipelineContextBanner}
               {renderDatabaseConfiguration()}
               {renderTestAndSave()}
             </>
           );
         } else {
+          const pipelineExportBanner =
+            connectionPurpose === 'pipeline_export' ? (
+              <Alert type="info" showIcon style={{ marginBottom: 16 }} message={t('pipeline_export_banner')} />
+            ) : null;
           if (databaseTypes.find((db) => db.value === selectedDatabaseType)?.isEnterpriseConnector) {
-            return renderEnterpriseConnectorForm();
+            return (
+              <>
+                {pipelineExportBanner}
+                {renderEnterpriseConnectorForm()}
+              </>
+            );
           }
           return (
             <>
+              {pipelineExportBanner}
               {renderDatabaseConfiguration()}
               {renderTestAndSave()}
             </>

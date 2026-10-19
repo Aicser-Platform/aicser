@@ -250,7 +250,10 @@ export function useDataSources() {
       setSchemaLoading(true);
       try {
         const res = await api.getDataSourceSchema(id);
-        setSchemaCache(id, res.schema);
+        setSchemaCache(id, {
+          ...res.schema,
+          served_from: res.served_from ?? res.schema?.served_from,
+        });
       } finally {
         setSchemaLoading(false);
       }

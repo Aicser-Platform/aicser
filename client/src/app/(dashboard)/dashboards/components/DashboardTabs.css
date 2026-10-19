@@ -500,3 +500,19 @@
     width: 100%;
   }
 }
+
+/* The board's name keeps room to be read: the actions give way (they wrap) before the title does. */
+.dashboard-studio-toolbar .toolbar-left {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.dashboard-studio-toolbar .toolbar-right {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.dashboard-studio-toolbar .toolbar-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

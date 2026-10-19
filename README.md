@@ -4,7 +4,7 @@ Aicser (AI Data Scientist) is an open-source data analytics and visualization pl
 
 **Community Edition (CE)** is a SQL-first analytics studio: data connections, query editor, chart designer, dashboards, knowledge search, and social feed.
 
-**Enterprise Edition (EE)** adds conversational analytics: ask questions in natural language via the AI Engine (`/chat`), AI orchestration, RBAC, billing, alerts, and the data platform services. Natural-language Q&A requires EE for business team and non-techncial users but CE still include AI Text-to-SQL with a natural-language prompting for ease of analysts and developers. 
+**Enterprise Edition (EE)** adds conversational analytics: ask questions in natural language via the AI Engine (`/chat`), AI orchestration, RBAC, billing, alerts, and the data platform services. Natural-language Q&A for business teams is an Enterprise feature. Community Edition still includes text-to-SQL when you bring your own model provider key, so analysts and developers can prompt in natural language. 
 
 ## Repository layout
 
@@ -19,14 +19,14 @@ The public monorepo ships the Community Edition. Enterprise features live in pri
 
 ## CE vs EE
 
-**Community Edition** includes dashboards, chart designer, data connections, SQL query editor, knowledge bases (document upload and search), notifications, feed, and user management. It also include NL-to-SQL with your own AI Provider's API key.
+**Community Edition** includes dashboards, the chart designer, data connections, the SQL query editor, knowledge bases (document upload and search), notifications, the feed, and user management. It also includes text-to-SQL with your own AI provider key.
 
 **Enterprise Edition** adds multi-tenancy, RBAC custom roles, billing, alerts (with agent investigate flow), scheduled AI briefings, collaboration social analytic feed, Telegram bots, embed SDK, AI chat, audit logs, and other paid enterprise features. 
 
 Edition is controlled by environment variables:
 
 ```bash
-AISER_EDITION=community              # or enterpirse (default)
+AISER_EDITION=community              # community (default) or enterprise
 AISER_EDITION_LICENSE_KEY=<key>       # presence also enables EE
 NEXT_PUBLIC_EDITION=enterprise        # frontend edition flag
 ```

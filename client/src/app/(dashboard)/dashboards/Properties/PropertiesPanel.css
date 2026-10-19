@@ -1,18 +1,20 @@
 .properties-panel {
   /* Docked like the left Dashboards panel — pushes canvas, never overlays widgets.
-     Cols stay at 12 so opening only narrows column pixels, never remaps x/w. */
+     Cols stay at 12 so opening only narrows column pixels, never remaps x/w.
+     Shared with /chart-designer via dashboard-studio-tokens (--studio-*). */
   position: relative;
   z-index: 20;
-  width: 320px;
-  min-width: 320px;
-  max-width: 320px;
+  width: var(--studio-properties-panel-width, 320px);
+  min-width: var(--studio-properties-panel-width, 320px);
+  max-width: var(--studio-properties-panel-width, 320px);
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--ant-color-bg-container);
-  border-left: 1px solid var(--ant-color-border);
+  background: var(--studio-card-bg, var(--ant-color-bg-container));
+  border-left: 1px solid var(--studio-border, var(--ant-color-border));
   overflow: hidden;
   flex-shrink: 0;
+  box-sizing: border-box;
   transition: width 0.28s ease, min-width 0.28s ease, max-width 0.28s ease, border-color 0.28s ease;
 }
 
@@ -27,10 +29,11 @@
 .properties-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 10px 10px 8px 16px;
-  border-bottom: 1px solid var(--ant-color-border);
+  border-bottom: 1px solid var(--studio-border, var(--ant-color-border));
+  background: var(--studio-card-bg, var(--ant-color-bg-container));
   flex-shrink: 0;
 }
 
@@ -112,7 +115,8 @@
 
 .properties-panel-footer {
   padding: 12px 16px;
-  border-top: 1px solid var(--ant-color-border);
+  border-top: 1px solid var(--studio-border, var(--ant-color-border));
+  background: var(--studio-card-bg, var(--ant-color-bg-container));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -897,3 +901,24 @@
 .pp-map-colors-arrow {
   color: var(--ant-color-text-tertiary);
 }
+
+/* Folded Properties: the shared rail, docked where the panel was. */
+.properties-panel-rail {
+  flex-shrink: 0;
+  margin: 8px;
+}
+
+/* Nothing selected: the board checklist */
+.pp-board { display: flex; flex-direction: column; gap: 8px; }
+.pp-board-summary { font-size: 12px; color: var(--ant-color-text-secondary); }
+.pp-board-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pp-board-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  padding: 6px 8px; border: 1px solid var(--ant-color-border-secondary); border-radius: 6px;
+  background: var(--ant-color-bg-container); color: var(--ant-color-text); font-size: 12px;
+  cursor: pointer; text-align: left;
+}
+.pp-board-item:hover, .pp-board-item:focus-visible { border-color: var(--ant-color-primary); }
+.pp-board-item-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-board-item-action { flex-shrink: 0; color: var(--ant-color-primary); }
+.pp-board-prompt { height: auto; padding: 16px 8px; }

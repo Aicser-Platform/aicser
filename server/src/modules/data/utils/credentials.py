@@ -53,6 +53,7 @@ def encrypt_credentials(config: Dict[str, Any]) -> Dict[str, Any]:
         "credentials_json", "service_account_json", "uri",
         # Object-storage keys as the S3/Azure/GCS connection form sends them (/data/delta-iceberg/connect).
         "access_key", "secret_key", "account_key", "sas_token", "service_account_key",
+        "service_account_json", "credentials_json",
     }
     out = dict(config)
     for k in list(out.keys()):
@@ -110,3 +111,12 @@ def decrypt_credentials(config: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+
+
+def encrypt_text(value: str) -> str:
+    """Encrypt one secret string (e.g. a webhook URL that carries its own token)."""
+    return _get_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_text(token: str) -> str:
+    return _get_fernet().decrypt(token.encode("utf-8")).decode("utf-8")

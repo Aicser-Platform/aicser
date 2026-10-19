@@ -9,6 +9,8 @@ Assemble the header Activity inbox for AISER:
   own bell icon, invisible from the header inbox everything else surfaces through.
 - **Comment**: new dashboard comments by others — on dashboards the user created, or in
   threads the user is part of.
+- **Activity** (data): failed pipeline runs and runs whose quality checks flagged them
+  (far fewer rows than usual), and cleaning recipes AI agents drafted for a person to review.
 - **Activity** (adoption): contextual setup nudges from real usage (data sources, chat, monitors,
   dashboards) — dismiss keys stored in user_settings alongside other preferences.
 """
@@ -274,7 +276,7 @@ async def credit_usage_notifications(db: AsyncSession, org_id: str) -> list[Noti
     try:
         from datetime import datetime, timezone
         from sqlalchemy import select, and_
-        from ee.modules.pricing.usage_tracker import _get_effective_plan_limits
+        from src.modules.pricing.usage_tracker import _get_effective_plan_limits
         from src.modules.billing.models import OrganizationUsage
 
         _plan_slug, limits = await _get_effective_plan_limits(org_id, db)
@@ -617,6 +619,100 @@ async def notebook_run_notifications(db: AsyncSession, user_id: str) -> list[Not
     return items
 
 
+_QUALITY_COPY = {
+    "no_rows": ("{name} brought no rows", "The last run wrote 0 rows; the run before wrote {previous}."),
+    "volume_drop": ("{name} brought far fewer rows", "{current} rows this run, {previous} last time."),
+}
+
+_BREACH_COPY = {
+    "missing_column": "column {column} is missing",
+    "type_changed": "{column} changed from {expected} to {actual}",
+    "too_few_rows": "{actual} rows, fewer than the {expected} promised",
+    "stale": "last refreshed {actual} hours ago (promised every {expected})",
+    "no_data": "there is no current version of the table",
+}
+
+
+def _contract_message(check: dict) -> str:
+    """'orders: column amount is missing; 12 rows, fewer than the 100 promised'."""
+    parts = [_BREACH_COPY.get(b.get("code"), "a promise is not met").format(**{"column": "?", "expected": "?", "actual": "?", **b})
+             for b in (check.get("breaches") or [])[:3]]
+    table = check.get("table") or "The table"
+    return f"{table}: " + "; ".join(parts) if parts else f"{table} no longer meets its contract."
+
+
+async def pipeline_run_notifications(db: AsyncSession, org_id: str) -> list[NotificationItem]:
+    """Failed pipeline runs and runs flagged by quality checks in the last week (Enterprise)."""
+    try:
+        async with db.begin_nested():
+            rows = (await db.execute(sa.text(
+                """
+                SELECT j.id, j.pipeline_id, j.status, j.error_message, j.finished_at,
+                       j.checkpoint -> 'quality' -> 'checks' AS checks, p.name
+                FROM data_ingestion_jobs j
+                JOIN data_pipelines p ON p.id = j.pipeline_id
+                WHERE CAST(p.organization_id AS text) = :org
+                  AND j.finished_at > now() - make_interval(days => 7)
+                  AND (j.status = 'failed' OR jsonb_array_length(COALESCE(j.checkpoint -> 'quality' -> 'checks', '[]'::jsonb)) > 0)
+                ORDER BY j.finished_at DESC
+                LIMIT 10
+                """
+            ), {"org": str(org_id)})).mappings().all()
+    except Exception as exc:
+        logger.debug("pipeline run notifications unavailable: %s", exc)
+        return []
+    items: list[NotificationItem] = []
+    for r in rows:
+        href = f"/pipelines/{r['pipeline_id']}"
+        name = r["name"] or "A pipeline"
+        if r["status"] == "failed":
+            title, message, severity = f"{name} failed", _truncate(r["error_message"], 160) or "Open the pipeline to see why.", "error"
+        else:
+            checks = r["checks"] or [{}]
+            # A broken contract outranks a volume change: something downstream relies on it.
+            check = next((c for c in checks if c.get("code") == "contract_breach"), checks[0])
+            if check.get("code") == "contract_breach":
+                title, message = f"{name} broke a data contract", _truncate(_contract_message(check), 160)
+                severity = "error" if check.get("on_breach") == "block" else "warning"
+            else:
+                title_t, message_t = _QUALITY_COPY.get(check.get("code"), ("{name} needs a look", "A quality check flagged this run."))
+                title = title_t.format(name=name)
+                message = message_t.format(previous=check.get("previous", "?"), current=check.get("current", "?"))
+                severity = "warning"
+        items.append(NotificationItem(
+            id=f"pipeline-run-{r['id']}", kind="activity", title=title, message=message, severity=severity,
+            created_at=_iso(r["finished_at"]), href=href, actions=[NotificationAction(label="Open pipeline", href=href)],
+        ))
+    return items
+
+
+async def review_notifications(db: AsyncSession, org_id: Optional[str], user_id: str) -> list[NotificationItem]:
+    """Recipes AI agents drafted for this person's organization, waiting for a person to publish."""
+    try:
+        async with db.begin_nested():
+            rows = (await db.execute(sa.text(
+                """
+                SELECT id, name, created_at FROM prep_recipes
+                WHERE COALESCE(is_deleted, false) = false AND status = 'draft' AND version = 0
+                  AND output ->> 'drafted_by' = 'agent'
+                  AND (CAST(organization_id AS text) = :org OR (:org = '' AND CAST(user_id AS text) = :uid))
+                ORDER BY created_at DESC LIMIT 10
+                """
+            ), {"org": str(org_id or ""), "uid": str(user_id)})).mappings().all()
+    except Exception as exc:
+        logger.debug("review notifications unavailable: %s", exc)
+        return []
+    return [
+        NotificationItem(
+            id=f"recipe-review-{r['id']}", kind="ai", title=f"Review the recipe “{r['name']}”",
+            message="An AI agent drafted these cleaning steps. Check them in Prepare and publish if they're right.",
+            severity="info", created_at=_iso(r["created_at"]), href=f"/prepare/{r['id']}",
+            actions=[NotificationAction(label="Review", href=f"/prepare/{r['id']}")],
+        )
+        for r in rows
+    ]
+
+
 async def build_inbox(
     db: AsyncSession,
     *,
@@ -639,9 +735,11 @@ async def build_inbox(
     chunks.extend(await feed_notifications(db, user_payload))
     chunks.extend(await comment_notifications(db, user_id))
     chunks.extend(await notebook_run_notifications(db, user_id))
+    chunks.extend(await review_notifications(db, org_id, user_id))
     if org_id:
         chunks.extend(await engagement_notifications(db, org_id, user_id, dismissed_tips))
         chunks.extend(await data_alert_notifications(db, org_id))
+        chunks.extend(await pipeline_run_notifications(db, org_id))
         chunks.extend(await ai_pipeline_notifications(db, org_id, user_id))
         chunks.extend(await credit_usage_notifications(db, org_id))
 

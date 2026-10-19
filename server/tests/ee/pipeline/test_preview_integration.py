@@ -11,7 +11,7 @@ def test_preview_returns_403_when_user_lacks_source_grant(monkeypatch):
     from fastapi.testclient import TestClient
 
     from src.db.session import get_async_session
-    from src.modules.pipeline.router import router
+    from src.modules.pipeline.router import pipeline_user_payload, router
     from src.modules.pricing import feature_gate
 
     org_id = "11111111-1111-1111-1111-111111111111"
@@ -37,6 +37,17 @@ def test_preview_returns_403_when_user_lacks_source_grant(monkeypatch):
         raise AssertionError("preview execution must not run without a source grant")
 
     monkeypatch.setattr(feature_gate, "get_user_organization_id", allow_lakehouse_feature)
+
+    # A signed-in member (tokens are verified for real elsewhere): this test is about the source
+    # grant, which must be checked before any Bronze data is read.
+    from fastapi import Request
+
+    from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+
+    async def signed_in(self, request: Request):
+        return {"sub": "user-1", "organization_id": org_id}
+
+    monkeypatch.setattr(JWTCookieBearer, "__call__", signed_in)
     monkeypatch.setattr(feature_gate, "_resolve_org_plan_context", fake_plan_context)
     monkeypatch.setattr(feature_gate, "org_entitlement", fake_entitlement)
     monkeypatch.setattr(
@@ -50,6 +61,7 @@ def test_preview_returns_403_when_user_lacks_source_grant(monkeypatch):
 
     app = FastAPI()
     app.dependency_overrides[get_async_session] = fake_get_async_session
+    app.dependency_overrides[pipeline_user_payload] = lambda: {"sub": "user-1", "organization_id": org_id}
     app.include_router(router, prefix="/api")
 
     with TestClient(app) as client:

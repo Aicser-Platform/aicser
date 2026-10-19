@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useDataSource } from '@/hooks/useDataSources';
 import { Tabs, Input, Select, Button, Tooltip, Collapse, Modal, Segmented, Typography, Alert, message } from 'antd';
 import {
-  MenuUnfoldOutlined,
+  SlidersOutlined,
   CodeOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -32,6 +32,7 @@ import type { RuntimeFilter } from '../utils/filterOperators';
 import { getDashboardFieldDragData, isDashboardFieldDrag } from '../utils/dashboardFieldDrag';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { useTranslations } from 'next-intl';
+import { CollapsedRail, PanelToggle } from '@/components/layout/SidePanel';
 import { isContentWidgetType, isControlWidgetType } from './widgetPropertyProfile';
 import { duplicateKpis, isEmptyDataWidget, kpiSignature, planEmptyWidgetBindings, planKpiVariety } from '../utils/bindEmptyWidgets';
 import { AUTO_TITLE_KEY, deriveAutoTitle, isAutoTitle } from '../utils/widgetAutoTitle';
@@ -48,6 +49,8 @@ interface PropertiesPanelProps {
   removeWidget: (id: string) => void;
   isCollapsed: boolean;
   onCollapse?: () => void;
+  /** Folded with a way back: the panel shows as a rail (the same one every workspace uses). */
+  onExpand?: () => void;
   isDesigner?: boolean;
   // Dashboard pages — passed through to ChartSpecificFields (analytics tab)
   dashboardPages?: { id: string; name: string }[];
@@ -60,6 +63,8 @@ interface PropertiesPanelProps {
   onOpenManageFilters?: () => void;
   /** Opens Data Modeling when a multi-table source has no relationships yet. */
   onOpenDataModeling?: () => void;
+  /** Selects a widget on the canvas (the board checklist shown when nothing is selected). */
+  onSelectWidget?: (id: string) => void;
 }
 
 export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
@@ -69,6 +74,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   setWidgets,
   isCollapsed,
   onCollapse,
+  onExpand,
   removeWidget,
   isDesigner = false,
   dashboardPages = [],
@@ -78,6 +84,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onRuntimeFiltersChange,
   onOpenManageFilters,
   onOpenDataModeling,
+  onSelectWidget,
 }) => {
   const {
     dataSources,
@@ -617,10 +624,34 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             ? tDash('type_divider')
             : selectedWidget?.chartType;
 
+  // Nothing selected: what is left to do on this board, one click from each widget.
+  const widgetsNeedingData = !isDesigner ? (widgets || []).filter((w: any) => isEmptyDataWidget(w)) : [];
+  const boardChecklist = (
+    <div className="pp-board">
+      <div className="pp-board-summary">{tDash('board_widget_count', { count: (widgets || []).length })}</div>
+      {widgetsNeedingData.length > 0 && onSelectWidget ? (
+        <>
+          <PpLabel>{tDash('board_needs_data', { count: widgetsNeedingData.length })}</PpLabel>
+          <ul className="pp-board-list">
+            {widgetsNeedingData.map((w: any) => (
+              <li key={w.id}>
+                <button type="button" className="pp-board-item" onClick={() => onSelectWidget(w.id)}>
+                  <span className="pp-board-item-title">{w.title || tDash('untitled_widget')}</span>
+                  <span className="pp-board-item-action">{tDash('board_choose_data')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <div className="pp-empty-state pp-board-prompt">{tDash('select_widget_prompt')}</div>
+    </div>
+  );
+
   const buildTab = (
     <div className="properties-panel-body">
       {!hasWidget ? (
-        <div className="pp-empty-state">{tDash('select_widget_prompt')}</div>
+        isDesigner ? <div className="pp-empty-state">{tDash('select_widget_prompt')}</div> : boardChecklist
       ) : isContentBlock ? (
         <>
           {!isDesigner && (
@@ -684,7 +715,50 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             </div>
           )}
 
-          {/* What kind of visual first (Datawrapper / Canva order), then the data behind it. */}
+          <div>
+            <PpLabel>{tDash('data_source_label')}</PpLabel>
+            <Select
+              size="small"
+              style={{ width: '100%' }}
+              value={selectedWidget?.dataSourceId ? String(selectedWidget.dataSourceId) : undefined}
+              onChange={confirmDataSourceChange}
+              options={dataSourceOptions}
+              placeholder={tDash('data_source_placeholder')}
+              loading={isLoading}
+              allowClear
+              showSearch
+              filterOption={(input, opt) =>
+                String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
+              }
+              status={!boundSourceListed && unlistedSource ? 'error' : undefined}
+            />
+            {!boundSourceListed && unlistedSource ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ marginTop: 6 }}
+                message={tDash('data_source_other_project_blocked')}
+              />
+            ) : null}
+          </div>
+
+          {!isSlicer && selectedWidget?.dataSourceId ? (
+            <div>
+              <PpLabel>{tDash('dataset_label')}</PpLabel>
+              <Segmented
+                size="small"
+                block
+                value={sqlBound || sqlEditorOpen ? 'query' : 'table'}
+                options={[
+                  { label: tDash('dataset_table'), value: 'table' },
+                  { label: tDash('dataset_query'), value: 'query' },
+                ]}
+                onChange={setDatasetMode}
+              />
+            </div>
+          ) : null}
+
+          {/* The data first (Datawrapper / Looker Studio order): which visuals fit depends on it. */}
           {!isSlicer ? (
                 <div>
                   <PpLabel>{tDash('chart_type_label')}</PpLabel>
@@ -751,48 +825,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 </div>
           ) : null}
 
-          <div>
-            <PpLabel>{tDash('data_source_label')}</PpLabel>
-            <Select
-              size="small"
-              style={{ width: '100%' }}
-              value={selectedWidget?.dataSourceId ? String(selectedWidget.dataSourceId) : undefined}
-              onChange={confirmDataSourceChange}
-              options={dataSourceOptions}
-              placeholder={tDash('data_source_placeholder')}
-              loading={isLoading}
-              allowClear
-              showSearch
-              filterOption={(input, opt) =>
-                String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
-              }
-              status={!boundSourceListed && unlistedSource ? 'error' : undefined}
-            />
-            {!boundSourceListed && unlistedSource ? (
-              <Alert
-                type="error"
-                showIcon
-                style={{ marginTop: 6 }}
-                message={tDash('data_source_other_project_blocked')}
-              />
-            ) : null}
-          </div>
-
-          {!isSlicer && selectedWidget?.dataSourceId ? (
-            <div>
-              <PpLabel>{tDash('dataset_label')}</PpLabel>
-              <Segmented
-                size="small"
-                block
-                value={sqlBound || sqlEditorOpen ? 'query' : 'table'}
-                options={[
-                  { label: tDash('dataset_table'), value: 'table' },
-                  { label: tDash('dataset_query'), value: 'query' },
-                ]}
-                onChange={setDatasetMode}
-              />
-            </div>
-          ) : null}
 
           {!isSlicer && (sqlBound || sqlEditorOpen) && (
             <>
@@ -1306,6 +1338,10 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   // ── (Sort lives in Build, click behaviour in Filters) ─────────────────────────
 
+  if (isCollapsed && onExpand) {
+    return <CollapsedRail side="right" label={tDash('properties_heading')} icon={<SlidersOutlined />} onExpand={onExpand} className="properties-panel-rail" />;
+  }
+
   return (
     <aside
       className={`properties-panel${isCollapsed ? ' collapsed' : ''}`}
@@ -1326,19 +1362,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             />
           ) : null}
           <div className="properties-panel-header">
+            {onCollapse ? <PanelToggle side="right" collapsed={false} onToggle={onCollapse} label={tDash('properties_heading')} /> : null}
             <span className="properties-panel-header-label">{tDash('properties_heading')}</span>
-            {onCollapse ? (
-              <Tooltip title="Collapse panel">
-                <Button
-                  type="text"
-                  size="small"
-                  className="properties-panel-collapse-btn"
-                  icon={<MenuUnfoldOutlined />}
-                  aria-label="Collapse properties panel"
-                  onClick={onCollapse}
-                />
-              </Tooltip>
-            ) : null}
           </div>
           <Tabs
             className="properties-panel-tabs"
@@ -1388,7 +1413,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 {tDash('refresh_chart')}
               </Button>
             </Tooltip>
-            {hasWidget && (
+            {/* The chart library deletes from its toolbar's ⋯ menu; a board removes a widget here. */}
+            {hasWidget && !isDesigner && (
               <Button
                 type="link"
                 danger

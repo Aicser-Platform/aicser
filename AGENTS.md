@@ -2,7 +2,7 @@
 
 This file is the canonical project brain for AI coding agents (Cursor, Claude Code, GitHub Copilot, etc.). Read it before making non-trivial changes.
 
-**Related docs:** [CONTRIBUTING.md](CONTRIBUTING.md) · [README.md](README.md) · [client/DEVELOPMENT.md](client/DEVELOPMENT.md) · [server/ARCHITECTURE.md](server/ARCHITECTURE.md) · [qa/README.md](qa/README.md) (optional UI browser QA track — does not affect default Docker)
+**Related docs:** [CONTRIBUTING.md](CONTRIBUTING.md) · [README.md](README.md) · [client/DEVELOPMENT.md](client/DEVELOPMENT.md) · [server/ARCHITECTURE.md](server/ARCHITECTURE.md) · [server/docs/README.md](server/docs/README.md) (lakehouse, semantic layer IA, governance) · [qa/README.md](qa/README.md) (optional UI browser QA track — does not affect default Docker)
 
 ---
 
@@ -91,11 +91,26 @@ Application code always imports `src.modules.*` — shims redirect to `ee/module
 
 **AI orchestration (EE):** LangGraph via `POST /ai/analyze` is the canonical chat path. Legacy `chats/core/ai_flows` is deprecated.
 
+### Product layers (SKU, not settings rows)
+
+Settings RBAC rows are **not** products. Quote and staff these layers:
+
+| Layer | SKU | What it is |
+| --- | --- | --- |
+| Kernel | (every paid SKU) | Org/project/RBAC, QueryIdentity + RLS, credentials, chart/dashboard objects |
+| Core | Analyze · Ask · Govern | BI work, NL chat, semantic/ontology/catalog/audit/SCIM |
+| Add-on | Operate · Decide · Platform · Channel · Industry | Alerts, Decision OS, lake/pipelines, embed/MCP/Slack/Teams, domain packs |
+
+Canonical map: `server/ee/modules/pricing/sku_catalog.py` and `client/src/constants/skuCatalog.ts`. Sidebar IA stays job-first (Ask, feed, dashboards, alerts, then Analyze / Predict / Data); items hide by SKU feature + permission, they do not get reshuffled.
+
 ### Hard rules
 
-1. **CE must never import EE directly** — no `from ee...` or `from client/ee` in CE code.
+1. **CE must never import EE directly** — no `from ee...`, `import_module("ee...")` or `from client/ee` in CE code. Use `src.modules.<name>` for shimmed modules and `src.enterprise.<rest>` for EE files that sit next to a CE module with its own code (e.g. `src.enterprise.modules.data.services.*`); both are the same module object as `ee.*` (`src/core/ee_import_alias.py`). `tests/test_module_conventions.py` enforces this.
 2. **EE extends CE** via shims, conditional routers, and frontend dynamic imports from `@/ee`.
 3. **Gate EE routes** with `is_ee_enabled()` on the backend; use `PermissionGuard` on EE frontend features.
+4. **Add-ons must not import add-ons.** An add-on may depend on Kernel plus one core host (Analyze, Ask, or Govern). Shared behavior belongs in Kernel or that host — not a new cross-add-on import.
+5. **New surfaces declare a SKU** (nav key and/or plan feature on the catalog). Do not borrow `knowledge:search` for ontology, semantic, alerts, or catalog — use `ontology:*`, `semantic:*`, `alert:*`, `catalog:*`.
+6. **Lakehouse & governance** — Storage, compute, movement, and govern are **four contracts** (see `server/docs/lakehouse-product.md`). UI hub: `/lakehouse`. Do **not** add duplicate RLS, credentials, or metric SSOT under Pipelines or Lakehouse; deep-link to Data source policies, Semantic layer, Catalog, and Settings audit. Regulated/bank playbook: `server/docs/regulated-enterprise-governance.md`. Doc index: `server/docs/README.md`.
 
 ---
 

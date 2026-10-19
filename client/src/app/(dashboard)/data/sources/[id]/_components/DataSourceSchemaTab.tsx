@@ -1,21 +1,21 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Input, message, Table, Tag, Typography, Tooltip } from 'antd';
+import { Alert, Button, Card, Empty, Input, message, Select, Table, Tag, Typography, Tooltip } from 'antd';
 import { CheckOutlined, EyeInvisibleOutlined, EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useDataSource, useDataSourceSchema, dataSourceKeys } from '@/hooks/useDataSources';
 import { updateDataSourceBusinessMetadata } from '@/api/dataSources';
+import { COLUMN_ROLES, ROLE_COLOR, columnEntry, roleFor, type ColumnRole } from '@/constants/columnRoles';
 import { enhancedDataService } from '@/services/enhancedDataService';
+import { LakehouseComputeSourceNotice } from '@/components/data/LakehouseComputeSourceNotice';
+import { isLakehouseComputeDataSource } from '@/utils/lakehouseComputeSource';
 import {
   normalizeType,
   friendlyName,
   fieldKey,
   getBusinessMetadata,
-  inferSemanticRole,
-  roleColor,
-  roleLabelKey,
   normalizeSchemaTables,
   buildTableRef,
   type SchemaFieldColumn,
@@ -35,7 +35,6 @@ const PREVIEW_ROW_LIMIT = 20;
 
 export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSourceId }) => {
   const t = useTranslations('data_source_detail');
-  const td = useTranslations('dashboards_page');
   const { dataSource } = useDataSource(dataSourceId);
   const { schema, isLoading } = useDataSourceSchema(dataSourceId);
   const businessMetadata = useMemo(() => getBusinessMetadata(schema), [schema]);
@@ -50,6 +49,22 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
   // typing (only committed on blur/Enter), and which key is mid-save.
   const [descDrafts, setDescDrafts] = useState<Record<string, string>>({});
   const [savingDescKey, setSavingDescKey] = useState<string | null>(null);
+
+  const [savingRoleKey, setSavingRoleKey] = useState<string | null>(null);
+  const tr = useTranslations('column_roles');
+
+  const saveColumnRole = async (key: string, role: ColumnRole) => {
+    setSavingRoleKey(key);
+    try {
+      // Roles replace as a whole map, like descriptions: send every column's role.
+      await updateDataSourceBusinessMetadata(dataSourceId, { column_roles: { ...(businessMetadata.column_roles || {}), [key]: role } });
+      await queryClient.invalidateQueries({ queryKey: dataSourceKeys.schema(dataSourceId) });
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingRoleKey(null);
+    }
+  };
 
   const saveColumnDescription = async (key: string, value: string) => {
     const trimmed = value.trim();
@@ -138,12 +153,32 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
     }
   };
 
+  const invalidateSchema = () => {
+    void queryClient.invalidateQueries({ queryKey: dataSourceKeys.schema(dataSourceId) });
+    void queryClient.invalidateQueries({ queryKey: dataSourceKeys.detail(dataSourceId) });
+  };
+
   if (!isLoading && tables.length === 0) {
+    if (isLakehouseComputeDataSource(dataSource)) {
+      return (
+        <LakehouseComputeSourceNotice
+          dataSource={dataSource}
+          tableCount={0}
+          variant="empty"
+          onSchemaRefresh={invalidateSchema}
+        />
+      );
+    }
     return <Empty description={t('schema_unavailable')} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   }
 
   return (
     <>
+      <LakehouseComputeSourceNotice
+        dataSource={dataSource}
+        tableCount={tables.length}
+        onSchemaRefresh={invalidateSchema}
+      />
       {tables.length > 0 ? (
         <Input
           allowClear
@@ -189,21 +224,43 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
                   title: t('schema_column_name'),
                   dataIndex: 'name',
                   key: 'name',
-                  render: (value: string) => (
-                    <>
-                      <div style={{ fontWeight: 500 }}>{friendlyName(value)}</div>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {value}
-                      </Text>
-                    </>
-                  ),
+                  render: (value: string) => {
+                    const display = friendlyName(value);
+                    const raw = String(value || '').trim();
+                    if (!raw) return '—';
+                    if (display === raw) {
+                      return <span style={{ fontWeight: 500 }}>{display}</span>;
+                    }
+                    return (
+                      <>
+                        <div style={{ fontWeight: 500 }}>{display}</div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{raw}</Text>
+                      </>
+                    );
+                  },
                 },
                 {
                   title: t('schema_column_role'),
                   key: 'role',
+                  width: 190,
                   render: (_: unknown, column: SchemaFieldColumn) => {
-                    const role = inferSemanticRole(column, businessMetadata);
-                    return <Tag color={roleColor(role)}>{td(roleLabelKey(role))}</Tag>;
+                    // The same roles as Prepare and the semantic model; a guess until someone sets it.
+                    const { role, set } = roleFor(businessMetadata, table.id, column.name, column.type);
+                    return (
+                      <Tooltip title={set ? tr('set_by_people') : tr('suggested')}>
+                        <Select<ColumnRole>
+                          size="small"
+                          variant={set ? 'outlined' : 'borderless'}
+                          style={{ width: 160, fontStyle: set ? undefined : 'italic' }}
+                          value={role}
+                          loading={savingRoleKey === fieldKey(table, column)}
+                          onChange={(next) => void saveColumnRole(fieldKey(table, column), next)}
+                          labelRender={({ value }) => <Tag color={ROLE_COLOR[value as ColumnRole]} bordered={false}>{tr(`role_${value}`)}</Tag>}
+                          options={COLUMN_ROLES.map((r) => ({ value: r, label: tr(`role_${r}`) }))}
+                          aria-label={tr('role')}
+                        />
+                      </Tooltip>
+                    );
                   },
                 },
                 {
@@ -223,7 +280,7 @@ export const DataSourceSchemaTab: React.FC<{ dataSourceId: string }> = ({ dataSo
                   width: 280,
                   render: (_: unknown, column: SchemaFieldColumn) => {
                     const key = fieldKey(table, column);
-                    const persisted = businessMetadata.column_descriptions?.[key] || '';
+                    const persisted = columnEntry(businessMetadata.column_descriptions, table.id, column.name) || '';
                     const value = key in descDrafts ? descDrafts[key] : persisted;
                     const isSaving = savingDescKey === key;
                     return (

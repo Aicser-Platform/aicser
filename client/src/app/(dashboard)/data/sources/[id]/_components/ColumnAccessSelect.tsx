@@ -38,7 +38,6 @@ export const ColumnAccessSelect: React.FC<{
       value={value}
       onChange={onChange}
       disabled={disabled}
-      status={value === COLUMN_ACCESS_UNSET ? 'warning' : undefined}
       style={{ minWidth: 260, ...style }}
       optionLabelProp="label"
       options={[

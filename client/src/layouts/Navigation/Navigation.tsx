@@ -2,8 +2,8 @@
 
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  AlertOutlined, ApartmentOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined,
-  TableOutlined, SettingOutlined, ThunderboltOutlined,
+  AlertOutlined, ApartmentOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, SafetyCertificateOutlined,
+  TableOutlined, SettingOutlined, ThunderboltOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import { Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
@@ -22,8 +22,10 @@ import {
   buildEnterpriseSidebarItems,
   buildCommunitySidebarItems,
   defaultFoldedSections,
+  filterSidebarItems,
   type NavItemDef,
 } from './navConfig';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import SidebarNav, { RAIL_WIDTH, type SidebarNavHandle, type SidebarNavIconMap } from './SidebarNav';
 
 const { Sider } = Layout;
@@ -53,8 +55,10 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,
   data: <DatabaseOutlined />,
+  'semantic-layer': <SafetyCertificateOutlined />,
   knowledge: <FileSearchOutlined />,
   warehouse: <ClusterOutlined />,
+  prepare: <ToolOutlined />,
   pipelines: <NodeIndexOutlined />,
   catalog: <ApartmentOutlined />,
   settings: <SettingOutlined />,
@@ -73,6 +77,7 @@ const COMMUNITY_ICONS: SidebarNavIconMap = {
   sheets: <TableOutlined />,
   spatial: <EnvironmentOutlined />,
   data: <DatabaseOutlined />,
+  prepare: <ToolOutlined />,
   knowledge: <FileSearchOutlined />,
   settings: <SettingOutlined />,
   'sec-analyze': <FundProjectionScreenOutlined />,
@@ -133,10 +138,26 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
     [router, props]
   );
 
-  const enterpriseItems = React.useMemo<NavItemDef[]>(
-    () => buildEnterpriseSidebarItems(showAiNav),
-    [showAiNav]
+  const { features, loading: featuresLoading } = useSubscriptionStore();
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const hasFeature = React.useCallback(
+    (feature: string) => {
+      if (!isEnterpriseEdition) return true;
+      if (featuresLoading || !features || Object.keys(features).length === 0) return true;
+      const val = features[feature];
+      return typeof val === 'boolean' ? val : true;
+    },
+    [features, featuresLoading]
   );
+  const enterpriseItems = React.useMemo<NavItemDef[]>(() => {
+    const raw = buildEnterpriseSidebarItems(showAiNav);
+    return filterSidebarItems(raw, {
+      hasFeature,
+      hasPermission: permissionsLoading
+        ? undefined
+        : (code) => hasPermission(code as Permission),
+    });
+  }, [showAiNav, hasFeature, hasPermission, permissionsLoading]);
 
   const communityItems = React.useMemo<NavItemDef[]>(
     () => buildCommunitySidebarItems(),
@@ -145,7 +166,6 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   // Builder sections fold for people who only view; data plumbing for all but those who
   // connect data or run the organization. Until permissions load nothing is folded.
-  const { hasPermission, loading: permissionsLoading } = usePermissions();
   const defaultFolded = React.useMemo(
     () => (permissionsLoading ? [] : defaultFoldedSections({
       canBuild: hasPermission(Permission.QUERY_SAVE) || hasPermission(Permission.CHART_EDIT),

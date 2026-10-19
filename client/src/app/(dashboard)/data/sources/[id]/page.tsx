@@ -3,7 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import React from 'react';
-import { Button, Empty, Tabs, Typography } from 'antd';
+import nextDynamic from 'next/dynamic';
+import { Button, Empty, Space, Tabs, Typography } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -12,12 +13,22 @@ import { useDataSource, useDataSourceAccessGrants } from '@/hooks/useDataSources
 import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import DataSourceOverviewTab from './_components/DataSourceOverviewTab';
 import DataSourceSchemaTab from './_components/DataSourceSchemaTab';
-import DataSourcePermissionsTab from './_components/DataSourcePermissionsTab';
-import RowFiltersTab from './_components/RowFiltersTab';
-import ColumnRulesTab from './_components/ColumnRulesTab';
+import DataSourceAccessTab from './_components/DataSourceAccessTab';
+import { isModelEligibleDataSource } from '@/components/data/modelEligible';
 import BypassBanner from './_components/BypassBanner';
+import { LakehouseComputeSourceNotice } from '@/components/data/LakehouseComputeSourceNotice';
 import styles from './DataSourceDetailPage.module.css';
-import { parseTabParam } from './_components/tabParam';
+import {
+  parseAccessSubParam,
+  parseSemanticSectionParam,
+  parseTabParam,
+  type AccessSubTab,
+  type SemanticLayerSection,
+} from './_components/tabParam';
+
+const SemanticStudio = isEnterpriseEdition
+  ? nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), { ssr: false })
+  : null;
 
 const { Text, Title } = Typography;
 
@@ -36,13 +47,34 @@ export default function DataSourceDetailPage() {
   const t = useTranslations('data_source_detail');
   const dataSourceId = String(params?.id || '');
   const { dataSource, isLoading, error } = useDataSource(dataSourceId);
+  const modelEligible = isModelEligibleDataSource(dataSource?.type);
   // Surfaced on Overview too — a bypass is a source-wide condition, not a tab-local one.
   const { grants } = useDataSourceAccessGrants(dataSourceId, isEnterpriseEdition);
 
-  const activeTab = parseTabParam(searchParams?.get('tab') ?? null);
+  const tabRaw = searchParams?.get('tab') ?? null;
+  const activeTab = parseTabParam(tabRaw);
+  const accessSub = parseAccessSubParam(tabRaw, searchParams?.get('access') ?? null);
+  const semanticSection = parseSemanticSectionParam(searchParams?.get('section') ?? null);
 
   const handleTabChange = (key: string) => {
-    router.replace(`/data/sources/${dataSourceId}?tab=${key}`, { scroll: false });
+    const params = new URLSearchParams({ tab: key });
+    if (key === 'semantic' && semanticSection) {
+      params.set('section', semanticSection);
+    }
+    if (key === 'access') {
+      params.set('access', accessSub);
+    }
+    router.replace(`/data/sources/${dataSourceId}?${params.toString()}`, { scroll: false });
+  };
+
+  const handleAccessSubChange = (sub: AccessSubTab) => {
+    const params = new URLSearchParams({ tab: 'access', access: sub });
+    router.replace(`/data/sources/${dataSourceId}?${params.toString()}`, { scroll: false });
+  };
+
+  const handleSemanticSectionChange = (section: SemanticLayerSection) => {
+    const params = new URLSearchParams({ tab: 'semantic', section });
+    router.replace(`/data/sources/${dataSourceId}?${params.toString()}`, { scroll: false });
   };
 
   if (!isLoading && (error || !dataSource)) {
@@ -72,18 +104,22 @@ export default function DataSourceDetailPage() {
           <Title level={2} className={styles.title}>
             {dataSource?.name || dataSourceId}
           </Title>
-          <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/data')}>
-            {t('back_to_data')}
-          </Button>
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/data')}>
+              {t('back_to_data')}
+            </Button>
+          </Space>
         </div>
-        <Text type="secondary" className={styles.description}>
-          {/* Plain type (the raw "sample_duckdb · unknown" enum pair used to show here). */}
-          {dataSource?.description || (dataSource?.type ? t(`overview_type_${dataSource.type}` as never) : '')}
-        </Text>
+        {activeTab !== 'semantic' ? (
+          <Text type="secondary" className={styles.description}>
+            {dataSource?.description || (dataSource?.type ? t(`overview_type_${dataSource.type}` as never) : '')}
+          </Text>
+        ) : null}
       </header>
       <div className={styles.body}>
         <Tabs
           className={styles.tabs}
+          destroyInactiveTabPane={false}
           activeKey={activeTab}
           onChange={handleTabChange}
           items={[
@@ -91,33 +127,70 @@ export default function DataSourceDetailPage() {
               key: 'overview',
               label: t('tab_overview'),
               children: (
-                <DataSourceOverviewTab
-                  dataSource={dataSource ?? null}
-                  banner={<BypassBanner grants={grants} />}
-                />
+                <div className={styles.tabPanel}>
+                  <DataSourceOverviewTab
+                    dataSource={dataSource ?? null}
+                    banner={
+                      <>
+                        <BypassBanner grants={grants} onOpenAccess={() => handleTabChange('access')} />
+                        <LakehouseComputeSourceNotice
+                          dataSource={dataSource ?? null}
+                          tableCount={
+                            Array.isArray((dataSource?.schema as { tables?: unknown[] } | null)?.tables)
+                              ? (dataSource!.schema as { tables: unknown[] }).tables.length
+                              : 0
+                          }
+                        />
+                      </>
+                    }
+                  />
+                </div>
               ),
             },
             {
               key: 'schema',
               label: t('tab_schema'),
-              children: <DataSourceSchemaTab dataSourceId={dataSourceId} />,
-            },
-            {
-              key: 'permissions',
-              label: t('tab_permissions'),
               children: (
-                <DataSourcePermissionsTab dataSourceId={dataSourceId} active={activeTab === 'permissions'} />
+                <div className={styles.tabPanel}>
+                  <DataSourceSchemaTab dataSourceId={dataSourceId} />
+                </div>
               ),
             },
+            ...(isEnterpriseEdition && SemanticStudio && modelEligible
+              ? [
+                  {
+                    key: 'semantic',
+                    label: t('tab_semantic'),
+                    children: (
+                      <div className={styles.tabPanel}>
+                        <SemanticStudio
+                          dataSourceId={dataSourceId}
+                          dataSourceName={dataSource?.name}
+                          embedded
+                          initialSection={semanticSection}
+                          onStudioSectionChange={handleSemanticSectionChange}
+                          onRequestSchemaTab={() =>
+                            router.replace(`/data/sources/${dataSourceId}?tab=schema`, { scroll: false })
+                          }
+                        />
+                      </div>
+                    ),
+                  },
+                ]
+              : []),
             {
-              key: 'row-filters',
-              label: t('tab_row_filters'),
-              children: <RowFiltersTab dataSourceId={dataSourceId} active={activeTab === 'row-filters'} />,
-            },
-            {
-              key: 'column-rules',
-              label: t('tab_column_rules'),
-              children: <ColumnRulesTab dataSourceId={dataSourceId} active={activeTab === 'column-rules'} />,
+              key: 'access',
+              label: t('tab_access'),
+              children: (
+                <div className={styles.tabPanel}>
+                  <DataSourceAccessTab
+                    dataSourceId={dataSourceId}
+                    active={activeTab === 'access'}
+                    subTab={accessSub}
+                    onSubTabChange={handleAccessSubChange}
+                  />
+                </div>
+              ),
             },
           ]}
         />

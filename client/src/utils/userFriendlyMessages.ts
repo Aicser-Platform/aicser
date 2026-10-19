@@ -608,6 +608,18 @@ export function makeErrorMessageUserFriendly(error: string, context?: {
     }
   }
 
+  // Pipeline manages the source but Silver/Gold is not ready yet
+  if (
+    /has not produced Silver\/Gold/i.test(errorMessage) ||
+    /LakehouseNotReady/i.test(errorMessage) ||
+    /pipeline manages this source but/i.test(errorMessage)
+  ) {
+    return (
+      'This source is managed by a pipeline that has not finished its first successful run yet. ' +
+      'Open Pipelines, run it once, then ask again — Ask reads the cleansed lakehouse tables, not the live database.'
+    );
+  }
+
   // Extract user-friendly error message
   let friendlyError = makeMessageUserFriendly(errorMessage);
 

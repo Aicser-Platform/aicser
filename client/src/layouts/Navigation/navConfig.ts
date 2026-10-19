@@ -9,8 +9,13 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
   '/data': ['sec-data'],
   '/knowledge': ['sec-data'],
   '/warehouse': ['sec-data'],
+  '/lakehouse': ['sec-data'],
   '/pipelines': ['sec-data'],
+  '/prepare': ['sec-data'],
+  '/chart-designer': ['sec-analyze'],
   '/catalog': ['sec-data'],
+  '/semantic-layer': ['sec-data'],
+  '/master-data': ['sec-data'],
 };
 
 export const NAV_ROUTES: Record<string, string> = {
@@ -22,14 +27,16 @@ export const NAV_ROUTES: Record<string, string> = {
   notebooks: '/notebooks',
   sheets: '/sheets',
   spatial: '/spatial',
-  warehouse: '/warehouse',
+  warehouse: '/lakehouse',
   models: '/models',
   data: '/data',
   knowledge: '/knowledge',
   'ai-decisions': '/ai-decisions',
   alerts: '/alerts',
   pipelines: '/pipelines',
+  prepare: '/prepare',
   catalog: '/catalog',
+  'semantic-layer': '/semantic-layer',
   settings: '/settings',
   billing: '/settings?tab=billing-subscription',
 };
@@ -57,7 +64,9 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
   knowledge: 'knowledge_libraries',
   warehouse: 'warehouse',
   pipelines: 'pipelines',
+  prepare: 'prepare',
   catalog: 'catalog',
+  'semantic-layer': 'semantic_layer',
   settings: 'settings',
   billing: 'billing',
 };
@@ -65,6 +74,7 @@ export const NAV_LABEL_KEYS: Record<string, string> = {
 /** Nav key → its section, for breadcrumb trails (Predict & decide > Prediction models).
  * Everyday pages (Ask, Shared insights, Dashboards…) have no section and no crumb trail. */
 export const NAV_PARENT_GROUP: Record<string, string> = {
+  'chart-designer': 'sec-analyze',
   'query-editor': 'sec-analyze',
   notebooks: 'sec-analyze',
   sheets: 'sec-analyze',
@@ -75,7 +85,9 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
   knowledge: 'sec-data',
   warehouse: 'sec-data',
   pipelines: 'sec-data',
+  prepare: 'sec-data',
   catalog: 'sec-data',
+  'semantic-layer': 'sec-data',
 };
 
 /** One-line hover hints: what each page is for, in plain words (technical names kept
@@ -96,7 +108,9 @@ export const NAV_HINT_KEYS: Record<string, string> = {
   knowledge: 'hint_documents',
   warehouse: 'hint_warehouse',
   pipelines: 'hint_pipelines',
+  prepare: 'hint_prepare',
   catalog: 'hint_catalog',
+  'semantic-layer': 'hint_semantic_layer',
   'sec-analyze': 'hint_analyze',
   'sec-predict': 'hint_ai',
   'sec-data': 'hint_my_data',
@@ -136,7 +150,7 @@ export function flattenNavLinks(items: NavItemDef[]): NavLinkDef[] {
 
 /** Maps (/spatial) is switched off until it's ready; NEXT_PUBLIC_FEATURE_MAPS=true brings it back. */
 export const MAPS_ENABLED = process.env.NEXT_PUBLIC_FEATURE_MAPS === 'true';
-const analyzeTools = (): string[] => ['query-editor', 'sheets', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
+const analyzeTools = (): string[] => ['chart-designer', 'query-editor', 'sheets', 'notebooks', ...(MAPS_ENABLED ? ['spatial'] : [])];
 
 const link = (key: string): NavLinkDef => ({ key, labelKey: NAV_LABEL_KEYS[key], href: NAV_ROUTES[key] });
 const top = (key: string): NavItemDef => ({ kind: 'link', ...link(key) });
@@ -152,21 +166,83 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
     ...(showAiNav ? [top('chat')] : []),
     top('feed'),
     top('dashboards'),
-    top('chart-designer'),
     top('alerts'),
     section('sec-analyze', analyzeTools()),
     ...(showAiNav ? [section('sec-predict', ['models', 'ai-decisions'])] : [section('sec-predict', ['models'])]),
-    section('sec-data', ['data', 'knowledge', 'warehouse', 'pipelines', 'catalog']),
+    // Connect → prepare → move → model → find. Lakehouse storage and compute are admin
+    // settings (Settings › Lakehouse); Documents fold into the Catalog next.
+    section('sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog', 'knowledge']),
   ];
+}
+
+export type NavAccess = {
+  hasFeature?: (feature: string) => boolean;
+  hasPermission?: (permission: string) => boolean;
+};
+
+/** Sidebar key → plan feature that must be on. Everyday Analyze items stay ungated. */
+export const NAV_FEATURE_GATE: Record<string, string> = {
+  alerts: 'alerts',
+  catalog: 'catalog',
+  warehouse: 'lakehouse',
+  pipelines: 'lakehouse',
+  models: 'ml_models',
+  'ai-decisions': 'ai_decisions',
+};
+
+/** Sidebar key → RBAC code. Applied only after permissions have loaded. */
+export const NAV_PERMISSION_GATE: Record<string, string> = {
+  alerts: 'alert:view',
+  catalog: 'catalog:view',
+};
+
+function linkAllowed(key: string, access?: NavAccess): boolean {
+  if (!access) return true;
+  const feature = NAV_FEATURE_GATE[key];
+  if (feature && access.hasFeature && !access.hasFeature(feature)) return false;
+  const perm = NAV_PERMISSION_GATE[key];
+  if (perm && access.hasPermission && !access.hasPermission(perm)) return false;
+  return true;
+}
+
+function collapseNavDividers(items: NavItemDef[]): NavItemDef[] {
+  const out: NavItemDef[] = [];
+  for (const item of items) {
+    if (item.kind === 'divider') {
+      if (!out.length || out[out.length - 1].kind === 'divider') continue;
+      out.push(item);
+      continue;
+    }
+    out.push(item);
+  }
+  if (out.length && out[out.length - 1].kind === 'divider') out.pop();
+  return out;
+}
+
+/** Hide SKU/role-gated pages without changing everyday order. */
+export function filterSidebarItems(items: NavItemDef[], access?: NavAccess): NavItemDef[] {
+  const out: NavItemDef[] = [];
+  for (const item of items) {
+    if (item.kind === 'divider') {
+      out.push(item);
+      continue;
+    }
+    if (item.kind === 'link') {
+      if (linkAllowed(item.key, access)) out.push(item);
+      continue;
+    }
+    const children = item.children.filter((child) => linkAllowed(child.key, access));
+    if (children.length) out.push({ ...item, children });
+  }
+  return collapseNavDividers(out);
 }
 
 export function buildCommunitySidebarItems(): NavItemDef[] {
   return [
     top('dashboards'),
-    top('chart-designer'),
     top('feed'),
     section('sec-analyze', analyzeTools()),
-    section('sec-data', ['data', 'knowledge']),
+    section('sec-data', ['data', 'prepare', 'knowledge']),
   ];
 }
 
@@ -196,7 +272,7 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'knowledge';
-  if (pathname === '/ai-decisions') return 'ai-decisions';
+  if (pathname === '/ai-decisions' || pathname.startsWith('/ai-decisions/')) return 'ai-decisions';
   if (pathname.startsWith('/settings')) {
     const tab = search ? new URLSearchParams(search).get('tab') : null;
     return tab === 'billing-subscription' ? 'billing' : 'settings';
@@ -206,10 +282,13 @@ export function selectedKeyForPathname(pathname: string | null, search?: string 
   if (pathname === '/dashboards') return 'dashboards';
   if (pathname === '/chart-designer') return 'chart-designer';
   if (pathname.startsWith('/pipelines')) return 'pipelines';
+  if (pathname === '/lakehouse' || pathname.startsWith('/lakehouse/')) return 'warehouse';
+  if (pathname === '/warehouse' || pathname.startsWith('/warehouse/')) return 'warehouse';
   if (pathname.startsWith('/catalog')) return 'catalog';
+  if (pathname === '/semantic-layer' || pathname.startsWith('/semantic-layer/')) return 'semantic-layer';
   if (pathname === '/alerts') return 'alerts';
   // Pages added later were missing here, so the sidebar highlighted nothing on them.
-  for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards'] as const) {
+  for (const key of ['notebooks', 'sheets', 'spatial', 'warehouse', 'models', 'dashboards', 'prepare'] as const) {
     if (pathname === NAV_ROUTES[key] || pathname.startsWith(`${NAV_ROUTES[key]}/`)) return key;
   }
   return '';

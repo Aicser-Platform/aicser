@@ -2,48 +2,24 @@
 
 export const dynamic = 'force-dynamic';
 
-import React from 'react';
-import nextDynamic from 'next/dynamic';
-import { Button } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
-import { useAuthenticatedFetch } from '@/hooks/useAuthenticatedFetch';
-import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { parseSemanticSectionParam, semanticLayerStudioHref } from '../_components/tabParam';
+import { useSearchParams } from 'next/navigation';
 
-const SemanticStudio = nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), {
-  ssr: false,
-});
-
-export default function SemanticStudioPage() {
+/** Legacy route — workbench lives on the data source detail tab. */
+export default function SemanticStudioRedirectPage() {
   const params = useParams();
   const router = useRouter();
-  const t = useTranslations('semantic_studio');
+  const searchParams = useSearchParams();
   const dataSourceId = String(params?.id || '');
-  const authenticatedFetch = useAuthenticatedFetch();
-  const [name, setName] = React.useState<string>('');
 
-  React.useEffect(() => {
-    if (!dataSourceId) return;
-    authenticatedFetch(`/api/data/sources/${dataSourceId}`)
-      .then((res) => setName(res?.data_source?.name || res?.name || dataSourceId))
-      .catch(() => setName(dataSourceId));
-  }, [authenticatedFetch, dataSourceId]);
+  useEffect(() => {
+    if (dataSourceId) {
+      const section = parseSemanticSectionParam(searchParams?.get('section') ?? null);
+      router.replace(semanticLayerStudioHref(dataSourceId, section ?? undefined), { scroll: false });
+    }
+  }, [dataSourceId, router, searchParams]);
 
-  return (
-    <DashboardPageShell>
-      <DashboardPageHeader
-        title={name || t('page_title')}
-        description={t('page_subtitle')}
-        extra={
-          <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => router.push('/data')}>
-            {t('back_to_hub')}
-          </Button>
-        }
-      />
-      <div className="page-body">
-      <SemanticStudio dataSourceId={dataSourceId} dataSourceName={name} />
-      </div>
-    </DashboardPageShell>
-  );
+  return null;
 }

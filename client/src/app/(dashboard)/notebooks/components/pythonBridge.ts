@@ -102,6 +102,52 @@ export function createPythonBridge(deps: BridgeDeps) {
           data_source_id: deps.sourceId(p.source == null ? null : String(p.source)),
           project_id: deps.projectId || undefined,
         }));
+      case 'inspect_model':
+        return ee(() => post('/api/models/inspect', {
+          data_source_id: deps.sourceId(p.source == null ? null : String(p.source)),
+          table: String(p.table ?? ''),
+          target: p.target != null ? String(p.target) : undefined,
+          task: p.task != null ? String(p.task) : undefined,
+          project_id: deps.projectId || undefined,
+        }));
+      case 'create_model':
+        return ee(() => post('/api/models', {
+          name: String(p.name ?? 'Model'),
+          data_source_id: deps.sourceId(p.source == null ? null : String(p.source)),
+          table: String(p.table ?? ''),
+          target: String(p.target ?? ''),
+          features: (p.features as string[]) || [],
+          task: p.task != null ? String(p.task) : undefined,
+          project_id: deps.projectId || undefined,
+        }));
+      case 'metrics': {
+        // The connection's semantic metrics, official first (the ones Ask and dashboards trust).
+        // Through this bridge's own api (it also runs outside the app, in the scheduled-run worker).
+        const id = deps.sourceId(p.source == null ? null : String(p.source));
+        const query = `data_source_id=${encodeURIComponent(id)}${deps.projectId ? `&project_id=${encodeURIComponent(deps.projectId)}` : ''}`;
+        return ee(async () => {
+          const r = await api<{ metrics?: Array<{ name: string; certified?: boolean }> }>(`/api/semantic/metrics?${query}`, { signal });
+          const metrics = [...(r.metrics ?? [])].sort(
+            (a, b) => Number(Boolean(b.certified)) - Number(Boolean(a.certified)) || a.name.localeCompare(b.name),
+          );
+          return { metrics };
+        });
+      }
+      case 'metric': {
+        // Compiled by the semantic layer, then run like any SQL cell: same access rules, same numbers.
+        const source = p.source == null ? null : String(p.source);
+        const { sql } = await ee(() =>
+          post<{ sql: string }>('/api/semantic/compile', {
+            data_source_id: deps.sourceId(source),
+            metric: String(p.metric ?? ''),
+            dimensions: (p.by as string[]) || [],
+            time_grain: p.grain == null ? undefined : String(p.grain),
+            limit: Number(p.limit) || 10000,
+            project_id: deps.projectId ?? null,
+          }),
+        );
+        return deps.query(sql, source);
+      }
       case 'decide': {
         const d = pick(await listDecisions(), String(p.decision ?? ''), 'decision', text);
         return post(`/api/ai-decisions/definitions/${encodeURIComponent(d.id)}/decide`, { rows: p.rows, text_columns: p.text_columns });

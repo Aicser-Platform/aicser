@@ -2,7 +2,6 @@
 
 import { InboxOutlined } from '@ant-design/icons';
 import { message, Upload, UploadProps } from 'antd';
-import { useRouter } from 'next/navigation';
 import { IFileUpload } from './types';
 
 const { Dragger } = Upload;
@@ -25,13 +24,7 @@ type UploadDataSource = {
     size?: number;
     uuid_filename?: string;
     row_count?: number | null;
-    schema?: {
-        storage?: {
-            onboarding?: {
-                onboarding_session_id?: string;
-            };
-        };
-    } & Record<string, unknown>;
+    schema?: Record<string, unknown>;
     preview?: unknown;
     uploaded_at?: string | null;
 };
@@ -43,16 +36,11 @@ type UploadApiResponse = {
     data_source?: UploadDataSource;
 };
 
-function onboardingSessionId(dataSource?: UploadDataSource): string | null {
-    return dataSource?.schema?.storage?.onboarding?.onboarding_session_id ?? null;
-}
-
 const UploadDragger: React.FC<UploadDraggerProps> = ({
     onUpload,
     validFileTypes = ['csv', 'xlsx', 'xls', 'json', 'tsv'], // Enhanced file support
     projectId,
 }) => {
-    const router = useRouter();
 
     const handleFileSizeValidation = (file: File): boolean => {
         if (file.size > MAX_FILE_SIZE) {
@@ -112,7 +100,6 @@ const UploadDragger: React.FC<UploadDraggerProps> = ({
                 if (response && response.success) {
                     // Handle the new data API response format
                     const dataSource = response.data_source;
-                    const sessionId = onboardingSessionId(dataSource);
                     
                     // Create upload response with all available data
                     const uploadResponse = new IFileUpload(
@@ -128,15 +115,11 @@ const UploadDragger: React.FC<UploadDraggerProps> = ({
                     uploadResponse.schema = dataSource?.schema;
                     uploadResponse.preview = dataSource?.preview;
                     uploadResponse.uploadedAt = dataSource?.uploaded_at;
-                    uploadResponse.onboardingSessionId = sessionId;
 
                     handleUploadSuccess(uploadResponse);
                     message.success(
                         `${info.file.name} file uploaded successfully. ${response.message || ''}`
                     );
-                    if (sessionId) {
-                        router.push(`/data/onboarding/${sessionId}`);
-                    }
                 } else {
                     message.error(`Upload failed: ${response?.error || 'Unknown error'}`);
                 }

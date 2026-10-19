@@ -143,19 +143,16 @@ export const GrantsTable: React.FC<{
           width: 200,
           render: (_, grant) => {
             const level = accessLevelFor(grant.permissions);
-            if (level === 'custom') {
-              return (
-                <Space size={4} wrap>
-                  {grant.permissions.map((permission) => (
-                    <Tag key={permission}>{t(`data_source_access_permission_${permission}`)}</Tag>
-                  ))}
-                </Space>
-              );
-            }
+            // A custom mix is named once, and can be moved to a standard level from the same picker.
+            const customLabel = t('data_source_access_level_custom_with', {
+              list: grant.permissions.map((permission) => t(`data_source_access_permission_${permission}`)).join(', '),
+            });
             return (
               <Select<AccessLevelKey>
                 value={level}
                 style={{ width: '100%' }}
+                popupMatchSelectWidth={280}
+                labelRender={({ value }) => (value === 'custom' ? customLabel : t(`data_source_access_level_${value}`))}
                 onChange={(next) => {
                   const permissions = ACCESS_LEVELS.find((item) => item.key === next)?.permissions ?? ['view'];
                   void save(
@@ -169,6 +166,14 @@ export const GrantsTable: React.FC<{
                   value: item.key,
                   label: t(`data_source_access_level_${item.key}`),
                 }))}
+                optionRender={(option) => (
+                  <Space orientation="vertical" size={0}>
+                    <span>{option.label}</span>
+                    <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'normal' }}>
+                      {t(`data_source_access_level_desc_${option.value}`)}
+                    </Text>
+                  </Space>
+                )}
               />
             );
           },
@@ -207,18 +212,13 @@ export const GrantsTable: React.FC<{
         },
         {
           key: 'actions',
-          width: 90,
+          width: 190,
+          align: 'right',
           render: (_, grant) => (
             <Space size={4}>
-              <Tooltip title={t('effective_access_view_button')}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EyeOutlined />}
-                  aria-label={t('effective_access_view_button')}
-                  onClick={() => setInspectedGrant(grant)}
-                />
-              </Tooltip>
+              <Button size="small" icon={<EyeOutlined />} onClick={() => setInspectedGrant(grant)}>
+                {t('effective_access_view_button')}
+              </Button>
               <Popconfirm
                 title={t('data_source_access_revoke_title')}
                 okButtonProps={{ danger: true }}
@@ -233,7 +233,9 @@ export const GrantsTable: React.FC<{
                   }
                 }}
               >
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                <Tooltip title={t('data_source_access_revoke')}>
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={t('data_source_access_revoke')} />
+                </Tooltip>
               </Popconfirm>
             </Space>
           ),

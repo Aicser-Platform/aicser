@@ -5,7 +5,12 @@ import { Button, Dropdown, Input, Segmented, Tooltip, message } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   ShareAltOutlined,
-  CodeOutlined,
+  FullscreenOutlined,
+  MoreOutlined,
+  BlockOutlined,
+  DeleteOutlined,
+  GlobalOutlined,
+  LinkOutlined,
   DashboardOutlined,
   CopyOutlined,
   DownloadOutlined,
@@ -15,7 +20,7 @@ import {
   BarChartOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import { ADD_TO_DASHBOARD_EVENT } from './chartDesignerEvents';
+import { ADD_TO_DASHBOARD_EVENT, TRASH_CHART_EVENT } from './chartDesignerEvents';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
 import { buildChartSnapshotPayload } from '@/app/(dashboard)/feed/utils/buildFeedSnapshotPayload';
@@ -37,13 +42,14 @@ interface ChartDesignerToolbarProps {
   /** The canvas shows the chart or the data behind it. */
   view?: 'chart' | 'data';
   onViewChange?: (view: 'chart' | 'data') => void;
+  /** Show the chart as viewers see it, without the editor. */
+  onPreview?: () => void;
 }
 
-export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewChange }: ChartDesignerToolbarProps) {
+export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewChange, onPreview }: ChartDesignerToolbarProps) {
   const t = useTranslations('chart_designer');
   const tDash = useTranslations('dashboards');
   const tf = useTranslations('feed_publish');
-  const te = useTranslations('embed_modal');
 
   const { user } = useAuth();
   const currentProject = useProjectStore((s) => s.currentProject);
@@ -56,6 +62,7 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
   const saveChart = useChartDesignerStore((s) => s.saveChart);
   const updateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
+  const duplicateWidget = useChartDesignerStore((s) => s.duplicateWidget);
 
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishChartId, setPublishChartId] = useState<string | undefined>();
@@ -158,6 +165,21 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
     }
   }, [ensureChartId, hasConfiguredData, selectedWidget, t, user?.id]);
 
+  /** A link teammates open in Aicser (signed in, under their own access). */
+  const handleCopyLink = useCallback(async () => {
+    setPreparing(true);
+    try {
+      const chartId = await ensureChartId();
+      if (!chartId) return;
+      await navigator.clipboard.writeText(`${window.location.origin}/chart-designer?chart=${encodeURIComponent(chartId)}`);
+      message.success(t('link_copied'));
+    } catch {
+      message.error(tDash('copy_failed'));
+    } finally {
+      setPreparing(false);
+    }
+  }, [ensureChartId, t, tDash]);
+
   const handleShowEmbed = useCallback(async () => {
     if (!selectedWidget) {
       message.warning(t('share_select_chart'));
@@ -173,21 +195,40 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
     }
   }, [ensureChartId, selectedWidget, t]);
 
+  const dispatchAddToDashboard = useCallback(() => {
+    if (!selectedWidget?.chartId) return;
+    window.dispatchEvent(
+      new CustomEvent(ADD_TO_DASHBOARD_EVENT, { detail: { chartId: String(selectedWidget.chartId) } }),
+    );
+  }, [selectedWidget?.chartId]);
+
   const shareMenuItems: MenuProps['items'] = [
+    {
+      key: 'link',
+      icon: <LinkOutlined />,
+      label: menuItemWithDescription(t('copy_link'), t('copy_link_desc')),
+      onClick: () => void handleCopyLink(),
+    },
+    {
+      key: 'dashboard',
+      icon: <DashboardOutlined />,
+      label: t('add_to_dashboard'),
+      disabled: !selectedWidget?.chartId,
+      onClick: () => dispatchAddToDashboard(),
+    },
+    { type: 'divider' },
     {
       key: 'feed',
       icon: <ShareAltOutlined />,
       label: menuItemWithDescription(tf('share_to_feed'), tf('share_to_feed_desc')),
       onClick: () => void handleShareToFeed(),
     },
-    {
-      key: 'embed',
-      icon: <CodeOutlined />,
-      label: te('embed_get_code'),
-      onClick: () => void handleShowEmbed(),
-    },
-    // Taking the chart out lives with sharing it (Canva / Datawrapper): one menu, not two.
-    { type: 'divider' },
+  ];
+
+  const title = selectedWidget?.title?.trim() || t('untitled_chart');
+
+  // Everything that isn't sharing: take the data or picture out, copy the chart, or remove it.
+  const moreMenuItems: MenuProps['items'] = [
     {
       key: 'copy',
       icon: <CopyOutlined />,
@@ -208,9 +249,25 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
         { key: 'svg', icon: <FileImageOutlined />, label: tDash('menu_download_svg'), onClick: () => void handleDownload('svg') },
       ],
     },
+    { type: 'divider' },
+    {
+      key: 'duplicate',
+      icon: <BlockOutlined />,
+      label: t('duplicate_chart'),
+      disabled: !selectedWidget,
+      onClick: () => selectedWidget && duplicateWidget(selectedWidget.id),
+    },
+    {
+      key: 'trash',
+      icon: <DeleteOutlined />,
+      danger: true,
+      label: t('move_to_trash'),
+      disabled: !selectedWidget?.chartId,
+      onClick: () =>
+        selectedWidget?.chartId &&
+        window.dispatchEvent(new CustomEvent(TRASH_CHART_EVENT, { detail: { chartId: String(selectedWidget.chartId), title } })),
+    },
   ];
-
-  const title = selectedWidget?.title?.trim() || t('untitled_chart');
 
   const handleDownload = async (key: string) => {
     if (!selectedWidget) return;
@@ -238,7 +295,7 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
       <div className="chart-designer-toolbar">
         {selectedWidget ? (
           // Title with its description underneath, as the chart reads on a dashboard.
-          <div className="chart-designer-toolbar-heading">
+          <div className="chart-designer-toolbar-meta">
             <Input
               className="chart-designer-toolbar-title"
               value={titleDraft}
@@ -256,6 +313,8 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
               value={typeof selectedWidget.chartOptions?.subtitle === 'string' ? selectedWidget.chartOptions.subtitle : ''}
               placeholder={tDash('inline_add_description')}
               editable
+              multiline
+              maxLength={500}
               onChange={(v) => emitWidgetOptionsPatch(String(selectedWidget.id), { subtitle: v || undefined })}
             />
           </div>
@@ -264,46 +323,39 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
             {t('toolbar_no_selection')}
           </span>
         )}
-        {/* See the numbers behind the chart without leaving it (Power BI "show as table"). */}
-        {selectedWidget && onViewChange ? (
-          <Segmented
-            size="small"
-            value={view}
-            onChange={(v) => onViewChange(v as 'chart' | 'data')}
-            options={[
-              { label: tDash('view_chart'), value: 'chart', icon: <BarChartOutlined /> },
-              { label: tDash('view_data'), value: 'data', icon: <TableOutlined /> },
-            ]}
-          />
-        ) : null}
-        {/* The next step after building a chart, one click away (the library "⋮" menu opens the
-            same dialog). */}
-        <Button
-          size="small"
-          icon={<DashboardOutlined />}
-          disabled={!selectedWidget?.chartId}
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent(ADD_TO_DASHBOARD_EVENT, { detail: { chartId: String(selectedWidget?.chartId) } }),
-            )
-          }
-        >
-          {t('add_to_dashboard')}
-        </Button>
-        <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
-          <Tooltip title={selectedWidget ? t('share_menu_tooltip') : t('share_select_chart')}>
-            <Button
-              type="text"
+        <div className="chart-designer-toolbar-actions">
+          {selectedWidget && onViewChange ? (
+            <Segmented
               size="small"
-              icon={<ShareAltOutlined />}
-              className="chart-designer-toolbar-share"
-              disabled={!selectedWidget}
-              loading={preparing || isSaving}
-            >
+              value={view}
+              onChange={(v) => onViewChange(v as 'chart' | 'data')}
+              options={[
+                { value: 'chart', icon: <Tooltip title={tDash('view_chart')}><BarChartOutlined aria-label={tDash('view_chart')} /></Tooltip> },
+                { value: 'data', icon: <Tooltip title={tDash('view_data')}><TableOutlined aria-label={tDash('view_data')} /></Tooltip> },
+              ]}
+            />
+          ) : null}
+          {onPreview ? (
+            <Tooltip title={t('full_screen')}>
+              <Button size="small" type="text" icon={<FullscreenOutlined />} aria-label={t('full_screen')} onClick={onPreview} disabled={!selectedWidget} />
+            </Tooltip>
+          ) : null}
+          <Dropdown menu={{ items: shareMenuItems }} trigger={['click']} disabled={!selectedWidget}>
+            <Button size="small" icon={<ShareAltOutlined />} className="chart-designer-toolbar-share" disabled={!selectedWidget} loading={preparing || isSaving}>
               {t('share')}
             </Button>
+          </Dropdown>
+          {/* Publish: a public link and embed code anyone can open without signing in. */}
+          <Tooltip title={t('publish_tooltip')}>
+            <Button size="small" type="primary" icon={<GlobalOutlined />} disabled={!selectedWidget || !hasConfiguredData(selectedWidget)}
+              onClick={() => void handleShowEmbed()}>
+              {t('publish')}
+            </Button>
           </Tooltip>
-        </Dropdown>
+          <Dropdown menu={{ items: moreMenuItems }} trigger={['click']} disabled={!selectedWidget}>
+            <Button size="small" type="text" icon={<MoreOutlined />} aria-label={t('more_actions')} disabled={!selectedWidget} />
+          </Dropdown>
+        </div>
       </div>
 
       {publishChartId && (
@@ -335,6 +387,7 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
         scope="chart"
         resourceId={embedChartId}
         name={title}
+        title={t('publish_dialog_title', { name: title })}
         iframeHeight={400}
       />
     </>

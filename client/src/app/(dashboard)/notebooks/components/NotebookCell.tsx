@@ -16,9 +16,13 @@ import { CellOutputView, type OutputAction } from './CellOutputView';
 import { NotebookChart, defaultAgg } from './NotebookChart';
 import { PivotView } from './PivotView';
 import { AGGS } from './chartShape';
+import { PivotFieldsPanel, emptyPivotLayout } from '@/components/analytics/PivotFieldsPanel';
+import { layoutToPivotSpec } from '@/components/analytics/pivotFieldLayout';
+import type { PivotFieldLayout } from '@/components/analytics/pivotFieldLayout';
 import { bindModelSchema, defineNotebookThemes, registerSqlCompletion, schemaFor } from './sqlCompletion';
 import { registerPythonCompletion } from './pythonCompletion';
 import { registerInlineAi } from './inlineAi';
+import { activeSlashLine, BlockSlashMenu } from './BlockSlashMenu';
 
 const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 const { Text } = Typography;
@@ -85,6 +89,8 @@ type Props = {
   /** Charts and pivots: save to the chart library or add to a dashboard, with their data. */
   onPublish?: (target: 'library' | 'dashboard') => void;
   registerEditor: (handle: EditorHandle | null) => void;
+  /** Notion-style slash menu: turn empty text block or insert below. */
+  onSlashBlock?: (type: CellType) => void;
 };
 
 export function NotebookCell(props: Props) {
@@ -198,6 +204,33 @@ export function NotebookCell(props: Props) {
       })
       .map((c) => ({ value: c, label: c }));
   }, [columns, spec.x, spec.y, props.chartData]);
+  const pivotTableRows = props.chartData?.rows ?? [];
+  const pivotLayout = React.useMemo((): PivotFieldLayout => ({
+    ...emptyPivotLayout,
+    rows: spec.rows ?? [],
+    columns: spec.columns ?? [],
+    values: spec.values ?? [],
+    filters: spec.filters ?? [],
+    filterValues: spec.filterValues ?? {},
+    agg: spec.agg && spec.agg !== 'none' ? spec.agg : 'sum',
+    valueAggs: (spec.valueAggs as PivotFieldLayout['valueAggs']) ?? {},
+  }), [spec.rows, spec.columns, spec.values, spec.filters, spec.filterValues, spec.agg, spec.valueAggs]);
+  const pivotFieldLabels = React.useMemo(() => ({
+    fieldsTitle: t('pivot_fields_title'),
+    fieldsHint: t('pivot_hint'),
+    zoneRows: t('pivot_rows'),
+    zoneColumns: t('pivot_columns'),
+    zoneValues: t('pivot_values'),
+    zoneFilters: t('pivot_filters'),
+    summarize: t('summarize'),
+    addToRow: t('pivot_rows'),
+    addToColumn: t('pivot_columns'),
+    addToValues: t('pivot_values'),
+    addToFilters: t('pivot_filters'),
+    filterAll: t('all'),
+    dragHint: '—',
+    aggLabel: (agg: string) => t(`agg_${agg}`),
+  }), [t]);
   const runnable = cell.type === 'sql' ? Boolean(cell.data_source_id && cell.source.trim()) : cell.type === 'python' ? Boolean(cell.source.trim()) : false;
 
   return (
@@ -208,13 +241,31 @@ export function NotebookCell(props: Props) {
       onFocusCapture={props.onFocus}
       onMouseDown={() => props.onEscape?.()}
     >
+      <div className={`nb-cell__shell${code ? ' nb-cell__shell--code' : ''}`}>
+        {code ? (
+          <div className="nb-cell__gutter">
+            <Tooltip title={t('run_cell_keys')}>
+              <button
+                type="button"
+                className="nb-cell__gutter-run"
+                disabled={!runnable || props.busy || readOnly}
+                aria-label={t('run')}
+                onClick={() => props.onRun(false)}
+              >
+                {running ? (
+                  <span className="nb-cell__count" title={t('run_count_help')}>[*]</span>
+                ) : props.execCount ? (
+                  <span className="nb-cell__count" title={t('run_count_help')}>{`[${props.execCount}]`}</span>
+                ) : (
+                  <CaretRightOutlined />
+                )}
+              </button>
+            </Tooltip>
+          </div>
+        ) : null}
+        <div className="nb-cell__main">
       <header className="nb-cell__bar">
         <Space size={6} wrap>
-          {code && (running || props.execCount) ? (
-            <span className="nb-cell__count" title={t('run_count_help')} aria-label={t('run_count_help')}>
-              {running ? '[*]' : props.execCount ? `[${props.execCount}]` : ''}
-            </span>
-          ) : null}
           <Tag icon={TYPE_ICON[cell.type]} bordered={false}>{t(`type_${cell.type}`)}</Tag>
           {cell.type === 'sql' ? (
             <Select
@@ -252,6 +303,19 @@ export function NotebookCell(props: Props) {
           ) : null}
         </Space>
         <Space size={4}>
+          {!readOnly ? (
+            <span className="nb-cell__hover-tools nb-cell__secondary">
+              <Tooltip title={t('move_up')}>
+                <Button size="small" type="text" icon={<ArrowUpOutlined />} disabled={props.index === 0} aria-label={t('move_up')} onClick={() => props.onMove(-1)} />
+              </Tooltip>
+              <Tooltip title={t('move_down')}>
+                <Button size="small" type="text" icon={<ArrowDownOutlined />} disabled={props.index === props.count - 1} aria-label={t('move_down')} onClick={() => props.onMove(1)} />
+              </Tooltip>
+              <Tooltip title={t('delete_cell')}>
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={t('delete_cell')} onClick={() => props.onDelete()} />
+              </Tooltip>
+            </span>
+          ) : null}
           {code && props.aiAvailable && !readOnly ? (
             <span className={aiOpen ? undefined : 'nb-cell__secondary'}>
               <Button size="small" type={aiOpen ? 'default' : 'text'} icon={<RobotOutlined />} onClick={() => setAiOpen((v) => !v)}>
@@ -380,7 +444,7 @@ export function NotebookCell(props: Props) {
               ariaLabel: t(`type_${cell.type}`),
             }}
           />
-          {!cell.source && !readOnly ? (
+          {!cell.source.trim() && !readOnly ? (
             <div className="nb-cell__placeholder" aria-hidden>
               {cell.type === 'sql'
                 ? (props.aiAvailable ? t('placeholder_sql_ai') : t('placeholder_sql'))
@@ -396,31 +460,41 @@ export function NotebookCell(props: Props) {
             <Input.TextArea
               variant="borderless"
               autoFocus
-              autoSize={{ minRows: 3, maxRows: 20 }}
+              autoSize={{ minRows: 2, maxRows: 24 }}
               value={cell.source}
-              placeholder={t('text_placeholder')}
+              placeholder={t('text_placeholder_notion')}
               onChange={(e) => onChange({ source: e.target.value })}
               onKeyDown={(e) => {
-                if ((e.key === 'Enter' && (e.shiftKey || e.metaKey || e.ctrlKey)) || e.key === 'Escape') {
+                if (e.key === 'Escape') {
                   e.preventDefault();
                   setEditingText(false);
-                  if (e.key === 'Escape') keysRef.current.escape?.();
-                  else if (e.shiftKey) runRef.current(true); // Shift+Enter moves on, as in code cells
+                  keysRef.current.escape?.();
                 }
               }}
             />
+            {activeSlashLine(cell.source) !== null && props.onSlashBlock ? (
+              <BlockSlashMenu
+                filter={activeSlashLine(cell.source) ?? ''}
+                onPick={(type) => props.onSlashBlock?.(type)}
+              />
+            ) : null}
             <Button size="small" type="link" onClick={() => setEditingText(false)}>{t('done')}</Button>
           </div>
         ) : (
           <div
-            className="nb-cell__markdown"
+            className="nb-cell__markdown nb-prose"
             role={readOnly ? undefined : 'button'}
             tabIndex={readOnly ? undefined : 0}
-            onDoubleClick={() => !readOnly && setEditingText(true)}
+            onClick={(e) => {
+              if (readOnly) return;
+              const el = e.target as HTMLElement;
+              if (el.closest('a, button')) return;
+              setEditingText(true);
+            }}
             onKeyDown={(e) => { if (!readOnly && e.key === 'Enter') setEditingText(true); }}
             aria-label={readOnly ? undefined : t('edit_text')}
           >
-            {cell.source ? <MarkdownRenderer content={cell.source} /> : <Text type="secondary">{t('text_empty')}</Text>}
+            {cell.source ? <MarkdownRenderer content={cell.source} className="nb-prose__md" /> : <Text type="secondary" className="nb-text-empty">{t('text_empty_notion')}</Text>}
           </div>
         )
       ) : null}
@@ -482,28 +556,17 @@ export function NotebookCell(props: Props) {
                 </Checkbox>
               ) : null}
             </div>
-          ) : (
-            <div className="nb-chart-controls">
-              <Field label={t('pivot_rows')}>
-                <Select size="small" mode="multiple" style={{ minWidth: 170 }} value={spec.rows ?? []} disabled={readOnly || !columns.length}
-                  maxTagCount="responsive" options={colOptions} onChange={(rows) => onChange({ chart: { ...spec, rows } })} aria-label={t('pivot_rows')} />
-              </Field>
-              <Field label={t('pivot_columns')}>
-                <Select size="small" mode="multiple" style={{ minWidth: 150 }} value={spec.columns ?? []} disabled={readOnly || !columns.length}
-                  maxTagCount="responsive" options={colOptions} onChange={(cols) => onChange({ chart: { ...spec, columns: cols } })} aria-label={t('pivot_columns')} />
-              </Field>
-              <Field label={t('pivot_values')}>
-                <Select size="small" mode="multiple" style={{ minWidth: 170 }} value={spec.values ?? []} disabled={readOnly || !columns.length}
-                  maxTagCount="responsive" placeholder={t('agg_count')} options={colOptions}
-                  onChange={(values) => onChange({ chart: { ...spec, values } })} aria-label={t('pivot_values')} />
-              </Field>
-              <Field label={t('summarize')}>
-                <Select size="small" style={{ width: 120 }} value={!spec.values?.length ? 'count' : spec.agg && spec.agg !== 'none' ? spec.agg : 'sum'} disabled={readOnly || !spec.values?.length}
-                  options={AGGS.filter((k) => k !== 'none').map((k) => ({ value: k, label: t(`agg_${k}`) }))}
-                  onChange={(agg) => onChange({ chart: { ...spec, agg } })} aria-label={t('summarize')} />
-              </Field>
-            </div>
-          )}
+          ) : columns.length ? (
+            <PivotFieldsPanel
+              compact
+              columns={columns}
+              rows={pivotTableRows}
+              layout={pivotLayout}
+              disabled={readOnly}
+              labels={pivotFieldLabels}
+              onChange={(layout) => onChange({ chart: { ...spec, ...layoutToPivotSpec(layout) } })}
+            />
+          ) : null}
           <ChartBody {...props} spec={spec} />
         </div>
       ) : null}
@@ -522,6 +585,8 @@ export function NotebookCell(props: Props) {
             : undefined}
         />
       ) : null}
+        </div>
+      </div>
     </section>
   );
 }

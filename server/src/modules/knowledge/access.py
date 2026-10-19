@@ -136,8 +136,8 @@ async def _library_decision(
     import importlib
 
     try:
-        models = importlib.import_module("ee.modules.knowledge.models")
-        service = importlib.import_module("ee.modules.knowledge.library_service")
+        models = importlib.import_module("src.enterprise.modules.knowledge.models")
+        service = importlib.import_module("src.enterprise.modules.knowledge.library_service")
     except ImportError:
         return None
     Library = models.KnowledgeLibrary

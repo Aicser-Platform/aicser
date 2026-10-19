@@ -4,13 +4,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
-  Alert, App, Button, Dropdown, Empty, Input, Modal, Popover, Select, Space, Spin, Switch, Tag, Tooltip, Typography,
+  Alert, App, Button, Drawer, Dropdown, Empty, Input, Modal, Popover, Select, Space, Spin, Switch, Tooltip, Typography,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  CaretRightOutlined, CheckOutlined, ClearOutlined, FieldTimeOutlined, HistoryOutlined, CloudSyncOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined,
-  DownOutlined, DownloadOutlined, FilePdfOutlined, FileTextOutlined, GlobalOutlined, LockOutlined, MoreOutlined,
-  ReloadOutlined, SaveOutlined, ShareAltOutlined, StopOutlined,
+  CaretRightOutlined, CheckOutlined, ClearOutlined, FieldTimeOutlined, HistoryOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined,
+  DownloadOutlined, FilePdfOutlined, FileTextOutlined, GlobalOutlined, LockOutlined, MoreOutlined, PlusOutlined, RobotOutlined,
+  ReloadOutlined, SafetyCertificateOutlined, SaveOutlined, ShareAltOutlined, StopOutlined,
 } from '@ant-design/icons';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
 import { useDataSources } from '@/hooks/useDataSources';
@@ -21,12 +21,20 @@ import { fetchApi } from '@/utils/api';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import {
   newCellId, nextResultName, notebookService,
-  type CellOutput, type CellType, type Notebook, type NotebookCell as Cell,
+  type CellOutput, type CellType, type Notebook, type NotebookCell as Cell, type NotebookSettings,
 } from '@/services/notebookService';
+import { defaultParamValues, substituteParameters } from '../utils/parameters';
+import { NotebookGovernanceDrawer, emptySettings } from './NotebookGovernanceDrawer';
+import { useNotebookPresence } from '../hooks/useNotebookPresence';
 import { usePythonRuntime, type Frame } from '../hooks/usePythonRuntime';
 import { NotebookCell, TYPE_ICON, type EditorHandle, type ResultInfo } from './NotebookCell';
 import { toCsv, toTsv, type OutputAction } from './CellOutputView';
+import { AddBar } from './AddBar';
+import { BlockHandle } from './BlockHandle';
+import { activeSlashLine } from './BlockSlashMenu';
 import { DataSidebar } from './DataSidebar';
+import { NotebookRunbookPanel } from './NotebookRunbookPanel';
+import { outlineFromCells } from '../utils/notebookOutline';
 import { setNotebookFrames, setNotebookSources } from './pythonCompletion';
 import { PublishDialog, type PublishTarget } from './PublishDialog';
 import { createPythonBridge } from './pythonBridge';
@@ -41,6 +49,13 @@ import { pivotGrid } from './PivotView';
 import { schemaFor, tableName } from './sqlCompletion';
 import { chartImage } from './NotebookChart';
 import { notebookHtml, printHtml } from './notebookExport';
+import { DocumentToolbar } from '@/components/work-surface/DocumentToolbar';
+import { buildNotebookStudioSurfaceContext } from '@/agent/notebookSurfaceContext';
+import type { SurfaceNotebookChanges } from '@/agent/surfaceAgentTypes';
+import { notebookWithChanges } from '@/agent/applyNotebookChanges';
+import { SurfaceCopilotDrawer, SurfaceInlineAsk } from '@/ee';
+import { inlineAskShortcutLabel, isInlineAskShortcut, type PendingSurfaceQuestion } from '@/agent/inlineAsk';
+import '@/components/work-surface/work-surface.css';
 import '../notebooks.css';
 import '../../dashboards/styles/comments.css';
 
@@ -75,19 +90,6 @@ function safeFileName(name: string): string {
   return name.replace(/[^\w\- ]+/g, '').trim() || 'notebook';
 }
 
-function AddBar({ onAdd, label, end = false }: { onAdd: (type: CellType) => void; label: string; end?: boolean }) {
-  const t = useTranslations('notebooks');
-  return (
-    <div className={`nb-add${end ? ' nb-add--end' : ''}`} role="group" aria-label={label}>
-      {(['sql', 'python', 'markdown', 'chart', 'pivot'] as CellType[]).map((type) => (
-        <Button key={type} size="small" type="text" icon={TYPE_ICON[type]} onClick={() => onAdd(type)}>
-          + {t(`type_${type}`)}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
 type Result = Frame & { row_count: number; version: number };
 
 function toRows(data: unknown[], columns: string[]): unknown[][] {
@@ -96,6 +98,7 @@ function toRows(data: unknown[], columns: string[]): unknown[][] {
 
 export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const t = useTranslations('notebooks');
+  const tAsk = useTranslations('surface_copilot');
   const { message } = App.useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -135,6 +138,14 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   });
   const [sideSource, setSideSource] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<{ cellId: string; target: PublishTarget } | null>(null);
+  const [notebookSettings, setNotebookSettings] = useState<NotebookSettings>(emptySettings);
+  const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
+  const [governanceOpen, setGovernanceOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  // ⌘J at a cell: a one-line question about that cell, answered (and applied) by the AI panel.
+  const [inlineAskCell, setInlineAskCell] = useState<string | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<PendingSurfaceQuestion | null>(null);
+  const { peers, emitFocus } = useNotebookPresence(notebookId);
 
   const results = useRef(new Map<string, Result>());
   const versionRef = useRef(1);
@@ -147,7 +158,11 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const editors = useRef(new Map<string, EditorHandle>());
   const pendingFocus = useRef<string | null>(null);
   const sidebarSourceRef = useRef<string | null>(null);
-  const readOnly = nb ? !nb.is_owner : true;
+  const readOnly = nb
+    ? !nb.is_owner ||
+      (notebookSettings.certification.status === 'approved' &&
+        notebookSettings.certification.locks_edits === true)
+    : true;
 
   const load = useCallback(async () => {
     try {
@@ -156,6 +171,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       setCells(data.cells || []);
       setRanSig(Object.fromEntries((data.cells || []).filter((c) => c.output).map((c) => [c.id, signature(c)])));
       setTitle(data.title);
+      const settings = data.settings ?? emptySettings;
+      setNotebookSettings(settings);
+      setParamValues(defaultParamValues(settings.parameters));
       versionRef.current = data.version;
       setSaveState('saved');
       setLoadError(null);
@@ -363,7 +381,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
 
   const runCell = useCallback(async (cell: Cell): Promise<boolean> => {
     if (cell.type !== 'sql' && cell.type !== 'python') return true;
-    if (!cell.source.trim()) return true;
+    const [applied] = substituteParameters([cell], paramValues, notebookSettings.parameters);
+    const execCell = applied ?? cell;
+    if (!execCell.source.trim()) return true;
     const controller = new AbortController();
     abortRef.current = controller;
     runningKind.current = cell.type;
@@ -372,9 +392,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     let output: CellOutput;
     try {
       if (cell.type === 'sql') {
-        if (!cell.data_source_id) throw new Error(t('choose_data_first'));
+        if (!execCell.data_source_id) throw new Error(t('choose_data_first'));
         const started = performance.now();
-        const res = await enhancedDataService.executeMultiEngineQuery(cell.source, cell.data_source_id, undefined, true, controller.signal, projectId);
+        const res = await enhancedDataService.executeMultiEngineQuery(execCell.source, execCell.data_source_id!, undefined, true, controller.signal, projectId);
         if (controller.signal.aborted) throw new Error(t('stopped'));
         if (!res.success) throw new Error(res.error || t('query_failed'));
         const columns = ((res.columns || []) as Array<string | { name: string }>).map((c) => (typeof c === 'string' ? c : c.name));
@@ -389,14 +409,20 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       } else {
         const inputs: Record<string, Result> = {};
         results.current.forEach((v, k) => { inputs[k] = v; });
-        const out = await py.run(cell.source, inputs, { sources: pySources, load: bridgeFor(cell, controller.signal) });
+        const out = await py.run(execCell.source, inputs, { sources: pySources, load: bridgeFor(cell, controller.signal) });
         setLiveImages((prev) => ({ ...prev, [cell.id]: out.images }));
         const stdout = out.stdout?.trim() || undefined;
         if (out.result?.kind === 'table') {
           output = { kind: 'table', columns: out.result.columns, rows: out.result.rows, row_count: out.result.row_count, text: stdout, ran_at: ranAt, duration_ms: out.duration_ms };
         } else {
           const text = [stdout, out.result?.kind === 'text' ? out.result.text : undefined].filter(Boolean).join('\n');
-          output = { kind: out.images.length ? 'image' : 'text', text: text || undefined, image: out.images[0], ran_at: ranAt, duration_ms: out.duration_ms };
+          output = {
+            kind: out.images.length ? 'image' : 'text',
+            text: text || undefined,
+            image: out.images[0],
+            ran_at: ranAt,
+            duration_ms: out.duration_ms,
+          } satisfies CellOutput;
         }
       }
       patchCell(cell.id, { output });
@@ -415,7 +441,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       runningKind.current = null;
       setRunningId(null);
     }
-  }, [bridgeFor, patchCell, projectId, py, pySources, t]);
+  }, [bridgeFor, notebookSettings.parameters, paramValues, patchCell, projectId, py, pySources, t]);
 
   /** Stop what's running: a query is cancelled; Python can only be stopped by restarting it. */
   const stop = useCallback(() => {
@@ -485,6 +511,35 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     });
   }, [patchCell]);
 
+  const handleSlashBlock = useCallback((cellId: string, index: number, type: CellType) => {
+    const cell = cellsRef.current.find((c) => c.id === cellId);
+    if (!cell || cell.type !== 'markdown') return;
+    const slashOnly = activeSlashLine(cell.source) !== null;
+    if (type === 'markdown') {
+      patchCell(cellId, { source: '' });
+      return;
+    }
+    if ((type === 'sql' || type === 'python') && slashOnly) {
+      changeType(cellId, type);
+      patchCell(cellId, { source: '' });
+      focusCell(cellId);
+      return;
+    }
+    if (slashOnly) {
+      removeCell(cellId);
+      const id = addCell(type, Math.max(0, index - 1));
+      setSelectedId(id);
+      return;
+    }
+    const id = addCell(type, index);
+    setSelectedId(id);
+  }, [addCell, changeType, focusCell, patchCell, removeCell]);
+
+  const openHistory = useCallback(async () => {
+    if (saveState === 'dirty') await saveNow();
+    setHistoryOpen(true);
+  }, [saveNow, saveState]);
+
   const runInsert = useCallback(async (cell: Cell) => {
     stopRef.current = false;
     await runCell(cell);
@@ -495,6 +550,15 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const keyActions = useRef<(e: KeyboardEvent) => void>(() => undefined);
   keyActions.current = (e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
+    if (ai.available && isInlineAskShortcut(e)) {
+      const here = (e.target as HTMLElement | null)?.closest?.('[data-cell-id]')?.getAttribute('data-cell-id');
+      const id = here || selectedId;
+      if (id) {
+        e.preventDefault();
+        setInlineAskCell(id);
+      }
+      return;
+    }
     if (mod && e.shiftKey && e.key === 'Enter') {
       e.preventDefault();
       if (!(runningAll || runningId !== null)) void runAll();
@@ -649,6 +713,19 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells, py.frames, resultsTick]);
 
+  const notebookCopilotContext = useMemo(
+    () =>
+      buildNotebookStudioSurfaceContext({
+        notebookId,
+        title,
+        intent: 'ask',
+        cells,
+        resultInfos,
+        dataSourceId: sideSource ?? undefined,
+      }),
+    [notebookId, title, cells, resultInfos, sideSource],
+  );
+
   // A run's outputs (scheduled or "Run now") shown in the cells, as if run here.
   const showRun = useCallback(async (runId: string) => {
     if (!nb) return;
@@ -657,7 +734,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
       let shown = 0;
       for (const [cellId, output] of Object.entries(run.outputs || {})) {
         if (cellsRef.current.some((c) => c.id === cellId)) {
-          patchCell(cellId, { output });
+          patchCell(cellId, { output: output as CellOutput });
           shown += 1;
         }
       }
@@ -833,7 +910,14 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     setSavingDataset(true);
     try {
       const frame = resultFor(saveFrom) ?? (await py.getFrame(saveFrom, 200000));
-      const res = await notebookService.saveDataset(saveName.trim() || saveFrom, frame.columns, frame.rows, projectId ? String(projectId) : null);
+      const upstream = cellsRef.current.filter((c) => c.type === 'sql' && c.data_source_id).map((c) => String(c.data_source_id));
+      const res = await notebookService.saveDataset(
+        saveName.trim() || saveFrom,
+        frame.columns,
+        frame.rows,
+        projectId ? String(projectId) : null,
+        { notebookId: nb?.id, upstreamDataSourceIds: [...new Set(upstream)] },
+      );
       setSaveOpen(false);
       message.success(
         <span>
@@ -849,6 +933,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   };
 
   const moreItems: MenuProps['items'] = [
+    { key: 'restart', icon: <ReloadOutlined />, label: t('restart_python'), disabled: py.status === 'off' },
+    ...(readOnly ? [] : [{ key: 'clear', icon: <ClearOutlined />, label: t('clear_outputs') }]),
+    { type: 'divider' as const },
     { key: 'shortcuts', icon: <span aria-hidden>⌨</span>, label: t('keyboard_shortcuts') },
     ...(ai.available && !readOnly
       ? [{ key: 'inline_ai', icon: inlineOn ? <CheckOutlined /> : <span aria-hidden style={{ display: 'inline-block', width: 14 }} />, label: t('inline_ai') }]
@@ -856,8 +943,10 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     { type: 'divider' as const },
     { key: 'dataset', icon: <SaveOutlined />, label: t('save_as_dataset'), disabled: !resultInfos.length },
     { key: 'duplicate', icon: <CopyOutlined />, label: t('duplicate') },
-    { key: 'history', icon: <HistoryOutlined />, label: t('version_history') },
-    ...(isEnterpriseEdition() ? [{ key: 'schedule', icon: <FieldTimeOutlined />, label: t('schedule_menu') }] : []),
+    { type: 'divider' as const },
+    { key: 'history', icon: <HistoryOutlined />, label: t('menu_version_history') },
+    { key: 'governance', icon: <SafetyCertificateOutlined />, label: t('menu_governance') },
+    ...(isEnterpriseEdition() ? [{ key: 'schedule', icon: <FieldTimeOutlined />, label: t('menu_schedule_refresh') }] : []),
     ...(nb?.is_owner ? [{ type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: t('delete'), danger: true }] : []),
   ];
 
@@ -955,6 +1044,10 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     return `${t('cell_n', { n: i + 1 })} · ${t(`type_${c.type}`)}${c.name ? ` · ${c.name}` : ''}`;
   }, [cells, t]);
   const sideSourceName = pySources.find((x) => x.id === sidebarSource)?.name;
+  const inlineAskScope = (() => {
+    const c = cells.find((x) => x.id === inlineAskCell);
+    return c?.name || (c ? t('cell_n', { n: cells.indexOf(c) + 1 }) : '');
+  })();
   useEffect(() => {
     if (!sidebarSource || !sideSourceName) {
       setSideSourceInfo(undefined);
@@ -971,14 +1064,34 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
     return () => { live = false; };
   }, [sidebarSource, sideSourceName]);
   const sourceOptions = useMemo(() => dataSources.map((d) => ({ value: String(d.id), label: d.name })), [dataSources]);
+  const insertAfterIndex = useMemo(() => {
+    if (!selectedId) return Math.max(cells.length - 1, -1);
+    const i = cells.findIndex((c) => c.id === selectedId);
+    return i >= 0 ? i : Math.max(cells.length - 1, -1);
+  }, [cells, selectedId]);
+  const addCellMenuItems: MenuProps['items'] = useMemo(() => [
+    { key: 'python', icon: TYPE_ICON.python, label: t('add_code') },
+    { key: 'sql', icon: TYPE_ICON.sql, label: t('type_sql') },
+    { key: 'markdown', icon: TYPE_ICON.markdown, label: t('add_markdown') },
+    { type: 'divider' as const },
+    { key: 'chart', icon: TYPE_ICON.chart, label: t('type_chart') },
+    { key: 'pivot', icon: TYPE_ICON.pivot, label: t('type_pivot') },
+  ], [t]);
+  const notebookOutline = useMemo(() => outlineFromCells(cells), [cells]);
   const busy = runningAll || runningId !== null;
 
   const onMore: MenuProps['onClick'] = async ({ key }) => {
     if (!nb) return;
+    if (key === 'restart') py.restart();
+    if (key === 'clear') clearOutputs();
     if (key === 'shortcuts') setShortcutsOpen(true);
     if (key === 'schedule') {
       if (saveState === 'dirty') await saveNow(); // runs use the saved notebook
       setScheduleOpen(true);
+    }
+    if (key === 'governance') {
+      setGovernanceOpen(true);
+      return;
     }
     if (key === 'history') {
       // Save pending edits first so the history and "now" agree.
@@ -1016,110 +1129,141 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
   const saveLabel = { saved: t('saved'), dirty: t('unsaved'), saving: t('saving'), conflict: t('conflict_short'), error: t('save_error') }[saveState];
   const pyLabel = { off: null, starting: t('python_starting'), ready: t('python_ready'), busy: t('python_busy'), failed: t('python_failed') }[py.status];
 
+  const saveTone = saveState === 'error' || saveState === 'conflict' ? 'danger' : 'ok';
+
   return (
     <div className="nb-editor">
-      <div className="nb-toolbar">
-        <div className="nb-toolbar__title">
-          <Input
-            className="nb-title"
-            variant="borderless"
-            value={title}
-            readOnly={readOnly}
-            maxLength={200}
-            aria-label={t('title_label')}
-            placeholder={t('untitled')}
-            onChange={(e) => { setTitle(e.target.value); markDirty(); }}
-            onBlur={() => { if (!title.trim() && nb) { setTitle(nb.title || t('untitled')); markDirty(); } }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur(); }}
-          />
-          <Tooltip title={saveState === 'error' ? saveProblem || t('save_retrying') : undefined}>
-            <Text type={saveState === 'error' || saveState === 'conflict' ? 'danger' : 'secondary'} className="nb-save-state" aria-live="polite">
-              {!readOnly ? <><CloudSyncOutlined /> {saveLabel}</> : <Tag>{t('view_only')}</Tag>}
-            </Text>
-          </Tooltip>
-          {pyLabel ? (
-            <Tooltip title={py.status === 'starting' ? t('python_note') : undefined}>
-              <Tag color={py.status === 'failed' ? 'error' : 'processing'} bordered={false}>{pyLabel}</Tag>
-            </Tooltip>
-          ) : null}
-        </div>
+      <DocumentToolbar
+        title={title}
+        titleReadOnly={readOnly}
+        titleAriaLabel={t('title_label')}
+        titlePlaceholder={t('untitled')}
+        onTitleChange={(v) => { setTitle(v); markDirty(); }}
+        onTitleBlur={() => { if (!title.trim() && nb) { setTitle(nb.title || t('untitled')); markDirty(); } }}
+        saveLabel={readOnly ? undefined : saveLabel}
+        saveTone={saveTone}
+        saveTooltip={saveState === 'error' ? saveProblem || t('save_retrying') : undefined}
+        viewOnly={readOnly}
+        viewOnlyLabel={t('view_only')}
+        actions={(
+          <>
+            {nb.is_owner ? (
+              <Popover
+                trigger="click"
+                placement="bottomRight"
+                title={t('share_title')}
+                content={(
+                  <div className="nb-share">
+                    <label className="nb-share__row">
+                      <span className="nb-share__icon" aria-hidden>{nb.visibility === 'project' ? <GlobalOutlined /> : <LockOutlined />}</span>
+                      <span className="nb-share__text">
+                        <Text strong>{t('share_with_project')}</Text>
+                        <Text type="secondary">{t('share_help')}</Text>
+                      </span>
+                      <Switch size="small" checked={nb.visibility === 'project'} onChange={(on) => void setVisibility(on)} aria-label={t('share_with_project')} />
+                    </label>
+                  </div>
+                )}
+              >
+                <Tooltip title={t('share')}>
+                  <Button icon={<ShareAltOutlined />} aria-label={t('share')} />
+                </Tooltip>
+              </Popover>
+            ) : null}
+            <Dropdown trigger={['click']} menu={{ items: exportItems, onClick: onExport }}>
+              <Tooltip title={t('export')}>
+                <Button icon={<DownloadOutlined />} aria-label={t('export')} />
+              </Tooltip>
+            </Dropdown>
+            {ai.available ? (
+              <Tooltip title={tAsk('inline_hint', { label: tAsk('inline_title'), shortcut: inlineAskShortcutLabel() })}>
+                <Button icon={<RobotOutlined />} onClick={() => setCopilotOpen(true)}>{t('ai_copilot')}</Button>
+              </Tooltip>
+            ) : null}
+            {nb ? (
+              <DashboardCollabCommentsPanel
+                dashboardId={nb.id}
+                apiRoot="/api/notebooks"
+                open={commentsOpen}
+                onOpenChange={setCommentsOpen}
+                selectedWidgetId={selectedId}
+                widgetTitle={cellLabel}
+                canModerate={!readOnly}
+                triggerSize="middle"
+                anchorTerms={{
+                  attach: (name) => t('comment_attach_cell', { cell: name }),
+                  on: t('comment_on_cell'),
+                  only: t('comment_only_cell'),
+                  selected: t('comment_selected_cell'),
+                }}
+              />
+            ) : null}
+            <Dropdown trigger={['click']} menu={{ items: moreItems, onClick: onMore }}>
+              <Button icon={<MoreOutlined />} aria-label={t('more')} />
+            </Dropdown>
+          </>
+        )}
+      />
+
+      <div className="nb-command-bar" role="toolbar" aria-label={t('command_bar')}>
         <Space wrap size={8}>
+          {!readOnly ? (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: addCellMenuItems,
+                onClick: ({ key }) => addCell(key as CellType, insertAfterIndex),
+              }}
+            >
+              <Button icon={<PlusOutlined />}>{t('add_cell_short')}</Button>
+            </Dropdown>
+          ) : null}
           {busy ? (
             <Button danger icon={<StopOutlined />} onClick={stop}>{t('stop')}</Button>
           ) : (
-            <Space.Compact>
-              <Button type="primary" icon={<CaretRightOutlined />} onClick={() => void runAll()} disabled={!cells.length}>
-                {t('run_all')}
-              </Button>
-              <Dropdown
-                trigger={['click']}
-                menu={{
-                  items: [
-                    { key: 'restart', icon: <ReloadOutlined />, label: t('restart_python'), disabled: py.status === 'off', title: t('restart_python_help') },
-                    ...(readOnly ? [] : [{ key: 'clear', icon: <ClearOutlined />, label: t('clear_outputs') }]),
-                  ],
-                  onClick: ({ key }) => {
-                    if (key === 'restart') py.restart();
-                    if (key === 'clear') clearOutputs();
-                  },
-                }}
-              >
-                <Button type="primary" icon={<DownOutlined />} aria-label={t('run_options')} />
-              </Dropdown>
-            </Space.Compact>
+            <Button type="primary" icon={<CaretRightOutlined />} onClick={() => void runAll()} disabled={!cells.length}>
+              {t('run_all')}
+            </Button>
           )}
-          {nb.is_owner ? (
-            <Popover
-              trigger="click"
-              placement="bottomRight"
-              title={t('share_title')}
-              content={(
-                <div className="nb-share">
-                  <label className="nb-share__row">
-                    <span className="nb-share__icon" aria-hidden>{nb.visibility === 'project' ? <GlobalOutlined /> : <LockOutlined />}</span>
-                    <span className="nb-share__text">
-                      <Text strong>{t('share_with_project')}</Text>
-                      <Text type="secondary">{t('share_help')}</Text>
-                    </span>
-                    <Switch size="small" checked={nb.visibility === 'project'} onChange={(on) => void setVisibility(on)} aria-label={t('share_with_project')} />
-                  </label>
-                </div>
-              )}
-            >
-              <Button icon={<ShareAltOutlined />}>{t('share')}</Button>
-            </Popover>
+        </Space>
+        <Space wrap size={8} className="nb-command-bar__end">
+          {notebookSettings.parameters.length ? (
+            <Space wrap size={4} className="nb-param-bar">
+              {notebookSettings.parameters.map((p) => (
+                <Input
+                  key={p.name}
+                  size="small"
+                  style={{ width: 120 }}
+                  placeholder={p.label || p.name}
+                  value={paramValues[p.name] != null ? String(paramValues[p.name]) : ''}
+                  onChange={(e) => setParamValues((prev) => ({ ...prev, [p.name]: e.target.value }))}
+                  aria-label={p.name}
+                />
+              ))}
+            </Space>
           ) : null}
-          <Dropdown trigger={['click']} menu={{ items: exportItems, onClick: onExport }}>
-            <Button icon={<DownloadOutlined />}>{t('export')}</Button>
-          </Dropdown>
-          {!sidebarOpen ? (
-            <Tooltip title={t('show_sidebar')}>
-              <Button icon={<DatabaseOutlined />} aria-label={t('show_sidebar')} onClick={() => toggleSidebar(true)} />
+          {peers.length > 1 ? (
+            <Text type="secondary" className="nb-presence">{t('governance_peers', { n: peers.length })}</Text>
+          ) : null}
+          {pyLabel ? (
+            <Tooltip title={py.status === 'starting' ? t('python_note') : undefined}>
+              <span className={`nb-session${py.status === 'failed' ? ' nb-session--error' : py.status === 'ready' ? ' nb-session--ready' : py.status === 'busy' ? ' nb-session--busy' : ''}`}>
+                <span className="nb-session__dot" aria-hidden />
+                <span className="nb-session__label">{pyLabel}</span>
+              </span>
             </Tooltip>
           ) : null}
-          {nb ? (
-            <DashboardCollabCommentsPanel
-              dashboardId={nb.id}
-              apiRoot="/api/notebooks"
-              open={commentsOpen}
-              onOpenChange={setCommentsOpen}
-              selectedWidgetId={selectedId}
-              widgetTitle={cellLabel}
-              canModerate={!readOnly}
-              triggerSize="middle"
-              anchorTerms={{
-                attach: (name) => t('comment_attach_cell', { cell: name }),
-                on: t('comment_on_cell'),
-                only: t('comment_only_cell'),
-                selected: t('comment_selected_cell'),
-              }}
-            />
+          {!sidebarOpen ? (
+            <Button icon={<DatabaseOutlined />} onClick={() => toggleSidebar(true)}>{t('menu_data')}</Button>
           ) : null}
-          <Dropdown trigger={['click']} menu={{ items: moreItems, onClick: onMore }}>
-            <Button icon={<MoreOutlined />} aria-label={t('more')} />
-          </Dropdown>
         </Space>
       </div>
+
+      {cells.length && notebookSettings.certification.status === 'approved' ? (
+        <div className="nb-meta-strip" aria-label={t('meta_strip')}>
+          <Text type="success">{t('governance_cert_approved_badge')}</Text>
+        </div>
+      ) : null}
 
       {saveState === 'conflict' ? (
         <Alert type="warning" showIcon message={t('conflict')} action={<Button size="small" onClick={() => void load()}>{t('reload')}</Button>} />
@@ -1135,6 +1279,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
 
       <div className={`nb-body${sidebarOpen ? ' nb-body--side' : ''}`}>
         <div className="nb-main">
+          <div className="nb-doc">
           {cells.length === 0 ? (
             <Empty description={t('empty_notebook')}>
               <Space wrap>
@@ -1152,7 +1297,8 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                 const producer = from && !chartData ? cells.find((c) => c.type === 'sql' && c.name === from) : undefined;
                 const stale = Boolean(cell.output && ranSig[cell.id] !== undefined && ranSig[cell.id] !== signature(cell));
                 return (
-                  <React.Fragment key={cell.id}>
+                  <div className="nb-block-wrap" key={cell.id}>
+                    {!readOnly ? <BlockHandle onInsert={(type) => addCell(type, index - 1)} /> : null}
                     <NotebookCell
                       cell={cell}
                       index={index}
@@ -1186,8 +1332,9 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                       onMove={(d) => moveCell(cell.id, d)}
                       onAskAi={(prompt) => askAi(cell, prompt)}
                       onOutputAction={(action) => void outputAction(cellsRef.current.find((c) => c.id === cell.id) ?? cell, action)}
-                      onFocus={() => { setFocusedId(cell.id); setSelectedId(cell.id); }}
+                      onFocus={() => { setFocusedId(cell.id); setSelectedId(cell.id); emitFocus(cell.id); }}
                       onPublish={readOnly ? undefined : (target) => setPublishing({ cellId: cell.id, target })}
+                      onSlashBlock={readOnly ? undefined : (type) => handleSlashBlock(cell.id, index, type)}
                       registerEditor={(handle) => {
                         if (handle) {
                           editors.current.set(cell.id, handle);
@@ -1201,15 +1348,22 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
                       }}
                     />
                     {!readOnly ? <AddBar label={t('add_cell')} end={index === cells.length - 1} onAdd={(type) => addCell(type, index)} /> : null}
-                  </React.Fragment>
+                  </div>
                 );
               })}
             </div>
           )}
+          </div>
         </div>
         {sidebarOpen ? (
           <DataSidebar
             dataSources={sourceOptions}
+            outline={notebookOutline}
+            notebookId={nb.id}
+            rowPreviewLimit={OUTPUT_ROWS}
+            dataSourceName={sideSourceName}
+            onOpenHistory={() => void openHistory()}
+            onOpenSchedule={() => setScheduleOpen(true)}
             sourceId={sidebarSource}
             onSourceChange={(id) => {
               setSideSource(id);
@@ -1221,6 +1375,17 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
           />
         ) : null}
       </div>
+
+      {nb ? (
+        <NotebookGovernanceDrawer
+          open={governanceOpen}
+          notebookId={nb.id}
+          canEdit={!readOnly}
+          settings={notebookSettings}
+          onClose={() => setGovernanceOpen(false)}
+          onSettingsChange={setNotebookSettings}
+        />
+      ) : null}
 
       <Modal open={shortcutsOpen} title={t('keyboard_shortcuts')} footer={null} onCancel={() => setShortcutsOpen(false)} width={640}>
         <div className="nb-shortcuts">
@@ -1249,6 +1414,7 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
           open={scheduleOpen}
           notebookId={nb.id}
           canEdit={!readOnly}
+          defaultRunParameters={paramValues}
           onClose={() => setScheduleOpen(false)}
           onShowRun={(id) => void showRun(id)}
         />
@@ -1273,6 +1439,48 @@ export function NotebookEditor({ notebookId }: { notebookId: string }) {
         onClose={() => setPublishing(null)}
       />
 
+      <SurfaceInlineAsk
+        open={Boolean(inlineAskCell)}
+        anchor={inlineAskCell ? document.querySelector(`[data-cell-id="${inlineAskCell}"]`) : null}
+        scopeLabel={inlineAskScope}
+        onClose={() => setInlineAskCell(null)}
+        onSubmit={(question: string) => {
+          setPendingQuestion({ id: Date.now(), text: tAsk('inline_question', { scope: inlineAskScope, question }) });
+          setCopilotOpen(true);
+        }}
+      />
+      <SurfaceCopilotDrawer
+        title={t('ai_copilot')}
+        open={copilotOpen}
+        onClose={() => setCopilotOpen(false)}
+        surfaceContext={notebookCopilotContext}
+        projectId={nb?.project_id ?? undefined}
+        dataSourceId={sideSource ?? undefined}
+        pendingQuestion={pendingQuestion}
+        cellLabel={(id) => {
+          const c = cellsRef.current.find((x) => x.id === id);
+          return c?.name || (c ? t('cell_n', { n: cellsRef.current.indexOf(c) + 1 }) : id);
+        }}
+        onApplyActions={async (actions) => {
+          const change = actions.find((a): a is SurfaceNotebookChanges => a.type === 'notebook_changes');
+          if (!change) return undefined;
+          const before = cellsRef.current;
+          const { cells: next, run, applied } = notebookWithChanges(before, change);
+          if (!applied && !run.length) return undefined;
+          setCells(next);
+          markDirty();
+          message.success(t('ai_copilot_applied'));
+          if (run.length) {
+            // Run once the new cells are in place (the run reads the current list).
+            await new Promise((r) => setTimeout(r, 0));
+            void runMany(next.filter((c) => run.includes(c.id)));
+          }
+          return () => {
+            setCells(before);
+            markDirty();
+          };
+        }}
+      />
       <Modal
         open={saveOpen}
         title={t('save_as_dataset')}

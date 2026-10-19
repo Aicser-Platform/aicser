@@ -7,7 +7,6 @@ import { Typography, ConfigProvider, Button, message, Divider, Tag, Alert, Modal
 import { DashboardLibrarySelect } from './components/DashboardLibrarySelect';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
-  LeftOutlined,
   PlusOutlined,
   DashboardOutlined,
 } from '@ant-design/icons';
@@ -61,8 +60,11 @@ import { StudioSidebarRail, type SidebarSection } from './components/StudioSideb
 import { StudioSidebarPanel } from './components/StudioSidebar/StudioSidebarPanel';
 import { DashboardsSection } from './components/StudioSidebar/sections/DashboardsSection';
 import { DataModelingSection } from './components/StudioSidebar/sections/DataModelingSection';
-import { InsertSection } from './components/StudioSidebar/sections/InsertSection';
 import { AiChatSection } from './components/StudioSidebar/sections/AiChatSection';
+import { SurfaceInlineAsk } from '@/ee';
+import { isInlineAskShortcut, type PendingSurfaceQuestion } from '@/agent/inlineAsk';
+import { AddPopover, type LibraryChart } from './components/AddPopover';
+import type { CanvasDragItem } from './utils/canvasDrag';
 import type { DataModelRelationship } from '@/api/dataModel';
 import { RelationshipDetailsPanel } from './components/ERDCanvas/RelationshipDetailsPanel';
 import { useDashboardBuildProgress } from './hooks/useDashboardBuildProgress';
@@ -127,6 +129,7 @@ export default function NewDashboardStudio() {
   const setSelectedWidgetId = useDashboardStore((s) => s.setSelectedWidgetId);
   const setPropertiesCollapsed = useDashboardStore((s) => s.setPropertiesCollapsed);
   const addWidgetToStore = useDashboardStore((s) => s.addWidget);
+  const linkWidgetToDashboard = useDashboardStore((s) => s.linkWidgetToDashboard);
   const removeWidgetFromStore = useDashboardStore((s) => s.removeWidget);
   const duplicateWidgetFromStore = useDashboardStore((s) => s.duplicateWidget);
   const addDashboard = useDashboardStore((s) => s.addDashboard);
@@ -346,6 +349,7 @@ export default function NewDashboardStudio() {
     return () => window.clearTimeout(timer);
   }, [currentProjectId]);
   const td = useTranslations('dashboards');
+  const tAsk = useTranslations('surface_copilot');
   const filterCtx = useDashboardFilterContext(currentProjectId);
   const { handleRuntimeFiltersChange, runRefresh } = filterCtx;
   const handleToolbarRuntimeFiltersChange = useCallback(
@@ -522,8 +526,8 @@ export default function NewDashboardStudio() {
       if (saved) {
         const { section, open } = JSON.parse(saved) as { section: SidebarSection | 'data'; open: boolean };
         if (!open) return null;
-        // The Data tab was removed; a state saved on it opens Data Modeling instead.
-        return section === 'data' ? 'modeling' : section;
+        // The Data tab was removed (Data Modeling opens instead); Charts moved to the Add panel.
+        return section === 'data' ? 'modeling' : (section as string) === 'charts' ? null : section;
       }
     } catch {
       // ignore parse errors
@@ -543,6 +547,8 @@ export default function NewDashboardStudio() {
     }
   }, []);
   const [selectedRelationship, setSelectedRelationship] = useState<DataModelRelationship | null>(null);
+  // The toolbar's Add popover (the empty board's button opens the same one).
+  const [addPanelOpen, setAddPanelOpen] = useState(false);
 
   // Deep link into a specific sidebar section + data source, e.g. Semantic
   // Studio's Entity Graph tab links here (?studio_section=modeling&studio_source=<id>)
@@ -889,6 +895,22 @@ export default function NewDashboardStudio() {
     }
   };
 
+  // ⌘J on a selected widget (edit mode): a one-line question about it, answered in the AI section.
+  const [inlineAskWidget, setInlineAskWidget] = useState<string | null>(null);
+  const [pendingAiQuestion, setPendingAiQuestion] = useState<PendingSurfaceQuestion | null>(null);
+  useEffect(() => {
+    if (!isEnterpriseEdition) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isInlineAskShortcut(e) || !isEditMode || !selectedWidgetId) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"], .ant-modal, .surface-inline-ask')) return;
+      e.preventDefault();
+      setInlineAskWidget(selectedWidgetId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isEditMode, selectedWidgetId]);
+
   const selectedWidget = useMemo(
     () => widgets.find((w) => w.id === selectedWidgetId) ?? null,
     [widgets, selectedWidgetId]
@@ -1058,6 +1080,38 @@ export default function NewDashboardStudio() {
     }
   };
 
+  /** A chart from the library placed on this board (shared, not copied), at a spot or at the end. */
+  const addLibraryChart = useCallback(
+    async (chart: LibraryChart, position?: { x: number; y: number }) => {
+      if (!activeDashboardId) return;
+      try {
+        await linkWidgetToDashboard(
+          { id: `lib-${chart.chartId}`, chartId: chart.chartId, title: chart.title, chartType: chart.chartType as WidgetInstance['chartType'] } as WidgetInstance,
+          { i: `lib-${chart.chartId}`, w: 6, h: 5, ...(position ?? {}), ...(filterCtx.activePageId ? { pageId: filterCtx.activePageId } : {}) } as LayoutItem,
+          String(activeDashboardId),
+        );
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : t('add_chart_failed'));
+      }
+    },
+    [activeDashboardId, linkWidgetToDashboard, filterCtx.activePageId, t],
+  );
+
+  /** Something dragged from the Add panel onto the canvas lands where it was dropped. */
+  const handleDropItem = useCallback(
+    (item: CanvasDragItem, position: { x: number; y: number }) => {
+      if (item.kind === 'chart') {
+        void addLibraryChart({ chartId: item.chartId, title: item.title, chartType: item.chartType }, position);
+        return;
+      }
+      const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === item.type);
+      if (template) void addWidget(template, position);
+    },
+    // addWidget is redefined each render; the drop always uses the current one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [addLibraryChart],
+  );
+
   const isFullPageSection = sidebarSection === 'modeling';
 
   if (!mounted) return null;
@@ -1149,18 +1203,27 @@ export default function NewDashboardStudio() {
       >
         <div
           style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
             minHeight: '100vh',
             width: '100%',
-            textAlign: 'center',
-            gap: '24px',
-            padding: '48px',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            boxSizing: 'border-box',
+            padding: '48px 24px 64px',
             background: 'var(--ant-color-bg-container)',
           }}
         >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              gap: '24px',
+              width: '100%',
+              maxWidth: 1080,
+              margin: '0 auto',
+            }}
+          >
           <DashboardOutlined style={{ fontSize: '64px', color: 'var(--color-brand-primary)' }} />
           <div>
             <Title level={3} style={{ margin: '0 0 8px 0' }}>
@@ -1181,7 +1244,7 @@ export default function NewDashboardStudio() {
             {t('create_dashboard')}
           </Button>
 
-          <Divider style={{ margin: '8px 0 0 0', maxWidth: '840px' }}>{td('or_sample_dashboard')}</Divider>
+          <Divider style={{ margin: '8px 0 0 0', width: '100%' }}>{td('or_sample_dashboard')}</Divider>
 
           {isLoadingTemplates ? (
             <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
@@ -1191,7 +1254,6 @@ export default function NewDashboardStudio() {
             <div
               style={{
                 width: '100%',
-                maxWidth: 1080,
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
                 gap: 12,
@@ -1250,6 +1312,7 @@ export default function NewDashboardStudio() {
               {t('no_sample_dashboards')}
             </Text>
           )}
+          </div>
         </div>
       </ConfigProvider>
     );
@@ -1291,13 +1354,23 @@ export default function NewDashboardStudio() {
               activeSection={sidebarSection}
               onSectionChange={handleSidebarSectionChange}
             />
+            <SurfaceInlineAsk
+              open={Boolean(inlineAskWidget)}
+              anchor={inlineAskWidget ? document.querySelector(`[data-widget-id="${inlineAskWidget}"]`) : null}
+              scopeLabel={widgets.find((w) => w.id === inlineAskWidget)?.title || td('untitled_widget')}
+              onClose={() => setInlineAskWidget(null)}
+              onSubmit={(question: string) => {
+                const scope = widgets.find((w) => w.id === inlineAskWidget)?.title || td('untitled_widget');
+                setPendingAiQuestion({ id: Date.now(), text: tAsk('inline_question', { scope, question }) });
+                handleSidebarSectionChange('ai');
+              }}
+            />
             <StudioSidebarPanel
               activeSection={sidebarSection}
               isFullPage={isFullPageSection}
               onCollapse={() => handleSidebarSectionChange(null)}
             >
               {sidebarSection === 'dashboards' && <DashboardsSection />}
-              {sidebarSection === 'charts' && <InsertSection />}
               {sidebarSection === 'modeling' && (
                 <DataModelingSection
                   onRelationshipSelect={setSelectedRelationship}
@@ -1308,24 +1381,7 @@ export default function NewDashboardStudio() {
                 <AiChatSection
                   activeDashboardId={activeDashboardId}
                   activeDashboardName={dashboards.find((d) => d.id === activeDashboardId)?.name}
-                  widgetCount={widgets.length}
-                  onAddDivider={() => {
-                    const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === 'divider');
-                    if (template) void addWidget(template);
-                  }}
-                  onAddKpi={() => {
-                    const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === 'stat');
-                    if (template) void addWidget(template);
-                  }}
-                  onAddNewPage={async () => {
-                    if (!activeDashboardId) return;
-                    const page = await chartService.createPage(activeDashboardId, 'New Section');
-                    filterCtx.setPages((prev) => [...prev, page]);
-                    filterCtx.setActivePageId(page.id);
-                  }}
-                  onOpenChartImport={() => {
-                    chartImport.setTargetDashboardId(activeDashboardId ?? null);
-                  }}
+                  pendingQuestion={pendingAiQuestion}
                 />
               )}
             </StudioSidebarPanel>
@@ -1334,15 +1390,21 @@ export default function NewDashboardStudio() {
             {!isFullscreen && (
               <>
               <DashboardTabs
-                onAddBlock={(type) => {
-                  const template = WIDGET_TEMPLATES.find((tpl) => tpl.type === type);
-                  if (template) void addWidget(template);
-                }}
-                onAddFilterPreset={(preset) => void handleAddFilterPreset(preset)}
-                onApplyLayoutPreset={applyLayoutPreset}
-                filtersPanelOpen={filterCtx.filtersPanelOpen}
-                onOpenFilterPanel={() => filterCtx.setFiltersPanelOpen(!filterCtx.filtersPanelOpen)}
-                onOpenFilterManager={() => filterCtx.setFiltersEditorOpen(true)}
+                renderAddButton={(button) => (
+                  <AddPopover
+                    widgets={widgets}
+                    open={addPanelOpen}
+                    onOpenChange={setAddPanelOpen}
+                    onAddBlock={(template) => void addWidget(template)}
+                    onAddChart={(chart) => void addLibraryChart(chart)}
+                    onAddFilterPreset={(preset) => void handleAddFilterPreset(preset)}
+                    onOpenFilterManager={() => filterCtx.setFiltersEditorOpen(true)}
+                    onApplyLayoutPreset={applyLayoutPreset}
+                    onOpenAi={() => handleSidebarSectionChange('ai')}
+                  >
+                    {button}
+                  </AddPopover>
+                )}
                 activePageId={filterCtx.activePageId}
                 pages={filterCtx.pages}
                 runtimeFilters={filterCtx.runtimeFilters}
@@ -1557,7 +1619,8 @@ export default function NewDashboardStudio() {
                   if (template) addWidget(template);
                 }}
                 onApplyStoryStarter={applyStoryStarter}
-                onDropWidget={(template, position) => addWidget(template, position)}
+                onDropItem={handleDropItem}
+                onOpenAddPanel={() => setAddPanelOpen(true)}
                 setPropertiesCollapsed={setPropertiesCollapsed}
                 onUpdateWidget={onUpdateWidget}
                 onLayoutSync={scheduleLayoutSync}
@@ -1586,24 +1649,6 @@ export default function NewDashboardStudio() {
             </div>
           </main>
 
-          {/* Edge re-open when properties are collapsed (docked panel pattern) */}
-          {selectedWidgetId && isEditMode && isPropertiesCollapsed && sidebarSection !== 'modeling' ? (
-            <div
-              className="sidebar-toggle-btn right collapsed"
-              onClick={() => setPropertiesCollapsed(false)}
-              role="button"
-              tabIndex={0}
-              aria-label="Expand properties panel"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setPropertiesCollapsed(false);
-                }
-              }}
-            >
-              <LeftOutlined style={{ fontSize: '10px' }} />
-            </div>
-          ) : null}
 
           {/* Right properties — docked flex sibling (pushes canvas like left sidebar) */}
           {sidebarSection === 'modeling' && selectedRelationship ? (
@@ -1620,6 +1665,7 @@ export default function NewDashboardStudio() {
               removeWidget={removeWidget}
               isCollapsed={isPropertiesCollapsed || sidebarSection === 'modeling'}
               onCollapse={() => setPropertiesCollapsed(true)}
+              onExpand={sidebarSection === 'modeling' ? undefined : () => setPropertiesCollapsed(false)}
               dashboardPages={filterCtx.pages.map((p) => ({ id: p.id, name: p.name }))}
               globalFiltersConfig={filterCtx.globalFiltersConfig}
               pageFiltersConfig={filterCtx.pageFiltersConfig}
@@ -1627,6 +1673,7 @@ export default function NewDashboardStudio() {
               onRuntimeFiltersChange={filterCtx.handleRuntimeFiltersChange}
               onOpenManageFilters={() => filterCtx.setPageFiltersEditorOpen(true)}
               onOpenDataModeling={() => handleSidebarSectionChange('modeling')}
+              onSelectWidget={setSelectedWidgetId}
             />
           ) : null}
         </div>

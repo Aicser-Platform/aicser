@@ -8,6 +8,9 @@ import { useTranslations } from 'next-intl';
 import { useDataSourceSchema } from '@/hooks/useDataSources';
 import type { ResultInfo } from './NotebookCell';
 import { tableName } from './sqlCompletion';
+import type { OutlineItem } from '../utils/notebookOutline';
+import { scrollToCell } from '../utils/notebookOutline';
+import { NotebookRunbookPanel } from './NotebookRunbookPanel';
 
 const { Text } = Typography;
 
@@ -20,7 +23,8 @@ function quoted(name: string): string {
  * notebook has made. Clicking a name types it into the cell being edited.
  */
 export function DataSidebar({
-  dataSources, sourceId, onSourceChange, results, onInsert, onClose,
+  dataSources, sourceId, onSourceChange, results, onInsert, onClose, outline = [],
+  notebookId, rowPreviewLimit = 200, dataSourceName, onOpenHistory, onOpenSchedule,
 }: {
   dataSources: Array<{ value: string; label: string }>;
   sourceId: string | null;
@@ -28,6 +32,12 @@ export function DataSidebar({
   results: ResultInfo[];
   onInsert: (text: string, kind: 'table' | 'column' | 'result') => void;
   onClose: () => void;
+  outline?: OutlineItem[];
+  notebookId?: string;
+  rowPreviewLimit?: number;
+  dataSourceName?: string | null;
+  onOpenHistory?: () => void;
+  onOpenSchedule?: () => void;
 }) {
   const t = useTranslations('notebooks');
   const { schema, isLoading } = useDataSourceSchema(sourceId);
@@ -118,6 +128,41 @@ export function DataSidebar({
               </div>
             ),
           },
+          {
+            key: 'outline',
+            label: t('side_outline'),
+            children: (
+              <div className="nb-side__body">
+                {outline.length ? (
+                  <ul className="nb-side__outline">
+                    {outline.map((item) => (
+                      <li key={item.id} className={`nb-side__outline-item nb-side__outline-item--l${item.level}`}>
+                        <button type="button" className="nb-side__outline-link" onClick={() => scrollToCell(item.cellId)}>
+                          {item.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <Text type="secondary" className="nb-side__hint">{t('side_outline_empty')}</Text>
+                )}
+              </div>
+            ),
+          },
+          ...(notebookId && onOpenHistory && onOpenSchedule ? [{
+            key: 'runbook',
+            label: t('side_runbook'),
+            children: (
+              <NotebookRunbookPanel
+                notebookId={notebookId}
+                dataSourceId={sourceId}
+                dataSourceName={dataSourceName}
+                rowPreviewLimit={rowPreviewLimit}
+                onOpenHistory={onOpenHistory}
+                onOpenSchedule={onOpenSchedule}
+              />
+            ),
+          }] : []),
           {
             key: 'results',
             label: t('side_results', { n: results.length }),

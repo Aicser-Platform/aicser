@@ -61,6 +61,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const currentLocale = useLocale();
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEnterpriseEdition });
   const showHostedBilling = isEnterpriseEdition && !isSelfHostDeploymentFromEnv() && !isSelfHost;
+  const showUsageInMenu = isEnterpriseEdition;
   const [appVersionLabel, setAppVersionLabel] = useState(getBuildTimeAiserVersionLabel);
 
   useEffect(() => {
@@ -110,11 +111,11 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
 
   const { init: initSubscription } = useSubscriptionStore();
   React.useEffect(() => {
-    if (showHostedBilling) {
+    if (showUsageInMenu) {
       void initSubscription();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHostedBilling]);
+  }, [showUsageInMenu]);
 
   // Derive display name: prefer first+last name from profile, fallback to email prefix
   const displayName = profile?.first_name
@@ -136,7 +137,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const projectsLimit = projects?.unlimited ? Infinity : (projects?.limit ?? 1);
 
   const handleDropdownVisibleChange = (open: boolean) => {
-    if (open && showHostedBilling) {
+    if (open && showUsageInMenu) {
       void refresh();
     }
   };
@@ -221,7 +222,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           },
         ]
       : []),
-    ...(showHostedBilling
+    ...(showUsageInMenu
       ? [
           {
             type: 'divider' as const,
@@ -326,7 +327,19 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                   )}
                 </div>
 
-                {canManageBilling && (
+                <Button
+                  type="link"
+                  size="small"
+                  block
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push('/settings?tab=usage');
+                  }}
+                  style={{ marginTop: 4, paddingLeft: 0 }}
+                >
+                  {t('view_usage_analytics')}
+                </Button>
+                {showHostedBilling && canManageBilling && (
                   <Button
                     type="primary"
                     size="small"
@@ -341,7 +354,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
                     {t('upgrade_plan')}
                   </Button>
                 )}
-                {canViewBilling && (
+                {showHostedBilling && canViewBilling && (
                   <Button
                     type="link"
                     size="small"

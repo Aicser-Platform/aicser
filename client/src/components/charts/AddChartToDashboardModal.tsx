@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Alert, Input, Modal } from 'antd';
+import { Alert, Checkbox, Input, Modal } from 'antd';
 import { useTranslations } from 'next-intl';
 import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
 import { DashboardLibrarySelect } from '@/app/(dashboard)/dashboards/components/DashboardLibrarySelect';
@@ -18,6 +18,9 @@ type AddChartToDashboardModalProps = {
   onCancel: () => void;
   confirmLoading?: boolean;
   subtitle?: string;
+  allSourcesCount?: number;
+  pinAll?: boolean;
+  onPinAllChange?: (val: boolean) => void;
 };
 
 export function AddChartToDashboardModal({
@@ -32,6 +35,9 @@ export function AddChartToDashboardModal({
   onCancel,
   confirmLoading,
   subtitle,
+  allSourcesCount,
+  pinAll = false,
+  onPinAllChange,
 }: AddChartToDashboardModalProps) {
   const t = useTranslations('chat');
   const noDashboards = dashboards.length === 0 && !targetDashboardId;
@@ -84,6 +90,17 @@ export function AddChartToDashboardModal({
           maxLength={120}
           showCount
         />
+      ) : null}
+
+      {allSourcesCount && allSourcesCount > 1 ? (
+        <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--ant-color-fill-quaternary)', borderRadius: 6 }}>
+          <Checkbox checked={pinAll} onChange={(e) => onPinAllChange?.(e.target.checked)}>
+            <span style={{ fontWeight: 500 }}>{t('pin_all_charts', { count: allSourcesCount })}</span>
+          </Checkbox>
+          <div style={{ fontSize: 12, color: 'var(--ant-color-text-secondary)', marginLeft: 24, marginTop: 2 }}>
+            {t('pin_all_charts_help')}
+          </div>
+        </div>
       ) : null}
 
       {subtitle ? (

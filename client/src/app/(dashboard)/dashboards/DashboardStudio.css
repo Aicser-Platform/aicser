@@ -8,6 +8,7 @@
 :root {
   --studio-sidebar-rail-width: 48px;
   --studio-sidebar-panel-width: 280px;
+  --studio-properties-panel-width: 320px;
 }
 
 /* Text edited in place on the card (description, source). */
@@ -32,19 +33,61 @@
 .widget-card:hover .inline-text-empty,
 .widget-card.selected .inline-text-empty,
 .inline-text-empty:focus-visible,
-.chart-designer-toolbar .inline-text-empty {
+.chart-designer-toolbar .inline-text-empty,
+.designer-simplified .widget-card-footnote .inline-text-empty {
   opacity: 0.55;
+}
+
+.inline-text--multiline {
+  white-space: pre-line;
+  display: block;
 }
 
 .inline-text-input {
   width: 100%;
-  padding: 0 4px;
-  border: 1px solid var(--ant-color-primary);
+  padding: 2px 4px;
+  border: 1px solid var(--ant-color-border);
   border-radius: 4px;
   background: var(--ant-color-bg-container);
   color: var(--ant-color-text);
   font: inherit;
-  resize: none;
+  resize: vertical;
+  outline: none;
+  box-shadow: none;
+}
+
+.inline-text-input:focus {
+  border-color: var(--ant-color-primary);
+}
+
+/* Avoid a second primary ring on top of the selected widget card chrome. */
+.widget-card .inline-text-input {
+  border-color: var(--ant-color-border);
+}
+
+.widget-card .inline-text-input:focus {
+  border-color: var(--ant-color-primary);
+  box-shadow: none;
+}
+
+.inline-text-input--multiline {
+  min-height: 2.5em;
+  line-height: 1.35;
+  resize: vertical;
+  field-sizing: content;
+}
+
+.widget-card-subtitle.inline-text-input,
+.widget-card-footnote .inline-text-input {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.widget-card-footnote:has(.inline-text-input) {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
 }
 
 .chart-data-table {

@@ -29,21 +29,22 @@ from src.modules.notebooks.schemas import (
     NotebookUpdate,
     SaveDatasetRequest,
 )
+from src.modules.notebooks.settings_schema import parse_settings
+from src.modules.notebooks.enterprise import settings_locked, register_lineage
+from src.modules.notebooks.audit import log_notebook_event
+from src.modules.notebooks.notebook_access import load_notebook, notebook_uuid
+from src.modules.notebooks.enterprise_router import router as enterprise_router
 
 router = APIRouter()
+router.include_router(enterprise_router)
+
+# Backward-compatible aliases for tests / EE imports
+_load = load_notebook
+_uuid = notebook_uuid
 
 # Version history: one point per person per working session, the last MAX_HISTORY kept.
 SESSION_GAP = timedelta(minutes=10)
 MAX_HISTORY = 100
-
-
-def _uuid(value: Optional[str]) -> Optional[uuid.UUID]:
-    if not value:
-        return None
-    try:
-        return uuid.UUID(str(value))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid id") from exc
 
 
 def _cells_json(cells: List[Cell]) -> List[Dict[str, Any]]:
@@ -69,38 +70,11 @@ def _serialize(nb: Notebook, caller: Caller, *, with_cells: bool = True) -> Dict
         "cell_count": len(nb.cells or []),
         "created_at": nb.created_at.isoformat() if nb.created_at else None,
         "updated_at": nb.updated_at.isoformat() if nb.updated_at else None,
+        "settings": parse_settings(getattr(nb, "settings", None) or {}).model_dump(),
     }
     if with_cells:
         out["cells"] = nb.cells or []
     return out
-
-
-async def _can_read_project(caller: Caller, project_id: Optional[uuid.UUID]) -> bool:
-    try:
-        await require_permission(
-            caller.user_id, "query:execute", organization_id=caller.organization_id,
-            project_id=str(project_id) if project_id else None,
-        )
-        return True
-    except HTTPException:
-        return False
-
-
-async def _load(db: AsyncSession, notebook_id: str, caller: Caller, *, write: bool) -> Notebook:
-    nb = await db.get(Notebook, _uuid(notebook_id))
-    if not nb or nb.is_deleted:
-        raise HTTPException(status_code=404, detail="Notebook not found")
-    if str(nb.user_id) == caller.user_id:
-        return nb
-    shared = nb.visibility == "project" and (
-        (nb.organization_id and caller.organization_id and str(nb.organization_id) == caller.organization_id)
-        or (not nb.organization_id and not caller.organization_id)
-    )
-    if not shared or not await _can_read_project(caller, nb.project_id):
-        raise HTTPException(status_code=404, detail="Notebook not found")
-    if write:
-        raise HTTPException(status_code=403, detail="Only the owner can change this notebook. Make a copy to edit it.")
-    return nb
 
 
 def _code_only(cells: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -228,6 +202,8 @@ async def update_notebook(
     overwrite each other: the second gets a 409 and reloads."""
     caller = caller_from_token(current_token)
     nb = await _load(db, notebook_id, caller, write=True)
+    if settings_locked(parse_settings(getattr(nb, "settings", None))):
+        raise HTTPException(status_code=403, detail="This notebook is certified and locked for editing.")
     if body.version != nb.version:
         raise HTTPException(status_code=409, detail="This notebook changed somewhere else. Reload to see the latest version.")
     if body.title is not None:
@@ -241,6 +217,7 @@ async def update_notebook(
     nb.version = nb.version + 1
     nb.updated_at = datetime.now(timezone.utc)
     await _snapshot(db, nb, caller.user_id)
+    await log_notebook_event(db, notebook_id=nb.id, user_id=_uuid(caller.user_id), action="save", metadata={"version": nb.version})
     await db.commit()
     await db.refresh(nb)
     return _serialize(nb, caller)
@@ -376,6 +353,7 @@ async def export_notebook(
 async def save_result_as_dataset(
     body: SaveDatasetRequest,
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
 ) -> Dict[str, Any]:
     """Keep a cell's result (for example a cleaned table from Python) as a dataset. It is data
     the person already has in their browser, stored through the same checks as an upload."""
@@ -393,7 +371,29 @@ async def save_result_as_dataset(
             columns[name] = pa.array(values)
         except (pa.ArrowInvalid, pa.ArrowTypeError):
             columns[name] = pa.array([None if v is None else str(v) for v in values])
-    return await save_table_as_dataset(current_token, body.name, pa.table(columns), project_id=body.project_id)
+    result = await save_table_as_dataset(current_token, body.name, pa.table(columns), project_id=body.project_id)
+    if body.notebook_id:
+        caller = caller_from_token(current_token)
+        try:
+            nb = await _load(db, body.notebook_id, caller, write=False)
+            upstream = body.upstream_data_source_ids or []
+            if not upstream:
+                for c in nb.cells or []:
+                    if isinstance(c, dict) and c.get("type") == "sql" and c.get("data_source_id"):
+                        upstream.append(str(c["data_source_id"]))
+            ds_id = (result.get("data_source") or {}).get("id")
+            await register_lineage(
+                db,
+                nb=nb,
+                user_id=_uuid(caller.user_id) or uuid.uuid4(),
+                dataset_id=str(ds_id) if ds_id else None,
+                dataset_name=body.name,
+                upstream_source_ids=list(dict.fromkeys(upstream))[:20],
+            )
+            await db.commit()
+        except HTTPException:
+            pass
+    return result
 
 
 # ── Comments: threads on the notebook or a cell (anyone who can open it) ───────

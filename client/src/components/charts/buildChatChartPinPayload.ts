@@ -6,6 +6,7 @@ import {
 } from '@/app/(dashboard)/dashboards/utils/filterConfigMerge';
 import {
   categoriesFromEchartsConfig,
+  horizontalCategoriesBottomUp,
   extractBarOrientationOptions,
   measureHintsFromEchartsConfig,
   promoteChartQueryToMultiMetrics,
@@ -32,12 +33,18 @@ export interface ChatMessagePinSource {
   query?: string;
   title?: string;
   queryResult?: Record<string, unknown>[] | null;
-  executionMetadata?: { chart_query?: Record<string, unknown> };
+  executionMetadata?: {
+    chart_query?: Record<string, unknown>;
+    complementary_charts?: unknown[];
+    stages_completed?: string[];
+  };
   ai_metadata?: { chart_query?: Record<string, unknown> };
   /** Chat message id — used to remember library chart after first pin/customize */
   messageId?: string;
   /** Existing library chart from a prior pin/customize of this message */
   libraryChartId?: string | null;
+  /** Slide or projection index within a multi-chart response */
+  slideIndex?: number;
 }
 
 export function inferChartTypeFromConfig(config: Record<string, unknown>): string {
@@ -119,10 +126,14 @@ export function buildChatChartPinPayload(
       }
     }
     Object.assign(chartOptions, display.props.chartOptions, extractBarOrientationOptions(rawConfig));
-    if (display.props.chartData) {
+    const liveSql = Boolean(sqlQuery?.trim() && resolvedDs);
+    if (display.props.chartData && !liveSql) {
       chartOptions.__prefetchedChartData = display.props.chartData;
     }
     chartOptions.__source = 'ai_chat';
+    if (liveSql) {
+      chartOptions.__bind = 'live_sql';
+    }
   } else if (display.mode === 'echarts') {
     chartOptions.__echartsSnapshot = display.config;
     chartOptions.__source = 'ai_chat';
@@ -210,7 +221,9 @@ export function buildChatChartPinPayload(
   }
 
   if (chartOptions.barChartType === 'horizontal' && chartOptions.__prefetchedChartData) {
+    // Prefetched data is in row order (top first); the option lists horizontal categories bottom-up.
     const cats = categoriesFromEchartsConfig(rawConfig);
+    if (horizontalCategoriesBottomUp(rawConfig)) cats.reverse();
     const prefetch = chartOptions.__prefetchedChartData as { x?: unknown[] };
     if (
       cats.length &&
@@ -220,6 +233,12 @@ export function buildChatChartPinPayload(
     ) {
       chartOptions.__prefetchedChartData = { ...prefetch, x: cats };
     }
+  }
+
+  if (sqlQuery?.trim() && resolvedDs) {
+    delete chartOptions.__prefetchedChartData;
+    chartOptions.__bind = 'live_sql';
+    chartOptions.sample_sql = sqlQuery.trim();
   }
 
   return {
@@ -285,40 +304,71 @@ export function storeChartImportSession(payload: ChatChartImportPayload): void {
   }
 }
 
-/** Normalize a chat message object into a pin/customize source payload. */
-export function buildChatMessagePinSource(message: {
-  id?: string;
-  messageId?: string;
-  echartsConfig?: unknown;
-  chartConfig?: unknown;
-  sqlQuery?: string;
-  sql?: string;
-  queryResult?: Record<string, unknown>[] | null;
-  data?: Record<string, unknown>[] | null;
-  dataSourceId?: string | null;
-  query?: string;
-  title?: string;
-  libraryChartId?: string | null;
-  chartId?: string | null;
-  executionMetadata?: { chart_query?: Record<string, unknown> };
-  ai_metadata?: { chart_query?: Record<string, unknown> };
-}): ChatMessagePinSource {
-  const messageId = message.messageId || message.id;
-  const remembered = peekChatLibraryChart(messageId);
+/** Normalize a chat message object into a pin/customize source payload.
+ * Supports multi-chart responses: passing slideIndex > 0 targets the corresponding complementary chart.
+ */
+export function buildChatMessagePinSource(
+  message: {
+    id?: string;
+    messageId?: string;
+    echartsConfig?: unknown;
+    chartConfig?: unknown;
+    sqlQuery?: string;
+    sql?: string;
+    queryResult?: Record<string, unknown>[] | null;
+    data?: Record<string, unknown>[] | null;
+    dataSourceId?: string | null;
+    query?: string;
+    title?: string;
+    libraryChartId?: string | null;
+    chartId?: string | null;
+    executionMetadata?: {
+      chart_query?: Record<string, unknown>;
+      complementary_charts?: unknown[];
+      stages_completed?: string[];
+    };
+    ai_metadata?: { chart_query?: Record<string, unknown> };
+  },
+  slideIndex: number = 0,
+): ChatMessagePinSource {
+  const baseMessageId = message.messageId || message.id;
+  const compCharts = message.executionMetadata?.complementary_charts;
+  const isComplementary = slideIndex > 0 && Array.isArray(compCharts) && compCharts[slideIndex];
+  const targetConfig = isComplementary
+    ? compCharts[slideIndex]
+    : (message.echartsConfig || message.chartConfig);
+  const targetMessageId = isComplementary
+    ? `${baseMessageId}-comp-${slideIndex}`
+    : baseMessageId;
+  const remembered = peekChatLibraryChart(targetMessageId);
+
+  const compTitle = isComplementary
+    ? (typeof (targetConfig as any)?.view_label === 'string' && (targetConfig as any).view_label.trim()) ||
+      (typeof (targetConfig as any)?.title?.text === 'string' && (targetConfig as any).title.text.trim()) ||
+      (typeof (targetConfig as any)?.title === 'string' && (targetConfig as any).title.trim()) ||
+      message.title
+    : message.title;
+
+  const compSql =
+    (isComplementary && typeof (targetConfig as any)?.sql_query === 'string' && (targetConfig as any).sql_query) ||
+    message.sqlQuery ||
+    message.sql;
+
   return {
-    echartsConfig: message.echartsConfig || message.chartConfig,
-    sqlQuery: message.sqlQuery || message.sql,
+    echartsConfig: targetConfig,
+    chartConfig: targetConfig,
+    sqlQuery: compSql,
     queryResult: message.queryResult || message.data || null,
     dataSourceId: message.dataSourceId ?? null,
     query: message.query,
-    title: message.title,
+    title: compTitle,
     executionMetadata: message.executionMetadata,
     ai_metadata: message.ai_metadata,
-    messageId: messageId ? String(messageId) : undefined,
+    messageId: targetMessageId ? String(targetMessageId) : undefined,
     libraryChartId:
-      message.libraryChartId ||
-      message.chartId ||
+      (isComplementary ? null : (message.libraryChartId || message.chartId)) ||
       remembered ||
       null,
+    slideIndex,
   };
 }

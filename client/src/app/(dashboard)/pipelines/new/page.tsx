@@ -4,8 +4,9 @@ import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { NodeIndexOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
+import { isEnterpriseEdition } from '@/utils/appPaths';
 
-const isEE = process.env.NEXT_PUBLIC_EDITION === 'enterprise';
+const isEE = isEnterpriseEdition();
 
 const EENewPipelinePage = dynamic(() => import('@/ee').then((m) => ({ default: m.NewPipelinePage })), {
   ssr: false,

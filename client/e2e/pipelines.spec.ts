@@ -38,7 +38,7 @@ async function landBronzeAndContinue(page: Page) {
   await page.getByRole('dialog').getByRole('button', { name: 'Continue to Transformation' }).click();
 }
 
-test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
+test.describe('Data pipeline wizard', () => {
   test('navigates to /pipelines, verifies scrollable container, and opens new wizard', async ({ page }) => {
     await page.goto('/pipelines', { waitUntil: 'domcontentloaded' });
 
@@ -58,7 +58,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await page.waitForURL('**/pipelines/new', { waitUntil: 'domcontentloaded' });
   });
 
-  test('walks through the 5-step wizard with destination, dbt transform, and semantic layer', async ({
+  test('walks through the 5-step wizard with destination, clean, and official names', async ({
     page,
   }) => {
     // Intercept catalog discovery to provide streams for the 5-step wizard flow
@@ -98,8 +98,8 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await expect(stepsContainer.getByText('Source')).toBeVisible();
     await expect(stepsContainer.getByText('Destination')).toBeVisible();
     await expect(stepsContainer.getByText('Sync & Schedule')).toBeVisible();
-    await expect(stepsContainer.getByText('Transformation')).toBeVisible();
-    await expect(stepsContainer.getByText('Semantic Layer')).toBeVisible();
+    await expect(stepsContainer.getByText('Clean')).toBeVisible();
+    await expect(stepsContainer.getByText('Official names')).toBeVisible();
 
     // Verify page shell is scrollable
     const pageShell = page.locator('.pipelines-new-page');
@@ -132,8 +132,8 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     // Land Bronze for real, then continue to Transformation
     await landBronzeAndContinue(page);
 
-    // 5. Step 4: Transformation (dbt)
-    await expect(page.getByRole('heading', { name: 'Transformation & Data Quality' })).toBeVisible();
+    // 5. Step 4: Clean
+    await expect(page.getByRole('heading', { name: 'Clean this table' })).toBeVisible();
     await expect(page.getByText('Auto-Mask Sensitive Data (PII)')).toBeVisible();
     await expect(page.getByText('Quarantine Corrupted Rows')).toBeVisible();
 
@@ -143,17 +143,17 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await dryRunBtn.click();
 
     // Expect Bronze vs Silver split preview
-    await expect(page.getByText('🥉 Bronze (Raw Input)')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('🥈 Silver (Cleaned Delta Output)')).toBeVisible();
+    await expect(page.getByText('Raw values')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('After cleaning')).toBeVisible();
 
     // Click "Continue to Semantic Layer"
-    const toSemanticBtn = page.getByRole('button', { name: 'Continue to Semantic Layer' });
+    const toSemanticBtn = page.getByRole('button', { name: 'Review official names' });
     await expect(toSemanticBtn).toBeVisible();
     await toSemanticBtn.click();
 
     // 6. Step 5: Semantic Layer (MetricFlow)
-    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
-    await expect(page.getByText('Hallucination-Proof AI Analytics')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Review official names' })).toBeVisible();
+    await expect(page.getByText('Same definitions everywhere')).toBeVisible();
 
     // Test AI Prompt Context Preview toggle
     const promptPreviewBtn = page.getByRole('button', { name: /Preview Prompt Context/i });
@@ -233,8 +233,8 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await landBronzeAndContinue(page);
 
     // Step 4: Verify Visual Data Cleaning Workbook
-    await expect(page.getByText('Visual Data Cleaning Workbook')).toBeVisible();
-    await expect(page.getByText('Silver Cleansed Table (Live Preview)')).toBeVisible();
+    await expect(page.getByText('Clean in the grid')).toBeVisible();
+    await expect(page.getByText('Cleaned preview')).toBeVisible();
 
     // Verify stream tabs exist
     await expect(page.getByRole('tab', { name: /deals/i })).toBeVisible();
@@ -242,8 +242,8 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await expect(page.getByRole('tab', { name: /customers/i })).toBeVisible();
 
     // Step 4 -> Step 5: Semantic Layer
-    await page.getByRole('button', { name: 'Continue to Semantic Layer' }).click();
-    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
+    await page.getByRole('button', { name: 'Review official names' }).click();
+    await expect(page.getByRole('heading', { name: 'Review official names' })).toBeVisible();
 
     // Check fact table is initially deals (candidate fact table)
     await expect(page.getByRole('strong').filter({ hasText: 'fact_deals' })).toBeVisible();
@@ -293,7 +293,7 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await landBronzeAndContinue(page);
 
     // Verify initial pagination state
-    await expect(page.getByText('Visual Data Cleaning Workbook')).toBeVisible();
+    await expect(page.getByText('Clean in the grid')).toBeVisible();
     await expect(page.getByText(/Page 1 of/i)).toBeVisible();
 
     // Verify Next Page button and click it
@@ -309,8 +309,8 @@ test.describe('Medallion Data Pipeline & 5-Step Wizard E2E', () => {
     await expect(page.getByText(/Page 1 of/i)).toBeVisible();
 
     // Continue to Semantic Layer and verify the Metrics Workbook + YAML model editor
-    await page.getByRole('button', { name: 'Continue to Semantic Layer' }).click();
-    await expect(page.getByRole('heading', { name: 'Aicser Semantic Layer' })).toBeVisible();
+    await page.getByRole('button', { name: 'Review official names' }).click();
+    await expect(page.getByRole('heading', { name: 'Review official names' })).toBeVisible();
 
     await expect(page.getByRole('tab', { name: /Cube Data Slice/i })).toHaveCount(0);
     const workbookTab = page.getByRole('tab', { name: /Metrics Workbook/i });

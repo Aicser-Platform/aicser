@@ -11,6 +11,7 @@ import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import BypassBanner from './BypassBanner';
 import GrantShareBar from './GrantShareBar';
 import GrantsTable from './GrantsTable';
+import SeeAsMemberDrawer from './SeeAsMemberDrawer';
 
 export const DataSourcePermissionsTab: React.FC<{ dataSourceId: string; active: boolean }> = ({
   dataSourceId,
@@ -42,6 +43,9 @@ export const DataSourcePermissionsTab: React.FC<{ dataSourceId: string; active: 
 
   return (
     <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <SeeAsMemberDrawer dataSourceId={dataSourceId} organizationId={organizationId} />
+      </div>
       <BypassBanner grants={grants} />
       <GrantShareBar
         dataSourceId={dataSourceId}

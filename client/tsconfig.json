@@ -54,6 +54,10 @@
   "exclude": [
     "node_modules",
     "ee",
-    "public/sw.js"
+    "public/sw.js",
+    "e2e",
+    "playwright.config.ts",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }

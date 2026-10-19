@@ -49,6 +49,7 @@ async def test_ingest_document_reuses_precreated_row_instead_of_inserting_second
     service = DocumentIngestionService(session)
     service._parse_file = AsyncMock(return_value=([RawSection(text="hello world")], {}))
     service._embed_and_store = AsyncMock(return_value=1)
+    service._redacts_personal_data = AsyncMock(return_value=True)  # library setting lookup (own test)
 
     test_file = tmp_path / "doc.txt"
     test_file.write_text("hello world")

@@ -34,6 +34,8 @@ export type EmbedDialogProps = {
   pageId?: string | null;
   filters?: unknown[];
   iframeHeight?: number;
+  /** Dialog title when the host names the action (e.g. "Publish …"). */
+  title?: string;
 };
 
 /**
@@ -50,6 +52,7 @@ export function EmbedDialog({
   pageId,
   filters,
   iframeHeight = 420,
+  title,
 }: EmbedDialogProps) {
   const t = useTranslations('embed_modal');
   const { createEmbedCode, loading } = useEmbedCode();
@@ -259,7 +262,7 @@ export function EmbedDialog({
 
   return (
     <Modal
-      title={name ? t('embed_dialog_title', { name }) : t('embed_get_code')}
+      title={title ?? (name ? t('embed_dialog_title', { name }) : t('embed_get_code'))}
       open={open}
       onCancel={onClose}
       width={760}

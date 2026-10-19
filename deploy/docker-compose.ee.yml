@@ -323,6 +323,8 @@ services:
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_uploads:/app/uploads
+      # Local lakehouse (staging/bronze/silver) must be shared with worker + warehouse-compute.
+      - lake_ee_data:/app/lake
       # Embedding model weights survive redeploys (first search otherwise re-downloads ~400 MB).
       - hf_model_cache:/app/.cache/huggingface
     extra_hosts:
@@ -377,6 +379,7 @@ services:
     environment: *server-env
     volumes:
       - server_ee_uploads:/app/uploads
+      - lake_ee_data:/app/lake
       - hf_model_cache:/app/.cache/huggingface
     depends_on:
       postgres:
@@ -427,6 +430,7 @@ services:
       WAREHOUSE_NODE_SLOTS: ${WAREHOUSE_NODE_SLOTS:-2}
     volumes:
       - server_ee_uploads:/app/uploads
+      - lake_ee_data:/app/lake
     depends_on:
       server:
         condition: service_healthy
@@ -522,6 +526,7 @@ volumes:
   postgres_ee_data:
   redis_ee_data:
   server_ee_uploads:
+  lake_ee_data:
   ollama_ee_models:
   hf_model_cache:
   routing_ee_tiles:

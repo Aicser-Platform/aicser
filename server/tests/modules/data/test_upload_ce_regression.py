@@ -1,8 +1,8 @@
 """CE / no-S3 uploads must behave exactly as before the pipeline landed."""
 
 
-async def test_ce_upload_never_calls_the_bronze_bridge(tmp_path, monkeypatch):
-    from unittest.mock import AsyncMock, MagicMock, patch
+async def test_ce_upload_never_stages_the_file_in_the_lakehouse(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
 
     monkeypatch.setenv("AISER_EDITION", "community")
 
@@ -27,9 +27,9 @@ async def test_ce_upload_never_calls_the_bronze_bridge(tmp_path, monkeypatch):
 
     monkeypatch.setattr("src.db.session.async_session", MagicMock(return_value=SessionCM()))
 
-    with patch.object(module, "_try_write_bronze", new=AsyncMock(return_value=None)) as bridge:
-        service = DataConnectivityService()
-        result = await service.process_uploaded_file(str(path), "orders.csv", options={})
+    service = DataConnectivityService()
+    result = await service.process_uploaded_file(str(path), "orders.csv", options={})
 
     assert result.get("success") is not False
-    bridge.assert_not_awaited(), "CE uploads must not reach the Bronze bridge"
+    added = [type(call.args[0]).__name__ for call in session.add.call_args_list if call.args]
+    assert "DataLakeObject" not in added, "CE uploads must not copy the file into the lakehouse"

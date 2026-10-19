@@ -37,6 +37,8 @@ type Props = {
   /** Edit-mode distribute actions merged into this menu */
   isEditMode?: boolean;
   isEnterprise?: boolean;
+  /** Operate add-on: scheduled dashboard email. Hidden when the plan lacks it. */
+  canSchedule?: boolean;
   onPublish?: () => void;
   onScheduleDelivery?: () => void;
   onManageSchedules?: () => void;
@@ -56,6 +58,7 @@ export function DashboardShareMenu({
   runtimeFilters = [],
   isEditMode = false,
   isEnterprise = false,
+  canSchedule = false,
   onPublish,
   onScheduleDelivery,
   onManageSchedules,
@@ -186,7 +189,7 @@ export function DashboardShareMenu({
     );
   }
 
-  if (isEditMode && isEnterprise && onScheduleDelivery && onManageSchedules) {
+  if (isEditMode && isEnterprise && canSchedule && onScheduleDelivery && onManageSchedules) {
     items.push(
       { type: 'divider' as const },
       {

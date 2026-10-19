@@ -1,12 +1,14 @@
-import { redirect } from 'next/navigation';
+'use client';
 
-/**
- * Semantic Layer hub — hidden from navigation; the previous SemanticLayerHubPage
- * implementation (data-source listing + "open studio" launcher) is preserved in
- * git history and can be restored by reverting this file. The actual per-source
- * editor at /data/sources/[id]/semantic (SemanticStudio) is unaffected and still
- * reachable via its existing deep links from the Data page, chat, and dashboards.
- */
-export default function SemanticLayerHubPage() {
-  redirect('/data');
+export const dynamic = 'force-dynamic';
+
+import nextDynamic from 'next/dynamic';
+
+const SemanticLayerHub = nextDynamic(
+  () => import('@/components/semantic/SemanticLayerHub').then((m) => m.SemanticLayerHub),
+  { ssr: false },
+);
+
+export default function SemanticLayerPage() {
+  return <SemanticLayerHub />;
 }

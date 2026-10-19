@@ -44,7 +44,9 @@ export function useAddChartToDashboard() {
   const [pendingSource, setPendingSource] = useState<{
     source: ChatMessagePinSource;
     dataSourceId?: string | null;
+    allSources?: ChatMessagePinSource[];
   } | null>(null);
+  const [pinAll, setPinAll] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const suggestDashboardName = useCallback(
@@ -62,7 +64,11 @@ export function useAddChartToDashboard() {
   );
 
   const openModal = useCallback(
-    async (source: ChatMessagePinSource, dataSourceId?: string | null) => {
+    async (
+      source: ChatMessagePinSource,
+      dataSourceId?: string | null,
+      allSources?: ChatMessagePinSource[],
+    ) => {
       if (isEnterpriseEdition) {
         const projectId = useProjectStore.getState().currentProjectId;
         if (!isValidUuid(projectId != null ? String(projectId) : null)) {
@@ -107,7 +113,8 @@ export function useAddChartToDashboard() {
         setTargetDashboardId(activeId ?? dashboardList[0]?.id ?? null);
       }
 
-      setPendingSource({ source, dataSourceId });
+      setPinAll(Boolean(allSources && allSources.length > 1));
+      setPendingSource({ source, dataSourceId, allSources });
       setOpen(true);
     },
     [activeDashboardId, fetchDashboards, suggestDashboardName, t],
@@ -117,6 +124,7 @@ export function useAddChartToDashboard() {
     setOpen(false);
     setPendingSource(null);
     setCreatingNew(false);
+    setPinAll(false);
     setNewDashboardName('');
   }, []);
 
@@ -158,64 +166,85 @@ export function useAddChartToDashboard() {
         dashboardId = await addDashboard(newDashboardName.trim());
       }
 
-      let payload = buildChatChartPinPayload(
-        pendingSource.source,
-        pendingSource.dataSourceId ?? pendingSource.source.dataSourceId ?? null,
-      );
-      const layoutState = needsCreate
-        ? []
-        : useDashboardStore.getState().dashboards.find((d) => String(d.id) === String(dashboardId))
-            ?.layout ?? [];
+      const sourcesToPin =
+        pinAll && pendingSource.allSources && pendingSource.allSources.length > 1
+          ? pendingSource.allSources
+          : [pendingSource.source];
+
       const projectId = useProjectStore.getState().currentProjectId;
+      let lastPinnedChartId: string | null = null;
 
-      // Same durable bind as Query Editor Visualize: save SQL → saved_query_id
-      payload = (await attachSavedQueryToPinPayload(
-        payload,
-        pendingSource.source.sqlQuery ||
-          (typeof payload.chartOptions?.sample_sql === 'string'
-            ? payload.chartOptions.sample_sql
-            : null),
-        { projectId, source: 'ai_chat_pin' },
-      )) as typeof payload;
+      for (let i = 0; i < sourcesToPin.length; i++) {
+        const currentSrc = sourcesToPin[i];
+        let payload = buildChatChartPinPayload(
+          currentSrc,
+          pendingSource.dataSourceId ?? currentSrc.dataSourceId ?? null,
+        );
 
-      // Library chart first, then link placement (reuse prior materialization for this message)
-      const pinned = await ensureLibraryChartAndPinToDashboard({
-        dashboardId: dashboardId!,
-        definition: {
-          title: payload.title,
-          chartType: payload.chartType,
-          dataSourceId: payload.dataSourceId,
-          chartQuery: payload.chartQuery,
-          chartOptions: payload.chartOptions,
-          existingChartId: pendingSource.source.libraryChartId || undefined,
-          reuseSavedQuery: Boolean(
-            payload.chartQuery &&
-              typeof payload.chartQuery === 'object' &&
-              (payload.chartQuery as { saved_query_id?: unknown }).saved_query_id,
-          ),
-        },
-        existingLayout: layoutState,
-        layout: { w: 6, h: 5 },
-        mode: 'link',
-        projectId,
-      });
+        // Same durable bind as Query Editor Visualize: save SQL → saved_query_id
+        payload = (await attachSavedQueryToPinPayload(
+          payload,
+          currentSrc.sqlQuery ||
+            (typeof payload.chartOptions?.sample_sql === 'string'
+              ? payload.chartOptions.sample_sql
+              : null),
+          { projectId, source: 'ai_chat_pin' },
+        )) as typeof payload;
 
-      rememberChatLibraryChart(pendingSource.source.messageId, pinned.libraryChartId);
+        // Position combo grid side-by-side: 2 columns, width 6, height 5
+        const col = (i % 2) * 6;
+        const row = Math.floor(i / 2) * 5;
+
+        // Library chart first, then link placement (reuse prior materialization for this message)
+        const pinned = await ensureLibraryChartAndPinToDashboard({
+          dashboardId: dashboardId!,
+          definition: {
+            title: payload.title,
+            chartType: payload.chartType,
+            dataSourceId: payload.dataSourceId,
+            chartQuery: payload.chartQuery,
+            chartOptions: payload.chartOptions,
+            existingChartId: currentSrc.libraryChartId || undefined,
+            reuseSavedQuery: Boolean(
+              payload.chartQuery &&
+                typeof payload.chartQuery === 'object' &&
+                (payload.chartQuery as { saved_query_id?: unknown }).saved_query_id,
+            ),
+          },
+          layout: { x: col, y: row, w: 6, h: 5 },
+          mode: 'link',
+          projectId,
+        });
+
+        rememberChatLibraryChart(currentSrc.messageId, pinned.libraryChartId);
+        lastPinnedChartId = pinned.chartId;
+      }
 
       await fetchDashboards();
       await useDashboardStore.getState().loadDashboardById(dashboardId!);
-      setSelectedWidgetId(`widget-${pinned.chartId}`);
+      if (lastPinnedChartId) {
+        setSelectedWidgetId(`widget-${lastPinnedChartId}`);
+      }
       setPropertiesCollapsed(false);
-      antMessage.success(
-        needsCreate && modalDashboards.length === 0
-          ? t('pin_dashboard_created_and_added')
-          : t('pin_dashboard_success'),
-      );
+
+      if (sourcesToPin.length > 1) {
+        antMessage.success(t('pin_dashboard_combo_success', { count: sourcesToPin.length }));
+      } else {
+        antMessage.success(
+          needsCreate && modalDashboards.length === 0
+            ? t('pin_dashboard_created_and_added')
+            : t('pin_dashboard_success'),
+        );
+      }
+
       setOpen(false);
       setPendingSource(null);
       setCreatingNew(false);
+      setPinAll(false);
       setNewDashboardName('');
-      router.push(`/dashboards?id=${dashboardId}&chart=${pinned.chartId}&mode=edit`);
+      if (lastPinnedChartId) {
+        router.push(`/dashboards?id=${dashboardId}&chart=${lastPinnedChartId}&mode=edit`);
+      }
     } catch (err) {
       console.error('[useAddChartToDashboard]', err);
       antMessage.error(formatApiValidationError(err) || t('pin_dashboard_failed'));
@@ -248,5 +277,8 @@ export function useAddChartToDashboard() {
     openModal,
     closeModal,
     confirmAdd,
+    pinAll,
+    setPinAll,
+    allSourcesCount: pendingSource?.allSources?.length,
   };
 }

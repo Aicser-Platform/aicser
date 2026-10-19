@@ -177,6 +177,67 @@ async def _execute_duckdb_with_timeout(conn: "duckdb.DuckDBPyConnection", query:
         raise TimeoutError(f"Query exceeded the {DUCKDB_STATEMENT_TIMEOUT_SECONDS}s execution limit")
 
 
+_ROUTINE_DDL_HEAD = re.compile(
+    r"^\s*((CREATE|ALTER|DROP)\s+(OR\s+REPLACE\s+)?(PROCEDURE|FUNCTION|TRIGGER|VIEW)\b|(CALL|EXEC(?:UTE)?)\s+)",
+    re.IGNORECASE,
+)
+def _write_statement_forbidden(stmt: str) -> Optional[str]:
+    s = stmt.strip()
+    if re.match(r"^\s*(INSERT|UPDATE|DELETE|MERGE|TRUNCATE)\b", s, re.IGNORECASE):
+        return "Write mode: data-changing DML is not allowed."
+    if re.search(r"\b(DROP\s+TABLE|DROP\s+DATABASE|DROP\s+SCHEMA)\b", s, re.IGNORECASE):
+        return "Write mode: DROP TABLE/DATABASE/SCHEMA is not allowed."
+    if re.match(r"^\s*(GRANT|REVOKE|SET)\b", s, re.IGNORECASE):
+        return "Write mode: GRANT/REVOKE/SET are not allowed."
+    return None
+
+
+def _split_sql_statements(sql: str) -> List[str]:
+    """Split on semicolons outside single-quoted strings (good enough for routine DDL batches)."""
+    parts: List[str] = []
+    buf: List[str] = []
+    in_str = False
+    for ch in sql:
+        if ch == "'" and (not buf or buf[-1] != "\\"):
+            in_str = not in_str
+        if ch == ";" and not in_str:
+            part = "".join(buf).strip()
+            if part:
+                parts.append(part)
+            buf = []
+        else:
+            buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def check_sql_routine_ddl_safety(query: str) -> Optional[str]:
+    """Allow CREATE/ALTER/DROP PROCEDURE|FUNCTION|TRIGGER|VIEW and CALL/EXEC on writable DB connections."""
+    stripped = (query or "").strip()
+    if not stripped:
+        return "Write mode: empty SQL is not allowed."
+    if _SQL_DANGEROUS_PREFIX_PATTERN.search(stripped):
+        return "Write mode: system extended procedures are not allowed."
+    for token in ("PROGRAM", "OUTFILE", "DUMPFILE", "LOAD_FILE", "DBLINK", "XP_CMDSHELL", "COPY"):
+        if re.search(rf"\b{token}\b", stripped, re.IGNORECASE):
+            return f"Write mode: {token} is not allowed."
+    statements = _split_sql_statements(stripped)
+    if len(statements) > 12:
+        return "Write mode: too many statements in one run (max 12)."
+    for stmt in statements:
+        forbidden = _write_statement_forbidden(stmt)
+        if forbidden:
+            return forbidden
+        if not _ROUTINE_DDL_HEAD.match(stmt):
+            return (
+                "Write mode allows only CREATE/ALTER/DROP PROCEDURE, FUNCTION, TRIGGER, VIEW "
+                "and CALL/EXEC(UTE) of a procedure."
+            )
+    return None
+
+
 def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Optional[str]:
     """Return an error message if `query` is not a single read-only SELECT.
 
@@ -745,7 +806,7 @@ class MultiEngineQueryService:
 
     async def _apply_sql_rls(self, query: str, **kwargs: Any) -> Tuple[str, bool]:
         """Thin seam over the EE enforcement service, opening its own session."""
-        from ee.modules.data.services.data_source_rls_enforcement_service import (
+        from src.enterprise.modules.data.services.data_source_rls_enforcement_service import (
             DataSourceRLSEnforcementService,
         )
         from src.db.session import async_session
@@ -757,7 +818,7 @@ class MultiEngineQueryService:
 
     async def _apply_sql_cls(self, query: str, **kwargs: Any) -> Tuple[str, List[str]]:
         """Thin seam over the EE enforcement service, opening its own session."""
-        from ee.modules.data.services.data_source_cls_enforcement_service import (
+        from src.enterprise.modules.data.services.data_source_cls_enforcement_service import (
             DataSourceCLSEnforcementService,
         )
         from src.db.session import async_session
@@ -850,7 +911,7 @@ class MultiEngineQueryService:
             return query, []
 
         try:
-            from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+            from src.enterprise.modules.data.services.rls_predicate_builder import resolve_dialect
 
             resolved = dialect or resolve_dialect(data_source)
         except Exception:
@@ -921,7 +982,7 @@ class MultiEngineQueryService:
             return query, False
 
         try:
-            from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+            from src.enterprise.modules.data.services.rls_predicate_builder import resolve_dialect
 
             resolved = dialect or resolve_dialect(data_source)
         except Exception:
@@ -973,6 +1034,7 @@ class MultiEngineQueryService:
         allow_spark: bool = True,
         cache_context: Optional[Dict[str, Any]] = None,
         identity: QueryAccess = None,
+        execution_mode: str = "read",
     ) -> Dict[str, Any]:
         """Execute a query on behalf of ``identity``, with row security applied.
 
@@ -980,6 +1042,19 @@ class MultiEngineQueryService:
         rather than by callers, so chat, dashboards, charts and the HTTP handlers
         cannot reach data by a route that skips it.
         """
+        if str(execution_mode or "read").lower() == "write":
+            err = check_sql_routine_ddl_safety(query)
+            if err:
+                return {"success": False, "error": err, "data": [], "columns": [], "row_count": 0}
+            result = await self.engines[QueryEngine.DIRECT_SQL].execute(
+                query,
+                data_source,
+                {"skip_read_only_check": True, "execution_mode": "write"},
+            )
+            if isinstance(result, dict):
+                result.setdefault("execution_mode", "write")
+            return result
+
         # Resolve the source FIRST. A pipeline-managed source is read from the
         # lakehouse, so row/column security must be computed against the source
         # that will actually be queried — that dict determines the SQL dialect
@@ -1078,7 +1153,7 @@ class MultiEngineQueryService:
         try:
             import importlib
 
-            engine_mod = importlib.import_module("ee.modules.warehouse.engine")
+            engine_mod = importlib.import_module("src.modules.warehouse.engine")
         except Exception:
             return {"success": False, "error": "The warehouse is part of the Enterprise edition.", "data": [], "columns": [], "row_count": 0}
         result = await engine_mod.execute(query, data_source, identity)
@@ -1579,7 +1654,7 @@ class MultiEngineQueryService:
     ) -> Dict[str, Any]:
         """Run PromQL via Prometheus HTTP API; tabular result for charts/SQL consumers."""
         from src.core.cache import cache
-        from ee.modules.data.services.enterprise_connectors_service import (
+        from src.enterprise.modules.data.services.enterprise_connectors_service import (
             ConnectionConfig,
             ConnectorType,
             EnterpriseConnectorsService,
@@ -1803,6 +1878,21 @@ class DuckDBEngine(BaseQueryEngine):
                         logger.info(f"✅ Created table alias '{primary_file_id}' pointing to 'data' table")
                     except Exception as e:
                         logger.warning(f"⚠️ Could not create file_id alias: {e}")
+
+                # Create natural table alias from filename or datasource name (e.g., orders.csv -> "orders")
+                orig_name = data_source.get("original_filename") or data_source.get("name") or ""
+                if orig_name:
+                    try:
+                        from pathlib import Path
+                        stem = Path(orig_name).stem
+                        clean_stem = re.sub(r"[^a-zA-Z0-9_]", "_", stem).strip("_")
+                        if clean_stem and clean_stem.lower() != "data":
+                            conn.execute(f'CREATE OR REPLACE VIEW "{clean_stem}" AS SELECT * FROM "data"')
+                            if clean_stem.lower() != clean_stem:
+                                conn.execute(f'CREATE OR REPLACE VIEW "{clean_stem.lower()}" AS SELECT * FROM "data"')
+                            logger.info(f"✅ Created natural table alias '{clean_stem}' pointing to 'data'")
+                    except Exception as alias_err:
+                        logger.debug("Could not create natural table alias: %s", alias_err)
                 
                 # Verify table exists and has data
                 try:
@@ -1820,11 +1910,11 @@ class DuckDBEngine(BaseQueryEngine):
             elif data_source["type"] == "database":
                 await self._load_database_data(conn, data_source)
 
-            # CRITICAL: Validate query for read-only safety (prevent DDL/DML/system operations)
-            _safety_error = check_sql_read_only_safety(query)
-            if _safety_error:
-                logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
-                return {"success": False, "error": _safety_error}
+            if not analysis.get("skip_read_only_check"):
+                _safety_error = check_sql_read_only_safety(query)
+                if _safety_error:
+                    logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
+                    return {"success": False, "error": _safety_error}
             
             # CRITICAL: Fix truncated date_trunc before execution (e.g. date_trunc('MONTH) missing quote + second arg)
             try:
@@ -1997,6 +2087,12 @@ class DuckDBEngine(BaseQueryEngine):
                     table_name = f"sheet_{idx}_{safe}"
                 conn.register(f"_excel_{idx}", df)
                 conn.execute(f'CREATE TABLE "{table_name}" AS SELECT * FROM _excel_{idx}')
+                clean_sheet_safe = re.sub(r"[^a-zA-Z0-9_]", "_", sheet.strip())
+                if clean_sheet_safe and clean_sheet_safe != table_name and clean_sheet_safe.lower() != "data":
+                    try:
+                        conn.execute(f'CREATE OR REPLACE VIEW "{clean_sheet_safe}" AS SELECT * FROM "{table_name}"')
+                    except Exception as alias_err:
+                        logger.debug("Could not create clean sheet view for '%s': %s", clean_sheet_safe, alias_err)
                 if first_sheet_table is None:
                     first_sheet_table = table_name
                 logger.debug(f"Loaded Excel sheet '{sheet}' as table '{table_name}'")
@@ -2426,11 +2522,11 @@ class DirectSQLEngine(BaseQueryEngine):
                     except:
                         pass
 
-            # CRITICAL: Validate query for read-only safety (command-position only: not inside identifiers like last_updated, created_at)
-            _safety_error = check_sql_read_only_safety(query)
-            if _safety_error:
-                logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
-                return {"success": False, "error": _safety_error}
+            if not analysis.get("skip_read_only_check"):
+                _safety_error = check_sql_read_only_safety(query)
+                if _safety_error:
+                    logger.error(f"❌ Blocked dangerous query operation: {query[:200]}")
+                    return {"success": False, "error": _safety_error}
             
             # Prefer a full connection URI if provided
             conn_uri = conn_info.get('uri') or conn_info.get('connection_string') or conn_info.get('connection_string_uri')
@@ -2820,11 +2916,21 @@ class DirectSQLArrowExecutor:
             conn_info.get('db_type') or conn_info.get('type')
             or self.data_source.get('db_type') or 'postgresql'
         ).lower()
+
+        from src.modules.data.services import warehouse_urls
+
+        if db_type in warehouse_urls.URL_TYPES:
+            return warehouse_urls.build_url(db_type, conn_info)
+
         if db_type == 'clickhouse':
-            raise NotImplementedError(
-                "the pipeline ingest path does not support ClickHouse (HTTP-only) "
-                "sources yet"
-            )
+            user = conn_info.get('username') or conn_info.get('user') or 'default'
+            password = conn_info.get('password') or ''
+            host = conn_info.get('host') or conn_info.get('hostname') or 'localhost'
+            port = conn_info.get('port') or 8123
+            database = conn_info.get('database') or 'default'
+            from urllib.parse import quote_plus
+            auth = f"{quote_plus(user)}:{quote_plus(password)}@" if password else f"{quote_plus(user)}@"
+            return f"clickhouse+http://{auth}{host}:{port}/{database}"
 
         user = conn_info.get('username') or conn_info.get('user')
         password = conn_info.get('password') or conn_info.get('pass')
@@ -2846,26 +2952,60 @@ class DirectSQLArrowExecutor:
             'mysql': 'mysql+pymysql',
             'sqlserver': 'mssql+pyodbc',
             'mssql': 'mssql+pyodbc',
+            'clickhouse': 'clickhouse+http',
         }.get(db_type, db_type)
 
         from urllib.parse import quote_plus
         auth = f"{quote_plus(user)}:{quote_plus(password or '')}@" if user else ""
         hostpart = f"{host}:{port}" if port else host
-        return f"{scheme}://{auth}{hostpart}/{database}"
+        uri = f"{scheme}://{auth}{hostpart}/{database}"
+        if db_type in ('sqlserver', 'mssql'):
+            # pyodbc needs the driver named, and a self-signed server certificate trusted unless
+            # the connection says otherwise (as the query path does).
+            driver = (conn_info.get('driver') or 'ODBC Driver 18 for SQL Server').replace(' ', '+')
+            query = [f"driver={driver}"]
+            if conn_info.get('trust_server_certificate', True):
+                query.append("TrustServerCertificate=yes")
+            uri = f"{uri}?{'&'.join(query)}"
+        return uri
 
     async def fetch_arrow(self, sql: str, params: Dict[str, Any]) -> List[Any]:
         import pyarrow as pa
 
+        conn_info = (
+            self.data_source.get('connection_info')
+            or self.data_source.get('connection_config')
+            or self.data_source.get('metadata')
+            or self.data_source.get('config')
+            or {}
+        )
+        if isinstance(conn_info, str):
+            try:
+                conn_info = json.loads(conn_info)
+            except Exception:
+                conn_info = {}
+        db_type = (
+            (conn_info.get('db_type') or conn_info.get('type') or self.data_source.get('db_type') or '')
+        ).lower()
+        if db_type == 'clickhouse' and not (conn_info.get('uri') or conn_info.get('connection_string')):
+            return await self._fetch_clickhouse_http_arrow(sql, conn_info)
+
         from src.modules.data.services.direct_sql_pool import dispose_engine, get_sync_engine
 
         conn_uri = self._connection_uri()
+        warehouse_kwargs: Dict[str, Any] = {}
+        from src.modules.data.services import warehouse_urls
+        if db_type in warehouse_urls.URL_TYPES:
+            warehouse_kwargs = warehouse_urls.engine_kwargs(db_type, conn_info)
 
         def run_sync() -> List[Dict[str, Any]]:
             import time
             max_retries = 3
             for attempt in range(max_retries):
                 try:
-                    eng = get_sync_engine(self.data_source, conn_uri)
+                    eng = get_sync_engine(
+                        self.data_source, conn_uri, extra_engine_kwargs=warehouse_kwargs or None
+                    )
                     with eng.connect() as conn:
                         result = conn.execute(sa.text(sql), params or {})
                         cols = list(result.keys())
@@ -2903,6 +3043,22 @@ class DirectSQLArrowExecutor:
             return []
 
         rows = await asyncio.to_thread(run_sync)
+        if not rows:
+            return []
+        return pa.Table.from_pylist(rows).to_batches()
+
+    async def _fetch_clickhouse_http_arrow(self, sql: str, conn_info: Dict[str, Any]) -> List[Any]:
+        import pyarrow as pa
+
+        from src.modules.data.services.database_connector_service import DatabaseConnectorService
+
+        svc = DatabaseConnectorService()
+        cfg = dict(conn_info)
+        cfg.setdefault('type', 'clickhouse')
+        result = await svc._execute_clickhouse_query(cfg, sql)
+        if not result.get('success'):
+            raise ValueError(result.get('error') or 'ClickHouse query failed')
+        rows = result.get('data') or []
         if not rows:
             return []
         return pa.Table.from_pylist(rows).to_batches()

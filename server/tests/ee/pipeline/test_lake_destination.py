@@ -69,12 +69,69 @@ def test_object_storage_keys_are_encrypted_at_rest():
     assert decrypt_credentials(stored)["secret_key"] == "plain"
 
 
-@pytest.mark.parametrize("uri", ["azure://acct/container", "s3://bucket-only-no-keys"])
-def test_non_s3_or_keyless_connections_are_not_destinations(uri):
+def test_keyless_connections_are_not_destinations():
     from src.modules.pipeline.load.destination import target_from_data_source
 
     with pytest.raises(ValueError):
-        target_from_data_source(SimpleNamespace(id="x", name="x", connection_config={"storage_uri": uri, "credentials": {}}))
+        target_from_data_source(
+            SimpleNamespace(
+                id="x",
+                name="x",
+                connection_config={"storage_uri": "s3://bucket-only-no-keys", "credentials": {}},
+            )
+        )
+
+
+def test_azure_interop_connection_becomes_a_target():
+    from src.modules.data.utils.credentials import encrypt_credentials
+    from src.modules.pipeline.load.destination import target_from_data_source
+
+    ds = SimpleNamespace(
+        id="ds-azure",
+        name="Azure lake",
+        db_type="azure_blob",
+        connection_config={
+            "storage_uri": "azure://medallion/bronze",
+            "credentials": encrypt_credentials(
+                {
+                    "access_key": "interop-key",
+                    "secret_key": "interop-secret",
+                    "account_name": "acct",
+                    "endpoint": "https://acct.blob.core.windows.net",
+                }
+            ),
+        },
+    )
+    t = target_from_data_source(ds)
+    assert (t.bucket, t.prefix, t.provider, t.endpoint_url) == (
+        "medallion",
+        "bronze/",
+        "azure",
+        "https://acct.blob.core.windows.net",
+    )
+
+
+def test_gcp_interop_connection_becomes_a_target():
+    from src.modules.data.utils.credentials import encrypt_credentials
+    from src.modules.pipeline.load.destination import target_from_data_source
+
+    ds = SimpleNamespace(
+        id="ds-gcp",
+        name="GCS lake",
+        db_type="gcp_cloud_storage",
+        connection_config={
+            "storage_uri": "gs://my-lake/warehouse",
+            "credentials": encrypt_credentials(
+                {
+                    "access_key": "hmac-access",
+                    "secret_key": "hmac-secret",
+                    "endpoint": "https://storage.googleapis.com",
+                }
+            ),
+        },
+    )
+    t = target_from_data_source(ds)
+    assert (t.bucket, t.prefix, t.provider) == ("my-lake", "warehouse/", "gcp")
 
 
 def test_public_view_never_includes_keys():
@@ -121,7 +178,8 @@ def test_duckdb_secret_is_scoped_to_the_destination_bucket():
     assert conn.execute("SELECT scope FROM duckdb_secrets() WHERE name = 's1'").fetchone()[0] == ["s3://cust-lake/analytics/"]
 
 
-async def test_resolve_target_without_a_destination_needs_platform_storage(monkeypatch):
+async def test_resolve_target_without_any_storage_says_so_plainly(monkeypatch):
+    # Normally impossible (built-in storage is the fallback); if it ever happens, say so in words.
     from src.modules.pipeline.load import destination
 
     async def none():
@@ -129,7 +187,7 @@ async def test_resolve_target_without_a_destination_needs_platform_storage(monke
 
     monkeypatch.setattr(destination, "platform_target", none)
 
-    with pytest.raises(ValueError, match="no S3 storage configured"):
+    with pytest.raises(ValueError, match="workspace lake storage is not available"):
         await destination.resolve_target(AsyncMock(), uuid.uuid4(), None)
 
 

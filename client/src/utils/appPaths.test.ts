@@ -16,4 +16,18 @@ describe('getChatHref', () => {
     const href = getChatHref();
     expect(['/chat', '/dashboards']).toContain(href);
   });
+
+  it('carries the current source when given', () => {
+    const href = getChatHref({ data_source_id: 'ds-42' });
+    if (href.startsWith('/chat')) {
+      expect(href).toContain('data_source_id=ds-42');
+    } else {
+      expect(href).toBe('/dashboards');
+    }
+  });
+
+  it('drops empty source ids so Ask is not bound to a blank param', () => {
+    const href = getChatHref({ data_source_id: '' });
+    expect(href.includes('data_source_id')).toBe(false);
+  });
 });

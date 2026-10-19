@@ -278,6 +278,8 @@ class ChartLibraryService:
             "usageCount": usage_count,
             "dashboards": dashboards or [],
             "scope": "library" if usage_count == 0 else "placed",
+            # What the chart reads, so a library row can say it without loading the full query.
+            "dataTable": (chart.chart_query or {}).get("tableName") if isinstance(chart.chart_query, dict) else None,
         }
         if detail == "full":
             base["chartQuery"] = chart.chart_query or {}

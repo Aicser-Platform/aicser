@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button, Select, Switch, Typography, Modal, Alert } from 'antd';
+import { useTranslations } from 'next-intl';
 import {
   ArrowRightOutlined,
   CloseOutlined,
@@ -104,15 +105,18 @@ function removeRelationshipJoinsFromOpenDashboard(relationship: DataModelRelatio
 interface RelationshipDetailsPanelProps {
   relationship: DataModelRelationship;
   onClose: () => void;
+  onChanged?: () => void;
 }
 
-const CARDINALITY_OPTIONS = [
-  { value: 'one_to_one', label: 'One to One (1:1)' },
-  { value: 'one_to_many', label: 'One to Many (1:*)' },
-  { value: 'many_to_many', label: 'Many to Many (*:*)' },
-];
+export function RelationshipDetailsPanel({ relationship, onClose, onChanged }: RelationshipDetailsPanelProps) {
+  const t = useTranslations('dashboards_page');
+  const tCommon = useTranslations('common');
 
-export function RelationshipDetailsPanel({ relationship, onClose }: RelationshipDetailsPanelProps) {
+  const cardinalityOptions = [
+    { value: 'one_to_one', label: t('erd_cardinality_one_to_one') },
+    { value: 'one_to_many', label: t('erd_cardinality_one_to_many') },
+    { value: 'many_to_many', label: t('erd_cardinality_many_to_many') },
+  ];
   const [cardinality, setCardinality] = useState(relationship.cardinality);
   const [crossFilter, setCrossFilter] = useState(relationship.cross_filter_direction);
   const [isActive, setIsActive] = useState(relationship.is_active);
@@ -144,18 +148,23 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
         assume_integrity: assumeIntegrity,
       },
     });
+    onChanged?.();
     onClose();
   };
 
   const handleDelete = () => {
     Modal.confirm({
-      title: 'Delete relationship?',
-      content: `Remove the relationship between ${shortTableName(relationship.from_table)} → ${shortTableName(relationship.to_table)}?`,
-      okText: 'Delete',
+      title: t('erd_delete_relationship_title'),
+      content: t('erd_delete_relationship_body', {
+        from: shortTableName(relationship.from_table),
+        to: shortTableName(relationship.to_table),
+      }),
+      okText: tCommon('delete'),
       okButtonProps: { danger: true },
       onOk: async () => {
         await deleteMutation.mutateAsync(relationship.id);
         removeRelationshipJoinsFromOpenDashboard(relationship);
+        onChanged?.();
         onClose();
       },
     });
@@ -185,7 +194,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
           justifyContent: 'space-between',
         }}
       >
-        <span>Relationship Details</span>
+        <span>{t('erd_relationship_details_title')}</span>
         <Button type="text" size="small" icon={<CloseOutlined />} onClick={onClose} />
       </div>
       <div
@@ -251,14 +260,14 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
             }}
           >
             <SwapOutlined style={{ marginRight: 6 }} />
-            Cardinality
+            {t('erd_cardinality')}
           </div>
           <Select
             size="middle"
             style={{ width: '100%' }}
             value={cardinality}
             onChange={setCardinality}
-            options={CARDINALITY_OPTIONS}
+            options={cardinalityOptions}
           />
         </div>
 
@@ -275,7 +284,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
             }}
           >
             <FilterOutlined style={{ marginRight: 6 }} />
-            Cross Filter Direction
+            {t('erd_cross_filter')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {(['single', 'both'] as const).map((dir) => (
@@ -285,7 +294,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
                 type={crossFilter === dir ? 'primary' : 'default'}
                 onClick={() => setCrossFilter(dir)}
               >
-                {dir === 'single' ? '→ Single' : '↔ Both'}
+                {dir === 'single' ? t('erd_cross_filter_single') : t('erd_cross_filter_both')}
               </Button>
             ))}
           </div>
@@ -301,11 +310,11 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
             alignItems: 'center',
           }}
         >
-          <span style={{ fontSize: 13 }}>Make relationship active</span>
+          <span style={{ fontSize: 13 }}>{t('erd_relationship_active')}</span>
           <Switch checked={isActive} onChange={setIsActive} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 13 }}>Assume integrity</span>
+          <span style={{ fontSize: 13 }}>{t('erd_assume_integrity')}</span>
           <Switch checked={assumeIntegrity} onChange={setAssumeIntegrity} />
         </div>
 
@@ -313,12 +322,15 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
           type="warning"
           showIcon
           icon={<InfoCircleOutlined />}
-          message={`This relationship connects ${shortTableName(relationship.from_table)} to ${shortTableName(relationship.to_table)}.`}
-          description="Validate that matching records exist in the target table before using this join in dashboards."
+          message={t('erd_relationship_connects', {
+            from: shortTableName(relationship.from_table),
+            to: shortTableName(relationship.to_table),
+          })}
+          description={t('erd_relationship_validate_hint')}
         />
 
         {updateMutation.isError && (
-          <Alert type="error" message="Failed to save. Please try again." showIcon />
+          <Alert type="error" message={t('erd_relationship_save_failed')} showIcon />
         )}
       </div>
 
@@ -337,7 +349,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
           loading={deleteMutation.isPending}
           onClick={handleDelete}
         >
-          Delete
+          {tCommon('delete')}
         </Button>
         <Button
           type="primary"
@@ -346,7 +358,7 @@ export function RelationshipDetailsPanel({ relationship, onClose }: Relationship
           loading={updateMutation.isPending}
           onClick={() => void handleSave()}
         >
-          Save
+          {tCommon('save')}
         </Button>
       </div>
     </div>

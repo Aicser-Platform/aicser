@@ -23,6 +23,7 @@ from fastapi import (
     status,
     Request,
 )
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
@@ -55,19 +56,19 @@ from src.modules.authentication.rbac.guard import (
 # them pull in large AI/connector stacks during module import.
 if is_ee_enabled():
     try:
-        from ee.modules.authentication.rbac.rbac_service import RBACService
+        from src.enterprise.modules.authentication.rbac.rbac_service import RBACService
     except ImportError:
         RBACService = None  # type: ignore
 
     try:
-        from ee.modules.data.services.intelligent_data_modeling_service import (
+        from src.enterprise.modules.data.services.intelligent_data_modeling_service import (
             IntelligentDataModelingService,
         )
     except ImportError:
         IntelligentDataModelingService = None  # type: ignore
 
     try:
-        from ee.modules.data.services.enterprise_connectors_service import (
+        from src.enterprise.modules.data.services.enterprise_connectors_service import (
             EnterpriseConnectorsService,
             ConnectionConfig,
             ConnectorType,
@@ -78,7 +79,7 @@ if is_ee_enabled():
         ConnectorType = None  # type: ignore
 
     try:
-        from ee.modules.data.services.delta_iceberg_connector import (
+        from src.enterprise.modules.data.services.delta_iceberg_connector import (
             DeltaIcebergConnector,
         )
     except ImportError:
@@ -1780,13 +1781,30 @@ async def upload_file(
 
         if preview_only:
             if result.get("success") and result.get("data_source"):
+                ds = result["data_source"]
+                preview_data = (
+                    ds.get("preview_data")
+                    or ds.get("preview")
+                    or ds.get("sample_data")
+                    or []
+                )
+                schema_dict = ds.get("schema") or {}
+                sheets = (
+                    ds.get("sheets")
+                    or list((schema_dict.get("all_sheets") or {}).keys())
+                    or [
+                        t.get("name")
+                        for t in (schema_dict.get("tables") or [])
+                        if isinstance(t, dict) and t.get("name")
+                    ]
+                )
                 return {
                     "success": True,
                     "data_source": {
-                        "preview_data": result["data_source"].get("preview_data", []),
-                        "sheets": result["data_source"].get("sheets", []),
-                        "schema": result["data_source"].get("schema", []),
-                        "row_count": result["data_source"].get("row_count", 0),
+                        "preview_data": preview_data,
+                        "sheets": sheets,
+                        "schema": schema_dict,
+                        "row_count": ds.get("row_count", 0),
                     },
                     "message": "Preview generated successfully",
                 }
@@ -2026,7 +2044,7 @@ async def list_data_source_rls_policies(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_service import DataSourceRLSService
+    from src.enterprise.modules.data.services.data_source_rls_service import DataSourceRLSService
 
     user_id = _authenticated_user_id(current_token)
     data_source = await _require_data_source_permission(
@@ -2063,7 +2081,7 @@ async def create_data_source_rls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_service import DataSourceRLSService
+    from src.enterprise.modules.data.services.data_source_rls_service import DataSourceRLSService
 
     user_id = _authenticated_user_id(current_token)
     data_source = await _require_data_source_permission(
@@ -2122,7 +2140,7 @@ async def update_data_source_rls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_service import DataSourceRLSService
+    from src.enterprise.modules.data.services.data_source_rls_service import DataSourceRLSService
 
     user_id = _authenticated_user_id(current_token)
     await _require_data_source_permission(
@@ -2179,7 +2197,7 @@ async def delete_data_source_rls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_service import DataSourceRLSService
+    from src.enterprise.modules.data.services.data_source_rls_service import DataSourceRLSService
 
     user_id = _authenticated_user_id(current_token)
     await _require_data_source_permission(
@@ -2221,7 +2239,7 @@ async def list_data_source_cls_policies(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source CLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+    from src.enterprise.modules.data.services.data_source_cls_service import DataSourceCLSService
 
     user_id = _authenticated_user_id(current_token)
     data_source = await _require_data_source_permission(
@@ -2258,7 +2276,7 @@ async def create_data_source_cls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source CLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+    from src.enterprise.modules.data.services.data_source_cls_service import DataSourceCLSService
 
     user_id = _authenticated_user_id(current_token)
     data_source = await _require_data_source_permission(
@@ -2371,7 +2389,7 @@ async def update_data_source_cls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source CLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+    from src.enterprise.modules.data.services.data_source_cls_service import DataSourceCLSService
 
     user_id = _authenticated_user_id(current_token)
     await _require_data_source_permission(
@@ -2427,7 +2445,7 @@ async def delete_data_source_cls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source CLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_cls_service import DataSourceCLSService
+    from src.enterprise.modules.data.services.data_source_cls_service import DataSourceCLSService
 
     user_id = _authenticated_user_id(current_token)
     await _require_data_source_permission(
@@ -2603,7 +2621,7 @@ async def preview_data_source_rls_policy(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_preview_service import preview_policy
+    from src.enterprise.modules.data.services.data_source_rls_preview_service import preview_policy
 
     user_id = _authenticated_user_id(current_token)
     data_source = await _require_data_source_permission(
@@ -2669,11 +2687,11 @@ async def get_my_data_source_row_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data source RLS policies require enterprise edition",
         )
-    from ee.modules.data.services.data_source_rls_enforcement_service import (
+    from src.enterprise.modules.data.services.data_source_rls_enforcement_service import (
         DataSourceRLSEnforcementService,
     )
-    from ee.modules.data.services.cls_rule_resolver import resolve_decisions
-    from ee.modules.data.services.rls_predicate_builder import resolve_dialect
+    from src.enterprise.modules.data.services.cls_rule_resolver import resolve_decisions
+    from src.enterprise.modules.data.services.rls_predicate_builder import resolve_dialect
     from src.modules.data.models import (
         DataSourceCLSPolicy,
         DataSourceCLSRule,
@@ -2692,6 +2710,35 @@ async def get_my_data_source_row_access(
     user_payload = current_token if isinstance(current_token, dict) else None
     organization_id = str((user_payload or {}).get("organization_id") or "") or None
     project_id = str((user_payload or {}).get("project_id") or "").strip() or None
+    return await _explain_row_and_column_access(
+        db, data_source, data_source_id, user_id, organization_id, project_id, user_payload
+    )
+
+
+async def _explain_row_and_column_access(
+    db: AsyncSession,
+    data_source: Any,
+    data_source_id: str,
+    user_id: str,
+    organization_id: Optional[str],
+    project_id: Optional[str],
+    user_payload: Optional[dict],
+) -> Dict[str, Any]:
+    """The rows and columns one user can see on a data source, exactly as enforcement decides.
+
+    Mirrors ``DataSourceRLSEnforcementService.apply_sql_rls`` over that user's own grants.
+    """
+    from src.enterprise.modules.data.services.data_source_rls_enforcement_service import (
+        DataSourceRLSEnforcementService,
+    )
+    from src.enterprise.modules.data.services.cls_rule_resolver import resolve_decisions
+    from src.enterprise.modules.data.services.rls_predicate_builder import resolve_dialect
+    from src.modules.data.models import (
+        DataSourceCLSPolicy,
+        DataSourceCLSRule,
+        DataSourceRLSPolicy,
+        DataSourceRLSRule,
+    )
 
     grants = await DataSourceAccessService.get_applicable_grants(
         user_id,
@@ -2730,7 +2777,7 @@ async def get_my_data_source_row_access(
         if found_cls_policy_ids != set(cls_policy_ids):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Your access to this data source refers to a column policy that no longer exists.",
+                detail="This access refers to a column policy that no longer exists.",
             )
 
         cls_rules_result = await db.execute(
@@ -2795,7 +2842,7 @@ async def get_my_data_source_row_access(
         # UI, even though the query path itself denies the query outright.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Your access to this data source refers to a row filter policy that no longer exists.",
+            detail="This access refers to a row filter policy that no longer exists.",
         )
 
     rules_result = await db.execute(
@@ -2858,6 +2905,77 @@ async def get_my_data_source_row_access(
         "denies_ungoverned_tables": denies_ungoverned_tables,
         "columns": column_payload,
     }
+
+@router.get("/sources/{data_source_id}/access-as/{target_user_id}")
+async def explain_access_for_member(
+    data_source_id: str,
+    target_user_id: str,
+    table: Optional[str] = None,
+    project_id: Optional[str] = None,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+):
+    """See what one member of the organization sees on this data source.
+
+    For people who manage the source: the access level that member holds, the rows and columns
+    their grants allow (as enforcement decides), and optionally a sample of a table queried as
+    them, with their row and column rules applied.
+    """
+    if not is_ee_enabled():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires enterprise edition")
+    import uuid
+
+    from src.modules.authentication.rbac.models import UserRole
+    from src.modules.data.services.data_source_access_service import (
+        DATA_SOURCE_PERMISSION_MANAGE,
+        DATA_SOURCE_PERMISSION_VIEW,
+    )
+    from src.modules.data.services.governed_sql import caller_for_user_id, load_source_for, quote_table, run_sql
+
+    admin_id = _authenticated_user_id(current_token)
+    data_source = await _require_data_source_permission(db, admin_id, data_source_id, DATA_SOURCE_PERMISSION_MANAGE)
+    try:
+        target = uuid.UUID(str(target_user_id))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Member not found") from None
+    organization_id = str(data_source.organization_id) if getattr(data_source, "organization_id", None) else None
+    if organization_id:
+        member = (await db.execute(
+            sa.select(UserRole.id).where(
+                UserRole.user_id == target,
+                UserRole.organization_id == uuid.UUID(organization_id),
+                UserRole.is_active.is_(True),
+                UserRole.is_deleted.is_not(True),
+            ).limit(1)
+        )).first()
+        if member is None:
+            raise HTTPException(status_code=404, detail="Member not found")
+
+    levels = {}
+    for permission in (DATA_SOURCE_PERMISSION_VIEW, DATA_SOURCE_PERMISSION_QUERY, DATA_SOURCE_PERMISSION_MANAGE):
+        levels[permission] = await DataSourceAccessService.can_access(
+            str(target), data_source_id, permission, project_id=project_id, session=db
+        )
+    payload = {"sub": str(target), "user_id": str(target), "id": str(target),
+               "organization_id": organization_id, "project_id": project_id}
+    access = (
+        await _explain_row_and_column_access(db, data_source, data_source_id, str(target), organization_id, project_id, payload)
+        if levels[DATA_SOURCE_PERMISSION_QUERY]
+        else None
+    )
+
+    sample: Optional[Dict[str, Any]] = None
+    if table and levels[DATA_SOURCE_PERMISSION_QUERY]:
+        try:
+            caller = await caller_for_user_id(str(target), project_id)
+            caller.organization_id = caller.organization_id or organization_id
+            source = await load_source_for(caller, data_source_id)
+            result = await run_sql(caller, source, f"SELECT * FROM {quote_table(table)} LIMIT 20")
+            sample = {"table": table, "columns": result["columns"], "rows": result["rows"]}
+        except HTTPException as exc:
+            sample = {"table": table, "error": str(exc.detail)}
+    logger.info("access-as: %s viewed %s's access to data source %s", admin_id, target, data_source_id)
+    return {"success": True, "levels": levels, "access": access, "sample": sample}
 
 
 # Query data source endpoint (deprecated — use POST /data/query/execute)
@@ -3158,15 +3276,19 @@ async def patch_business_metadata(
             current_schema = (
                 dict(data_source.schema) if isinstance(data_source.schema, dict) else {}
             )
+            from src.modules.data.services.business_metadata import fold_measures_and_dimensions
+
             bm = dict(current_schema.get("business_metadata") or {})
-            if body.measures is not None:
-                bm["measures"] = body.measures
-            if body.dimensions is not None:
-                bm["dimensions"] = body.dimensions
             if body.column_descriptions is not None:
                 bm["column_descriptions"] = body.column_descriptions
+            if body.column_roles is not None:
+                bm["column_roles"] = body.column_roles
+            if body.personal_columns is not None:
+                bm["personal_columns"] = sorted(set(body.personal_columns))
             if body.ontology_mapping is not None:
                 bm["ontology_mapping"] = body.ontology_mapping
+            # Measures and dimensions belong to the semantic model; never kept here twice.
+            bm, new_metrics = fold_measures_and_dimensions(bm, body.measures, body.dimensions)
             current_schema["business_metadata"] = bm
 
             updated = await data_crud_service.update_data_source_by_id(
@@ -3175,46 +3297,22 @@ async def patch_business_metadata(
                 session=db,
             )
 
-        try:
-            from src.modules.ai.services.langgraph_orchestrator import (
-                LangGraphMultiAgentOrchestrator,
-            )
+        from src.modules.data.services.business_metadata import (
+            refresh_after_metadata_change,
+            sync_dimension_types,
+        )
 
-            LangGraphMultiAgentOrchestrator.invalidate_schema_cache(data_source_id)
-        except Exception as inv_err:
-            logger.debug("Schema cache invalidation skipped: %s", inv_err)
-        try:
-            from src.core.cache import cache
+        if new_metrics and is_ee_enabled():
+            from src.modules.ai.services.semantic_layer_db import semantic_layer_db
 
-            if cache:
-                cache.delete(f"ds:{data_source_id}")
-        except Exception:
-            pass
-        # Rebuild schema index for Schema RAG when business_metadata (e.g. column_descriptions) changes.
-        try:
-            from src.modules.ai.services.schema_index_service import (
-                build_schema_index_for_data_source,
-            )
-
-            result = await build_schema_index_for_data_source(
-                db, data_source_id, current_schema
-            )
-            logger.debug(
-                "Schema index rebuilt after business-metadata patch: %s", result
-            )
-        except Exception as idx_err:
-            logger.warning(
-                "Schema index build after business-metadata patch failed: %s", idx_err
-            )
-        # Invalidate SQL feedback cache — business metadata (table/column descriptions) changes the semantic contract
-        try:
-            from src.modules.ai.utils.sql_feedback_store import (
-                invalidate_for_data_source as _inv_fb,
-            )
-
-            _inv_fb(data_source_id)
-        except Exception:
-            pass
+            for metric in new_metrics:
+                await semantic_layer_db.upsert_metric(
+                    name=metric["name"], expression=metric["expression"], description=metric["description"],
+                    source="business_metadata", data_source_id=data_source_id,
+                )
+        async with async_session() as sync_db:
+            await sync_dimension_types(sync_db, data_source_id, bm.get("column_roles") or {})
+        await refresh_after_metadata_change(db, data_source_id, current_schema)
 
         return {
             "success": True,
@@ -3983,11 +4081,65 @@ async def analyze_data_source_for_cube(request: Dict[str, Any]):
             f"/cube-modeling/analyze: data_source_id={data_source_id} collected {len(data) if data else 0} rows; connection_info_present={bool(connection_info)}"
         )
 
-        # Analyze with Cube.js modeling service (optional)
+        # Legacy Cube.js analyzer (optional). When absent, use the native semantic layer
+        # (metrics/dimensions in Postgres) — Cube.js is not required for EE deployments.
         if not cube_modeling_service:
-            raise HTTPException(
-                status_code=503, detail="Cube.js modeling service is not available"
+            from src.core.edition import is_ee_enabled
+
+            if not is_ee_enabled():
+                raise HTTPException(
+                    status_code=503, detail="Cube.js modeling service is not available"
+                )
+            from src.modules.data.services.data_connectivity_service import (
+                DataConnectivityService,
             )
+
+            try:
+                from src.modules.ai.services.semantic_layer_db import semantic_layer_db
+            except ImportError:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Semantic modeling is not available in this edition",
+                )
+
+            schema_result = await DataConnectivityService().get_source_schema(
+                data_source_id
+            )
+            if not schema_result.get("success"):
+                raise HTTPException(
+                    status_code=404,
+                    detail=schema_result.get("error") or "Data source schema not found",
+                )
+            gen = await semantic_layer_db.auto_generate_from_schema(
+                data_source_id=data_source_id,
+                schema=schema_result.get("schema") or {},
+                project_id=None,
+            )
+            if not gen.get("success"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=gen.get("error") or "Semantic auto-generate failed",
+                )
+            metrics_n = int(gen.get("metrics_imported") or 0)
+            dims_n = int(gen.get("dimensions_imported") or 0)
+            return {
+                "success": True,
+                "engine": "aicser_semantic",
+                "fallback_model": {"engine": "aicser_semantic"},
+                "message": (
+                    "Draft metrics and dimensions were generated from your physical "
+                    "schema (native semantic layer; Cube.js not required)."
+                ),
+                "analysis": {
+                    "row_count": len(data) if data else None,
+                    "column_count": None,
+                    "measures": [{"name": f"metric_{i}"} for i in range(metrics_n)],
+                    "dimensions": [{"name": f"dimension_{i}"} for i in range(dims_n)],
+                    "metrics_imported": metrics_n,
+                    "dimensions_imported": dims_n,
+                    "join_paths_available": gen.get("join_paths_available"),
+                },
+            }
         mid_ts = time.time()
         logger.info(f"/cube-modeling/analyze calling analyzer: ts={mid_ts}")
         result = await cube_modeling_service.analyze_data_source(
@@ -4708,7 +4860,65 @@ async def get_data_source_schema(
     origin: str = "serving",
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
 ):
-    """Get schema information for a specific data source. Requires authentication and ownership (creator or project member)."""
+    """Get schema information for a specific data source. Requires authentication and ownership (creator or project member).
+
+    Whichever way the tables are read (live database, lakehouse, file), the response carries the
+    connection's stored business metadata: what people said its columns mean.
+    """
+    response = await _data_source_schema_response(data_source_id, refresh, origin, current_token)
+    schema = response.get("schema") if isinstance(response, dict) else None
+    if isinstance(schema, dict) and any(isinstance(t, dict) and t.get("origin_data_source_id") for t in schema.get("tables") or []):
+        # A warehouse lists Gold tables built from many sources: show each person only the tables
+        # whose source they may query (reading them is refused otherwise anyway).
+        schema = await _visible_tables(schema, current_token)
+        response["schema"] = schema
+    if isinstance(schema, dict) and "business_metadata" not in schema:
+        bm = await _stored_business_metadata(data_source_id)
+        if bm:
+            response["schema"] = {**schema, "business_metadata": bm}
+    return response
+
+
+async def _stored_business_metadata(data_source_id: str) -> Optional[Dict[str, Any]]:
+    from src.db.session import async_session
+    from src.modules.data.models import DataSource
+
+    async with async_session() as db:
+        row = await db.get(DataSource, str(data_source_id))
+    stored = row.schema if row is not None else None
+    if isinstance(stored, str):
+        try:
+            stored = json.loads(stored)
+        except ValueError:
+            stored = None
+    bm = stored.get("business_metadata") if isinstance(stored, dict) else None
+    return bm if isinstance(bm, dict) and bm else None
+
+
+async def _visible_tables(schema: Dict[str, Any], current_token: Any) -> Dict[str, Any]:
+    from src.modules.data.services.data_source_access_service import DataSourceAccessService
+
+    payload = current_token if isinstance(current_token, dict) else extract_user_payload(current_token)
+    user_id = str(payload.get("id") or payload.get("user_id") or payload.get("sub") or "")
+    allowed: Dict[str, bool] = {}
+    kept = []
+    for table in schema.get("tables") or []:
+        origin = table.get("origin_data_source_id") if isinstance(table, dict) else None
+        if origin:
+            if origin not in allowed:
+                allowed[origin] = bool(user_id) and await DataSourceAccessService.can_query(user_id, str(origin))
+            if not allowed[origin]:
+                continue
+        kept.append(table)
+    return {**schema, "tables": kept}
+
+
+async def _data_source_schema_response(
+    data_source_id: str,
+    refresh: bool,
+    origin: str,
+    current_token: Union[str, dict],
+):
     try:
         logger.info("Fetching schema for data source: %s", data_source_id)
         user_id = None
@@ -4781,6 +4991,10 @@ async def get_data_source_schema(
                 schema_result = await data_service.get_database_schema(data_source_id)
                 if schema_result.get("success") and schema_result.get("schema"):
                     schema = schema_result["schema"]
+                    # Keep what people said about the columns when the live schema replaces the stored one.
+                    stored_bm = await _stored_business_metadata(data_source_id)
+                    if isinstance(schema, dict) and stored_bm and "business_metadata" not in schema:
+                        schema = {**schema, "business_metadata": stored_bm}
                     try:
                         from sqlalchemy import update
 
@@ -5606,16 +5820,103 @@ async def execute_enterprise_query(
     connection_id: str,
     request: Dict[str, Any],
     current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
 ):
-    """Execute query on enterprise connection"""
+    """Execute a query for an enterprise connection.
+
+    Prefer ``data_source_id`` so execution goes through MultiEngineQueryService
+    (lakehouse routing, QueryIdentity, RLS). When the connection is also a
+    pipeline-managed data source, direct hits are refused so analytics never
+    bypass the lakehouse contract.
+    """
     try:
+        from src.modules.data.services.query_routing import LakehouseNotReady, load_managed_lakehouse
+
         query = request.get("query", "")
         params = request.get("params")
+        # Enterprise connections persist as DataSource rows with the same id.
+        data_source_id = str(request.get("data_source_id") or connection_id)
 
         if not query:
             raise HTTPException(status_code=400, detail="Query is required")
 
-        uid = user_id_from_payload(extract_user_payload(current_token))
+        user_payload = (
+            current_token
+            if isinstance(current_token, dict)
+            else extract_user_payload(current_token)
+        )
+        uid = user_id_from_payload(user_payload)
+        managed = await load_managed_lakehouse(data_source_id)
+        data_source = await data_service.get_data_source_by_id(data_source_id)
+
+        if data_source:
+            # Governed path: lakehouse routing + QueryIdentity + RLS.
+            org_id = await get_user_organization_id(uid, db)
+            effective_project_id = str(
+                request.get("project_id")
+                or (user_payload or {}).get("project_id")
+                or ""
+            ).strip()
+            await _require_data_source_permission(
+                db,
+                uid,
+                data_source_id,
+                DATA_SOURCE_PERMISSION_QUERY,
+                project_id=effective_project_id or None,
+            )
+            await require_permission(
+                uid,
+                "query:execute",
+                organization_id=str(org_id) if org_id else None,
+                project_id=effective_project_id or None,
+            )
+            try:
+                result = await multi_engine_service.execute_query(
+                    query=query,
+                    data_source=data_source,
+                    optimization=True,
+                    cache_context={
+                        "organization_id": str(org_id) if org_id else None,
+                        "project_id": effective_project_id or None,
+                        "user_id": uid,
+                    },
+                    identity=QueryIdentity(
+                        user_id=str(uid),
+                        organization_id=str(org_id) if org_id else None,
+                        project_id=effective_project_id or None,
+                        token_payload=user_payload or {},
+                    ),
+                )
+            except LakehouseNotReady as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"A pipeline manages this source but has not produced Silver/Gold "
+                        f"data yet (last run: {exc.last_run_status or 'never'})."
+                    ),
+                ) from exc
+            return {
+                "success": result.get("success", True),
+                "data": result.get("data") or result.get("rows") or [],
+                "columns": result.get("columns") or [],
+                "row_count": result.get("row_count") or result.get("rows_affected"),
+                "execution_time": result.get("execution_time") or result.get("duration_ms"),
+                "query_id": result.get("query_id"),
+                "error": result.get("error"),
+                "served_from": "lakehouse" if managed else "source",
+            }
+
+        if managed is not None:
+            # Pipeline-managed but no DataSource row — refuse the direct warehouse hit.
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This source is managed by a pipeline. Query it via "
+                    "/api/data/query/execute with data_source_id so analytics "
+                    "read lakehouse Silver/Gold instead of the original system."
+                ),
+            )
+
         result = await enterprise_connectors_service.execute_query(
             connection_id, query, params, requester_id=uid
         )
@@ -5628,8 +5929,11 @@ async def execute_enterprise_query(
             "execution_time": result.execution_time,
             "query_id": result.query_id,
             "error": result.error,
+            "served_from": "source",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Enterprise query execution failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -5839,8 +6143,28 @@ async def execute_multi_engine_query(
                     )
                     selected_engine = None  # Auto-select optimal engine
 
+        execution_mode = str(request.get("execution_mode") or "read").strip().lower()
+        if execution_mode not in ("read", "write"):
+            execution_mode = "read"
+        if execution_mode == "write":
+            await _require_data_source_permission(
+                db,
+                user_id,
+                data_source_id,
+                DATA_SOURCE_PERMISSION_EDIT,
+                project_id=effective_project_id or None,
+            )
+            src_type = str(data_source.get("type") or "").lower()
+            if is_demo_source or src_type in (
+                "file", "google_sheets", "sample_duckdb", "warehouse", "lakehouse_iceberg",
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Write SQL is only available on direct database connections.",
+                )
+
         # Apply filters server-side by safely wrapping the original SQL
-        if filters and isinstance(filters, list):
+        if execution_mode != "write" and filters and isinstance(filters, list):
             try:
                 query = _apply_filters_to_query(query, filters, data_source.get("db_type"))
             except Exception:
@@ -5871,6 +6195,7 @@ async def execute_multi_engine_query(
                 "user_id": user_id,
             },
             identity=query_identity,
+            execution_mode=execution_mode,
         )
 
         # Ensure result has proper structure with all required fields
@@ -5899,6 +6224,86 @@ async def execute_multi_engine_query(
     except Exception as e:
         logger.error(f"❌ Multi-engine query execution failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/query/export")
+async def export_query_results(
+    request: Dict[str, Any],
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+):
+    """Export already-fetched query rows as Parquet (Arrow) or Arrow IPC.
+
+    Accepts ``columns`` + ``rows`` (or ``data``) from the SQL editor so we never
+    re-hit an OLTP source just to download. Caps row count to keep memory bounded.
+    """
+    import io
+
+    fmt = str(request.get("format") or "parquet").strip().lower()
+    if fmt not in ("parquet", "arrow", "arrow_ipc"):
+        raise HTTPException(status_code=400, detail="format must be parquet or arrow")
+
+    columns = request.get("columns") or []
+    rows = request.get("rows") if request.get("rows") is not None else request.get("data")
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(status_code=400, detail="rows (or data) are required")
+    if len(rows) > 100_000:
+        raise HTTPException(status_code=400, detail="Export is limited to 100,000 rows")
+
+    # Auth: any signed-in user may export their own result set (no DS hit).
+    if isinstance(current_token, str):
+        extract_user_payload(current_token)
+
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=501, detail="Parquet export is not available on this server"
+        ) from exc
+
+    if columns and isinstance(columns[0], dict):
+        col_names = [
+            str(c.get("name") or c.get("field") or f"col_{i}")
+            for i, c in enumerate(columns)
+        ]
+    elif columns:
+        col_names = [str(c) for c in columns]
+    else:
+        first = rows[0]
+        col_names = (
+            list(first.keys())
+            if isinstance(first, dict)
+            else [f"col_{i}" for i in range(len(first))]
+        )
+
+    arrays = {name: [] for name in col_names}
+    for row in rows:
+        if isinstance(row, dict):
+            for name in col_names:
+                arrays[name].append(row.get(name))
+        else:
+            for i, name in enumerate(col_names):
+                arrays[name].append(row[i] if i < len(row) else None)
+
+    table = pa.table(arrays)
+    buf = io.BytesIO()
+    if fmt == "parquet":
+        pq.write_table(table, buf, compression="zstd")
+        media = "application/vnd.apache.parquet"
+        filename = "query_results.parquet"
+    else:
+        sink = pa.BufferOutputStream()
+        with pa.ipc.new_stream(sink, table.schema) as writer:
+            writer.write_table(table)
+        buf.write(sink.getvalue().to_pybytes())
+        media = "application/vnd.apache.arrow.stream"
+        filename = "query_results.arrow"
+
+    return Response(
+        content=buf.getvalue(),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # Same dialect-name mapping used by ee/modules/data/services/rls_predicate_builder.py,
@@ -6132,6 +6537,10 @@ async def test_delta_iceberg_connection(
                 status_code=400, detail="format_type and storage_uri are required"
             )
 
+        if request.get("purpose") == "pipeline_lake":
+            probe = await _probe_pipeline_lake(storage_uri, credentials)
+            return {"success": probe["success"], **({"error": probe["error"]} if not probe["success"] else {"message": "Ready for pipeline lakes"})}
+
         result = await delta_iceberg_connector.test_connection(
             format_type=format_type,
             storage_uri=storage_uri,
@@ -6160,6 +6569,35 @@ def _uuid_or_none(value):
         return _uuid.UUID(str(value)) if value else None
     except (ValueError, TypeError):
         return None
+
+
+async def _probe_pipeline_lake(storage_uri: str, credentials: Dict[str, Any]) -> Dict[str, Any]:
+    from urllib.parse import urlparse
+
+    from src.modules.data.utils.s3_compatible import (
+        default_s3_endpoint,
+        interop_access_keys,
+        normalize_storage_provider,
+        probe_bucket_write,
+        s3_client_for,
+    )
+
+    keys = interop_access_keys(credentials)
+    parsed = urlparse(storage_uri or "")
+    if not keys or not parsed.netloc:
+        return {"success": False, "error": "An s3:// bucket address and access keys are required"}
+    provider = normalize_storage_provider(credentials.get("provider"))
+    client = s3_client_for(
+        access_key_id=keys[0],
+        secret_access_key=keys[1],
+        region=credentials.get("region"),
+        endpoint_url=default_s3_endpoint(provider, credentials),
+        provider=provider,
+    )
+    probe = await asyncio.to_thread(probe_bucket_write, client, parsed.netloc, parsed.path.strip("/"))
+    if not probe["ok"]:
+        return {"success": False, "error": probe["message"]}
+    return {"success": True, "schema": [], "row_count": 0}
 
 
 @router.post("/delta-iceberg/connect")
@@ -6208,56 +6646,60 @@ async def connect_delta_iceberg(
                 status_code=400, detail="format_type and storage_uri are required"
             )
 
-        # Test connection first
-        test_result = await delta_iceberg_connector.test_connection(
-            format_type=format_type,
-            storage_uri=storage_uri,
-            credentials=credentials,
-            **{
-                k: v
-                for k, v in request.items()
-                if k not in ["format_type", "storage_uri", "credentials", "name"]
-            },
-        )
-
-        if not test_result.get("success"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Connection test failed: {test_result.get('error', 'Unknown error')}",
-            )
-
-        # Get full connection result with schema and sample data
-        if format_type in ["delta", "delta_lake"]:
-            connect_result = await delta_iceberg_connector.connect_delta_table(
-                storage_uri=storage_uri,
-                credentials=credentials,
-                version=request.get("version"),
-                timestamp=request.get("timestamp"),
-                organization_id=organization_id,
-            )
-        elif format_type in ["iceberg"]:
-            connect_result = await delta_iceberg_connector.connect_iceberg_table(
-                storage_uri=storage_uri,
-                credentials=credentials,
-                snapshot_id=request.get("snapshot_id"),
-                organization_id=organization_id,
-            )
-        elif format_type in ["s3_parquet", "azure_blob", "gcp_cloud_storage"]:
-            # For direct cloud storage files (S3, Azure, GCP), use connect_cloud_storage_file
-            file_format = request.get(
-                "file_format", "parquet"
-            )  # Default to parquet, but supports csv, json, tsv
-            connect_result = await delta_iceberg_connector.connect_cloud_storage_file(
-                storage_uri=storage_uri,
-                credentials=credentials,
-                file_format=file_format,
-                organization_id=organization_id,
-            )
+        if request.get("purpose") == "pipeline_lake":
+            # A bucket for pipeline lakes starts empty: what matters is that the keys can write,
+            # read back and delete under the prefix (reading existing tables would refuse it).
+            connect_result = await _probe_pipeline_lake(storage_uri, credentials)
         else:
-            raise HTTPException(
-                status_code=400, detail=f"Unsupported format: {format_type}"
+            # Test connection first
+            test_result = await delta_iceberg_connector.test_connection(
+                format_type=format_type,
+                storage_uri=storage_uri,
+                credentials=credentials,
+                **{
+                    k: v
+                    for k, v in request.items()
+                    if k not in ["format_type", "storage_uri", "credentials", "name"]
+                },
             )
 
+            if not test_result.get("success"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Connection test failed: {test_result.get('error', 'Unknown error')}",
+                )
+
+            # Get full connection result with schema and sample data
+            if format_type in ["delta", "delta_lake"]:
+                connect_result = await delta_iceberg_connector.connect_delta_table(
+                    storage_uri=storage_uri,
+                    credentials=credentials,
+                    version=request.get("version"),
+                    timestamp=request.get("timestamp"),
+                    organization_id=organization_id,
+                )
+            elif format_type in ["iceberg"]:
+                connect_result = await delta_iceberg_connector.connect_iceberg_table(
+                    storage_uri=storage_uri,
+                    credentials=credentials,
+                    snapshot_id=request.get("snapshot_id"),
+                    organization_id=organization_id,
+                )
+            elif format_type in ["s3_parquet", "azure_blob", "gcp_cloud_storage"]:
+                # For direct cloud storage files (S3, Azure, GCP), use connect_cloud_storage_file
+                file_format = request.get(
+                    "file_format", "parquet"
+                )  # Default to parquet, but supports csv, json, tsv
+                connect_result = await delta_iceberg_connector.connect_cloud_storage_file(
+                    storage_uri=storage_uri,
+                    credentials=credentials,
+                    file_format=file_format,
+                    organization_id=organization_id,
+                )
+            else:
+                raise HTTPException(
+                    status_code=400, detail=f"Unsupported format: {format_type}"
+                )
         if not connect_result.get("success"):
             raise HTTPException(
                 status_code=400,
@@ -6289,16 +6731,24 @@ async def connect_delta_iceberg(
                     if k not in ["format_type", "storage_uri", "credentials", "name"]
                 },
             }
+            if credentials.get("provider"):
+                connection_config["provider"] = credentials.get("provider")
+            if credentials.get("endpoint"):
+                connection_config["endpoint"] = credentials.get("endpoint")
+            if credentials.get("region"):
+                connection_config["region"] = credentials.get("region")
+            if credentials.get("account_name"):
+                connection_config["account_name"] = credentials.get("account_name")
 
             insert_query = sa.text(
                 """
                 INSERT INTO data_sources 
                 (id, name, type, format, db_type, size, row_count, schema, 
-                 connection_config, metadata, user_id, organization_id, is_active, 
+                 connection_config, user_id, organization_id, is_active, 
                  created_at, updated_at, last_accessed, file_path)
                 VALUES 
                 (:id, :name, :type, :format, :db_type, :size, :row_count, :schema,
-                 :connection_config, :metadata, :user_id, :organization_id, :is_active,
+                 :connection_config, :user_id, :organization_id, :is_active,
                  :created_at, :updated_at, :last_accessed, :file_path)
             """
             )
@@ -6315,15 +6765,6 @@ async def connect_delta_iceberg(
                     "row_count": connect_result.get("row_count", 0),
                     "schema": schema_json,
                     "connection_config": json.dumps(connection_config),
-                    "metadata": json.dumps(
-                        {
-                            "connection_type": "delta_iceberg",
-                            "storage_uri": storage_uri,
-                            "format": format_type,
-                            "status": "connected",
-                            "created_at": datetime.now().isoformat(),
-                        }
-                    ),
                     "user_id": user_id,
                     # The org, so its members can pick this connection (e.g. as a pipeline destination)
                     "organization_id": _uuid_or_none(organization_id),
@@ -6482,7 +6923,7 @@ async def create_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Create a ClickHouse Kafka engine stream into a MergeTree landing table (org-scoped)."""
-    from ee.modules.data.services.streaming_ingestion_service import (
+    from src.enterprise.modules.data.services.streaming_ingestion_service import (
         StreamDefinition,
         ColumnDef,
         StreamingIngestionService,
@@ -6535,7 +6976,7 @@ async def list_streams(
     db: AsyncSession = Depends(get_async_session),
 ):
     """List stream definitions for the organisation."""
-    from ee.modules.data.services.streaming_ingestion_service import (
+    from src.enterprise.modules.data.services.streaming_ingestion_service import (
         StreamingIngestionService,
     )
 
@@ -6563,7 +7004,7 @@ async def get_stream_status(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Get consumer lag and throughput for a stream."""
-    from ee.modules.data.services.streaming_ingestion_service import (
+    from src.enterprise.modules.data.services.streaming_ingestion_service import (
         StreamingIngestionService,
     )
 
@@ -6596,7 +7037,7 @@ async def test_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Peek at rows from the Kafka engine table (debug)."""
-    from ee.modules.data.services.streaming_ingestion_service import (
+    from src.enterprise.modules.data.services.streaming_ingestion_service import (
         StreamingIngestionService,
     )
 
@@ -6628,7 +7069,7 @@ async def delete_stream(
     db: AsyncSession = Depends(get_async_session),
 ):
     """Drop Kafka engine table + MV and remove the stream record (landing MergeTree kept)."""
-    from ee.modules.data.services.streaming_ingestion_service import (
+    from src.enterprise.modules.data.services.streaming_ingestion_service import (
         StreamingIngestionService,
     )
 

@@ -56,9 +56,12 @@ export function useUpdateRelationship(dataSourceId: string) {
 export function useAutoDetectRelationships(dataSourceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => autoDetectRelationships(dataSourceId),
-    onSuccess: () => {
+    mutationFn: (opts?: { projectSourceIds?: string[] }) => autoDetectRelationships(dataSourceId, opts),
+    onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: QUERY_KEY(dataSourceId) });
+      for (const id of variables?.projectSourceIds ?? []) {
+        void qc.invalidateQueries({ queryKey: QUERY_KEY(id) });
+      }
     },
   });
 }

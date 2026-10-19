@@ -46,6 +46,28 @@ def test_extract_column_lineage_tracks_across_a_join():
     assert any("region_name" in c for c in mapping["region_name"])
 
 
+def test_openlineage_event_has_job_and_io():
+    from src.modules.pipeline.transform.lineage import to_openlineage_event
+
+    event = to_openlineage_event(
+        pipeline_name="orders-silver",
+        pipeline_id="p1",
+        run_id="r1",
+        graph={
+            "nodes": [
+                {"id": "n1", "name": "bronze.orders", "asset_id": "a"},
+                {"id": "n2", "name": "silver.orders", "asset_id": "b"},
+            ],
+            "edges": [{"from": "n1", "to": "n2", "column_map": {"amount": ["total"]}}],
+        },
+    )
+    assert event["job"]["name"] == "orders-silver"
+    assert event["run"]["runId"] == "r1"
+    assert event["schemaURL"].startswith("https://openlineage.io/")
+    assert event["inputs"][0]["name"] == "bronze.orders"
+    assert event["outputs"][0]["facets"]["columnLineage"]["fields"]["amount"]["inputFields"][0]["name"] == "total"
+
+
 def test_extract_column_lineage_survives_unparseable_sql():
     """Lineage is best-effort metadata; it must never fail a pipeline run."""
     from src.modules.pipeline.transform.lineage import extract_column_lineage

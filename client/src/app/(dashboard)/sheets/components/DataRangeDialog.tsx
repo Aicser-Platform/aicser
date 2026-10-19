@@ -4,7 +4,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Input, Modal, Segmented, Select, Space, Typography } from 'antd';
 import { BulbOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { useQuery } from '@tanstack/react-query';
 import { useDataSourceSchema } from '@/hooks/useDataSources';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
+import { compileMetric, listModelDimensions, listModelMetrics } from '@/api/semanticModel';
 import { fetchApi } from '@/utils/api';
 import { tableQuery } from './sheetData';
 
@@ -13,8 +16,9 @@ const { Text } = Typography;
 export type RangeRequest = { dataSourceId: string; sourceName: string; sql: string; name: string };
 
 /**
- * Put data into the sheet at the selected cell: a table, your own SQL, or (with AI) a
- * description turned into SQL by the same text-to-SQL path as the SQL editor.
+ * Put data into the sheet at the selected cell: a table, a semantic metric (by dimensions and
+ * period, the same definition as Ask and dashboards), your own SQL, or (with AI) a description
+ * turned into SQL by the same text-to-SQL path as the SQL editor.
  */
 export function DataRangeDialog({
   open, anchorLabel, dataSources, defaultSourceId, aiAvailable, initial, onCancel, onSubmit,
@@ -31,7 +35,11 @@ export function DataRangeDialog({
 }) {
   const t = useTranslations('sheets');
   const [sourceId, setSourceId] = useState<string | null>(null);
-  const [mode, setMode] = useState<'table' | 'sql' | 'ai'>('table');
+  type Mode = 'table' | 'metric' | 'sql' | 'ai';
+  const [mode, setMode] = useState<Mode>('table');
+  const [metric, setMetric] = useState<string | null>(null);
+  const [dims, setDims] = useState<string[]>([]);
+  const [grain, setGrain] = useState<string | null>(null);
   const [table, setTable] = useState<string | null>(null);
   const [sql, setSql] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -39,6 +47,13 @@ export function DataRangeDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { schema } = useDataSourceSchema(sourceId);
+  const metricsQuery = useQuery({
+    queryKey: ['range-metrics', sourceId],
+    queryFn: () => Promise.all([listModelMetrics(sourceId!), listModelDimensions(sourceId!)]),
+    enabled: open && mode === 'metric' && Boolean(sourceId),
+  });
+  const [modelMetrics, modelDims] = metricsQuery.data ?? [[], []];
+  const hasTimeDim = modelDims.some((d) => dims.includes(d.name) && d.dimension_type === 'time');
 
   useEffect(() => {
     if (!open) return;
@@ -87,17 +102,21 @@ export function DataRangeDialog({
     }
   };
 
-  const finalSql = mode === 'table' ? (table ? tableQuery(table) : '') : sql.trim();
+  const finalSql = mode === 'table' ? (table ? tableQuery(table) : '') : mode === 'metric' ? (metric ? 'metric' : '') : sql.trim();
   const submit = async () => {
     if (!sourceId || !finalSql) return;
     setBusy(true);
     setError(null);
     try {
+      // A metric becomes the semantic layer's SQL for it, then refreshes like any other range.
+      const rangeSql = mode === 'metric' && metric
+        ? await compileMetric(sourceId, { metric, dimensions: dims, time_grain: hasTimeDim ? grain : null })
+        : finalSql;
       await onSubmit({
         dataSourceId: sourceId,
         sourceName: dataSources.find((d) => d.value === sourceId)?.label ?? '',
-        sql: finalSql,
-        name: name.trim() || (mode === 'table' && table ? table : t('range_default_name')),
+        sql: rangeSql,
+        name: name.trim() || (mode === 'table' && table ? table : mode === 'metric' && metric ? [metric, ...dims].join(' by ') : t('range_default_name')),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : t('query_failed'));
@@ -143,9 +162,10 @@ export function DataRangeDialog({
           <Segmented
             block
             value={mode}
-            onChange={(v) => setMode(v as 'table' | 'sql' | 'ai')}
+            onChange={(v) => setMode(v as Mode)}
             options={[
               { value: 'table', label: t('range_mode_table') },
+              ...(isEnterpriseEdition ? [{ value: 'metric', label: t('range_mode_metric') }] : []),
               { value: 'sql', label: t('range_mode_sql') },
               ...(aiAvailable ? [{ value: 'ai', label: t('range_mode_ai') }] : []),
             ]}
@@ -156,6 +176,32 @@ export function DataRangeDialog({
           <Form.Item label={t('range_table')}>
             <Select showSearch value={table ?? undefined} options={tables} onChange={setTable} placeholder={t('range_table_placeholder')} disabled={!sourceId} />
           </Form.Item>
+        ) : mode === 'metric' ? (
+          <>
+            <Form.Item label={t('range_metric')} extra={modelMetrics.length || metricsQuery.isLoading ? undefined : t('range_metric_none')}>
+              <Select
+                showSearch
+                loading={metricsQuery.isLoading}
+                value={metric ?? undefined}
+                onChange={setMetric}
+                placeholder={t('range_metric_placeholder')}
+                options={modelMetrics.map((m) => ({ value: m.name, label: m.certified ? `${m.name} ✓` : m.name }))}
+                disabled={!sourceId}
+              />
+            </Form.Item>
+            <Space wrap align="start" style={{ width: '100%' }}>
+              <Form.Item label={t('range_metric_by')} style={{ minWidth: 280 }}>
+                <Select mode="multiple" value={dims} onChange={setDims} placeholder={t('range_metric_by_placeholder')}
+                  options={modelDims.map((d) => ({ value: d.name, label: d.name }))} />
+              </Form.Item>
+              {hasTimeDim ? (
+                <Form.Item label={t('range_metric_grain')}>
+                  <Select style={{ width: 170 }} value={grain ?? undefined} onChange={setGrain} allowClear
+                    options={['day', 'week', 'month', 'quarter', 'year', 'fiscal_quarter', 'fiscal_year'].map((g) => ({ value: g, label: t(`grain_${g}`) }))} />
+                </Form.Item>
+              ) : null}
+            </Space>
+          </>
         ) : mode === 'sql' ? (
           <Form.Item label={t('range_sql')}>
             <Input.TextArea value={sql} onChange={(e) => setSql(e.target.value)} autoSize={{ minRows: 5, maxRows: 14 }}

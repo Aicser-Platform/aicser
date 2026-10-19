@@ -24,6 +24,8 @@ class Notebook(BaseModel):
     # The project folder it is filed in (src/modules/folders); unfiled when empty.
     folder_id = Column(UUID(as_uuid=True), ForeignKey("asset_folders.id", ondelete="SET NULL"), nullable=True, index=True)
     version = Column(Integer, nullable=False, server_default="1")
+    # parameters, compute_profile, git sync, certification (see settings_schema.py)
+    settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
 
     __table_args__ = (Index("ix_notebooks_scope", "organization_id", "project_id", "visibility"),)
 
@@ -69,3 +71,18 @@ class NotebookComment(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (Index("ix_notebook_comments_nb", "notebook_id", "created_at"),)
+
+
+class NotebookAuditEvent(Base):
+    """Who did what on a notebook — complement to HTTP audit_logs for DS runbooks."""
+
+    __tablename__ = "notebook_audit_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    notebook_id = Column(UUID(as_uuid=True), ForeignKey("notebooks.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), nullable=True)
+    action = Column(String(64), nullable=False)
+    event_metadata = Column("metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (Index("ix_notebook_audit_nb", "notebook_id", "created_at"),)

@@ -3,6 +3,7 @@ import { hydrateChartConfigFromQueryResult, rawChartConfig } from '@/components/
 import {
   categoriesFromEchartsConfig,
   extractBarOrientationOptions,
+  horizontalCategoriesBottomUp,
   measureHintsFromEchartsConfig,
   promoteChartQueryToMultiMetrics,
 } from '@/components/charts/normalizeMultiMetricChartQuery';
@@ -659,6 +660,13 @@ function buildFromEchartsConfig(cfg: Record<string, unknown>, chartType: string)
     });
 
   if (!mappedSeries.length || (!x.length && !mappedSeries[0]?.data?.length)) return null;
+
+  // A horizontal bar option lists categories bottom-to-top; chart data is in row order (first
+  // row on top), the same as a dashboard's SQL rows, so the shared renderer orients both alike.
+  if (horizontalCategoriesBottomUp(cfg)) {
+    x.reverse();
+    for (const s of mappedSeries) s.data.reverse();
+  }
 
   const chartData: ChartData = {
     x: x.length ? x : mappedSeries[0].data.map((_, i) => String(i + 1)),

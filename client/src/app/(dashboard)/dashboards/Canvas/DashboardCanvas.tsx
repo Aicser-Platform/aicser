@@ -26,6 +26,7 @@ import {
   ColumnWidthOutlined,
   ColumnHeightOutlined,
   BellOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { getChatHref } from '@/utils/appPaths';
 import { cardTitleStyle, chartDescription, chartSource, sourcePatch } from '../utils/chartAnnotations';
@@ -44,6 +45,7 @@ import '../icons/IconPicker.css';
 import { isLayoutSlotWidget } from '../utils/layoutScaffolds';
 import '../components/AddDashboardDrawer.css';
 import { WidgetBlockPicker } from '../components/WidgetBlockPicker';
+import { currentCanvasDrag, droppedCanvasItem, endCanvasDrag, type CanvasDragItem } from '../utils/canvasDrag';
 import type { RuntimeFilter } from '../stores/useDashboardStore';
 import { exportChartByWidget } from '../services/exportChartImageService';
 import { copyChartData, exportCSV, exportExcel, normalizeToRows } from '../services/exportChartDataService';
@@ -75,8 +77,9 @@ export default function DashboardCanvas({
   removeWidget,
   duplicateWidget,
   onAddWidget,
-  onDropWidget,
+  onDropItem,
   onApplyStoryStarter,
+  onOpenAddPanel,
   setPropertiesCollapsed,
   onUpdateWidget,
   onLayoutSync,
@@ -100,8 +103,11 @@ export default function DashboardCanvas({
   removeWidget: (id: string) => void;
   duplicateWidget?: (id: string) => void;
   onAddWidget: (template?: any) => void;
-  onDropWidget?: (template: any, position?: { x: number; y: number }) => void;
+  /** A block or saved chart dragged from the Add panel, dropped at a grid position. */
+  onDropItem?: (item: CanvasDragItem, position: { x: number; y: number }) => void;
   onApplyStoryStarter?: (id: import('../utils/storyStarters').StoryStarterId) => void;
+  /** Dashboards: blocks are added from the Add panel, so the empty board offers it instead of its own list. */
+  onOpenAddPanel?: () => void;
   setPropertiesCollapsed: (collapsed: boolean) => void;
   onUpdateWidget?: (id: string, updates: any) => void;
   onLayoutSync?: (l: any[]) => void;
@@ -678,13 +684,15 @@ export default function DashboardCanvas({
       }
 
       case 'explain': {
-        // Hand the chart to AI Chat (the full analysis experience) with a plain question,
-        // instead of a second, cramped chat inside a drawer.
         const w = widgets.find((x) => x.id === widgetId);
+        const dashId = dashboardId || activeDashboardId;
         router.push(
           getChatHref({
+            mode: 'dashboard',
             prompt: td('ask_ai_about_chart_prompt', { title: w?.title || td('this_chart') }),
             data_source_id: w?.dataSourceId ? String(w.dataSourceId) : undefined,
+            dashboard_id: dashId ? String(dashId) : undefined,
+            target_widget_id: widgetId,
           }),
         );
         break;
@@ -890,36 +898,23 @@ export default function DashboardCanvas({
           }
         }
       }}
+      // Dropping on an empty board: there's no grid to aim at yet, so it goes top-left.
+      // With widgets on the board the grid itself takes the drop (with a placeholder).
       onDragOver={(e) => {
-        if (!isEditing) return;
+        if (!isEditing || !onDropItem || widgets.length > 0 || !currentCanvasDrag()) return;
         e.preventDefault();
         setIsDragOver(true);
       }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={(e) => {
-        if (!isEditing) return;
-        e.preventDefault();
         setIsDragOver(false);
-        // Drop synthesizes a click on whatever lands under the cursor — ignore it.
+        if (!isEditing || !onDropItem || widgets.length > 0) return;
+        const item = droppedCanvasItem(e);
+        if (!item) return;
+        e.preventDefault();
         suppressPropertiesOpenBriefly();
-        try {
-          const data = e.dataTransfer.getData('application/json');
-          if (!data) return;
-          const template = JSON.parse(data);
-          const rect = e.currentTarget.getBoundingClientRect();
-          const marginX = isDesigner ? 0 : 8;
-          const marginY = isDesigner ? 0 : 8;
-          const rowHeight = isDesigner ? designerRowHeight : 42;
-          const width = Math.max(1, rect.width);
-          const colWidth = (width - marginX * (GRID_COLS - 1)) / GRID_COLS;
-          const relX = e.clientX - rect.left;
-          const relY = e.clientY - rect.top;
-          const gridX = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(relX / (colWidth + marginX))));
-          const gridY = Math.max(0, Math.floor(relY / (rowHeight + marginY)));
-          onDropWidget?.(template, { x: gridX, y: gridY });
-        } catch (err) {
-          console.error(err);
-        }
+        endCanvasDrag();
+        onDropItem(item, { x: 0, y: 0 });
       }}
       onMouseMove={(e) => {
         if (!onCollabCursorMove || readOnly) return;
@@ -1046,6 +1041,21 @@ export default function DashboardCanvas({
         }}
         draggableHandle=".widget-card-header, .drag-handle"
         draggableCancel=".no-drag"
+        // Blocks and saved charts dragged in from the Add panel: a placeholder the item's size
+        // follows the pointer, and the item lands exactly there.
+        isDroppable={isEditing && Boolean(onDropItem)}
+        droppingItem={{ i: '__dropping__', w: currentCanvasDrag()?.w ?? 6, h: currentCanvasDrag()?.h ?? 5 }}
+        onDropDragOver={() => {
+          const item = currentCanvasDrag();
+          return item ? { w: item.w, h: item.h } : false;
+        }}
+        onDrop={(_layout, item, e) => {
+          const dropped = droppedCanvasItem(e as Event);
+          endCanvasDrag();
+          if (!dropped || !item || !onDropItem) return;
+          suppressPropertiesOpenBriefly();
+          onDropItem(dropped, { x: item.x, y: item.y });
+        }}
       >
         {widgets.map((w) => {
           const isText = w.chartType === 'text';
@@ -1329,7 +1339,13 @@ export default function DashboardCanvas({
               variant="canvas"
               onSelect={(template) => onAddWidget(template)}
               onApplyStoryStarter={onApplyStoryStarter}
+              hideBlocks={Boolean(onOpenAddPanel)}
             />
+            {onOpenAddPanel ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={onOpenAddPanel} style={{ marginTop: 16 }}>
+                {tPage('empty_add')}
+              </Button>
+            ) : null}
           </div>
         </div>
       )}

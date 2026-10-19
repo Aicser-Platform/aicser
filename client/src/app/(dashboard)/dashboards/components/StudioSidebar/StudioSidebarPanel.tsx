@@ -16,7 +16,6 @@ interface StudioSidebarPanelProps {
 
 const SECTION_LABEL_KEYS: Record<SidebarSection, string> = {
   dashboards: 'rail_dashboards',
-  charts: 'rail_charts',
   modeling: 'rail_modeling',
   ai: 'rail_ai',
 };
@@ -33,6 +32,7 @@ export function StudioSidebarPanel({
     'studio-sidebar-panel',
     !isOpen && 'collapsed',
     isOpen && isFullPage && 'full-page',
+    isOpen && activeSection === 'ai' && 'studio-sidebar-panel--ai',
   ]
     .filter(Boolean)
     .join(' ');
@@ -55,7 +55,7 @@ export function StudioSidebarPanel({
               </Tooltip>
             ) : null}
           </div>
-          <div className="studio-panel-body">{children}</div>
+          <div className={`studio-panel-body${activeSection === 'ai' ? ' studio-panel-body--ai' : ''}`}>{children}</div>
         </>
       )}
     </div>

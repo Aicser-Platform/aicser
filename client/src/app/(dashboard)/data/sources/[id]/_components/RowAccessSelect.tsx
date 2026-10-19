@@ -54,7 +54,6 @@ export const RowAccessSelect: React.FC<{
       value={value}
       onChange={onChange}
       disabled={disabled}
-      status={value === ROW_ACCESS_UNSET ? 'warning' : undefined}
       style={{ minWidth: 260, ...style }}
       optionLabelProp="label"
       options={[

@@ -37,10 +37,12 @@ function PreviewTile({
     >
       {showHeader && (
         <div className="widget-card-header widget-card-header-stack">
-          <span className="widget-card-title">{widget.title}</span>
-          {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
-            <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
-          ) : null}
+          <div className="widget-card-header-titles">
+            <span className="widget-card-title">{widget.title}</span>
+            {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
+              <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
+            ) : null}
+          </div>
         </div>
       )}
       <div className={`widget-card-body no-drag ${kind === 'text' ? 'overflow-y-auto' : ''}`}>

@@ -11,6 +11,11 @@ export async function GET(request: NextRequest, context: { params?: any }) {
   return handleSyncRequest(request, context, 'GET');
 }
 
+export async function PATCH(request: NextRequest, context: { params?: any }) {
+  return handleSyncRequest(request, context, 'PATCH');
+}
+
+
 export async function POST(request: NextRequest, context: { params?: any }) {
   return handleSyncRequest(request, context, 'POST');
 }
@@ -70,6 +75,7 @@ async function handleSyncRequest(
     }
 
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
 
     if (!response.ok) {
       const responseContentType = response.headers.get('content-type') || '';

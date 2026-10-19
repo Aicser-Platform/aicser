@@ -370,19 +370,12 @@ class ChartService {
   }
 
   async createDashboardFromTemplate(payload: CreateDashboardFromTemplatePayload): Promise<any> {
-    // The backend's single Pydantic body param is (for reasons not yet root-caused —
-    // isolated FastAPI repros with the same signature shape don't reproduce it) actually
-    // requiring the body embedded under its own param name, contradicting both FastAPI's
-    // documented default and this endpoint's own integration test. Verified empirically
-    // via direct curl against the live server: flat body -> 422, embedded -> 200.
     return await this.authenticatedFetch(`charts/dashboards/from-template`, {
       method: 'POST',
       body: JSON.stringify({
-        request_payload: {
-          template_id: payload.templateId,
-          project_id: payload.projectId != null ? String(payload.projectId) : undefined,
-          dashboard_name: payload.dashboardName,
-        },
+        template_id: payload.templateId,
+        project_id: payload.projectId != null ? String(payload.projectId) : undefined,
+        dashboard_name: payload.dashboardName,
       }),
     });
   }

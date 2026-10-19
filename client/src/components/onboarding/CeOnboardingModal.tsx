@@ -126,11 +126,11 @@ export function CeOnboardingModal({ onConnectData }: CeOnboardingModalProps) {
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
             <Button onClick={() => setStep(0)}>{t('back')}</Button>
             <Button onClick={finish}>{t('skip')}</Button>
-            <Button icon={<ExperimentOutlined />} onClick={() => handleConnect('sample_duckdb')}>
-              {t('try_sample_data')}
-            </Button>
-            <Button type="primary" icon={<DatabaseOutlined />} onClick={() => handleConnect()}>
+            <Button icon={<DatabaseOutlined />} onClick={() => handleConnect()}>
               {t('connect_data')}
+            </Button>
+            <Button type="primary" icon={<ExperimentOutlined />} onClick={() => handleConnect('sample_duckdb')}>
+              {t('try_sample_data')}
             </Button>
           </div>
         </>

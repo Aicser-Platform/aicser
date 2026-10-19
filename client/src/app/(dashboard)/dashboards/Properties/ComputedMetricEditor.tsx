@@ -5,7 +5,10 @@ import { App, Button, Divider, Input, Modal, Radio, Segmented, Select, Space, Ty
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { useLocale, useTranslations } from 'next-intl';
 import { fetchApi } from '@/utils/api';
+import { createCalcField } from '@/api/calcFields';
+import { computedMetricToExpression } from '@/utils/computedMetricExpression';
 import { isEnterpriseEdition } from '@/utils/appPaths';
+import { useProjectStore } from '@/stores/useProjectStore';
 import type { ComputedMetricSide, ComputedMetric, ComputedOperation, MetricValueFormat } from './PropertiesPanelConfig';
 import type { MetricItem } from './FormFields';
 
@@ -27,6 +30,8 @@ interface Props {
   open: boolean;
   initial?: MetricItem;
   columnOptions: { label: React.ReactNode; value: string; type?: string }[];
+  /** When set, fx formulas can be saved as data-source calculated fields or semantic metrics. */
+  dataSourceId?: string;
   onSave: (metric: MetricItem) => void;
   onCancel: () => void;
 }
@@ -71,10 +76,12 @@ function SideEditor({
   );
 }
 
-export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onCancel }: Props) {
+export function ComputedMetricEditor({ open, initial, columnOptions, dataSourceId, onSave, onCancel }: Props) {
   const t = useTranslations('formula_editor');
   const locale = useLocale();
   const { message } = App.useApp();
+  const projectId = useProjectStore((s) => s.currentProject?.id);
+  const [promoting, setPromoting] = useState<'calc' | 'semantic' | null>(null);
   const existing = initial?.computed;
   const [label, setLabel] = useState('');
   const [op, setOp] = useState<ComputedOperation>('ratio');
@@ -139,15 +146,17 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
     }
   };
 
+  const buildComputed = (): ComputedMetric => ({
+    type: op,
+    numerator: a,
+    denominator: b,
+    multiplier: percentable ? multiplier : 1,
+    format: valueFormat,
+  });
+
   const save = () => {
     if (!isValid) return;
-    const computed: ComputedMetric = {
-      type: op,
-      numerator: a,
-      denominator: b,
-      multiplier: percentable ? multiplier : 1,
-      format: valueFormat,
-    };
+    const computed = buildComputed();
     onSave({
       field: label.trim().replace(/\s+/g, '_').toLowerCase(),
       aggregation: 'ratio',
@@ -155,6 +164,57 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
       computed,
       valueFormat,
     });
+  };
+
+  const fieldName = () => label.trim().replace(/\s+/g, '_').toLowerCase();
+
+  const saveAsCalcField = async () => {
+    if (!dataSourceId || !isValid) return;
+    const expression = computedMetricToExpression(buildComputed());
+    if (!expression) {
+      message.error(t('promote_expression_failed'));
+      return;
+    }
+    setPromoting('calc');
+    try {
+      await createCalcField(dataSourceId, {
+        name: fieldName(),
+        expression,
+        description: label.trim(),
+      });
+      message.success(t('promote_calc_ok'));
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : t('promote_calc_failed'));
+    } finally {
+      setPromoting(null);
+    }
+  };
+
+  const saveAsSemanticMetric = async () => {
+    if (!dataSourceId || !isValid || !isEnterpriseEdition()) return;
+    const expression = computedMetricToExpression(buildComputed());
+    if (!expression) {
+      message.error(t('promote_expression_failed'));
+      return;
+    }
+    setPromoting('semantic');
+    try {
+      await fetchApi('semantic/metrics', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: label.trim(),
+          expression,
+          description: label.trim(),
+          data_source_id: dataSourceId,
+          project_id: projectId != null ? String(projectId) : undefined,
+        }),
+      });
+      message.success(t('promote_semantic_ok'));
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : t('promote_semantic_failed'));
+    } finally {
+      setPromoting(null);
+    }
   };
 
   const sideText = (s: ComputedMetricSide) => (s.field ? `${t(`agg_${s.aggregation}` as never)} ${nameOf(s.field)}` : '…');
@@ -167,12 +227,25 @@ export function ComputedMetricEditor({ open, initial, columnOptions, onSave, onC
     <Modal
       title={t('title')}
       open={open}
-      onOk={save}
       onCancel={onCancel}
-      okText={initial?.computed ? t('save') : t('add')}
-      okButtonProps={{ disabled: !isValid }}
       width={580}
       destroyOnHidden
+      footer={[
+        dataSourceId ? (
+          <Button key="calc" loading={promoting === 'calc'} disabled={!isValid || promoting !== null} onClick={() => void saveAsCalcField()}>
+            {t('promote_calc_field')}
+          </Button>
+        ) : null,
+        dataSourceId && isEnterpriseEdition() ? (
+          <Button key="semantic" loading={promoting === 'semantic'} disabled={!isValid || promoting !== null} onClick={() => void saveAsSemanticMetric()}>
+            {t('promote_semantic_metric')}
+          </Button>
+        ) : null,
+        <Button key="cancel" onClick={onCancel}>{t('cancel')}</Button>,
+        <Button key="ok" type="primary" disabled={!isValid} onClick={save}>
+          {initial?.computed ? t('save') : t('add')}
+        </Button>,
+      ].filter(Boolean)}
     >
       <Space direction="vertical" style={{ width: '100%' }} size={12}>
         {isEnterpriseEdition() ? (

@@ -53,6 +53,15 @@ PLAN_CONFIGS: Dict[str, Dict[str, Any]] = {
             "streaming": False,
             "alerts": False,
             "pivot_table": False,
+            "govern": False,
+            "operate": False,
+            "decide": False,
+            "platform": False,
+            "channel_pack": False,
+            "embed_isv": False,
+            "industry_packs": False,
+            "slack_teams": False,
+            "ai_cost_center": False,
         },
     }
 }

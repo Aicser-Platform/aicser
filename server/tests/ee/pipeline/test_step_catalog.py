@@ -10,13 +10,14 @@ VALID_GROUPS = {
     "combine",
     "reshape",
     "escape",
+    "ai",  # Add a prediction / Add an AI answer (a model or the AI fills the column)
 }
 
 
 def test_every_registered_step_declares_group_and_label():
     from src.modules.pipeline.transform.steps import STEP_REGISTRY
 
-    assert len(STEP_REGISTRY) == 19, "expected the full step catalog"
+    assert len(STEP_REGISTRY) == 38, "expected the full step catalog"
     for kind, cls in STEP_REGISTRY.items():
         assert cls.group in VALID_GROUPS, f"{kind} has group {cls.group!r}"
         assert cls.label, f"{kind} has no label"
@@ -66,19 +67,30 @@ def test_catalog_is_sorted_by_group_then_kind():
     assert order == sorted(order)
 
 
-def test_org_id_accepts_frontend_selected_org_header():
-    from src.modules.pipeline.router import _org_id, pipeline_user_payload
+def test_org_header_selects_one_of_the_users_own_organizations(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
 
-    payload = {"sub": "user-1"}
-    merged = __import__("asyncio").run(
-        pipeline_user_payload(
-            payload=payload,
-            x_organization_id="11111111-1111-1111-1111-111111111111",
-        )
-    )
+    from src.modules.pipeline import router as pipeline_router
 
-    assert merged["organization_id"] == "11111111-1111-1111-1111-111111111111"
-    assert str(_org_id(merged)) == "11111111-1111-1111-1111-111111111111"
+    org = "11111111-1111-1111-1111-111111111111"
+    user = "22222222-2222-2222-2222-222222222222"
+
+    async def member(user_id, organization_id, db):
+        return organization_id == org
+
+    monkeypatch.setattr(pipeline_router, "_is_org_member", member)
+    run = __import__("asyncio").run
+
+    merged = run(pipeline_router.pipeline_user_payload(payload={"sub": user}, x_organization_id=org, db=None))
+    assert merged["organization_id"] == org
+    assert str(pipeline_router._org_id(merged)) == org
+
+    # Another organization's id in the header grants nothing.
+    with pytest.raises(HTTPException) as exc:
+        run(pipeline_router.pipeline_user_payload(
+            payload={"sub": user}, x_organization_id="33333333-3333-3333-3333-333333333333", db=None))
+    assert exc.value.status_code == 403
 
 
 def test_pipeline_payload_rejects_org_header_without_user_identity():

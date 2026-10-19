@@ -355,3 +355,22 @@
   min-height: 56px;
   overflow: visible;
 }
+
+.schema-explorer-tabs .ant-tabs-content {
+  max-height: min(52vh, 480px);
+  overflow: auto;
+}
+
+.calc-fields-panel__name {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ant-color-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.calc-fields-panel__name:hover {
+  text-decoration: underline;
+}

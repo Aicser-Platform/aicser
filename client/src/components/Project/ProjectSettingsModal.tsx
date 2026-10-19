@@ -56,6 +56,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
 
   const canManage = project?.my_role === 'project_owner' || project?.my_role === 'project_editor';
   const isOwner = project?.my_role === 'project_owner';
+  const canManageMembers = isOwner;
   const projectId = project?.id;
 
   const { members, isLoading: membersLoading } = useProjectMembers(open ? projectId : undefined);
@@ -83,6 +84,17 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
 
   const roleLabel = (roleId: string) =>
     projectRoles.find((r) => r.id === roleId)?.display_name || roleId;
+
+  const inviteRoles = useMemo(
+    () => projectRoles.filter((r) => r.name !== 'project_owner'),
+    [projectRoles],
+  );
+
+  useEffect(() => {
+    if (!open || inviteRoleId || inviteRoles.length === 0) return;
+    const editor = inviteRoles.find((r) => r.name === 'project_editor') ?? inviteRoles[0];
+    if (editor) setInviteRoleId(editor.id);
+  }, [open, inviteRoleId, inviteRoles]);
 
   const handleSave = async () => {
     if (!projectId) return;
@@ -222,7 +234,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
             value={inviteRoleId}
             onChange={setInviteRoleId}
             style={{ minWidth: 160 }}
-            options={projectRoles.map((r) => ({ value: r.id, label: r.display_name }))}
+            options={inviteRoles.map((r) => ({ value: r.id, label: r.display_name }))}
           />
           <Button
             type="primary"
@@ -248,7 +260,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
             return (
               <List.Item
                 actions={
-                  canManage
+                  canManageMembers
                     ? [
                         <Select
                           key="role"

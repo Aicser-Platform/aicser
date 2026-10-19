@@ -28,7 +28,15 @@ export function pivotGrid(p: Pivot, totalLabel: string): { columns: string[]; ro
 
 export function PivotView({ spec, columns, rows, fileName }: { spec: ChartSpec; columns: string[]; rows: unknown[][]; fileName: string }) {
   const t = useTranslations('notebooks');
-  const p = useMemo(() => pivot(columns, rows, { rows: spec.rows, columns: spec.columns, values: spec.values, agg: spec.agg }), [columns, rows, spec]);
+  const p = useMemo(() => pivot(columns, rows, {
+    rows: spec.rows,
+    columns: spec.columns,
+    values: spec.values,
+    filters: spec.filters,
+    filterValues: spec.filterValues,
+    agg: spec.agg,
+    valueAggs: spec.valueAggs,
+  }), [columns, rows, spec]);
   const measureCount = new Set(p.colKeys.map((c) => c.measure)).size;
   const hasTotal = p.body.some((r) => r.total != null);
 

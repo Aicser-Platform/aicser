@@ -79,7 +79,7 @@ function NotebooksList() {
     }
   }, [searchParams, undoDelete, router]);
 
-  const create = async (key: 'blank' | 'explore' | 'python') => {
+  const create = async (key: 'blank' | 'explore' | 'python' | 'features') => {
     setBusy(true);
     try {
       const nb = await notebookService.create({
@@ -135,11 +135,11 @@ function NotebooksList() {
             <Dropdown
               trigger={['click']}
               menu={{
-                items: (['blank', 'explore', 'python'] as const).map((k) => ({
+                items: (['blank', 'explore', 'python', 'features'] as const).map((k) => ({
                   key: k,
                   label: <div><div>{t(`tpl_${k}_title`)}</div><Text type="secondary" style={{ fontSize: 12 }}>{t(`tpl_${k}_desc`)}</Text></div>,
                 })),
-                onClick: ({ key }) => void create(key as 'blank' | 'explore' | 'python'),
+                onClick: ({ key }) => void create(key as 'blank' | 'explore' | 'python' | 'features'),
               }}
             >
               <Button type="primary" icon={<PlusOutlined />} loading={busy}>{t('new')}</Button>
