@@ -33,7 +33,32 @@ function resolveScope(opts?: {
   };
 }
 
-/** Create a saved query; retries with a numeric suffix on name collision. */
+/** Find an existing saved query with identical SQL within scope to avoid duplicates. */
+export async function findMatchingSavedQuery(opts: {
+  sql: string;
+  organizationId?: string | null;
+  projectId?: string | number | null;
+}): Promise<string | null> {
+  const sql = opts.sql?.trim();
+  if (!sql) return null;
+  const { organizationId, projectId } = resolveScope(opts);
+  const qs = scopedQs(organizationId, projectId);
+  try {
+    const res = await fetchApi<{ items?: Array<{ id: string | number; sql: string }> }>(
+      `queries/saved-queries${qs}`,
+      { method: 'GET' },
+    );
+    const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+    const match = res?.items?.find(
+      (item) => item.sql?.replace(/\s+/g, ' ').trim().toLowerCase() === normalized,
+    );
+    return match?.id != null ? String(match.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Create a saved query; reuses an existing matching query if one exists, or creates a new one. */
 export async function createSavedQuery(opts: {
   name: string;
   sql: string;
@@ -43,6 +68,10 @@ export async function createSavedQuery(opts: {
 }): Promise<string | null> {
   const sql = opts.sql?.trim();
   if (!sql) return null;
+
+  // De-duplication check: if a saved query with identical SQL already exists in this scope, reuse it
+  const existingId = await findMatchingSavedQuery(opts);
+  if (existingId) return existingId;
 
   const { organizationId, projectId } = resolveScope(opts);
   const qs = scopedQs(organizationId, projectId);

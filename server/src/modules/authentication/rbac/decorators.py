@@ -13,7 +13,7 @@ from src.core.edition import is_ee_enabled
 
 
 if is_ee_enabled():
-    from ee.modules.authentication.rbac.decorators import (  # noqa: F401
+    from src.enterprise.modules.authentication.rbac.decorators import (  # noqa: F401
         get_role_permissions,
         require_permission,
         require_role,

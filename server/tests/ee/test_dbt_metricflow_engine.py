@@ -139,7 +139,7 @@ async def test_dbt_duckdb_quality_tests():
     conn.close()
 
 
-async def test_metricflow_query_compilation_and_execution():
+async def test_metricflow_query_compilation():
     """Verify MetricFlow compiles metric requests into deterministic SQL and executes via DuckDB."""
     org_id = uuid.uuid4()
 
@@ -194,12 +194,9 @@ async def test_metricflow_query_compilation_and_execution():
     assert "GROUP BY 1, 2" in sql
     assert "ORDER BY 1 DESC" in sql
 
-    # 3. Test execution
-    res = await engine.execute_query(query_req)
-    assert res.sql == sql
-    assert "order_date__month" in res.columns
-    assert "amount_sum" in res.columns
-    assert res.execution_time_ms >= 0
+    # Running it is not this engine's job: compiled SQL runs through the governed query path,
+    # under the caller's identity and row/column rules (the old direct DuckDB route is gone).
+    assert not hasattr(engine, "execute_query")
 
     # Clean up test project directory
     shutil.rmtree(os.path.join("/app/dbt_projects", str(org_id)), ignore_errors=True)

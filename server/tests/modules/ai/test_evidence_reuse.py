@@ -120,8 +120,8 @@ def test_skill_allowlist():
 
 def test_unique_metric_match():
     metrics = [
-        {"name": "loan_amount", "expression": "SUM(amount)"},
-        {"name": "customer_count", "expression": "COUNT(*)"},
+        {"name": "loan_amount", "expression": "SUM(amount)", "certified": True},
+        {"name": "customer_count", "expression": "COUNT(*)", "certified": True},
     ]
     hit = match_governed_metric("show loan amount by region", metrics)
     assert hit and hit["name"] == "loan_amount"

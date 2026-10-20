@@ -12,8 +12,23 @@ export const MAX_RANGE_ROWS = 50_000;
 
 export type QueryResult = { columns: string[]; rows: unknown[][]; total: number };
 
-export async function runRangeQuery(sql: string, dataSourceId: string, projectId: string | null, signal?: AbortSignal): Promise<QueryResult> {
-  const res = await enhancedDataService.executeMultiEngineQuery(sql, dataSourceId, undefined, true, signal, projectId ?? undefined);
+export function applySqlParameters(sql: string, values: Record<string, unknown>): string {
+  return sql.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]{0,39})\s*\}\}/g, (_, name: string) => {
+    if (!(name in values)) return `{{${name}}}`;
+    const v = values[name];
+    return v == null ? '' : String(v);
+  });
+}
+
+export async function runRangeQuery(
+  sql: string,
+  dataSourceId: string,
+  projectId: string | null,
+  signal?: AbortSignal,
+  paramValues?: Record<string, unknown>,
+): Promise<QueryResult> {
+  const query = paramValues ? applySqlParameters(sql, paramValues) : sql;
+  const res = await enhancedDataService.executeMultiEngineQuery(query, dataSourceId, undefined, true, signal, projectId ?? undefined);
   if (!res.success) throw new Error(res.error || 'The query failed.');
   const named = ((res.columns || []) as Array<string | { name: string }>).map((c) => (typeof c === 'string' ? c : c.name));
   const columns = named.length ? named : Object.keys((res.data?.[0] as Record<string, unknown>) || {});

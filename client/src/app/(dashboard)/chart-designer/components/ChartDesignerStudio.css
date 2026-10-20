@@ -237,40 +237,14 @@
   border-radius: 6px;
 }
 
+/* Properties chrome is owned by PropertiesPanel.css + studio tokens (same as /dashboards). */
 .designer-simplified .properties-panel {
-  position: relative;
-  right: auto;
-  top: auto;
-  bottom: auto;
-  width: 300px;
-  min-width: 300px;
-  max-width: 300px;
-  flex: 0 0 300px;
+  flex: 0 0 var(--studio-properties-panel-width, 320px);
   height: 100%;
   min-height: 100%;
   transform: none !important;
-  background: var(--studio-sidebar-bg);
-  border-left: 1px solid var(--studio-border);
   box-shadow: none;
   backdrop-filter: none;
-  overflow: hidden;
-}
-
-.designer-simplified .properties-panel .panel-header {
-  height: 44px;
-  padding: 12px 12px 6px;
-}
-
-.designer-simplified .properties-panel .panel-header h3 {
-  font-size: 13px;
-}
-
-.designer-simplified .properties-panel .properties-tabs .ant-tabs-nav {
-  padding: 0 12px;
-}
-
-.designer-simplified .properties-panel .tab-pane-content {
-  padding: 10px;
 }
 
 .designer-simplified .properties-panel.collapsed {
@@ -328,9 +302,9 @@
 
 .designer-simplified .widget-card {
   border-radius: 12px;
-  box-shadow: none;
-  border: 1px solid var(--studio-border);
-  background: var(--studio-card-bg);
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent;
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
@@ -388,8 +362,11 @@
 }
 
 .designer-simplified .widget-card:hover,
-.designer-simplified .widget-card.selected {
-  box-shadow: 0 0 0 1px rgba(0, 194, 203, 0.2);
+.designer-simplified .widget-card.selected,
+.designer-simplified .react-grid-item .widget-card.selected {
+  box-shadow: none !important;
+  border: none !important;
+  background: transparent;
 }
 
 /* Empty State Refinements */
@@ -550,9 +527,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 6px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
+  flex-shrink: 0;
+}
+
+.chart-designer-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -571,19 +556,68 @@
   font-weight: 600;
 }
 
+/* Heading with its one-line subtitle, edited in place (no box around them). */
+.chart-designer-toolbar-meta,
 .chart-designer-toolbar-heading {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .chart-designer-toolbar-description {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
+  line-height: 1.4;
   color: var(--ant-color-text-secondary);
+}
+
+.chart-designer-toolbar-description.inline-text {
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.chart-designer-toolbar-description.inline-text-input {
+  white-space: pre-wrap;
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  min-height: 1.5em;
+}
+
+/* Fields inside meta: borderless; outer .chart-designer-toolbar-meta owns the chrome */
+.chart-designer-toolbar-meta .inline-text,
+.chart-designer-toolbar-meta .chart-designer-toolbar-title.ant-input {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0;
+  margin: 0;
+}
+
+.chart-designer-toolbar-meta .inline-text-input {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
+  margin: 0;
+  background: transparent !important;
+}
+
+.chart-designer-toolbar-meta .chart-designer-toolbar-title.ant-input {
+  line-height: 1.35;
+  padding-block: 0;
+}
+
+.chart-designer-studio .widget-card-footnote {
+  flex-shrink: 0;
+  padding: 8px 24px 4px;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .chart-designer-toolbar-title--empty {
@@ -651,4 +685,56 @@
   .chart-designer-toolbar-title {
     font-size: 13px;
   }
+}
+
+/* Empty designer: one heading over the chart-type gallery. */
+.chart-designer-empty {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+/* Preview: the chart as viewers see it, at full, tablet or phone width. */
+.chart-designer-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 1500; /* above the app header and drawers; antd popups inside use their own layer */
+  display: flex;
+  flex-direction: column;
+  background: var(--ant-color-bg-layout);
+}
+
+.chart-designer-preview__bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+}
+
+.chart-designer-preview__stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 16px;
+}
+
+.chart-designer-preview__frame {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  background: var(--ant-color-bg-container);
+  transition: width 0.2s ease;
+}
+
+.chart-designer-preview__chart {
+  margin-top: 12px;
 }

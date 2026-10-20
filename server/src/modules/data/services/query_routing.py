@@ -20,7 +20,7 @@ import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
 # Source types whose queries move to the lakehouse once a pipeline manages them
-ROUTABLE_TYPES = ("database", "enterprise_connector", "file")
+ROUTABLE_TYPES = ("database", "enterprise_connector", "file", "google_sheets")
 # A table's most refined layer wins
 LAYER_RANK = {"gold": 2, "silver": 1}
 # Pipeline bookkeeping carried into every Silver/Gold table: the Bronze audit

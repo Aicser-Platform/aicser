@@ -117,6 +117,25 @@ export async function ensureLibraryChartAndPinToDashboard(opts: {
     };
   }
 
+  // De-duplication check: if this dashboard already has this libraryChart placed in link mode,
+  // do not duplicate the link; instead update its placement or return the existing placement.
+  if (mode === 'link' && libraryChartId) {
+    try {
+      const existingCharts = await chartService.listCharts(opts.dashboardId);
+      const alreadyPlaced = existingCharts?.find((c) => String(c.id) === libraryChartId);
+      if (alreadyPlaced) {
+        return {
+          chartId: String(alreadyPlaced.id),
+          libraryChartId,
+          linked: true,
+          copied: false,
+        };
+      }
+    } catch {
+      // ignore probe error and proceed
+    }
+  }
+
   const linked = await chartService.linkChart(opts.dashboardId, {
     chartId: libraryChartId,
     mode: 'link',

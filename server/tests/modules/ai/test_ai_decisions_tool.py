@@ -239,3 +239,15 @@ async def test_notebook_rows_are_decided_once_per_text_scrubbed_and_joined_back(
     monkeypatch.setattr(T, "max_inline_distinct", lambda: 1)
     with pytest.raises(T.DecisionToolError, match="Start a run"):
         await T.decide_rows(_Def, rows, ["note"], organization_id="o")
+
+
+def test_saved_dataset_has_the_export_columns_and_reviews_win():
+    rows = [{"id": 1, "note": "refund please"}, {"id": 2, "note": "thanks"}]
+    answers = {
+        T.text_key(T.row_text(rows[0], ["note"])): {"value": "false", "confidence": 0.6, "band": "surface", "reviewed_value": "true"},
+        T.text_key(T.row_text(rows[1], ["note"])): {"value": "false", "confidence": 0.97, "band": "act", "reviewed_value": None},
+    }
+    table = T.result_table(rows, ["note"], answers, "Wants a refund?")
+    assert table.column_names == ["id", "note", "wants_a_refund", "wants_a_refund_confidence", "wants_a_refund_needs_review"]
+    assert table.column("wants_a_refund").to_pylist() == ["true", "false"]
+    assert table.column("wants_a_refund_needs_review").to_pylist() == [False, False]

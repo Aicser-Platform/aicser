@@ -1,0 +1,47 @@
+.ws-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ws-doc__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ws-doc__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+.ws-doc__title-input.ant-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  text-overflow: ellipsis;
+  font-size: 18px;
+  font-weight: 600;
+  padding-inline: 0;
+}
+.ws-doc__save {
+  display: inline-block;
+  flex-shrink: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.ws-doc__actions {
+  justify-content: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ws-doc__row {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}

@@ -186,8 +186,13 @@ if is_ee_enabled():
         ("src.modules.catalog.router", "router", "/api", "Catalog bridge"),
         ("src.modules.bi_sync.router", "router", "/api", "BI Sync"),
         ("src.modules.warehouse.router", "router", "/api", "Warehouse"),
+        ("src.modules.master_data.router", "router", "/api", "Master data"),
+        ("src.modules.activation.router", "router", "/api", "Actions"),
+        ("src.modules.privacy.router", "router", "/api", "Privacy requests"),
+        ("src.modules.shares.router", "router", "/api", "Data shares"),
         ("src.modules.mlops.router", "router", "/api", "Models"),
         ("src.modules.notebook_runs.router", "router", "/api", "Scheduled notebook runs"),
+        ("src.modules.workbook_runs.router", "router", "/api", "Scheduled workbook runs"),
         ("src.modules.warehouse.iceberg_rest", "router", "/api/warehouse/iceberg", "Iceberg REST catalog"),
     ]:
         try:

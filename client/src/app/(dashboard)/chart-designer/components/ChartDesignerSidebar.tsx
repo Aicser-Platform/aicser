@@ -1,9 +1,10 @@
 'use client';
 
-import { ADD_TO_DASHBOARD_EVENT } from './chartDesignerEvents';
+import { ADD_TO_DASHBOARD_EVENT, TRASH_CHART_EVENT } from './chartDesignerEvents';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Input,
+  Alert,
   Dropdown,
   Modal,
   Typography,
@@ -29,6 +30,7 @@ import {
   HistoryOutlined,
   AppstoreOutlined,
   UndoOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useRouter } from 'next/navigation';
@@ -43,12 +45,16 @@ import {
 } from '../services/chartLibraryService';
 import { chartBuilderService } from '../services/chartBuilderService';
 import { WidgetBlockPicker } from '../../dashboards/components/WidgetBlockPicker';
+import { CollapsedRail, PanelToggle, usePanelCollapsed } from '@/components/layout/SidePanel';
 import type { WidgetTemplate } from '../../dashboards/widgetTemplates';
 import { DashboardLibrarySelect } from '../../dashboards/components/DashboardLibrarySelect';
+import { dashboardLibraryService } from '../../dashboards/services/dashboardLibraryService';
+import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
 import { LibraryCollectionControls } from '@/components/library/LibraryCollectionControls';
 import { getDashboardChartTypeIcon } from '../../dashboards/Properties/dashboardChartTypeSwitcher';
 import './ChartDesignerSidebar.css';
 import { useTranslations } from 'next-intl';
+import { useImpactConfirm } from '@/components/impact/impact';
 
 const { Text } = Typography;
 
@@ -62,11 +68,12 @@ type ChartDesignerSidebarProps = {
 
 export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAddTemplate }) => {
   const t = useTranslations('chart_designer');
+  const [libraryCollapsed, setLibraryCollapsed] = usePanelCollapsed('designer.library');
+  const confirmWithImpact = useImpactConfirm();
   const router = useRouter();
   const {
     widgets,
     selectedWidgetId,
-    isSidebarCollapsed,
     setSelectedWidgetId,
     deleteChart,
     updateWidget,
@@ -75,6 +82,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
   const [addChartOpen, setAddChartOpen] = useState(false);
   const dashboards = useDashboardStore((s) => s.dashboards);
   const fetchDashboards = useDashboardStore((s) => s.fetchDashboards);
+  const addDashboard = useDashboardStore((s) => s.addDashboard);
   const linkWidgetToDashboard = useDashboardStore((s) => s.linkWidgetToDashboard);
   const currentProjectId = useProjectStore((s) => s.currentProjectId);
 
@@ -94,6 +102,8 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
   const [addToDashboardOpen, setAddToDashboardOpen] = useState(false);
   const [addToDashboardChartId, setAddToDashboardChartId] = useState<string | null>(null);
   const [targetDashboardId, setTargetDashboardId] = useState<string | null>(null);
+  const [creatingDashboard, setCreatingDashboard] = useState(false);
+  const [newDashboardName, setNewDashboardName] = useState('');
   const [pinMode, setPinMode] = useState<'link' | 'copy'>('link');
   const [addingToDashboard, setAddingToDashboard] = useState(false);
 
@@ -251,11 +261,13 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
   };
 
   const handleDelete = (id: string, title: string) => {
-    Modal.confirm({
+    void confirmWithImpact({
+      kind: 'chart',
+      id,
       title: t('trash_chart_title'),
       content: t('trash_chart_confirm', { title }),
       okText: t('move_to_trash'),
-      okType: 'danger',
+      danger: true,
       cancelText: t('cancel'),
       onOk: async () => {
         const widget = widgets.find((w) => String(w.chartId) === String(id));
@@ -281,11 +293,13 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
   };
 
   const handlePurge = (id: string, title: string) => {
-    Modal.confirm({
+    void confirmWithImpact({
+      kind: 'chart',
+      id,
       title: t('purge_chart_title'),
       content: t('purge_chart_confirm', { title }),
       okText: t('delete_permanently'),
-      okType: 'danger',
+      danger: true,
       cancelText: t('cancel'),
       onOk: async () => {
         await chartLibraryService.purge(id);
@@ -305,20 +319,69 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
     }
   };
 
+  const suggestDashboardName = useCallback(
+    (chartId: string) => {
+      const fromList = items.find((it) => it.id === chartId)?.title?.trim();
+      const fromWidget = widgets.find((w) => String(w.chartId) === String(chartId))?.title?.trim();
+      const title = fromList || fromWidget || '';
+      if (title) return title.length > 60 ? `${title.slice(0, 57)}…` : title;
+      return t('add_to_dashboard_new_default_name');
+    },
+    [items, t, widgets],
+  );
+
   const openAddToDashboard = async (chartId: string) => {
-    if (dashboards.length === 0) {
+    let dashboardList = useDashboardStore.getState().dashboards;
+    if (dashboardList.length === 0) {
       try {
-        await fetchDashboards();
+        const page = await dashboardLibraryService.list({
+          projectId: currentProjectId,
+          facet: 'recent',
+          limit: 1,
+          detail: 'summary',
+        });
+        if (page.total > 0) {
+          await fetchDashboards();
+          dashboardList = useDashboardStore.getState().dashboards;
+        }
       } catch {
         message.error(t('add_to_dashboard_load_failed'));
         return;
       }
     }
+
+    const isEmpty = dashboardList.length === 0;
     setAddToDashboardChartId(chartId);
     setPinMode('link');
-    setTargetDashboardId(useDashboardStore.getState().activeDashboardId ?? dashboards[0]?.id ?? null);
+    setCreatingDashboard(isEmpty);
+    setNewDashboardName(suggestDashboardName(chartId));
+    setTargetDashboardId(
+      isEmpty
+        ? CREATE_NEW_DASHBOARD_ID
+        : useDashboardStore.getState().activeDashboardId ?? dashboardList[0]?.id ?? null,
+    );
     setAddToDashboardOpen(true);
   };
+
+  const handleDashboardTargetChange = (id: string | null) => {
+    if (id === CREATE_NEW_DASHBOARD_ID) {
+      setCreatingDashboard(true);
+      setTargetDashboardId(CREATE_NEW_DASHBOARD_ID);
+      return;
+    }
+    setCreatingDashboard(false);
+    setTargetDashboardId(id);
+  };
+
+  // The designer header's "Move to trash" uses this same check and flow.
+  useEffect(() => {
+    const onTrash = (e: Event) => {
+      const d = (e as CustomEvent<{ chartId?: string; title?: string }>).detail;
+      if (d?.chartId) handleDelete(d.chartId, d.title || t('untitled_short'));
+    };
+    window.addEventListener(TRASH_CHART_EVENT, onTrash);
+    return () => window.removeEventListener(TRASH_CHART_EVENT, onTrash);
+  });
 
   // The designer header's "Add to dashboard" opens this same dialog.
   useEffect(() => {
@@ -332,12 +395,32 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
   }, [dashboards]);
 
   const handleAddToDashboard = async () => {
-    if (!addToDashboardChartId || !targetDashboardId) {
+    if (!addToDashboardChartId) return;
+
+    const needsCreate =
+      creatingDashboard ||
+      targetDashboardId === CREATE_NEW_DASHBOARD_ID ||
+      (!targetDashboardId && useDashboardStore.getState().dashboards.length === 0);
+
+    let dashboardId = targetDashboardId;
+
+    if (needsCreate) {
+      const name = newDashboardName.trim();
+      if (!name) {
+        message.warning(t('add_to_dashboard_name_required'));
+        return;
+      }
+    } else if (!dashboardId) {
       message.warning(t('add_to_dashboard_select_required'));
       return;
     }
+
     setAddingToDashboard(true);
     try {
+      if (needsCreate) {
+        dashboardId = await addDashboard(newDashboardName.trim());
+      }
+
       await ensureWidgetLoaded(addToDashboardChartId);
       const widget = useChartDesignerStore
         .getState()
@@ -346,14 +429,20 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
       const result = await linkWidgetToDashboard(
         widget as any,
         { i: widget.id, x: 0, y: 0, w: 6, h: 5 },
-        targetDashboardId,
+        dashboardId!,
         pinMode,
       );
       message.success(
-        pinMode === 'copy' ? t('add_to_dashboard_copied') : t('add_to_dashboard_linked'),
+        needsCreate
+          ? t('add_to_dashboard_created_and_added')
+          : pinMode === 'copy'
+            ? t('add_to_dashboard_copied')
+            : t('add_to_dashboard_linked'),
       );
       setAddToDashboardOpen(false);
-      router.push(`/dashboards?id=${targetDashboardId}&chart=${result.chartId}&mode=edit`);
+      setCreatingDashboard(false);
+      setNewDashboardName('');
+      router.push(`/dashboards?id=${dashboardId}&chart=${result.chartId}&mode=edit`);
     } catch (err) {
       console.error('[ChartDesignerSidebar] add to dashboard', err);
       message.error(t('add_to_dashboard_failed'));
@@ -441,8 +530,16 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
     [t],
   );
 
+  if (libraryCollapsed) {
+    return (
+      <aside className="chart-designer-sidebar chart-designer-sidebar--rail">
+        <CollapsedRail side="left" label={t('library_title')} icon={<BarChartOutlined />} count={widgets.length} onExpand={() => setLibraryCollapsed(false)} />
+      </aside>
+    );
+  }
+
   return (
-    <aside className={`chart-designer-sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
+    <aside className="chart-designer-sidebar">
       <div className="sidebar-header">
         <Input
           prefix={<SearchOutlined />}
@@ -452,6 +549,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
           onChange={(e) => setSearch(e.target.value)}
           className="search-input"
         />
+        <PanelToggle side="left" collapsed={false} onToggle={() => setLibraryCollapsed(true)} label={t('library_title')} />
       </div>
 
       <div className="library-toolbar">
@@ -474,6 +572,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                 <div style={{ width: 340, maxHeight: 420, overflow: 'auto', padding: 4 }}>
                   <WidgetBlockPicker
                     variant="popover"
+                    chartsOnly
                     onSelect={handleAddTemplate}
                     hintText={t('empty_state_hint')}
                   />
@@ -533,6 +632,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                   <div style={{ width: 340, maxHeight: 420, overflow: 'auto', padding: 4 }}>
                     <WidgetBlockPicker
                       variant="popover"
+                      chartsOnly
                       onSelect={handleAddTemplate}
                       hintText={t('empty_state_hint')}
                     />
@@ -599,6 +699,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                       <>
                         <span className="item-name">{item.title || t('untitled_short')}</span>
                         <span className="item-meta">
+                          {item.dataTable ? `${item.dataTable} · ` : ''}
                           {usage > 0
                             ? t('used_on_n', { count: usage })
                             : t('scope_library')}
@@ -706,18 +807,51 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
       <Modal
         title={t('add_to_dashboard')}
         open={addToDashboardOpen}
-        onCancel={() => setAddToDashboardOpen(false)}
+        onCancel={() => {
+          setAddToDashboardOpen(false);
+          setCreatingDashboard(false);
+          setNewDashboardName('');
+        }}
         onOk={() => void handleAddToDashboard()}
-        okText={pinMode === 'copy' ? t('add_as_copy') : t('add_as_link')}
+        okText={
+          creatingDashboard || targetDashboardId === CREATE_NEW_DASHBOARD_ID
+            ? t('add_to_dashboard_create_and_add')
+            : pinMode === 'copy'
+              ? t('add_as_copy')
+              : t('add_as_link')
+        }
         confirmLoading={addingToDashboard}
       >
-        <DashboardLibrarySelect
-          value={targetDashboardId}
-          onChange={setTargetDashboardId}
-          placeholder={t('add_to_dashboard_select')}
-          defaultFacet="recent"
-          style={{ marginBottom: 12 }}
-        />
+        {creatingDashboard && !dashboards.length ? (
+          <Alert
+            type="info"
+            showIcon
+            message={t('add_to_dashboard_no_dashboards')}
+            style={{ marginBottom: 12 }}
+          />
+        ) : null}
+        {!(creatingDashboard && !dashboards.length) ? (
+          <DashboardLibrarySelect
+            value={
+              targetDashboardId === CREATE_NEW_DASHBOARD_ID ? CREATE_NEW_DASHBOARD_ID : targetDashboardId
+            }
+            onChange={handleDashboardTargetChange}
+            placeholder={t('add_to_dashboard_select')}
+            defaultFacet="recent"
+            style={{ marginBottom: 12 }}
+            extraOptions={[{ value: CREATE_NEW_DASHBOARD_ID, label: t('add_to_dashboard_create_new') }]}
+          />
+        ) : null}
+        {creatingDashboard || targetDashboardId === CREATE_NEW_DASHBOARD_ID ? (
+          <Input
+            placeholder={t('add_to_dashboard_name_placeholder')}
+            value={newDashboardName}
+            onChange={(e) => setNewDashboardName(e.target.value)}
+            maxLength={120}
+            showCount
+            style={{ marginBottom: 12 }}
+          />
+        ) : null}
         <Segmented
           block
           value={pinMode}

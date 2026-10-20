@@ -48,6 +48,17 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MarketingSessionResponse(BaseModel):
+    """Safe session payload for sibling sites (e.g. aicser.com). Never includes JWTs."""
+
+    logged_in: bool
+    email: Optional[str] = None
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
 class TokenExchangeRequest(BaseModel):
     provider: Literal["supabase", "keycloak"]
     token: str

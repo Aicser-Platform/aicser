@@ -83,7 +83,7 @@ def apply(query: str, data_source: Mapping[str, Any], raw_filters: Any, dialect:
         # Loaded only when a locked filter is present; same seam as row security's _apply_sql_rls.
         import importlib
 
-        rewriter = importlib.import_module("ee.modules.data.services.rls_query_rewriter")
+        rewriter = importlib.import_module("src.enterprise.modules.data.services.rls_query_rewriter")
         base_table_nodes = rewriter.base_table_nodes
         inject_predicates = rewriter.inject_predicates
         parse_single_read = rewriter.parse_single_read

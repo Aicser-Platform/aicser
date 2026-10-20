@@ -27,26 +27,26 @@ from src.modules.data.services.governed_sql import Caller, caller_from_token
 from src.modules.workbooks import engine
 from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVersion
 from src.modules.workbooks.schemas import WorkbookCreate, WorkbookUpdate
+from src.modules.notebooks.settings_schema import parse_settings
+from src.modules.workbooks.governance import settings_locked
+from src.modules.workbooks.audit import log_workbook_event
+from src.modules.workbooks.workbook_access import load_workbook, workbook_uuid
+from src.modules.workbooks.enterprise_router import router as workbook_enterprise_router
 from src.shared.comment_threads import CommentThreads
 from src.shared.middleware.rate_limiter import rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+router.include_router(workbook_enterprise_router)
 comments = CommentThreads(WorkbookComment, "workbook_id", "cell_ref", anchor_max=80)
+
+_load = load_workbook
+_uuid = workbook_uuid
 
 # History: one point per person per working session; documents can be large, so fewer kept
 # than for notebooks.
 SESSION_GAP = timedelta(minutes=10)
 MAX_HISTORY = 50
-
-
-def _uuid(value: Optional[str]) -> Optional[uuid.UUID]:
-    if not value:
-        return None
-    try:
-        return uuid.UUID(str(value))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid id") from exc
 
 
 def _bad(exc: engine.WorkbookError) -> HTTPException:
@@ -69,37 +69,12 @@ def _serialize(wb: Workbook, caller: Caller, *, with_doc: bool = True) -> Dict[s
         "timezone": wb.timezone,
         "created_at": wb.created_at.isoformat() if wb.created_at else None,
         "updated_at": wb.updated_at.isoformat() if wb.updated_at else None,
+        "settings": parse_settings(getattr(wb, "settings", None)).model_dump(),
     }
     if with_doc:
         out["doc"] = base64.b64encode(bytes(wb.doc)).decode("ascii")
         out["ranges"] = wb.ranges or []
     return out
-
-
-async def _can_read_project(caller: Caller, project_id: Optional[uuid.UUID]) -> bool:
-    try:
-        await require_permission(caller.user_id, "query:execute", organization_id=caller.organization_id,
-                                 project_id=str(project_id) if project_id else None)
-        return True
-    except HTTPException:
-        return False
-
-
-async def _load(db: AsyncSession, workbook_id: str, caller: Caller, *, write: bool) -> Workbook:
-    wb = await db.get(Workbook, _uuid(workbook_id))
-    if not wb or wb.is_deleted:
-        raise HTTPException(status_code=404, detail="Workbook not found")
-    if str(wb.user_id) == caller.user_id:
-        return wb
-    shared = wb.visibility == "project" and (
-        (wb.organization_id and caller.organization_id and str(wb.organization_id) == caller.organization_id)
-        or (not wb.organization_id and not caller.organization_id)
-    )
-    if not shared or not await _can_read_project(caller, wb.project_id):
-        raise HTTPException(status_code=404, detail="Workbook not found")
-    if write:
-        raise HTTPException(status_code=403, detail="Only the owner can change this workbook. Make a copy to edit it.")
-    return wb
 
 
 def _decode(doc_b64: str) -> bytes:
@@ -212,6 +187,26 @@ async def import_workbook(
     return res
 
 
+@router.post("/dedupe-file-sources")
+async def dedupe_workbook_file_sources(
+    project_id: Optional[str] = Query(None),
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> Dict[str, Any]:
+    """Deactivate duplicate FILE data sources (same sheet name / same workbook) in a project."""
+    caller = caller_from_token(current_token, project_id)
+    pid = project_id or caller.project_id
+    await require_permission(
+        caller.user_id,
+        "data:edit",
+        organization_id=caller.organization_id,
+        project_id=pid,
+    )
+    from src.modules.workbooks.datasource_link import dedupe_project_file_sources
+
+    return await dedupe_project_file_sources(db, project_id=pid)
+
+
 @router.get("/{workbook_id}")
 async def get_workbook(
     workbook_id: str,
@@ -232,6 +227,8 @@ async def update_workbook(
     """Save changes; ``version`` must match, so two tabs can't silently overwrite each other."""
     caller = caller_from_token(current_token)
     wb = await _load(db, workbook_id, caller, write=True)
+    if settings_locked(parse_settings(getattr(wb, "settings", None))):
+        raise HTTPException(status_code=403, detail="This workbook is certified and locked for editing.")
     if body.version != wb.version:
         raise HTTPException(status_code=409, detail="This workbook changed somewhere else. Reload to see the latest version.")
     if body.doc is not None:
@@ -252,6 +249,14 @@ async def update_workbook(
     wb.version += 1
     wb.updated_at = datetime.now(timezone.utc)
     await _snapshot(db, wb, caller.user_id)
+    await log_workbook_event(db, workbook_id=wb.id, user_id=_uuid(caller.user_id), action="save", metadata={"version": wb.version})
+    if body.ranges is not None:
+        try:
+            from src.modules.workbooks.lineage import sync_range_lineage
+
+            await sync_range_lineage(db, wb=wb, user_id=_uuid(caller.user_id) or wb.user_id, ranges=wb.ranges or [])
+        except Exception as lineage_err:
+            logger.debug("Workbook range lineage skipped: %s", lineage_err)
     await db.commit()
     await db.refresh(wb)
     out = _serialize(wb, caller, with_doc=False)
@@ -319,6 +324,139 @@ async def export_xlsx(
     safe = re.sub(r"[^A-Za-z0-9 _.-]+", "", wb.title).strip() or "workbook"
     return Response(content=data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{safe}.xlsx"'})
+
+
+@router.post("/{workbook_id}/sync-datasource")
+async def sync_workbook_datasource(
+    workbook_id: str,
+    current_token: Union[str, dict] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> Dict[str, Any]:
+    """Expose this workbook as a queryable data source so Aicser AI Ask and dashboards can query it."""
+    caller = caller_from_token(current_token)
+    wb = await _load(db, workbook_id, caller, write=False)
+
+    try:
+        data = await asyncio.to_thread(engine.to_xlsx, bytes(wb.doc))
+    except engine.WorkbookError as exc:
+        raise _bad(exc) from exc
+
+    from src.modules.data.services.data_connectivity_service import DataConnectivityService
+    from src.modules.workbooks.datasource_link import (
+        resolve_workbook_data_source_id,
+        workbook_upload_options,
+    )
+
+    service = DataConnectivityService()
+
+    project_id = str(wb.project_id) if wb.project_id else caller.project_id
+    existing_ds_id, deduped = await resolve_workbook_data_source_id(
+        db, str(wb.id), project_id=project_id,
+    )
+
+    clean_name = re.sub(r"[^A-Za-z0-9 _.-]+", "", wb.title).strip() or "Workbook"
+    upload_options = workbook_upload_options(
+        str(wb.id),
+        wb.title,
+        project_id=project_id,
+        organization_id=caller.organization_id,
+        user_id=caller.user_id,
+        existing_source_id=existing_ds_id,
+    )
+
+    upload_res = await service.upload_file(
+        file_content=data,
+        filename=f"{clean_name}.xlsx",
+        options=upload_options,
+    )
+
+    if not upload_res.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to expose workbook as data source: {upload_res.get('error', 'Unknown error')}",
+        )
+
+    uploaded = upload_res.get("data_source") if isinstance(upload_res.get("data_source"), dict) else {}
+    ds_id = upload_res.get("data_source_id") or uploaded.get("id") or existing_ds_id
+
+    # Update DataSource to tag workbook_id in connection_config
+    if ds_id:
+        try:
+            ds = await db.get(DataSource, str(ds_id))
+            if ds:
+                cfg = dict(ds.connection_config or {})
+                cfg["workbook_id"] = str(wb.id)
+                cfg["source_type"] = "workbook"
+                ds.connection_config = cfg
+                await db.commit()
+        except Exception as e:
+            logger.warning("Failed to stamp connection_config with workbook_id: %s", e)
+
+        try:
+            from src.modules.platform.lineage_service import emit_lineage_event
+            await emit_lineage_event(
+                db,
+                event_type="workbook_synced_to_datasource",
+                project_id=str(wb.project_id) if wb.project_id else None,
+                actor_user_id=caller.user_id,
+                data_source_id=str(ds_id),
+                payload={
+                    "workbook_id": str(wb.id),
+                    "workbook_title": wb.title,
+                    "data_source_id": str(ds_id),
+                },
+            )
+        except Exception as lineage_err:
+            logger.debug("Lineage event emission skipped: %s", lineage_err)
+
+        try:
+            from src.core.edition import is_ee_enabled
+            from src.modules.data.services.query_identity import QueryIdentity
+
+            if is_ee_enabled() and caller.organization_id:
+                from src.modules.ontology.service import ontology_service
+
+                identity = QueryIdentity(
+                    user_id=str(caller.user_id),
+                    organization_id=str(caller.organization_id),
+                    project_id=str(wb.project_id) if wb.project_id else caller.project_id,
+                )
+                wb_node = await ontology_service.upsert_node(
+                    db,
+                    identity=identity,
+                    kind="Workbook",
+                    ptr=str(wb.id),
+                    ptr_type="workbook",
+                    project_id=identity.project_id,
+                    props={"name": wb.title, "data_source_id": str(ds_id)},
+                )
+                ds_node = await ontology_service.upsert_node(
+                    db,
+                    identity=identity,
+                    kind="Dataset",
+                    ptr=str(ds_id),
+                    ptr_type="catalog",
+                    props={"name": f"{wb.title} (Sheet)", "data_source_id": str(ds_id)},
+                )
+                await ontology_service.upsert_edge(
+                    db,
+                    identity=identity,
+                    edge_type="QUERIES",
+                    src_id=wb_node["id"],
+                    dst_id=ds_node["id"],
+                )
+                await db.commit()
+        except Exception as ont_err:
+            logger.debug("Workbook ontology pointer skipped: %s", ont_err)
+
+    return {
+        "success": True,
+        "data_source_id": ds_id,
+        "name": upload_options.get("name") or f"{wb.title} (Sheet)",
+        "reused": bool(existing_ds_id),
+        "deduped_sources": deduped,
+        "message": "Workbook is now queryable by Aicser AI Ask and Dashboards",
+    }
 
 
 # ── History ─────────────────────────────────────────────────────────────────

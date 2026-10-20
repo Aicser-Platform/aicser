@@ -6,7 +6,7 @@ import {
 } from './chartBuilderService';
 
 const IS_ENTERPRISE_EDITION =
-  process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
+  ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase());
 
 export type ChartLibraryFacet =
   | 'all'
@@ -34,6 +34,8 @@ export type ChartLibraryItem = {
   tags?: string[];
   updatedAt?: string | null;
   usageCount?: number;
+  /** The table the chart reads (summary lists include it). */
+  dataTable?: string | null;
   dashboards?: Array<{ id: string; name: string }>;
   scope?: 'library' | 'placed';
   chartQuery?: ChartQuery | Record<string, unknown>;

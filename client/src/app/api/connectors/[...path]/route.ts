@@ -10,6 +10,11 @@ export async function GET(request: NextRequest, context: { params?: any }) {
   return handleConnectorsRequest(request, context, 'GET');
 }
 
+export async function PATCH(request: NextRequest, context: { params?: any }) {
+  return handleConnectorsRequest(request, context, 'PATCH');
+}
+
+
 export async function POST(request: NextRequest, context: { params?: any }) {
   return handleConnectorsRequest(request, context, 'POST');
 }
@@ -65,6 +70,7 @@ async function handleConnectorsRequest(
     }
 
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
 
     if (!response.ok) {
       const responseContentType = response.headers.get('content-type') || '';

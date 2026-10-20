@@ -17,7 +17,12 @@ export type DataModelRelationship = {
 };
 
 export type RelationshipCreatePayload = Omit<DataModelRelationship, 'id' | 'data_source_id' | 'created_at'>;
-export type RelationshipUpdatePayload = Partial<Pick<DataModelRelationship, 'cardinality' | 'cross_filter_direction' | 'is_active' | 'assume_integrity'>>;
+export type RelationshipUpdatePayload = Partial<
+  Pick<
+    DataModelRelationship,
+    'join_type' | 'cardinality' | 'cross_filter_direction' | 'is_active' | 'assume_integrity'
+  >
+>;
 
 export async function listRelationships(dataSourceId: string): Promise<DataModelRelationship[]> {
   const res = await fetchApi<{ relationships: DataModelRelationship[] }>(
@@ -60,10 +65,26 @@ export async function deleteRelationship(dataSourceId: string, relationshipId: s
   }
 }
 
-export async function autoDetectRelationships(dataSourceId: string): Promise<DataModelRelationship[]> {
-  const res = await fetchApi<{ relationships: DataModelRelationship[] }>(
-    `data/data-sources/${dataSourceId}/model/auto-detect`,
-    { method: 'POST' }
-  );
-  return res?.relationships || [];
+export type AutoDetectResult = {
+  relationships: DataModelRelationship[];
+  totalAdded?: number;
+};
+
+export async function autoDetectRelationships(
+  dataSourceId: string,
+  opts?: { projectSourceIds?: string[] },
+): Promise<AutoDetectResult> {
+  const res = await fetchApi<{
+    relationships: DataModelRelationship[];
+    total_added?: number;
+  }>(`data/data-sources/${dataSourceId}/model/auto-detect`, {
+    method: 'POST',
+    body: JSON.stringify(
+      opts?.projectSourceIds?.length ? { source_ids: opts.projectSourceIds } : {},
+    ),
+  });
+  return {
+    relationships: res?.relationships || [],
+    totalAdded: res?.total_added,
+  };
 }

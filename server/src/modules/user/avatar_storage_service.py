@@ -449,6 +449,9 @@ class S3AvatarStorageService:
     def _generate_user_blob_name(self, org_id: str, user_id: str) -> str:
         return f"orgs/{org_id}/users/{user_id}/avatars/avatar.webp"
 
+    def _generate_org_blob_name(self, org_id: str) -> str:
+        return f"orgs/{org_id}/avatars/logo.webp"
+
     async def upload_avatar(
         self,
         file_content: bytes,
@@ -467,19 +470,23 @@ class S3AvatarStorageService:
                 f"File too large ({len(file_content)} bytes). Maximum is {MAX_AVATAR_SIZE_BYTES} bytes (5 MB)."
             )
 
-        if not user_id:
-            raise ValueError("user_id is required for S3 avatar upload")
-
-        object_key = self._generate_user_blob_name(org_id, user_id)
+        object_key = (
+            self._generate_user_blob_name(org_id, user_id)
+            if user_id
+            else self._generate_org_blob_name(org_id)
+        )
         webp_content = await asyncio.to_thread(self._compress_to_webp, file_content)
 
         def _put() -> None:
+            metadata = {"org_id": org_id}
+            if user_id:
+                metadata["user_id"] = user_id
             self._client.put_object(
                 Bucket=self.bucket_name,
                 Key=object_key,
                 Body=webp_content,
                 ContentType="image/webp",
-                Metadata={"org_id": org_id, "user_id": user_id},
+                Metadata=metadata,
             )
 
         try:

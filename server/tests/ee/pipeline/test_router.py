@@ -136,10 +136,12 @@ async def test_create_pipeline_accepts_a_data_source_with_no_table():
         name="Orders sync",
         source_asset_type="data_source",
         source_asset_id="ds-1",
+        wizard_state={"v": 1, "selectedDataSourceId": "ds-1", "catalog": []},
     )
 
     assert req.source_table is None
     assert req.source_asset_type == "data_source"
+    assert req.wizard_state["v"] == 1
 
 
 async def test_pipeline_response_surfaces_source_table_and_watermark_column():
@@ -155,7 +157,11 @@ async def test_pipeline_response_surfaces_source_table_and_watermark_column():
         slug="orders-sync",
         source_asset_type="data_source",
         source_asset_id="ds-1",
-        options={"source_table": "public.orders", "watermark_column": "updated_at"},
+        options={
+            "source_table": "public.orders",
+            "watermark_column": "updated_at",
+            "wizard_state": {"v": 1, "pipelineName": "Orders sync"},
+        },
         target_layer="silver",
         ingest_mode="incremental",
         enabled=True,
@@ -177,6 +183,7 @@ async def test_pipeline_response_surfaces_source_table_and_watermark_column():
     assert response.source_table == "public.orders"
     assert response.watermark_column == "updated_at"
     assert response.sheets == []
+    assert response.wizard_state == {"v": 1, "pipelineName": "Orders sync"}
 
 
 async def test_create_pipeline_rejects_a_duplicate_name_with_a_clear_error(monkeypatch):

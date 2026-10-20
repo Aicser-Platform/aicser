@@ -260,7 +260,8 @@ class EnhancedDataService {
         engine?: string,
         optimization: boolean = true,
         signal?: AbortSignal,
-        projectId?: string | number | null
+        projectId?: string | number | null,
+        executionMode: 'read' | 'write' = 'read',
     ): Promise<QueryResult> {
         try {
             // fetchApi already parses JSON and throws on non-2xx responses
@@ -275,6 +276,7 @@ class EnhancedDataService {
                     engine,
                     optimization,
                     project_id: projectId != null ? String(projectId) : undefined,
+                    execution_mode: executionMode,
                 }),
                 signal,
             });

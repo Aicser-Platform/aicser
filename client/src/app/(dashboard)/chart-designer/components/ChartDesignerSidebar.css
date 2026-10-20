@@ -27,17 +27,22 @@
   box-shadow: 1px 0 8px rgba(0, 0, 0, 0.2);
 }
 
-.chart-designer-sidebar.collapsed {
-  width: 0;
+/* Folded library: the shared 40px rail (SidePanel). */
+.chart-designer-sidebar.chart-designer-sidebar--rail {
+  width: auto;
   min-width: 0;
-  max-width: 0;
-  flex-basis: 0;
-  opacity: 0;
-  pointer-events: none;
-  border-right-color: transparent;
+  max-width: none;
+  flex: 0 0 auto;
+  padding: 8px;
+  border-right: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .sidebar-header {
+  display: flex;
+  gap: 4px;
+  align-items: center;
   padding: 10px 12px 6px;
   flex-shrink: 0;
 }

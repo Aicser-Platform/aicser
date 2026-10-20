@@ -61,6 +61,44 @@ class _Aicser:
             raise ValueError("Give the table as 'schema.table', as shown in the Data panel.")
         return await self.sql(f"SELECT * FROM {name.strip()} LIMIT {max(1, int(limit))}", source)
 
+    async def metrics(self, source=None):
+        """The semantic model's metrics for a data source, official ones first."""
+        items = (await self._call("metrics", source=None if source is None else str(source)))["metrics"]
+        return pd.DataFrame([{"name": m.get("name"), "official": bool(m.get("certified")),
+                              "description": m.get("description")} for m in items],
+                            columns=["name", "official", "description"])
+
+    async def metric(self, name, by=None, grain=None, source=None, limit=10000):
+        """A semantic metric as a DataFrame: by=['region'] groups it, grain='month' (or fiscal_year…)
+        buckets time dimensions. Same definition and access rules as Ask and dashboards."""
+        dims = [by] if isinstance(by, str) else list(by or [])
+        out = await self._call("metric", metric=str(name), by=dims, grain=grain, limit=int(limit),
+                               source=None if source is None else str(source))
+        return pd.DataFrame(out["rows"], columns=out["columns"])
+
+    async def inspect(self, table, target=None, source=None, task="auto"):
+        """Profile a table for modeling (column kinds, dropped fields, class balance)."""
+        payload = {"table": str(table), "task": str(task)}
+        if target is not None:
+            payload["target"] = str(target)
+        if source is not None:
+            payload["source"] = str(source)
+        return await self._call("inspect_model", **payload)
+
+    async def create_model(self, name, table, target, features, source=None, task=None):
+        """Start training a guided model on a gold/feature table (same as Models → New)."""
+        payload = {
+            "name": str(name),
+            "table": str(table),
+            "target": str(target),
+            "features": list(features),
+        }
+        if source is not None:
+            payload["source"] = str(source)
+        if task is not None:
+            payload["task"] = str(task)
+        return await self._call("create_model", **payload)
+
     async def models(self):
         """Prediction and forecast models you can use (approved versions serve predictions)."""
         items = (await self._call("models"))["items"]
@@ -139,11 +177,11 @@ class _Aicser:
         return res
 
     def __repr__(self):
-        return ("aicser: table, sql, sources · models, predict, forecast, save_forecast · decisions, decide "
+        return ("aicser: table, sql, sources · metrics, metric · inspect, create_model, models, predict · forecast, save_forecast · decisions, decide "
                 "— help(aicser.<name>) for details")
 
 _AICSER_MAX_ROWS = 50000
-_AICSER_ASYNC = {"sql", "table", "models", "predict", "forecast", "save_forecast", "decisions", "decide"}
+_AICSER_ASYNC = {"sql", "table", "inspect", "create_model", "models", "predict", "forecast", "save_forecast", "decisions", "decide"}
 
 def _aicser_need_frame(df):
     if not isinstance(df, pd.DataFrame):

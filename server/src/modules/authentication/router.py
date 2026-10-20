@@ -10,6 +10,7 @@ from src.modules.authentication.schemas import (
     ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
+    MarketingSessionResponse,
     PasswordResetMessageResponse,
     RegisterRequest,
     ResetPasswordRequest,
@@ -326,6 +327,46 @@ async def me(request: Request, db: AsyncSession = Depends(get_async_session)):
 async def whoami(request: Request):
     token = request.cookies.get("auth_token")
     return {"has_token": bool(token)}
+
+
+@router.get("/auth/session", response_model=MarketingSessionResponse)
+async def marketing_session(request: Request, db: AsyncSession = Depends(get_async_session)):
+    """Logged-in chrome for sibling marketing origins. No access_token / JWT in the body."""
+    if not request.cookies.get(COOKIE_NAME):
+        return MarketingSessionResponse(logged_in=False)
+    try:
+        from src.modules.authentication.deps.auth_bearer import get_current_user
+
+        user_payload = await get_current_user(request)
+    except HTTPException:
+        return MarketingSessionResponse(logged_in=False)
+    except Exception:
+        logger.debug("marketing_session: auth resolve failed", exc_info=True)
+        return MarketingSessionResponse(logged_in=False)
+
+    from src.modules.user.service import UserService
+
+    profile = await UserService(db).get_profile(str(user_payload["sub"]))
+    if not profile:
+        return MarketingSessionResponse(logged_in=False)
+
+    avatar_url = profile.get("avatar_url")
+    if avatar_url:
+        try:
+            from src.modules.user.avatar_storage_service import generate_avatar_sas_url
+
+            avatar_url = generate_avatar_sas_url(avatar_url)
+        except Exception:
+            logger.debug("marketing_session: avatar resolve skipped", exc_info=True)
+
+    return MarketingSessionResponse(
+        logged_in=True,
+        email=profile.get("email"),
+        username=profile.get("username"),
+        first_name=profile.get("first_name"),
+        last_name=profile.get("last_name"),
+        avatar_url=avatar_url,
+    )
 
 
 @router.get("/auth/whoami-raw")

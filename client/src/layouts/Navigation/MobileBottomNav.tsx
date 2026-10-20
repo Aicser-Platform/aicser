@@ -3,12 +3,14 @@
 import React from 'react';
 import {
   AlertOutlined,
+  ApartmentOutlined,
   AppstoreOutlined,
   CodeOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   EllipsisOutlined,
   MessageOutlined,
+  NodeIndexOutlined,
   SettingOutlined,
   AreaChartOutlined,
   ClusterOutlined,
@@ -22,9 +24,12 @@ import {
 import { Drawer } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { selectedKeyForPathname } from './navConfig';
+import { filterSidebarItems, selectedKeyForPathname } from './navConfig';
 import SidebarNav, { type SidebarNavIconMap } from './SidebarNav';
 import { useAiAvailability } from '@/hooks/useAiAvailability';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import {
   CE_MOBILE_TABS,
   EE_MOBILE_TABS,
@@ -57,6 +62,8 @@ const MORE_ICONS: SidebarNavIconMap = {
   'ai-decisions': <ThunderboltOutlined />,
   knowledge: <FileSearchOutlined />,
   warehouse: <ClusterOutlined />,
+  pipelines: <NodeIndexOutlined />,
+  catalog: <ApartmentOutlined />,
   settings: <SettingOutlined />,
 };
 
@@ -77,7 +84,25 @@ export function MobileBottomNav() {
       ? EE_MOBILE_TABS.filter((tab) => tab.key !== 'chat')
       : CE_MOBILE_TABS;
   const moreActive = isMoreNavActive(selectedKey, isEnterpriseEdition, showAiNav);
-  const moreItems = isEnterpriseEdition ? enterpriseMoreNavItems() : communityMoreNavItems();
+  const { features, loading: featuresLoading } = useSubscriptionStore();
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const hasFeature = React.useCallback(
+    (feature: string) => {
+      if (!isEnterpriseEdition) return true;
+      if (featuresLoading || !features || Object.keys(features).length === 0) return true;
+      const val = features[feature];
+      return typeof val === 'boolean' ? val : true;
+    },
+    [features, featuresLoading],
+  );
+  const moreItems = React.useMemo(() => {
+    const raw = isEnterpriseEdition ? enterpriseMoreNavItems() : communityMoreNavItems();
+    if (!isEnterpriseEdition) return raw;
+    return filterSidebarItems(raw, {
+      hasFeature,
+      hasPermission: permissionsLoading ? undefined : (code) => hasPermission(code as Permission),
+    });
+  }, [hasFeature, hasPermission, permissionsLoading]);
 
   const navigate = (href: string) => {
     setMoreOpen(false);

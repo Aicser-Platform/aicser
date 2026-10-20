@@ -3,7 +3,7 @@
 import { CrossFilterChips } from './CrossFilterChips';
 import { cardTitleStyle, chartSource } from '../../utils/chartAnnotations';
 import { WidgetFootnote } from '../WidgetFootnote';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { displayTitle } from '../../utils/widgetAutoTitle';
 import { Responsive, WidthProvider } from 'react-grid-layout';
@@ -44,7 +44,42 @@ type Props = {
   hideInteractionHint?: boolean;
   /** Mount every widget immediately (feed/embed detail). Lazy IO can miss tiles in overflow-clipped ancestors. */
   eagerMount?: boolean;
+  /**
+   * Grow rows so a short design fills a stage instead of sitting small in empty space:
+   * 'stage' fills a comfortable share of the window, 'screen' the rest of the window below
+   * the grid (full screen). Rows never shrink below the authored height.
+   */
+  fit?: 'none' | 'stage' | 'screen';
 };
+
+const ROW_HEIGHT = 42;
+const ROW_GAP = 8;
+const MAX_FIT_ROW_HEIGHT = 160;
+
+/** Row height that makes `rows` fill the target height, measured from the window. */
+function useFitRowHeight(ref: React.RefObject<HTMLDivElement | null>, rows: number, fit: 'none' | 'stage' | 'screen') {
+  const [rowHeight, setRowHeight] = useState(ROW_HEIGHT);
+  useEffect(() => {
+    if (fit === 'none' || rows <= 0) {
+      setRowHeight(ROW_HEIGHT);
+      return;
+    }
+    const measure = () => {
+      const el = ref.current;
+      if (!el) return;
+      const target =
+        fit === 'screen'
+          ? window.innerHeight - el.getBoundingClientRect().top - 16
+          : Math.min(720, Math.max(360, window.innerHeight * 0.62));
+      const next = Math.floor((target - (rows - 1) * ROW_GAP) / rows);
+      setRowHeight(Math.min(MAX_FIT_ROW_HEIGHT, Math.max(ROW_HEIGHT, next)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [ref, rows, fit]);
+  return rowHeight;
+}
 
 function getPreviewWidgetHeight(widget: WidgetInstance, sourceLayout?: LayoutItem): number {
   if (widget.chartType === 'divider') return 2;
@@ -122,6 +157,7 @@ export function DashboardViewerGrid({
   layoutMode = 'auto',
   hideInteractionHint = false,
   eagerMount = false,
+  fit = 'none',
 }: Props) {
   const screens = useBreakpoint();
   // Narrow screens: tablet (< 992px) and mobile (< 768px)
@@ -169,6 +205,11 @@ export function DashboardViewerGrid({
     };
   }, [layout, layoutMode, widgets]);
 
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const designRows = useMemo(() => (layout.length ? Math.max(...layout.map((item) => item.y + item.h)) : 0), [layout]);
+  // Reflowed phone layouts stack cards at their own heights; only the authored design is stretched.
+  const rowHeight = useFitRowHeight(wrapperRef, designRows, shouldReflow ? 'none' : fit);
+
   const responsiveCols = useMemo(() => {
     if (layoutMode === 'preserve') {
       return { lg: 12, md: 12, sm: 12, xs: 12, xxs: 12 };
@@ -178,7 +219,7 @@ export function DashboardViewerGrid({
   }, [layoutMode]);
 
   return (
-    <div className="dashboard-canvas-wrapper dashboard-viewer-canvas" style={{ minHeight: canvasMinHeight }}>
+    <div ref={wrapperRef} className="dashboard-canvas-wrapper dashboard-viewer-canvas" style={{ minHeight: canvasMinHeight }}>
       {onCrossFilter ? (
         <CrossFilterChips runtimeFilters={runtimeFilters} onRemove={(field) => onCrossFilter(field, null)} />
       ) : null}
@@ -194,8 +235,8 @@ export function DashboardViewerGrid({
         }}
         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
         cols={responsiveCols}
-        rowHeight={42}
-        margin={[8, 8]}
+        rowHeight={rowHeight}
+        margin={[ROW_GAP, ROW_GAP]}
         containerPadding={[0, 0]}
         isDraggable={false}
         isResizable={false}
@@ -212,17 +253,19 @@ export function DashboardViewerGrid({
               <div className={`widget-card widget-type-${widget.chartType} ${!showHeader ? 'header-hidden' : ''}`}>
                 {showHeader && (
                   <div className="widget-card-header widget-card-header-stack">
-                    <span className="widget-card-title" style={{ display: 'inline-flex', alignItems: 'center', ...cardTitleStyle(widget.chartOptions) }}>
-                      {widget.chartOptions?.headerIcon ? (
-                        <span className="widget-header-icon">
-                          <DashboardIcon icon={widget.chartOptions.headerIcon} size={14} />
-                        </span>
+                    <div className="widget-card-header-titles">
+                      <span className="widget-card-title" style={{ display: 'inline-flex', alignItems: 'center', ...cardTitleStyle(widget.chartOptions) }}>
+                        {widget.chartOptions?.headerIcon ? (
+                          <span className="widget-header-icon">
+                            <DashboardIcon icon={widget.chartOptions.headerIcon} size={14} />
+                          </span>
+                        ) : null}
+                        {displayTitle(widget, tPage as never)}
+                      </span>
+                      {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
+                        <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
                       ) : null}
-                      {displayTitle(widget, tPage as never)}
-                    </span>
-                    {typeof widget.chartOptions?.subtitle === 'string' && widget.chartOptions.subtitle.trim() ? (
-                      <span className="widget-card-subtitle">{widget.chartOptions.subtitle}</span>
-                    ) : null}
+                    </div>
                   </div>
                 )}
                 <div className="widget-card-body no-drag">

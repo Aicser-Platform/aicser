@@ -94,3 +94,5 @@ class SaveDatasetRequest(BaseModel):
     columns: List[str] = Field(..., min_length=1, max_length=500)
     rows: List[List[Any]] = Field(..., min_length=1, max_length=200_000)
     project_id: Optional[str] = Field(None, max_length=64)
+    notebook_id: Optional[str] = Field(None, max_length=64)
+    upstream_data_source_ids: Optional[List[str]] = Field(None, max_length=20)

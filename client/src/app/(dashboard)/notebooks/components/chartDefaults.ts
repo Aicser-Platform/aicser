@@ -53,12 +53,24 @@ export function suggestChart(columns: string[], rows: unknown[][]): Pick<ChartSp
 /** A first pivot: the most useful grouping down the side, a second one (or dates) across. */
 export function suggestPivot(columns: string[], rows: unknown[][]): Pick<ChartSpec, 'rows' | 'columns' | 'values' | 'agg'> {
   const { measures, date, categories } = profile(columns, rows);
-  const down = categories[0]?.name ?? date?.name;
+  let down = categories[0]?.name ?? date?.name;
+  if (!down && columns.length) {
+    const sample = rows.slice(0, 200);
+    const fallback = columns.find((name, i) => {
+      if (ID_NAME.test(name)) return false;
+      const values = sample.map((r) => r[i]).filter((v) => v !== null && v !== undefined && v !== '');
+      const distinct = new Set(values.map(String)).size;
+      return distinct >= 2;
+    });
+    down = fallback ?? columns.find((c) => !ID_NAME.test(c)) ?? columns[0];
+  }
   const across = categories.find((c) => c.name !== down && c.distinct <= 12)?.name;
+  const values = measures.slice(0, 1).map((m) => m.name);
+  const agg = values.length ? 'sum' : 'count';
   return {
     rows: down ? [down] : [],
     columns: across ? [across] : [],
-    values: measures.slice(0, 1).map((m) => m.name),
-    agg: 'sum',
+    values,
+    agg,
   };
 }

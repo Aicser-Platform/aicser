@@ -1,0 +1,23 @@
+/* Joins workbench header: one row, explanations in the ⓘ tooltip. */
+.data-model-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.data-model-toolbar__switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.data-model-toolbar__info {
+  flex-shrink: 0;
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+}

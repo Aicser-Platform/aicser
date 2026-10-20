@@ -103,3 +103,31 @@ async def test_dispatch_commits_each_pipeline_before_enqueueing_it():
     # A commit for pipeline A must land before pipeline B's enqueue — proves
     # each pipeline's row is durable before its job reaches the queue.
     assert call_order == ["commit", "enqueue", "commit", "enqueue"]
+
+
+async def test_dispatch_skips_a_pipeline_whose_last_run_is_still_going():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from src.modules.pipeline.scheduler import dispatch_due_pipelines
+
+    now = datetime(2026, 8, 25, 10, 30, tzinfo=timezone.utc)
+    pipeline = MagicMock()
+    pipeline.id = uuid.uuid4()
+    pipeline.schedule_cron = "* * * * *"
+    pipeline.next_run_at = datetime(2026, 8, 25, 10, 29, tzinfo=timezone.utc)
+
+    due = MagicMock()
+    due.scalars.return_value.all.return_value = [pipeline]
+    busy = MagicMock()
+    busy.scalars.return_value.all.return_value = [pipeline.id]
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.execute = AsyncMock(side_effect=[due, busy])
+
+    with patch("src.modules.pipeline.scheduler.enqueue_job", new=AsyncMock()) as eq:
+        run_ids = await dispatch_due_pipelines(session, now)
+
+    assert run_ids == []
+    eq.assert_not_awaited()
+    session.add.assert_not_called()
+    assert pipeline.next_run_at == datetime(2026, 8, 25, 10, 31, tzinfo=timezone.utc)

@@ -10,6 +10,10 @@ import type {
 import type { ReactNode } from 'react';
 import type { PricingPlanKey } from '@/utils/pricingPlans';
 export { default as EnhancedDataPanel } from '@/components/data/SQLEditor/QueryEditorDataPanel';
+export const SurfaceCopilot = (_props: AnyComponentProps): null => null;
+export const SurfaceCopilotDrawer = (_props: AnyComponentProps): null => null;
+export const SurfaceCopilotPanel = (_props: AnyComponentProps): null => null;
+export const SurfaceInlineAsk = (_props: AnyComponentProps): null => null;
 
 type ProviderProps = { children: ReactNode };
 type ProjectSelectorModalProps = {
@@ -47,14 +51,16 @@ export function FeatureGate({ children }: ProviderProps & { feature?: string }) 
 export const OrganizationSettingsTab = (): null => null;
 export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
+export const OutboundEmailSettingsTab = (): null => null;
 export const SubscriptionSettingsTab = (): null => null;
+export const UsageAnalyticsSettingsTab = (): null => null;
 export const LicenseSettingsTab      = (): null => null;
 export const RolesTab                = (): null => null;
 export const AgentSkillsTab          = (): null => null;
 export const AgentWorkflowsTab       = (): null => null;
 export const AgentCapabilitiesTab    = (): null => null;
-export const KpiDefinitionsTab       = (): null => null;
 export const BriefingsTab            = (): null => null;
+export const AgentBudgetTab          = (): null => null;
 export const ReviewQueueWidget       = (_props: AnyComponentProps): null => null;
 export const SemanticStudio          = (_props: AnyComponentProps): null => null;
 export const ConnectModelVisualizeWizard = (_props: AnyComponentProps): null => null;
@@ -80,7 +86,6 @@ export const PipelinesPage           = (): null => null;
 export const NewPipelinePage         = (): null => null;
 export const PipelineBuilderPage     = (): null => null;
 export const CatalogPage             = (): null => null;
-export const OnboardingPage          = (): null => null;
 export const InviteAcceptPageEE      = (): null => null;
 export const InviteSetPasswordPageEE = (): null => null;
 
@@ -284,3 +289,6 @@ export function useSubscriptionStore() {
   };
 }
 export const useSubscription = useSubscriptionStore;
+export const MasterDataPage          = (): null => null;
+export const PrivacyRequestsTab      = (): null => null;
+export const DataSharesTab           = (): null => null;

@@ -10,7 +10,9 @@ from src.core.edition import is_ee_enabled
 
 try:
     if is_ee_enabled():
-        from ee.modules.authentication.rbac.guard import (  # noqa: F401
+        from src.enterprise.modules.authentication.rbac.guard import (  # noqa: F401
+            alert_rbac_guard,
+            catalog_rbac_guard,
             data_rbac_guard,
             legacy_charts_rbac_guard,
             permission_for_method,
@@ -31,11 +33,13 @@ except ImportError:
             return None
         return str(payload.get("sub") or payload.get("user_id") or payload.get("id") or "") or None
 
-    def permission_for_method(method: str, *, view: str, edit: str, delete: str) -> str:
+    def permission_for_method(method: str, *, view: str, edit: str, delete: str, create: str | None = None) -> str:
         m = (method or "GET").upper()
         if m == "DELETE":
             return delete
-        if m in ("POST", "PUT", "PATCH"):
+        if m == "POST":
+            return create or edit
+        if m in ("PUT", "PATCH"):
             return edit
         return view
 
@@ -49,4 +53,10 @@ except ImportError:
         return
 
     async def semantic_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
+        return
+
+    async def alert_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
+        return
+
+    async def catalog_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return

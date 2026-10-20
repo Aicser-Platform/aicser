@@ -156,12 +156,12 @@ class UploadDatasourceStorageService:
         return PostgresStorageService()
 
     def _azure_storage(self):
-        from ee.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
+        from src.enterprise.modules.data.services.azure_blob_storage_service import AzureBlobStorageService
 
         return AzureBlobStorageService()
 
     def _s3_storage(self, config: dict | None = None):
-        from ee.modules.data.services.s3_storage_service import S3StorageService
+        from src.enterprise.modules.data.services.s3_storage_service import S3StorageService
 
         return S3StorageService(config=config)
 

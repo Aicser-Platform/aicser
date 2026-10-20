@@ -57,40 +57,147 @@ def _column_name(col: Any) -> Optional[str]:
     return str(name) if name else None
 
 
+def _table_basename(table_name: str) -> str:
+    name = str(table_name or "").strip()
+    if "." in name:
+        return name.rsplit(".", 1)[-1]
+    return name
+
+
 def _relationship_key_suffix(column_name: str) -> Optional[str]:
     name = str(column_name or "").strip().lower()
     # Pipeline bookkeeping (_load_id is on every Silver/Gold table) is never a business
     # key: matching on it joins unrelated tables, and served tables don't carry it.
     if name in PIPELINE_AUDIT_COLUMNS:
         return None
+    if name.startswith("unnamed") or name in ("index", "row_number", "row_id"):
+        return None
     if name.endswith("_id") and len(name) > 3:
         return "_id"
     if name.endswith("_key") and len(name) > 4:
         return "_key"
+    if name.endswith("_code") and len(name) > 5:
+        return "_code"
+    if name.endswith("_number") and len(name) > 8:
+        return "_number"
     return None
 
 
-def _guess_target_table(column_name: str, table_names: set[str]) -> Optional[str]:
-    """Heuristic: user_id -> users/user, device_key -> dim_device/device."""
+def _entity_from_key_column(column_name: str) -> Optional[str]:
     suffix = _relationship_key_suffix(column_name)
     if not suffix:
         return None
-    base = column_name[: -len(suffix)]
-    if not base:
+    entity = str(column_name[: -len(suffix)] or "").strip().lower()
+    return entity or None
+
+
+def _singularize(name: str) -> str:
+    n = name.lower()
+    if n.endswith("ies") and len(n) > 4:
+        return n[:-3] + "y"
+    if n.endswith("s") and len(n) > 2:
+        return n[:-1]
+    return n
+
+
+def _entity_matches_table(entity: str, table_name: str) -> bool:
+    base = _table_basename(table_name).lower()
+    ent = entity.lower()
+    if base == ent or base == f"{ent}s" or _singularize(base) == ent or _singularize(ent) == _singularize(base):
+        return True
+    if base.endswith(f"_{ent}") or base.endswith(f"_{ent}s"):
+        return True
+    return False
+
+
+def _basename_index(table_names: set[str]) -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {}
+    for t in table_names:
+        base = _table_basename(t).lower()
+        out.setdefault(base, []).append(t)
+        for variant in (_singularize(base), f"{base}s", f"{_singularize(base)}s"):
+            out.setdefault(variant, []).append(t)
+    return out
+
+
+def _resolve_table_name(candidate: str, table_names: set[str], basename_index: Dict[str, List[str]]) -> Optional[str]:
+    low = candidate.lower()
+    if low in table_names:
+        return low
+    matches = basename_index.get(low) or []
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return sorted(matches, key=len)[0]
+    return None
+
+
+def _guess_target_table(
+    column_name: str,
+    table_names: set[str],
+    basename_index: Dict[str, List[str]],
+) -> Optional[str]:
+    """Heuristic: user_id -> users/user, device_key -> dim_device/device, works with schema.table names."""
+    entity = _entity_from_key_column(column_name)
+    if not entity:
         return None
     candidates = [
-        base,
-        f"{base}s",
-        base.rstrip("s"),
-        f"{base.rstrip('s')}s",
-        f"dim_{base}",
-        f"{base}_dim",
+        entity,
+        f"{entity}s",
+        _singularize(entity),
+        f"{_singularize(entity)}s",
+        f"dim_{entity}",
+        f"{entity}_dim",
+        f"ref_{entity}",
+        f"lookup_{entity}",
     ]
     for cand in candidates:
-        if cand.lower() in table_names:
-            for t in table_names:
-                if t == cand.lower():
-                    return t
+        resolved = _resolve_table_name(cand, table_names, basename_index)
+        if resolved:
+            return resolved
+    return None
+
+
+def _preferred_pk_column(table: dict, columns_map: Dict[str, str]) -> Optional[str]:
+    for col in table.get("columns") or []:
+        if isinstance(col, dict) and col.get("is_primary_key"):
+            name = _column_name(col)
+            if name:
+                return columns_map.get(name.lower(), name)
+    base = _table_basename(str(table.get("name") or "")).lower()
+    for cand in ("id", f"{base}_id", f"{_singularize(base)}_id"):
+        if cand in columns_map:
+            return columns_map[cand]
+    return columns_map.get("id")
+
+
+def _column_type_family(col: Any) -> str:
+    raw = ""
+    if isinstance(col, dict):
+        raw = str(col.get("type") or col.get("data_type") or "")
+    fam = raw.upper()
+    if any(x in fam for x in ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER")):
+        return "number"
+    if any(x in fam for x in ("CHAR", "TEXT", "STRING", "UUID", "VARCHAR")):
+        return "text"
+    if any(x in fam for x in ("DATE", "TIME")):
+        return "date"
+    return "unknown"
+
+
+def _types_compatible(left_col: Any, right_col: Any) -> bool:
+    a = _column_type_family(left_col)
+    b = _column_type_family(right_col)
+    if a == "unknown" or b == "unknown":
+        return True
+    return a == b
+
+
+def _col_obj_by_name(table: dict, col_name: str) -> Optional[dict]:
+    target = col_name.lower()
+    for col in table.get("columns") or []:
+        if isinstance(col, dict) and str(col.get("name") or "").lower() == target:
+            return col
     return None
 
 
@@ -143,6 +250,7 @@ def _detect_relationship_candidates(schema_info: Any) -> List[Dict[str, str]]:
 
     tables = _schema_tables(schema_info)
     table_names = _table_names_from_schema(schema_info)
+    basename_index = _basename_index(table_names)
     table_by_lname = {str(t.get("name")).lower(): t for t in tables}
     columns_by_table: Dict[str, Dict[str, str]] = {}
     for table in tables:
@@ -236,15 +344,43 @@ def _detect_relationship_candidates(schema_info: Any) -> List[Dict[str, str]]:
             if matches:
                 continue
 
-            # Legacy fallback: order_id -> orders.id / order.id.
-            guessed = _guess_target_table(col_name, table_names)
+            entity = _entity_from_key_column(col_name)
+            if entity:
+                for other in tables:
+                    other_name = str(other.get("name"))
+                    if other_name.lower() == from_lname:
+                        continue
+                    if not _entity_matches_table(entity, other_name):
+                        continue
+                    target_cols = columns_by_table.get(other_name.lower(), {})
+                    to_col = (
+                        target_cols.get(col_name.lower())
+                        or _preferred_pk_column(other, target_cols)
+                    )
+                    if not to_col:
+                        continue
+                    from_col_obj = _col_obj_by_name(table, col_name)
+                    to_col_obj = _col_obj_by_name(other, to_col)
+                    if from_col_obj and to_col_obj and not _types_compatible(from_col_obj, to_col_obj):
+                        continue
+                    _add(
+                        from_table,
+                        col_name,
+                        other_name,
+                        to_col,
+                        source="entity_pk",
+                        schema_name=schema_name,
+                    )
+
+            # Legacy fallback: order_id -> orders.id / order.id (schema-qualified names supported).
+            guessed = _guess_target_table(col_name, table_names, basename_index)
             if not guessed:
                 continue
             target = table_by_lname.get(guessed.lower())
             target_cols = columns_by_table.get(guessed.lower(), {})
             if not target:
                 continue
-            to_col = target_cols.get(col_name.lower()) or target_cols.get("id")
+            to_col = target_cols.get(col_name.lower()) or _preferred_pk_column(target, target_cols)
             if not to_col:
                 continue
             _add(
@@ -259,6 +395,135 @@ def _detect_relationship_candidates(schema_info: Any) -> List[Dict[str, str]]:
     return detected
 
 
+def _detect_cross_source_candidates(
+    sources: List[Tuple[str, Any]],
+) -> List[Dict[str, str]]:
+    """Match natural keys across data sources (e.g. enrollment.student_id ↔ students.student_id)."""
+    entries: List[Dict[str, Any]] = []
+    for data_source_id, schema_info in sources:
+        if not isinstance(schema_info, dict):
+            continue
+        for table in _schema_tables(schema_info):
+            table_name = str(table.get("name"))
+            schema_name = str(table.get("schema") or schema_info.get("schema") or "public")
+            for col in table.get("columns") or []:
+                col_name = _column_name(col)
+                if not col_name or not _relationship_key_suffix(col_name):
+                    continue
+                entries.append(
+                    {
+                        "data_source_id": data_source_id,
+                        "table": table,
+                        "table_name": table_name,
+                        "schema_name": schema_name,
+                        "col_name": col_name,
+                        "col": col,
+                        "col_lower": col_name.lower(),
+                    }
+                )
+
+    detected: List[Dict[str, str]] = []
+    seen: set[tuple] = set()
+
+    def _add_cross(
+        host_source_id: str,
+        from_table: str,
+        from_column: str,
+        to_source_id: str,
+        to_table: str,
+        to_column: str,
+        schema_name: str,
+    ) -> None:
+        if host_source_id == to_source_id and from_table == to_table:
+            return
+        key = (host_source_id, from_table, from_column, to_source_id, to_table, to_column)
+        rev = (host_source_id, to_table, to_column, to_source_id, from_table, from_column)
+        if key in seen or rev in seen:
+            return
+        seen.add(key)
+        detected.append(
+            {
+                "data_source_id": host_source_id,
+                "to_data_source_id": to_source_id if to_source_id != host_source_id else None,
+                "from_table": from_table,
+                "from_column": from_column,
+                "to_table": to_table,
+                "to_column": to_column,
+                "join_type": "LEFT",
+                "source": "cross_source",
+                "from_schema": schema_name,
+            }
+        )
+
+    by_col: Dict[str, List[Dict[str, Any]]] = {}
+    for e in entries:
+        by_col.setdefault(e["col_lower"], []).append(e)
+
+    for col_lower, group in by_col.items():
+        if len(group) < 2:
+            continue
+        for i, left in enumerate(group):
+            for right in group[i + 1 :]:
+                if left["data_source_id"] == right["data_source_id"] and left["table_name"] == right["table_name"]:
+                    continue
+                if not _types_compatible(left["col"], right["col"]):
+                    continue
+                source_table, target_table = _relationship_direction(left["table"], right["table"])
+                if source_table is left["table"]:
+                    from_e, to_e = left, right
+                else:
+                    from_e, to_e = right, left
+                host = str(from_e["data_source_id"])
+                to_src = str(to_e["data_source_id"])
+                _add_cross(
+                    host,
+                    from_e["table_name"],
+                    from_e["col_name"],
+                    to_src,
+                    to_e["table_name"],
+                    to_e["col_name"],
+                    str(from_e["schema_name"]),
+                )
+
+        # Same column name across sources but entity PK pattern (student_id -> dim with id).
+        entity = _entity_from_key_column(col_lower)
+        if not entity:
+            continue
+        for fact in group:
+            for dim in group:
+                if fact["table_name"] == dim["table_name"] and fact["data_source_id"] == dim["data_source_id"]:
+                    continue
+                if not _entity_matches_table(entity, dim["table_name"]):
+                    continue
+                dim_cols = {
+                    str(_column_name(c) or "").lower(): _column_name(c)
+                    for c in dim["table"].get("columns") or []
+                    if _column_name(c)
+                }
+                to_col = dim_cols.get(col_lower) or _preferred_pk_column(dim["table"], dim_cols)
+                if not to_col:
+                    continue
+                to_col_obj = _col_obj_by_name(dim["table"], to_col)
+                if not _types_compatible(fact["col"], to_col_obj or {}):
+                    continue
+                source_table, target_table = _relationship_direction(fact["table"], dim["table"])
+                if source_table is fact["table"]:
+                    from_e, to_e = fact, dim
+                else:
+                    from_e, to_e = dim, fact
+                _add_cross(
+                    str(from_e["data_source_id"]),
+                    from_e["table_name"],
+                    from_e["col_name"],
+                    str(to_e["data_source_id"]),
+                    to_e["table_name"],
+                    to_col,
+                    str(from_e["schema_name"]),
+                )
+
+    return detected
+
+
 class DataModelService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -269,11 +534,22 @@ class DataModelService:
     async def list_relationships(self, data_source_id: str) -> List[dict]:
         stmt = (
             select(DataModelRelationship)
-            .where(DataModelRelationship.data_source_id == data_source_id)
+            .where(
+                (DataModelRelationship.data_source_id == data_source_id)
+                | (DataModelRelationship.to_data_source_id == data_source_id)
+            )
             .order_by(DataModelRelationship.created_at.asc())
         )
         result = await self.db.execute(stmt)
-        return [_serialize_relationship(r) for r in result.scalars().all()]
+        seen: set[str] = set()
+        out: List[dict] = []
+        for r in result.scalars().all():
+            rid = str(r.id)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            out.append(_serialize_relationship(r))
+        return out
 
     async def create_relationship(self, data_source_id: str, payload: dict) -> dict:
         # Idempotent create: a relationship is uniquely identified by its
@@ -414,25 +690,27 @@ class DataModelService:
         await self.db.commit()
         return True
 
-    async def auto_detect(self, data_source_id: str) -> List[dict]:
-        ds = await self.get_data_source(data_source_id)
-        if not ds:
-            return []
-
-        schema_info = ds.schema if isinstance(ds.schema, dict) else {}
-        detected = _detect_relationship_candidates(schema_info)
-
-        created: List[dict] = []
-        existing = await self.list_relationships(data_source_id)
-        existing_keys = {
-            (r["from_table"], r["from_column"], r["to_table"], r["to_column"]) for r in existing
-        }
+    async def _persist_detected(
+        self,
+        data_source_id: str,
+        detected: List[Dict[str, Any]],
+        *,
+        existing_keys: Optional[set] = None,
+    ) -> int:
+        if existing_keys is None:
+            existing = await self.list_relationships(data_source_id)
+            existing_keys = {
+                (r["from_table"], r["from_column"], r["to_table"], r["to_column"]) for r in existing
+            }
+        added = 0
         for item in detected:
+            host_id = str(item.get("data_source_id") or data_source_id)
             key = (item["from_table"], item["from_column"], item["to_table"], item["to_column"])
             if key in existing_keys:
                 continue
             rel = DataModelRelationship(
-                data_source_id=data_source_id,
+                data_source_id=host_id,
+                to_data_source_id=item.get("to_data_source_id"),
                 from_table=item["from_table"],
                 from_column=item["from_column"],
                 to_table=item["to_table"],
@@ -445,7 +723,60 @@ class DataModelService:
             )
             self.db.add(rel)
             await self.db.flush()
-            created.append(_serialize_relationship(rel))
             existing_keys.add(key)
+            added += 1
+        return added
+
+    async def auto_detect(
+        self,
+        data_source_id: str,
+        *,
+        peer_source_ids: Optional[List[str]] = None,
+    ) -> List[dict]:
+        ids = list(dict.fromkeys([data_source_id] + [str(s) for s in (peer_source_ids or []) if s]))
+        result = await self.auto_detect_project(data_source_id, ids)
+        return result["relationships"]
+
+    async def auto_detect_project(
+        self,
+        host_data_source_id: str,
+        source_ids: List[str],
+    ) -> Dict[str, Any]:
+        """Run within-source detect on every source, then cross-source links owned by host."""
+        ordered = list(dict.fromkeys([host_data_source_id] + [s for s in source_ids if s]))
+        counts: Dict[str, int] = {}
+        for sid in ordered:
+            before = await self.list_relationships(sid)
+            before_keys = {
+                (r["from_table"], r["from_column"], r["to_table"], r["to_column"]) for r in before
+            }
+            ds = await self.get_data_source(sid)
+            if not ds:
+                counts[sid] = 0
+                continue
+            schema_info = ds.schema if isinstance(ds.schema, dict) else {}
+            within = _detect_relationship_candidates(schema_info)
+            added = await self._persist_detected(sid, within, existing_keys=set(before_keys))
+            counts[sid] = added
+
+        peers = [s for s in ordered if s != host_data_source_id]
+        sources_for_cross: List[Tuple[str, Any]] = []
+        for sid in ordered:
+            ds = await self.get_data_source(sid)
+            if ds and isinstance(ds.schema, dict):
+                sources_for_cross.append((sid, ds.schema))
+        cross_added = 0
+        if len(sources_for_cross) > 1:
+            cross = _detect_cross_source_candidates(sources_for_cross)
+            for item in cross:
+                item["data_source_id"] = item.get("data_source_id") or host_data_source_id
+            host_existing = await self.list_relationships(host_data_source_id)
+            host_keys = {
+                (r["from_table"], r["from_column"], r["to_table"], r["to_column"]) for r in host_existing
+            }
+            cross_added = await self._persist_detected(host_data_source_id, cross, existing_keys=host_keys)
+            counts[host_data_source_id] = counts.get(host_data_source_id, 0) + cross_added
+
         await self.db.commit()
-        return await self.list_relationships(data_source_id)
+        total = sum(counts.values())
+        return {"counts": counts, "total_added": total, "relationships": await self.list_relationships(host_data_source_id)}

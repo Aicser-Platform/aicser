@@ -447,6 +447,11 @@ div.page-container,
   display: none !important;
 }
 
+.page-wrapper .page-intro-text {
+  margin-bottom: 16px;
+  max-width: 42rem;
+}
+
 .page-wrapper.page-wrapper--full-bleed::before,
 .page-container.page-wrapper--full-bleed::before {
   display: none !important;

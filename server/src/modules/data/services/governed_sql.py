@@ -29,6 +29,39 @@ class Caller:
     payload: Dict[str, Any]
 
 
+async def caller_for_user_id(user_id: str, project_id: Optional[str] = None) -> Caller:
+    """Build a Caller for server-side jobs (scheduled notebook runs) as a specific user."""
+    import uuid as uuid_mod
+
+    from sqlalchemy import or_, select
+
+    from src.db.session import async_session
+    from src.modules.user.models import User
+
+    uid = uuid_mod.UUID(str(user_id))
+    org_id: Optional[str] = None
+    async with async_session() as db:
+        res = await db.execute(select(User).where(or_(User.id == uid, User.user_id == uid)))
+        # A person can have a linked identity row pointing at the same user_id; the exact id wins.
+        users = list(res.scalars().all())
+        user = next((u for u in users if u.id == uid), users[0] if users else None)
+        if user and user.tenant_id and str(user.tenant_id) not in ("default", ""):
+            org_id = str(user.tenant_id)
+    payload: Dict[str, Any] = {
+        "sub": str(user_id),
+        "user_id": str(user_id),
+        "id": str(user_id),
+        "organization_id": org_id,
+        "project_id": project_id,
+    }
+    return Caller(
+        user_id=str(user_id),
+        organization_id=org_id,
+        project_id=str(project_id) if project_id else None,
+        payload=payload,
+    )
+
+
 def caller_from_token(current_token: Any, project_id: Optional[str] = None) -> Caller:
     payload = extract_user_payload(current_token) if not isinstance(current_token, dict) else current_token
     user_id = str(payload.get("id") or payload.get("user_id") or payload.get("sub") or "").strip()
@@ -41,6 +74,27 @@ def caller_from_token(current_token: Any, project_id: Optional[str] = None) -> C
         project_id=str(project_id or payload.get("project_id") or "") or None,
         payload=payload,
     )
+
+
+async def resolve_organization(caller: Caller, db, requested: Optional[str] = None) -> Caller:
+    """The caller with their organization filled in when the sign-in token doesn't carry it.
+
+    Enterprise: the organization they asked for if they belong to it, else their first one
+    (membership is checked). Community has no organizations, so the caller is returned as is.
+    """
+    if caller.organization_id:
+        return caller
+    from src.core.edition import is_ee_enabled
+
+    if not is_ee_enabled():
+        return caller
+    from src.modules.pricing.feature_gate import get_user_organization_id
+
+    org = await get_user_organization_id(caller.user_id, db, requested.strip() if isinstance(requested, str) and requested.strip() else None)
+    if org and requested and str(org) != requested.strip():
+        org = None  # asked for an organization they don't belong to
+    caller.organization_id = str(org) if org else None
+    return caller
 
 
 def quote_ident(name: str) -> str:

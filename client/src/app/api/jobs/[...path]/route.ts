@@ -6,6 +6,19 @@ export async function GET(request: NextRequest, context: { params?: Promise<Reco
   return proxy(request, context, 'GET');
 }
 
+export async function PUT(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'PUT');
+}
+
+export async function PATCH(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'PATCH');
+}
+
+export async function DELETE(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'DELETE');
+}
+
+
 export async function POST(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
   return proxy(request, context, 'POST');
 }
@@ -25,11 +38,12 @@ async function proxy(
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     Object.assign(headers, buildProxyAuthHeaders(request));
     const init: RequestInit = { method, headers, credentials: 'include' };
-    if (method === 'POST') {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
       const body = await request.text();
       if (body) init.body = body;
     }
     const response = await fetch(backendUrl, init);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (error: unknown) {

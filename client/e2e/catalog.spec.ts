@@ -15,6 +15,10 @@ test.describe('Catalog Explorer', () => {
     const tabs = page.locator('.ant-tabs');
     await expect(tabs).toBeVisible();
 
-    await expect(page.getByText('Medallion Flow & Pipeline')).toBeVisible();
+    await expect(page.getByText('Data flow & pipeline')).toBeVisible();
+
+    await expect(page.getByText('@dlt')).toHaveCount(0);
+    await expect(page.getByText('insights_gold')).toHaveCount(0);
+    await expect(page.getByText('Auto-Loader')).toHaveCount(0);
   });
 });

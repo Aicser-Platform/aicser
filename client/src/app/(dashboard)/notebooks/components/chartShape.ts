@@ -137,7 +137,12 @@ export type PivotSpec = {
   rows?: string[];
   columns?: string[];
   values?: string[];
+  /** Page-style filters: only rows matching selected values are included. */
+  filters?: string[];
+  filterValues?: Record<string, string[]>;
   agg?: Agg;
+  /** Per measure aggregation when multiple value fields are used. */
+  valueAggs?: Record<string, Agg>;
 };
 
 export type Pivot = {
@@ -154,12 +159,36 @@ export type Pivot = {
 const MAX_PIVOT_ROWS = 1000;
 const MAX_PIVOT_COLS = 60;
 
+function aggForMeasure(spec: PivotSpec, measure: string, hasMeasures: boolean): Agg {
+  if (!hasMeasures) return 'count';
+  const per = spec.valueAggs?.[measure];
+  if (per && per !== 'none') return per;
+  return spec.agg && spec.agg !== 'none' ? spec.agg : 'sum';
+}
+
 export function pivot(columns: string[], rows: unknown[][], spec: PivotSpec): Pivot {
+  const filterFields = spec.filters ?? [];
+  const filterValues = spec.filterValues ?? {};
+  let dataRows = rows;
+  if (filterFields.length) {
+    dataRows = rows.filter((r) => {
+      for (const field of filterFields) {
+        const colIdx = columns.indexOf(field);
+        if (colIdx < 0) continue;
+        const allowed = filterValues[field];
+        if (!allowed || allowed.length === 0) continue;
+        if (!allowed.includes(label(r[colIdx]))) return false;
+      }
+      return true;
+    });
+  }
+
   const ri = (spec.rows ?? []).map((c) => columns.indexOf(c)).filter((i) => i >= 0);
   const ci = (spec.columns ?? []).map((c) => columns.indexOf(c)).filter((i) => i >= 0);
   const measures = (spec.values ?? []).map((v) => ({ name: v, i: columns.indexOf(v) })).filter((m) => m.i >= 0);
-  const agg: Agg = measures.length ? (spec.agg && spec.agg !== 'none' ? spec.agg : 'sum') : 'count';
+  const defaultAgg: Agg = measures.length ? (spec.agg && spec.agg !== 'none' ? spec.agg : 'sum') : 'count';
   const ms = measures.length ? measures : [{ name: 'count', i: -1 }];
+  const singleMeasureAgg = ms.length === 1 ? aggForMeasure(spec, ms[0].name, measures.length > 0) : defaultAgg;
 
   const cells = new Map<string, Map<string, Acc>>();
   const rowTotals = new Map<string, Acc>();
@@ -169,7 +198,7 @@ export function pivot(columns: string[], rows: unknown[][], spec: PivotSpec): Pi
   const colVals: string[] = [];
   const colSeen = new Set<string>();
 
-  for (const r of rows) {
+  for (const r of dataRows) {
     const keys = ri.map((i) => label(r[i]));
     const rk = JSON.stringify(keys);
     if (!rowKeys.has(rk)) rowKeys.set(rk, keys);
@@ -212,15 +241,15 @@ export function pivot(columns: string[], rows: unknown[][], spec: PivotSpec): Pi
   });
   const body = sortedRows.slice(0, MAX_PIVOT_ROWS).map(([rk, keys]) => ({
     keys,
-    cells: colKeys.map((c) => finish(cells.get(rk)?.get(c.key), agg)),
-    total: ms.length === 1 && ci.length ? finish(rowTotals.get(rk), agg) : null,
+    cells: colKeys.map((c) => finish(cells.get(rk)?.get(c.key), aggForMeasure(spec, c.measure, measures.length > 0))),
+    total: ms.length === 1 && ci.length ? finish(rowTotals.get(rk), singleMeasureAgg) : null,
   }));
   return {
     rowHeaders: spec.rows?.filter((c) => columns.includes(c)) ?? [],
     colKeys,
     body,
-    totals: colKeys.map((c) => finish(colTotals.get(c.key), agg)),
-    grand: ms.length === 1 && ci.length ? finish(grand, agg) : null,
+    totals: colKeys.map((c) => finish(colTotals.get(c.key), aggForMeasure(spec, c.measure, measures.length > 0))),
+    grand: ms.length === 1 && ci.length ? finish(grand, singleMeasureAgg) : null,
     truncated: sortedRows.length > MAX_PIVOT_ROWS || colVals.length > MAX_PIVOT_COLS,
   };
 }

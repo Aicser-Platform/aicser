@@ -150,6 +150,7 @@ services:
       S3_REGION: ${S3_REGION:-us-east-1}
     volumes:
       - server_ee_uploads:/app/uploads
+      - lake_ee_data:/app/lake
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -182,6 +183,7 @@ services:
     environment: *server-env
     volumes:
       - server_ee_uploads:/app/uploads
+      - lake_ee_data:/app/lake
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -237,6 +239,7 @@ volumes:
   postgres_ee_data:
   redis_ee_data:
   server_ee_uploads:
+  lake_ee_data:
 
 networks:
   default:

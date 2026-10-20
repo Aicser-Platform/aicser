@@ -3,7 +3,7 @@ Data Connectivity Schemas
 Pydantic schemas for data connectivity API
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Literal, List, Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -190,11 +190,17 @@ class BusinessMetadataSchema(BaseModel):
 
 
 class BusinessMetadataUpdate(BaseModel):
-    """Request body for PATCH /data/sources/{id}/business-metadata."""
+    """Request body for PATCH /data/sources/{id}/business-metadata.
+
+    measures/dimensions are accepted for older clients and imports but not stored here: measures
+    with a calculation become draft metrics in the semantic model, the rest become column roles.
+    """
 
     measures: Optional[List[Dict[str, Any]]] = None
     dimensions: Optional[List[Dict[str, Any]]] = None
     column_descriptions: Optional[Dict[str, str]] = None
+    column_roles: Optional[Dict[str, Literal["amount", "count", "category", "date", "id", "text"]]] = None
+    personal_columns: Optional[List[str]] = None
     ontology_mapping: Optional[Dict[str, Any]] = None
 
 

@@ -35,8 +35,6 @@ import src.db.registry  # noqa: F401
 from src.shared.jobs.tasks import (
     dispatch_due_pipelines_job,
     evaluate_alert_rules,
-    ingest_staged_asset,
-    profile_staged_asset,
     refresh_artifact_data,
     refresh_schema_cache,
     run_bi_sync,
@@ -49,12 +47,16 @@ from src.shared.jobs.tasks import (
     forward_audit_events_to_siem,
     check_decision_calibration,
     run_ai_decision,
+    run_scheduled_ai_decisions,
     run_answer_accuracy_eval,
     train_ml_model,
     retrain_scheduled_ml_models,
     run_notebook,
     run_due_notebook_schedules,
+    run_workbook,
+    run_due_workbook_schedules,
     score_scheduled_ml_models,
+    drift_retrain_ml_models,
     export_report_file,
     reindex_stale_knowledge_chunks,
     classify_data_source_columns,
@@ -105,12 +107,16 @@ _JOB_FUNCTIONS = [
     forward_audit_events_to_siem,    # cron: push audit events to the SIEM (no-op unless AUDIT_SIEM_URL)
     check_decision_calibration,      # cron (nightly): decision-layer calibration vs outcomes (EE)
     run_ai_decision,                 # on-demand: one AI Decisions run over a query result (EE)
+    run_scheduled_ai_decisions,      # cron (hourly): scheduled AI decisions refresh their datasets (EE)
     run_answer_accuracy_eval,        # cron (nightly, opt-in) + on-demand: golden-set answer accuracy (EE)
     train_ml_model,                  # on-demand: train one model version (EE Models)
     retrain_scheduled_ml_models,     # cron (hourly): scheduled model retraining (EE Models)
     run_notebook,                    # on-demand: one notebook run in the sandboxed runner (EE)
     run_due_notebook_schedules,      # cron (every minute): queue due notebook schedules (EE)
+    run_workbook,                    # on-demand: refresh live sheet ranges as owner (EE)
+    run_due_workbook_schedules,      # cron (every minute): queue due workbook schedules (EE)
     score_scheduled_ml_models,       # cron (hourly): scheduled batch scoring into a refreshed dataset (EE Models)
+    drift_retrain_ml_models,         # cron (hourly): retrain when input drift exceeds threshold (EE Models)
     export_report_file,              # on-demand: build a report/deck/workbook for a chat answer (EE exports)
     reindex_stale_knowledge_chunks,  # cron: re-embeds chunks with missing/stale embeddings, bounded batch per run
     classify_data_source_columns,    # on-demand: LLM column classification cache population (see column_semantic_classifier.py)
@@ -128,7 +134,13 @@ _WRAPPED_FUNCTIONS = wrap_arq_functions(_JOB_FUNCTIONS)
 # and full AI analyses (long executive reports take ~8 minutes). Killed at 5 minutes they left
 # work half-done — a model version stuck on "training", a report that never finished. One try:
 # repeating a long job that timed out only doubles the cost.
-_LONG_JOB_TIMEOUTS = {"train_ml_model": 3600, "process_ai_analyze_job": 1800, "export_report_file": 900, "run_notebook": 1900}
+_LONG_JOB_TIMEOUTS = {
+    "train_ml_model": 3600,
+    "process_ai_analyze_job": 1800,
+    "export_report_file": 900,
+    "run_notebook": 1900,
+    "run_workbook": 900,
+}
 
 
 def _with_long_timeouts(functions):
@@ -146,20 +158,7 @@ _PIPELINE_RUN_FUNCTION = arq_func(
     name="run_pipeline",
     timeout=PIPELINE_JOB_TIMEOUT,
 )
-# Profiling a large file and streaming it to Bronze both outlive the 300s default.
-_ONBOARDING_FUNCTIONS = [
-    arq_func(
-        wrap_arq_functions([profile_staged_asset])[0],
-        name="profile_staged_asset",
-        timeout=PIPELINE_JOB_TIMEOUT,
-    ),
-    arq_func(
-        wrap_arq_functions([ingest_staged_asset])[0],
-        name="ingest_staged_asset",
-        timeout=PIPELINE_JOB_TIMEOUT,
-    ),
-]
-_ARQ_FUNCTIONS = [*_with_long_timeouts(_WRAPPED_FUNCTIONS), _PIPELINE_RUN_FUNCTION, *_ONBOARDING_FUNCTIONS]
+_ARQ_FUNCTIONS = [*_with_long_timeouts(_WRAPPED_FUNCTIONS), _PIPELINE_RUN_FUNCTION]
 _FUNCTIONS_BY_NAME = {fn.__name__: fn for fn in _WRAPPED_FUNCTIONS}
 
 
@@ -270,6 +269,11 @@ class WorkerSettings:
             name="notebook_schedules",
         ),
         cron(
+            _FUNCTIONS_BY_NAME["run_due_workbook_schedules"],
+            minute=set(range(60)),
+            name="workbook_schedules",
+        ),
+        cron(
             _FUNCTIONS_BY_NAME["retrain_scheduled_ml_models"],
             minute=25,
             name="ml_model_scheduled_retrain",
@@ -279,5 +283,16 @@ class WorkerSettings:
             minute=40,  # after retraining, so a same-hour auto-approved version scores
             name="ml_model_scheduled_scoring",
             timeout=1800,
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["run_scheduled_ai_decisions"],
+            minute=35,
+            name="ai_decision_schedules",
+            timeout=3600,
+        ),
+        cron(
+            _FUNCTIONS_BY_NAME["drift_retrain_ml_models"],
+            minute=50,
+            name="ml_model_drift_retrain",
         ),
     ]

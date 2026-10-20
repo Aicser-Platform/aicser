@@ -920,49 +920,6 @@
   flex-shrink: 0;
 }
 
-.query-editor-workspace .qe-sources-collapsed {
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  padding: 8px 6px !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 8px !important;
-}
-
-.query-editor-workspace .qe-sources-collapsed-btn.ant-btn {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-  max-width: 40px !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-}
-
-.query-editor-workspace .qe-sources-collapsed-btn.ant-btn > .ant-btn-icon,
-.query-editor-workspace .qe-sources-collapsed-btn.ant-btn .anticon {
-  margin: 0 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 0 !important;
-  font-size: 16px !important;
-}
-
-.query-editor-workspace .qe-sources-collapsed-btn.ant-btn .ant-btn-icon {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-inline-end: 0 !important;
-  line-height: 0 !important;
-}
-
 /* Shared compact schema explorer (chat + query editor) */
 .chat-page-container .data-panel.data-panel-flat .data-header,
 .query-editor-workspace .data-panel.data-panel-flat .data-header {

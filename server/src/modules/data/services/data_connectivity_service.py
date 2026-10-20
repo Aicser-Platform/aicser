@@ -22,7 +22,7 @@ from .database_connector_service import DatabaseConnectorService
 from .upload_datasource_storage_service import UploadDatasourceStorageService
 
 try:
-    from ee.modules.data.services.ai_schema_service import AISchemaService
+    from src.enterprise.modules.data.services.ai_schema_service import AISchemaService
 except ImportError:
     AISchemaService = None  # type: ignore
 from src.core.edition import is_ee_enabled
@@ -66,50 +66,61 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-async def _try_write_bronze(
-    session,
-    file_path: str,
-    organization_id,
-    data_source_id: str,
-    available_sheets: Optional[list] = None,
-):
-    """Open an onboarding session for an upload. EE-only.
+async def _stage_original_upload(session, file_path: str, organization_id, data_source_id: str,
+                                 filename: Optional[str] = None):
+    """Keep the original upload in the lakehouse for pipelines. EE with the lakehouse plan only.
 
-    Returns None everywhere else — CE, no organization, or any failure — so the
-    blob path is untouched and an upload never fails because onboarding is down.
-
-    Does NOT enqueue the profiling job. `session` is the caller's own,
-    not-yet-committed transaction (the parent `data_sources` row is typically
-    added to it after this returns), and the ARQ worker looks the onboarding
-    session up by id through a *different* database connection. Enqueueing
-    here would race the caller's own commit. The caller must enqueue
-    "profile_staged_asset" for the returned onboarding_session_id itself,
-    only after its own commit has succeeded.
+    Returns None everywhere else -- CE, no organization, or any failure -- so the upload itself
+    is untouched and never fails because of this copy.
     """
-    if not organization_id:
+    if not is_ee_enabled() or not organization_id:
         return None
     try:
-        from src.modules.pipeline.onboarding.service import create_session
+        from src.modules.pricing.feature_gate import org_has_plan_feature
+
+        if not await org_has_plan_feature(str(organization_id), session, "lakehouse"):
+            return None
+    except Exception:
+        pass
+    try:
+        from src.modules.pipeline.staging import try_stage_original_upload
     except ImportError:
         return None
+    return await try_stage_original_upload(session, file_path, organization_id, data_source_id, filename)
 
-    try:
-        onboarding = await create_session(
-            session,
-            org_id=organization_id,
-            data_source_id=data_source_id,
-            file_path=file_path,
-            filename=os.path.basename(file_path),
-            actor_id=None,
-            available_sheets=available_sheets,
-        )
-        return {"onboarding_session_id": str(onboarding.id)}
-    except Exception as exc:  # noqa: BLE001 - onboarding must never break upload
-        logger.warning(
-            "onboarding session could not be opened for %s: %s", data_source_id, exc
-        )
+
+
+def _json_ready(value: Any) -> Any:
+    """Plain JSON for a JSONB column: Decimal, dates, UUIDs and numpy scalars converted; NaN as null."""
+    import datetime as _dt
+    import math
+    import uuid as _uuid
+    from decimal import Decimal
+
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, Decimal):
+        return _json_ready(float(value))
+    if isinstance(value, (_dt.datetime, _dt.date, _dt.time)):
+        return value.isoformat()
+    if isinstance(value, _uuid.UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_ready(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_ready(v) for v in value]
+    if hasattr(value, "item"):  # numpy / pyarrow scalars
+        try:
+            return _json_ready(value.item())
+        except Exception:  # noqa: BLE001
+            pass
+    if isinstance(value, (bytes, bytearray)):
         return None
-
+    return str(value)
 
 class NoOpAISchemaService:
     async def generate_data_insights(
@@ -346,7 +357,7 @@ class DataConnectivityService:
     ) -> Dict[str, Any]:
         """Test IoT / time-series connection via EnterpriseConnectorsService (plan-gated in product; not AISER_EDITION)."""
         try:
-            from ee.modules.data.services.enterprise_connectors_service import (
+            from src.enterprise.modules.data.services.enterprise_connectors_service import (
                 ConnectionConfig,
                 ConnectorType,
                 EnterpriseConnectorsService,
@@ -1677,6 +1688,10 @@ class DataConnectivityService:
 
     async def _save_data_source_to_db(self, data_source: Dict[str, Any]) -> bool:
         """Save data source to database"""
+        # Previews carry Decimal, date and NaN values that the JSON columns can't store as-is.
+        for key in ("schema", "sample_data"):
+            if data_source.get(key) is not None:
+                data_source[key] = _json_ready(data_source[key])
         try:
             from src.db.session import async_session
             from src.modules.data.models import DataSource
@@ -1691,7 +1706,6 @@ class DataConnectivityService:
                 existing_result = await db.execute(existing_query)
                 existing = existing_result.scalar_one_or_none()
 
-                bronze = None
                 if existing:
                     # Update existing
                     existing.name = data_source["name"]
@@ -1707,6 +1721,8 @@ class DataConnectivityService:
                     existing.sample_data = data_source.get(
                         "sample_data"
                     )  # Save sample_data as JSON
+                    if data_source.get("connection_config") is not None:
+                        existing.connection_config = data_source["connection_config"]
                     from datetime import timezone
 
                     existing.updated_at = datetime.now(timezone.utc)
@@ -1780,6 +1796,7 @@ class DataConnectivityService:
                         sample_data=data_source.get(
                             "sample_data"
                         ),  # Save sample_data as JSON
+                        connection_config=data_source.get("connection_config"),
                         project_id=project_id,  # Required - validated above
                         organization_id=organization_id_uuid,
                         user_id=user_id_uuid,  # Track who uploaded this data source
@@ -1787,60 +1804,32 @@ class DataConnectivityService:
                     db.add(new_data_source)
                     # Flush now, in isolation, so the data_sources row is
                     # physically present before anything that FKs to it
-                    # (the onboarding session's staging object, the project
-                    # access grant) is added below. SQLAlchemy's unit of work
+                    # (the staged original upload, the project access grant)
+                    # is added below. SQLAlchemy's unit of work
                     # does NOT order cross-mapper inserts by FK dependency in
                     # this codebase (there are no relationship() mappings
                     # between DataSource and DataLakeObject/
-                    # DataOnboardingSession/DataSourceAccessGrant) -- verified
+                    # DataSourceAccessGrant) -- verified
                     # against live Postgres: adding the child rows to the
                     # same session as the parent, even after it, and flushing
                     # them together still raises ForeignKeyViolationError.
                     # Only a separate, earlier flush of the parent avoids it.
                     await db.flush()
 
-                    if is_ee_enabled() and organization_id_uuid:
-                        source_schema = data_source.get("schema")
-                        all_sheets = (
-                            source_schema.get("all_sheets")
-                            if isinstance(source_schema, dict)
-                            else None
-                        )
-                        bronze = await _try_write_bronze(
-                            db,
-                            str(data_source.get("source_file_path") or ""),
-                            organization_id_uuid,
-                            str(data_source.get("id")),
-                            available_sheets=list(all_sheets.keys())
-                            if isinstance(all_sheets, dict)
-                            else None,
-                        )
-                        if bronze:
-                            if isinstance(data_source.get("schema"), dict):
-                                data_source["schema"].setdefault("storage", {})
-                                if "onboarding_session_id" in bronze:
-                                    data_source["schema"]["storage"][
-                                        "onboarding"
-                                    ] = bronze
-                                else:
-                                    data_source["storage_uri"] = bronze["storage_uri"]
-                                    data_source["object_key"] = bronze["object_key"]
-                                    data_source["storage_format"] = "parquet"
-                                    data_source["schema"]["storage"]["bronze"] = bronze
-                                # new_data_source.schema is the SAME dict object
-                                # as data_source["schema"] (set by reference
-                                # above); the mutation above already updated it
-                                # in place. But new_data_source was already
-                                # flushed once, and a plain JSON column mutated
-                                # in place -- even via reassignment of the same
-                                # object -- is not picked up as a change by
-                                # SQLAlchemy's default (non-mutable) JSON
-                                # comparator, so the onboarding info would
-                                # silently never reach the database without
-                                # this explicit flag.
-                                from sqlalchemy.orm.attributes import flag_modified
+                    staged = await _stage_original_upload(
+                        db,
+                        str(data_source.get("source_file_path") or ""),
+                        organization_id_uuid,
+                        str(data_source.get("id")),
+                        data_source.get("original_filename"),
+                    )
+                    if staged and isinstance(data_source.get("schema"), dict):
+                        data_source["schema"].setdefault("storage", {})["original"] = staged
+                        # new_data_source.schema is this same dict, but a JSON column mutated
+                        # in place after a flush isn't seen as changed without this flag.
+                        from sqlalchemy.orm.attributes import flag_modified
 
-                                flag_modified(new_data_source, "schema")
+                        flag_modified(new_data_source, "schema")
 
                     if is_ee_enabled() and project_id:
                         try:
@@ -1868,25 +1857,6 @@ class DataConnectivityService:
                     )
 
                 await db.commit()
-
-                if bronze and bronze.get("onboarding_session_id"):
-                    # Only now -- after the data_sources row this onboarding
-                    # session's FK depends on is durably committed -- is it
-                    # safe to let the ARQ worker (a separate DB connection)
-                    # go looking for it.
-                    try:
-                        from src.shared.jobs.client import enqueue_job
-
-                        await enqueue_job(
-                            "profile_staged_asset",
-                            session_id=bronze["onboarding_session_id"],
-                        )
-                    except Exception as exc:  # noqa: BLE001 - never break upload
-                        logger.warning(
-                            "profiling job could not be enqueued for %s: %s",
-                            data_source.get("id"),
-                            exc,
-                        )
 
                 return True
 
@@ -1968,7 +1938,11 @@ class DataConnectivityService:
             user_id = options.get("user_id") if options else None
             project_id = options.get("project_id") if options else None
             organization_id = options.get("organization_id") if options else None
-            name = options.get("name") if options else original_filename
+            name = (
+                (options.get("name") if options else None)
+                or (options.get("datasource_name") if options else None)
+                or original_filename
+            )
 
             # Get file size from temp file
             file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
@@ -1977,6 +1951,7 @@ class DataConnectivityService:
             total_row_count = enhanced_schema.get("row_count")
             if total_row_count is None:
                 total_row_count = len(data)
+            link_cfg = options.get("connection_config") if options else None
             data_source = {
                 "id": options.get("source_id")
                 or f"file_{int(datetime.now().timestamp())}",
@@ -1991,6 +1966,16 @@ class DataConnectivityService:
                 "source_file_path": file_path,
                 "original_filename": original_filename,
                 "preview": data[:PREVIEW_ROWS] if len(data) > PREVIEW_ROWS else data,
+                "preview_data": data[:PREVIEW_ROWS] if len(data) > PREVIEW_ROWS else data,
+                "sheets": list(enhanced_schema.get("all_sheets", {}).keys())
+                if isinstance(enhanced_schema, dict) and enhanced_schema.get("all_sheets")
+                else [
+                    t.get("name")
+                    for t in (enhanced_schema.get("tables") or [])
+                    if isinstance(t, dict) and t.get("name")
+                ]
+                if isinstance(enhanced_schema, dict)
+                else [],
                 # Add fields expected by frontend
                 "uuid_filename": f"file_{int(datetime.now().timestamp())}_{original_filename}",
                 "content_type": f"application/{file_extension}",
@@ -1999,6 +1984,8 @@ class DataConnectivityService:
                 "project_id": project_id,  # Pass project_id from options (REQUIRED)
                 "organization_id": organization_id,
             }
+            if isinstance(link_cfg, dict) and link_cfg:
+                data_source["connection_config"] = dict(link_cfg)
 
             storage_meta = options.get("storage_meta") or {}
             if isinstance(storage_meta, dict) and storage_meta:
@@ -2063,6 +2050,7 @@ class DataConnectivityService:
             return {
                 "success": True,
                 "data_source": data_source,
+                "data_source_id": data_source.get("id"),
                 "data": data if options.get("include_data") else None,
             }
 
@@ -2133,10 +2121,10 @@ class DataConnectivityService:
                 stored_content_type = "application/x-parquet"
                 stored_size = parquet_payload["compressed_size_bytes"]
 
-            # Pre-generate source_id so it can be used in both the storage path and the data source record
+            # Pre-generate or reuse source_id so it can be used in both the storage path and the data source record
             import uuid as _uuid
 
-            source_id = str(_uuid.uuid4())
+            source_id = options.get("source_id") or str(_uuid.uuid4())
 
             storage_service = UploadDatasourceStorageService()
             object_key = await storage_service.store_file(
@@ -2252,7 +2240,7 @@ class DataConnectivityService:
 
         import uuid as _uuid
 
-        source_id = str(_uuid.uuid4())
+        source_id = options.get("source_id") or str(_uuid.uuid4())
 
         storage_service = UploadDatasourceStorageService()
         object_key = await storage_service.store_file(
@@ -3942,6 +3930,30 @@ class DataConnectivityService:
                             rows_for_schema = data[:100]
                     except Exception:
                         pass
+            from src.modules.data.services.api_stream_catalog import (
+                discover_api_streams,
+                infer_schema_tables_from_streams,
+            )
+
+            try:
+                tables = await discover_api_streams(config, sample_rows=50)
+            except Exception as exc:
+                logger.info("multi-stream API discover failed, falling back to single response: %s", exc)
+                tables = []
+            if tables:
+                schema = infer_schema_tables_from_streams(tables)
+                schema["connection_database"] = "default"
+                schema["last_updated"] = datetime.now().isoformat()
+                total_rows = sum(t.get("row_count") or 0 for t in tables)
+                logger.info(
+                    "API schema: %d stream(s) for %s", len(tables), data_source_id
+                )
+                return {
+                    "success": True,
+                    "schema": schema,
+                    "row_count": total_rows,
+                }
+
             if not rows_for_schema or not isinstance(rows_for_schema[0], dict):
                 return {
                     "success": False,

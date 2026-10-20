@@ -7,6 +7,19 @@ export async function GET(request: NextRequest, context: { params?: Promise<Reco
   return proxy(request, context, 'GET');
 }
 
+export async function PUT(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'PUT');
+}
+
+export async function PATCH(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'PATCH');
+}
+
+export async function DELETE(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
+  return proxy(request, context, 'DELETE');
+}
+
+
 export async function POST(request: NextRequest, context: { params?: Promise<Record<string, unknown>> | Record<string, unknown> }) {
   return proxy(request, context, 'POST');
 }
@@ -41,6 +54,7 @@ async function proxy(
     }
 
     const response = await fetch(backendUrl, init);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
     const responseContentType = response.headers.get('content-type') || '';
 
     if (!response.ok) {

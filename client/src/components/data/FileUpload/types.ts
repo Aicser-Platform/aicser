@@ -8,7 +8,6 @@ export class IFileUpload {
     schema?: unknown;
     preview?: unknown;
     uploadedAt?: string | null;
-    onboardingSessionId?: string | null;
 
     constructor(
         filename: string,

@@ -28,6 +28,7 @@ class Workbook(BaseModel):
     # The project folder it is filed in (src/modules/folders); unfiled when empty.
     folder_id = Column(UUID(as_uuid=True), ForeignKey("asset_folders.id", ondelete="SET NULL"), nullable=True, index=True)
     version = Column(Integer, nullable=False, server_default="1")
+    settings = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
 
     __table_args__ = (Index("ix_workbooks_scope", "organization_id", "project_id", "visibility"),)
 
@@ -72,3 +73,16 @@ class WorkbookComment(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (Index("ix_workbook_comments_wb", "workbook_id", "created_at"),)
+
+
+class WorkbookAuditEvent(Base):
+    __tablename__ = "workbook_audit_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workbook_id = Column(UUID(as_uuid=True), ForeignKey("workbooks.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), nullable=True)
+    action = Column(String(64), nullable=False)
+    event_metadata = Column("metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (Index("ix_workbook_audit_wb", "workbook_id", "created_at"),)

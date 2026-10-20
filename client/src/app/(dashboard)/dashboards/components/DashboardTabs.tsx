@@ -41,9 +41,6 @@ import { Dropdown, Button, Space, Modal, Input, Select, message, Spin, Divider, 
 import { TagOutlined } from '@ant-design/icons';
 import { useFolderStore } from '../stores/useFolderStore';
 import './DashboardTabs.css';
-import { AddBlockPopover } from './AddBlockPopover';
-import type { DashboardFilter } from '@/types/dashboard';
-import type { LayoutPreset } from './LayoutPresetsMenu';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
 import { SchedulePublishModals } from './SchedulePublishModals';
 import { DashboardShareMenu } from './DashboardShareMenu';
@@ -53,7 +50,6 @@ import { useAutomationManager } from '../hooks/useAutomationManager';
 import { exportDashboardCanvas, printDashboardOnly } from '../services/exportDashboardService';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { shouldApplyWatermark } from '@/utils/watermark';
-import { maxLayoutY } from '../utils/layoutSanitize';
 import { formatApiValidationError } from '@/utils/validationErrorMessage';
 import { getDashboardApiErrorMessage, isPublishOwnerError } from '../utils/dashboardApiErrors';
 import type { CollabUser } from '../utils/collaborationTypes';
@@ -86,12 +82,8 @@ const buildSharedDashboardUrl = (dashboardId?: string | null): string => {
 };
 
 type DashboardTabsProps = {
-  onAddBlock?: (type: string) => void;
-  onAddFilterPreset?: (filter: Partial<DashboardFilter>) => void;
-  onApplyLayoutPreset?: (preset: LayoutPreset) => void;
-  filtersPanelOpen?: boolean;
-  onOpenFilterPanel?: () => void;
-  onOpenFilterManager?: () => void;
+  /** Wraps the toolbar's Add button in the Add popover (blocks, saved charts, filters, layouts). */
+  renderAddButton?: (button: React.ReactElement) => React.ReactNode;
   activePageId?: string | null;
   pages?: DashboardPageItem[];
   runtimeFilters?: RuntimeFilter[];
@@ -113,12 +105,7 @@ type DashboardTabsProps = {
 };
 
 export const DashboardTabs: React.FC<DashboardTabsProps> = ({
-  onAddBlock,
-  onAddFilterPreset,
-  onApplyLayoutPreset,
-  filtersPanelOpen = false,
-  onOpenFilterPanel,
-  onOpenFilterManager,
+  renderAddButton,
   activePageId,
   pages = [],
   runtimeFilters = [],
@@ -154,10 +141,9 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     setActiveDashboardId,
     addDashboard,
     fetchDashboards,
-    addWidget: addWidgetToStore,
   } = useDashboardStore();
   const { currentProject, currentProjectId } = useProjectStore();
-  const { planType } = useSubscriptionStore();
+  const { planType, features, loading: featuresLoading } = useSubscriptionStore();
   const exportBranding = shouldApplyWatermark(planType);
 
   const activeDashboard = dashboards.find((d) => d.id === activeDashboardId);
@@ -497,35 +483,6 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
     } finally {
       setCreatingTemplateId(null);
     }
-  };
-
-  const handleSelectBlock = (type: string) => {
-    if (onAddBlock) {
-      onAddBlock(type);
-      return;
-    }
-    const instanceId = `w_${Date.now()}`;
-    const newWidget = {
-      id: instanceId,
-      chartType: type as any,
-      title: t('chart_title_by_type', { type: `${type.charAt(0).toUpperCase() + type.slice(1)}` }),
-      chartOptions: {
-        showLegend: true,
-        showDataLabel: false,
-        showGridline: true,
-        showAxis: true,
-      },
-    };
-
-    const layoutItem = {
-      i: instanceId,
-      x: 0,
-      y: maxLayoutY(layout),
-      w: 4,
-      h: 5,
-    };
-
-    addWidgetToStore(newWidget, layoutItem);
   };
 
   const handlePreviewDashboard = () => {
@@ -1316,19 +1273,9 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
           )}
 
           {isEditMode && (
-            <AddBlockPopover
-              onSelect={handleSelectBlock}
-              onAddFilterPreset={onAddFilterPreset}
-              onApplyLayoutPreset={onApplyLayoutPreset}
-              filtersPanelOpen={filtersPanelOpen}
-              onOpenFilterPanel={onOpenFilterPanel}
-              onOpenFilterManager={onOpenFilterManager}
-              widgets={widgets}
-            >
-              <Button type="primary" icon={<PlusOutlined />}>
-                {t('add')}
-              </Button>
-            </AddBlockPopover>
+            renderAddButton ? (
+              renderAddButton(<Button type="primary" icon={<PlusOutlined />}>{t('add')}</Button>)
+            ) : null
           )}
 
           {activeDashboardId && onCollabCommentsOpenChange ? (
@@ -1356,6 +1303,12 @@ export const DashboardTabs: React.FC<DashboardTabsProps> = ({
             runtimeFilters={runtimeFilters}
             isEditMode={isEditMode}
             isEnterprise={isEnterpriseEdition}
+            canSchedule={
+              isEnterpriseEdition &&
+              (featuresLoading || !features || Object.keys(features).length === 0
+                ? true
+                : Boolean(features.scheduled_reports))
+            }
             onPublish={openPublishModal}
             onScheduleDelivery={openAutoSendModal}
             onManageSchedules={openAutomationListModal}

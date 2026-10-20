@@ -62,7 +62,7 @@ async def test_unmanaged_sources_pass_through(monkeypatch):
         return None
 
     monkeypatch.setattr(query_routing, "load_managed_lakehouse", none)
-    for ds_type in ("database", "file"):
+    for ds_type in ("database", "file", "google_sheets", "enterprise_connector"):
         ds = {"id": "ds-1", "type": ds_type}
         assert await query_routing.resolve_query_source(ds) is ds
 

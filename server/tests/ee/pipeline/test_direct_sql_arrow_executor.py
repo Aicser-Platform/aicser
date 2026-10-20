@@ -38,7 +38,7 @@ def test_connection_uri_builds_a_postgres_url_from_fields():
     assert uri == "postgresql+psycopg2://reader:s3cr3t@db.internal:5432/analytics"
 
 
-def test_connection_uri_rejects_clickhouse():
+def test_connection_uri_supports_clickhouse_over_http():
     from src.modules.data.services.multi_engine_query_service import \
         DirectSQLArrowExecutor
 
@@ -46,8 +46,7 @@ def test_connection_uri_rejects_clickhouse():
         {"db_type": "clickhouse", "connection_info": {"host": "ch", "database": "d"}}
     )
 
-    with pytest.raises(NotImplementedError):
-        executor._connection_uri()
+    assert executor._connection_uri() == "clickhouse+http://default@ch:8123/d"
 
 
 def test_connection_uri_requires_host_and_database():
@@ -91,7 +90,7 @@ async def test_fetch_arrow_runs_the_query_and_returns_batches(monkeypatch):
 
     monkeypatch.setattr(
         "src.modules.data.services.direct_sql_pool.get_sync_engine",
-        lambda data_source, uri: FakeEngine(),
+        lambda data_source, uri, **_engine_kwargs: FakeEngine(),
     )
 
     batches = await executor.fetch_arrow("SELECT * FROM orders WHERE updated_at > :since", {"since": "x"})
@@ -130,7 +129,7 @@ async def test_fetch_arrow_returns_no_batches_for_an_empty_result(monkeypatch):
 
     monkeypatch.setattr(
         "src.modules.data.services.direct_sql_pool.get_sync_engine",
-        lambda data_source, uri: FakeEngine(),
+        lambda data_source, uri, **_engine_kwargs: FakeEngine(),
     )
 
     batches = await executor.fetch_arrow("SELECT * FROM orders", {})

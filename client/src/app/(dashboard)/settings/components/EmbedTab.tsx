@@ -25,6 +25,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
+import { FeatureGate } from '@/ee';
 import { EmbedDeveloperGuide } from './embed/EmbedDeveloperGuide';
 import { fetchApi, handleUpgradeRequiredError } from '@/utils/api';
 import { EmbedResourcePicker, useEmbedResources } from './embed/EmbedResourcePicker';
@@ -612,9 +613,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
                         ]}
                       />
                     </Form.Item>
-                    <Form.Item name="theme_hide_branding" valuePropName="checked">
-                      <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
-                    </Form.Item>
+                    <FeatureGate feature="embed_isv" inline>
+                      <Form.Item name="theme_hide_branding" valuePropName="checked">
+                        <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+                      </Form.Item>
+                    </FeatureGate>
                   </>
                 ),
               },
@@ -666,9 +669,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               ]}
             />
           </Form.Item>
-          <Form.Item name="theme_hide_branding" valuePropName="checked">
-            <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
-          </Form.Item>
+          <FeatureGate feature="embed_isv" inline>
+            <Form.Item name="theme_hide_branding" valuePropName="checked">
+              <Checkbox>{t('embed_theme_hide_branding')}</Checkbox>
+            </Form.Item>
+          </FeatureGate>
           <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
             <Space>
               <Button

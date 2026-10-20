@@ -20,13 +20,14 @@ type Props = {
   variant?: 'card' | 'detail';
   maxWidgets?: number;
   onReady?: (info: { widgetCount: number }) => void;
+  fit?: 'stage' | 'screen';
 };
 
 /**
  * Read-only dashboard renderer for /feed — same data path as shared/embed viewers
  * (layout, pages, filters, batch refresh) instead of ad-hoc WidgetPreview grids.
  */
-export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidgets, onReady }: Props) {
+export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidgets, onReady, fit = 'stage' }: Props) {
   const t = useTranslations('feed');
   const viewer = useDashboardViewerState(dashboardId, {
     mode: 'auth',
@@ -138,6 +139,7 @@ export function FeedDashboardViewer({ dashboardId, variant = 'detail', maxWidget
         layoutMode="auto"
         hideInteractionHint
         eagerMount
+        fit={variant === 'detail' ? fit : 'none'}
       />
       </DashboardPaletteProvider>
     </div>

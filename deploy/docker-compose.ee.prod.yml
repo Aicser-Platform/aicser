@@ -136,6 +136,7 @@ services:
     volumes:
       - ../server/alembic/versions:/app/alembic/versions
       - server_ee_prod_uploads:/app/uploads
+      - lake_ee_prod_data:/app/lake
     ports:
       - "8000:8000"
     depends_on:
@@ -171,6 +172,9 @@ services:
     container_name: aiser-worker-ee-prod
     restart: unless-stopped
     working_dir: /app
+    volumes:
+      - server_ee_prod_uploads:/app/uploads
+      - lake_ee_prod_data:/app/lake
     environment:
       AISER_EDITION: enterprise
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aiser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aiser}
@@ -238,6 +242,7 @@ volumes:
   postgres_ee_prod_data:
   redis_ee_prod_data:
   server_ee_prod_uploads:
+  lake_ee_prod_data:
 
 networks:
   default:

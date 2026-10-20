@@ -1,0 +1,109 @@
+/* Folding side panels: the same header toggle and folded rail in every workspace. */
+.side-panel {
+  width: var(--side-panel-width, 260px);
+  min-width: 0;
+  transition: width 0.18s ease;
+}
+
+/* Two classes: the folded rail is the same width everywhere, whatever the page's panel class sets. */
+.side-panel.side-panel--collapsed {
+  width: 40px;
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: hidden;
+}
+
+.side-panel__head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 28px;
+  margin-bottom: 4px;
+}
+
+.side-panel__title {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-panel__title-icon {
+  color: var(--ant-color-primary);
+}
+
+.side-panel__extra {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+}
+
+.side-panel__toggle {
+  flex-shrink: 0;
+  color: var(--ant-color-text-tertiary);
+}
+
+.side-panel__toggle:hover {
+  color: var(--ant-color-primary);
+}
+
+.side-panel-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  width: 40px;
+  height: 100%;
+  min-height: 160px;
+  padding: 8px 0;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.side-panel-rail__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--ant-color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.side-panel-rail__body:hover {
+  color: var(--ant-color-primary);
+}
+
+.side-panel-rail__body:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+}
+
+.side-panel-rail__icon {
+  font-size: 16px;
+  color: var(--ant-color-primary);
+}
+
+.side-panel-rail__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+/* A search box in place of the panel title */
+.side-panel__search { flex: 1; min-width: 0; }

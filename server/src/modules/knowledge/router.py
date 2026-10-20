@@ -285,7 +285,7 @@ async def create_knowledge_base(
         try:
             import importlib
 
-            _lib_service = importlib.import_module("ee.modules.knowledge.library_service")
+            _lib_service = importlib.import_module("src.enterprise.modules.knowledge.library_service")
             await _lib_service.KnowledgeLibraryService.ensure_library_for_data_source(ds_id, user_id)
         except Exception:
             logger.warning("Knowledge library wrapper creation skipped for %s", ds_id, exc_info=True)

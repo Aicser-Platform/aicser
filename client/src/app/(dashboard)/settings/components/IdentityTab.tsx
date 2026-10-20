@@ -119,35 +119,26 @@ export default function IdentityTab(_: TabComponentProps) {
 
   const isKeycloak = sso?.provider === 'keycloak';
   const keycloakGroups = sso?.groups_by_source?.keycloak ?? 0;
+  const signInLabel = isKeycloak
+    ? t('sso_provider_managed')
+    : sso?.provider
+      ? t('sso_provider_sso')
+      : t('sso_unknown');
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      {/* How people sign in, and how groups arrive. Keycloak sends groups in the sign-in
-          token (no SCIM); Okta / Entra and similar push them over SCIM (below). */}
       <Card size="small" title={t('sso_title')}>
         {sso ? (
           <Space direction="vertical" size={6} style={{ width: '100%' }}>
             <Text>
-              {t('sso_provider')}{' '}
-              <Tag color="blue">{isKeycloak ? 'Keycloak' : sso.provider === 'supabase' ? 'Supabase' : sso.provider}</Tag>
-              {isKeycloak && sso.keycloak.host ? (
-                <Text type="secondary">
-                  {sso.keycloak.host}
-                  {sso.keycloak.realm ? ` · ${t('sso_realm')} ${sso.keycloak.realm}` : ''}
-                </Text>
-              ) : null}
+              {t('sso_provider')}: <Text strong>{signInLabel}</Text>
             </Text>
             {isKeycloak ? (
-              <>
-                <Text>
-                  {keycloakGroups > 0
-                    ? t('sso_keycloak_groups_on', { count: keycloakGroups })
-                    : t('sso_keycloak_groups_waiting')}
-                </Text>
-                <Paragraph type="secondary" style={{ margin: 0 }}>
-                  {t('sso_keycloak_setup', { client: sso.keycloak.client_id || 'aiser' })}
-                </Paragraph>
-              </>
+              <Text type="secondary">
+                {keycloakGroups > 0
+                  ? t('sso_keycloak_groups_on', { count: keycloakGroups })
+                  : t('sso_keycloak_groups_waiting')}
+              </Text>
             ) : (
               <Paragraph type="secondary" style={{ margin: 0 }}>
                 {t('sso_non_keycloak')}

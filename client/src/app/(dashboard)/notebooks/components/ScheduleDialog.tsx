@@ -13,23 +13,38 @@ const { Text } = Typography;
 type Frequency = 'hourly' | 'daily' | 'weekdays' | 'weekly';
 export type Schedule = {
   enabled: boolean; frequency: Frequency; hour: number; minute: number; weekday: number; timezone: string;
-  notify: 'failure' | 'always' | 'never'; timeout_s: number; next_run_at?: string | null; last_run_at?: string | null; last_status?: string | null;
+  notify: 'failure' | 'always' | 'never'; timeout_s: number;
+  run_parameters?: Record<string, unknown>;
+  next_run_at?: string | null; last_run_at?: string | null; last_status?: string | null;
 };
 export type RunSummary = {
   id: string; trigger: 'schedule' | 'manual'; status: 'queued' | 'running' | 'ok' | 'failed'; error?: string | null;
   duration_ms?: number | null; created_at?: string | null; finished_at?: string | null;
 };
 
-const base = (id: string) => `/api/notebook-runs/${encodeURIComponent(id)}`;
-
-export const notebookRuns = {
-  schedule: (id: string) => fetchApi<{ schedule: Schedule | null; enabled: boolean }>(`${base(id)}/schedule`),
-  save: (id: string, s: Schedule) => fetchApi<{ schedule: Schedule; enabled: boolean }>(`${base(id)}/schedule`, { method: 'PUT', body: JSON.stringify(s) }),
-  remove: (id: string) => fetchApi<void>(`${base(id)}/schedule`, { method: 'DELETE' }),
-  runNow: (id: string) => fetchApi<RunSummary>(`${base(id)}/run`, { method: 'POST' }),
-  runs: (id: string) => fetchApi<{ items: RunSummary[] }>(`${base(id)}/runs`),
-  run: (id: string, runId: string) => fetchApi<RunSummary & { outputs: Record<string, CellOutput> }>(`${base(id)}/runs/${encodeURIComponent(runId)}`),
+export type DocumentRunsApi = {
+  schedule: (id: string) => Promise<{ schedule: Schedule | null; enabled: boolean }>;
+  save: (id: string, s: Schedule) => Promise<{ schedule: Schedule; enabled: boolean }>;
+  remove: (id: string) => Promise<void>;
+  runNow: (id: string) => Promise<RunSummary>;
+  runs: (id: string) => Promise<{ items: RunSummary[] }>;
+  run: (id: string, runId: string) => Promise<RunSummary & { outputs: Record<string, unknown> }>;
 };
+
+function createRunsApi(apiPrefix: 'notebook-runs' | 'workbook-runs'): DocumentRunsApi {
+  const base = (id: string) => `/api/${apiPrefix}/${encodeURIComponent(id)}`;
+  return {
+    schedule: (id) => fetchApi(`${base(id)}/schedule`),
+    save: (id, s) => fetchApi(`${base(id)}/schedule`, { method: 'PUT', body: JSON.stringify(s) }),
+    remove: (id) => fetchApi(`${base(id)}/schedule`, { method: 'DELETE' }),
+    runNow: (id) => fetchApi(`${base(id)}/run`, { method: 'POST' }),
+    runs: (id) => fetchApi(`${base(id)}/runs`),
+    run: (id, runId) => fetchApi(`${base(id)}/runs/${encodeURIComponent(runId)}`),
+  };
+}
+
+export const notebookRuns = createRunsApi('notebook-runs');
+export const workbookRuns = createRunsApi('workbook-runs');
 
 function browserZone(): string {
   try {
@@ -52,15 +67,24 @@ function zones(): string[] {
  * access in a sandbox on the server; results stay with each run and can be shown in the notebook.
  */
 export function ScheduleDialog({
-  open, notebookId, canEdit, onClose, onShowRun,
+  open, documentId, notebookId, canEdit, onClose, onShowRun, defaultRunParameters,
+  runsApi = notebookRuns,
+  translationNamespace = 'notebooks',
+  explainKey = 'schedule_explain',
 }: {
   open: boolean;
-  notebookId: string;
+  documentId?: string;
+  notebookId?: string;
   canEdit: boolean;
   onClose: () => void;
   onShowRun: (runId: string) => void;
+  defaultRunParameters?: Record<string, unknown>;
+  runsApi?: DocumentRunsApi;
+  translationNamespace?: 'notebooks' | 'sheets';
+  explainKey?: string;
 }) {
-  const t = useTranslations('notebooks');
+  const docId = documentId ?? notebookId ?? '';
+  const t = useTranslations(translationNamespace);
   const format = useFormatter();
   const { message } = App.useApp();
   const [loading, setLoading] = useState(true);
@@ -73,7 +97,7 @@ export function ScheduleDialog({
 
   const load = useCallback(async () => {
     try {
-      const [s, r] = await Promise.all([notebookRuns.schedule(notebookId), notebookRuns.runs(notebookId)]);
+      const [s, r] = await Promise.all([runsApi.schedule(docId), runsApi.runs(docId)]);
       setEnabledOnServer(s.enabled);
       setSaved(s.schedule);
       setDraft(s.schedule ?? { enabled: true, frequency: 'daily', hour: 7, minute: 0, weekday: 0, timezone: browserZone(), notify: 'failure', timeout_s: 600 });
@@ -83,7 +107,7 @@ export function ScheduleDialog({
     } finally {
       setLoading(false);
     }
-  }, [message, notebookId, t]);
+  }, [docId, message, runsApi, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,10 +120,10 @@ export function ScheduleDialog({
   useEffect(() => {
     if (!open || !active) return;
     const timer = window.setInterval(() => {
-      notebookRuns.runs(notebookId).then((r) => setRuns(r.items)).catch(() => undefined);
+      runsApi.runs(docId).then((r) => setRuns(r.items)).catch(() => undefined);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [open, active, notebookId]);
+  }, [docId, open, active, runsApi]);
 
   const patch = (p: Partial<Schedule>) => setDraft((d) => (d ? { ...d, ...p } : d));
 
@@ -107,7 +131,7 @@ export function ScheduleDialog({
     if (!draft) return;
     setBusy('save');
     try {
-      const res = await notebookRuns.save(notebookId, draft);
+      const res = await runsApi.save(docId, { ...draft, run_parameters: defaultRunParameters ?? draft.run_parameters ?? {} });
       setSaved(res.schedule);
       setDraft(res.schedule);
       message.success(res.schedule.enabled ? t('schedule_saved') : t('schedule_paused'));
@@ -121,7 +145,7 @@ export function ScheduleDialog({
   const runNow = async () => {
     setBusy('run');
     try {
-      const run = await notebookRuns.runNow(notebookId);
+      const run = await runsApi.runNow(docId);
       setRuns((prev) => [run, ...prev.filter((r) => r.id !== run.id)]);
       message.info(t('schedule_run_started'));
     } catch (err) {
@@ -145,7 +169,7 @@ export function ScheduleDialog({
       {loading || !draft ? <Spin /> : (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           {!enabledOnServer ? <Alert type="info" showIcon message={t('schedule_not_set_up')} /> : null}
-          <Text type="secondary">{t('schedule_explain')}</Text>
+          <Text type="secondary">{t(explainKey)}</Text>
           {canEdit ? (
             <>
               <Space wrap align="center">

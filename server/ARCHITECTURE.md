@@ -600,3 +600,158 @@ execute_query / federated extract
 
 Enforcement is **caller-scoped SQL rewrite** from Aicser RLS policies (`data_source_rls_*`), not `SET ROLE` / session Postgres RLS. That covers DuckDB and API paths where database RLS cannot apply. Native warehouse `SET ROLE` is optional and additive only when a customer warehouse already relies on DB roles.
 
+### Lakehouse object storage
+
+Pipeline **staging / bronze / quarantine** keys (`orgs/{org_id}/…`) use the same backend as **file uploads** (`get_object_store_async` ↔ Settings → Storage or `STORAGE_BACKEND` / `S3_*`). **`STORAGE_BACKEND=s3`**: uploads and medallion objects share one bucket (worker and API need no shared disk). **`postgresql`** (default Docker EE): uploads in Postgres; lake files on local disk at `LAKE_ROOT` — Compose must mount the same `lake_ee_data` volume on **server**, **worker**, and **warehouse-compute**. Onboarding copies upload bytes into staging via `UploadDatasourceStorageService`, not `open(file_path)` alone.
+
+### Usage, billing, and deployment surfaces
+
+Three **deployment products** share one usage API on Enterprise but expose different UI:
+
+| Product | Detection | Billing UI | Usage UI |
+| --- | --- | --- | --- |
+| **Aicser Cloud (SaaS)** | `AISER_DEPLOYMENT_MODE=saas`, EE | Settings → **Billing** (Stripe/KHQR) | Settings → **Usage & analytics** + profile menu |
+| **EE self-host** | `self_host` + EE license | Settings → **License** (no Stripe tab) | Same **Usage** tab (local `organization_usage` + `llm_request_summary`) |
+| **CE self-host** | CE edition | None | Settings → **Usage** (footprint + BYOK copy); `GET /pricing/usage` |
+
+`GET /organizations/workspace-config` returns `edition`, `billing_surface` (`hosted` \| `license` \| `none`), and `usage_analytics`. **All org members** with `org:view` can open Usage; cross-user spend breakdown is scoped to org owner/admin (same RBAC as billing usage breakdown).
+
+**Semantic / KPI / catalog** are separate from usage: governed metrics live in the semantic layer; org KPI definitions are Ask-only memory (`organization_kpi_definitions`); catalog is read-only discovery.
+
+### Pipeline landing (configure once, choose per pipeline)
+
+| Configure once (admin) | API / UI | Used for |
+| --- | --- | --- |
+| **Workspace storage** | Settings → Integrations → Platform → **Workspace storage** (`admin/runtime-config/storage`) | Uploads, default Bronze, pipelines on “Workspace” |
+| **Org lake buckets** | Data → connect S3 lake (`saved_s3_destinations`) | Pipelines on “Your bucket” — Silver & Gold always follow that bucket |
+| **Warehouse export DB** | Data → Postgres/MySQL/ClickHouse/SQL Server | Gold tables pushed to customer SQL warehouse (not medallion files) |
+
+Pipeline wizard **Destination** only selects among registered targets plus one optional switch: **Bronze in org bucket** (when Silver/Gold use that bucket). There is no separate per-layer destination picker in v1 — splitting Silver/Gold across different roots would be a distinct advanced SKU/workflow.
+
+`GET /pipelines/storage` mirrors workspace + saved destinations (includes org layout + S3 health). `GET/PATCH /pipelines/lakehouse-settings` sets org `object_prefix_template`. Per-pipeline `movement_policy` is stored in `data_pipelines.options` and edited on pipeline detail → Movement policy.
+
+### Lakehouse naming (storage · compute · movement)
+
+**Canonical UI:** [`/lakehouse`](../../client/src/app/(dashboard)/lakehouse/page.tsx) (alias `/warehouse`). Product map: [server/docs/lakehouse-product.md](docs/lakehouse-product.md).
+
+| Name in UI | Google analogy | What it is | What it is **not** |
+| --- | --- | --- | --- |
+| **Lakehouse → Storage** | Cloud Storage buckets | S3 roots, medallion object paths, Iceberg warehouse URI | SQL engines, ingest jobs |
+| **Lakehouse → Compute** | BigQuery slots / reservations | `warehouse-compute`, embedded/pool/Trino profiles, query history | Bucket credentials, pipeline transforms |
+| **Pipelines** | Dataflow / transfer | Bronze→Silver→Gold movement + schedule | A second storage admin UI |
+| **Warehouse export** | Federated query to Cloud SQL | Gold **tables** in customer Postgres/MySQL/ClickHouse/SQL Server | Iceberg files |
+| **Data** | Connection catalog | OLTP, files, APIs, export DBs, lake bucket registration | Compute scaling |
+| **Semantic / Catalog / RLS** | Dataplex + policy tags (split) | Meaning, discovery, row/column access at **read** time | Movement retention (pipeline `movement_policy`; not access control) |
+
+API paths remain `GET /api/warehouse/*` and `warehouse_*` env vars until a coordinated rename.
+
+### Regulated enterprises (governance & reporting)
+
+Banks and similar customers need **access**, **official definitions**, **lineage**, and **audit evidence** — not a fifth copy of policy UI on the lake.
+
+| Need | Where in Aicser | Notes |
+| --- | --- | --- |
+| Entitlements / RLS | Data source row & column policies; `QueryIdentity` + `inject_predicates` | Applies to lake Gold and exported Gold DBs |
+| Reporting SSOT | Semantic layer (certified metrics) | KPI definitions in Settings are Ask memory only |
+| Lineage | Catalog; pipeline OpenLineage; transform column lineage | Not a full enterprise data catalog replacement |
+| Movement / retention | Pipeline movement policy; org lake layout | Worker retention enforcement rolling out |
+| Evidence | Settings audit log; AI audit log (Govern); Lakehouse query history | SIEM forwarder optional |
+| Privacy | Column rules; PII policy on schema | Env-gated `AISER_PII_*` |
+
+Customer-facing hub: **Lakehouse → Governance**. Playbook: [server/docs/regulated-enterprise-governance.md](docs/regulated-enterprise-governance.md).
+
+### Pipeline lake vs warehouse export vs warehouse compute
+
+Three **runtime** roles (see table above for UI consolidation):
+
+| Surface | User entry | Runtime role |
+| --- | --- | --- |
+| **Pipeline lake storage** | Pipeline wizard destination **S3 lake (Iceberg)**; optional **saved S3** (`destination_asset_id`, `bronze_landing` platform vs lakehouse) | Medallion **Bronze / Silver / Gold** object paths on workspace or customer bucket (`load/destination.py`, `ingest/bronze_writer.py`) |
+| **Warehouse export** | Pipeline wizard **Postgres / MySQL / ClickHouse / SQL Server** destination | **Load Gold tables** into customer’s existing SQL warehouse (JDBC/BI), not medallion file layout |
+| **Warehouse compute** | EE `/lakehouse` (Compute tab) + `warehouse-compute` service | **Query** Gold (and federation) on the lake; scale replicas separately from ingest |
+
+**Data → warehouse** object-storage connections (`iceberg`, `s3_parquet`, etc.) register buckets used as **pipeline lake roots** and optional Ask/federation targets. They are **not** the same as connecting Postgres/MySQL for NL→SQL, and they are **not** a substitute for **warehouse compute** when users need heavy SQL over Iceberg.
+
+**Ask / charts execution** prefers lake Gold when the pipeline is ready (`QueryIdentity` + federation); export destinations are for systems that must read Gold inside the customer’s warehouse engine.
+
+### Medallion object layout (S3 + Iceberg)
+
+| Concern | Mechanism | Configurable? |
+| --- | --- | --- |
+| **Iceberg warehouse root** | `S3Target.root` from workspace storage or saved org bucket (`load/destination.py`) | Bucket + prefix per connection |
+| **Iceberg namespace** | `catalog.namespace_for(org, layer)` → `org_<hex>_<layer>` | Catalog contract, not path strings |
+| **Bronze Parquet keys** | `bronze_writer.bronze_key` under `orgs/{org_id}/bronze/…` (optional `bronze_landing` in customer bucket) | `bronze_landing` per pipeline |
+| **Object prefix template** | `load/path_layout.py` — default `orgs/{org_id}/{layer}/` | Org `PATCH /pipelines/lakehouse-settings`, platform `lake_object_prefix_template`, env `AISER_LAKE_OBJECT_PREFIX_TEMPLATE` |
+
+Common industry patterns (domain/`env` segment, `raw|curated|analytics`, Hive `db/table`) should map via the template — not hard-coded branches in writers. **Gaps (roadmap):** legal hold, bucket IAM audit UI, automated retention worker enforcement, regulatory report packs. **Done:** storage health, Governance hub tab, movement policy storage — see `server/docs/lakehouse-product.md`.
+
+### Context plane (structured + unstructured intelligence)
+
+Three stores, already wired in EE Ask:
+
+| Store | Contents | Services |
+| --- | --- | --- |
+| **Structural** | Schema index, semantic metrics/dimensions, joins, NL→SQL patterns | `schema_retrieval_service`, `semantic_context_service`, `query_patterns` |
+| **Documental** | KB chunks, citations | `RAGRetrievalService`, `document_chunks` (+ optional pgvector) |
+| **Relational graph** | Pointer-only ontology + pipeline lineage | `ontology_*` tables, optional **Apache AGE** expand (`age_backend.py` — never required) |
+
+**Memory tiers:** turn/session (`AiserWorkflowState`, `context_pack`), short-term (query/plan cache in orchestrator), long-term (`query_patterns`, KPI memory, `SmartContextEngineer`), team/org (`POST /ontology/backfill`, auto after pipeline deploy). Canonical map: `server/ee/modules/context_plane/`.
+
+**Hybrid Ask:** RAG uses Schema RAG on the **structured** `data_source_id`, ontology expand boosts linked chunks, then `graph_retrieve` → NL2SQL. API sources support **`connection_config.streams[]`** and optional **`openapi_url`** for multi-endpoint catalogs (`api_stream_catalog.py`).
+
+### Semantic layer (governed SSOT)
+
+**Product name:** Semantic layer (not “Definitions” alone — that term is used in copy as *business definitions*: metrics, dimensions, joins). **Single SSOT:** `semantic_metrics` / `semantic_dimensions` plus `data_model_relationships` (table-level joins; optional `to_data_source_id` for cross-source). **Workbench:** project hub `/semantic-layer` → per source `/data/sources/{id}?tab=semantic` (Schema tab = physical tables; Semantic tab = business model). **Dashboards → Data modeling** is the same relationship API and graph components (`DataModelRelationships`, `ERDCanvas`) scoped to the dashboard’s selected source(s) — not a second model store; full metrics/certification stay in the semantic workbench. **Catalog** read-only via `GET /api/semantic/context`; **pipelines** publish draft measures (`semantic_publish.py`) and wizard joins (`relationship_publish.py`). Ask/SQL preview use `get_unified_semantic_context` (metrics, dimensions, `join_paths`, `prompt_hint`). **Direction:** project-wide ERD across all model-eligible sources in the project (cross-source joins already persistable); dashboard modeling becomes a thin embed of that view.
+
+### Replication-log CDC (log_cdc)
+
+Postgres WAL capture uses a Debezium-compatible inbox (`POST /api/pipelines/cdc/inbox`), scheduled ingest, and Silver **merge** that applies `_op = d` tombstones before upsert. Setup helpers and runbooks: [server/docs/log-cdc-postgres.md](docs/log-cdc-postgres.md).
+
+### Batch vs near-real-time ingest (product contract)
+
+| Mode | User-facing name | Mechanism | Typical use |
+| --- | --- | --- | --- |
+| `snapshot` / full refresh | Scheduled batch | Cron (or manual) reload of selected tables into Bronze → Silver/Gold | Small/medium tables, files, “must match source deletes” |
+| `incremental` | Scheduled incremental | Watermark column (`updated_at`, etc.); each run pulls rows newer than last checkpoint | Large OLTP without hammering the source |
+| `cdc` | Incremental + merge | Same watermark poll; Silver merge by primary key (soft deletes in source may remain in lake until full refresh) | Fact tables with stable keys |
+| `log_cdc` | Near real-time | External Debezium (or compatible) → CDC inbox API → scheduled micro-batch ingest | Postgres WAL, hard deletes, lower latency than cron-only |
+
+**Not** a managed streaming bus (Kafka/Flink) inside CE/EE: “real-time” is **inbox + frequent ingest jobs**. Scale-out is **worker/warehouse-compute** replicas, object storage (S3) for medallion files, and **incremental** modes to bound each run.
+
+### Full load → incremental (coverage contract)
+
+1. **First full refresh** lands the whole table in Bronze and supersedes prior Bronze snapshots for that table. Silver dedupe/merge uses **primary key** + **cursor** from the wizard.
+2. **Watermark state** (`data_cdc_states`, connector `watermark`) advances on each incremental run and is **also baselined from the max cursor value after a full refresh** when a watermark column is configured — so switching to incremental after a full load does not reuse a stale high-water mark from an older era.
+3. **Re-baseline**: `POST /api/pipelines/{id}/sync-position/reset` clears stored positions; the next incremental run reads from an empty checkpoint (full pull once, then watermark resumes). Use after a deliberate full reload or source backfill.
+4. **Hard deletes** in the source are not removed by watermark-only incremental; schedule periodic full refresh or use `log_cdc`.
+5. **Column selection** — SQL sources project at extract (`SELECT` subset + aliases on Bronze). **Files, sheets, S3 objects, REST/API, and NoSQL collections** project in Arrow after read (same `stream_selected_columns` / `stream_column_aliases` on `pipeline.options`). Silver compile still respects the same field map for transforms.
+6. **Source kinds** — `pipeline_capabilities` + `source_profile` route discover/ingest/preview: **SQL** warehouses (Postgres, MySQL, SQL Server, ClickHouse HTTP, Snowflake, BigQuery, Redshift, Databricks, Oracle, Trino, Athena via `warehouse_urls` + `DirectSQLArrowExecutor`), **snapshot** (files, Google Sheets, S3/GCS/Azure prefixes, universal `api` sources, MongoDB collections), **query-only** (cube, knowledge_base). `GET /api/connectors/capabilities?data_source_id=` mirrors wizard gating.
+
+### Scale (how we handle growth)
+
+- **Extract**: Per-run row limits, incremental watermarks, OLTP guidance (replica, avoid full scan on prod). Bronze landing can be ingest-only (wizard) before heavy transforms.
+- **Storage**: Medallion objects on `LAKE_ROOT` or S3; Iceberg loader for Gold; shared volume required on multi-container Docker when not on S3.
+- **Compute**: ARQ worker runs pipeline jobs; `warehouse-compute` for heavy SQL; DuckDB/federation for Ask/charts on lake when ready (see execution path above).
+- **Concurrency**: Pipeline runs are job-scoped; multi-query fan-out uses semaphores and budgets (separate from ingest).
+
+### Data quality (DQ) in pipelines
+
+- **Wizard / Silver YAML**: Type casts, filters, dedupe, validate steps; **quarantine** routes bad rows to a quarantine prefix without failing the whole sync (`quarantine_bad_rows`).
+- **PII**: Optional masking step before Silver persist (hash/redact) in the transformation workbook.
+- **Semantic layer**: Draft metrics from pipelines; **certification** in semantic workbench before treating numbers as official for Ask/dashboards.
+- **Gaps vs full DQ vendors** (Great Expectations, Monte Carlo): No separate DQ SLA product yet — expectations are embedded in transform recipes and quarantine; observability is run history + table last_error on overview.
+
+### Vendor checklist (honest positioning)
+
+| Criterion | Aicser today | Direction |
+| --- | --- | --- |
+| Connectors | Universal sources + pipeline parity (SQL, files, S3, REST, Mongo snapshot) | Kafka/ES streaming ingest; deeper multi-stream API configs |
+| Batch | Cron + manual | Same; clearer “schedule” copy in UI |
+| Real-time | `log_cdc` + inbox | Documented runbook; not sub-second streaming |
+| Scale | Workers + S3 lake + incremental | Autoscale workers; partition-aware extracts |
+| DQ | Quarantine, validate steps, PII mask | Optional expectation library on Gold tables |
+| Schema / field map | PK, cursor, include/rename/hash checklist, source preview, drift check | Bronze-only projection for files; DQ monitoring product |
+| Lineage | OpenLineage export on pipeline detail | Catalog + column lineage surfaces |
+| Security | Encrypted credentials, RLS on query path, tenant isolation | SCIM/RBAC (EE), audit on semantic certify |
+| Cost control | Run stats, row limits, lake routing for Ask | Per-org compute quotas (EE hooks) |
+

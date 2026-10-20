@@ -238,7 +238,7 @@ const FeedDetailPage: React.FC = () => {
   return (
     <DashboardPageShell>
       <main className="feed-detail-page flex w-full min-w-0 flex-col gap-5">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center justify-between gap-2">
           <Button
             type="text"
             size="small"
@@ -246,9 +246,9 @@ const FeedDetailPage: React.FC = () => {
             onClick={() => router.push('/feed')}
             aria-label={t('back_to_feed')}
           >
-            {t('back_to_feed')}
+            <span className="hidden sm:inline">{t('back_to_feed')}</span>
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {canOpenAsset && isPostOwner && isDashboard ? (
               <Button
                 type="primary"
@@ -298,7 +298,7 @@ const FeedDetailPage: React.FC = () => {
           ) : (
             <div className="mt-3">
               <FeedPostContent item={item} variant="detail" showTitle={false} />
-              <div className="mt-3 -mx-4">
+              <div className="mt-3">
                 <FeedImages images={item.images} />
               </div>
             </div>
@@ -327,7 +327,7 @@ const FeedDetailPage: React.FC = () => {
             </div>
             <div className="feed-detail-viz-canvas bg-[var(--ant-color-bg-container)]">
               {useFullViewer ? (
-                <FeedPostViewer item={item} variant="detail" />
+                <FeedPostViewer item={item} variant="detail" fit={isFullscreen ? 'screen' : 'stage'} />
               ) : (
                 <div className="min-h-[360px] overflow-hidden bg-[var(--ant-color-bg-container)]">
                   <FeedPreviewVisual item={item} />

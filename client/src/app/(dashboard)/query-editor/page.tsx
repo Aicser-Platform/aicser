@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingScreen from '@/components/LoadingScreen/LoadingScreen';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
-import { Card, Typography, Alert, Space, Button, Tooltip, Tag, Popover, message } from 'antd';
+import { Typography, Space, Button, Tag, Popover, Tooltip, message } from 'antd';
 import { useTranslations } from 'next-intl';
 import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { NarrowViewportNotice } from '@/components/layout/NarrowViewportNotice';
@@ -21,7 +21,6 @@ import {
   BulbOutlined,
   PlayCircleOutlined,
   DatabaseOutlined,
-  InfoCircleOutlined,
   CodeOutlined,
   ShareAltOutlined,
   EyeOutlined,
@@ -38,6 +37,8 @@ import {
 } from '@/utils/queryEditorBridge';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDataSources } from '@/hooks/useDataSources';
+import { useDataSourceStore } from '@/stores/useDataSourceStore';
+import { getChatHref, isEnterpriseEdition } from '@/utils/appPaths';
 
 /* Lazy load Monaco editor for faster initial page load */
 function EditorLoadingPlaceholder() {
@@ -125,7 +126,21 @@ const generateQueryTemplates = (
           ? `SELECT a.*, b.name FROM ${fullTableName} a JOIN ${schemaPrefix}other_table b ON a.id = b.id LIMIT ${DEFAULT_QUERY_LIMIT};`
           : `SELECT a.*, b.name FROM table_a a JOIN table_b b ON a.id = b.id LIMIT ${DEFAULT_QUERY_LIMIT};`),
       icon: <LinkOutlined />
-    }
+    },
+    ...(isFileSource ? [] : [
+      {
+        name: t('tpl_procedure'),
+        description: t('tpl_procedure_desc'),
+        sql: `-- Turn on "Routines (write)" in the toolbar, then run.\nCREATE OR REPLACE PROCEDURE ${schemaPrefix || ''}refresh_example()\nLANGUAGE sql\nAS $$\n  -- your logic\n  SELECT 1;\n$$;`,
+        icon: <CodeOutlined />
+      },
+      {
+        name: t('tpl_trigger'),
+        description: t('tpl_trigger_desc'),
+        sql: `-- Turn on "Routines (write)" in the toolbar, then run.\nCREATE OR REPLACE FUNCTION ${schemaPrefix || ''}audit_row()\nRETURNS trigger AS $$\nBEGIN\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\nCREATE TRIGGER example_audit\nAFTER INSERT ON ${fullTableName}\nFOR EACH ROW EXECUTE PROCEDURE ${schemaPrefix || ''}audit_row();`,
+        icon: <CodeOutlined />
+      },
+    ]),
   ];
 };
 
@@ -145,17 +160,8 @@ export default function QueryEditorPage() {
     undefined;
   const { isDarkMode } = useThemeMode();
   const { dataSources } = useDataSources();
+  const selectedDataSourceId = useDataSourceStore((s) => s.selectedId);
   const [publishOpen, setPublishOpen] = useState(false);
-  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        return window.localStorage.getItem('qe_welcome_dismissed') !== 'true';
-      } catch {
-        return true;
-      }
-    }
-    return true;
-  });
   const [selectedTableName, setSelectedTableName] = useState<string | undefined>();
   const [selectedSchemaName, setSelectedSchemaName] = useState<string | undefined>();
 
@@ -188,14 +194,6 @@ export default function QueryEditorPage() {
     }
   }, [isAuthenticated, authLoading, router]);
 
-  const handleDismissWelcome = () => {
-    setShowWelcome(false);
-    try {
-      window.localStorage.setItem('qe_welcome_dismissed', 'true');
-    } catch {
-      // ignore storage errors
-    }
-  };
 
   if (authLoading) {
     return <LoadingScreen />;
@@ -239,24 +237,20 @@ export default function QueryEditorPage() {
                     </Button>
                   )}
 
-                  {['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()) && (
-                    <Button
-                      type="default"
-                      icon={<MessageOutlined />}
-                      onClick={() => router.push('/chat')}
-                    >
-                      {t('ask_ai_engine')}
-                    </Button>
+                  {isEnterpriseEdition() && (
+                    <Tooltip title={t('ask_ai_engine')}>
+                      <Button
+                        icon={<MessageOutlined />}
+                        aria-label={t('ask_ai_engine')}
+                        onClick={() => router.push(getChatHref({ data_source_id: selectedDataSourceId }))}
+                      />
+                    </Tooltip>
                   )}
 
                   {savedQueryId ? (
-                    <Button
-                      type="default"
-                      icon={<ShareAltOutlined />}
-                      onClick={() => setPublishOpen(true)}
-                    >
-                      {t('publish_to_feed')}
-                    </Button>
+                    <Tooltip title={t('publish_to_feed')}>
+                      <Button icon={<ShareAltOutlined />} aria-label={t('publish_to_feed')} onClick={() => setPublishOpen(true)} />
+                    </Tooltip>
                   ) : null}
 
                   <Popover
@@ -353,9 +347,7 @@ export default function QueryEditorPage() {
                     placement="bottomRight"
                     overlayStyle={{ maxWidth: '360px' }}
                   >
-                    <Button type="default" icon={<BulbOutlined />}>
-                      {t('query_templates')}
-                    </Button>
+                    <Button icon={<BulbOutlined />} aria-label={t('query_templates')} title={t('query_templates')} />
                   </Popover>
             </Space>
           }
@@ -363,41 +355,6 @@ export default function QueryEditorPage() {
 
         <NarrowViewportNotice message={tCommon('desktop_recommended')} storageKey="query-editor" breakpoint={576} />
 
-        {showWelcome && (
-          <div style={{ padding: '4px 12px', margin: 0 }} className="qe-welcome-banner">
-            <Alert
-              message={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--ant-color-text)', lineHeight: '1.4' }}>
-                  <InfoCircleOutlined style={{ color: 'var(--ant-color-primary)', fontSize: '16px', flexShrink: 0 }} />
-                  <span>{t('welcome_alert')}</span>
-                  <Popover
-                    title={t('show_tips')}
-                    content={
-                      <div style={{ maxWidth: 320, whiteSpace: 'pre-line', fontSize: 13, lineHeight: 1.5 }}>
-                        {t('welcome_tips')}
-                      </div>
-                    }
-                    trigger="click"
-                  >
-                    <Button type="link" size="small" style={{ padding: 0, height: 'auto', fontSize: 13 }}>
-                      {t('show_tips')}
-                    </Button>
-                  </Popover>
-                </div>
-              }
-              type="info"
-              showIcon={false}
-              closable
-              onClose={handleDismissWelcome}
-              style={{ 
-                marginTop: 0,
-                marginBottom: 0,
-                borderRadius: '6px',
-                padding: '8px 12px'
-              }}
-            />
-          </div>
-        )}
 
         <div
           className="page-body"

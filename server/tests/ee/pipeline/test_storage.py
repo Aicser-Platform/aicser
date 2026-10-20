@@ -64,7 +64,46 @@ async def test_s3_adapter_passes_the_key_positionally_and_normalises_the_result(
 
 def test_get_object_store_selects_by_storage_backend(monkeypatch):
     from src.core.config import settings
-    from src.modules.pipeline.storage import LocalObjectStore, get_object_store
+    from src.modules.pipeline.storage import (
+        LocalObjectStore,
+        S3ObjectStoreAdapter,
+        get_object_store,
+    )
 
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "", raising=False)
     assert isinstance(get_object_store(), LocalObjectStore)
+
+    monkeypatch.setenv("STORAGE_BACKEND", "s3")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret")
+    monkeypatch.setenv("S3_BUCKET_NAME", "bucket")
+    monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3", raising=False)
+    monkeypatch.setattr(settings, "S3_ACCESS_KEY_ID", "key", raising=False)
+    monkeypatch.setattr(settings, "S3_SECRET_ACCESS_KEY", "secret", raising=False)
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "bucket", raising=False)
+    assert isinstance(get_object_store(), S3ObjectStoreAdapter)
+
+
+@pytest.mark.asyncio
+async def test_get_object_store_async_uses_admin_s3_config(monkeypatch):
+    from src.modules.pipeline.storage import S3ObjectStoreAdapter, get_object_store_async
+
+    async def _fake_effective():
+        return {
+            "enabled": True,
+            "configured": True,
+            "backend": "s3",
+            "access_key_id": "a",
+            "secret_access_key": "b",
+            "bucket_name": "lake-prod",
+            "region": "us-east-1",
+            "endpoint_url": "",
+        }
+
+    monkeypatch.setattr(
+        "src.core.system_settings.runtime_config.get_effective_storage_config",
+        _fake_effective,
+    )
+    store = await get_object_store_async()
+    assert isinstance(store, S3ObjectStoreAdapter)
+    assert store.uri_for("orgs/x/staging/y/file.csv") == "s3://lake-prod/orgs/x/staging/y/file.csv"

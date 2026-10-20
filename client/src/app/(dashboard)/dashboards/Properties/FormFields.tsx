@@ -320,6 +320,7 @@ interface MetricListFieldProps extends FieldProps {
   chartType?: string;
   /** When set (e.g. saved SQL), new metrics use this agg instead of sum/count. */
   defaultAggregation?: string;
+  dataSourceId?: string;
   onFieldDrop?: (field: DashboardFieldDragPayload) => void;
 }
 
@@ -337,6 +338,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
   excludeFields = [],
   chartType,
   defaultAggregation,
+  dataSourceId,
   onFieldDrop,
 }) => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -693,6 +695,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
           open={computedEditorOpen}
           initial={editingComputedIndex != null ? metrics[editingComputedIndex] : undefined}
           columnOptions={columnOptions}
+          dataSourceId={dataSourceId}
           onSave={(metric) => {
             if (editingComputedIndex != null) {
               const updated = [...metrics];

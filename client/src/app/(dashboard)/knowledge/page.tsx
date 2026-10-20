@@ -2,6 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
+import { ExtractTableModal } from '@/components/knowledge/ExtractTableModal';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   Card,
@@ -35,6 +37,8 @@ import {
   EditOutlined,
   RedoOutlined,
   MoreOutlined,
+  SafetyOutlined,
+  TableOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useTranslations } from 'next-intl';
@@ -300,6 +304,7 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   const { mutateAsync: deleteDocument, isPending: deleting } = useDeleteKnowledgeDocument();
   const { mutateAsync: updateDocument, isPending: renamingDoc } = useUpdateKnowledgeDocument();
   const updateLibrary = useUpdateKnowledgeLibrary();
+  const [extractOpen, setExtractOpen] = useState(false);
   const uploadDoc = useUploadKnowledgeDocument();
   const reindexKb = useReindexKnowledgeBase();
   const retryDoc = useRetryKnowledgeDocument();
@@ -456,6 +461,9 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
       },
     });
   };
+
+  // Personal data is removed before indexing unless the library turned it off.
+  const redactsPersonalData = (lib: KnowledgeLibrary) => lib.settings?.redact_personal_data !== false;
 
   const statusIcon = (status: string) => {
     switch (status) {
@@ -622,6 +630,27 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
   const libraryMenu: MenuProps['items'] = library
     ? [
         { key: 'rename', icon: <EditOutlined />, label: t('rename'), onClick: () => handleRenameLibrary(library) },
+        ...(isEnterpriseEdition
+          ? [{ key: 'extract', icon: <TableOutlined />, label: t('extract_menu'), onClick: () => setExtractOpen(true) }]
+          : []),
+        {
+          key: 'redact',
+          icon: <SafetyOutlined />,
+          label: redactsPersonalData(library) ? t('redaction_on') : t('redaction_off'),
+          onClick: async () => {
+            const next = !redactsPersonalData(library);
+            try {
+              await updateLibrary.mutateAsync({
+                libraryId: library.id,
+                settings: { ...(library.settings ?? {}), redact_personal_data: next },
+              });
+              message.success(next ? t('redaction_enabled') : t('redaction_disabled'));
+              void refetchLibs();
+            } catch (err) {
+              message.error(formatApiValidationError(err));
+            }
+          },
+        },
         {
           key: 'reindex',
           icon: <RedoOutlined />,
@@ -844,6 +873,14 @@ const KnowledgePageContent: React.FC<{ canManage: boolean }> = ({ canManage }) =
         pages={citationPages || undefined}
       />
 
+      {library ? (
+        <ExtractTableModal
+          open={extractOpen}
+          libraryId={library.id}
+          libraryName={library.name}
+          onClose={() => setExtractOpen(false)}
+        />
+      ) : null}
       <Modal
         title={t('create_library')}
         open={createOpen}

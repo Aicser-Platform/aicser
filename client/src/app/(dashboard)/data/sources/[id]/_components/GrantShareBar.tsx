@@ -198,10 +198,19 @@ export const GrantShareBar: React.FC<{
             setColumnAccess(COLUMN_ACCESS_UNSET);
           }}
           style={{ minWidth: 180 }}
+          popupMatchSelectWidth={280}
           options={ACCESS_LEVELS.filter((item) => item.key !== 'custom').map((item) => ({
             value: item.key,
             label: t(`data_source_access_level_${item.key}`),
           }))}
+          optionRender={(option) => (
+            <Space orientation="vertical" size={0}>
+              <span>{option.label}</span>
+              <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'normal' }}>
+                {t(`data_source_access_level_desc_${option.value}`)}
+              </Text>
+            </Space>
+          )}
         />
         {needsRowAccess ? (
           <RowAccessSelect value={rowAccess} onChange={setRowAccess} policies={policies} />

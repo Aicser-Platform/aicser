@@ -240,7 +240,7 @@ export const ColumnPolicyEditorPage: React.FC<{ dataSourceId: string; policyId?:
 
   const isDirty = !sameState(state, baseline.current);
   const isSaving = createPolicy.isPending || updatePolicy.isPending;
-  const backHref = `/data/sources/${dataSourceId}?tab=column-rules`;
+  const backHref = `/data/sources/${dataSourceId}?tab=access&access=column-rules`;
   const goBack = () => router.push(backHref);
 
   const setField = <K extends keyof ColumnPolicyFormState>(key: K, value: ColumnPolicyFormState[K]) => {

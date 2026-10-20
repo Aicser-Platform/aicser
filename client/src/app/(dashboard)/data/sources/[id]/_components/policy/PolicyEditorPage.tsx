@@ -68,7 +68,7 @@ export const PolicyEditorPage: React.FC<{ dataSourceId: string; policyId?: strin
   const { attributes } = useDataSourceRLSProjectAttributes(dataSourceId, simulateProjectId);
   const projectAttributeKeys = useMemo(() => attributes.map((attribute) => attribute.key), [attributes]);
 
-  const backHref = `/data/sources/${dataSourceId}?tab=row-filters`;
+  const backHref = `/data/sources/${dataSourceId}?tab=access&access=row-filters`;
   const goBack = () => router.push(backHref);
 
   const handleCancel = () => {

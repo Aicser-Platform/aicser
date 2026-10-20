@@ -16,8 +16,8 @@ if os.path.isdir(_ee_rbac_path) and _ee_rbac_path not in __path__:
     __path__.append(_ee_rbac_path)
 
 if is_ee_enabled():
-    from ee.modules.authentication.rbac import *  # noqa: F401, F403
-    from ee.modules.authentication.rbac import __all__  # noqa: F401
+    from src.enterprise.modules.authentication.rbac import *  # noqa: F401, F403
+    from src.enterprise.modules.authentication.rbac import __all__  # noqa: F401
 else:
     from src.modules.authentication.rbac_service import has_dashboard_access
 

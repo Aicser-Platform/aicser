@@ -10,8 +10,6 @@ import ssl
 import urllib.request
 from typing import Any
 
-import boto3
-from botocore.config import Config
 
 from src.modules.data.utils.credentials import decrypt_credentials, encrypt_credentials
 from src.core.config import strip_env_value
@@ -186,6 +184,7 @@ def public_storage_status(config: dict[str, Any]) -> dict[str, Any]:
         "secret_key_configured": bool(config.get("secret_access_key")),
         "bucket_name": config.get("bucket_name") or "",
         "region": config.get("region") or "us-east-1",
+        "lake_object_prefix_template": config.get("lake_object_prefix_template") or "",
     }
 
 
@@ -257,6 +256,7 @@ async def save_storage_config(payload: dict[str, Any], user_id: str | None = Non
     if access_key.startswith(MASKED_SECRET_PREFIX):
         access_key = str(fallback.get("access_key_id") or "")
 
+    tpl = str(payload.get("lake_object_prefix_template") or existing.get("lake_object_prefix_template") or "").strip()
     config = _strip_empty(
         {
             "enabled": enabled,
@@ -267,6 +267,7 @@ async def save_storage_config(payload: dict[str, Any], user_id: str | None = Non
             "secret_access_key": secret,
             "bucket_name": str(payload.get("bucket_name") or "").strip(),
             "region": str(payload.get("region") or "us-east-1").strip() or "us-east-1",
+            "lake_object_prefix_template": tpl,
         }
     )
     await _repo.set_setting(
@@ -331,18 +332,19 @@ async def test_storage_config(config: dict[str, Any] | None = None) -> dict[str,
     if str(resolved.get("backend") or "").lower() != "s3":
         return {"success": True, "message": "Storage backend is configured"}
 
-    def _test_s3() -> None:
-        endpoint_url = resolved.get("endpoint_url") or None
-        addressing_style = "path" if endpoint_url else "virtual"
-        client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=resolved.get("access_key_id"),
-            aws_secret_access_key=resolved.get("secret_access_key"),
-            region_name=resolved.get("region") or "us-east-1",
-            config=Config(s3={"addressing_style": addressing_style}),
-        )
-        client.head_bucket(Bucket=resolved.get("bucket_name"))
+    from src.modules.data.utils.s3_compatible import probe_bucket_write, s3_client_for
 
-    await asyncio.to_thread(_test_s3)
-    return {"success": True, "message": "S3 bucket is reachable"}
+    def _probe() -> dict[str, Any]:
+        client = s3_client_for(
+            access_key_id=resolved.get("access_key_id"),
+            secret_access_key=resolved.get("secret_access_key"),
+            region=resolved.get("region"),
+            endpoint_url=resolved.get("endpoint_url"),
+            provider=resolved.get("provider"),
+        )
+        return probe_bucket_write(client, str(resolved.get("bucket_name")))
+
+    # Write, read back and delete: read-only keys would pass a reachability check and then
+    # fail every upload and sync.
+    result = await asyncio.to_thread(_probe)
+    return {"success": bool(result["ok"]), "message": result["message"]}

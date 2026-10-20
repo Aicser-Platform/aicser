@@ -24,6 +24,8 @@ import {
     CheckCircleOutlined,
 } from '@ant-design/icons';
 import { enhancedDataService } from '@/services/enhancedDataService';
+import { getStoredDataSourcePreference } from '@/stores/useDataSourceStore';
+import { getChatHref } from '@/utils/appPaths';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -275,7 +277,11 @@ const MultiEngineQueryTab: React.FC = () => {
                     </Button>
                     <Button 
                         icon={<BarChartOutlined />}
-                        onClick={() => window.location.href = '/chat'}
+                        onClick={() => {
+                            window.location.href = getChatHref({
+                                data_source_id: getStoredDataSourcePreference().id,
+                            });
+                        }}
                     >
                         {t('ai_powered_analysis')}
                     </Button>

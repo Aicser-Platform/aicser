@@ -125,7 +125,7 @@ async def classify_data_source_columns(ctx: Dict[str, Any], data_source_id: str)
 
         from src.modules.data.services.data_connectivity_service import DataConnectivityService
 
-        _classifier_svc = importlib.import_module("ee.modules.ai.services.column_semantic_classifier")
+        _classifier_svc = importlib.import_module("src.modules.ai.services.column_semantic_classifier")
         classify_data_source_columns_llm = _classifier_svc.classify_data_source_columns_llm
 
         svc = DataConnectivityService()
@@ -279,7 +279,7 @@ async def refresh_artifact_data(
     try:
         import importlib
 
-        _artifact_svc = importlib.import_module("ee.modules.ai.services.artifact_automation_service")
+        _artifact_svc = importlib.import_module("src.modules.ai.services.artifact_automation_service")
         refresh_all_dashboards_for_data_source = _artifact_svc.refresh_all_dashboards_for_data_source
         export_dashboard_artifacts = _artifact_svc.export_dashboard_artifacts
         result = await refresh_all_dashboards_for_data_source(data_source_id)
@@ -321,7 +321,7 @@ async def sync_artifacts_after_schema_change(
     try:
         import importlib
 
-        _artifact_svc = importlib.import_module("ee.modules.ai.services.artifact_automation_service")
+        _artifact_svc = importlib.import_module("src.modules.ai.services.artifact_automation_service")
         _sync = _artifact_svc.sync_artifacts_after_schema_change
         result = await _sync(data_source_id, old_schema=old_schema, new_schema=new_schema)
         return {"success": True, **result, "completed_at": datetime.utcnow().isoformat()}
@@ -682,7 +682,7 @@ async def sync_salesforce_object(
         return {"success": False, "error": "EE edition required for Salesforce sync"}
     import importlib
 
-    sync_object = importlib.import_module("ee.modules.data.services.salesforce_sync_service").sync_object
+    sync_object = importlib.import_module("src.enterprise.modules.data.services.salesforce_sync_service").sync_object
 
     async with async_session() as db:
         result = await sync_object(
@@ -727,7 +727,7 @@ async def sync_hubspot_object(
         return {"success": False, "error": "EE edition required for Hubspot sync"}
     import importlib
 
-    sync_object = importlib.import_module("ee.modules.data.services.hubspot_sync_service").sync_object
+    sync_object = importlib.import_module("src.enterprise.modules.data.services.hubspot_sync_service").sync_object
 
     async with async_session() as db:
         result = await sync_object(
@@ -763,7 +763,7 @@ async def run_pipeline(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
         logger.debug("pipeline module unavailable (CE build); skipping run %s", run_id)
         return {"success": False, "error": "pipeline_unavailable"}
     except Exception as e:
-        logger.error("Pipeline run %s failed: %s", run_id, e)
+        logger.exception("Pipeline run %s failed: %s", run_id, e)
         return {"success": False, "error": str(e)}
 
 
@@ -782,50 +782,6 @@ async def dispatch_due_pipelines_job(ctx: Dict[str, Any]) -> Dict[str, Any]:
         return {"success": True, "dispatched": 0}
     except Exception as e:
         logger.error("Pipeline dispatch failed: %s", e)
-        return {"success": False, "error": str(e)}
-
-
-async def profile_staged_asset(ctx: Dict[str, Any], session_id: str) -> Dict[str, Any]:
-    """Profile a staged upload and advance its onboarding session. EE-only."""
-    logger.info("Profiling staged asset for onboarding session %s", session_id)
-    try:
-        import uuid as _uuid
-
-        from src.db.session import async_session
-        from src.modules.pipeline.onboarding.service import run_profile
-
-        async with async_session() as db:
-            status = await run_profile(db, _uuid.UUID(session_id))
-        return {"success": status == "review", "status": status, "session_id": session_id}
-    except ImportError:
-        logger.debug("pipeline module unavailable (CE build); skipping %s", session_id)
-        return {"success": False, "error": "pipeline_unavailable"}
-    except Exception as e:
-        logger.error("Profiling session %s failed: %s", session_id, e)
-        return {"success": False, "error": str(e)}
-
-
-async def ingest_staged_asset(ctx: Dict[str, Any], session_id: str) -> Dict[str, Any]:
-    """Apply onboarding decisions and write the staged asset to Bronze. EE-only."""
-    logger.info("Ingesting staged asset for onboarding session %s", session_id)
-    try:
-        import uuid as _uuid
-
-        from src.db.session import async_session
-        from src.modules.pipeline.onboarding.service import run_ingest
-
-        async with async_session() as db:
-            status = await run_ingest(db, _uuid.UUID(session_id))
-        return {
-            "success": status == "ingested",
-            "status": status,
-            "session_id": session_id,
-        }
-    except ImportError:
-        logger.debug("pipeline module unavailable (CE build); skipping %s", session_id)
-        return {"success": False, "error": "pipeline_unavailable"}
-    except Exception as e:
-        logger.error("Ingest for session %s failed: %s", session_id, e)
         return {"success": False, "error": str(e)}
 
 
@@ -869,6 +825,15 @@ async def run_ai_decision(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     return await process_run(run_id)
 
 
+async def run_scheduled_ai_decisions(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (hourly): run scheduled AI decisions again and refresh their saved datasets (EE)."""
+    try:
+        from src.modules.ai.decisions.tool_service import run_due_decisions
+    except Exception:
+        return {"skipped": "AI Decisions are part of the Enterprise edition"}
+    return await run_due_decisions()
+
+
 async def train_ml_model(ctx: Dict[str, Any], version_id: str) -> Dict[str, Any]:
     """On-demand: train one model version (EE Models). Reads data as the model's creator."""
     try:
@@ -905,6 +870,15 @@ async def retrain_scheduled_ml_models(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return await retrain_due_models()
 
 
+async def drift_retrain_ml_models(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (hourly): retrain when monitored input drift crosses the PSI threshold (EE Models)."""
+    try:
+        from src.modules.mlops.service import drift_retrain_models
+    except Exception:
+        return {"skipped": "Models are part of the Enterprise edition"}
+    return await drift_retrain_models()
+
+
 async def run_notebook(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     """On-demand: one notebook run in the sandboxed notebook runner (EE scheduled runs)."""
     try:
@@ -920,4 +894,22 @@ async def run_due_notebook_schedules(ctx: Dict[str, Any]) -> Dict[str, Any]:
         from src.modules.notebook_runs.service import run_due_schedules
     except Exception:
         return {"skipped": "Scheduled notebook runs are part of the Enterprise edition"}
+    return await run_due_schedules()
+
+
+async def run_workbook(ctx: Dict[str, Any], run_id: str) -> Dict[str, Any]:
+    """On-demand: refresh live workbook ranges as the owner (EE)."""
+    try:
+        from src.modules.workbook_runs.service import execute_run
+    except Exception:
+        return {"skipped": "Scheduled workbook runs are part of the Enterprise edition"}
+    return await execute_run(run_id)
+
+
+async def run_due_workbook_schedules(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Cron (every minute): queue workbooks whose schedule has come round (EE)."""
+    try:
+        from src.modules.workbook_runs.service import run_due_schedules
+    except Exception:
+        return {"skipped": "Scheduled workbook runs are part of the Enterprise edition"}
     return await run_due_schedules()

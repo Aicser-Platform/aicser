@@ -397,6 +397,19 @@ export function categoriesFromEchartsConfig(cfg: Record<string, unknown> | null 
 }
 
 /**
+ * Whether a horizontal bar option lists its categories bottom-to-top (ECharts' default when
+ * yAxis isn't `inverse`). Such an option is already in *display* order, the reverse of the
+ * rows; reading it as rows and orienting again (orientDataForHorizontalBar) flips it upside down.
+ */
+export function horizontalCategoriesBottomUp(cfg: Record<string, unknown> | null | undefined): boolean {
+  if (!cfg || extractBarOrientationOptions(cfg).barChartType !== 'horizontal') return false;
+  const yAxis = Array.isArray(cfg.yAxis)
+    ? (cfg.yAxis[0] as Record<string, unknown>)
+    : (cfg.yAxis as Record<string, unknown> | undefined);
+  return yAxis?.inverse !== true;
+}
+
+/**
  * ECharts places category index 0 at the *bottom* of horizontal bars.
  * Reverse so SQL/ORDER BY (e.g. DESC) shows the first row at the top — industry default.
  */

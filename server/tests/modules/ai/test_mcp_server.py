@@ -47,8 +47,10 @@ async def test_tools_list_is_read_only(app):
     assert {t["name"] for t in tools} == {
         "list_data_sources", "describe_data_source", "list_metrics", "query_metric", "run_query", "ask",
         "list_models", "score_with_model", "list_decisions", "preview_decision",
+        "list_domains", "list_recipes", "suggest_cleaning", "preview_cleaning", "draft_recipe",
     }
-    assert all(t["annotations"]["readOnlyHint"] for t in tools)
+    # Only drafting a recipe writes, and it writes a draft a person must publish.
+    assert {t["name"] for t in tools if not t["annotations"]["readOnlyHint"]} == {"draft_recipe"}
 
 
 @pytest.mark.asyncio

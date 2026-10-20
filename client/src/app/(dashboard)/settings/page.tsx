@@ -23,7 +23,6 @@ import {
   SecurityScanOutlined,
   KeyOutlined,
   TeamOutlined,
-  DatabaseOutlined,
   BankOutlined,
   SettingOutlined,
   LinkOutlined,
@@ -39,10 +38,11 @@ import {
   ApartmentOutlined,
   SafetyCertificateOutlined,
   SafetyOutlined,
-  FundOutlined,
   LineChartOutlined,
   FileSearchOutlined,
   BellOutlined,
+  DollarOutlined,
+  ClusterOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -61,10 +61,10 @@ import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
 import { ProfileTab } from './components/ProfileTab';
 import { SecurityTab } from './components/SecurityTab';
 import { ApiKeysTab } from './components/ApiKeysTab';
-import { DataSourcesTab } from './components/DataSourcesTab';
 import { GeneralTab } from './components/GeneralTab';
 import { ProjectTab } from './components/ProjectTab';
 import { NotificationsTab } from './components/NotificationsTab';
+import { CommunityUsageTab } from './components/CommunityUsageTab';
 
 const OrganizationTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
@@ -76,8 +76,26 @@ const TeamTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.Team
 const IntegrationTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
+const AccessOverviewTab = nextDynamic(() => import('./components/AccessOverviewTab').then((m) => m.AccessOverviewTab), {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+// Storage, compute and cost are admin settings; people browse lake tables in the Catalog.
+const LakehouseSettingsTab = nextDynamic(
+  (() =>
+    import('@/ee').then((m) => ({
+      default: function LakehouseSettings() {
+        const Page = m.WarehousePage;
+        return <Page embedded />;
+      },
+    }))) as any,
+  { ssr: false },
+) as React.ComponentType<TabComponentProps>;
 const SubscriptionTab = nextDynamic(
   (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const UsageAnalyticsTab = nextDynamic(
+  (() => import('@/ee').then((m) => ({ default: m.UsageAnalyticsSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const LicenseTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.LicenseSettingsTab }))) as any, {
@@ -95,10 +113,16 @@ const AgentWorkflowsTab = nextDynamic((() => import('@/ee').then((m) => ({ defau
 const AgentCapabilitiesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentCapabilitiesTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const KpiDefinitionsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.KpiDefinitionsTab }))) as any, {
+const PrivacyRequestsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.PrivacyRequestsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const DataSharesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.DataSharesTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const BriefingsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentBudgetTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
@@ -237,6 +261,14 @@ const NAV_GROUPS: NavGroup[] = [
         description: 'Permissions and RBAC',
       },
       {
+        key: 'usage',
+        label: 'Usage & analytics',
+        icon: <LineChartOutlined />,
+        requiredPermission: Permission.ORG_VIEW,
+        component: isEE ? UsageAnalyticsTab : CommunityUsageTab,
+        description: 'Your footprint and AI activity',
+      },
+      {
         key: 'billing-subscription',
         label: 'Billing',
         icon: <CreditCardOutlined />,
@@ -244,17 +276,18 @@ const NAV_GROUPS: NavGroup[] = [
         // Admins can view; changing the plan or paying stays with org:manage_billing (owner).
         requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
         component: SubscriptionTab,
-        description: 'Plan, usage, invoices',
+        description: 'Plan, payment, invoices (Aicser Cloud)',
       },
       {
         key: 'identity',
-        label: 'Identity (SCIM)',
+        label: 'Directory sync',
         icon: <TeamOutlined />,
         eeOnly: true,
         // Same permission the SCIM token/role API checks: provisioning people is user management.
         requiredPermission: Permission.ORG_MANAGE_USERS,
         component: IdentityTab,
-        description: 'Provision users and groups from your identity provider',
+        description: 'Users and groups from your identity provider (SCIM)',
+        requiredFeature: 'govern',
       },
       {
         key: 'ai-residency',
@@ -264,6 +297,7 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: AIResidencyTab,
         description: 'Where your prompts and data may be processed',
+        requiredFeature: 'govern',
       },
       {
         key: 'license',
@@ -273,7 +307,6 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: LicenseTab,
         description: 'Enterprise license status',
-        requiredFeature: 'audit_logs',
       },
     ],
   },
@@ -281,21 +314,23 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Data & Integrations',
     items: [
       {
-        key: 'data-sources',
-        label: 'Data Sources',
-        icon: <DatabaseOutlined />,
-        requiredPermission: Permission.DATA_CONNECT,
-        component: DataSourcesTab,
-        description: 'Connected databases and files',
-      },
-      {
         key: 'integrations',
         label: 'Integrations',
         icon: <LinkOutlined />,
         eeOnly: true,
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: IntegrationTab,
-        description: 'Slack, Jira, Salesforce…',
+        description: 'Email delivery, Slack, Teams, lake storage, and more',
+      },
+      {
+        key: 'lakehouse',
+        label: 'Lakehouse',
+        icon: <ClusterOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        requiredFeature: 'lakehouse',
+        component: LakehouseSettingsTab,
+        description: 'Storage, compute, query cost and retention',
       },
     ],
   },
@@ -318,6 +353,32 @@ const NAV_GROUPS: NavGroup[] = [
         component: EmbedTab,
         description: 'Embed charts in your apps',
         requiredFeature: 'embed_analytics',
+      },
+      {
+        key: 'access-overview',
+        label: 'Access overview',
+        icon: <SafetyOutlined />,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: AccessOverviewTab,
+        description: 'Row and column rules across every connection',
+      },
+      {
+        key: 'privacy',
+        label: 'Privacy requests',
+        icon: <SafetyOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: PrivacyRequestsTab,
+        description: "Find one person's data in the lakehouse; erasing it also keeps them out of later pipeline runs",
+      },
+      {
+        key: 'data-shares',
+        label: 'Data shares',
+        icon: <SafetyOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: DataSharesTab,
+        description: 'Lakehouse tables a partner reads over HTTPS with a token, filtered to the rows they may see',
       },
       {
         key: 'audit',
@@ -365,16 +426,6 @@ const NAV_GROUPS: NavGroup[] = [
         requiredFeature: 'agent_configuration',
       },
       {
-        key: 'kpi-definitions',
-        label: 'KPI Definitions',
-        icon: <FundOutlined />,
-        eeOnly: true,
-        component: KpiDefinitionsTab,
-        description: 'Teach the AI how your org calculates key metrics',
-        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
-        requiredFeature: 'agent_configuration',
-      },
-      {
         key: 'ai-quality',
         label: 'AI Quality',
         icon: <LineChartOutlined />,
@@ -386,11 +437,11 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         key: 'ai-decision-layer',
-        label: 'Decision Layer',
+        label: 'AI routing',
         icon: <ThunderboltOutlined />,
         eeOnly: true,
         component: AIDecisionLayerTab,
-        description: 'Fast typed AI decisions and their readiness',
+        description: 'Which steps the assistant decides with your own fast model, and whether each is ready',
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
         requiredFeature: 'agent_configuration',
       },
@@ -414,6 +465,16 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
         requiredFeature: 'agent_configuration',
       },
+      {
+        key: 'agent-budget',
+        label: 'AI cost center',
+        icon: <DollarOutlined />,
+        eeOnly: true,
+        component: AgentBudgetTab,
+        description: 'Budgets and model spend by project',
+        requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
+        requiredFeature: 'ai_cost_center',
+      },
     ],
   },
 ];
@@ -425,13 +486,11 @@ const NAV_GROUPS: NavGroup[] = [
  */
 const SETTINGS_SECTIONS: { id: string; label: string; keys: string[] }[] = [
   { id: 'account', label: 'Me', keys: ['profile', 'notifications', 'security'] },
-  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'data-sources', 'integrations', 'billing-subscription'] },
-  { id: 'ai', label: 'AI', keys: ['agent-capabilities', 'kpi-definitions', 'briefings', 'ai-quality'] },
-  {
-    id: 'admin',
-    label: 'Admin',
-    keys: ['organization', 'roles', 'identity', 'ai-residency', 'ai-decision-layer', 'license', 'audit', 'ai-audit-log'],
-  },
+  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'integrations', 'usage', 'billing-subscription'] },
+  { id: 'data_platform', label: 'Data platform', keys: ['lakehouse'] },
+  { id: 'ai', label: 'AI', keys: ['agent-capabilities', 'briefings', 'ai-quality', 'ai-decision-layer', 'agent-budget'] },
+  { id: 'governance', label: 'Governance', keys: ['access-overview', 'privacy', 'data-shares', 'audit', 'ai-audit-log', 'ai-residency'] },
+  { id: 'admin', label: 'Admin', keys: ['organization', 'roles', 'identity', 'license'] },
   { id: 'developer', label: 'Developer', keys: ['api-keys', 'embed'] },
 ];
 
@@ -541,6 +600,20 @@ const SettingsPage: React.FC = () => {
     permissionsLoading && knownTab ? (requestedTab as string) : resolveSettingsTab(requestedTab, visibleItems);
 
   useEffect(() => {
+    if (requestedTab === 'outbound-email') {
+      router.replace('/settings?tab=integrations&section=outbound-email', { scroll: false });
+      return;
+    }
+    // Metric definitions live in Semantic models now.
+    if (requestedTab === 'kpi-definitions') {
+      router.replace('/semantic-layer', { scroll: false });
+      return;
+    }
+    // Connections live on one page; the old Settings copy points there.
+    if (requestedTab === 'data-sources') {
+      router.replace('/data', { scroll: false });
+      return;
+    }
     if (permissionsLoading) return;
     if (requestedTab && requestedTab !== activeTab) {
       router.replace(`/settings?tab=${activeTab}`, { scroll: false });
@@ -565,7 +638,7 @@ const SettingsPage: React.FC = () => {
     loadApiKeys();
     loadTeamMembers(currentOrganization?.id);
     loadDataSources();
-    if (showHostedBilling) {
+    if (isEE) {
       void initSubscription();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

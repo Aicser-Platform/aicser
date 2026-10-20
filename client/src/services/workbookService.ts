@@ -36,7 +36,51 @@ export type WorkbookSummary = {
   updated_at: string | null;
 };
 
-export type Workbook = WorkbookSummary & { doc: string; ranges: DataRange[] };
+export type WorkbookParameterDef = {
+  name: string;
+  label?: string | null;
+  type: 'string' | 'number' | 'boolean' | 'date';
+  default?: unknown;
+  required?: boolean;
+};
+
+export type WorkbookVisualEmbed = {
+  id: string;
+  kind: 'chart' | 'image';
+  sheet_index: number;
+  row: number;
+  column: number;
+  width: number;
+  height: number;
+  payload: Record<string, unknown>;
+};
+
+export type WorkbookSettings = {
+  parameters: WorkbookParameterDef[];
+  compute_profile: 'browser' | 'server';
+  git: { remote_url?: string | null; branch?: string; last_export_at?: string | null; last_commit_message?: string | null; auto_export_on_save?: boolean };
+  certification: {
+    status: 'draft' | 'in_review' | 'approved' | 'rejected';
+    submitted_by?: string | null;
+    certified_by?: string | null;
+    certified_at?: string | null;
+    note?: string | null;
+    locks_edits?: boolean;
+  };
+  visual_embeds?: WorkbookVisualEmbed[];
+  analyze_bindings?: Array<{
+    id: string;
+    kind: 'pivot';
+    sheet_index: number;
+    row: number;
+    column: number;
+    width: number;
+    height: number;
+    analyze_binding: Record<string, unknown>;
+  }>;
+};
+
+export type Workbook = WorkbookSummary & { doc: string; ranges: DataRange[]; settings?: WorkbookSettings };
 
 export type WorkbookVersionSummary = {
   id: string;
@@ -87,6 +131,30 @@ export const workbookService = {
     return fetchApi<Workbook & { neutralized: number }>(`${base}/import`, { method: 'POST', body: form });
   },
   exportXlsx: (id: string) => fetchApiBlob(`${base}/${enc(id)}/export.xlsx`),
+  syncDataSource: (id: string) =>
+    fetchApi<{
+      success: boolean;
+      data_source_id: string;
+      name: string;
+      message: string;
+      reused?: boolean;
+      deduped_sources?: number;
+    }>(
+      `${base}/${enc(id)}/sync-datasource`,
+      { method: 'POST' },
+    ),
+  getSettings: (id: string) => fetchApi<{ settings: WorkbookSettings }>(`${base}/${enc(id)}/settings`),
+  putSettings: (id: string, patch: Partial<WorkbookSettings>) =>
+    fetchApi<{ settings: WorkbookSettings }>(`${base}/${enc(id)}/settings`, { method: 'PUT', body: JSON.stringify(patch) }),
+  lintSecrets: (id: string) =>
+    fetchApi<{ findings: Array<{ message: string }>; ok: boolean }>(`${base}/${enc(id)}/lint-secrets`, { method: 'POST' }),
+  audit: (id: string) => fetchApi<{ items: Array<{ action: string; created_at?: string }> }>(`${base}/${enc(id)}/audit`),
+  gitExport: (id: string) => fetchApi<{ manifest: Record<string, unknown> }>(`${base}/${enc(id)}/git/export`, { method: 'POST' }),
+  certifySubmit: (id: string) => fetchApi<{ settings: WorkbookSettings }>(`${base}/${enc(id)}/certification/submit`, { method: 'POST' }),
+  certifyApprove: (id: string, body: { note?: string; lock_edits?: boolean }) =>
+    fetchApi<{ settings: WorkbookSettings }>(`${base}/${enc(id)}/certification/approve`, { method: 'POST', body: JSON.stringify(body) }),
+  certifyReject: (id: string, body: { note?: string }) =>
+    fetchApi<{ settings: WorkbookSettings }>(`${base}/${enc(id)}/certification/reject`, { method: 'POST', body: JSON.stringify(body) }),
   versions: (id: string) => fetchApi<{ items: WorkbookVersionSummary[] }>(`${base}/${enc(id)}/versions`),
   version: (id: string, versionId: string) =>
     fetchApi<{ id: string; title: string; doc: string; ranges: DataRange[]; updated_at: string | null }>(`${base}/${enc(id)}/versions/${enc(versionId)}`),

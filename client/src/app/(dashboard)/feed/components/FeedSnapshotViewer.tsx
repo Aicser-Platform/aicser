@@ -23,6 +23,7 @@ type Props = {
   item: FeedItem;
   variant?: 'card' | 'detail';
   maxWidgets?: number;
+  fit?: 'stage' | 'screen';
 };
 
 /**
@@ -38,7 +39,7 @@ export function FeedSnapshotViewer(props: Props) {
   );
 }
 
-function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets }: Props) {
+function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets, fit = 'stage' }: Props) {
   const t = useTranslations('feed');
   const noopCrossFilter = useCallback(() => {}, []);
 
@@ -154,12 +155,6 @@ function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets }: Props)
     const pageWidgets = filterVisibleWidgets(widgets, layoutForWidgets, activePageId, pages, defaultPageId);
     const pageLayout = filterVisibleLayout(layoutForWidgets, pageWidgets);
 
-    // Studio publish captures every widget; feed-attach snapshots may be a
-    // smaller ranked set. Size the canvas to this payload's own footprint so a
-    // 1–2 widget snapshot is not stranded in a huge empty box.
-    const maxRowExtent = pageLayout.length ? Math.max(...pageLayout.map((item) => item.y + item.h)) : 0;
-    const contentHeightPx = maxRowExtent * (42 + 8);
-    const detailCanvasMinHeight = `${Math.max(contentHeightPx + 16, 240)}px`;
 
     return (
       <div className="feed-snapshot-viewer feed-snapshot-viewer--detail w-full">
@@ -178,6 +173,7 @@ function FeedSnapshotViewerBody({ item, variant = 'detail', maxWidgets }: Props)
           layoutMode="auto"
           hideInteractionHint
           eagerMount
+          fit={fit}
         />
       </div>
     );

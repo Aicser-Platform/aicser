@@ -21,7 +21,7 @@ import {
 } from '../services/chartBuilderService';
 
 const IS_ENTERPRISE_EDITION =
-  process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
+  ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase());
 
 export interface ChartDesignerWidget {
   id: string;
@@ -54,14 +54,12 @@ interface ChartDesignerState {
   isPropertiesCollapsed: boolean;
   isLoading: boolean;
   isSaving: boolean;
-  isSidebarCollapsed: boolean;
 
   // Actions
   setWidgets: (widgets: ChartDesignerWidget[]) => void;
   setLayout: (layout: LayoutItem[]) => void;
   setSelectedWidgetId: (id: string | null) => void;
   setPropertiesCollapsed: (collapsed: boolean) => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
 
   addWidget: (widget: ChartDesignerWidget, layoutItem?: LayoutItem) => void;
   updateWidget: (id: string, updates: Partial<ChartDesignerWidget>) => void;
@@ -87,7 +85,6 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
   isPropertiesCollapsed: true,
   isLoading: false,
   isSaving: false,
-  isSidebarCollapsed: false,
 
   setWidgets: (next) =>
     set((state) => ({
@@ -150,7 +147,6 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
 
   setPropertiesCollapsed: (collapsed) => set({ isPropertiesCollapsed: collapsed }),
 
-  setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
 
   addWidget: (widget, layoutItem) =>
     set((state) => {
@@ -632,7 +628,6 @@ export const useChartDesignerStore = create<ChartDesignerState>((set, get) => ({
       layout: [],
       selectedWidgetId: null,
       isPropertiesCollapsed: true,
-      isSidebarCollapsed: false,
       isLoading: false,
       isSaving: false,
     }),

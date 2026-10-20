@@ -77,9 +77,13 @@ export function DataSourceIcon({ type, dbType, size = 16, style }: DataSourceIco
   }
 
   let inner: React.ReactElement;
-  if (type === 'file' && getIntegrationLogo('file')) {
-    return <DataSourceLogoImage appType="file" size={size} style={style} />;
-  } else if (type === 'file') {
+  if (type === 'file') {
+    const fileApp = dbType && getIntegrationLogo(dbType) ? dbType : 'file';
+    if (getIntegrationLogo(fileApp)) {
+      return <DataSourceLogoImage appType={fileApp} size={size} style={style} />;
+    }
+  }
+  if (type === 'file') {
     inner = <FileTextOutlined style={{ ...baseStyle, color: '#52c41a' }} />;
   } else if (type === 'api' && getIntegrationLogo('api')) {
     return <DataSourceLogoImage appType="api" size={size} style={style} />;

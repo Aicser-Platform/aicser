@@ -341,6 +341,35 @@ class DataLakeObject(BaseModel):
     )
 
 
+class DataContract(BaseModel):
+    """What a certified table promises its consumers: these columns with these types, at least
+    this many rows, refreshed this often. Pipeline runs are checked against it, and a Prepare
+    change that would break it is named before it is published."""
+
+    __tablename__ = "data_contracts"
+
+    organization_id = Column(UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True)
+    data_source_id = Column(String, ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_table = Column(String, nullable=True)
+    layer = Column(String(20), nullable=False, server_default=text("'silver'"))
+    # [{"name": ..., "type": ..., "required": true}]
+    columns = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    min_rows = Column(Integer, nullable=True)
+    freshness_hours = Column(Integer, nullable=True)
+    # warn: flag the run and tell the owner; block: also refuse Prepare changes that break it.
+    on_breach = Column(String(10), nullable=False, server_default=text("'warn'"))
+    owner_id = Column(UUID(as_uuid=True), nullable=True)
+    created_by = Column(UUID(as_uuid=True), nullable=True)
+    version = Column(Integer, nullable=False, server_default=text("1"))
+    # Last evaluation, so the Catalog can show it without re-reading the table.
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
+    last_breaches = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+
+    __table_args__ = (
+        Index("ix_data_contracts_table", "data_source_id", "source_table", "layer"),
+    )
+
+
 class DataIngestionJob(BaseModel):
     """Scheduled or on-demand load into a lakehouse layer."""
 
@@ -367,7 +396,13 @@ class DataIngestionJob(BaseModel):
         nullable=False,
     )
     mode = Column(
-        Enum("snapshot", "incremental", "cdc", name="data_ingestion_mode_enum"),
+        Enum(
+            "snapshot",
+            "incremental",
+            "cdc",
+            "log_cdc",
+            name="data_ingestion_mode_enum",
+        ),
         nullable=False,
     )
     target_layer = Column(
@@ -434,6 +469,44 @@ class DataCDCState(BaseModel):
             "connector",
             "stream_name",
             name="uq_data_cdc_state_stream",
+        ),
+    )
+
+
+class DataPipelineCdcEvent(BaseModel):
+    """Buffered replication-log change events (Debezium envelope) before Bronze landing."""
+
+    __tablename__ = "data_pipeline_cdc_events"
+
+    organization_id = Column(
+        UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True
+    )
+    data_source_id = Column(
+        String,
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stream_name = Column(String(255), nullable=False)
+    op = Column(String(1), nullable=False)
+    row_payload = Column(JSONB, nullable=True)
+    before_payload = Column(JSONB, nullable=True)
+    source_offset = Column(String(512), nullable=True)
+    source_ts_ms = Column(Integer, nullable=True)
+    status = Column(
+        Enum("pending", "committed", name="data_pipeline_cdc_event_status_enum"),
+        nullable=False,
+        server_default=text("'pending'"),
+    )
+    committed_load_id = Column(UUID(as_uuid=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_data_pipeline_cdc_events_pending",
+            "data_source_id",
+            "stream_name",
+            "status",
+            "created_at",
         ),
     )
 
@@ -569,7 +642,13 @@ class DataPipeline(BaseModel):
         server_default=text("'silver'"),
     )
     ingest_mode = Column(
-        Enum("snapshot", "incremental", "cdc", name="data_pipeline_ingest_mode_enum"),
+        Enum(
+            "snapshot",
+            "incremental",
+            "cdc",
+            "log_cdc",
+            name="data_pipeline_ingest_mode_enum",
+        ),
         nullable=False,
         server_default=text("'snapshot'"),
     )
@@ -744,71 +823,6 @@ class DataAssetProfile(BaseModel):
 
     __table_args__ = (
         Index("ix_data_asset_profiles_object_created", "lake_object_id", "created_at"),
-    )
-
-
-class DataOnboardingSession(BaseModel):
-    """A staged upload being walked from raw file to reviewed Bronze."""
-
-    __tablename__ = "data_onboarding_sessions"
-
-    organization_id = Column(
-        UUID(as_uuid=True), *_organization_fk(), nullable=True, index=True
-    )
-    data_source_id = Column(
-        String,
-        ForeignKey("data_sources.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    staging_object_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("data_lake_objects.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    bronze_object_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("data_lake_objects.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    profile_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("data_asset_profiles.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    status = Column(
-        Enum(
-            "profiling",
-            "review",
-            "ingesting",
-            "ingested",
-            "failed",
-            "abandoned",
-            name="data_onboarding_status_enum",
-        ),
-        nullable=False,
-        server_default=text("'profiling'"),
-        index=True,
-    )
-    decisions = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    error_message = Column(Text, nullable=True)
-    created_by = Column(UUID(as_uuid=True), nullable=True)
-
-    __table_args__ = (
-        # Scoped by sheet, not just data_source_id: a multi-sheet workbook fans
-        # out into one session per sheet (see select_sheets), all sharing the
-        # same data_source_id and open at once. COALESCE to '' rather than
-        # leaving sheet_name out of the index entirely -- Postgres treats NULL
-        # as distinct from NULL in a unique index, which would silently stop
-        # enforcing "one open session" for every plain (non-Excel) upload,
-        # since none of those ever set sheet_name.
-        Index(
-            "uq_data_onboarding_open_per_source",
-            "data_source_id",
-            text("(COALESCE(decisions->>'sheet_name', ''))"),
-            unique=True,
-            postgresql_where=text("status IN ('profiling', 'review', 'ingesting')"),
-        ),
     )
 
 

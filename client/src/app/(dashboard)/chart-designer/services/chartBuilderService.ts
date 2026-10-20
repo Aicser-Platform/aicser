@@ -13,7 +13,7 @@ import type { ChartQuery } from '../../dashboards/services/chartService';
  */
 
 const IS_ENTERPRISE_EDITION =
-  process.env.NEXT_PUBLIC_EDITION === 'enterprise' || process.env.EDITION === 'enterprise';
+  ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase());
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

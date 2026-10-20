@@ -1,33 +1,15 @@
 'use client';
 
-import dynamic from 'next/dynamic';
-import { useTranslations } from 'next-intl';
-import { ClusterOutlined, RocketOutlined } from '@ant-design/icons';
-import { Button, Result } from 'antd';
-import { DashboardPageHeader, DashboardPageShell } from '@/components/layout/DashboardPageShell';
-import { isEnterpriseEdition } from '@/utils/appPaths';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
-const EEWarehousePage = dynamic(() => import('@/ee').then((m) => ({ default: m.WarehousePage })), { ssr: false });
-
-function WarehouseCEFallback() {
-  const t = useTranslations('warehouse');
-  return (
-    <DashboardPageShell className="warehouse-page">
-      <DashboardPageHeader icon={<ClusterOutlined />} title={t('title')} />
-      <Result
-        icon={<ClusterOutlined style={{ color: 'var(--ant-color-primary)' }} />}
-        title={t('ce_title')}
-        subTitle={t('ce_desc')}
-        extra={
-          <Button type="primary" icon={<RocketOutlined />} onClick={() => window.dispatchEvent(new CustomEvent('open-pricing-modal'))}>
-            {t('ce_cta')}
-          </Button>
-        }
-      />
-    </DashboardPageShell>
-  );
-}
-
-export default function WarehouseRoute() {
-  return isEnterpriseEdition() ? <EEWarehousePage /> : <WarehouseCEFallback />;
+/** Legacy URL — canonical lakehouse hub is `/lakehouse`. */
+export default function WarehouseAliasPage() {
+  const router = useRouter();
+  useEffect(() => {
+    const path = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/lakehouse';
+    const target = path.replace(/^\/warehouse/, '/lakehouse');
+    router.replace(target);
+  }, [router]);
+  return null;
 }

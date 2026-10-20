@@ -13,6 +13,14 @@ export async function GET(
   return handleKnowledgeRequest(request, context, 'GET');
 }
 
+export async function PATCH(
+  request: NextRequest,
+  context: { params?: any }
+) {
+  return handleKnowledgeRequest(request, context, 'PATCH');
+}
+
+
 export async function POST(
   request: NextRequest,
   context: { params?: any }
@@ -100,6 +108,7 @@ async function handleKnowledgeRequest(
     }
 
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) return new NextResponse(null, { status: 204 });
 
     const responseContentType = response.headers.get('content-type') || '';
 

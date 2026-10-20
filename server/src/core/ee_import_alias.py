@@ -33,6 +33,12 @@ this closes the actual gap so neither category of bug can recur.
 
 The fix
 ───────
+Community code never names `ee.` itself. Two spellings reach Enterprise code:
+`src.modules.<name>.*` for wholesale shims, and `src.enterprise.<rest>` (aliased
+to `ee.<rest>`) for EE files added next to a CE module that has code of its own
+(`data`, `authentication`, `knowledge`, ...). Without EE enabled or checked out,
+`src.enterprise.*` simply doesn't exist (ImportError), like any optional module.
+
 A `sys.meta_path` finder: the first time anything imports
 `src.modules.<name>.<rest>` for a `<name>` that genuinely uses the wholesale
 shim pattern, it imports `ee.modules.<name>.<rest>` instead and aliases
@@ -119,22 +125,46 @@ def _discover_shimmed_roots() -> Set[str]:
 
 
 class _AliasLoader(importlib.abc.Loader):
-    """Loader that hands back an already-imported module object as-is.
+    """Loader that hands back the ee.* module object itself.
 
-    exec_module() intentionally does nothing - the ee.modules.* import that
-    produced `module` already ran its top-level code exactly once; running
-    it again here would recreate the exact double-execution this whole
-    mechanism exists to prevent.
+    The ee import happens here, in create_module(), not in the finder: Python calls finders
+    while holding its global import lock, and running a module's code under that lock
+    deadlocks as soon as the module imports something another thread is loading (seen with
+    the embedding warm-up thread loading sentence_transformers while /health imported an EE
+    module). Loading runs under only this module's own lock, where nested imports are safe.
+
+    exec_module() intentionally does nothing - the ee.* import already ran its top-level code
+    exactly once; running it again would recreate the double-execution this mechanism prevents.
     """
 
-    def __init__(self, module):
-        self._module = module
+    def __init__(self, ee_name: str, ce_dir: Optional[str] = None):
+        self._ee_name = ee_name
+        self._ce_dir = ce_dir
 
     def create_module(self, spec):
-        return self._module
+        module = importlib.import_module(self._ee_name)
+        # A shimmed package keeps its CE-only files importable (the shim's own __path__ lists
+        # both folders; the alias would otherwise replace it with the EE folder alone): EE wins
+        # a name that exists in both, a name only CE has (e.g. src.modules.ai.surface_context_schema)
+        # is still found.
+        if self._ce_dir and hasattr(module, "__path__") and self._ce_dir not in list(module.__path__):
+            module.__path__.append(self._ce_dir)
+        return module
 
     def exec_module(self, module):
         pass
+
+
+def _ee_location(ee_name: str):
+    """(origin file, package directory or None) for an ee.* name, read from disk only - finding
+    it through importlib would import its parent packages, which is what must not happen here."""
+    base = os.path.join(_SERVER_ROOT, *ee_name.split("."))
+    if os.path.isdir(base):
+        init = os.path.join(base, "__init__.py")
+        return (init if os.path.isfile(init) else None), base
+    if os.path.isfile(base + ".py"):
+        return base + ".py", None
+    return None
 
 
 class _EEAliasFinder(importlib.abc.MetaPathFinder):
@@ -150,10 +180,9 @@ class _EEAliasFinder(importlib.abc.MetaPathFinder):
 
     def _find_spec(self, fullname: str):
         parts = fullname.split(".")
-        if len(parts) < 3 or parts[0] != "src" or parts[1] != "modules":
+        if len(parts) < 3 or parts[0] != "src" or parts[1] not in ("modules", "enterprise"):
             return None
-        root = parts[2]
-        if root not in _discover_shimmed_roots():
+        if parts[1] == "modules" and parts[2] not in _discover_shimmed_roots():
             return None
 
         from src.core.edition import is_ee_enabled
@@ -161,28 +190,26 @@ class _EEAliasFinder(importlib.abc.MetaPathFinder):
         if not is_ee_enabled():
             return None
 
-        ee_name = "ee.modules." + ".".join(parts[2:])
-        # importlib.import_module is itself a sys.modules-cache-checking
-        # no-op when ee_name is already loaded, so this covers both cases
-        # without this finder ever writing to sys.modules itself - leaving
-        # that to Python's own _bootstrap._load, which is what actually
-        # performs the parent.child attribute wiring (setattr(parent_module,
-        # tail, module)) that make later `import src.modules.X.Y; X.Y.thing`
-        # attribute-style access work, not just a sys.modules dict lookup.
-        # A finder that pre-populates sys.modules itself short-circuits that
-        # bootstrap step for the *parent* package spec, silently leaving the
-        # already-loaded ee-side package missing the very submodule attribute
-        # this whole mechanism exists to alias correctly.
-        ee_module = importlib.import_module(ee_name)
-
-        spec = importlib.util.spec_from_loader(fullname, _AliasLoader(ee_module), origin=getattr(ee_module, "__file__", None))
-        # Package-shaped targets (anything with __path__, e.g. src.modules.chats
-        # aliasing to ee.modules.chats) must declare submodule_search_locations,
-        # or Python's bootstrap can't correctly resolve *children* of this
-        # alias (src.modules.chats.models) as being part of a package at all.
-        ee_path = getattr(ee_module, "__path__", None)
-        if ee_path is not None:
-            spec.submodule_search_locations = list(ee_path)
+        # src.modules.<shimmed>.<rest> → ee.modules.<shimmed>.<rest>; src.enterprise.<rest> → ee.<rest>
+        # (additive EE code next to a CE module with its own code, e.g. ee.modules.data.services.*).
+        ee_name = ("ee.modules." if parts[1] == "modules" else "ee.") + ".".join(parts[2:])
+        # The finder only locates the file; the loader imports it (see _AliasLoader). Python's
+        # own _bootstrap._load still writes sys.modules and wires parent.child attributes, so
+        # `import src.modules.X.Y; X.Y.thing` works as for any module.
+        location = _ee_location(ee_name)
+        if location is None:
+            return None  # no such ee module: let the normal import report it
+        origin, package_dir = location
+        ce_dir = None
+        if parts[1] == "modules" and package_dir is not None:
+            candidate = os.path.join(_SRC_MODULES_DIR, *parts[2:])
+            ce_dir = candidate if os.path.isdir(candidate) else None
+        spec = importlib.util.spec_from_loader(fullname, _AliasLoader(ee_name, ce_dir), origin=origin)
+        # Package-shaped targets (e.g. src.modules.chats aliasing to ee.modules.chats) must
+        # declare submodule_search_locations, or Python's bootstrap can't resolve *children* of
+        # this alias (src.modules.chats.models) as part of a package at all.
+        if package_dir is not None:
+            spec.submodule_search_locations = [package_dir] + ([ce_dir] if ce_dir else [])
         return spec
 
 

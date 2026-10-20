@@ -1,5 +1,6 @@
 'use client';
 
+import { useSendTo } from '@/components/actions/useSendTo';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
@@ -28,9 +29,11 @@ import {
   Drawer,
   Segmented,
   Badge,
+  Switch,
   type MenuProps,
 } from 'antd';
 import { useTranslations } from 'next-intl';
+import { CollapsedRail } from '@/components/layout/SidePanel';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import MemoryOptimizedEditor, { type MemoryOptimizedEditorHandle } from '@/components/ai/MemoryOptimizedEditor';
 import {
@@ -43,7 +46,6 @@ import {
   CloseCircleOutlined,
   CloseOutlined,
   DownloadOutlined,
-  ExpandOutlined,
   CloudOutlined,
   ApiOutlined,
   FileOutlined,
@@ -61,11 +63,12 @@ import {
 } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { enhancedDataService } from '@/services/enhancedDataService';
-import { fetchApi } from '@/utils/api';
+import { fetchApi, fetchApiBlob } from '@/utils/api';
 import UniversalDataSourceModal from '@/components/data/UniversalDataSourceModal/UniversalDataSourceModal';
 import { generateColumns } from '@/components/data/SQLEditor/panes/generateColumns';
 import { PerformancePane } from '@/components/data/SQLEditor/panes/PerformancePane';
 import { QueryHistoryPane } from '@/components/data/SQLEditor/panes/QueryHistoryPane';
+import { compileMetric } from '@/api/semanticModel';
 import { SavedQueriesSnapshotsPane } from '@/components/data/SQLEditor/panes/SavedQueriesSnapshotsPane';
 import { ResultsTabPane } from '@/components/data/SQLEditor/panes/ResultsTabPane';
 import { ModelSelector } from '@/components/ai/ModelSelector/ModelSelector';
@@ -279,6 +282,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   defaultSidebarOpen = false,
 }) => {
   const t = useTranslations('monaco_sql_editor');
+  const sendTo = useSendTo();
   const router = useRouter();
   const formatError = useFormatUserError();
   const authenticatedFetch = useAuthenticatedFetch();
@@ -420,6 +424,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
   }, [results]);
   const [selectedEngine, setSelectedEngine] = useState<string>('auto');
   const [resolvedEngine, setResolvedEngine] = useState<string | null>(null);
+  const [sqlWriteMode, setSqlWriteMode] = useState(false);
+  const canSqlWrite = selectedDataSource?.type === 'database';
   const [queryHistory, setQueryHistory] = useState<any[]>([]);
   const [historySearch, setHistorySearch] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
@@ -2228,6 +2234,29 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     document.body.removeChild(link);
   };
 
+  const exportToParquet = async (data: any[]) => {
+    if (data.length === 0) return;
+    try {
+      const columns = Object.keys(data[0]);
+      const { blob, filename } = await fetchApiBlob('/data/query/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: 'parquet', columns, rows: data }),
+      });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.href = url;
+      link.download = filename || `query_results_${new Date().toISOString().slice(0, 10)}.parquet`;
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : t('export_parquet_failed'));
+    }
+  };
+
   /** Download current editor content as a .sql or .py file (no duplication with Saved Queries). */
   const downloadCurrentQueryAsFile = useCallback(() => {
     const content = editorLanguage === 'python' ? (sqlQuery || '') : (sqlQuery || '');
@@ -2658,7 +2687,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
       const startTime = Date.now();
 
       // Respect the limit the user has set: use LIMIT/TOP in the SQL if present; otherwise use Row Limit control (or no limit if "All").
-      if (editorLanguage === 'sql' && !isPromqlDataSource) {
+      if (editorLanguage === 'sql' && !isPromqlDataSource && !sqlWriteMode) {
         const existingLimit = extractLimitFromQuery(executedSql);
         const limitInQuery = existingLimit !== null || limitSource === 'query';
         if (!limitInQuery && rowLimit !== 'all') {
@@ -2728,6 +2757,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         true,
         abortController.signal,
         projectId || currentProjectId,
+        sqlWriteMode ? 'write' : 'read',
       );
 
       const executionTime = Date.now() - startTime;
@@ -2755,7 +2785,11 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         // Log if data is empty but success is true
         if (resultData.length === 0) {
           console.warn('⚠️ Query executed successfully but returned no data rows');
-          message.info(t('query_no_results_success'));
+          if (sqlWriteMode) {
+            message.success(t('sql_write_ok'));
+          } else {
+            message.info(t('query_no_results_success'));
+          }
         }
 
         setResults(resultData);
@@ -2936,6 +2970,34 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
     },
     []
   );
+
+  // A semantic metric as SQL, compiled by the semantic layer (joins, calendar), runnable here
+  // under the viewer's own access rules so the numbers match Ask and dashboards.
+  const handleMetricInsert = useCallback(
+    async (metric: { name: string }, dataSourceId: string) => {
+      try {
+        const compiled = await compileMetric(dataSourceId, { metric: metric.name, limit: DEFAULT_QUERY_LIMIT });
+        const sql = `-- ${metric.name} (semantic model)\n${compiled.trim().replace(/;?$/, ';')}`;
+        const current = (latestEditorContentRef.current || sqlQuery).trim();
+        if (!current || current === DEFAULT_SQL_SNIPPET.trim() || /^SELECT \* FROM [^\s;]+ LIMIT \d+;?$/i.test(current)) {
+          setSqlQuery(sql);
+          latestEditorContentRef.current = sql;
+          setQueryTabs((prev) => prev.map((tab) => (tab.key === activeQueryKey ? { ...tab, sql } : tab)));
+        } else {
+          editorInsertRef.current?.insertTextAtCursor(`\n${sql}\n`);
+        }
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [sqlQuery, activeQueryKey],
+  );
+
+  const handleCalcFieldClick = useCallback((field: { name: string; expression: string }) => {
+    const alias = /[\s"]/.test(field.name) ? `"${field.name.replace(/"/g, '""')}"` : field.name;
+    const snippet = `(${field.expression}) AS ${alias}`;
+    editorInsertRef.current?.insertTextAtCursor(snippet);
+  }, []);
 
   const compactMenuItems = useMemo(() => {
     const items: MenuProps['items'] = [
@@ -3289,6 +3351,20 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                     />
 
                     {!isSmallScreen && <Divider orientation="vertical" style={{ margin: '0 2px' }} />}
+
+                    {canSqlWrite && editorLanguage === 'sql' && !isPromqlDataSource ? (
+                      <Tooltip title={t('sql_write_mode_tooltip')}>
+                        <Space size={4} className="qe-write-mode">
+                          <Switch
+                            size="small"
+                            checked={sqlWriteMode}
+                            onChange={setSqlWriteMode}
+                            aria-label={t('sql_write_mode')}
+                          />
+                          {!isSmallScreen ? <span style={{ fontSize: 12 }}>{t('sql_write_mode')}</span> : null}
+                        </Space>
+                      </Tooltip>
+                    ) : null}
 
                     {/* Always visible, however many tabs are open (tabs that don't fit go to the ⋯ menu). */}
                     <Tooltip title={t('new_query_tab')}>
@@ -3861,7 +3937,27 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                             icon: <DownloadOutlined />,
                             disabled: results.length === 0,
                             onClick: () => exportToJSON(results),
-                          }
+                          },
+                          {
+                            key: 'parquet',
+                            label: t('export_parquet'),
+                            icon: <DownloadOutlined />,
+                            disabled: results.length === 0,
+                            onClick: () => void exportToParquet(results),
+                          },
+                          ...(sendTo.items(
+                            () =>
+                              results.length
+                                ? {
+                                    title: t('send_result_title'),
+                                    text: sqlQuery.trim().slice(0, 2000),
+                                    columns: Object.keys(results[0] ?? {}),
+                                    rows: results as Record<string, unknown>[],
+                                    source: { kind: 'sql' },
+                                  }
+                                : null,
+                            results.length === 0,
+                          ) ?? []),
                         ] }} trigger={['click']}>
                           <Tooltip title={t('more_actions')}>
                             <Button
@@ -3971,8 +4067,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             ) : null}
             <div
               style={{
-                width: sidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
-                minWidth: sidebarCollapsed ? '64px' : `${dataPanelWidth}px`,
+                width: sidebarCollapsed ? '48px' : `${dataPanelWidth}px`,
+                minWidth: sidebarCollapsed ? '48px' : `${dataPanelWidth}px`,
                 height: '100%',
                 borderLeft: !sidebarCollapsed
                   ? `1px solid ${isDarkMode ? 'var(--ant-color-border)' : 'var(--ant-color-border-secondary)'}`
@@ -3985,38 +4081,15 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               }}
             >
               {sidebarCollapsed ? (
-                <div className="qe-sources-collapsed">
-                  <Tooltip title={t('expand_data_panel')} placement="left">
-                    <Button
-                      type="text"
-                      size="small"
-                      className="icon-only-btn qe-sources-collapsed-btn"
-                      icon={<ExpandOutlined />}
-                      onClick={() => {
-                        setSidebarCollapsed(false);
-                        try {
-                          window.localStorage.setItem('sidebarCollapsed', 'false');
-                        } catch {}
-                        try {
-                          window.dispatchEvent(
-                            new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: false } })
-                          );
-                        } catch {}
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title={t('add_data_source')} placement="left">
-                    <Button
-                      type="text"
-                      size="small"
-                      className="icon-only-btn qe-sources-collapsed-btn"
-                      icon={<PlusOutlined />}
-                      onClick={() => setShowConnectDataModal(true)}
-                    />
-                  </Tooltip>
-                  <Tooltip title={t('data_sources')} placement="left">
-                    <DatabaseOutlined style={{ fontSize: '20px', color: 'var(--ant-color-primary)' }} />
-                  </Tooltip>
+                <div style={{ padding: 4, height: '100%' }}>
+                  <CollapsedRail side="right" label={t('data_sources')} icon={<DatabaseOutlined />} count={contextDataSources.length || undefined}
+                    onExpand={() => {
+                      setSidebarCollapsed(false);
+                      try {
+                        window.localStorage.setItem('sidebarCollapsed', 'false');
+                        window.dispatchEvent(new CustomEvent('sidebar-collapse-changed', { detail: { collapsed: false } }));
+                      } catch {}
+                    }} />
                 </div>
               ) : (
                 <EnhancedDataPanel
@@ -4031,6 +4104,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   }}
                   onTableClick={handleTableClick}
                   onColumnClick={handleColumnClick}
+                  onCalcFieldClick={handleCalcFieldClick}
+                  onMetricInsert={handleMetricInsert}
                   schemaTreeCompact
                 />
               )}
@@ -4088,6 +4163,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                 }
               }}
               onColumnClick={handleColumnClick}
+              onCalcFieldClick={handleCalcFieldClick}
+              onMetricInsert={handleMetricInsert}
               schemaTreeCompact
             />
           </Drawer>
@@ -4103,6 +4180,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           refreshDataSources();
         }}
       />
+
+      {sendTo.manager}
 
       {/* Saved Queries Modal - Consolidated: named queries only; execution history is in Query History tab */}
       <Modal

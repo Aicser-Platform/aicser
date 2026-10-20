@@ -48,6 +48,7 @@ export const RowFiltersTab: React.FC<{ dataSourceId: string; active: boolean }> 
         loading={isLoading}
         dataSource={policies}
         pagination={false}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('row_rules_empty')} /> }}
         columns={[
           {
             title: t('data_source_rls_policy_name'),

@@ -105,7 +105,8 @@ async def resolve_semantic_chart_query(
     """
     Resolve semantic_metric_id and semantic_dimension_ids to current expressions
     at chart execution time (dbt/Cube-style reference-by-id).
-    When a certified metric is bound, compile through SemanticQueryCompiler when possible.
+    A bound metric (official or draft: the widget chose it) compiles through SemanticQueryCompiler,
+    so the card runs the model's current definition with its joins and calendar.
     """
     cq = copy.deepcopy(chart_query or {})
     metric_id = cq.get("semantic_metric_id")
@@ -113,12 +114,12 @@ async def resolve_semantic_chart_query(
 
     if metric_id and data_source_id:
         try:
-            from ee.modules.semantic.compiler import SemanticQueryCompiler
-            from ee.modules.semantic.query_spec import SemanticQuerySpec
+            from src.enterprise.modules.semantic.compiler import SemanticQueryCompiler
+            from src.enterprise.modules.semantic.query_spec import SemanticQuerySpec
 
             ctx = await get_unified_semantic_context(db, str(data_source_id))
             metric = await _fetch_semantic_metric(db, str(metric_id))
-            if metric and metric.get("certified"):
+            if metric:
                 dim_keys = [str(i) for i in (cq.get("semantic_dimension_ids") or [])]
                 spec = SemanticQuerySpec(
                     data_source_id=str(data_source_id),
@@ -126,7 +127,7 @@ async def resolve_semantic_chart_query(
                     dimensions=dim_keys,
                     limit=int(cq.get("limit") or 5000),
                 )
-                from ee.modules.semantic.rls import rls_filters_for_user
+                from src.enterprise.modules.semantic.rls import rls_filters_for_user
 
                 ds_row = await db.get(DataSource, str(data_source_id))
                 schema_info = (ds_row.schema if ds_row and isinstance(ds_row.schema, dict) else {}) or {}
@@ -139,7 +140,7 @@ async def resolve_semantic_chart_query(
                     schema_info=schema_info,
                     dialect=dialect,
                     rls_filters=rls_filters,
-                    time_spines=ctx.get("time_spines") or [],
+                    calendar=ctx.get("calendar") or {},
                 )
                 compiled = compiler.compile(spec)
                 cq["compiled_semantic_sql"] = compiled.sql
@@ -235,46 +236,45 @@ async def _load_supplemental_metrics(
                         "source": "domain",
                         "certified": False,
                     })
-        org_id = getattr(ds, "organization_id", None)
-        if org_id:
-            from ee.modules.ai.services.kpi_memory_service import _fetch_matching_definitions
-            kpis = await _fetch_matching_definitions(
-                organization_id=str(org_id),
-                query="",
-                data_source_id=data_source_id,
-                db_session=db,
-                limit=12,
-            )
-            for k in kpis or []:
-                name = k.get("kpi_name") or k.get("name")
-                if not name or name in existing_names:
+        # Organization metric definitions are certified semantic metrics on their connection, so they
+        # arrive with this connection's own metrics above; nothing is added twice here.
+        # Core dimensions (date, customer, legal entity…) defined once for the organization, where
+        # this connection can join to them.
+        if getattr(ds, "organization_id", None):
+            from src.modules.semantic_domains.core import core_dimensions
+
+            for dim in await core_dimensions(db, str(ds.organization_id), str(data_source_id)):
+                if dim["availability"] == "needs_lakehouse" or dim["name"] in {d.get("name") for d in extra_dims}:
                     continue
-                existing_names.add(name)
-                extra_metrics.append({
-                    "id": f"kpi:{org_id}:{name}",
-                    "name": name,
-                    "expression": k.get("sql_expression") or name,
-                    "description": "Org-verified KPI",
-                    "source": "kpi",
-                    "certified": False,
+                extra_dims.append({
+                    "id": dim["id"],
+                    "name": dim["name"],
+                    "expression": dim["expression"] or dim["name"],
+                    "description": dim["description"] or "Core dimension",
+                    "source": "core",
+                    "certified": True,
                 })
     except Exception as exc:
         logger.debug("_load_supplemental_metrics: %s", exc)
     return extra_metrics, extra_dims
 
 
-async def list_time_spines(db: AsyncSession, data_source_id: str) -> List[Dict[str, Any]]:
-    try:
-        result = await db.execute(
-            sa_text(
-                "SELECT id, name, base_column, grain, sql_template, is_active "
-                "FROM semantic_time_spines WHERE data_source_id = :ds AND is_active = true ORDER BY name"
-            ),
-            {"ds": data_source_id},
-        )
-        return [dict(zip(result.keys(), row)) for row in result.fetchall()]
-    except Exception:
-        return []
+def describe_metric_format(fmt: Optional[str]) -> Optional[str]:
+    """How a metric's values should be read out: "currency USD", "a percentage" and so on.
+
+    Formats are kind[:code][:decimals], e.g. currency:USD:2, percent:1, number:0, integer.
+    Percent values are fractions (0.25 is 25%).
+    """
+    parts = str(fmt or "").strip().split(":")
+    kind = parts[0].lower()
+    if kind == "currency":
+        code = parts[1].upper() if len(parts) > 1 and parts[1] else ""
+        return f"currency {code}".strip()
+    if kind == "percent":
+        return "a percentage (the value is a fraction: 0.25 means 25%)"
+    if kind == "integer":
+        return "a whole number"
+    return None
 
 
 async def get_unified_semantic_context(
@@ -309,8 +309,9 @@ async def get_unified_semantic_context(
 
         m_res = await db.execute(
             sa_text(
-                f"SELECT id, name, expression, description, category, certified, metric_type, source "
-                f"FROM semantic_metrics WHERE {m_where} ORDER BY name LIMIT 50"
+                f"SELECT id, name, expression, description, category, certified, metric_type, source, format, "
+                f"COALESCE(type_params->'synonyms', '[]'::jsonb) AS synonyms "
+                f"FROM semantic_metrics WHERE {m_where} ORDER BY certified DESC, name LIMIT 50"
             ),
             params,
         )
@@ -319,7 +320,7 @@ async def get_unified_semantic_context(
 
         d_res = await db.execute(
             sa_text(
-                f"SELECT id, name, expression, description, certified "
+                f"SELECT id, name, expression, description, certified, dimension_type, default_grain "
                 f"FROM semantic_dimensions WHERE {d_where} ORDER BY name LIMIT 50"
             ),
             params,
@@ -334,11 +335,17 @@ async def get_unified_semantic_context(
     if sup_m:
         metrics.extend(sup_m)
     if sup_d:
-        dimensions.extend(sup_d)
+        # The connection's own definition wins over a supplement of the same name.
+        own = {d.get("name") for d in dimensions}
+        dimensions.extend(d for d in sup_d if d.get("name") not in own)
 
-    time_spines: List[Dict[str, Any]] = []
+    # Time is a dimension type; the organization calendar (Core domain) sets fiscal year and week start.
+    time_dimensions = [d for d in dimensions if str(d.get("dimension_type") or "") == "time"]
+    calendar: Dict[str, Any] = {}
     if data_source_id:
-        time_spines = await list_time_spines(db, data_source_id)
+        from src.modules.semantic_domains.core import org_calendar
+
+        calendar = await org_calendar(db, data_source_id)
 
     # ── Build structured, actionable prompt_hint ─────────────────────────────
     # Certified metrics are highest-trust SQL expressions — inject them as
@@ -350,8 +357,16 @@ async def get_unified_semantic_context(
     prompt_sections: List[str] = []
 
     if certified:
+        def _named(m: Dict[str, Any]) -> str:
+            also = [w for w in (m.get("synonyms") or []) if isinstance(w, str) and w.strip()][:4]
+            notes = [f"also called {', '.join(also)}"] if also else []
+            shown = describe_metric_format(m.get("format"))
+            if shown:
+                notes.append(f"report as {shown}")
+            return f"{m['name']} ({'; '.join(notes)})" if notes else m["name"]
+
         sql_snippets = "; ".join(
-            f"{m['name']}: {m['expression']}" for m in certified[:10]
+            f"{_named(m)}: {m['expression']}" for m in certified[:10]
         )
         prompt_sections.append(
             f"CERTIFIED METRICS — use these exact SQL expressions when asked for these KPIs: {sql_snippets}."
@@ -373,13 +388,19 @@ async def get_unified_semantic_context(
             dim_parts.append(entry)
         prompt_sections.append("Grouping dimensions: " + ", ".join(dim_parts) + ".")
 
-    if time_spines:
+    if time_dimensions:
         ts_parts = [
-            f"{ts['base_column']} (grain: {ts['grain']})" for ts in time_spines[:4]
+            f"{d['name']}={d.get('expression') or d['name']} (default grain: {d.get('default_grain') or 'day'})"
+            for d in time_dimensions[:4]
         ]
+        months = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+                  "October", "November", "December"]
+        start = int(calendar.get("fiscal_year_start_month") or 1)
+        cal_note = (f" The fiscal year starts in {months[start - 1]}." if start != 1 else "") + (
+            " Weeks start on Sunday." if calendar.get("week_start") == "sunday" else "")
         prompt_sections.append(
             "Time dimensions for trend analysis: " + ", ".join(ts_parts) + ". "
-            "Use DATE_TRUNC(grain, column) for time bucketing."
+            "Use DATE_TRUNC(grain, column) for time bucketing." + cal_note
         )
 
     if join_paths:
@@ -398,7 +419,8 @@ async def get_unified_semantic_context(
         "metrics": metrics,
         "dimensions": dimensions,
         "join_paths": join_paths,
-        "time_spines": time_spines,
+        "time_dimensions": time_dimensions,
+        "calendar": calendar,
         "total_metrics": len(metrics),
         "total_dimensions": len(dimensions),
         "total_joins": len(join_paths),

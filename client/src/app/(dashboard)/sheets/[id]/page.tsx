@@ -16,7 +16,7 @@ export default function WorkbookPage() {
   const params = useParams();
   const id = typeof params?.id === 'string' ? params.id : '';
   return (
-    <DashboardPageShell>
+    <DashboardPageShell fillHeight>
       <WorkbookEditor key={id} workbookId={id} />
     </DashboardPageShell>
   );

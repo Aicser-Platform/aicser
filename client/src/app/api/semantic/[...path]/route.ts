@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBackendUrlForApi } from '@/utils/backendUrl';
 import { buildProxyAuthHeaders } from '@/utils/proxyAuthHeaders';
 
-/**
- * Proxy route for /api/semantic/* endpoints
- * Handles GET /api/semantic/catalog and POST /api/semantic/query
- */
+/** Proxy for /api/semantic/*: every method the semantic API uses (edit and delete included). */
 export async function GET(request: NextRequest, context: { params?: any }) {
   return handleSemanticRequest(request, context, 'GET');
 }
 
 export async function POST(request: NextRequest, context: { params?: any }) {
   return handleSemanticRequest(request, context, 'POST');
+}
+
+export async function PUT(request: NextRequest, context: { params?: any }) {
+  return handleSemanticRequest(request, context, 'PUT');
+}
+
+export async function PATCH(request: NextRequest, context: { params?: any }) {
+  return handleSemanticRequest(request, context, 'PATCH');
+}
+
+export async function DELETE(request: NextRequest, context: { params?: any }) {
+  return handleSemanticRequest(request, context, 'DELETE');
 }
 
 async function handleSemanticRequest(
@@ -32,8 +41,9 @@ async function handleSemanticRequest(
     const queryString = searchParams.toString();
     const fullUrl = queryString ? `${backendUrl}?${queryString}` : backendUrl;
 
+    // Keep the caller's content type: dbt imports are multipart uploads, not JSON.
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      'Content-Type': request.headers.get('content-type') || 'application/json',
     };
     Object.assign(headers, buildProxyAuthHeaders(request));
 
@@ -49,14 +59,17 @@ async function handleSemanticRequest(
       signal: AbortSignal.timeout(60_000),
     };
 
-    if (method === 'POST') {
-      const body = await request.text();
-      if (body) {
+    if (method !== 'GET') {
+      const body = await request.arrayBuffer();
+      if (body.byteLength) {
         requestOptions.body = body;
       }
     }
 
     const response = await fetch(fullUrl, requestOptions);
+    if (response.status === 204) {
+      return new NextResponse(null, { status: 204 });
+    }
 
     if (!response.ok) {
       const responseContentType = response.headers.get('content-type') || '';

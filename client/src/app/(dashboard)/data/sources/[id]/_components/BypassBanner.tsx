@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Alert } from 'antd';
+import { Alert, Button } from 'antd';
 import { useTranslations } from 'next-intl';
 import type { DataSourceAccessGrant } from '@/api/dataSources';
 import { countBypassGrants } from './RowAccessSelect';
@@ -11,7 +11,7 @@ import { countBypassGrants } from './RowAccessSelect';
  * for any user holding it, so the warning has to live above the table rather
  * than on the offending row.
  */
-export const BypassBanner: React.FC<{ grants: DataSourceAccessGrant[] }> = ({ grants }) => {
+export const BypassBanner: React.FC<{ grants: DataSourceAccessGrant[]; onOpenAccess?: () => void }> = ({ grants, onOpenAccess }) => {
   const t = useTranslations('data_source_detail');
   const count = countBypassGrants(grants);
   if (count === 0) return null;
@@ -21,7 +21,8 @@ export const BypassBanner: React.FC<{ grants: DataSourceAccessGrant[] }> = ({ gr
       type="warning"
       showIcon
       style={{ marginBottom: 16 }}
-      message={t('bypass_banner', { count })}
+      message={t(onOpenAccess ? 'bypass_banner' : 'bypass_banner_here', { count })}
+      action={onOpenAccess ? <Button size="small" onClick={onOpenAccess}>{t('tab_access')}</Button> : undefined}
     />
   );
 };

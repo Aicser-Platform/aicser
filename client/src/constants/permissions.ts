@@ -7,6 +7,7 @@ export enum Permission {
   ORG_MANAGE_BILLING = 'org:manage_billing',
   /** See plan, usage and invoices without changing them (org_admin). */
   ORG_VIEW_BILLING = 'org:view_billing',
+  ORG_INVITE = 'org:invite',
   ORG_VIEW_ANALYTICS = 'org:view_analytics',
 
   PROJECT_VIEW = 'project:view',
@@ -14,6 +15,8 @@ export enum Permission {
   PROJECT_EDIT = 'project:edit',
   PROJECT_DELETE = 'project:delete',
   PROJECT_MANAGE_MEMBERS = 'project:manage_members',
+  PROJECT_INVITE_MEMBER = 'project:invite_member',
+  PROJECT_REMOVE_MEMBER = 'project:remove_member',
   PROJECT_EXPORT = 'project:export',
 
   DATA_VIEW = 'data:view',
@@ -22,16 +25,28 @@ export enum Permission {
   DATA_UPLOAD = 'data:upload',
   DATA_CONNECT = 'data:connect',
   DATA_CREATE = 'data:create',
+  DATA_EXPORT = 'data:export',
 
   CHART_VIEW = 'chart:view',
+  CHART_CREATE = 'chart:create',
   CHART_EDIT = 'chart:edit',
   CHART_DELETE = 'chart:delete',
   CHART_SHARE = 'chart:share',
+  CHART_PUBLISH = 'chart:publish',
+  CHART_UNPUBLISH = 'chart:unpublish',
   DASHBOARD_VIEW = 'dashboard:view',
   DASHBOARD_CREATE = 'dashboard:create',
   DASHBOARD_EDIT = 'dashboard:edit',
   DASHBOARD_DELETE = 'dashboard:delete',
+  DASHBOARD_SHARE = 'dashboard:share',
   DASHBOARD_PUBLISH = 'dashboard:publish',
+  DASHBOARD_UNPUBLISH = 'dashboard:unpublish',
+
+  CHAT_VIEW = 'chat:view',
+  CHAT_CREATE = 'chat:create',
+  CHAT_EDIT = 'chat:edit',
+  CHAT_DELETE = 'chat:delete',
+  CHAT_SHARE = 'chat:share',
 
   AI_USE = 'ai:use',
   AI_ADVANCED = 'ai:advanced',
@@ -53,11 +68,32 @@ export enum Permission {
   AGENT_USE = 'agent:use',
   AGENT_CONFIGURE = 'agent:configure',
 
+  QUERY_VIEW = 'query:view',
   QUERY_EXECUTE = 'query:execute',
+  QUERY_EDIT = 'query:edit',
   QUERY_SAVE = 'query:save',
   QUERY_SHARE = 'query:share',
+  QUERY_DELETE = 'query:delete',
 
   USER_VIEW_PROFILE = 'user:view_profile',
   USER_EDIT_PROFILE = 'user:edit_profile',
   USER_MANAGE_API_KEYS = 'user:manage_api_keys',
+
+  SEMANTIC_VIEW = 'semantic:view',
+  SEMANTIC_EDIT = 'semantic:edit',
+  SEMANTIC_DELETE = 'semantic:delete',
+  SEMANTIC_CERTIFY = 'semantic:certify',
+
+  ONTOLOGY_SEARCH = 'ontology:search',
+  ONTOLOGY_EXPAND = 'ontology:expand',
+  ONTOLOGY_MANAGE = 'ontology:manage',
+
+  ALERT_VIEW = 'alert:view',
+  ALERT_CREATE = 'alert:create',
+  ALERT_EDIT = 'alert:edit',
+  ALERT_DELETE = 'alert:delete',
+
+  CATALOG_VIEW = 'catalog:view',
+  CATALOG_EDIT = 'catalog:edit',
+  CATALOG_ADMIN = 'catalog:admin',
 }

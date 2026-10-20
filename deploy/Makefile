@@ -119,8 +119,15 @@ ce-fresh:
 # -- EE build
 ee:
 	$(EE) up -d --build
+# Same as `ee` but never builds server+client+worker in parallel (WSL OOM / swap thrash).
+ee-serial:
+	COMPOSE_PARALLEL_LIMIT=1 $(EE) up -d --build
 ee-up:
 	$(EE) up -d
+ee-build-server:
+	COMPOSE_PARALLEL_LIMIT=1 $(EE) build server
+ee-build-client:
+	COMPOSE_PARALLEL_LIMIT=1 $(EE) build client
 ee-client-light:
 	COMPOSE_PARALLEL_LIMIT=1 NEXT_BUILD_CPUS=1 NEXT_BUILD_MAX_OLD_SPACE_SIZE=3072 $(EE) build client
 	$(EE) up -d --no-deps client
@@ -197,6 +204,7 @@ seed-rbac-dev:
 .PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
+        ee-serial ee-build-server ee-build-client \
         eval eval-answers eval-modes eval-decisions migrate-ee \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
         ee ee-down ee-logs ee-ollama ee-client-light ee-restart ee-restart-client \

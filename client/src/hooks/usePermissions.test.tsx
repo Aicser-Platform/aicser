@@ -22,4 +22,11 @@ describe('Permission enum', () => {
     expect(Permission.AGENT_USE).toBe('agent:use');
     expect(Permission.AGENT_CONFIGURE).toBe('agent:configure');
   });
+
+  it('includes govern and operate permissions', () => {
+    expect(Permission.SEMANTIC_CERTIFY).toBe('semantic:certify');
+    expect(Permission.ONTOLOGY_SEARCH).toBe('ontology:search');
+    expect(Permission.ALERT_VIEW).toBe('alert:view');
+    expect(Permission.CATALOG_VIEW).toBe('catalog:view');
+  });
 });

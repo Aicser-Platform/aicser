@@ -283,19 +283,16 @@ export const getDataSourceSchema = (
   });
 
 /**
- * Update business metadata (column descriptions, measures, dimensions,
- * ontology_mapping) for a data source. The backend merges by TOP-LEVEL key
- * but each key you DO pass fully REPLACES the existing value for that key
- * (see PATCH /data/sources/{id}/business-metadata) - so column_descriptions
- * must be sent as the complete map (existing + the one edit), not a
- * single-key patch, or the other columns' descriptions are wiped.
+ * Update what a connection's columns mean (descriptions, roles, personal data, ontology mapping).
+ * Each key you pass fully REPLACES that key's map, so send the complete map (existing + the one
+ * edit). Metrics and dimensions are defined in the semantic model, not here.
  */
 export const updateDataSourceBusinessMetadata = (
   id: string,
   data: {
     column_descriptions?: Record<string, string>;
-    measures?: Array<Record<string, unknown>>;
-    dimensions?: Array<Record<string, unknown>>;
+    column_roles?: Record<string, string>;
+    personal_columns?: string[];
     ontology_mapping?: Record<string, unknown>;
   },
 ): Promise<{ data_source: DataSource }> =>

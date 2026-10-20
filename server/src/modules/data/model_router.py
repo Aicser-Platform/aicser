@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Body, status
@@ -74,6 +74,12 @@ class RelationshipCreateRequest(BaseModel):
     is_active: Optional[bool] = Field(default=True)
     assume_integrity: Optional[bool] = Field(default=False)
     to_data_source_id: Optional[str] = Field(default=None)
+
+
+class AutoDetectRequest(BaseModel):
+    """When set, runs detection on every listed source plus cross-source joins (host = path id)."""
+
+    source_ids: Optional[List[str]] = Field(default=None)
 
 
 class RelationshipUpdateRequest(BaseModel):
@@ -153,6 +159,7 @@ async def delete_relationship(
 @router.post("/auto-detect")
 async def auto_detect_relationships(
     data_source_id: str,
+    body: AutoDetectRequest = Body(default_factory=AutoDetectRequest),
     db: AsyncSession = Depends(get_async_session),
     current_user: dict = Depends(JWTCookieBearer()),
 ):
@@ -160,6 +167,17 @@ async def auto_detect_relationships(
         raise HTTPException(status_code=401, detail="Authentication required")
     svc = DataModelService(db)
     await _require_data_source_access(db, data_source_id, current_user, write=True)
+    if body.source_ids:
+        for peer_id in body.source_ids:
+            if peer_id != data_source_id:
+                await _require_data_source_access(db, peer_id, current_user, write=True)
+        result = await svc.auto_detect_project(data_source_id, body.source_ids)
+        return {
+            "relationships": result["relationships"],
+            "count": len(result["relationships"]),
+            "total_added": result.get("total_added", 0),
+            "counts_by_source": result.get("counts", {}),
+        }
     relationships = await svc.auto_detect(data_source_id)
     return {"relationships": relationships, "count": len(relationships)}
 

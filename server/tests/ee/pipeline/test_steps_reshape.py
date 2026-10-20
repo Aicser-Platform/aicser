@@ -67,6 +67,25 @@ def test_pivot_step_uses_native_duckdb_pivot():
     assert sql == 'PIVOT s0 ON "region" USING sum("amount") GROUP BY "month"'
 
 
+def test_fill_down_step_sql():
+    from src.modules.pipeline.transform.steps import FillDownStep
+
+    sql = FillDownStep(columns=["region"], order_by="order_date").to_cte("s0", _ctx())
+    assert "last_value(\"region\" IGNORE NULLS)" in sql
+    assert 'ORDER BY "order_date"' in sql
+    assert "UNBOUNDED PRECEDING" in sql
+
+
+def test_cluster_step_rewrites_aliases():
+    from src.modules.pipeline.transform.steps import ClusterStep
+
+    sql = ClusterStep(column="country", mapping={"USA": "United States", "US": "United States"}).to_cte(
+        "s0", _ctx()
+    )
+    assert "WHEN 'USA' THEN 'United States'" in sql
+    assert 'AS "country"' in sql
+
+
 def test_unpivot_step_sql():
     from src.modules.pipeline.transform.steps import UnpivotStep
 

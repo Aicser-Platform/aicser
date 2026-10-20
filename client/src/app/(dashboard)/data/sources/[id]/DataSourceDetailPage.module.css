@@ -56,6 +56,21 @@
   min-width: 0;
 }
 
+.tabs :global(.ant-tabs-content-holder) {
+  padding-top: 4px;
+}
+
+.tabPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.tabPanel :global(.page-section-card) {
+  margin-bottom: 0;
+}
+
 .emptyState {
   min-height: 320px;
   display: flex;

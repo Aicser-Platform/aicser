@@ -1,3 +1,5 @@
+import { SemanticMetricFields } from './SemanticMetricFields';
+import { isEnterpriseEdition } from '@/hooks/dataSourceKeys';
 import React from 'react';
 import { Divider, Alert, Button, Tooltip, Collapse, ColorPicker, Segmented } from 'antd';
 import { SwapOutlined } from '@ant-design/icons';
@@ -219,8 +221,21 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
     }
   };
 
+  // A widget can measure a semantic metric by name: the server compiles it at run time, so the
+  // card follows the model (and its official definition) instead of a copied expression.
+  const widgetSourceId = String(chartQuery?.data_source_id || selectedWidget?.dataSourceId || selectedWidget?.config?.dataSourceId || '');
+
   return (
     <>
+      {mode === 'mapping' && isEnterpriseEdition && !sqlBound && widgetSourceId ? (
+        <div style={{ marginBottom: 12 }}>
+          <SemanticMetricFields
+            dataSourceId={widgetSourceId}
+            chartQuery={chartQuery}
+            onChange={(patch) => Object.entries(patch).forEach(([key, value]) => onUpdateChartQuery(key, value))}
+          />
+        </div>
+      ) : null}
       {mode === 'mapping' && metricIssues.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
           {metricIssues.map((issue) => (
@@ -357,6 +372,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                   maxItems={field.maxCount}
                   excludeFields={excludeFields}
                   chartType={chartType}
+                  dataSourceId={selectedWidget.dataSourceId as string | undefined}
                   defaultAggregation={sqlBound || chartType === 'scatter' || chartType === 'histogram' ? 'none' : undefined}
                 />
               );

@@ -40,9 +40,16 @@ export function InlineText({
   }
 
   if (editing) {
+    const inputClass = [
+      'inline-text-input',
+      multiline ? 'inline-text-input--multiline' : '',
+      className,
+    ]
+      .filter(Boolean)
+      .join(' ');
     const common = {
       ref,
-      className: `inline-text-input ${className}`,
+      className: inputClass,
       value,
       maxLength,
       'aria-label': placeholder,
@@ -61,14 +68,15 @@ export function InlineText({
       onClick: (e: React.MouseEvent) => e.stopPropagation(),
       onMouseDown: (e: React.MouseEvent) => e.stopPropagation(),
     };
-    return multiline ? <textarea rows={2} {...common} /> : <input {...common} />;
+    const lineCount = multiline ? Math.min(8, Math.max(2, value.split('\n').length + 1)) : undefined;
+    return multiline ? <textarea rows={lineCount} {...common} /> : <input {...common} />;
   }
 
   return (
     <span
       role="button"
       tabIndex={0}
-      className={`inline-text ${value ? '' : 'inline-text-empty'} ${className}`}
+      className={`inline-text ${multiline ? 'inline-text--multiline' : ''} ${value ? '' : 'inline-text-empty'} ${className}`}
       title={placeholder}
       onClick={() => {
         original.current = value;
