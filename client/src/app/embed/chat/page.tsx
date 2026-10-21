@@ -3,17 +3,11 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
-import { Alert, Button, Card, Input, Typography, Avatar, Tooltip } from 'antd';
+import { Bot, MessageSquare, Plus } from 'lucide-react';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
-import {
-  SendOutlined,
-  StopOutlined,
-  CopyOutlined,
-  ReloadOutlined,
-  RobotOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import MarkdownRenderer from '@/components/ui/markdown/MarkdownRenderer';
+import { EmbedChatComposer } from '@/components/embed/chat/EmbedChatComposer';
+import { EmbedChatAssistantMessage, EmbedChatUserMessage } from '@/components/embed/chat/EmbedChatMessage';
+import { EmbedChatResultCard } from '@/components/embed/chat/EmbedChatResultCard';
 import { useTranslations } from 'next-intl';
 import { notifyEmbedError, notifyEmbedReady, notifyEmbedResize, parseEmbedErrorDetail } from '@/utils/embedMessaging';
 import { getOrCreateEmbedVisitorId } from '@/utils/embedVisitorId';
@@ -35,7 +29,6 @@ import {
   isSubstantiveCompleteEvent,
   type CitationItem,
   type StreamingAccumulator,
-  ThoughtProcessDisplay,
 } from '@/ee';
 import { isDashboardAutoOpenEnabled } from '@/app/(dashboard)/dashboards/utils/dashboardAutoOpenStorage';
 
@@ -60,9 +53,6 @@ const EmbedEChartsFallback = dynamic(
   { ssr: false, loading: dynamicChunkLoading },
 );
 
-const { Text, Paragraph } = Typography;
-const { TextArea } = Input;
-
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -82,6 +72,51 @@ interface ChatMessage {
   }>;
   dashboardCreated?: Record<string, unknown> | null;
   followUpQuestions?: string[];
+  sqlQuery?: string;
+  insights?: string[];
+  toolSteps?: string[];
+}
+
+/** Insights and recommendations arrive as strings or as { title, what | description } objects. */
+function textOf(item: unknown): string {
+  if (typeof item === 'string') return item;
+  if (!item || typeof item !== 'object') return '';
+  const o = item as Record<string, unknown>;
+  const body = String(o.what || o.description || o.text || o.insight || '');
+  const title = typeof o.title === 'string' ? o.title : '';
+  return title && body && !body.startsWith(title) ? `${title}: ${body}` : title || body;
+}
+
+function insightsOf(source: Record<string, unknown>): string[] {
+  const list = [
+    ...(Array.isArray(source.insights) ? source.insights : []),
+    ...(Array.isArray(source.recommendations) ? source.recommendations : []),
+  ];
+  return list.map(textOf).filter(Boolean).slice(0, 6);
+}
+
+/** Labels for the "Used N tools" list (execution_metadata.reasoning_steps). */
+function toolStepsOf(steps: unknown[] | undefined): string[] {
+  return (steps || [])
+    .map((s) => {
+      if (typeof s === 'string') return s;
+      const o = (s || {}) as Record<string, unknown>;
+      return String(o.title || o.name || o.tool || o.step || o.description || o.action || '');
+    })
+    .filter(Boolean);
+}
+
+function sqlOf(source: Record<string, unknown>): string | undefined {
+  const sql = source.sql_query ?? source.sqlQuery;
+  return typeof sql === 'string' && sql.trim() ? sql : undefined;
+}
+
+/** The chart's own title (ECharts `title.text`), if it has one. */
+function chartTitleOf(config: unknown): string {
+  const title = (config as { title?: unknown } | null)?.title;
+  const first = Array.isArray(title) ? title[0] : title;
+  const text = (first as { text?: unknown } | undefined)?.text;
+  return typeof text === 'string' ? text : '';
 }
 
 function resolveAnalysisMode(config: { allowed_modes?: string[]; capabilities?: string } | null): string {
@@ -114,6 +149,9 @@ function buildAssistantPatch(
     dashboardWidgetsReady: (view.dashboardWidgetsReady || []) as ChatMessage['dashboardWidgetsReady'],
     dashboardCreated: view.dashboardCreated ?? null,
     followUpQuestions: view.followUpQuestions,
+    sqlQuery: sqlOf(pr as Record<string, unknown>),
+    insights: insightsOf(pr as Record<string, unknown>),
+    toolSteps: toolStepsOf(view.reasoningSteps),
   };
 }
 
@@ -131,6 +169,7 @@ function EmbedChatContent() {
 function EmbedChatView({ session }: { session: EmbedSessionState }) {
   const tEmbed = useTranslations('embed_chat');
   const tChatPage = useTranslations('chat_page');
+  const tMode = useTranslations('embed_chat.modes');
   const searchParams = useSearchParams();
   const token = session.token;
   const assistantId = searchParams?.get('assistant_id') || '';
@@ -196,7 +235,12 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
     // admin-session-gated lookup below, which is what the same-origin
     // logged-in Settings > Embed preview relies on.
     const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${resolveEmbedToken(token)}`;
+    if (token) {
+      headers.Authorization = `Bearer ${resolveEmbedToken(token)}`;
+      // Required by the embed-chat auth (chat_auth.py), same as on /analyze; without it the
+      // config 400s and the page falls back to the session lookup, which visitors can't use.
+      headers['X-Embed-Visitor-Id'] = visitorIdRef.current || getOrCreateEmbedVisitorId();
+    }
     fetch(`/api/ai/embed/${assistantId}/config`, { headers })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -463,6 +507,8 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
                     chartConfig: chartCfg,
                     queryResult: qr,
                     citations: data.citations || data.rag_citations || [],
+                    sqlQuery: sqlOf(data),
+                    insights: insightsOf(data),
                   }
                 : m,
             ),
@@ -489,408 +535,216 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
     [prompt, loading, assistantConfig, token, assistantId, libraryIdsParam, openDashboard],
   );
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
-  };
+  /** A fresh conversation: the next question starts a new one on the server. */
+  const handleNewChat = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    conversationIdRef.current = null;
+    setMessages([]);
+    setError(null);
+    setLoading(false);
+  }, []);
 
   if (!isEE) {
     return (
-      <div style={themeStyle} data-theme={dataTheme}>
-        <Alert
-          type="info"
-          showIcon
-          message={tEmbed('ee_required_title')}
-          description={tEmbed('ee_required_desc')}
-          style={{ margin: 24 }}
-        />
+      <div style={themeStyle} data-theme={dataTheme} className="flex h-dvh items-center justify-center bg-bg p-6">
+        <div className="max-w-md rounded-xl border border-border bg-bg-container p-5 text-center">
+          <p className="mb-1 mt-0 text-sm font-semibold text-text">{tEmbed('ee_required_title')}</p>
+          <p className="m-0 text-sm text-text-secondary">{tEmbed('ee_required_desc')}</p>
+        </div>
       </div>
     );
   }
 
   const assistantName = assistantConfig?.name || 'Aicser AI';
   const resolvedAnalysisMode = resolveAnalysisMode(assistantConfig);
-  const assistantAvatarColor = assistantConfig?.color || 'var(--ant-color-primary, #1677ff)';
-  const renderAssistantAvatar = (size: number) =>
-    assistantConfig?.icon_emoji ? (
-      <Avatar
-        size={size}
-        style={{ background: assistantAvatarColor, flexShrink: 0, fontSize: Math.round(size * 0.55) }}
-      >
-        {assistantConfig.icon_emoji}
-      </Avatar>
-    ) : (
-      <Avatar
-        size={size}
-        icon={<RobotOutlined />}
-        style={{ background: assistantAvatarColor, flexShrink: 0 }}
-      />
-    );
+  const modeLabel = tMode.has(resolvedAnalysisMode) ? tMode(resolvedAnalysisMode) : resolvedAnalysisMode;
+  const accent = assistantConfig?.color || 'var(--ant-color-primary, #00c2cb)';
+  const renderAssistantAvatar = (size: 'sm' | 'lg') => (
+    <span
+      className={`inline-flex shrink-0 items-center justify-center rounded-full text-white ${
+        size === 'lg' ? 'h-12 w-12 text-2xl' : 'h-8 w-8 text-base'
+      }`}
+      style={{ background: accent }}
+      aria-hidden
+    >
+      {assistantConfig?.icon_emoji || <Bot className={size === 'lg' ? 'h-6 w-6' : 'h-4 w-4'} />}
+    </span>
+  );
   const starters = (assistantConfig?.conversation_starters || []).slice(0, 6);
+  const lastUserQuestion = [...messages].reverse().find((m) => m.role === 'user')?.content;
+  const hideBranding = assistantConfig?.hide_aicser_branding ?? theme?.hide_aicser_branding;
 
   return (
-    <div
-      style={{
-        ...themeStyle,
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: 420,
-        maxHeight: 720,
-        background: 'var(--ant-color-bg-layout, #f5f5f5)',
-      }}
-      data-theme={dataTheme}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '10px 16px',
-          background: 'var(--ant-color-bg-container, #fff)',
-          borderBottom: '1px solid var(--ant-color-border, #e8e8e8)',
-          flexShrink: 0,
-        }}
-      >
-        {renderAssistantAvatar(30)}
-        <Text strong style={{ fontSize: 14 }}>
-          {assistantName}
-        </Text>
-        {loading && <AppLoadingIndicator variant="minimal" className="ml-auto" />}
-      </div>
-
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '12px 16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
-      >
-        {messages.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', marginTop: 32 }}>
-            <div style={{ marginBottom: 12 }}>{renderAssistantAvatar(48)}</div>
-            <Paragraph type="secondary" style={{ fontSize: 13 }}>
-              {assistantConfig?.welcome_message || tEmbed('welcome', { name: assistantName })}
-            </Paragraph>
-            {starters.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 8,
-                  justifyContent: 'center',
-                  marginTop: 12,
-                  padding: '0 8px',
-                }}
-              >
-                {starters.map((starter, idx) => (
-                  <Button
-                    key={`${idx}_${starter}`}
-                    size="small"
-                    onClick={() => void handleSend(starter)}
-                    style={{ fontSize: 12, borderRadius: 16, height: 'auto', padding: '4px 12px' }}
-                  >
-                    {starter}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
+    <div style={themeStyle} data-theme={dataTheme} className="flex h-dvh min-h-[420px] flex-col bg-bg text-text">
+      <header className="flex shrink-0 items-center gap-2.5 border-b border-border bg-bg-container px-4 py-3">
+        <MessageSquare className="h-5 w-5 text-text-secondary" aria-hidden />
+        <div className="min-w-0 flex-1 truncate text-base font-semibold text-text">{assistantName}</div>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleNewChat}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-transparent px-2.5 py-1 text-sm text-text hover:bg-[var(--ant-color-fill-tertiary,rgba(0,0,0,0.04))]"
+          >
+            <Plus className="h-4 w-4" />
+            {tEmbed('new_chat')}
+          </button>
         )}
+      </header>
 
-        {messages.map((msg) => {
-          const chartDisplay =
-            msg.role === 'assistant' && msg.chartConfig
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+          {messages.length === 0 && !loading && (
+            <div className="mt-8 flex flex-col items-center text-center">
+              {renderAssistantAvatar('lg')}
+              <p className="mb-0 mt-3 max-w-md text-sm text-text-secondary">
+                {assistantConfig?.welcome_message || tEmbed('welcome', { name: assistantName })}
+              </p>
+              {starters.length > 0 && (
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {starters.map((starter, idx) => (
+                    <button
+                      key={`${idx}_${starter}`}
+                      type="button"
+                      onClick={() => void handleSend(starter)}
+                      className="rounded-full border border-border bg-bg-container px-3.5 py-1.5 text-sm text-text hover:border-[var(--ant-color-primary,#00c2cb)]"
+                    >
+                      {starter}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {messages.map((msg, idx) => {
+            if (msg.role === 'user') return <EmbedChatUserMessage key={msg.id} content={msg.content} />;
+
+            const chartDisplay = msg.chartConfig
               ? resolveChatChartDisplay(msg.chartConfig, msg.queryResult, msg)
               : { mode: 'none' as const };
-          const hasHybridData = !!(msg.chartConfig || (msg.queryResult && msg.queryResult.length > 0));
-          const showDashboardPlan = Boolean(
-            msg.role === 'assistant' &&
-              (msg.dashboardKpiPlan ||
-                msg.dashboardWidgetsReady?.length ||
-                msg.dashboardCreated?.dashboard_id),
-          );
-
-          return (
-            <div
-              key={msg.id}
-              style={{
-                display: 'flex',
-                flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
-                gap: 8,
-                alignItems: 'flex-start',
-              }}
-            >
-              {msg.role === 'user' ? (
-                <Avatar
-                  size={28}
-                  icon={<UserOutlined />}
-                  style={{ background: '#87d068', flexShrink: 0 }}
-                />
-              ) : (
-                renderAssistantAvatar(28)
-              )}
-              <Card
-                size="small"
-                style={{
-                  maxWidth: '85%',
-                  background:
-                    msg.role === 'user'
-                      ? 'var(--ant-color-primary-bg, #e6f4ff)'
-                      : msg.error
-                        ? 'var(--ant-color-error-bg, #fff2f0)'
-                        : 'var(--ant-color-bg-container, #fff)',
-                  border: msg.error ? '1px solid var(--ant-color-error-border, #ffccc7)' : undefined,
-                  borderRadius: msg.role === 'user' ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-                }}
-                styles={{ body: { padding: '8px 12px' } }}
-                extra={
-                  msg.role === 'assistant' && !msg.streaming && msg.content ? (
-                    <Tooltip title={tEmbed('copy')}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        onClick={() => copyToClipboard(msg.content)}
-                        style={{ opacity: 0.5 }}
-                      />
-                    </Tooltip>
-                  ) : undefined
-                }
-              >
-                {msg.role === 'user' ? (
-                  <Text style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{msg.content}</Text>
-                ) : msg.streaming && !msg.content && !msg.progress?.message ? (
-                  <ThoughtProcessDisplay
-                    compact
-                    isThinking
-                    isDark={false}
-                    currentStage="thinking"
-                    progressMessage="Thinking"
+            const chart =
+              chartDisplay.mode === 'shared' ? (
+                // Sized like the in-app chat's chart host: the widget fills its parent's height.
+                <div className="relative h-[320px] w-full">
+                  <SharedChartRenderer
+                    chartType={chartDisplay.props.chartType}
+                    chartData={chartDisplay.props.chartData}
+                    chartOptions={chartDisplay.props.chartOptions}
+                    chartQuery={chartDisplay.props.chartQuery}
                   />
-                ) : (
-                  <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                    {msg.streaming && msg.progress && (
-                      <div style={{ marginBottom: msg.content ? 10 : 0 }}>
-                        <ThoughtProcessDisplay
-                          compact
-                          isDark={false}
-                          currentStage={msg.progress.stage}
-                          progressMessage={msg.progress.message}
-                          progressPercentage={msg.progress.percentage}
-                          analyticsType={
-                            resolvedAnalysisMode === 'ai_search'
-                              ? 'ai_search'
-                              : resolvedAnalysisMode === 'dashboard'
-                                ? 'dashboard'
-                                : 'descriptive'
-                          }
-                          isKnowledgeBase={resolvedAnalysisMode === 'ai_search'}
-                          // Same fix as the main in-app chat's ChatMessageList: a
-                          // "partial"/degraded backend outcome can finish without
-                          // ever sending a stage/message this component's isComplete
-                          // heuristic recognizes, leaving this card stuck showing a
-                          // stale stage forever right above the real content once it
-                          // arrives. Real content already present means the run is
-                          // over from the visitor's point of view regardless of what
-                          // the raw stage string says.
-                          hasFinalContent={!!(
-                            msg.chartConfig ||
-                            (Array.isArray(msg.queryResult) && msg.queryResult.length > 0) ||
-                            (msg.content && msg.content.trim().length > 0)
-                          )}
-                        />
-                      </div>
-                    )}
+                </div>
+              ) : chartDisplay.mode === 'echarts' ? (
+                <EmbedEChartsFallback config={withChartAnimationDefaults(chartDisplay.config)} minHeight={260} />
+              ) : undefined;
+            const hasResult = Boolean(chart || msg.sqlQuery || msg.queryResult?.length);
+            const hasHybridData = !!(msg.chartConfig || (msg.queryResult && msg.queryResult.length > 0));
+            const showDashboardPlan = Boolean(
+              msg.dashboardKpiPlan || msg.dashboardWidgetsReady?.length || msg.dashboardCreated?.dashboard_id,
+            );
+            const isLast = idx === messages.length - 1;
 
-                    {showDashboardPlan && (
-                      <div style={{ marginBottom: msg.content ? 10 : 0 }}>
-                        <DashboardPlanCard
-                          tier={String(msg.dashboardKpiPlan?.tier || 'operational')}
-                          targetWidgets={Number(
-                            msg.dashboardKpiPlan?.section_count ||
-                              (msg.dashboardKpiPlan?.sections as unknown[] | undefined)?.length ||
-                              8,
-                          )}
-                          sections={
-                            (msg.dashboardKpiPlan?.sections || []) as Array<{
-                              title?: string;
-                              chart_type?: string;
-                            }>
-                          }
-                          widgetsReady={msg.dashboardWidgetsReady || []}
-                          isStreaming={!!msg.streaming}
-                          dashboardCreated={msg.dashboardCreated ?? null}
-                          fromChatMessageId={msg.id}
-                          onOpenDashboard={() => {
-                            if (msg.dashboardCreated) openDashboard(msg.dashboardCreated, msg.id);
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {msg.content ? (
-                      <MarkdownRenderer content={msg.content} className="markdown-compact" />
-                    ) : null}
-
-                    {msg.streaming && (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          width: 2,
-                          height: '1em',
-                          background: 'currentColor',
-                          animation: 'blink 1s step-end infinite',
-                          verticalAlign: 'text-bottom',
-                          marginLeft: 1,
+            return (
+              <EmbedChatAssistantMessage
+                key={msg.id}
+                avatar={renderAssistantAvatar('sm')}
+                content={msg.content}
+                streaming={msg.streaming}
+                error={msg.error}
+                progressMessage={msg.progress?.message}
+                toolSteps={msg.toolSteps || []}
+                insights={msg.streaming ? [] : msg.insights || []}
+                followUps={(msg.followUpQuestions || []).slice(0, 4)}
+                onFollowUp={(q) => void handleSend(q)}
+                onRetry={
+                  msg.error && isLast && lastUserQuestion ? () => void handleSend(lastUserQuestion) : undefined
+                }
+                before={
+                  showDashboardPlan ? (
+                    <div className="mb-3">
+                      <DashboardPlanCard
+                        tier={String(msg.dashboardKpiPlan?.tier || 'operational')}
+                        targetWidgets={Number(
+                          msg.dashboardKpiPlan?.section_count ||
+                            (msg.dashboardKpiPlan?.sections as unknown[] | undefined)?.length ||
+                            8,
+                        )}
+                        sections={
+                          (msg.dashboardKpiPlan?.sections || []) as Array<{ title?: string; chart_type?: string }>
+                        }
+                        widgetsReady={msg.dashboardWidgetsReady || []}
+                        isStreaming={!!msg.streaming}
+                        dashboardCreated={msg.dashboardCreated ?? null}
+                        fromChatMessageId={msg.id}
+                        onOpenDashboard={() => {
+                          if (msg.dashboardCreated) openDashboard(msg.dashboardCreated, msg.id);
                         }}
                       />
-                    )}
-
-                    {msg.citations && msg.citations.length > 0 && (
+                    </div>
+                  ) : undefined
+                }
+                result={
+                  hasResult ? (
+                    <EmbedChatResultCard
+                      title={chartTitleOf(chartDisplay.mode === 'echarts' ? chartDisplay.config : msg.chartConfig) || tEmbed('result_title')}
+                      chart={chart}
+                      sql={msg.sqlQuery}
+                      rows={msg.queryResult}
+                    />
+                  ) : undefined
+                }
+                after={
+                  msg.citations && msg.citations.length > 0 ? (
+                    <div className="mt-3">
                       <CitationSourcesStrip
                         citations={msg.citations}
                         isHybrid={hasHybridData}
                         openInNewTab
                         t={(key, values) => tChatPage(key, values as Record<string, string | number>)}
                       />
-                    )}
+                    </div>
+                  ) : undefined
+                }
+              />
+            );
+          })}
 
-                    {chartDisplay.mode === 'shared' && (
-                      <div style={{ marginTop: 12 }}>
-                        <SharedChartRenderer
-                          chartType={chartDisplay.props.chartType}
-                          chartData={chartDisplay.props.chartData}
-                          chartOptions={chartDisplay.props.chartOptions}
-                          chartQuery={chartDisplay.props.chartQuery}
-                          minHeight={240}
-                        />
-                      </div>
-                    )}
-                    {chartDisplay.mode === 'echarts' && (
-                      <EmbedEChartsFallback
-                        config={withChartAnimationDefaults(chartDisplay.config)}
-                        minHeight={240}
-                      />
-                    )}
+          <div ref={messagesEndRef} />
+        </div>
+      </main>
 
-                    {!msg.streaming && msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
-                      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                        {msg.followUpQuestions.slice(0, 4).map((q) => (
-                          <Button
-                            key={q}
-                            size="small"
-                            type="default"
-                            onClick={() => void handleSend(q)}
-                            style={{ fontSize: 12, borderRadius: 16, height: 'auto', padding: '2px 10px' }}
-                          >
-                            {q}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
+      <footer className="shrink-0 px-4 pb-3 pt-2">
+        <div className="mx-auto max-w-3xl">
+          {error && (
+            <div
+              role="alert"
+              className="mb-2 flex items-start gap-2 rounded-lg border border-[var(--ant-color-error-border,#ffccc7)] bg-[var(--ant-color-error-bg,#fff2f0)] px-3 py-2 text-sm text-[var(--ant-color-error,#ff4d4f)]"
+            >
+              <span className="min-w-0 flex-1">{error}</span>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                aria-label={tEmbed('dismiss')}
+                className="border-0 bg-transparent p-0 text-current opacity-70 hover:opacity-100"
+              >
+                ×
+              </button>
             </div>
-          );
-        })}
-
-        {messages.length > 0 && messages[messages.length - 1]?.error && (
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={() => {
-                const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-                if (lastUser) void handleSend(lastUser.content);
-              }}
-            >
-              {tEmbed('retry')}
-            </Button>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {error && (
-        <Alert
-          type="error"
-          message={error}
-          closable
-          onClose={() => setError(null)}
-          style={{ margin: '0 16px 8px', flexShrink: 0 }}
-        />
-      )}
-
-      <div
-        style={{
-          padding: '10px 16px 8px',
-          borderTop: '1px solid var(--ant-color-border, #e8e8e8)',
-          background: 'var(--ant-color-bg-container, #fff)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          <TextArea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={tEmbed('input_placeholder')}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            disabled={loading}
-            style={{ flex: 1, resize: 'none', borderRadius: 8, fontSize: 13 }}
-          />
-          {loading ? (
-            <Button
-              danger
-              icon={<StopOutlined />}
-              onClick={handleStop}
-              style={{ flexShrink: 0, borderRadius: 8 }}
-            >
-              Stop
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              onClick={() => void handleSend()}
-              disabled={!prompt.trim()}
-              style={{ flexShrink: 0, borderRadius: 8 }}
-            >
-              Send
-            </Button>
           )}
-        </div>
-        {/* Inline under composer — never fixed over the Send button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-start', minHeight: 18 }}>
-          <EmbedBrandingFooter
-            variant="inline"
-            hidden={assistantConfig?.hide_aicser_branding ?? theme?.hide_aicser_branding}
+          <EmbedChatComposer
+            value={prompt}
+            onChange={setPrompt}
+            onSend={() => void handleSend()}
+            onStop={handleStop}
+            loading={loading}
+            modeLabel={modeLabel}
           />
+          <div className="mt-2 flex items-center justify-center gap-3 text-xs text-text-tertiary">
+            <span>{tEmbed('disclaimer')}</span>
+            <EmbedBrandingFooter variant="inline" hidden={hideBranding} />
+          </div>
         </div>
-      </div>
-
-      <style>{`
-        @keyframes blink { 50% { opacity: 0; } }
-        @keyframes typingDot {
-          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
+      </footer>
     </div>
   );
 }

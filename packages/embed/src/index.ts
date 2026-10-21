@@ -68,6 +68,15 @@ export interface EmbedOptions {
   onTokenExpired?: () => void;
 }
 
+export interface ChatEmbedOptions extends EmbedOptions {
+  /**
+   * Embed assistant to chat with (Settings → Embed → Assistants). Required for visitors who
+   * aren't signed in to Aicser; the assistant's authentication mode must be "Embed token" or
+   * "Anonymous", and the token must have the `chat` scope.
+   */
+  assistantId?: string;
+}
+
 export interface EmbedHandle {
   iframe: HTMLIFrameElement;
   /** Replace the viewer's filters (the embed's locked filters still apply on the server). */
@@ -103,9 +112,11 @@ function buildEmbedUrl(
   baseUrl: string,
   path: string,
   token: string,
-  opts?: Pick<EmbedOptions, 'pageId' | 'filters'>
+  opts?: Pick<EmbedOptions, 'pageId' | 'filters'>,
+  params?: Record<string, string>
 ): string {
   const url = new URL(path, baseUrl.replace(/\/$/, '') + '/');
+  for (const [key, value] of Object.entries(params ?? {})) url.searchParams.set(key, value);
   if (token) url.searchParams.set('token', token);
   if (opts?.pageId) url.searchParams.set('page', opts.pageId);
   if (opts?.filters?.length) {
@@ -127,7 +138,12 @@ function createIframe(options: EmbedOptions): HTMLIFrameElement {
   return iframe;
 }
 
-function mountEmbed(path: string, container: HTMLElement, options: EmbedOptions): EmbedHandle {
+function mountEmbed(
+  path: string,
+  container: HTMLElement,
+  options: EmbedOptions,
+  params?: Record<string, string>
+): EmbedHandle {
   const iframe = createIframe(options);
   container.innerHTML = '';
   container.appendChild(iframe);
@@ -150,10 +166,13 @@ function mountEmbed(path: string, container: HTMLElement, options: EmbedOptions)
 
   const load = (token: string) => {
     ready = false;
-    iframe.src = buildEmbedUrl(options.baseUrl, path, token, {
-      pageId: options.pageId,
-      filters: options.filters,
-    });
+    iframe.src = buildEmbedUrl(
+      options.baseUrl,
+      path,
+      token,
+      { pageId: options.pageId, filters: options.filters },
+      params
+    );
   };
 
   const renew = async (reload: boolean) => {
@@ -287,9 +306,10 @@ export function embedChart(container: HTMLElement, slug: string, options: EmbedO
   return mountEmbed(`embed/chart/${encodeURIComponent(slug)}`, container, options);
 }
 
-/** Embed the AI assistant (Enterprise Edition). */
-export function embedChat(container: HTMLElement, options: EmbedOptions): EmbedHandle {
-  return mountEmbed('embed/chat', container, options);
+/** Embed the AI assistant (Enterprise Edition). Pass `assistantId` to chat with an embed assistant. */
+export function embedChat(container: HTMLElement, options: ChatEmbedOptions): EmbedHandle {
+  const { assistantId, ...rest } = options;
+  return mountEmbed('embed/chat', container, rest, assistantId ? { assistant_id: assistantId } : undefined);
 }
 
 /**

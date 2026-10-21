@@ -88,7 +88,7 @@ export function Analytics({ region }: { region: string }) {
 }
 ```
 
-`AicserChart` (`chartId`), `AicserChat` (the AI assistant, Enterprise Edition) and `AicserReport` (`reportId` = `conversationId:messageId`, Enterprise Edition) take the same props.
+`AicserChart` (`chartId`), `AicserChat` (the AI assistant, Enterprise Edition; `assistantId`) and `AicserReport` (`reportId` = `conversationId:messageId`, Enterprise Edition) take the same props.
 
 ## Public link
 
@@ -97,6 +97,16 @@ embedDashboard(el, 'b4b3…', { baseUrl: 'https://app.aicser.com', token: 'PUBLI
 ```
 
 Or paste the iframe snippet from Settings → Embed.
+
+## AI assistant (chat)
+
+Create an assistant in Settings → Embed → Assistants, set its authentication mode to **Embed token** or **Anonymous**, and use **Get embed code** for a chat token:
+
+```ts
+embedChat(el, { baseUrl: 'https://app.aicser.com', assistantId: 'ASSISTANT_ID', token: 'CHAT_TOKEN' });
+```
+
+Without `assistantId` the chat only works for people signed in to Aicser. Chat links can't be signed per visitor yet (`signEmbedUrl` covers dashboards, charts and reports), and locked filters don't apply to chat: visitors can ask about everything in the assistant's data sources.
 
 ## API
 
@@ -110,6 +120,7 @@ Or paste the iframe snippet from Settings → Embed.
 | `token` | A public link token or a signed token |
 | `getToken` | `() => Promise<string>`: fetch a fresh signed token from your server; enables silent renewal |
 | `filters`, `pageId` | Initial filters and page |
+| `assistantId` | `embedChat` only: the embed assistant to chat with |
 | `autoResize` | Grow the iframe to its content (default `true`) |
 | `onReady`, `onResize`, `onFilterChange`, `onError` | Events from the embed |
 | `onTokenExpired` | The session ran out and couldn't be renewed |

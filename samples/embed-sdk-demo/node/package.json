@@ -1,0 +1,15 @@
+{
+  "name": "aicser-embed-demo-node",
+  "private": true,
+  "type": "module",
+  "description": "Sample host app: signs Aicser embeds with @aicser/embed/server and mounts them with @aicser/embed",
+  "scripts": {
+    "start": "node --env-file-if-exists=../.env server.mjs"
+  },
+  "dependencies": {
+    "@aicser/embed": "^0.3.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

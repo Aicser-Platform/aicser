@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { embedDashboard, embedReport } from '../src/index';
+import { embedChat, embedDashboard, embedReport } from '../src/index';
 import { AicserSignError, signEmbedUrl } from '../src/server';
 
 const BASE = 'https://app.aicser.test';
@@ -105,6 +105,27 @@ describe('@aicser/embed', () => {
     document.body.appendChild(el);
     const h = embedReport(el, 'conv-1:msg-1', { baseUrl: BASE, token: 'tok' });
     expect(h.iframe.src).toBe(`${BASE}/embed/report/conv-1%3Amsg-1?token=tok`);
+    h.destroy();
+  });
+
+  it('loads a chat embed for an assistant, keeping it on token renewal', async () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const tokens = ['t1', 't2'];
+    const h = embedChat(el, { baseUrl: BASE, assistantId: 'asst 1', getToken: async () => tokens.shift()! });
+    await flush();
+    expect(h.iframe.src).toBe(`${BASE}/embed/chat?assistant_id=asst+1&token=t1`);
+    fromEmbed(h.iframe, 'token-expired', { reason: 'open_failed' });
+    await flush();
+    expect(h.iframe.src).toBe(`${BASE}/embed/chat?assistant_id=asst+1&token=t2`);
+    h.destroy();
+  });
+
+  it('loads a chat embed without an assistant as before', () => {
+    const el = document.createElement('div');
+    document.body.appendChild(el);
+    const h = embedChat(el, { baseUrl: BASE, token: 'tok' });
+    expect(h.iframe.src).toBe(`${BASE}/embed/chat?token=tok`);
     h.destroy();
   });
 });

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aicser embed SDK demo</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Acme Portal <small>— a sample host app</small></h1>
+        <p id="backend" class="muted">Loading…</p>
+      </div>
+      <label>
+        Signed in as
+        <select id="customer"></select>
+      </label>
+    </header>
+
+    <main>
+      <aside>
+        <section>
+          <h2>Embed</h2>
+          <label>Resource <select id="scope"></select></label>
+          <div class="row">
+            <button id="mount" class="primary">Mount</button>
+            <button id="destroy">Destroy</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Host commands</h2>
+          <div class="row">
+            <button id="refresh">refresh()</button>
+            <button id="renew">setToken(getToken())</button>
+          </div>
+          <div class="row">
+            <button id="export-png">exportImage('png')</button>
+            <button id="export-pdf">exportImage('pdf')</button>
+          </div>
+          <label>Filters (JSON)
+            <textarea id="filters" rows="4">[{"field": "region", "operator": "equals", "value": "EU"}]</textarea>
+          </label>
+          <div class="row">
+            <button id="set-filters">setFilters()</button>
+            <button id="clear-filters">setFilters([])</button>
+          </div>
+          <label>Page id <input id="page-id" placeholder="dashboard page uuid" /></label>
+          <button id="set-page">setPage()</button>
+        </section>
+
+        <section>
+          <h2>Tokens <span id="token-count" class="badge">0</span></h2>
+          <p class="muted small">Each signed link opens once. The SDK calls <code>getToken()</code> on mount,
+            before the session expires, and after a reload.</p>
+          <p id="token-info" class="small mono"></p>
+        </section>
+      </aside>
+
+      <div class="stage">
+        <div id="embed" class="embed"><p class="muted">Press Mount.</p></div>
+        <section class="log">
+          <h2>Events <button id="clear-log" class="link">clear</button></h2>
+          <ol id="log"></ol>
+        </section>
+      </div>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

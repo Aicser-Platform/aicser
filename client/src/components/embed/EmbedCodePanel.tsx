@@ -145,7 +145,7 @@ export function EmbedCodePanel({
       {token ? (
         <>
           <Paragraph strong style={{ marginBottom: 4, marginTop: 4 }}>
-            {t('embed_token_label')}
+            {t('embed_token_label_public')}
           </Paragraph>
           <div className="embed-code-panel__token">{token}</div>
           <Button size="small" icon={<CopyOutlined />} onClick={() => void copy(token, 'copied_clipboard')}>

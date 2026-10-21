@@ -123,6 +123,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const [assistantEmbedLoading, setAssistantEmbedLoading] = useState(false);
   const [selectedEmbedScope, setSelectedEmbedScope] = useState<string>('dashboard');
   const watchedScopes = Form.useWatch('scopes', form) as string[] | undefined;
+  const watchedDomains = Form.useWatch('allowed_domains', form) as string | undefined;
   // Names for the tokens table, so each row says what it embeds rather than an ID.
   const embedResources = useEmbedResources();
   const resourceName = useMemo(() => {
@@ -558,7 +559,17 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           >
             <EmbedResourcePicker scopes={watchedScopes ?? ['dashboard']} />
           </Form.Item>
-          <Form.Item name="allowed_domains" label={t('embed_allowed_domains')} extra={t('embed_allowed_domains_help')}>
+          <Form.Item
+            name="allowed_domains"
+            label={t('embed_allowed_domains')}
+            extra={
+              (watchedDomains || '').trim() ? (
+                t('embed_allowed_domains_help')
+              ) : (
+                <Typography.Text type="warning">{t('embed_allowed_domains_empty_warning')}</Typography.Text>
+              )
+            }
+          >
             <Input placeholder="example.com, teams.microsoft.com" />
           </Form.Item>
           <Form.Item name="download" label={t('embed_download')} extra={t('embed_download_help')}>
@@ -705,7 +716,10 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       >
         {createdToken ? (
           <>
-            <Alert type="warning" message={t('api_key_store_securely')} style={{ marginBottom: 16 }} />
+            <Alert type="info" showIcon message={t('embed_token_public_notice')} style={{ marginBottom: 12 }} />
+            {createdToken.allowed_domains?.length ? null : (
+              <Alert type="warning" showIcon message={t('embed_token_no_domains_warning')} style={{ marginBottom: 16 }} />
+            )}
             {embedScopeOptions.length > 1 ? (
               <Select
                 style={{ width: '100%', marginBottom: 12 }}

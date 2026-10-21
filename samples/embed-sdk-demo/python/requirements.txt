@@ -1,0 +1,1 @@
+aicser-embed>=0.3.1

@@ -1,6 +1,6 @@
 {
   "name": "@aicser/embed",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Embed Aicser dashboards, charts, reports and the AI assistant: iframe SDK with token renewal, host commands, a React wrapper and a server-side signing helper",
   "license": "AGPL-3.0",
   "type": "module",

@@ -24,6 +24,9 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 
     const headers: Record<string, string> = {};
     Object.assign(headers, buildProxyAuthHeaders(request));
+    // The backend's embed-chat auth requires it here too (same as the analyze proxy).
+    const visitorId = request.headers.get('X-Embed-Visitor-Id');
+    if (visitorId) headers['X-Embed-Visitor-Id'] = visitorId;
 
     const response = await fetch(url, { method: 'GET', headers });
     const text = await response.text();

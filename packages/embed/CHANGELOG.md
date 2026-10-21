@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-10-21
+
+### Added
+- `embedChat` takes `assistantId` and `AicserChat` an `assistantId` prop, so the chat embed reaches an embed assistant. Without it, visitors who aren't signed in to Aicser couldn't chat.
+
 ## 0.3.1 — 2026-09-29
 
 ### Added

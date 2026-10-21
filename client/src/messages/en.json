@@ -5701,7 +5701,24 @@
     "copy": "Copy",
     "open_dashboard": "Open dashboard",
     "follow_up": "Follow up",
-    "cancelled": "*(response cancelled)*"
+    "cancelled": "*(response cancelled)*",
+    "send": "Send",
+    "stop": "Stop",
+    "new_chat": "New chat",
+    "thinking": "Thinking…",
+    "tools_used": "{count, plural, one {Used # tool} other {Used # tools}}",
+    "tab_chart": "Chart",
+    "tab_query": "Query",
+    "tab_table": "Table",
+    "rows_shown": "Showing {shown} of {total} rows",
+    "result_title": "Result",
+    "disclaimer": "AI may make mistakes. Please verify important information.",
+    "dismiss": "Dismiss",
+    "modes": {
+      "ai_search": "Search knowledge",
+      "standard": "Analyze",
+      "dashboard": "Build dashboard"
+    }
   },
   "embed_modal": {
     "failed_load_embeds": "Failed to load embeds",
@@ -5731,6 +5748,7 @@
     "embed_no_url": "No embed URL available. Check that the resource exists and you have embed permissions.",
     "embed_generating": "Generating embed code…",
     "embed_token_label": "Access token (store securely — shown once)",
+    "embed_token_label_public": "Token (already included in the code above — anyone who has it can view)",
     "embed_copy_token": "Copy token",
     "embed_get_code": "Get embed code",
     "embed_assistant_hint": "Creates a chat-scoped token and builds an iframe URL for this assistant.",
@@ -9559,6 +9577,9 @@
     "embed_theme_update_failed": "Failed to update embed theme",
     "embed_theme_updated": "Embed theme updated",
     "embed_token_created_title": "Embed token created",
+    "embed_token_public_notice": "This is a public link: anyone who sees the iframe code or URL can view this content until it expires or you revoke it. It is visible in your page source, so treat it like a share link, not a password.",
+    "embed_token_no_domains_warning": "No allowed domains: this embed opens on any website and directly in a browser. To limit where it shows, revoke it and create a new one with allowed domains.",
+    "embed_allowed_domains_empty_warning": "No domains set: this embed will open on any website and directly in a browser.",
     "embed_tokens_title": "Embed tokens",
     "enabled": "Enabled",
     "enabled_models_empty": "No models enabled yet — add at least one below.",

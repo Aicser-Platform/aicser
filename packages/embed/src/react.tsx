@@ -121,11 +121,19 @@ export const AicserChart = forwardRef<EmbedHandle | null, AicserChartProps>(func
   return <div ref={containerRef} className={props.className} style={props.style} />;
 });
 
-export type AicserChatProps = SharedProps;
+export type AicserChatProps = SharedProps & {
+  /** Embed assistant to chat with (Settings → Embed → Assistants). */
+  assistantId?: string;
+};
 
 /** The AI assistant (Enterprise Edition). */
 export const AicserChat = forwardRef<EmbedHandle | null, AicserChatProps>(function AicserChat(props, ref) {
-  const containerRef = useEmbed((el, o) => embedChat(el, o), props, `${props.baseUrl}|chat`, ref);
+  const containerRef = useEmbed(
+    (el, o) => embedChat(el, { ...o, assistantId: props.assistantId }),
+    props,
+    `${props.baseUrl}|chat|${props.assistantId ?? ''}`,
+    ref,
+  );
   return <div ref={containerRef} className={props.className} style={props.style} />;
 });
 
