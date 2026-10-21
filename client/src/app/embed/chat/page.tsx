@@ -213,6 +213,8 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
   // -in admin) — stop retrying it and use the legacy session-cookie path
   // for the rest of this page session.
   const useLegacyEndpointRef = useRef<boolean>(false);
+  // Why the embed endpoint refused this assistant, shown if the session fallback fails too.
+  const embedRefusalRef = useRef<string>('');
 
   useEffect(() => {
     visitorIdRef.current = getOrCreateEmbedVisitorId();
@@ -324,12 +326,13 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         };
-        if (token) {
+        // Only the embed endpoint takes the embed token. The session endpoint must authenticate by
+        // the sign-in cookie alone: an embed token in Authorization would override the cookie and be
+        // refused as "Invalid or unverifiable token".
+        if (useEmbed && token) {
           const current = resolveEmbedToken(token);
           h.Authorization = `Bearer ${current}`;
           h['X-Embed-Token'] = current;
-        }
-        if (useEmbed) {
           h['X-Embed-Visitor-Id'] = visitorIdRef.current;
         }
         return h;
@@ -398,6 +401,8 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
         });
 
         if (!res.ok && useEmbed && res.status === 403 && !useLegacyEndpointRef.current) {
+          const refusal = await res.json().catch(() => ({}));
+          embedRefusalRef.current = parseEmbedErrorDetail(refusal, '');
           useLegacyEndpointRef.current = true;
           useEmbed = false;
           await ensureLegacyConversationId();
@@ -411,6 +416,11 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
         }
 
         if (!res.ok) {
+          // Not signed in to Aicser after the embed endpoint refused: the embed endpoint's reason
+          // (e.g. the assistant only allows signed-in users) is the useful one, not "sign in again".
+          if (!useEmbed && (res.status === 401 || res.status === 403) && embedRefusalRef.current) {
+            throw new Error(embedRefusalRef.current);
+          }
           const detail = await res.json().catch(() => ({}));
           throw new Error(parseEmbedErrorDetail(detail, `Request failed (${res.status})`));
         }

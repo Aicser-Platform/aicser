@@ -20,6 +20,16 @@ class LockedFilterError(Exception):
     """The query can't be filtered for this embed (shown to the viewer as a plain message)."""
 
 
+NO_REWRITER = "This embed needs row filtering, which this server can't apply."
+NO_FILTER_COLUMN = "None of this data has the columns this embed is filtered by."
+UNFILTERABLE_QUERY = "This question reads data that can't be filtered for this embed."
+
+
+def refusal_in(text: str) -> Optional[str]:
+    """The viewer-facing refusal inside an error that was flattened to a string on its way up."""
+    return next((m for m in (NO_REWRITER, NO_FILTER_COLUMN, UNFILTERABLE_QUERY) if m in text), None)
+
+
 def sanitize(raw: Any) -> List[Dict[str, Any]]:
     """[{field, values}] from the token's locked filters; malformed entries raise ValueError."""
     out: List[Dict[str, Any]] = []
@@ -88,17 +98,17 @@ def apply(query: str, data_source: Mapping[str, Any], raw_filters: Any, dialect:
         inject_predicates = rewriter.inject_predicates
         parse_single_read = rewriter.parse_single_read
     except Exception as exc:  # the rewriter ships with the enterprise edition
-        raise LockedFilterError("This embed needs row filtering, which this server can't apply.") from exc
+        raise LockedFilterError(NO_REWRITER) from exc
     tables = _tables_with(data_source.get("schema") or {}, (f["field"] for f in filters))
     if data_source.get("type") in ("file", "google_sheets") and not tables:
         tables = ["data"]  # single-table uploads are queried as `data`
     if not tables:
-        raise LockedFilterError("None of this data has the columns this embed is filtered by.")
+        raise LockedFilterError(NO_FILTER_COLUMN)
     predicate = _predicate(filters, dialect)
     statement = parse_single_read(query, dialect)
     touched = {
         (n.name or "").strip().strip('"').lower() for n in base_table_nodes(statement)
     }
     if not touched & {t.split(".")[-1] for t in tables}:
-        raise LockedFilterError("This question reads data that can't be filtered for this embed.")
+        raise LockedFilterError(UNFILTERABLE_QUERY)
     return inject_predicates(query, {t: predicate for t in tables}, dialect=dialect, deny_ungoverned=False)

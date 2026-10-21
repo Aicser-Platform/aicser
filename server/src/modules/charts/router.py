@@ -3053,6 +3053,25 @@ async def get_dashboard_for_embed(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _embed_chart_identity(token: str, chart: Any) -> QueryIdentity:
+    """Who an embedded chart's query runs as, the same as an embedded dashboard's (see
+    dashboards/router.py _embed_query_identity): the token's creator, in the chart's project, so
+    their row and column security apply, carrying the token's locked filters so every query is
+    pinned to the host app's customer. The token was already verified by the caller."""
+    from types import MappingProxyType
+
+    from src.modules.embed.service import decode_embed_token
+
+    payload = decode_embed_token(token)
+    project_id = getattr(chart, "project_id", None)
+    return QueryIdentity(
+        user_id=str(payload["sub"]),
+        organization_id=str(payload["org_id"]) if payload.get("org_id") else None,
+        project_id=str(project_id) if project_id else None,
+        token_payload=MappingProxyType({"embed_locked_filters": list(payload.get("locked_filters") or [])}),
+    )
+
+
 @router.get("/embed/{slug}")
 async def get_chart_for_embed(slug: str, request: Request, response: Response, token: Optional[str] = None):
     """
@@ -3130,35 +3149,19 @@ async def get_chart_for_embed(slug: str, request: Request, response: Response, t
         try:
             from src.modules.embed.limits import cap_rows, embed_row_cap
 
-            data = cap_rows(await service.execute(chart, identity=None), embed_row_cap())
+            identity = _embed_chart_identity(token or "", chart)
+            data = cap_rows(await service.execute(chart, identity=identity), embed_row_cap())
         except Exception as exc:
             logger.error(f"Embed chart execution failed for {chart_uuid}: {exc}")
-            # This endpoint always executes with identity=None (a public embed
-            # has no signed-in viewer to attribute the query to) - when the
-            # chart's data source has column security configured,
-            # _enforce_column_security (multi_engine_query_service.py) fails
-            # closed rather than serving ungoverned columns, which is correct,
-            # not a bug. But by the time that reaches here it's already been
-            # flattened into a plain string ("Query execution failed: ...",
-            # via _execute_db_source's `raise Exception(f"...{exec_res.get
-            # ('error')}")`), losing the RowSecurityIdentityRequired type - so
-            # this is a substring match, not an isinstance check. Surfacing it
-            # as a generic 500 "Chart could not be executed" made a correct,
-            # by-design policy refusal indistinguishable from a real server
-            # bug, with no way for the viewer (or the admin who shared the
-            # link) to know it needs the data source's column security
-            # disabled, or a different data source, to be embeddable at all.
-            if "column security configured" in str(exc):
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "This chart can't be shown in a public embed: its data source "
-                        "has column-level security enabled, and a public embed has no "
-                        "signed-in viewer to check permissions against. Disable column "
-                        "security on the data source, or embed a chart built on a "
-                        "different data source, to continue."
-                    ),
-                )
+            # By the time a refusal gets here it has been flattened into a string ("Query
+            # execution failed: ..."), so it is recognised by its message. A locked-filter refusal
+            # (fail-closed: this data can't be pinned to the embed's customer) is a policy
+            # decision the viewer should read, not a server error.
+            from src.modules.embed.locked_filters import refusal_in
+
+            refusal = refusal_in(str(exc))
+            if refusal:
+                raise HTTPException(status_code=403, detail=refusal)
             raise HTTPException(status_code=500, detail="Chart could not be executed")
 
         return {
