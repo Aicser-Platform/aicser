@@ -810,10 +810,12 @@ body.dashboard-print-mode .sidebar-toggle-btn {
     overflow-y: auto;
   }
 
+  /* !important on max-width too: PropertiesPanel.css loads later and its 320px cap left
+     an empty strip beside the stacked panel on tablets (KR2). */
   .properties-panel {
     width: 100% !important;
     min-width: 0 !important;
-    max-width: 100%;
+    max-width: 100% !important;
     max-height: 45vh;
     border-left: none !important;
     border-top: 1px solid var(--studio-border);
@@ -825,6 +827,17 @@ body.dashboard-print-mode .sidebar-toggle-btn {
   }
 
   .studio-canvas-area {
+    min-height: 50vh;
+    flex: 1 0 auto;
+  }
+
+  .dashboard-workspace,
+  .dashboard-workspace-main {
+    flex: 1 0 auto;
+    min-height: 50vh;
+  }
+
+  .studio-canvas-scroll {
     min-height: 50vh;
   }
 
