@@ -94,6 +94,7 @@ import {
 } from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
 import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
 import { QueryVisualizeModal, type QueryVisualizeModalValues } from '@/components/data/SQLEditor/QueryVisualizeModal';
+import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
 import { RlsAppliedPopoverContent } from '@/components/data/SQLEditor/RlsAppliedPopoverContent';
 
 const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
@@ -1428,6 +1429,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
       setVisualizeConfirming(true);
       try {
+        if (values.target === 'dashboard' && values.dashboardId === CREATE_NEW_DASHBOARD_ID) {
+          // "Create new dashboard…": make it, named after the chart, then add the chart to it.
+          const { useDashboardStore } = await import('@/app/(dashboard)/dashboards/stores/useDashboardStore');
+          const createdId = await useDashboardStore.getState().addDashboard(name);
+          values = { ...values, dashboardId: String(createdId) };
+        }
         // Persist under the widget title (unique). Keep tab title unless user named the tab.
         const savedId = await persistSavedQueryForTab({
           name,
@@ -2605,7 +2612,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           }
 
           setResults(resultData);
-          setExecutionTime(result.execution_time || executionTime);
+          setExecutionTime(executionTime);
           // Update resolved engine state for display
           const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
           setResolvedEngine(resolvedEngineValue);
@@ -2620,7 +2627,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               data: resultData,
               columns: result.columns || [],
               rowCount: result.row_count || resultData.length,
-              executionTime: result.execution_time || executionTime,
+              executionTime: executionTime,
               query: extractedSQL,
               dataSourceId: dsId,
             });
@@ -2797,7 +2804,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         setResultLimitApplied(appendedLimit);
         setRlsApplied(Boolean(result.rls_applied));
         setColumnsOmitted(Array.isArray(result.columns_omitted) ? result.columns_omitted.map(String) : []);
-        setExecutionTime(result.execution_time || executionTime);
+        // Measured here in ms: engines report execution_time in seconds (one in ms), which read as "0.006ms".
+        setExecutionTime(executionTime);
         // Update resolved engine state for display
         const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
         setResolvedEngine(resolvedEngineValue);
@@ -2818,13 +2826,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             data: result.data || [],
             columns: result.columns || [],
             rowCount: result.row_count || (result.data || []).length,
-            executionTime: result.execution_time || executionTime,
+            executionTime: executionTime,
             query: executedSql,
             dataSourceId: dsId,
           });
         }
 
-        const durationMs = result.execution_time || executionTime;
+        const durationMs = executionTime;
         const historyItem = {
           id: Date.now(),
           state: 'success',

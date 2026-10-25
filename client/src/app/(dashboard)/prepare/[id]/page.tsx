@@ -8,9 +8,9 @@ import { useTranslations } from 'next-intl';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Drawer, Dropdown, Input, List, Modal, Space, Tag, Tooltip, Typography, message } from 'antd';
-import { ArrowLeftOutlined, ExperimentOutlined, ExportOutlined, HistoryOutlined, MoreOutlined, SaveOutlined, TableOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExperimentOutlined, ExportOutlined, HistoryOutlined, InfoCircleOutlined, MoreOutlined, SaveOutlined, TableOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useRecipeActions } from '@/components/prep/useRecipeActions';
-import { DashboardPageHeader, DashboardPageLoading, DashboardPageShell } from '@/components/layout/DashboardPageShell';
+import { DashboardPageLoading, DashboardPageShell } from '@/components/layout/DashboardPageShell';
 import { RecipeEditor } from '@/components/prep/RecipeEditor';
 import {
   getRecipe,
@@ -159,27 +159,23 @@ export default function RecipePage() {
     );
 
   return (
-    <DashboardPageShell>
-      <DashboardPageHeader
-        icon={<Button type="text" icon={<ArrowLeftOutlined />} aria-label={t('back')} onClick={() => router.push('/prepare')} />}
-        title={
-          <Space size={8} wrap>
-            <Typography.Text strong style={{ fontSize: 'inherit' }} editable={{ onChange: rename, triggerType: ['icon', 'text'] }}>
-              {r.name}
-            </Typography.Text>
-            {statusTag}
-          </Space>
-        }
-        description={
-          <Space size={8}>
-            <span>{t('editor_description')}</span>
-            <Text type="secondary">
-              {saving === 'saving' ? t('saving') : saving === 'saved' ? t('saved') : saving === 'error' ? t('save_failed') : ''}
-            </Text>
-          </Space>
-        }
-        extra={
-          <Space wrap>
+    <DashboardPageShell fillHeight className="recipe-page">
+      {/* One bar for name, state and actions: the rows below belong to the data. */}
+      <header className="recipe-page__bar">
+        <div className="recipe-page__title">
+          <Button type="text" size="small" icon={<ArrowLeftOutlined />} aria-label={t('back')} onClick={() => router.push('/prepare')} />
+          <Typography.Text strong className="recipe-page__name" editable={{ onChange: rename, triggerType: ['icon', 'text'] }}>
+            {r.name}
+          </Typography.Text>
+          {statusTag}
+          <Tooltip title={t('editor_description')}>
+            <InfoCircleOutlined className="recipe-page__info" aria-label={t('editor_description')} />
+          </Tooltip>
+          <Text type="secondary" className="recipe-page__saving">
+            {saving === 'saving' ? t('saving') : saving === 'saved' ? t('saved') : saving === 'error' ? t('save_failed') : ''}
+          </Text>
+        </div>
+          <Space size={6}>
             {/* One primary action (Publish); the rest are icons named on hover. */}
             <Tooltip title={t('history')}>
               <Button icon={<HistoryOutlined />} aria-label={t('history')} onClick={() => setHistoryOpen(true)} />
@@ -220,8 +216,7 @@ export default function RecipePage() {
               </Dropdown>
             ) : null}
           </Space>
-        }
-      />
+      </header>
 
       <RecipeEditor
         dataSourceId={r.data_source_id}
@@ -232,6 +227,9 @@ export default function RecipePage() {
         columnMeta={r.column_meta}
         outputDataSourceId={r.output?.data_source_id}
         onColumnMetaChange={r.is_owner ? async (meta) => setRecipe(await updateRecipe(id, { column_meta: meta })) : undefined}
+        name={r.name}
+        cleaning={r.cleaning}
+        onCleaningChange={r.is_owner ? async (log) => setRecipe(await updateRecipe(id, { cleaning: log })) : undefined}
       />
 
       <Modal

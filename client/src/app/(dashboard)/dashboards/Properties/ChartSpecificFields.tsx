@@ -232,7 +232,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
           <SemanticMetricFields
             dataSourceId={widgetSourceId}
             chartQuery={chartQuery}
-            onChange={(patch) => Object.entries(patch).forEach(([key, value]) => onUpdateChartQuery(key, value))}
+            onChange={(patch) => onUpdateChartQuery('__patch', patch)}
           />
         </div>
       ) : null}

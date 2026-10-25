@@ -20,7 +20,7 @@ from ee.modules.authentication.token_exchange import (
 # ── validate_supabase_token: username extraction from user_metadata ──────────
 
 def _encode_supabase_jwt(secret: str, *, sub: str, email: str, username: str | None):
-    from jose import jwt as jose_jwt
+    import jwt as pyjwt
 
     claims = {
         "sub": sub,
@@ -30,7 +30,7 @@ def _encode_supabase_jwt(secret: str, *, sub: str, email: str, username: str | N
     }
     if username is not None:
         claims["user_metadata"] = {"username": username}
-    return jose_jwt.encode(claims, secret, algorithm="HS256")
+    return pyjwt.encode(claims, secret, algorithm="HS256")
 
 
 def test_validate_supabase_token_extracts_username_from_user_metadata(monkeypatch):

@@ -29,6 +29,8 @@ class PrepRecipe(BaseModel):
     output = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
     # What each output column means, set in Prepare: {"amount": {"description", "role", "personal"}}.
     column_meta = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    # The CLEAN panel: review decisions on issues no step fixes, and notes on the dataset
+    cleaning = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
 
     __table_args__ = (Index("ix_prep_recipes_scope", "organization_id", "project_id"),)
 

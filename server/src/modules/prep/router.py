@@ -62,6 +62,7 @@ def _serialize(recipe: PrepRecipe, caller: Caller) -> Dict[str, Any]:
         "version": recipe.version,
         "output": recipe.output or {},
         "column_meta": recipe.column_meta or {},
+        "cleaning": recipe.cleaning or {},
         "project_id": str(recipe.project_id) if recipe.project_id else None,
         "is_owner": str(recipe.user_id) == caller.user_id,
         "created_at": recipe.created_at.isoformat() if recipe.created_at else None,
@@ -215,6 +216,8 @@ async def update_recipe(recipe_id: str, req: RecipeUpdate, current_token: Union[
         recipe.steps = req.steps
     if req.column_meta is not None:
         recipe.column_meta = {k: v.model_dump() for k, v in req.column_meta.items()}
+    if req.cleaning is not None:
+        recipe.cleaning = req.cleaning.model_dump()
     # Any change after publishing is a draft until published again.
     if recipe.status == "published" and (req.steps is not None or req.table is not None):
         recipe.status = "draft"

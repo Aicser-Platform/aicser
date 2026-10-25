@@ -323,7 +323,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           const sqid = selectedWidget?.chartQuery?.saved_query_id;
           if (sqid) {
             const { fetchApi } = await import('@/utils/api');
-            const res = await fetchApi('queries/saved-queries');
+            const { savedQueriesPath } = await import('@/utils/savedQueriesPath');
+            const res = await fetchApi(savedQueriesPath());
             const list =
               (res as { items?: Array<{ id?: string | number; sql?: string }> })?.items || [];
             const found = list.find((q) => String(q.id) === String(sqid));

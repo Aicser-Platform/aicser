@@ -526,8 +526,11 @@ export default function NewDashboardStudio() {
       if (saved) {
         const { section, open } = JSON.parse(saved) as { section: SidebarSection | 'data'; open: boolean };
         if (!open) return null;
-        // The Data tab was removed (Data Modeling opens instead); Charts moved to the Add panel.
-        return section === 'data' ? 'modeling' : (section as string) === 'charts' ? null : section;
+        // Data Modeling (and the old Data tab) fills the page and hides the board: coming back to
+        // Dashboards opens the board with the dashboard list, not last visit's join diagram.
+        // Links that ask for modeling (?studio_section=modeling) still open it.
+        if (section === 'data' || section === 'modeling') return 'dashboards';
+        return (section as string) === 'charts' ? null : section;
       }
     } catch {
       // ignore parse errors
@@ -580,6 +583,8 @@ export default function NewDashboardStudio() {
       setCreatingDashboard(true);
       try {
         await addDashboard(name);
+        // A new dashboard is for building on: show its board, not a full-page panel.
+        setSidebarSection((cur) => (cur === 'modeling' ? 'dashboards' : cur));
         if (layout === 'kpi' || layout === 'executive') {
           await seedDashboardStarterLayout(layout, filterCtx.activePageId);
         }
@@ -1068,6 +1073,7 @@ export default function NewDashboardStudio() {
       if (createdId) {
         setActiveDashboardId(String(createdId));
         await loadDashboardById(String(createdId));
+        setSidebarSection((cur) => (cur === 'modeling' ? 'dashboards' : cur));
       }
 
       const title = response?.dashboard?.title || template.default_dashboard_name || template.name;

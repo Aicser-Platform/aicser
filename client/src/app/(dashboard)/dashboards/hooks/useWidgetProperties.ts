@@ -162,10 +162,15 @@ export const useWidgetProperties = ({
       selectedWidget?.chartQuery?.query_snapshot_id ||
       selectedWidget?.chartOptions?.sample_sql,
   );
+  // Scores, rates, shares and ages are averaged: a total credit score or total age means nothing.
+  const isAveragedField = (name: string) => /(^|_)(score|rate|ratio|pct|percent|percentage|age|margin)(_|$)/i.test(name);
+  const isAmountLike = (name: string) =>
+    /(amount|total|revenue|sales|price|cost|balance|income|value|paid|due|principal|fee|qty|quantity|spend)/i.test(name);
   const metricAggregationForColumn = (column?: { name: string; type: string }) => {
     // Custom SQL / saved query cards are pre-aggregated — Don't summarize (Metabase style).
     if (isSqlBoundWidget) return 'none';
-    return column && isMeasureColumn(column) ? 'sum' : 'count';
+    if (!column || !isMeasureColumn(column)) return 'count';
+    return isAveragedField(column.name) ? 'avg' : 'sum';
   };
   const pickDefaultMetricColumn = (
     columns: Array<{ name: string; type: string }>,
@@ -173,7 +178,12 @@ export const useWidgetProperties = ({
   ) => {
     const excluded = fieldName(excludeField).toLowerCase();
     const candidates = columns.filter((column) => column.name.toLowerCase() !== excluded);
+    const summable = (column: { name: string; type: string }) => isMeasureColumn(column) && !isAveragedField(column.name);
     return (
+      // A money-like total first; with only scores or ages to add up, count the rows instead.
+      candidates.find((column) => summable(column) && isAmountLike(column.name)) ||
+      candidates.find(summable) ||
+      candidates.find((column) => /(^id$|_id$)/i.test(column.name)) ||
       candidates.find(isMeasureColumn) ||
       candidates.find((column) => isNumericType(column.type) && !isDimensionLikeField(column.name)) ||
       candidates.find((column) => !isDimensionLikeField(column.name)) ||
@@ -557,7 +567,9 @@ export const useWidgetProperties = ({
     const prevX = selectedWidget.chartQuery?.x;
     let nextQuery = ensureChartQueryDefaults({
       ...(selectedWidget.chartQuery || {}),
-      ...(key === 'pivotSwap' ? {} : { [key]: value }),
+      // '__patch' sets several keys in one update: calling this once per key builds each call on
+      // the same render's query, so only the last key would survive.
+      ...(key === 'pivotSwap' ? {} : key === '__patch' && value && typeof value === 'object' ? value : { [key]: value }),
       // A sort the person picks is theirs: no longer the pie's automatic largest-first.
       ...(key === 'sortBy' || key === 'sortOrder' ? { sortAuto: undefined } : {}),
     });
@@ -1055,7 +1067,8 @@ export const useWidgetProperties = ({
       let sql = sample;
       if (sqid) {
         const { fetchApi } = await import('@/utils/api');
-        const res = await fetchApi('queries/saved-queries');
+        const { savedQueriesPath } = await import('@/utils/savedQueriesPath');
+        const res = await fetchApi(savedQueriesPath());
         const list = (res as { items?: Array<{ id?: string | number; sql?: string }> })?.items || [];
         const found = list.find((q) => String(q.id) === String(sqid));
         if (found?.sql) sql = found.sql;

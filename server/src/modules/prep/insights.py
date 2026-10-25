@@ -267,3 +267,64 @@ def suggestions(conn, view: str) -> List[Dict[str, Any]]:
     order = {"error": 0, "warning": 1, "info": 2}
     found.sort(key=lambda f: (order.get(f["severity"], 3), f.get("column") or ""))
     return found
+
+
+_NUMERIC_TYPES = ("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "FLOAT", "REAL", "DOUBLE", "DECIMAL")
+# Values beyond this many interquartile ranges from the middle half are extreme enough to question
+OUTLIER_IQR = 3
+OUTLIER_MIN_VALUES = 8
+MOSTLY_EMPTY = 0.5
+
+
+def _round(value: Any) -> Any:
+    return round(value, 2) if isinstance(value, float) else value
+
+
+def review_items(conn, view: str) -> List[Dict[str, Any]]:
+    """Findings no step can fix on its own: someone who knows the data decides what they mean
+    (keep, exclude, or note). Same shape as suggestions, without a suggested_step."""
+    found: List[Dict[str, Any]] = []
+    total = conn.execute(f"SELECT count(*) FROM {view}").fetchone()[0] or 0
+    if not total:
+        return found
+    for column, ctype in [(r[0], str(r[1]).upper()) for r in conn.execute(f"DESCRIBE {view}").fetchall()]:
+        col = quote_ident(column)
+        filled, distinct = conn.execute(f"SELECT count({col}), count(DISTINCT {col}) FROM {view}").fetchone()
+        empty_ratio = 1 - filled / total
+        if empty_ratio >= MOSTLY_EMPTY:
+            found.append({"code": "mostly_empty", "severity": "warning", "column": column,
+                          "message_key": "prepare.finding.mostly_empty",
+                          "params": {"column": column, "percent": round(empty_ratio * 100)}})
+            continue
+        if total > 1 and distinct == 1 and filled == total:
+            value = conn.execute(f"SELECT CAST(any_value({col}) AS VARCHAR) FROM {view}").fetchone()[0]
+            found.append({"code": "constant_column", "severity": "info", "column": column,
+                          "message_key": "prepare.finding.constant_column", "params": {"column": column, "value": value}})
+            continue
+        if ctype.startswith(_NUMERIC_TYPES) and filled >= OUTLIER_MIN_VALUES:
+            q1, q3 = conn.execute(
+                f"SELECT quantile_cont({col}, 0.25), quantile_cont({col}, 0.75) FROM {view}"
+            ).fetchone()
+            q1, q3 = float(q1 or 0), float(q3 or 0)  # DECIMAL columns give Decimal, not SQL-safe
+            spread = q3 - q1
+            if spread > 0:
+                low, high = q1 - OUTLIER_IQR * spread, q3 + OUTLIER_IQR * spread
+                count = conn.execute(
+                    f"SELECT count(*) FROM {view} WHERE {col} < {low!r} OR {col} > {high!r}"
+                ).fetchone()[0]
+                if count:
+                    examples = [str(_round(v)) for (v,) in conn.execute(
+                        f"SELECT {col} FROM {view} WHERE {col} < {low!r} OR {col} > {high!r} "
+                        f"ORDER BY abs({col} - {(q1 + q3) / 2!r}) DESC LIMIT 3"
+                    ).fetchall()]
+                    found.append({"code": "outliers", "severity": "warning", "column": column,
+                                  "message_key": "prepare.finding.outliers",
+                                  "params": {"column": column, "count": int(count), "low": _round(low),
+                                             "high": _round(high), "examples": examples}})
+        elif ctype.startswith(("DATE", "TIMESTAMP")):
+            future = conn.execute(f"SELECT count(*) FROM {view} WHERE {col} > current_date + 1").fetchone()[0]
+            if future:
+                found.append({"code": "future_dates", "severity": "warning", "column": column,
+                              "message_key": "prepare.finding.future_dates",
+                              "params": {"column": column, "count": int(future)}})
+    return found

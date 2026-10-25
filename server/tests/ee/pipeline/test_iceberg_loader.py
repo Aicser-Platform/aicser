@@ -119,6 +119,24 @@ def test_upsert_is_idempotent(local_catalog):
     assert first.equals(second)
 
 
+def test_unchanged_merge_still_reports_the_table_size(local_catalog):
+    """A merge that changes nothing writes 0 rows; the catalog's row count must still be the
+    table's, not 0 (gold tables of a scheduled merge pipeline showed as empty)."""
+    from src.modules.pipeline.load.iceberg_loader import load_to_iceberg
+    from src.modules.pipeline.load.stage import _table_rows
+
+    local_catalog.create_namespace("org_x")
+    kwargs = dict(namespace="org_x", table_name="o", write_mode="merge", primary_key=["id"])
+    data = _table([1, 2, 3], [10.0, 20.0, 30.0])
+    load_to_iceberg(local_catalog, table=data, **kwargs)
+    again = load_to_iceberg(local_catalog, table=data, **kwargs)
+
+    assert again["rows_written"] == 0
+    assert again["total_rows"] == 3
+    assert _table_rows(again) == 3
+    assert _table_rows({"rows_written": 5}) == 5
+
+
 def test_upsert_updates_changed_rows_and_inserts_new_ones(local_catalog):
     from src.modules.pipeline.load.iceberg_loader import load_to_iceberg
 

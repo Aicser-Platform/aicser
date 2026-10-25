@@ -27,6 +27,8 @@ import {
   type SampleMode,
   type TypeSpec,
   type ColumnMeaning,
+  type CleaningLog,
+  type Finding,
 } from '@/api/prep';
 import { appendStep, COLUMN_TYPES, friendlyType, moveStep, steps as build, type ColumnType } from './recipeSteps';
 import { ColumnMeaningModal } from './ColumnMeaningModal';
@@ -35,6 +37,7 @@ import { ColumnHeader } from './ColumnHeader';
 import { StepList } from './StepList';
 import { StepForm, formForStep, type FormKind } from './StepForm';
 import { SqlView, YamlView } from './CodeViews';
+import { CleanPanel, decisionKey, type AugmentAction } from './CleanPanel';
 import { getDataSourceSchema } from '@/api/dataSources';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { SidePanel } from '@/components/layout/SidePanel';
@@ -56,6 +59,11 @@ export type RecipeEditorProps = {
   onColumnMetaChange?: (meta: Record<string, ColumnMeaning>) => Promise<void>;
   /** The table this recipe produced, for adding columns to the semantic model. */
   outputDataSourceId?: string | null;
+  /** Names the cleaning report. */
+  name?: string;
+  /** The CLEAN panel's decisions and notes; saved when the host can. */
+  cleaning?: CleaningLog;
+  onCleaningChange?: (log: CleaningLog) => Promise<void>;
 };
 
 const PREVIEW_LIMIT = 200;
@@ -65,7 +73,7 @@ type FormState = { kind: FormKind; columns: string[]; editIndex?: number; detect
 
 /**
  * Prepare's one editor: steps on the left, the data after the selected step in the middle,
- * suggested fixes on the right. Every change shows what it did, can be edited, switched off
+ * the CLEAN panel (understand, fix, review, enrich, note) on the right. Every change shows what it did, can be edited, switched off
  * or undone. Used by the Prepare page, file upload and pipelines.
  */
 export function RecipeEditor({
@@ -79,6 +87,9 @@ export function RecipeEditor({
   columnMeta,
   onColumnMetaChange,
   outputDataSourceId,
+  name,
+  cleaning,
+  onCleaningChange,
 }: RecipeEditorProps) {
   const [meaningFor, setMeaningFor] = useState<{ column: string; kind: string } | null>(null);
   const tr = useTranslations('column_roles');
@@ -363,7 +374,8 @@ export function RecipeEditor({
     key: col.name,
     dataIndex: col.name,
     ellipsis: true,
-    width: 190,
+    width: 160,
+    onHeaderCell: () => ({ 'data-col': col.name }) as React.HTMLAttributes<HTMLElement>,
     title: (
       <ColumnHeader
         name={col.name}
@@ -420,6 +432,48 @@ export function RecipeEditor({
     if (!fixes.length) return;
     commit(fixes.reduce((acc, s) => appendStep(acc, s), steps));
     setSelected(null);
+  };
+
+  const healthTag = profile.data && profile.data.health != null ? (
+    <Tag color={profile.data.health >= 80 ? 'success' : profile.data.health >= 50 ? 'warning' : 'error'}>
+      {t('health', { score: profile.data.health })}
+    </Tag>
+  ) : null;
+  const findingText = (f: Finding) =>
+    tRoot(
+      f.message_key as never,
+      Object.fromEntries(
+        Object.entries(f.params).map(([k, v]) => [
+          k,
+          k === 'type' ? t(`type_${String(v)}`).toLowerCase() : Array.isArray(v) ? v.join(' → ') : (v as never),
+        ]),
+      ) as never,
+    );
+  const openIssues =
+    findings.filter((f) => f.suggested_step).length +
+    findings.filter((f) => !f.suggested_step && !cleaning?.decisions?.[decisionKey(f)]).length;
+  const augment: AugmentAction[] = [
+    { key: 'formula', icon: <FunctionOutlined />, label: t('add_formula'), onClick: () => open('formula', selCols) },
+    { key: 'conditional', label: t('add_conditional'), onClick: () => open('conditional', selCols) },
+    { key: 'concat', label: t('action_concat'), onClick: () => open('concat', selCols) },
+    { key: 'split', label: t('action_split'), needsColumn: true, onClick: () => open('split', selCols.slice(0, 1)) },
+    { key: 'extract', label: t('action_extract'), needsColumn: true, onClick: () => open('extract', selCols.slice(0, 1)) },
+    { key: 'merge', label: t('action_merge'), onClick: () => open('merge', selCols) },
+    { key: 'append', label: t('action_append'), onClick: () => open('append', []) },
+    { key: 'group', label: t('action_group'), onClick: () => open('group', selCols) },
+    ...(isEnterpriseEdition()
+      ? [
+          { key: 'ai_answer', icon: <ThunderboltOutlined />, label: t('add_ai_answer'), onClick: () => open('ai_answer', selCols) },
+          { key: 'predict', icon: <ExperimentOutlined />, label: t('add_predict'), onClick: () => open('predict', selCols) },
+        ]
+      : []),
+  ];
+  const showColumn = (column: string) => {
+    setSelCols([column]);
+    requestAnimationFrame(() => {
+      const th = Array.from(document.querySelectorAll<HTMLElement>('.recipe-editor__grid th[data-col]')).find((el) => el.dataset.col === column);
+      th?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    });
   };
 
   return (
@@ -483,17 +537,59 @@ export function RecipeEditor({
           ) : (
             <span />
           )}
-          <Space wrap size={6}>
-            <Input
-              size="small"
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder={t('search_rows')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 170 }}
-              aria-label={t('search_rows')}
-            />
+          <Input
+            size="small"
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={t('search_rows')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 170 }}
+            aria-label={t('search_rows')}
+          />
+        </div>
+
+        {selCols.length > 1 && !readOnly ? (
+          <div className="recipe-editor__selection">
+            <Text strong>{t('selected_columns', { count: selCols.length })}</Text>
+            <Dropdown menu={{ items: columnMenu(selCols[0]) }} trigger={['click']}>
+              <Button size="small">{t('actions')}</Button>
+            </Dropdown>
+            <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setSelCols([])}>
+              {t('clear_selection')}
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="recipe-editor__grid-meta">
+          <Text type="secondary">
+            {preview.data
+              ? t('preview_meta', {
+                  rows: preview.data.rows.length,
+                  columns: preview.data.columns.length,
+                  sample: preview.data.sample_rows,
+                  mode: t(`sample_label_${preview.data.sample_mode ?? 'first'}`),
+                })
+              : t('loading_preview')}
+          </Text>
+          {preview.data?.sampled ? <Tag color="gold">{t('sample_partial')}</Tag> : null}
+          {selected !== null && selected >= 0 && changes ? (
+            <Space size={4} wrap>
+              <Text type="secondary">{t('this_step')}</Text>
+              {changedCount ? <Tag color="blue">{t('cells_changed', { count: changedCount })}</Tag> : null}
+              {changes.added.length ? <Tag color="green">{t('stat_added', { count: changes.added.length })}</Tag> : null}
+              {removedCols.length ? (
+                <Tooltip title={removedCols.join(', ')}>
+                  <Tag>{t('stat_removed', { count: removedCols.length })}</Tag>
+                </Tooltip>
+              ) : null}
+            </Space>
+          ) : null}
+          {preview.data?.quarantined_count ? (
+            <Tag color="warning">{t('set_aside_count', { count: preview.data.quarantined_count })}</Tag>
+          ) : null}
+          <span className="recipe-editor__spacer" />
+          <Space wrap size={6} className="recipe-editor__views">
             <Tooltip title={t('sample_hint')}>
               <Segmented
                 size="small"
@@ -518,18 +614,6 @@ export function RecipeEditor({
             />
           </Space>
         </div>
-
-        {selCols.length > 1 && !readOnly ? (
-          <div className="recipe-editor__selection">
-            <Text strong>{t('selected_columns', { count: selCols.length })}</Text>
-            <Dropdown menu={{ items: columnMenu(selCols[0]) }} trigger={['click']}>
-              <Button size="small">{t('actions')}</Button>
-            </Dropdown>
-            <Button size="small" type="text" icon={<ClearOutlined />} onClick={() => setSelCols([])}>
-              {t('clear_selection')}
-            </Button>
-          </div>
-        ) : null}
 
         {view === 'yaml' ? (
           <YamlView
@@ -562,108 +646,59 @@ export function RecipeEditor({
                 style={{ marginBottom: 8 }}
               />
             ) : null}
-            <div className="recipe-editor__grid-meta">
-              <Text type="secondary">
-                {preview.data
-                  ? t('preview_meta', {
-                      rows: preview.data.rows.length,
-                      columns: preview.data.columns.length,
-                      sample: preview.data.sample_rows,
-                      mode: t(`sample_label_${preview.data.sample_mode ?? 'first'}`),
-                    })
-                  : t('loading_preview')}
-              </Text>
-              {preview.data?.sampled ? <Tag color="gold">{t('sample_partial')}</Tag> : null}
-              {selected !== null && selected >= 0 && changes ? (
-                <Space size={4} wrap>
-                  <Text type="secondary">{t('this_step')}</Text>
-                  {changedCount ? <Tag color="blue">{t('cells_changed', { count: changedCount })}</Tag> : null}
-                  {changes.added.length ? <Tag color="green">{t('stat_added', { count: changes.added.length })}</Tag> : null}
-                  {removedCols.length ? (
-                    <Tooltip title={removedCols.join(', ')}>
-                      <Tag>{t('stat_removed', { count: removedCols.length })}</Tag>
-                    </Tooltip>
-                  ) : null}
-                </Space>
-              ) : null}
-              {preview.data?.quarantined_count ? (
-                <Tag color="warning">{t('set_aside_count', { count: preview.data.quarantined_count })}</Tag>
-              ) : null}
-            </div>
             <Table
               size="small"
               rowKey="__i"
               columns={gridColumns}
               dataSource={filteredRows}
               loading={preview.isFetching}
-              pagination={{ pageSize: 50, showSizeChanger: false, size: 'small' }}
-              scroll={{ x: 'max-content', y: 520 }}
+              pagination={{ pageSize: 100, showSizeChanger: false, size: 'small' }}
+              scroll={{ x: 'max-content', y: 'calc(100dvh - 310px)' }}
               locale={{ emptyText: preview.isError ? t('preview_error') : <Empty description={t('no_rows')} /> }}
             />
           </>
         )}
       </section>
 
-      {/* The grid needs the width on a laptop: suggestions start folded below 1600px, a click away. */}
+      {/* Starts folded on narrow screens, where the grid needs the width; a click away. */}
       <SidePanel
-        id="prepare.suggestions"
+        id="prepare.clean"
         side="right"
-        title={t('suggestions')}
+        title={t('clean.title')}
         icon={<BulbOutlined />}
-        count={findings.length}
-        width={280}
-        defaultCollapsed={() => typeof window !== 'undefined' && window.innerWidth < 1600}
+        count={openIssues}
+        width={300}
+        defaultCollapsed={() => typeof window !== 'undefined' && window.innerWidth < 1280}
         className="recipe-editor__suggest"
-        extra={profile.data && profile.data.health != null ? (
-          <Tag color={profile.data.health >= 80 ? 'success' : profile.data.health >= 50 ? 'warning' : 'error'}>
-            {t('health', { score: profile.data.health })}
-          </Tag>
-        ) : null}
+        extra={healthTag}
       >
-        {profile.isFetching && !profile.data ? <Text type="secondary">{t('checking_data')}</Text> : null}
-        {profile.data?.error ? <Text type="secondary">{t('suggestions_after_fix')}</Text> : null}
-        {profile.data && !profile.data.error && findings.length === 0 ? <Text type="secondary">{t('no_suggestions')}</Text> : null}
-        {findings.filter((f) => f.suggested_step).length > 1 && !readOnly ? (
-          <Button size="small" onClick={applyAll}>
-            {t('apply_all', { count: findings.filter((f) => f.suggested_step).length })}
-          </Button>
-        ) : null}
-        <List
-          size="small"
-          locale={{ emptyText: <span /> }}
-          dataSource={findings}
-          renderItem={(f) => (
-            <List.Item
-              actions={
-                f.suggested_step && !readOnly
-                  ? [
-                      <Button key="apply" size="small" onClick={() => add(f.suggested_step as PrepStep)}>
-                        {t('apply')}
-                      </Button>,
-                    ]
-                  : []
-              }
-            >
-              <Space direction="vertical" size={2}>
-                <Text>
-                  {tRoot(
-                    f.message_key as never,
-                    Object.fromEntries(
-                      Object.entries(f.params).map(([k, v]) => [
-                        k,
-                        k === 'type' ? t(`type_${String(v)}`).toLowerCase() : Array.isArray(v) ? v.join(' → ') : (v as never),
-                      ]),
-                    ) as never,
-                  )}
-                </Text>
-                {Array.isArray(f.params.failing) && (f.params.failing as string[]).length ? (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {t('still_unread', { values: (f.params.failing as string[]).slice(0, 3).join(' · ') })}
-                  </Text>
-                ) : null}
-              </Space>
-            </List.Item>
-          )}
+        <CleanPanel
+          name={name ?? table ?? ''}
+          table={preview.data?.table ?? table ?? ''}
+          rowCount={profile.data?.profile?.row_count}
+          sampled={profile.data?.profile?.sampled}
+          columns={preview.data?.columns ?? []}
+          dists={dists}
+          findings={findings}
+          loading={profile.isFetching}
+          error={profile.data?.error}
+          readOnly={readOnly}
+          columnMeta={columnMeta}
+          cleaning={cleaning}
+          onCleaningChange={readOnly ? undefined : onCleaningChange}
+          stepSentences={steps.map((step) => stepSentence(step, tt))}
+          findingText={findingText}
+          augment={augment}
+          hasSelection={selCols.length > 0}
+          onApply={(step) => add(step)}
+          onApplyAll={applyAll}
+          onSelectColumn={showColumn}
+          onMeaning={
+            onColumnMetaChange
+              ? (column) => setMeaningFor({ column, kind: friendlyType((preview.data?.columns ?? []).find((c) => c.name === column)?.type ?? '') })
+              : undefined
+          }
+          onExclude={(column) => open('filter_rows', [column])}
         />
       </SidePanel>
 

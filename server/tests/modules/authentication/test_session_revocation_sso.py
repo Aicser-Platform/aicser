@@ -1,4 +1,4 @@
-from jose import jwt
+import jwt
 
 from src.modules.authentication import service
 

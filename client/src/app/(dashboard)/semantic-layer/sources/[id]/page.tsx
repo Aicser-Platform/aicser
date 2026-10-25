@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import React from 'react';
 import nextDynamic from 'next/dynamic';
-import { Button, Select, Space, Typography } from 'antd';
+import { Button, Select, Space, Tooltip, Typography } from 'antd';
 import { ArrowLeftOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -61,37 +61,7 @@ export default function SemanticLayerSourcePage() {
   }
 
   return (
-    <DashboardPageShell>
-      <DashboardPageHeader
-        title={
-          <Select
-            showSearch
-            variant="borderless"
-            optionFilterProp="label"
-            value={dataSourceId}
-            aria-label={t('switch_model')}
-            className="semantic-model-switcher"
-            popupMatchSelectWidth={320}
-            onChange={(id) => router.push(semanticLayerStudioHref(String(id), sectionParam ?? undefined))}
-            options={[
-              ...(modelSources.some((ds) => String(ds.id) === dataSourceId) || !dataSource
-                ? []
-                : [{ value: dataSourceId, label: dataSource.name }]),
-              ...modelSources.map((ds) => ({ value: String(ds.id), label: ds.name })),
-            ]}
-          />
-        }
-        extra={
-          <Space wrap>
-            <Button icon={<DatabaseOutlined />} onClick={() => router.push(`/data/sources/${dataSourceId}`)}>
-              {t('open_data_source')}
-            </Button>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => router.push('/semantic-layer')}>
-              {t('back_to_hub')}
-            </Button>
-          </Space>
-        }
-      />
+    <DashboardPageShell fillHeight>
       <div className="page-body">
         <SemanticStudio
           dataSourceId={dataSourceId}
@@ -99,6 +69,34 @@ export default function SemanticLayerSourcePage() {
           embedded={false}
           initialSection={sectionParam}
           onStudioSectionChange={handleSectionChange}
+          headerStart={
+            <Space size={4}>
+              <Tooltip title={t('back_to_hub')}>
+                <Button type="text" icon={<ArrowLeftOutlined />} aria-label={t('back_to_hub')} onClick={() => router.push('/semantic-layer')} />
+              </Tooltip>
+              <Select
+                showSearch
+                variant="borderless"
+                optionFilterProp="label"
+                value={dataSourceId}
+                aria-label={t('switch_model')}
+                className="semantic-model-switcher"
+                popupMatchSelectWidth={320}
+                onChange={(id) => router.push(semanticLayerStudioHref(String(id), sectionParam ?? undefined))}
+                options={[
+                  ...(modelSources.some((ds) => String(ds.id) === dataSourceId) || !dataSource
+                    ? []
+                    : [{ value: dataSourceId, label: dataSource.name }]),
+                  ...modelSources.map((ds) => ({ value: String(ds.id), label: ds.name })),
+                ]}
+              />
+            </Space>
+          }
+          headerEnd={
+            <Button icon={<DatabaseOutlined />} onClick={() => router.push(`/data/sources/${dataSourceId}`)}>
+              {t('open_data_source')}
+            </Button>
+          }
         />
       </div>
     </DashboardPageShell>

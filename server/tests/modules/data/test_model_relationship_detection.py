@@ -151,3 +151,18 @@ def test_cross_source_same_key_column():
     assert any(
         r["from_column"] == "student_id" and r["to_column"] == "student_id" for r in cross
     )
+
+
+def test_uploaded_files_with_flat_columns_link_across_sources():
+    """Uploads store one flat column list (no `tables`); detection reads each as one table named
+    after the source, so two uploads sharing loan_id are linked."""
+    import types
+
+    from src.modules.data.model_service import _detect_cross_source_candidates, _detection_schema
+
+    loans = types.SimpleNamespace(name="loans", schema={"columns": [{"name": "loan_id", "type": "string"}, {"name": "amount", "type": "number"}]})
+    payments = types.SimpleNamespace(name="loan_payments", schema={"columns": [{"name": "loan_id", "type": "string"}, {"name": "paid", "type": "number"}]})
+
+    assert _detection_schema(loans)["tables"][0]["name"] == "loans"
+    found = _detect_cross_source_candidates([("a", _detection_schema(loans)), ("b", _detection_schema(payments))])
+    assert any(c["from_table"] == "loans" and c["to_table"] == "loan_payments" and c["from_column"] == "loan_id" for c in found)

@@ -85,13 +85,6 @@ import { semanticLayerStudioHref } from './sources/[id]/_components/tabParam';
 
 const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
-const ConnectModelVisualizeWizard = nextDynamic(
-  () => isEEEdition
-    ? import('@/ee').then((m) => m.ConnectModelVisualizeWizard)
-    : Promise.resolve(() => null as React.ReactElement | null),
-  { ssr: false },
-);
-
 const { Title, Text } = Typography;
 
 const isSampleDataSource = (ds: { type?: string | null }) =>
@@ -121,7 +114,6 @@ const DataSourcesPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>('all');
     const [pricingModalVisible, setPricingModalVisible] = useState(false);
-    const [wizardSource, setWizardSource] = useState<DataSource | null>(null);
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
     const [profileLoading, setProfileLoading] = useState(false);
@@ -662,9 +654,6 @@ const DataSourcesPage: React.FC = () => {
                     }
                     if (created?.id) {
                         const isModelEligible = isModelEligibleDataSource(created.type);
-                        if (isModelEligible) {
-                            setWizardSource(created as DataSource);
-                        }
                         message.success(
                             <span>
                                 {t('connected_success', { name: created.name || t('unknown') })}{' '}
@@ -695,13 +684,6 @@ const DataSourcesPage: React.FC = () => {
                 existingDataSource={selectedDataSource}
             />
 
-            {wizardSource && isEEEdition && (
-                <ConnectModelVisualizeWizard
-                    open={!!wizardSource}
-                    sources={[{ id: wizardSource.id, name: wizardSource.name, type: wizardSource.type }]}
-                    onClose={() => setWizardSource(null)}
-                />
-            )}
             {/* Data Profile + PII Drawer */}
             <Drawer
                 title={

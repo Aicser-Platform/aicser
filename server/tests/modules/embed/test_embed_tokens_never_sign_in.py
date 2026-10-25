@@ -4,7 +4,7 @@ secret is configured to the same value as a sign-in secret (it was, on every env
 import os
 
 import pytest
-from jose import jwt
+import jwt
 
 os.environ.setdefault("AISER_EDITION", "enterprise")
 
@@ -42,12 +42,10 @@ def test_links_made_before_the_derived_key_still_open():
 
 
 def test_session_login_refuses_embed_tokens():
-    from jose import JWTError
-
     from src.modules.authentication.service import decode_access_token
 
     legacy = jwt.encode(_embed_payload(), SHARED, algorithm="HS256")
-    with pytest.raises(JWTError, match="Embed tokens"):
+    with pytest.raises(jwt.PyJWTError, match="Embed tokens"):
         decode_access_token(legacy)
 
 

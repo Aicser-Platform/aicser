@@ -157,6 +157,8 @@ export type DataModelWorkbenchPanelProps = {
   canvasMinHeight?: number;
   /** Show relationship table editor below the canvas. */
   showRelationshipTable?: boolean;
+  /** Embedded join list starts open; false keeps the diagram as big as it can be. */
+  joinListDefaultOpen?: boolean;
   onRelationshipsChanged?: () => void;
   /** Hide redundant link back to semantic tab when already embedded there. */
   hideSemanticNavLink?: boolean;
@@ -173,6 +175,7 @@ export function DataModelWorkbenchPanel({
   variant = 'sidebar',
   canvasMinHeight = 420,
   showRelationshipTable = false,
+  joinListDefaultOpen = true,
   onRelationshipsChanged,
 }: DataModelWorkbenchPanelProps) {
   const t = useTranslations('dashboards_page');
@@ -330,7 +333,10 @@ export function DataModelWorkbenchPanel({
     modelSources.some((ds) => !loadedData.has(ds.id));
 
   const pendingKeys = React.useRef<Set<string>>(new Set());
-  const autoDetectMutation = useAutoDetectRelationships(primarySourceId ?? '');
+  // With every source on the canvas and none picked, detection still runs: it is hosted on the
+  // first source and given the others, so keys like loan_id link across sources.
+  const detectHostId = primarySourceId ?? modelSources[0]?.id ?? '';
+  const autoDetectMutation = useAutoDetectRelationships(detectHostId);
   const autoDetectAttempted = React.useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -343,8 +349,8 @@ export function DataModelWorkbenchPanel({
   }, [primarySourceId, isLoading, allTables.length, allRelationships.length, effectiveScope]);
 
   const handleDetectRelationships = useCallback(() => {
-    if (!primarySourceId) return;
-    autoDetectAttempted.current.add(primarySourceId);
+    if (!detectHostId) return;
+    autoDetectAttempted.current.add(detectHostId);
     const projectSourceIds = modelSources.map((s) => s.id);
     autoDetectMutation.mutate(
       effectiveScope === 'project' && projectSourceIds.length > 1
@@ -363,7 +369,7 @@ export function DataModelWorkbenchPanel({
         onError: () => message.error(t('modeling_detect_failed')),
       },
     );
-  }, [primarySourceId, autoDetectMutation, effectiveScope, modelSources, t, onRelationshipsChanged]);
+  }, [detectHostId, autoDetectMutation, effectiveScope, modelSources, t, onRelationshipsChanged]);
 
   const columnType = useCallback(
     (sourceId: string, tableName: string, columnName: string): string | undefined => {
@@ -627,7 +633,7 @@ export function DataModelWorkbenchPanel({
           <Collapse
             size="small"
             bordered={false}
-            defaultActiveKey={['joins']}
+            defaultActiveKey={joinListDefaultOpen ? ['joins'] : []}
             className="data-model-workbench__join-collapse"
             items={[
               {

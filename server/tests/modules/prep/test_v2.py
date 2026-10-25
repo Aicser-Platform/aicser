@@ -145,3 +145,30 @@ def test_labels_with_a_number_are_not_numbers():
     assert "level" not in detect.detect_types(c, "lv")
     c.execute("CREATE TEMP VIEW money AS SELECT * FROM (VALUES ('USD 1,200'), ('$5'), ('(30)'), ('12%')) t(amount)")
     assert detect.detect_types(c, "money")["amount"]["type"] == "number"
+
+
+def test_review_items_flag_what_no_step_can_decide():
+    """Extreme values, mostly empty and single-value columns, and future dates are for a person to
+    judge, so they come without a suggested step."""
+    c = duckdb.connect()
+    c.execute(
+        "CREATE TEMP VIEW orders AS SELECT * FROM (VALUES "
+        "(1, 10.0, NULL, 'KH', DATE '2026-01-05'), (2, 12.0, NULL, 'KH', DATE '2026-01-06'),"
+        "(3, 11.0, 'x', 'KH', DATE '2026-01-07'), (4, 13.0, NULL, 'KH', DATE '2026-01-08'),"
+        "(5, 9.0, NULL, 'KH', DATE '2026-01-09'), (6, 10.5, NULL, 'KH', DATE '2026-01-10'),"
+        "(7, 11.5, NULL, 'KH', DATE '2026-01-11'), (8, 9000.0, NULL, 'KH', DATE '2999-01-01')"
+        ") t(id, amount, coupon, country, ordered_on)"
+    )
+    found = {f["code"]: f for f in insights.review_items(c, "orders")}
+
+    assert set(found) == {"outliers", "mostly_empty", "constant_column", "future_dates"}
+    assert found["outliers"]["column"] == "amount" and found["outliers"]["params"]["count"] == 1
+    assert found["outliers"]["params"]["examples"] == ["9000.0"]
+    assert found["mostly_empty"]["params"] == {"column": "coupon", "percent": 88}
+    assert found["constant_column"]["params"]["value"] == "KH"
+    assert found["future_dates"]["params"]["count"] == 1
+    assert all("suggested_step" not in f for f in found.values())
+
+
+def test_review_items_leave_ordinary_data_alone(conn):
+    assert insights.review_items(conn, "src") == []

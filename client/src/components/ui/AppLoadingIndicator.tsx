@@ -41,6 +41,10 @@ function SlowLoadingHint() {
   );
 }
 
+/** Logo size per mark, also set inline: the loader can paint before the stylesheet arrives, and
+ * an unstyled <img> showed the logo full size in the top-left corner. */
+const LOGO_PX = { small: 20, default: 30, large: 44 } as const;
+
 const MARK_SIZE_CLASS = {
   small: 'app-loading-indicator__mark--small',
   default: 'app-loading-indicator__mark--default',
@@ -83,6 +87,7 @@ export function AppLoadingIndicator({
 
   const resolvedSize = size ?? (variant === 'full' ? 'large' : 'default');
   const markClass = MARK_SIZE_CLASS[resolvedSize as keyof typeof MARK_SIZE_CLASS] ?? MARK_SIZE_CLASS.default;
+  const logoPx = LOGO_PX[resolvedSize as keyof typeof LOGO_PX] ?? LOGO_PX.default;
 
   const rootClass = [
     'app-loading-indicator',
@@ -93,11 +98,32 @@ export function AppLoadingIndicator({
     .join(' ');
 
   return (
-    <div className={rootClass} role="status" aria-live="polite" aria-busy="true">
+    <div
+      className={rootClass}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      // Centred without the stylesheet too (see LOGO_PX).
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...(variant === 'full' ? { position: 'fixed', inset: 0, zIndex: 9999 } : {}),
+      }}
+    >
       <div className={`app-loading-indicator__mark ${markClass}`}>
         <span className="app-loading-indicator__ring" aria-hidden="true" />
         {/* eslint-disable-next-line @next/next/no-img-element -- decorative, must render before hydration/auth resolve */}
-        <img src="/aiser-logo.png" alt="" className="app-loading-indicator__logo" aria-hidden="true" />
+        <img
+          src="/aiser-logo.png"
+          alt=""
+          className="app-loading-indicator__logo"
+          aria-hidden="true"
+          width={logoPx}
+          height={logoPx}
+          style={{ width: logoPx, height: logoPx }}
+        />
       </div>
       {tip ? <div className="app-loading-indicator__tip">{tip}</div> : null}
       {slow ? <SlowLoadingHint /> : null}

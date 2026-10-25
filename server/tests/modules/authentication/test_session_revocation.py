@@ -24,7 +24,7 @@ every already-authenticated user.
 import time
 
 import pytest
-from jose import JWTError
+from jwt import PyJWTError
 
 from src.modules.authentication import service
 
@@ -68,7 +68,7 @@ def test_logout_revokes_the_token_immediately(fake_cache):
     token = service.create_access_token("user-1", "a@example.com")
     service.revoke_access_token(token)
 
-    with pytest.raises(JWTError):
+    with pytest.raises(PyJWTError):
         service.decode_access_token(token)
 
 
@@ -81,7 +81,7 @@ def test_revoking_one_token_does_not_affect_a_sibling_session(fake_cache):
 
     service.revoke_access_token(token_a)
 
-    with pytest.raises(JWTError):
+    with pytest.raises(PyJWTError):
         service.decode_access_token(token_a)
     # Sibling session survives.
     assert service.decode_access_token(token_b)["sub"] == "user-1"
@@ -93,7 +93,7 @@ def test_revoke_all_sessions_invalidates_previously_issued_tokens(fake_cache):
 
     service.revoke_all_sessions_for_user("user-1")
 
-    with pytest.raises(JWTError):
+    with pytest.raises(PyJWTError):
         service.decode_access_token(old_token)
 
 
@@ -120,7 +120,7 @@ def test_revoke_all_sessions_does_not_affect_other_users(fake_cache):
 def test_token_without_jti_is_not_revocable_but_still_valid(fake_cache):
     """Pre-existing tokens minted before this feature shipped have no jti/iat
     claim — decode must still succeed (no forced mass-logout on deploy)."""
-    from jose import jwt as jose_jwt
+    import jwt as pyjwt
     from datetime import datetime, timedelta, timezone
     from src.core.config import settings
 
@@ -129,7 +129,7 @@ def test_token_without_jti_is_not_revocable_but_still_valid(fake_cache):
         "email": "legacy@example.com",
         "exp": datetime.now(timezone.utc) + timedelta(days=1),
     }
-    legacy_token = jose_jwt.encode(legacy_payload, settings.SECRET_KEY, algorithm=service.ALGORITHM)
+    legacy_token = pyjwt.encode(legacy_payload, settings.SECRET_KEY, algorithm=service.ALGORITHM)
 
     payload = service.decode_access_token(legacy_token)
     assert payload["sub"] == "user-legacy"
@@ -153,8 +153,7 @@ def test_decode_without_cache_available_skips_revocation_check(monkeypatch):
 async def test_revoked_session_is_not_rescued_by_other_decoders(fake_cache, monkeypatch):
     """A revoked Aicser session must be refused by the request guard itself — even when a
     deployment sets JWT_SECRET to the same value as SECRET_KEY, where the Supabase HS256
-    fallback would otherwise accept the aud-less token (python-jose skips the audience
-    check when "aud" is missing)."""
+    fallback would otherwise accept the aud-less token if it stopped requiring "aud"."""
     from fastapi import HTTPException
     from starlette.requests import Request
 

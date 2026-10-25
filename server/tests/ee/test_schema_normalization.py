@@ -62,6 +62,8 @@ def test_single_table_file_schema_still_uses_data_table():
     assert normalized["tables"] == [
         {
             "name": "data",
+            # The upload's name stays as an alias, so metrics written on it run on "data".
+            "logical_name": "uploaded_csv",
             "columns": [{"name": "amount", "type": "DOUBLE"}],
             "row_count": 10,
         }

@@ -115,13 +115,34 @@
   color: var(--ant-color-error, #d4380d);
 }
 
+/* A step's actions sit over the end of its row on hover or keyboard focus: one line per step. */
+.recipe-editor__step-row {
+  position: relative;
+}
+
 .recipe-editor__step-actions {
-  opacity: 0.55;
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--ant-color-bg-container, #fff);
+  box-shadow: var(--ant-box-shadow-tertiary, 0 1px 2px rgba(0, 0, 0, 0.08));
+  visibility: hidden;
 }
 
 .recipe-editor__step-row:hover .recipe-editor__step-actions,
-.recipe-editor__step-row.is-selected .recipe-editor__step-actions {
-  opacity: 1;
+.recipe-editor__step-row:focus-within .recipe-editor__step-actions {
+  visibility: visible;
+}
+
+@media (hover: none) {
+  .recipe-editor__step-actions {
+    position: static;
+    box-shadow: none;
+    background: transparent;
+    visibility: visible;
+  }
 }
 
 .recipe-editor__hint {
@@ -140,6 +161,10 @@
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 8px;
+}
+
+.recipe-editor__spacer {
+  flex: 1;
 }
 
 .recipe-editor__col {
@@ -212,7 +237,7 @@
 
 .recipe-editor__step-text {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: normal;
@@ -341,7 +366,7 @@
 
 .recipe-col__chart {
   width: 100%;
-  height: 22px;
+  height: 16px;
   display: block;
 }
 
@@ -350,20 +375,20 @@
 }
 
 .recipe-col__chart-placeholder {
-  height: 22px;
+  height: 16px;
 }
 
 .recipe-col__top {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  height: 22px;
+  height: 16px;
   overflow: hidden;
 }
 
 .recipe-col__top-row {
   position: relative;
-  height: 7px;
+  height: 5px;
 }
 
 .recipe-col__top-bar {
@@ -424,4 +449,245 @@
 
 .recipe-col__meaning.is-personal {
   background: var(--ant-color-warning);
+}
+
+/* ---- The recipe page: one bar, then the editor fills the rest of the screen ---- */
+.recipe-page__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  margin-bottom: 8px;
+}
+
+.recipe-page__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recipe-page__title .ant-tag {
+  margin: 0;
+}
+
+.recipe-page__name {
+  font-size: 18px;
+  min-width: 0;
+  max-width: 40vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recipe-page__info {
+  color: var(--ant-color-text-tertiary, #999);
+  cursor: help;
+}
+
+.recipe-page__saving {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.recipe-page .recipe-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 760px) {
+  .recipe-page__bar {
+    flex-wrap: wrap;
+  }
+}
+
+.page-wrapper.recipe-page {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+/* Dense grid: more rows on screen, like a spreadsheet (the app-wide table padding is !important) */
+.recipe-editor__grid .ant-table-small .ant-table-tbody > tr:not(.ant-table-measure-row) > td {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+.recipe-editor__grid .ant-table-small .ant-pagination {
+  margin: 8px 0 0;
+}
+
+/* ---- CLEAN panel ---- */
+.clean-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.clean-panel__letter {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.clean-panel__count {
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--ant-color-primary, #0f7c80);
+}
+
+.clean-panel__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.clean-panel__hint,
+.clean-panel__small {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.clean-panel__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.clean-panel__summary .ant-tag {
+  margin: 0;
+}
+
+.clean-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clean-panel__col,
+.clean-panel__review {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border-secondary, #f0f0f0);
+}
+
+.clean-panel__review.is-decided {
+  background: var(--ant-color-fill-quaternary, #fafafa);
+}
+
+.clean-panel__col-main,
+.clean-panel__review-text {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ant-color-text, inherit);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.clean-panel__col-main:hover .clean-panel__col-name,
+.clean-panel__review-text:hover {
+  color: var(--ant-color-primary, #0f7c80);
+}
+
+.clean-panel__col-main:focus-visible,
+.clean-panel__review-text:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #0f7c80);
+  outline-offset: 2px;
+}
+
+.clean-panel__col-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clean-panel__col-type {
+  flex: none;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary, #666);
+}
+
+.clean-panel__bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ant-color-fill-secondary, #e5e5e5);
+  overflow: hidden;
+}
+
+.clean-panel__bar span {
+  display: block;
+  height: 100%;
+  background: var(--ant-color-success, #52c41a);
+}
+
+.clean-panel__meaning {
+  color: var(--ant-color-text, inherit);
+}
+
+.clean-panel__link {
+  align-self: flex-start;
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+}
+
+/* Describing a column is offered where the pointer or focus is, not on every card */
+@media (hover: hover) {
+  .clean-panel__col .clean-panel__link {
+    display: none;
+  }
+  .clean-panel__col:hover .clean-panel__link,
+  .clean-panel__col:focus-within .clean-panel__link {
+    display: inline-flex;
+  }
+}
+
+.clean-panel__decision {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.clean-panel__decision .ant-tag {
+  margin: 0;
+}
+
+.clean-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clean-panel__actions .ant-btn.clean-panel__action {
+  justify-content: flex-start;
+}
+
+.clean-panel__report {
+  margin: 0;
+  padding: 8px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary, #fafafa);
+  font-family: var(--ant-font-family-code, ui-monospace, Menlo, monospace);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }

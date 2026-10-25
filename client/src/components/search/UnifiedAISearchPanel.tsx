@@ -24,6 +24,7 @@ import { useKnowledgeLibraries } from '@/hooks/useKnowledgeLibraries';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { fetchApi } from '@/utils/api';
+import { savedQueriesPath } from '@/utils/savedQueriesPath';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -143,7 +144,7 @@ export const UnifiedAISearchPanel: React.FC<UnifiedAISearchPanelProps> = ({
 
   useEffect(() => {
     setQueriesLoading(true);
-    fetchApi('queries/saved-queries')
+    fetchApi(savedQueriesPath())
       .then((res: { items?: SavedQueryRow[]; saved_queries?: SavedQueryRow[] }) => {
         const list = res?.items || res?.saved_queries || (Array.isArray(res) ? res : []);
         setSavedQueries(list as SavedQueryRow[]);

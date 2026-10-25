@@ -502,6 +502,8 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
     translated_refs: List[str] = []
     fallback_refs: List[str] = []
     unavailable_found: List[str] = []
+    # Table name as written -> the table it runs as, for column qualifiers (loans.amount).
+    redirected: Dict[str, str] = {}
 
     for match in _DUCKDB_TABLE_REF_RE.finditer(query):
         keyword = match.group(1).upper()
@@ -525,11 +527,15 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
             replacements.append((match.start(), match.end(), f'{keyword} "{target}"'))
             translated_refs.append(raw_ref)
         elif bare_name in direct_duckdb_names:
+            target = bare_name
             replacements.append((match.start(), match.end(), f'{keyword} "{bare_name}"'))
             translated_refs.append(raw_ref)
         else:
+            target = "data"
             replacements.append((match.start(), match.end(), f'{keyword} "data"'))
             fallback_refs.append(raw_ref)
+        if bare_name != target.lower():
+            redirected[bare_name] = target
 
     if unavailable_found:
         unavailable = sorted(set(unavailable_found))
@@ -547,6 +553,20 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
     rewritten = query
     for start, end, replacement in reversed(replacements):
         rewritten = rewritten[:start] + replacement + rewritten[end:]
+
+    # Columns qualified by the name as written follow the table: SELECT SUM(loans.amount)
+    # FROM loans (how semantic metrics and people write it) runs as "data".amount FROM "data".
+    if redirected:
+        parts = re.split(r"('(?:[^']|'')*')", rewritten)  # odd parts are string literals: left as typed
+        for i in range(0, len(parts), 2):
+            for bare, target in redirected.items():
+                parts[i] = re.sub(
+                    rf'(?<![\w".]){re.escape(bare)}\s*\.(?=\s*["A-Za-z_])|(?<![\w.])"{re.escape(bare)}"\s*\.(?=\s*["A-Za-z_])',
+                    f'"{target}".',
+                    parts[i],
+                    flags=re.IGNORECASE,
+                )
+        rewritten = "".join(parts)
 
     return rewritten, None, translated_refs + fallback_refs
 

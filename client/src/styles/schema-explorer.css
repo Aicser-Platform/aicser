@@ -361,6 +361,40 @@
   overflow: auto;
 }
 
+/* In a side panel (Ask, SQL editor) the tabs fill the panel's height: Tables / Calc stay put and
+   only the list scrolls, instead of stopping at the cap above with empty space under it. */
+.schema-explorer-tree-scroll:has(> .schema-explorer-tabs) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.schema-explorer-tree-scroll > .schema-explorer-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.schema-explorer-tree-scroll > .schema-explorer-tabs > .ant-tabs-nav {
+  flex-shrink: 0;
+}
+
+/* antd names the panel wrapper -content-holder or -body-holder depending on the version. */
+.schema-explorer-tree-scroll > .schema-explorer-tabs > .ant-tabs-content-holder,
+.schema-explorer-tree-scroll > .schema-explorer-tabs > .ant-tabs-body-holder {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.schema-explorer-tree-scroll > .schema-explorer-tabs .ant-tabs-content {
+  max-height: none;
+  overflow: visible;
+}
+
 .calc-fields-panel__name {
   background: none;
   border: none;
