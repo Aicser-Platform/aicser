@@ -124,3 +124,27 @@ def test_registry_metrics_back_the_semantic_tab_when_yaml_has_none():
     assert block["metrics"][0]["expression"] == "SUM(total_amount)"
     assert all(m["certified"] for m in block["metrics"])
     assert registry_semantic([]) is None
+
+
+def test_pipeline_semantic_matches_semantic_models():
+    """The pipeline lists what Semantic models lists (registry metrics and their certification),
+    keeps the table each was drafted on, and flags drafts the registry doesn't have yet."""
+    from src.modules.pipeline.overview import semantic_block, synced_semantic
+
+    orders = 'semantic:\n  fact_table: "orders"\n  metrics: [{"name": "orders_rows", "title": "Orders", "type": "custom", "expression": "COUNT(*)"}, {"name": "aov", "type": "average", "column": "total"}]\n'
+    yaml_block = semantic_block({"orders": orders})
+    rows = [
+        {"name": "orders_rows", "expression": "COUNT(*)", "tags": None, "certified": True},
+        {"name": "total_amount", "expression": "SUM(orders.total_amount)", "tags": None, "certified": True},
+    ]
+
+    block = synced_semantic(yaml_block, rows)
+
+    assert [m["name"] for m in block["metrics"]] == ["orders_rows", "total_amount", "aov"]
+    assert [m.get("table") for m in block["metrics"]] == ["orders", None, "orders"]
+    assert [m["certified"] for m in block["metrics"]] == [True, True, False]
+    assert block["metrics"][0]["title"] == "Orders"
+    assert block["metrics"][2]["published"] is False
+    assert block["source"] == "registry"
+    assert synced_semantic(yaml_block, []) is yaml_block
+    assert synced_semantic(None, []) is None

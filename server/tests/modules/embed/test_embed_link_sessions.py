@@ -5,7 +5,7 @@ and anonymous viewers get at most EMBED_MAX_ROWS rows per chart."""
 from types import SimpleNamespace
 
 import pytest
-from jose import JWTError
+from jwt import PyJWTError
 
 from src.modules.embed import service as embed_service
 from src.modules.embed.limits import cap_rows
@@ -46,7 +46,7 @@ async def test_signed_link_opens_once_and_only_its_session_reads_data():
     created = await _signed(locked_filters=[{"field": "tenant_id", "value": "acme"}])
     link = created["token"]
 
-    with pytest.raises(JWTError):  # the link itself can't read data
+    with pytest.raises(PyJWTError):  # the link itself can't read data
         await embed_service.verify_embed_token(link, required_scope="dashboard")
 
     opened = await embed_service.open_embed_session(link, required_scope="dashboard")
@@ -57,9 +57,9 @@ async def test_signed_link_opens_once_and_only_its_session_reads_data():
     # The session keeps the link's locked filters.
     assert embed_service.decode_embed_token(session)["locked_filters"] == [{"field": "tenant_id", "value": ["acme"]}]
 
-    with pytest.raises(JWTError, match="already opened"):
+    with pytest.raises(PyJWTError, match="already opened"):
         await embed_service.open_embed_session(link, required_scope="dashboard")
-    with pytest.raises(JWTError):  # a session can't be exchanged again either
+    with pytest.raises(PyJWTError):  # a session can't be exchanged again either
         await embed_service.open_embed_session(session)
 
 
@@ -68,7 +68,7 @@ async def test_revoking_the_link_ends_its_sessions():
     created = await _signed()
     session = (await embed_service.open_embed_session(created["token"]))["token"]
     await embed_service.revoke_embed_token("u1", created["id"])
-    with pytest.raises(JWTError):
+    with pytest.raises(PyJWTError):
         await embed_service.verify_embed_token(session, required_scope="dashboard")
 
 
@@ -87,7 +87,7 @@ async def test_site_limited_link_opens_only_inside_an_allowed_site():
     assert opened["single_use"] is False and opened["allowed_domains"] == ["example.com"]
     # Not single-use: a reload of the same public page opens again.
     await embed_service.open_embed_session(link, parent_origin="https://example.com")
-    with pytest.raises(JWTError):  # the raw link can't skip the site check
+    with pytest.raises(PyJWTError):  # the raw link can't skip the site check
         await embed_service.verify_embed_token(link, required_scope="dashboard")
 
 

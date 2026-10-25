@@ -20,10 +20,10 @@ async def _resolve_user_str(user_payload) -> Optional[str]:
         return None
     # Extract unverified claims if a raw JWT string is passed
     try:
-        from jose import jwt as jose_jwt
+        import jwt as pyjwt
         if isinstance(user_payload, str) and "." in user_payload:
             try:
-                claims = jose_jwt.get_unverified_claims(user_payload)
+                claims = pyjwt.decode(user_payload, options={"verify_signature": False})
                 if isinstance(claims, dict) and claims:
                     user_payload = claims
             except Exception:
@@ -136,9 +136,9 @@ async def has_dashboard_access(user_payload, dashboard_id: str) -> bool:
     # Extract unverified claims if needed
     try:
         if isinstance(user_payload, str) and "." in user_payload:
-            from jose import jwt as jose_jwt
+            import jwt as pyjwt
             try:
-                claims = jose_jwt.get_unverified_claims(user_payload)
+                claims = pyjwt.decode(user_payload, options={"verify_signature": False})
                 if isinstance(claims, dict) and claims:
                     user_payload = claims
                     logger.info("has_dashboard_access: extracted unverified claims from token")

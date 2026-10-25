@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from jose import JWTError
+from jwt import InvalidTokenError
 
 from ee.modules.embed import chat_auth
 from ee.modules.embed.models import EmbedAssistant
@@ -96,7 +96,7 @@ async def test_blank_visitor_id_header_rejected_400():
 
 @pytest.mark.asyncio
 async def test_invalid_or_expired_or_revoked_token_rejected_401(monkeypatch):
-    monkeypatch.setattr(chat_auth, "verify_embed_token", AsyncMock(side_effect=JWTError("bad token")))
+    monkeypatch.setattr(chat_auth, "verify_embed_token", AsyncMock(side_effect=InvalidTokenError("bad token")))
     request = _fake_request({"Authorization": "Bearer bad", "X-Embed-Visitor-Id": "v1"})
     with pytest.raises(HTTPException) as exc:
         await chat_auth.get_embed_chat_context("assistant-1", request)
@@ -105,12 +105,12 @@ async def test_invalid_or_expired_or_revoked_token_rejected_401(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_wrong_scope_token_rejected_401(monkeypatch):
-    """verify_embed_token(required_scope='chat') itself raises JWTError for a
+    """verify_embed_token(required_scope='chat') itself raises InvalidTokenError for a
     token minted with e.g. only ['dashboard'] scope -- confirm that surfaces
     as a clean 401 here rather than propagating an unhandled exception."""
     monkeypatch.setattr(
         chat_auth, "verify_embed_token",
-        AsyncMock(side_effect=JWTError("Missing required scope: chat")),
+        AsyncMock(side_effect=InvalidTokenError("Missing required scope: chat")),
     )
     request = _fake_request({"Authorization": "Bearer tok", "X-Embed-Visitor-Id": "v1"})
     with pytest.raises(HTTPException) as exc:

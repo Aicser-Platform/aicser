@@ -79,6 +79,8 @@ async def test_preview_reports_bad_step_instead_of_failing():
 async def test_profile_suggests_fixes():
     result = await service.profile(CALLER, ProfileRequest(data_source_id="ds1"))
     assert result["profile"]["row_count"] == 3
+    # Three rows is under the sample cap: the stats cover the whole table.
+    assert result["profile"]["sampled"] is False and result["sample_rows"] == 3
     assert isinstance(result["health"], int)
     codes = {f["code"] for f in result["findings"]}
     assert "null_tokens" in codes

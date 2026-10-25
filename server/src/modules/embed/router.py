@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from jose import JWTError
+import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -319,7 +319,7 @@ async def verify_embed_token(
     the plan that granted it."""
     try:
         result = await embed_service.verify_embed_token(token, required_scope=scope, allow_link=True)
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     org_id = result.get("org_id")
@@ -380,7 +380,7 @@ async def open_embed_session(body: EmbedSessionRequest, db: AsyncSession = Depen
         )
     except embed_service.EmbedOriginError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         message = str(exc)
         if "expired" in message.lower():
             message = "This embed link has expired."

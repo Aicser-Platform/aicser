@@ -58,6 +58,9 @@ export function DashboardsSection() {
   const t = useTranslations('dashboard_tabs');
   const confirmWithImpact = useImpactConfirm();
   const activeDashboardId = useDashboardStore((s) => s.activeDashboardId);
+  // The open dashboard's count follows the board as charts are added or removed; the others
+  // keep the count the list was loaded with.
+  const activeChartCount = useDashboardStore((s) => s.widgets.filter((w) => w.chartId != null).length);
   const setActiveDashboardId = useDashboardStore((s) => s.setActiveDashboardId);
   const loadDashboardById = useDashboardStore((s) => s.loadDashboardById);
   const addDashboard = useDashboardStore((s) => s.addDashboard);
@@ -391,7 +394,9 @@ export function DashboardsSection() {
     }
   };
 
-  const renderDashboardRow = (dashboard: DashboardLibraryItem) => {
+  const renderDashboardRow = (listed: DashboardLibraryItem) => {
+    const dashboard =
+      String(listed.id) === String(activeDashboardId) ? { ...listed, chartCount: activeChartCount } : listed;
     const id = String(dashboard.id);
     const name = dashboard.title || dashboard.name || id;
     const isActive = id === activeDashboardId;

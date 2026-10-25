@@ -19,6 +19,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/__tests__/setup.ts'],
+    // Node 25+ ships a global localStorage/sessionStorage that shadows jsdom's and is unusable
+    // without --localstorage-file; turn it off so tests get jsdom's Storage.
+    execArgv: ['--no-webstorage'],
     // Every unit test in the app: a hand-kept folder list silently skipped ~40 test files that
     // sat next to their code, so a green run did not mean they passed.
     include: ['src/**/*.test.{ts,tsx}', 'ee/src/**/*.test.{ts,tsx}'],

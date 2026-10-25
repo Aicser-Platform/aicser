@@ -25,6 +25,14 @@ describe('widgetAutoTitle', () => {
     expect(deriveAutoTitle({ chartType: 'bar', chartQuery: {} }, t)).toBeNull();
   });
 
+  it('names a semantic metric widget by the metric, not its SQL', () => {
+    const semantic = {
+      semantic_metric_id: 'm1',
+      yMetrics: [{ field: 'SUM(loans.loan_amount_usd)', aggregation: 'none', label: 'total_loan_amount_usd' }],
+    };
+    expect(deriveAutoTitle({ chartType: 'stat', chartQuery: semantic }, t)).toBe('Total loan amount usd');
+  });
+
   it('treats placeholders and titles we wrote as automatic, never a typed one', () => {
     expect(isAutoTitle({ title: 'KPI' }, ['KPI'])).toBe(true);
     expect(isAutoTitle({ title: 'Line' })).toBe(true);

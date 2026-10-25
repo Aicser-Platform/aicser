@@ -153,7 +153,7 @@ export const WIDGET_TEMPLATES = [
       </div>
     ),
     category: 'Indicators',
-    defaultSize: { w: 3, h: 2 },
+    defaultSize: { w: 3, h: 3 }, // room for the title, value and source line
     description: 'KPI stat card for one headline number.',
   },
   {

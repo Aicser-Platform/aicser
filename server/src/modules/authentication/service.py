@@ -8,7 +8,7 @@ import uuid as uuid_module
 from typing import Optional
 from uuid import UUID as PyUUID
 
-from jose import jwt, JWTError
+import jwt
 from passlib.context import CryptContext
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -65,14 +65,14 @@ def create_access_token(user_id: str, email: str) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    """Raise JWTError if invalid, expired, or revoked."""
+    """Raise jwt.PyJWTError if invalid, expired, or revoked."""
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     # An embed token (src/modules/embed) is never a login, even if the two signing secrets
     # are ever configured to the same value.
     if payload.get("type") == "embed":
-        raise JWTError("Embed tokens can't sign in")
+        raise jwt.InvalidTokenError("Embed tokens can't sign in")
     if _is_revoked(payload):
-        raise JWTError("Token has been revoked")
+        raise jwt.InvalidTokenError("Token has been revoked")
     return payload
 
 
@@ -120,13 +120,13 @@ def revoke_access_token(token: str) -> None:
             token, settings.SECRET_KEY, algorithms=[ALGORITHM],
             options={"verify_exp": False},
         )
-    except JWTError:
+    except jwt.PyJWTError:
         # SSO tokens (Supabase / Keycloak) are signed by the identity provider. Denylisting
         # only needs their id and expiry; reading them unverified is safe here because this
         # can only ever *remove* access, never grant it.
         try:
-            payload = jwt.get_unverified_claims(token)
-        except JWTError:
+            payload = jwt.decode(token, options={"verify_signature": False})
+        except jwt.PyJWTError:
             return
     jti = payload.get("jti")
     exp = payload.get("exp")

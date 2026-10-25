@@ -37,7 +37,7 @@ import { useKnowledgeLibraries } from '@/hooks/useKnowledgeLibraries';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
 import { EmbedAssistantModal } from './embed/EmbedAssistantModal';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
-import { buildEmbedChatUrl, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
+import { buildEmbedChatUrl, onThisApp, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
 import type { EmbedAssistantRecord } from '../types';
 import type { TabComponentProps } from '../page';
 
@@ -275,8 +275,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
 
   const createdEmbedUrl = useMemo(() => {
     if (!createdToken?.embed_urls) return '';
-    return (
-      createdToken.embed_urls[selectedEmbedScope] || pickPrimaryEmbedUrl(createdToken.embed_urls)
+    return onThisApp(
+      createdToken.embed_urls[selectedEmbedScope] || pickPrimaryEmbedUrl(createdToken.embed_urls) || '',
     );
   }, [createdToken, selectedEmbedScope]);
 
