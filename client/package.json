@@ -14,7 +14,7 @@
     "predev:turbo": "node scripts/setup-ee.js",
     "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev --webpack",
     "dev:light": "NODE_OPTIONS='--max-old-space-size=3072' next dev --webpack",
-    "dev:turbo": "NODE_OPTIONS='--max-old-space-size=4096' next dev --turbo",
+    "dev:turbo": "NODE_OPTIONS='--max-old-space-size=2048' next dev --turbo",
     "build": "NODE_OPTIONS='--max-old-space-size=4096' next build --webpack",
     "build:light": "NODE_OPTIONS='--max-old-space-size=3072' next build --webpack",
     "start:prod": "next start",
