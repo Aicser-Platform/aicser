@@ -76,11 +76,18 @@ export function BrandThemeProvider({ children }: ProviderProps) {
 }
 
 // ── Page stubs ───────────────────────────────────────────────────────────────
+export const AIDecisionsPage         = (): null => null;
 export const AlertsPage              = (): null => null;
+export const DecisionDetailPage      = (): null => null;
+export const FeedbackPage            = (): null => null;
+export const LakeTablesPage          = (): null => null;
+export const ModelDetailPage         = (): null => null;
 export const WarehousePage           = (): null => null;
 export const ModelsPage              = (): null => null;
 export const ChatPage                = (): null => null;
 export const ProjectsPage            = (): null => null;
+export const ReportPage              = (): null => null;
+export const SupportPage             = (): null => null;
 export const DataPlatformPage        = (): null => null;
 export const PipelinesPage           = (): null => null;
 export const NewPipelinePage         = (): null => null;
@@ -104,6 +111,9 @@ export function buildCompleteFromAccumulator(
   return { ...acc, message: acc.message || fallbackMessage };
 }
 export function isSubstantiveCompleteEvent(_evt: Record<string, unknown>): boolean {
+  return false;
+}
+export function isNarrationToken(_evt?: unknown): boolean {
   return false;
 }
 export function displayText(_partialResults?: Record<string, unknown>, fallback = ''): string {

@@ -57,14 +57,16 @@ function loadSentryWrapper() {
   }
 }
 
-// Webpack alias: @/ee → ee/src/ee/ (EE) or src/ee-fallback.ts (CE).
+// Webpack alias: @/ee → ee/src/ee/ (EE) or src/ee-fallback.ts + src/ee (CE).
 // Turbopack: absolute-path aliases are limited; CE uses setup-ee.js shim + resolveAlias below.
 const eeIndex = path.resolve(__dirname, 'ee/src/ee/index.ts');
 const eeFallback = path.resolve(__dirname, 'src/ee-fallback.ts');
 const pricingModalNoop = path.resolve(__dirname, 'src/components/PricingModal.noop.tsx');
 const edition = (process.env.NEXT_PUBLIC_EDITION || process.env.EDITION || '').toLowerCase();
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
-const eeEntry = isEnterprise ? path.dirname(eeIndex) : eeFallback;
+const eeEntry = isEnterprise
+  ? path.dirname(eeIndex)
+  : [eeFallback, path.resolve(__dirname, 'src/ee')];
 // API route handlers (route.ts) and chat hot-path modules must not import the
 // @/ee barrel. The barrel re-exports ChatPage / useConversationStore, which
 // import fetchApi — a cycle that left ChatPanel undefined on /chat.
@@ -169,6 +171,9 @@ const nextConfig = {
   experimental: {
     ...(process.env.NEXT_DEV_CPUS
       ? { cpus: Number.parseInt(process.env.NEXT_DEV_CPUS, 10) }
+      : {}),
+    ...(process.env.NEXT_LOW_MEM === '1'
+      ? { webpackMemoryOptimizations: true, cpus: 2 }
       : {}),
     // Rewrites barrel imports (`import { x } from 'pkg'`) to direct submodule
     // imports so only the used code is pulled into the graph.
