@@ -1,5 +1,9 @@
 DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
-COMPOSE    := docker compose --project-directory $(DEPLOY_DIR)
+# Container runtime: docker when installed, else podman. Override: make CONTAINER=podman ...
+CONTAINER  ?= $(if $(shell command -v docker 2>/dev/null),docker,podman)
+COMPOSE    := $(CONTAINER) compose --project-directory $(DEPLOY_DIR)
+# Hide podman's "Executing external compose provider" banner.
+export PODMAN_COMPOSE_WARNING_LOGS ?= false
 DEV_BASE   := -f $(DEPLOY_DIR)/docker-compose.dev.yml
 DEV_CE     := $(COMPOSE) -p aiser-dev-ce -f $(DEPLOY_DIR)/docker-compose.dev.ce.yml
 DEV_LITE   := $(COMPOSE) -p aiser-dev-lite -f $(DEPLOY_DIR)/docker-compose.dev.lite.yml
@@ -37,13 +41,57 @@ dev-lite:
 	-$(DEV_LEGACY) down --remove-orphans
 	-$(DEV_CE_EXTRAS) down --remove-orphans
 	-$(DEV_EE_EXTRAS) down --remove-orphans
-	$(DEV_LITE) up
+	$(DEV_LITE) up --force-recreate
 
 dev-lite-build:
 	-$(DEV_LEGACY) down --remove-orphans
 	-$(DEV_CE_EXTRAS) down --remove-orphans
 	-$(DEV_EE_EXTRAS) down --remove-orphans
-	$(DEV_LITE) up -d --build
+	$(DEV_LITE) up -d --build --force-recreate
+
+# Hybrid dev: postgres + redis + server in Podman, client native on the host
+# (faster compiles: all CPU cores, native file system, no container memory cap).
+dev-lite-api:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
+	-$(DEV_LITE) rm -s -f client
+	$(DEV_LITE) up -d --force-recreate postgres redis server
+	@echo "Backend ready. Start the client: cd client && npm run dev:turbo:lite"
+
+# One command for hybrid dev: backend in Podman, then the native client (Ctrl+C stops the client;
+# the backend keeps running until `make dev-lite-down`).
+dev-hybrid: dev-lite-api
+	cd $(DEPLOY_DIR)/../client && npm run dev:turbo:lite
+
+# Fail when a dev-lite container has no memory limit, may use swap, or was
+# created from an older compose file (stale config hash), or when the running
+# server's database is not at the Alembic head. Services without a
+# container are skipped (hybrid mode). Recreate with: make dev-lite-build
+dev-lite-check:
+	@fail=0; ids=""; \
+	for svc in $$($(DEV_LITE) config --services); do \
+	  id=$$($(DEV_LITE) ps -a -q $$svc); \
+	  if [ -z "$$id" ]; then echo "SKIP $$svc: not running"; continue; fi; \
+	  ids="$$ids $$id"; \
+	  mem=$$($(CONTAINER) inspect --format '{{.HostConfig.Memory}}' $$id); \
+	  swap=$$($(CONTAINER) inspect --format '{{.HostConfig.MemorySwap}}' $$id); \
+	  have=$$($(CONTAINER) inspect --format '{{index .Config.Labels "com.docker.compose.config-hash"}}' $$id); \
+	  want=$$($(DEV_LITE) config --hash $$svc | awk '{print $$2}'); \
+	  if [ "$$mem" = "0" ]; then echo "FAIL $$svc: no memory limit"; fail=1; \
+	  elif [ "$$swap" != "$$mem" ]; then echo "FAIL $$svc: may use swap (memswap_limit != mem_limit)"; fail=1; \
+	  elif [ "$$have" != "$$want" ]; then echo "FAIL $$svc: stale container (config hash differs), recreate it"; fail=1; \
+	  else echo "OK   $$svc: mem_limit $$((mem / 1048576))m, config up to date"; fi; \
+	done; \
+	if [ -z "$$ids" ]; then echo "FAIL no dev-lite containers"; exit 1; fi; \
+	sid=$$($(DEV_LITE) ps -q server); \
+	if [ -n "$$sid" ]; then \
+	  rev=$$($(CONTAINER) exec $$sid /venv/bin/python -m alembic -c alembic.ini current 2>/dev/null); \
+	  case "$$rev" in *"(head)"*) echo "OK   db: $$rev";; \
+	    *) echo "FAIL db: not at head ($${rev:-unknown}); restart server to run migrations"; fail=1;; esac; \
+	fi; \
+	$(CONTAINER) stats --no-stream $$ids; \
+	exit $$fail
 
 dev-lite-logs:
 	$(DEV_LITE) logs -f
@@ -223,7 +271,7 @@ seed-rbac-dev:
 	$(DEV_EE) exec server python -m ee.scripts.seed_rbac
 
 .PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down \
-        dev-lite dev-lite-build dev-lite-logs dev-lite-down \
+        dev-lite dev-lite-build dev-lite-api dev-hybrid dev-lite-check dev-lite-logs dev-lite-down \
         dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \

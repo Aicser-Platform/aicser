@@ -7,6 +7,9 @@ import { captureClientException } from '@/lib/observability/capture';
 export default function AppError({ error }: { error: Error }) {
   React.useEffect(() => {
     captureClientException(error, { surface: 'app-error' });
+    if (/loading (css )?chunk .+ failed/i.test(error?.message || '') && typeof window !== 'undefined') {
+      window.location.reload();
+    }
   }, [error]);
 
   React.useEffect(() => {

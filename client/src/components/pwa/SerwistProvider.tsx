@@ -10,12 +10,32 @@ type Props = {
 };
 
 /**
+ * In dev, drop any service worker left over from a production build on the same origin, plus
+ * its caches. Otherwise the old worker keeps intercepting dev requests with stale precached chunks.
+ */
+async function removeStaleServiceWorkers(): Promise<void> {
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  }
+}
+
+/**
  * Registers the Serwist-built service worker (/sw.js).
  * Uses manual registration for React 18 compatibility (@serwist/next/react requires React 19).
  */
 export function SerwistProvider({ children }: Props) {
   useEffect(() => {
-    if (isDev && !pwaInDev) return;
+    if (isDev && !pwaInDev) {
+      removeStaleServiceWorkers().catch((err) => {
+        console.warn('[PWA] Could not remove stale service worker:', err);
+      });
+      return;
+    }
     if (!('serviceWorker' in navigator)) return;
 
     let active = true;

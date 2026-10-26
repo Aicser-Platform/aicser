@@ -1,18 +1,35 @@
 # Aicser Community Edition — development stack (dev-lite, low-memory standalone).
 #
 # Purpose:
-#   Full live-reload development stack for memory-constrained environments
-#   (e.g., Podman VM 4 GB shared with global-mysql ~620 MB, fitting in the remaining ~3.4 GB).
+#   Full live-reload development stack that fits in a Podman VM of 4 GB,
+#   shared with another project's.
 #
-# Memory Budget (Total mem_limit ~3.3 GB / actual runtime usage ~1.0 - 1.5 GB):
-#   - postgres:  192 MB (shared_buffers=64MB, work_mem=4MB, conn=20)
-#   - redis:      48 MB (maxmemory 32mb, volatile-lru)
-#   - server:    768 MB (uvicorn --reload, pool 5+5, MALLOC_ARENA_MAX=2)
-#   - client:   2300 MB (next dev --turbo, node 26 max-old-space=1280, cpus=2, NEXT_LOW_MEM=1)
+# Memory budget for a 4 GB Podman VM (~3.85 GB total):
+#   - VM kernel + podman:          ~450 MB (reserve, not capped here)
+#   - postgres:  128 MB (shared_buffers=64MB, work_mem=4MB, conn=20)
+#   - redis:      32 MB (maxmemory 24mb, volatile-lru)
+#   - server:    640 MB (uvicorn --reload, pool 5+5, MALLOC_ARENA_MAX=2)
+#   - client:   2200 MB (next dev --turbo, JS heap 1024 MB + Turbopack 768 MB, NEXT_LOW_MEM=1)
+#   Override with CLIENT_DEV_MEM_LIMIT / NODE_MAX_OLD_SPACE_SIZE / NEXT_TURBOPACK_MEMORY_LIMIT_MB.
+#
+#   mem_limit is the only hard cap; memswap_limit = mem_limit so a container cannot
+#   spill into VM swap (default would allow the same amount again as swap and the
+#   VM thrashes instead of OOM-restarting). --max-old-space-size caps only the JS heap and
+#   turbopackMemoryLimit is a soft target, so the client can briefly exceed both;
+#   at mem_limit it is OOM-killed and restarted (restart: unless-stopped).
+#   If /query-editor keeps OOM-restarting, lower NEXT_TURBOPACK_MEMORY_LIMIT_MB to 512
+#   instead of raising the client cap. Check limits with: make -C deploy dev-lite-check
 #
 # Usage:
-#   podman compose -f deploy/docker-compose.dev.lite.yml up
-#   (or via make: make -C deploy dev-lite)
+#   Hybrid (recommended, fastest compiles): backend here, client native on the host.
+#     make -C deploy dev-hybrid          # both steps below in one command
+#     make -C deploy dev-lite-api        # postgres + redis + server only
+#     cd client && npm run dev:turbo:lite     # uses client/.env.local -> localhost:8000
+#   VM budget without the client: kernel ~450 + global-mysql/redis ~400
+#   + postgres 128 + redis 32 + server 640 = ~1.65 GB, so a 2-3 GB VM is enough.
+#
+#   Full stack in containers (client capped at 2.2 GB, slower compiles):
+#     make -C deploy dev-lite   (or: podman compose -f deploy/docker-compose.dev.lite.yml up)
 #
 # IMPORTANT:
 #   Default ports match dev-ce exactly (3000, 8000, 5432, 6379).
@@ -37,10 +54,10 @@ x-client-command: &client-command
     fi;
     node scripts/setup-ee.js;
     if [ "$${NEXT_DEV_TURBO}" = "true" ]; then
-      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-1280}"
+      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-1024}"
       ./node_modules/.bin/next dev --turbo -H 0.0.0.0 -p $${PORT:-3000};
     else
-      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-1280}"
+      NODE_OPTIONS="--max-old-space-size=$${NODE_MAX_OLD_SPACE_SIZE:-1024}"
       ./node_modules/.bin/next dev --webpack -H 0.0.0.0 -p $${PORT:-3000};
     fi
 
@@ -66,13 +83,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 192m
+    mem_limit: 128m
+    memswap_limit: 128m
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: aiser-redis-dev-lite
-    command: redis-server --maxmemory 32mb --maxmemory-policy volatile-lru
+    command: redis-server --maxmemory 24mb --maxmemory-policy volatile-lru
     ports:
       - "${DEV_REDIS_PORT:-6379}:6379"
     volumes:
@@ -82,7 +100,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    mem_limit: 48m
+    mem_limit: 32m
+    memswap_limit: 32m
     restart: unless-stopped
 
   server:
@@ -171,7 +190,7 @@ services:
         fi
         /venv/bin/python -m src.shared.sample_data.ensure
         echo "Running CE migrations..."
-        /venv/bin/python -m alembic -c alembic.ini upgrade 2026_07_08_avatar_url_text
+        /venv/bin/python -m alembic -c alembic.ini upgrade ce@head
         exec /venv/bin/python -m uvicorn src.main:app \
           --host 0.0.0.0 \
           --port 8000 \
@@ -182,7 +201,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 90s
-    mem_limit: 768m
+    mem_limit: 640m
+    memswap_limit: 640m
     restart: unless-stopped
 
   client:
@@ -202,7 +222,8 @@ services:
       API_TARGET: http://server:8000
       PORT: "3000"
       NEXT_DEV_TURBO: ${NEXT_DEV_TURBO:-true}
-      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1280}
+      NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-1024}
+      NEXT_TURBOPACK_MEMORY_LIMIT_MB: ${NEXT_TURBOPACK_MEMORY_LIMIT_MB:-768}
       NEXT_DEV_CPUS: ${NEXT_DEV_CPUS:-2}
       NEXT_LOW_MEM: "1"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -216,12 +237,12 @@ services:
     volumes:
       - ../client:/app
       - client_dev_lite_node_modules:/app/node_modules
-      - client_dev_lite_ee_shim:/app/src/ee
       - client_dev_lite_next:/app/.next
     depends_on:
       server:
         condition: service_healthy
-    mem_limit: ${CLIENT_DEV_MEM_LIMIT:-2300m}
+    mem_limit: ${CLIENT_DEV_MEM_LIMIT:-2200m}
+    memswap_limit: ${CLIENT_DEV_MEM_LIMIT:-2200m}
     restart: unless-stopped
 
 volumes:
@@ -229,7 +250,6 @@ volumes:
   redis_dev_lite_data:
   pip_dev_lite_cache:
   client_dev_lite_node_modules:
-  client_dev_lite_ee_shim:
   client_dev_lite_next:
 
 networks:

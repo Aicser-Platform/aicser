@@ -169,11 +169,19 @@ const nextConfig = {
   },
 
   experimental: {
+    ...(process.env.NEXT_LOW_MEM === '1'
+      ? { webpackMemoryOptimizations: true, cpus: 2 }
+      : {}),
+    // After NEXT_LOW_MEM so an explicit NEXT_DEV_CPUS wins.
     ...(process.env.NEXT_DEV_CPUS
       ? { cpus: Number.parseInt(process.env.NEXT_DEV_CPUS, 10) }
       : {}),
-    ...(process.env.NEXT_LOW_MEM === '1'
-      ? { webpackMemoryOptimizations: true, cpus: 2 }
+    // Caps Turbopack's native (Rust) memory; --max-old-space-size only caps the JS heap.
+    ...(process.env.NEXT_TURBOPACK_MEMORY_LIMIT_MB
+      ? {
+          turbopackMemoryLimit:
+            Number.parseInt(process.env.NEXT_TURBOPACK_MEMORY_LIMIT_MB, 10) * 1024 * 1024,
+        }
       : {}),
     // Rewrites barrel imports (`import { x } from 'pkg'`) to direct submodule
     // imports so only the used code is pulled into the graph.
