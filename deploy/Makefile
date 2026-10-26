@@ -2,6 +2,7 @@ DEPLOY_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 COMPOSE    := docker compose --project-directory $(DEPLOY_DIR)
 DEV_BASE   := -f $(DEPLOY_DIR)/docker-compose.dev.yml
 DEV_CE     := $(COMPOSE) -p aiser-dev-ce -f $(DEPLOY_DIR)/docker-compose.dev.ce.yml
+DEV_LITE   := $(COMPOSE) -p aiser-dev-lite -f $(DEPLOY_DIR)/docker-compose.dev.lite.yml
 DEV_EE     := AISER_EDITION=enterprise $(COMPOSE) -p aiser-dev-ee $(DEV_BASE) -f $(DEPLOY_DIR)/docker-compose.dev.ee.yml
 DEV_CE_EXTRAS := $(DEV_CE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
 DEV_EE_EXTRAS := $(DEV_EE) -f $(DEPLOY_DIR)/docker-compose.dev.extras.yml
@@ -30,6 +31,25 @@ dev-ce-logs:
 
 dev-ce-down:
 	$(DEV_CE_EXTRAS) down --remove-orphans
+
+# Start the low-memory dev-lite stack (standalone CE, Turbopack, memory limits).
+dev-lite:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
+	$(DEV_LITE) up
+
+dev-lite-build:
+	-$(DEV_LEGACY) down --remove-orphans
+	-$(DEV_CE_EXTRAS) down --remove-orphans
+	-$(DEV_EE_EXTRAS) down --remove-orphans
+	$(DEV_LITE) up -d --build
+
+dev-lite-logs:
+	$(DEV_LITE) logs -f
+
+dev-lite-down:
+	$(DEV_LITE) down --remove-orphans
 
 # Start only the EE development stack.
 dev-ee:
@@ -80,6 +100,7 @@ dev-down:
 	-$(DEV_LEGACY) down --remove-orphans
 	-$(DEV_CE_EXTRAS) down --remove-orphans
 	-$(DEV_EE_EXTRAS) down --remove-orphans
+	-$(DEV_LITE) down --remove-orphans
 
 dev-logs: dev-ce-logs
 
@@ -201,7 +222,9 @@ seed-rbac-ee:
 seed-rbac-dev:
 	$(DEV_EE) exec server python -m ee.scripts.seed_rbac
 
-.PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down dev-ee dev-ee-build \
+.PHONY: dev dev-ce dev-ce-build dev-ce-logs dev-ce-down \
+        dev-lite dev-lite-build dev-lite-logs dev-lite-down \
+        dev-ee dev-ee-build \
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
         ee-serial ee-build-server ee-build-client \

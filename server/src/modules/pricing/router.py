@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import get_async_session
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
-from src.modules.authentication.rbac.models import UserRole
+try:
+    from src.modules.authentication.rbac.models import UserRole
+except ImportError:
+    UserRole = None  # type: ignore
 from src.modules.data.models import DataSource
 from src.modules.pricing.plans import PLAN_CONFIGS, get_plan_config
 from src.modules.project.models import Project
@@ -51,16 +54,18 @@ async def community_usage_summary(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
-    org_stmt = (
-        select(UserRole.organization_id)
-        .where(
-            UserRole.user_id == str(user_id),
-            UserRole.is_active == True,
-            UserRole.is_deleted == False,
+    org_id = None
+    if UserRole is not None:
+        org_stmt = (
+            select(UserRole.organization_id)
+            .where(
+                UserRole.user_id == str(user_id),
+                UserRole.is_active == True,
+                UserRole.is_deleted == False,
+            )
+            .limit(1)
         )
-        .limit(1)
-    )
-    org_id = (await db.execute(org_stmt)).scalar_one_or_none()
+        org_id = (await db.execute(org_stmt)).scalar_one_or_none()
 
     ds_used = 0
     proj_used = 0
