@@ -183,6 +183,7 @@
   border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
   font-weight: var(--font-weight-semibold) !important;
   font-size: var(--font-size-base) !important;
+  border-radius: 0 !important;
 }
 
 .ant-card-body {
@@ -1254,9 +1255,12 @@ h4, .h4 {
   padding: 0 !important;
 }
 
-/* Ensure all cards have consistent styling */
-div[class*="card"],
-div[class*="Card"] {
+/* Ensure all cards have consistent styling.
+   Skip antd card parts (.ant-card-head, -body, -extra...): the .ant-card rule above already
+   styles the card itself, and rounding the head's bottom corners bends its border-bottom
+   into stray marks at both card edges. */
+div[class*="card"]:not([class*="ant-card-"]):not(.ant-card-head),
+div[class*="Card"]:not([class*="ant-card-"]):not(.ant-card-head) {
   background: var(--ant-color-bg-container) !important;
   border-radius: var(--radius-lg) !important;
 }
