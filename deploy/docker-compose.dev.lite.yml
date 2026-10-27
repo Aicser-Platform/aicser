@@ -12,6 +12,10 @@
 #   - client:   2200 MB (next dev --turbo, JS heap 1024 MB + Turbopack 768 MB, NEXT_LOW_MEM=1)
 #   Override with CLIENT_DEV_MEM_LIMIT / NODE_MAX_OLD_SPACE_SIZE / NEXT_TURBOPACK_MEMORY_LIMIT_MB.
 #
+#   Server reload watches only SERVER_RELOAD_DIRS (default: src). With polling on, watching
+#   all of /app also scans the host's server/.venv (~80k files) and costs ~10% of a core idle.
+#   SERVER_RELOAD_DIRS=. restores the old behavior; several dirs: SERVER_RELOAD_DIRS="src alembic".
+#
 #   mem_limit is the only hard cap; memswap_limit = mem_limit so a container cannot
 #   spill into VM swap (default would allow the same amount again as swap and the
 #   VM thrashes instead of OOM-restarting). --max-old-space-size caps only the JS heap and
@@ -20,16 +24,70 @@
 #   If /query-editor keeps OOM-restarting, lower NEXT_TURBOPACK_MEMORY_LIMIT_MB to 512
 #   instead of raising the client cap. Check limits with: make -C deploy dev-lite-check
 #
-# Usage:
-#   Hybrid (recommended, fastest compiles): backend here, client native on the host.
-#     make -C deploy dev-hybrid          # both steps below in one command
-#     make -C deploy dev-lite-api        # postgres + redis + server only
-#     cd client && npm run dev:turbo:lite     # uses client/.env.local -> localhost:8000
-#   VM budget without the client: kernel ~450 + global-mysql/redis ~400
-#   + postgres 128 + redis 32 + server 640 = ~1.65 GB, so a 2-3 GB VM is enough.
+# ─────────────────────────────────────────────────────────────────────────────
+# How to Run:
+# ─────────────────────────────────────────────────────────────────────────────
 #
-#   Full stack in containers (client capped at 2.2 GB, slower compiles):
-#     make -C deploy dev-lite   (or: podman compose -f deploy/docker-compose.dev.lite.yml up)
+# 1. Hybrid Dev (Recommended & Fastest):
+#    Runs PostgreSQL, Redis, and FastAPI in containers, while running Next.js Turbopack
+#    natively on the host (bypasses container memory limits, uses all CPU cores and native FS).
+#
+#    Single command:
+#      make -C deploy dev-hybrid
+#
+#    Or in two separate terminal steps:
+#      Step 1 (Start backend):  make -C deploy dev-lite-api
+#      Step 2 (Start frontend): cd client && npm run dev:turbo:lite
+#
+#    App will be available at: http://localhost:3000
+#    Backend API available at: http://localhost:8000/health
+#    VM memory budget without client: ~1.65 GB (a 2-3 GB Podman VM is sufficient).
+#
+# 2. Full Stack in Containers:
+#    Runs all 4 services (Postgres, Redis, FastAPI Server, Next.js Client) inside containers.
+#    Client is capped at 2.2 GB RAM.
+#
+#    Start containers:
+#      make -C deploy dev-lite
+#
+#    Rebuild images & recreate containers:
+#      make -C deploy dev-lite-build
+#
+#    Or via direct compose CLI:
+#      podman compose -p aiser-dev-lite -f deploy/docker-compose.dev.lite.yml up -d --force-recreate
+#      (or: docker compose -p aiser-dev-lite -f deploy/docker-compose.dev.lite.yml up -d --force-recreate)
+#
+# 3. Health & Sanity Verification:
+#    Verifies container memory limits, config hash freshness, and Alembic DB head:
+#      make -C deploy dev-lite-check
+#
+#    Note: If you have a host service on port 6379 (e.g. global-redis), run with:
+#      DEV_REDIS_PORT=6380 make -C deploy dev-lite-check
+#
+# 4. View Logs & Teardown:
+#    Follow logs:
+#      make -C deploy dev-lite-logs
+#      podman compose -p aiser-dev-lite -f deploy/docker-compose.dev.lite.yml logs -f server
+#
+#    Stop and remove containers:
+#      make -C deploy dev-lite-down
+#
+#    Recreate a single service (e.g. after config changes):
+#      podman compose -p aiser-dev-lite -f deploy/docker-compose.dev.lite.yml up -d --force-recreate server
+#
+# 5. Environment Knobs & Overrides:
+#    - SERVER_RELOAD_DIRS:
+#        SERVER_RELOAD_DIRS=src           (default: watches src/, ignores host .venv)
+#        SERVER_RELOAD_DIRS="src alembic" (watches multiple directories)
+#        SERVER_RELOAD_DIRS=.             (escape hatch: watches entire /app)
+#    - Custom Port Mappings (override if host ports are already bound):
+#        DEV_POSTGRES_PORT=5433
+#        DEV_REDIS_PORT=6380
+#        DEV_SERVER_PORT=8001
+#        DEV_CLIENT_PORT=3001
+#    - Memory limits:
+#        CLIENT_DEV_MEM_LIMIT=2048m
+#        NEXT_TURBOPACK_MEMORY_LIMIT_MB=512 (reduce if memory is tight)
 #
 # IMPORTANT:
 #   Default ports match dev-ce exactly (3000, 8000, 5432, 6379).
@@ -146,6 +204,7 @@ services:
       ALLOW_UNVERIFIED_JWT_IN_DEV: ${ALLOW_UNVERIFIED_JWT_IN_DEV:-true}
       MALLOC_ARENA_MAX: "2"
       WATCHFILES_FORCE_POLLING: ${WATCHFILES_FORCE_POLLING:-true}
+      SERVER_RELOAD_DIRS: ${SERVER_RELOAD_DIRS:-src}
       # ── Redis ────────────────────────────────────────────────────────────────
       REDIS_HOST: redis
       REDIS_PORT: "6379"
@@ -191,10 +250,13 @@ services:
         /venv/bin/python -m src.shared.sample_data.ensure
         echo "Running CE migrations..."
         /venv/bin/python -m alembic -c alembic.ini upgrade ce@head
+        # Build --reload-dir args for watched directories (defaults to src)
+        RELOAD_ARGS=""
+        for d in $${SERVER_RELOAD_DIRS:-src}; do RELOAD_ARGS="$$RELOAD_ARGS --reload-dir $$d"; done
         exec /venv/bin/python -m uvicorn src.main:app \
           --host 0.0.0.0 \
           --port 8000 \
-          --reload
+          --reload $$RELOAD_ARGS
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
