@@ -770,7 +770,7 @@
   }
 }
 
-@media (max-width: 767.98px) {
+@media (max-width: 768px) {
   .studio-sidebar-panel:not(.collapsed):not(.full-page) {
     position: absolute;
     left: 48px;

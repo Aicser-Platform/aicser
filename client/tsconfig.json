@@ -31,7 +31,8 @@
         "./src/ee/index.ts"
       ],
       "@/ee/*": [
-        "./ee/src/ee/*"
+        "./ee/src/ee/*",
+        "./src/ee/*"
       ],
       "@/*": [
         "./src/*"

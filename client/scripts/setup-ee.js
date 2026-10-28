@@ -46,6 +46,7 @@ const edition = (
   process.env.AISER_EDITION ||
   ''
 ).toLowerCase();
+const isCommunity = edition === 'community' || edition === 'ce';
 const isEnterprise = edition === 'enterprise' || edition === 'ee';
 const hasEnterpriseModules = existsSync(eeIndex) && existsSync(eeChatPage);
 
@@ -53,7 +54,7 @@ const hasEnterpriseModules = existsSync(eeIndex) && existsSync(eeChatPage);
 // should point to it regardless of whether env vars are loaded yet (e.g. predev
 // runs before Next.js reads .env). Env-var check is kept as a fallback for
 // cases where the submodule is absent but CI still needs EE mode.
-if (hasEnterpriseModules || isEnterprise) {
+if (!isCommunity && (hasEnterpriseModules || isEnterprise)) {
   writeShim(
     eeShimFile,
     [
