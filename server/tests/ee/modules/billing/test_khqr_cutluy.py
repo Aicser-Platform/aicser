@@ -86,8 +86,9 @@ def test_signature_accepts_millisecond_timestamp():
 # ── pricing / period ─────────────────────────────────────────────────────────
 
 def test_plan_price_only_for_self_serve_plans():
-    assert prov.plan_price("pro", "monthly") == Decimal("25.00")
-    assert prov.plan_price("team", "yearly") == Decimal("990.00")
+    assert prov.plan_price("pro", "monthly") == Decimal("18.00")
+    assert prov.plan_price("pro", "monthly", ai_seats=0, platform_seats=1) == Decimal("6.00")
+    assert prov.plan_price("team", "yearly", ai_seats=3, platform_seats=0) == Decimal("660.00")
     assert prov.plan_price("enterprise", "monthly") is None
     assert prov.plan_price("free", "monthly") is None
     assert prov.plan_price("pro", "weekly") is None

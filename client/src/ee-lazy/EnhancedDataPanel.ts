@@ -1,0 +1,1 @@
+export { EnhancedDataPanel } from '@/ee';

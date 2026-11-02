@@ -213,7 +213,7 @@ async def change_password(
     except ValueError as e:
         detail = str(e)
         status_code = (
-            status.HTTP_401_UNAUTHORIZED if detail == "Current password is incorrect" else status.HTTP_404_NOT_FOUND
+            status.HTTP_401_UNAUTHORIZED if detail in ("Current password is incorrect", "Invalid verification code") else status.HTTP_404_NOT_FOUND
         )
         raise HTTPException(status_code=status_code, detail=detail)
     return {"message": "Password updated"}
@@ -245,10 +245,9 @@ async def two_factor_status(request: Request, db: AsyncSession = Depends(get_asy
 
     payload = await get_current_user(request)
     try:
-        enabled = await get_totp_status(db, str(payload["sub"]))
+        return await get_totp_status(db, str(payload["sub"]))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return {"enabled": enabled}
 
 
 @router.post("/auth/2fa/enroll/start", response_model=TwoFactorEnrollStartResponse)
@@ -298,7 +297,7 @@ async def two_factor_disable(
 
     payload = await get_current_user(request)
     try:
-        await disable_totp(db, str(payload["sub"]), body.password)
+        await disable_totp(db, str(payload["sub"]), body.password, body.code)
     except ValueError as e:
         detail = str(e)
         status_code = (

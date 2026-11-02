@@ -26,21 +26,22 @@ spec:
       containers:
         - name: server
           image: {{ .Values.server.image | quote }}
+          command: ["/app/scripts/docker-entrypoint.sh", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "{{ .Values.server.port }}", "--workers", "2"]
           ports:
             - containerPort: {{ .Values.server.port }}
           env:
-            {{- range $key, $value := .Values.server.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            {{- include "aicser.serverEnv" . | nindent 12 }}
           envFrom:
-            {{- if .Values.server.existingSecret }}
-            - secretRef:
-                name: {{ .Values.server.existingSecret }}
-            {{- end }}
+            {{- include "aicser.serverEnvFrom" . | nindent 12 }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.server.startupProbe | nindent 12 }}
           livenessProbe:
             {{- toYaml .Values.server.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.server.livenessProbe | nindent 12 }}
+            {{- toYaml .Values.server.readinessProbe | nindent 12 }}
+          volumeMounts:
+            {{- include "aicser.sharedVolumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "aicser.sharedVolumes" . | nindent 8 }}

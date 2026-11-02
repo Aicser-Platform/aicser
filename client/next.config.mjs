@@ -231,6 +231,12 @@ const nextConfig = {
       'antd/lib/typography/Base/Ellipsis.js': path.resolve(process.cwd(), 'src/patches/antd-safe-ellipsis.tsx'),
     };
 
+    // The @/ee barrel re-exports every Enterprise page. Its modules run nothing on import, so saying
+    // so lets webpack skip the barrel, and src/ee-lazy/* gives each page only what it uses.
+    if (!isServer) {
+      config.module.rules.push({ test: /ee[\\/]src[\\/]ee[\\/].*\.tsx?$/, sideEffects: false });
+    }
+
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,

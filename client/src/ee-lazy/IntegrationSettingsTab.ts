@@ -1,0 +1,1 @@
+export { IntegrationSettingsTab } from '@/ee';

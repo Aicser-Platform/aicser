@@ -1,0 +1,1 @@
+export { AdoptionTab } from '@/ee';

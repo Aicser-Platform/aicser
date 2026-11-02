@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCachedState } from '@/hooks/useCachedState';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -30,7 +31,7 @@ function WorkbooksList() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useProjectStore((s) => s.currentProjectId);
-  const [items, setItems] = useState<WorkbookSummary[] | null>(null);
+  const [items, setItems] = useCachedState<WorkbookSummary[] | null>(`sheets:${projectId ?? ''}`, null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
@@ -93,7 +94,7 @@ function WorkbooksList() {
   };
 
   const importFile = async (file: File) => {
-    if (!/\.xlsx$/i.test(file.name)) {
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
       message.error(t('import_only_xlsx'));
       return;
     }
@@ -105,6 +106,8 @@ function WorkbooksList() {
     try {
       const wb = await workbookService.importXlsx(file, projectId ? String(projectId) : null, undefined, browserZone());
       if (wb.neutralized) message.warning(t('import_neutralized', { n: wb.neutralized }));
+      // Macros never run here: say they weren't brought over, and that the Agent can explain or rebuild them.
+      if (wb.macros?.length) message.info(t('import_macros', { n: wb.macros.length }), 8);
       router.push(`/sheets/${wb.id}`);
     } catch (err) {
       message.error(err instanceof Error ? err.message : t('import_failed'));
@@ -126,7 +129,7 @@ function WorkbooksList() {
         description={t('subtitle')}
         extra={
           <Space wrap>
-            <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden
+            <input ref={fileRef} type="file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12" hidden
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = ''; }} />
             <Button icon={<UploadOutlined />} onClick={() => fileRef.current?.click()} disabled={busy}>{t('import_xlsx')}</Button>
             <Button type="primary" icon={<PlusOutlined />} loading={busy} onClick={() => void create()}>{t('new')}</Button>

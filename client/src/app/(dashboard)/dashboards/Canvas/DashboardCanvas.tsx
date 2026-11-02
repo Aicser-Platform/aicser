@@ -955,7 +955,7 @@ export default function DashboardCanvas({
           <Tooltip title={td('multi_select_align_left')}>
             <Button
               size="small"
-              icon={<AlignLeftOutlined />}
+              icon={<AlignLeftOutlined />} aria-label={td('multi_select_align_left')}
               disabled={selectedWidgetIds.size < 2}
               onClick={() => alignSelectedWidgets('left')}
             />
@@ -963,7 +963,7 @@ export default function DashboardCanvas({
           <Tooltip title={td('multi_select_align_top')}>
             <Button
               size="small"
-              icon={<VerticalAlignTopOutlined />}
+              icon={<VerticalAlignTopOutlined />} aria-label={td('multi_select_align_top')}
               disabled={selectedWidgetIds.size < 2}
               onClick={() => alignSelectedWidgets('top')}
             />
@@ -971,7 +971,7 @@ export default function DashboardCanvas({
           <Tooltip title={td('multi_select_distribute_horizontal')}>
             <Button
               size="small"
-              icon={<ColumnWidthOutlined />}
+              icon={<ColumnWidthOutlined />} aria-label={td('multi_select_distribute_horizontal')}
               disabled={selectedWidgetIds.size < 3}
               onClick={() => distributeSelectedWidgets('horizontal')}
             />
@@ -979,7 +979,7 @@ export default function DashboardCanvas({
           <Tooltip title={td('multi_select_distribute_vertical')}>
             <Button
               size="small"
-              icon={<ColumnHeightOutlined />}
+              icon={<ColumnHeightOutlined />} aria-label={td('multi_select_distribute_vertical')}
               disabled={selectedWidgetIds.size < 3}
               onClick={() => distributeSelectedWidgets('vertical')}
             />
@@ -1180,8 +1180,9 @@ export default function DashboardCanvas({
                       {displayTitle(w, tPage as never)}
                     </Text>
                   )}
-                  {/* Description: typed straight into the card while editing. */}
-                  {!['text', 'slicer', 'filter', 'divider', 'image'].includes(String(w.chartType)) ? (
+                  {/* Description: typed straight into the card while editing (in the Chart Designer it lives
+                      in the toolbar under the chart's name, so it isn't repeated here). */}
+                  {!isDesigner && !['text', 'slicer', 'filter', 'divider', 'image'].includes(String(w.chartType)) ? (
                     <InlineText
                       className="widget-card-subtitle"
                       value={typeof w.chartOptions?.subtitle === 'string' ? w.chartOptions.subtitle : ''}

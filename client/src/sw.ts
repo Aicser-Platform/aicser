@@ -82,3 +82,28 @@ self.addEventListener('fetch', (event) => {
 });
 
 serwist.addEventListeners();
+
+// Push notifications (alerts): show them, and open the right page when tapped.
+self.addEventListener('push', (event) => {
+  const data = (() => {
+    try {
+      return event.data?.json() ?? {};
+    } catch {
+      return {};
+    }
+  })() as { title?: string; body?: string; url?: string };
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Aicser', {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: data.url || '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data as { url?: string } | undefined)?.url || '/';
+  event.waitUntil(self.clients.openWindow(url));
+});

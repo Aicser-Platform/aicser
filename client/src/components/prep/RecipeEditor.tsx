@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, List, Modal, Segmented, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, List, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   BulbOutlined,
@@ -297,7 +297,9 @@ export function RecipeEditor({
                 { key: 'split', label: t('action_split'), onClick: () => open('split', [column]) },
                 { key: 'extract', label: t('action_extract'), onClick: () => open('extract', [column]) },
                 { key: 'flatten', label: t('action_flatten_json'), onClick: () => open('flatten_json', [column]) },
-                { key: 'explode', label: t('action_explode'), onClick: () => add(build.explode(column)) },
+                { key: 'split_rows', label: t('action_split_rows'), onClick: () => open('split_rows', [column]) },
+                { key: 'window', label: t('action_window'), onClick: () => open('window', [column]) },
+                { key: 'bin', label: t('action_bin'), onClick: () => open('bin', [column]) },
               ],
             },
           ]
@@ -314,6 +316,7 @@ export function RecipeEditor({
           { key: 'dedupe', label: t('action_dedupe_by'), onClick: () => add(build.dedupeBy(cols)) },
           ...(!many
             ? [
+                { key: 'top_n', label: t('action_top_n'), onClick: () => open('top_n', [column]) },
                 { key: 'sort_asc', label: t('action_sort_asc'), onClick: () => add(build.sort(column, false)) },
                 { key: 'sort_desc', label: t('action_sort_desc'), onClick: () => add(build.sort(column, true)) },
               ]
@@ -342,6 +345,18 @@ export function RecipeEditor({
     { key: 'predict', icon: <ExperimentOutlined />, label: t('add_predict'), onClick: () => open('predict', selCols) },
   ];
   const tableMenu: MenuProps['items'] = [
+    {
+      key: 'sheet',
+      label: t('group_sheet'),
+      children: [
+        { key: 'header_rows', label: t('action_header_rows'), onClick: () => open('header_rows', []) },
+        { key: 'remove_rows', label: t('action_remove_rows'), onClick: () => open('remove_rows', []) },
+      ],
+    },
+    { key: 'expand_rows', label: t('action_expand_rows'), onClick: () => open('expand_rows', selCols) },
+    { key: 'window', label: t('action_window'), onClick: () => open('window', selCols) },
+    { key: 'index', label: t('action_index'), onClick: () => open('index', []) },
+    { type: 'divider' },
     { key: 'checks', label: t('action_checks'), onClick: () => open('checks', selCols) },
     { key: 'merge', label: t('action_merge'), onClick: () => open('merge', selCols) },
     { key: 'append', label: t('action_append'), onClick: () => open('append', []) },
@@ -590,8 +605,9 @@ export function RecipeEditor({
           ) : null}
           <span className="recipe-editor__spacer" />
           <Space wrap size={6} className="recipe-editor__views">
-            <Tooltip title={t('sample_hint')}>
-              <Segmented
+            {/* One compact choice (first rows by default) instead of three buttons. */}
+            <Tooltip title={t('sample_hint')} placement="top">
+              <Select
                 size="small"
                 value={sampleMode}
                 onChange={(v) => setSampleMode(v as SampleMode)}
@@ -600,6 +616,9 @@ export function RecipeEditor({
                   { value: 'random', label: t('sample_random') },
                   { value: 'full', label: t('sample_full') },
                 ]}
+                popupMatchSelectWidth={false}
+                style={{ width: 118 }}
+                aria-label={t('sample_hint')}
               />
             </Tooltip>
             <Segmented

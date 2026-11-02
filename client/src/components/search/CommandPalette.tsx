@@ -44,7 +44,8 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
-import { flattenNavLinks, buildEnterpriseSidebarItems, buildCommunitySidebarItems } from '@/layouts/Navigation/navConfig';
+import { fetchApi } from '@/utils/api';
+import { flattenNavLinks, buildEnterpriseSidebarItems, buildCommunitySidebarItems, NAV_LABEL_KEYS } from '@/layouts/Navigation/navConfig';
 import { isEnterpriseEdition as getIsEnterpriseEdition } from '@/utils/appPaths';
 import { isAiFrontendEnabled } from '@/utils/aiAvailability';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -59,7 +60,26 @@ const { Text } = Typography;
 
 const isEnterpriseEdition = getIsEnterpriseEdition();
 
-type PaletteGroup = 'nav' | 'settings' | 'projects';
+// What each kind of search result is: its icon, and the sidebar word for it when it has no location.
+const ASSET_ICONS: Record<string, React.ReactNode> = {
+  dashboard: <DashboardOutlined />,
+  chart: <AreaChartOutlined />,
+  metric: <LineChartOutlined />,
+  table: <DatabaseOutlined />,
+  data_source: <DatabaseOutlined />,
+  library: <BookOutlined />,
+  recipe: <FileTextOutlined />,
+};
+const ASSET_LABEL: Record<string, string> = {
+  dashboard: NAV_LABEL_KEYS.dashboards,
+  chart: NAV_LABEL_KEYS['chart-designer'],
+  data_source: NAV_LABEL_KEYS.data,
+  metric: NAV_LABEL_KEYS['semantic-layer'],
+  recipe: NAV_LABEL_KEYS.prepare,
+};
+
+type PaletteGroup = 'assets' | 'nav' | 'settings' | 'projects';
+type AssetHit = { type: string; id: string; name: string; context?: string | null; href: string };
 
 interface PaletteItem {
   id: string;
@@ -110,11 +130,8 @@ const SETTINGS_TABS: Array<{ key: string; labelKey: string; icon: React.ReactNod
 
 function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
-  const tag = el.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  if ((el as HTMLElement).isContentEditable) return true;
-  // Respect Monaco's own chorded keybindings (e.g. Ctrl+K Ctrl+S) instead of
-  // hijacking Ctrl+K while the SQL/Python editor has focus.
+  // Works from text boxes too (Ask's box usually has focus). Only code editors keep the key:
+  // Monaco's own chorded bindings use it (e.g. Ctrl+K Ctrl+S).
   if (el.closest('.monaco-editor')) return true;
   return false;
 }
@@ -150,9 +167,35 @@ export const CommandPalette: React.FC = () => {
         return;
       }
     };
+    const onOpenRequest = () => setOpen(true); // the header's Search control
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('open-command-palette', onOpenRequest);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('open-command-palette', onOpenRequest);
+    };
   }, []);
+
+  // Beyond pages: the things people named (dashboards, charts, metrics, tables), from the catalog
+  // search, which only returns what this person may open.
+  const [assets, setAssets] = useState<AssetHit[]>([]);
+  useEffect(() => {
+    const q = query.trim();
+    if (!open || !isEnterpriseEdition || q.length < 2) {
+      setAssets([]);
+      return;
+    }
+    let stale = false;
+    const id = setTimeout(() => {
+      fetchApi<{ items?: AssetHit[]; results?: AssetHit[] }>(`/api/catalog/assets?q=${encodeURIComponent(q)}&limit=8${currentProject?.id ? `&project_id=${currentProject.id}` : ''}`)
+        .then((r) => { if (!stale) setAssets(r.items ?? r.results ?? []); })
+        .catch(() => { if (!stale) setAssets([]); });
+    }, 200);
+    return () => {
+      stale = true;
+      clearTimeout(id);
+    };
+  }, [open, query, currentProject?.id]);
 
   useEffect(() => {
     if (open) {
@@ -214,11 +257,19 @@ export const CommandPalette: React.FC = () => {
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((item) => {
+    const found: PaletteItem[] = assets.map((a) => ({
+      id: `asset-${a.type}-${a.id}`,
+      group: 'assets' as const,
+      label: a.name,
+      description: a.context || tNav(ASSET_LABEL[a.type] ?? 'data'),
+      icon: ASSET_ICONS[a.type] ?? <FileTextOutlined />,
+      onSelect: () => router.push(a.href),
+    }));
+    return [...found, ...items.filter((item) => {
       const hay = [item.label, item.description, item.keywords].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
-    });
-  }, [items, query]);
+    })];
+  }, [items, query, assets, router, tNav]);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -253,7 +304,7 @@ export const CommandPalette: React.FC = () => {
   };
 
   const groupLabel = (group: PaletteGroup) =>
-    group === 'nav' ? t('group_navigate') : group === 'settings' ? t('group_settings') : t('group_projects');
+    group === 'assets' ? t('group_assets') : group === 'nav' ? t('group_navigate') : group === 'settings' ? t('group_settings') : t('group_projects');
 
   let renderedGroup: PaletteGroup | null = null;
 
@@ -298,7 +349,6 @@ export const CommandPalette: React.FC = () => {
                       padding: '6px 16px',
                       fontSize: 11,
                       fontWeight: 600,
-                      textTransform: 'uppercase',
                       letterSpacing: 0.4,
                       color: 'var(--ant-color-text-tertiary)',
                     }}

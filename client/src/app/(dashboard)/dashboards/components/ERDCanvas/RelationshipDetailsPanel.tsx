@@ -253,7 +253,6 @@ export function RelationshipDetailsPanel({ relationship, onClose, onChanged }: R
             style={{
               fontSize: 11,
               fontWeight: 600,
-              textTransform: 'uppercase',
               color: 'var(--ant-color-text-secondary)',
               marginBottom: 6,
               letterSpacing: '0.12em',
@@ -277,7 +276,6 @@ export function RelationshipDetailsPanel({ relationship, onClose, onChanged }: R
             style={{
               fontSize: 11,
               fontWeight: 600,
-              textTransform: 'uppercase',
               color: 'var(--ant-color-text-secondary)',
               marginBottom: 6,
               letterSpacing: '0.12em',

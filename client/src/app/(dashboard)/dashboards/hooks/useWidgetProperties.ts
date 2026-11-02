@@ -18,6 +18,7 @@ import { chartTypeChangePatch } from '../utils/chartTypeChange';
 import { fieldDisplayName, friendlyName } from '@/utils/schemaFieldHelpers';
 import { enhancedDataService } from '@/services/enhancedDataService';
 import { stripPinFreezeOptions } from '@/components/charts/chartDesignerBridge';
+import { runsOwnSql } from '../utils/chartQueryMode';
 
 interface UseWidgetPropertiesParams {
   selectedWidget: any;
@@ -157,11 +158,8 @@ export const useWidgetProperties = ({
   };
   const isMeasureColumn = (column: { name: string; type: string }) =>
     isNumericType(column.type) && !isDimensionLikeField(column.name);
-  const isSqlBoundWidget = Boolean(
-    selectedWidget?.chartQuery?.saved_query_id ||
-      selectedWidget?.chartQuery?.query_snapshot_id ||
-      selectedWidget?.chartOptions?.sample_sql,
-  );
+  // Same rule as the server: SQL stored beside real fields never runs, so it doesn't make this a SQL chart.
+  const isSqlBoundWidget = Boolean(selectedWidget && runsOwnSql(selectedWidget));
   // Scores, rates, shares and ages are averaged: a total credit score or total age means nothing.
   const isAveragedField = (name: string) => /(^|_)(score|rate|ratio|pct|percent|percentage|age|margin)(_|$)/i.test(name);
   const isAmountLike = (name: string) =>
@@ -297,12 +295,7 @@ export const useWidgetProperties = ({
         ? hasMetric
         : true;
     const hasTable = Boolean(selectedWidget?.chartQuery?.tableName);
-    const hasSqlSource = Boolean(
-      selectedWidget?.chartQuery?.saved_query_id ||
-        selectedWidget?.chartQuery?.query_snapshot_id ||
-        (typeof selectedWidget?.chartOptions?.sample_sql === 'string' &&
-          selectedWidget.chartOptions.sample_sql.trim()),
-    );
+    const hasSqlSource = Boolean(selectedWidget && runsOwnSql(selectedWidget));
 
     // Compute a hash of the current query + chart type (not chartOptions).
     // chartType MUST be included: switching e.g. stat -> bar can leave

@@ -1,5 +1,6 @@
 'use client';
 
+import { TwoFactorRequiredError, clearPendingTwoFactor, rememberTwoFactor } from '@/auth/twoFactor';
 import { create } from 'zustand';
 import { getAuthActions } from '@/auth/authProvider';
 import type { SignupResult } from '@/auth/types';
@@ -99,7 +100,15 @@ async function ensureAicserBearerFromEeSession(): Promise<void> {
   if (!res.ok) return;
   if (!canAcceptAuthSession() || isStaleLogoutEpoch(epochAtStart)) return;
 
-  const data = (await res.json().catch(() => ({}))) as { access_token?: string };
+  const data = (await res.json().catch(() => ({}))) as {
+    access_token?: string;
+    two_factor_required?: boolean;
+    login_token?: string;
+  };
+  if (data.two_factor_required && data.login_token) {
+    rememberTwoFactor(data.login_token);
+    return;
+  }
   if (data.access_token && canAcceptAuthSession() && !isStaleLogoutEpoch(epochAtStart)) {
     setCeBearerToken(data.access_token);
   }
@@ -205,7 +214,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
       set({ user, isAuthenticated: !!user, session: sessionFromBearer() });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Login failed';
-      set({ loginError: msg });
+      if (!(e instanceof TwoFactorRequiredError)) set({ loginError: msg });
       throw e;
     } finally {
       set({ actionLoading: false });
@@ -240,6 +249,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
   },
 
   logout: async () => {
+    clearPendingTwoFactor();
     const epoch = beginLogout();
     cancelActiveInit?.();
     clearCeBearerToken();

@@ -16,10 +16,15 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import nextDynamic from 'next/dynamic';
-import { Tooltip } from 'antd';
+import { Input, Tabs, Tooltip } from 'antd';
+import { MOVED_TABS, groupSettingsPages } from './settingsPages';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
   UserOutlined,
+  GlobalOutlined,
+  ApiOutlined,
+  SearchOutlined,
+  InfoCircleOutlined,
   SecurityScanOutlined,
   KeyOutlined,
   TeamOutlined,
@@ -43,6 +48,9 @@ import {
   BellOutlined,
   DollarOutlined,
   ClusterOutlined,
+  BulbOutlined,
+  BranchesOutlined,
+  RiseOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -67,13 +75,13 @@ import { NotificationsTab } from './components/NotificationsTab';
 import { CommunityUsageTab } from './components/CommunityUsageTab';
 
 const OrganizationTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
+  (() => import('@/ee-lazy/OrganizationSettingsTab').then((m) => ({ default: m.OrganizationSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
-const TeamTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.TeamSettingsTab }))) as any, {
+const TeamTab = nextDynamic((() => import('@/ee-lazy/TeamSettingsTab').then((m) => ({ default: m.TeamSettingsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const IntegrationTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.IntegrationSettingsTab }))) as any, {
+const IntegrationTab = nextDynamic((() => import('@/ee-lazy/IntegrationSettingsTab').then((m) => ({ default: m.IntegrationSettingsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const AccessOverviewTab = nextDynamic(() => import('./components/AccessOverviewTab').then((m) => m.AccessOverviewTab), {
@@ -82,7 +90,7 @@ const AccessOverviewTab = nextDynamic(() => import('./components/AccessOverviewT
 // Storage, compute and cost are admin settings; people browse lake tables in the Catalog.
 const LakehouseSettingsTab = nextDynamic(
   (() =>
-    import('@/ee').then((m) => ({
+    import('@/ee-lazy/WarehousePage').then((m) => ({
       default: function LakehouseSettings() {
         const Page = m.WarehousePage;
         return <Page embedded />;
@@ -91,38 +99,52 @@ const LakehouseSettingsTab = nextDynamic(
   { ssr: false },
 ) as React.ComponentType<TabComponentProps>;
 const SubscriptionTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
+  (() => import('@/ee-lazy/SubscriptionSettingsTab').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const UsageAnalyticsTab = nextDynamic(
-  (() => import('@/ee').then((m) => ({ default: m.UsageAnalyticsSettingsTab }))) as any,
+  (() => import('@/ee-lazy/UsageAnalyticsSettingsTab').then((m) => ({ default: m.UsageAnalyticsSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
-const LicenseTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.LicenseSettingsTab }))) as any, {
+const LicenseTab = nextDynamic((() => import('@/ee-lazy/LicenseSettingsTab').then((m) => ({ default: m.LicenseSettingsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const RolesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.RolesTab }))) as any, {
+const RolesTab = nextDynamic((() => import('@/ee-lazy/RolesTab').then((m) => ({ default: m.RolesTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AgentSkillsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentSkillsTab }))) as any, {
+const AgentSkillsTab = nextDynamic((() => import('@/ee-lazy/AgentSkillsTab').then((m) => ({ default: m.AgentSkillsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AgentWorkflowsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentWorkflowsTab }))) as any, {
+const ReleasesTab = nextDynamic((() => import('@/ee-lazy/ReleasesPanel').then((m) => ({ default: m.ReleasesPanel }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AgentCapabilitiesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentCapabilitiesTab }))) as any, {
+const AdoptionSettingsTab = nextDynamic((() => import('@/ee-lazy/AdoptionTab').then((m) => ({ default: m.AdoptionTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const PrivacyRequestsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.PrivacyRequestsTab }))) as any, {
+const PublishingTab = nextDynamic(() => import('./components/PublishingTab'), { ssr: false, loading: () => <SettingsTabLoading /> });
+const AgentMcpTab = nextDynamic((() => import('@/ee-lazy/AgentMcpTab').then((m) => ({ default: m.AgentMcpTab }))) as any, {
+  ssr: false,
+  loading: () => <SettingsTabLoading />,
+});
+const AgentWorkflowsTab = nextDynamic((() => import('@/ee-lazy/AgentWorkflowsTab').then((m) => ({ default: m.AgentWorkflowsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const DataSharesTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.DataSharesTab }))) as any, {
+const AgentCapabilitiesTab = nextDynamic((() => import('@/ee-lazy/AgentCapabilitiesTab').then((m) => ({ default: m.AgentCapabilitiesTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const BriefingsTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.BriefingsTab }))) as any, {
+const PrivacyRequestsTab = nextDynamic((() => import('@/ee-lazy/PrivacyRequestsTab').then((m) => ({ default: m.PrivacyRequestsTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AgentBudgetTab = nextDynamic((() => import('@/ee').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
+const DataSharesTab = nextDynamic((() => import('@/ee-lazy/DataSharesTab').then((m) => ({ default: m.DataSharesTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentMemoryTab = nextDynamic((() => import('@/ee-lazy/AgentMemoryTab').then((m) => ({ default: m.AgentMemoryTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentRulesTab = nextDynamic((() => import('@/ee-lazy/AgentRulesTab').then((m) => ({ default: m.AgentRulesTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AgentBudgetTab = nextDynamic((() => import('@/ee-lazy/AgentBudgetTab').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
@@ -146,7 +168,7 @@ const AIResidencyTab = nextDynamic(() => import('./components/AIResidencyTab').t
 const AIAuditLogTab = nextDynamic(() => import('./components/AIAuditLogTab').then((m) => ({ default: m.default })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const FeatureGate = nextDynamic((() => import('@/ee').then((m) => ({ default: m.FeatureGate }))) as any, {
+const FeatureGate = nextDynamic((() => import('@/ee-lazy/FeatureGate').then((m) => ({ default: m.FeatureGate }))) as any, {
   ssr: false,
 }) as React.ComponentType<{ feature: string; children: React.ReactNode }>;
 
@@ -234,6 +256,15 @@ const NAV_GROUPS: NavGroup[] = [
         description: 'Name, description, project settings',
       },
       {
+        key: 'releases',
+        label: 'Releases',
+        icon: <BranchesOutlined />,
+        eeOnly: true,
+        requiredFeature: 'govern',
+        component: ReleasesTab,
+        description: 'Move definitions between projects (dev to prod) with review, and keep them in Git',
+      },
+      {
         key: 'organization',
         label: 'Organization',
         icon: <BankOutlined />,
@@ -262,11 +293,20 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         key: 'usage',
-        label: 'Usage & analytics',
+        label: 'Usage',
         icon: <LineChartOutlined />,
         requiredPermission: Permission.ORG_VIEW,
         component: isEE ? UsageAnalyticsTab : CommunityUsageTab,
         description: 'Your footprint and AI activity',
+      },
+      {
+        key: 'adoption',
+        label: 'Adoption',
+        icon: <RiseOutlined />,
+        eeOnly: true,
+        requiredPermission: Permission.AUDIT_VIEW,
+        component: AdoptionSettingsTab,
+        description: 'Who uses Aicser, what they open, and content that needs attention',
       },
       {
         key: 'billing-subscription',
@@ -363,6 +403,15 @@ const NAV_GROUPS: NavGroup[] = [
         description: 'Row and column rules across every connection',
       },
       {
+        key: 'publishing',
+        label: 'Publishing',
+        icon: <GlobalOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: PublishingTab,
+        description: 'Who may publish outside the organization, and for how long',
+      },
+      {
         key: 'privacy',
         label: 'Privacy requests',
         icon: <SafetyOutlined />,
@@ -395,16 +444,26 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'AI Agent',
     items: [
-      // {
-      //   key: 'agent-skills',
-      //   label: 'Skills',
-      //   icon: <ThunderboltOutlined />,
-      //   eeOnly: true,
-      //   component: AgentSkillsTab,
-      //   description: 'Org SKILL.md instruction packs',
-      //   requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
-      //   requiredFeature: 'agent_configuration',
-      // },
+      {
+        key: 'agent-skills',
+        label: 'Skills',
+        icon: <ThunderboltOutlined />,
+        eeOnly: true,
+        component: AgentSkillsTab,
+        description: 'Instruction packs the agent uses',
+        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
+      },
+      {
+        key: 'agent-mcp',
+        label: 'Outside tools',
+        icon: <ApiOutlined />,
+        eeOnly: true,
+        component: AgentMcpTab,
+        description: 'MCP servers whose tools the agent may use, one tool at a time',
+        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
+        requiredFeature: 'agent_configuration',
+      },
       // {
       //   key: 'agent-workflows',
       //   label: 'Workflows',
@@ -456,14 +515,22 @@ const NAV_GROUPS: NavGroup[] = [
         requiredFeature: 'audit_logs',
       },
       {
-        key: 'briefings',
-        label: 'Briefings',
-        icon: <FileTextOutlined />,
+        key: 'ai-memory',
+        label: 'AI memory',
+        icon: <BulbOutlined />,
         eeOnly: true,
-        component: BriefingsTab,
-        description: 'Scheduled AI reports',
-        requiredPermission: [Permission.AGENT_CONFIGURE, ADMIN_SETTINGS_PERMISSION],
-        requiredFeature: 'agent_configuration',
+        component: AgentMemoryTab,
+        description: 'What Aicser remembers for you, your project and your organization',
+      },
+      {
+        key: 'agent-rules',
+        label: 'Agent rules',
+        icon: <SafetyCertificateOutlined />,
+        eeOnly: true,
+        component: AgentRulesTab,
+        description: 'Which actions need approval, devices, retention and on-device models',
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        requiredFeature: 'agent',
       },
       {
         key: 'agent-budget',
@@ -484,15 +551,6 @@ const NAV_GROUPS: NavGroup[] = [
  * admin-only governance, then developer tools. Permission filtering still hides what a role
  * can't use, so a business user sees "Me" and a short "Workspace"; admins see the rest grouped.
  */
-const SETTINGS_SECTIONS: { id: string; label: string; keys: string[] }[] = [
-  { id: 'account', label: 'Me', keys: ['profile', 'notifications', 'security'] },
-  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'integrations', 'usage', 'billing-subscription'] },
-  { id: 'data_platform', label: 'Data platform', keys: ['lakehouse'] },
-  { id: 'ai', label: 'AI', keys: ['agent-capabilities', 'briefings', 'ai-quality', 'ai-decision-layer', 'agent-budget'] },
-  { id: 'governance', label: 'Governance', keys: ['access-overview', 'privacy', 'data-shares', 'audit', 'ai-audit-log', 'ai-residency'] },
-  { id: 'admin', label: 'Admin', keys: ['organization', 'roles', 'identity', 'license'] },
-  { id: 'developer', label: 'Developer', keys: ['api-keys', 'embed'] },
-];
 
 function hasRequiredPermission(
   item: NavItem,
@@ -544,53 +602,31 @@ const SettingsPage: React.FC = () => {
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pageAction, setPageAction] = useState<React.ReactNode>(null);
+  const [navQuery, setNavQuery] = useState('');
 
-  // Every contextual upgrade CTA in this app (handleUpgradeRequiredError,
-  // plan-gated tab banners, etc.) opens the pricing modal by dispatching this
-  // event rather than holding a ref to whichever page happens to render it —
-  // chat/page.tsx already listens for it. Settings rendered its own
-  // <PricingModal> but never listened, so every "Upgrade" button reachable
-  // from a settings tab was a dead click.
-  useEffect(() => {
-    const handler = () => setPricingModalVisible(true);
-    window.addEventListener('open-pricing-modal', handler);
-    return () => window.removeEventListener('open-pricing-modal', handler);
-  }, []);
+  // Upgrade CTAs (open-pricing-modal) are handled once by GlobalPricingModal in the dashboard layout.
 
   const tNav = useTranslations('settings_nav');
-  const visibleNavGroups = useMemo(() => {
+  const visibleItems = useMemo(() => {
     const tr = (key: string, fallback: string) => (tNav.has(key as any) ? tNav(key as any) : fallback);
-    const allowed = NAV_GROUPS.flatMap((group) => group.items).filter(
-      (item) =>
-        (item.key !== 'billing-subscription' || showHostedBilling) &&
-        (!item.eeOnly || isEE) &&
-        hasRequiredPermission(item, hasPermission, hasAnyPermission)
-    );
-    const byKey = new Map(allowed.map((item) => [item.key, item]));
-    const placed = new Set<string>();
-    const groups: NavGroup[] = SETTINGS_SECTIONS.map((section) => ({
-      label: tr(`group_${section.id}`, section.label),
-      items: section.keys.flatMap((key) => {
-        const item = byKey.get(key);
-        if (!item) return [];
-        placed.add(key);
-        return [item];
-      }),
-    }));
-    // Anything not yet assigned a section still shows, under Workspace.
-    groups[1].items.push(...allowed.filter((item) => !placed.has(item.key)));
-    return groups
-      .map((group) => ({
-        ...group,
-        items: group.items.map((item) => ({
-          ...item,
-          label: tr(`${item.key}_label`, item.label),
-          description: item.description ? tr(`${item.key}_desc`, item.description) : item.description,
-        })),
-      }))
-      .filter((group) => group.items.length > 0);
+    return NAV_GROUPS.flatMap((group) => group.items)
+      .filter(
+        (item) =>
+          (item.key !== 'billing-subscription' || showHostedBilling) &&
+          (!item.eeOnly || isEE) &&
+          hasRequiredPermission(item, hasPermission, hasAnyPermission)
+      )
+      .map((item) => ({
+        ...item,
+        label: tr(`${item.key}_label`, item.label),
+        description: item.description ? tr(`${item.key}_desc`, item.description) : item.description,
+      }));
   }, [hasPermission, hasAnyPermission, showHostedBilling, tNav]);
-  const visibleItems = useMemo(() => visibleNavGroups.flatMap((group) => group.items), [visibleNavGroups]);
+  // The sidebar lists pages; a page holding several settings shows them as tabs.
+  const visiblePageGroups = useMemo(
+    () => groupSettingsPages(visibleItems, (key, fallback) => (tNav.has(key as any) ? tNav(key as any) : fallback)),
+    [visibleItems, tNav],
+  );
   const requestedTab = searchParams?.get('tab');
   // While permissions load, gated tabs look invisible; resolving then sent every deep link
   // (?tab=identity, ?tab=ai-residency…) to Profile and rewrote the URL. Keep the requested
@@ -600,6 +636,10 @@ const SettingsPage: React.FC = () => {
     permissionsLoading && knownTab ? (requestedTab as string) : resolveSettingsTab(requestedTab, visibleItems);
 
   useEffect(() => {
+    if (requestedTab && MOVED_TABS[requestedTab]) {
+      router.replace(MOVED_TABS[requestedTab]);
+      return;
+    }
     if (requestedTab === 'outbound-email') {
       router.replace('/settings?tab=integrations&section=outbound-email', { scroll: false });
       return;
@@ -661,27 +701,68 @@ const SettingsPage: React.FC = () => {
   }, []);
 
   const activeItem = useMemo(() => visibleItems.find((i) => i.key === activeTab), [activeTab, visibleItems]);
+  const activePage = useMemo(
+    () => visiblePageGroups.flatMap((g) => g.pages).find((p) => p.items.some((i) => i.key === activeTab)),
+    [activeTab, visiblePageGroups],
+  );
   const ActiveComponent = (
     activeItem?.component ?? (permissionsLoading ? SettingsTabLoading : ProfileTab)
   ) as React.ComponentType<TabComponentProps>;
 
+  // Search finds a page by its name, its description or any of its tabs, and opens the tab that matched.
+  const query = navQuery.trim().toLowerCase();
+  const matches = (text?: string) => Boolean(text && text.toLowerCase().includes(query));
+  const searchedGroups = query
+    ? visiblePageGroups
+        .map((group) => ({
+          ...group,
+          pages: group.pages.filter(
+            (page) => matches(page.label) || matches(page.description) || page.items.some((i) => matches(i.label) || matches(i.description)),
+          ),
+        }))
+        .filter((group) => group.pages.length > 0)
+    : visiblePageGroups;
+  const firstMatchKey = (page: (typeof visiblePageGroups)[number]['pages'][number]) =>
+    (query ? page.items.find((i) => matches(i.label)) ?? page.items.find((i) => matches(i.description)) : undefined)?.key ??
+    page.items[0].key;
+
+  const navSearch = (
+    <Input
+      size="small"
+      allowClear
+      prefix={<SearchOutlined className="text-[var(--ant-color-text-tertiary)]" />}
+      placeholder={tNav('search_placeholder')}
+      aria-label={tNav('search_placeholder')}
+      value={navQuery}
+      onChange={(e) => setNavQuery(e.target.value)}
+      onPressEnter={() => {
+        const first = searchedGroups[0]?.pages[0];
+        if (first) handleNav(firstMatchKey(first));
+      }}
+      className="mb-3"
+    />
+  );
+
   // ── Sidebar nav ──────────────────────────────────────────────────────────────
   const SidebarNav = () => (
     <nav className="w-full">
-      {visibleNavGroups.map((group) => {
+      {query && searchedGroups.length === 0 ? (
+        <div className="px-2 text-[13px] text-[var(--ant-color-text-tertiary)]">{tNav('search_empty')}</div>
+      ) : null}
+      {searchedGroups.map((group) => {
         return (
-          <div key={group.label} className="mb-[18px]">
+          <div key={group.id} className="mb-[18px]">
             {/* Group label — matches main sidebar's section label style */}
-            <div className="mb-0.5 px-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-[var(--ant-color-text-quaternary)]">
+            <div className="mb-0.5 px-2 text-[11px] font-semibold text-[var(--ant-color-text-quaternary)]">
               {group.label}
             </div>
-            {group.items.map((item) => {
-              const isActive = activeTab === item.key;
+            {group.pages.map((page) => {
+              const isActive = activePage?.id === page.id;
               return (
-                <Tooltip key={item.key} title={item.description} placement="right" mouseEnterDelay={0.7}>
+                <Tooltip key={page.id} title={page.description} placement="right" mouseEnterDelay={0.7}>
                   <button
                     type="button"
-                    onClick={() => handleNav(item.key)}
+                    onClick={() => handleNav(firstMatchKey(page))}
                     className={[
                       'relative flex w-full cursor-pointer items-center gap-2 rounded-md border-0 px-2 py-1.5 text-left text-[13px]',
                       'transition-colors duration-150',
@@ -691,9 +772,9 @@ const SettingsPage: React.FC = () => {
                     ].join(' ')}
                   >
                     <span className="shrink-0 text-sm leading-none">
-                      {item.key === 'organization' && orgNavIcon ? orgNavIcon : item.icon}
+                      {page.items[0].key === 'organization' && orgNavIcon ? orgNavIcon : page.icon}
                     </span>
-                    <span className="leading-[1.3]">{item.label}</span>
+                    <span className="leading-[1.3]">{page.label}</span>
                   </button>
                 </Tooltip>
               );
@@ -709,9 +790,10 @@ const SettingsPage: React.FC = () => {
       <div className="flex w-full min-h-0 flex-1 flex-col items-stretch md:flex-row md:items-start">
         {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
         <aside className="sticky top-0 hidden w-[210px] shrink-0 flex-col self-start border-r border-[var(--ant-color-border)] py-5 pl-0 pr-2 md:flex">
-          <div className="mb-4 px-2">
-            <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
+          <div className="mb-3 px-2">
+            <span className="text-sm font-bold text-[var(--ant-color-text)]">{tNav('title')}</span>
           </div>
+          <div className="px-2">{navSearch}</div>
           <SidebarNav />
         </aside>
 
@@ -723,7 +805,7 @@ const SettingsPage: React.FC = () => {
             className="flex cursor-pointer items-center gap-1.5 border-0 bg-transparent text-[13px] font-semibold text-[var(--ant-color-text)]"
           >
             <MenuOutlined className="text-[15px]" />
-            <span>{activeItem?.label || tNav('title')}</span>
+            <span>{activePage?.label || activeItem?.label || tNav('title')}</span>
           </button>
           {pageAction}
         </div>
@@ -736,16 +818,17 @@ const SettingsPage: React.FC = () => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="mb-4 flex items-center justify-between px-2">
-                <span className="text-sm font-bold text-[var(--ant-color-text)]">Settings</span>
+                <span className="text-sm font-bold text-[var(--ant-color-text)]">{tNav('title')}</span>
                 <button
                   type="button"
-                  aria-label="Close settings navigation"
+                  aria-label={tNav('close_nav')}
                   onClick={() => setMobileSidebarOpen(false)}
                   className="cursor-pointer border-0 bg-transparent text-base text-[var(--ant-color-text-tertiary)] hover:text-[var(--ant-color-text)]"
                 >
                   <CloseOutlined />
                 </button>
               </div>
+              <div className="px-2">{navSearch}</div>
               <SidebarNav />
             </div>
           </div>
@@ -762,30 +845,40 @@ const SettingsPage: React.FC = () => {
             <div className="mb-5">
               <div className="flex items-center justify-between gap-3">
                 {/* Left: icon + title + description */}
-                <div className="flex min-w-0 items-start gap-2.5">
-                  <span className="mt-0.5 shrink-0 text-lg text-[var(--ant-color-primary)]">
-                    {activeItem.key === 'organization' && orgNavIcon
-                      ? orgNavIcon
-                      : activeItem.icon}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-base font-bold leading-[1.3] text-[var(--ant-color-text)]">
-                      {activeItem.label}
-                    </div>
-                    {activeItem.description && (
-                      <div className="mt-0.5 text-xs leading-[1.4] text-[var(--ant-color-text-tertiary)]">
-                        {activeItem.description}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <h2 className="m-0 text-[18px] font-semibold leading-[1.3] text-[var(--ant-color-text)]">
+                    {activePage?.label ?? activeItem.label}
+                  </h2>
+                  {(activePage?.description ?? activeItem.description) && (
+                    <Tooltip title={activePage?.description ?? activeItem.description} placement="bottomLeft">
+                      <InfoCircleOutlined tabIndex={0} className="cursor-help text-sm text-[var(--ant-color-text-tertiary)]" />
+                    </Tooltip>
+                  )}
                 </div>
 
                 {/* Right: tab action button — registered by each tab via onSetAction */}
                 {pageAction && <div className="hidden shrink-0 md:block">{pageAction}</div>}
               </div>
 
-              {/* Single divider — tabs must NOT add their own */}
-              <div className="mt-3.5 border-b border-[var(--ant-color-border)]" />
+              {/* A page with several settings: underline tabs (sections), whose rule is the page divider.
+                  Pills are kept for switching views of the same content, never for sections. */}
+              {activePage && activePage.items.length > 1 ? (
+                <Tabs
+                  className="settings-page-tabs mt-2"
+                  activeKey={activeTab}
+                  onChange={(v) => handleNav(String(v))}
+                  items={activePage.items.map((item) => ({
+                    key: item.key,
+                    label: (
+                      <Tooltip title={item.description} mouseEnterDelay={0.7}>
+                        <span>{item.label}</span>
+                      </Tooltip>
+                    ),
+                  }))}
+                />
+              ) : (
+                <div className="mt-3.5 border-b border-[var(--ant-color-border)]" />
+              )}
             </div>
           )}
 

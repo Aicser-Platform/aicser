@@ -64,7 +64,7 @@ export function StepList({
   return (
     <SidePanel
       id="prepare.steps"
-      side="left"
+      side="right"
       title={t('applied_steps')}
       icon={<OrderedListOutlined />}
       count={steps.length}
@@ -82,7 +82,8 @@ export function StepList({
     >
       <ol className="recipe-editor__step-list">
         <li>
-          <button type="button" className={`recipe-editor__step${selected === -1 ? ' is-selected' : ''}`} onClick={() => onSelect(-1)}>
+          <button type="button" className={`recipe-editor__step recipe-editor__step--source${selected === -1 ? ' is-selected' : ''}`}
+            onClick={() => onSelect(-1)} title={t('step_source', { table })}>
             <DatabaseOutlined /> <span>{t('step_source', { table })}</span>
           </button>
         </li>

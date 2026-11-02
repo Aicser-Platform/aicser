@@ -23,6 +23,7 @@ async def enforce_publish_owner_edit(
     db: AsyncSession,
     dashboard_id: UUID,
     user_payload: Dict[str, Any] | Any,
+    permission: str = "dashboard:publish",
 ) -> None:
     """
     Gate toggling a dashboard's anonymous public read access (config.is_public,
@@ -32,7 +33,8 @@ async def enforce_publish_owner_edit(
     ownership or role. Mirrors the read-side check in
     authentication.rbac_service.has_dashboard_access, but requires actual
     write authority (creator, org owner/admin, or dashboard:publish), not
-    just dashboard:view.
+    just dashboard:view. Saving edits passes permission="dashboard:edit": a project's editors work
+    on each other's dashboards; publishing keeps its stricter permission.
     """
     from src.core.edition import is_ee_enabled
     from src.modules.dashboards.models import Dashboard
@@ -64,7 +66,7 @@ async def enforce_publish_owner_edit(
             from src.modules.authentication.rbac.rbac_service import RBACService
             from src.modules.authentication.rbac_service import has_org_role
 
-            if await RBACService.check_permission(uid, "dashboard:publish", str(org_id), str(project_id)):
+            if await RBACService.check_permission(uid, permission, str(org_id), str(project_id)):
                 return
             if await has_org_role(user_payload, org_id, ["owner", "admin"]):
                 return

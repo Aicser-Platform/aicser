@@ -71,6 +71,9 @@ def decode_access_token(token: str) -> dict:
     # are ever configured to the same value.
     if payload.get("type") == "embed":
         raise jwt.InvalidTokenError("Embed tokens can't sign in")
+    # A delegated agent token is scoped to one run (delegated.py), never a session.
+    if payload.get("type") == "delegated":
+        raise jwt.InvalidTokenError("Delegated agent tokens can't sign in")
     if _is_revoked(payload):
         raise jwt.InvalidTokenError("Token has been revoked")
     return payload
@@ -515,11 +518,15 @@ async def resolve_pending_two_factor_login(
     return user
 
 
-async def get_totp_status(db: AsyncSession, user_id: str) -> bool:
+async def get_totp_status(db: AsyncSession, user_id: str) -> dict:
     user = await get_user_by_id(db, user_id)
     if not user:
         raise ValueError("User not found")
-    return bool(user.totp_enabled)
+    return {
+        "enabled": bool(user.totp_enabled),
+        "has_password": bool(user.hashed_password),
+        "backup_codes_left": len(user.totp_backup_codes or []),
+    }
 
 
 async def start_totp_enrollment(db: AsyncSession, user_id: str) -> dict:
@@ -570,16 +577,23 @@ async def confirm_totp_enrollment(db: AsyncSession, user_id: str, code: str) -> 
     return backup_codes
 
 
-async def disable_totp(db: AsyncSession, user_id: str, password: Optional[str] = None) -> None:
+async def disable_totp(db: AsyncSession, user_id: str, password: Optional[str] = None, code: Optional[str] = None) -> None:
     """Clear TOTP enrollment. Requires the current password when the account has one --
     same re-authentication requirement as change_user_password, for the same reason: an
-    attacker with just a hijacked session shouldn't be able to strip 2FA off the account."""
+    attacker with just a hijacked session shouldn't be able to strip 2FA off the account.
+    Accounts that sign in through a provider have no password here, so they prove it with a code."""
+    from src.modules.authentication import totp_service
+
     user = await get_user_by_id(db, user_id)
     if not user:
         raise ValueError("User not found")
     if user.hashed_password:
         if not password or not verify_password(password, user.hashed_password):
             raise ValueError("Current password is incorrect")
+    elif user.totp_enabled:
+        secret = totp_service.decrypt_secret(user.totp_secret) if user.totp_secret else None
+        if not (secret and code and totp_service.verify_totp_code(secret, code)):
+            raise ValueError("Invalid verification code")
     user.totp_enabled = False
     user.totp_secret = None
     user.totp_backup_codes = None

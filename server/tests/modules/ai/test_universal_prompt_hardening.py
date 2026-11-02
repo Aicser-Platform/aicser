@@ -95,11 +95,22 @@ def test_append_reference_date_line_adds_current_date():
     assert _REFERENCE_DATE_MARKER in result[0]["content"]
 
 
-def test_append_reference_date_line_is_idempotent_on_same_list():
-    messages = [{"role": "system", "content": "System prompt text."}]
-    _append_reference_date_line(messages)
-    _append_reference_date_line(messages)
-    assert messages[0]["content"].count(_REFERENCE_DATE_MARKER) == 1
+def test_append_reference_date_line_is_idempotent_and_leaves_the_callers_messages_alone():
+    messages = [{"role": "system", "content": "System prompt text."}, {"role": "user", "content": "Hi"}]
+    twice = _append_reference_date_line(_append_reference_date_line(messages))
+    assert twice[0]["content"].count(_REFERENCE_DATE_MARKER) == 1
+    assert twice[-1]["content"].count("(Current time:") == 1
+    assert messages[0]["content"] == "System prompt text." and messages[1]["content"] == "Hi"
+
+
+def test_time_of_day_never_enters_the_system_message():
+    out = _append_reference_date_line([{"role": "system", "content": "S"}, {"role": "user", "content": "Q"}])
+    assert "time" not in out[0]["content"].lower()
+    assert out[-1]["content"].startswith("Q") and "(Current time:" in out[-1]["content"]
+    # Mid-agent-loop the last message is a tool result: nothing is added, the prefix stays put.
+    loop = [{"role": "system", "content": "S"}, {"role": "user", "content": "goal"},
+            {"role": "tool", "tool_call_id": "c1", "content": "{}"}]
+    assert _append_reference_date_line(loop)[1]["content"] == "goal"
 
 
 def test_reference_date_line_uses_client_timezone_when_present():

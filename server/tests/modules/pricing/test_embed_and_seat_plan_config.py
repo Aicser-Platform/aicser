@@ -29,13 +29,13 @@ def test_pro_has_branded_embed_but_not_white_label():
     label on the team tier' structure."""
     assert is_feature_available("pro", "embed_analytics") is True
     assert is_feature_available("pro", "embed_white_label") is False
-    assert get_plan_limits("pro")["embed_views_limit"] == 5000
+    assert get_plan_limits("pro")["embed_views_limit"] == 10000
 
 
 def test_team_has_white_label_embed():
     assert is_feature_available("team", "embed_analytics") is True
     assert is_feature_available("team", "embed_white_label") is True
-    assert get_plan_limits("team")["embed_views_limit"] == 50000
+    assert get_plan_limits("team")["embed_views_limit"] == 100000
 
 
 def test_enterprise_embed_is_unlimited():
@@ -70,13 +70,13 @@ def test_team_viewer_seats_priced_well_below_editor_seats():
     )
 
 
-def test_team_includes_a_generous_viewer_seat_allowance():
-    """A tight viewer allowance defeats the purpose -- the whole strategy is
-    letting orgs roll out read-only access broadly without hitting the
-    editor-seat wall (industry precedent: Domo's cheap Viewer licenses vs
-    limited paid Administrator seats)."""
+def test_signed_in_viewers_are_light_members_and_public_views_are_generous():
+    """Read-only access spreads through free public links and embeds; a signed-in viewer is a
+    Light member ($6), the same as a member building without Aicser's AI."""
     team = get_plan_config("team")
-    assert team["included_viewer_seats"] > team["included_seats"]
+    assert team["included_viewer_seats"] == 0
+    assert team["additional_viewer_seat_price"] == team["additional_platform_seat_price"] == 6.0
+    assert get_plan_limits("team")["embed_views_limit"] >= 100000
 
 
 def test_enterprise_seats_and_views_are_unlimited_not_just_large():

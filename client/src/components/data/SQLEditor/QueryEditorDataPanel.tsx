@@ -265,20 +265,20 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
         </Space>
         <Space size={2}>
           <Tooltip title={t('add_data_source')}>
-            <Button type="text" size="small" icon={<PlusOutlined />} onClick={openConnectDataModal} />
+            <Button type="text" size="small" icon={<PlusOutlined />} aria-label={t('add_data_source')} onClick={openConnectDataModal} />
           </Tooltip>
           <Tooltip title={t('refresh')}>
             <Button
               type="text"
               size="small"
-              icon={<ReloadOutlined />}
+              icon={<ReloadOutlined />} aria-label={t('refresh')}
               loading={isLoading}
               onClick={() => void refreshDataSources()}
             />
           </Tooltip>
           {onCollapse ? (
             <Tooltip title={t('collapse')}>
-              <Button type="text" size="small" icon={<CompressOutlined />} onClick={onCollapse} />
+              <Button type="text" size="small" icon={<CompressOutlined />} aria-label={t('collapse')} onClick={onCollapse} />
             </Tooltip>
           ) : null}
         </Space>
@@ -354,7 +354,7 @@ const QueryEditorDataPanel: React.FC<QueryEditorDataPanelProps> = ({
                   <Button
                     type="text"
                     size="small"
-                    icon={<TableOutlined />}
+                    icon={<TableOutlined />} aria-label={t('refresh_schema')}
                     loading={schemaLoading}
                     onClick={() => {
                       fetchDataSourceSchema(selectedDataSource.id).catch((error) => {

@@ -1,16 +1,26 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Avatar, Badge, Button, Checkbox, Drawer, Dropdown, Empty, Input, Segmented, Spin, Tag, Typography, message } from 'antd';
 import {
-  CheckCircleOutlined,
-  CommentOutlined,
-  EllipsisOutlined,
-  RedoOutlined,
-  SendOutlined,
-} from '@ant-design/icons';
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Checkbox,
+  Drawer,
+  Dropdown,
+  Empty,
+  Input,
+  Segmented,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from 'antd';
+import { CheckCircleOutlined, CommentOutlined, EllipsisOutlined, RedoOutlined, SendOutlined } from '@ant-design/icons';
 import { useFormatter, useTranslations } from 'next-intl';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { MentionInput, MentionText, fromBody, toBody } from '@/components/mentions/MentionInput';
 import { useDashboardComments } from '../hooks/useDashboardComments';
 import type { DashboardComment, DashboardCommentThread } from '../utils/collaborationTypes';
 
@@ -56,7 +66,11 @@ export function DashboardCollabCommentsPanel({
   const t = useTranslations('dashboards');
   const format = useFormatter();
   const selfId = useAuthStore((s) => s.user?.id ?? null);
-  const { threads, loading, error, openCount, reload, add, edit, setResolved, remove } = useDashboardComments(dashboardId, true, apiRoot);
+  const { threads, loading, error, openCount, reload, add, edit, setResolved, remove } = useDashboardComments(
+    dashboardId,
+    true,
+    apiRoot
+  );
 
   const [filter, setFilter] = useState<Filter>('open');
   const [onlyWidget, setOnlyWidget] = useState(true);
@@ -70,6 +84,23 @@ export function DashboardCollabCommentsPanel({
   // Deletes wait a few seconds with Undo (instead of a confirmation dialog) before reaching the server.
   const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set());
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // People picked with @ in any box here (name -> user id), and whether the @ list is open.
+  const people = useRef<Record<string, string>>({});
+  const picking = useRef(false);
+  const enterSends = (e: React.KeyboardEvent, send: () => void) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (picking.current) {
+      picking.current = false; // this Enter picks a person from the list
+      return;
+    }
+    e.preventDefault();
+    send();
+  };
+  const startEdit = (c: DashboardComment) => {
+    const { text, people: found } = fromBody(c.body);
+    Object.assign(people.current, found);
+    setEditing({ id: c.id, body: text });
+  };
 
   useEffect(() => {
     if (open) void reload(); // catch up on anything missed while closed without a live socket
@@ -105,7 +136,7 @@ export function DashboardCollabCommentsPanel({
   };
 
   const submit = async () => {
-    const body = draft.trim();
+    const body = toBody(draft.trim(), people.current);
     if (!body) return;
     const widgetId = selectedWidgetId && attachToWidget ? selectedWidgetId : null;
     if (await run('new', () => add(body, { widgetId }))) {
@@ -116,7 +147,7 @@ export function DashboardCollabCommentsPanel({
   };
 
   const submitReply = async (threadId: string) => {
-    const body = replyDraft.trim();
+    const body = toBody(replyDraft.trim(), people.current);
     if (!body) return;
     if (await run(threadId, () => add(body, { parentId: threadId }))) {
       setReplyDraft('');
@@ -126,7 +157,7 @@ export function DashboardCollabCommentsPanel({
 
   const saveEdit = async () => {
     if (!editing) return;
-    const body = editing.body.trim();
+    const body = toBody(editing.body.trim(), people.current);
     if (!body) return;
     if (await run('edit', () => edit(editing.id, body))) setEditing(null);
   };
@@ -154,9 +185,9 @@ export function DashboardCollabCommentsPanel({
               const next = new Set(prev);
               next.delete(id);
               return next;
-            }),
+            })
           );
-      }, UNDO_MS),
+      }, UNDO_MS)
     );
     message.open({
       key: `comment-deleted-${id}`,
@@ -208,8 +239,7 @@ export function DashboardCollabCommentsPanel({
                 trigger={['click']}
                 menu={{
                   items: menuItems,
-                  onClick: ({ key }) =>
-                    key === 'edit' ? setEditing({ id: c.id, body: c.body }) : scheduleDelete(c.id),
+                  onClick: ({ key }) => (key === 'edit' ? startEdit(c) : scheduleDelete(c.id)),
                 }}
               >
                 <Button
@@ -224,30 +254,40 @@ export function DashboardCollabCommentsPanel({
           </div>
           {editing?.id === c.id ? (
             <div className="dashboard-comment-editor">
-              <Input.TextArea
+              <MentionInput
+                people={people}
                 autoSize={{ minRows: 2, maxRows: 8 }}
                 maxLength={MAX_BODY}
                 value={editing.body}
                 autoFocus
-                onChange={(e) => setEditing({ id: c.id, body: e.target.value })}
-                onPressEnter={(e) => {
-                  if (!e.shiftKey) {
-                    e.preventDefault();
-                    void saveEdit();
-                  }
+                onSearch={() => {
+                  picking.current = true;
                 }}
+                onSelect={() => {
+                  picking.current = false;
+                }}
+                onChange={(text) => setEditing({ id: c.id, body: text })}
+                onKeyDown={(e) => enterSends(e, () => void saveEdit())}
               />
               <div className="dashboard-comment-actions">
                 <Button size="small" onClick={() => setEditing(null)}>
                   {t('collab_comments_cancel')}
                 </Button>
-                <Button size="small" type="primary" loading={busy === 'edit'} disabled={!editing.body.trim()} onClick={() => void saveEdit()}>
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={busy === 'edit'}
+                  disabled={!editing.body.trim()}
+                  onClick={() => void saveEdit()}
+                >
                   {t('collab_comments_save')}
                 </Button>
               </div>
             </div>
           ) : (
-            <Typography.Paragraph className="dashboard-comment-body">{c.body}</Typography.Paragraph>
+            <Typography.Paragraph className="dashboard-comment-body">
+              <MentionText body={c.body} />
+            </Typography.Paragraph>
           )}
           {!isReply && thread.widget_id && !(selectedWidgetId && onlyWidget) ? (
             <Tag className="dashboard-comment-widget">
@@ -333,19 +373,21 @@ export function DashboardCollabCommentsPanel({
                 ))}
                 {replyTo === thread.id ? (
                   <div className="dashboard-comment-editor dashboard-comment--reply">
-                    <Input.TextArea
+                    <MentionInput
+                      people={people}
                       autoSize={{ minRows: 1, maxRows: 6 }}
                       maxLength={MAX_BODY}
                       value={replyDraft}
                       autoFocus
                       placeholder={t('collab_comments_reply_placeholder')}
-                      onChange={(e) => setReplyDraft(e.target.value)}
-                      onPressEnter={(e) => {
-                        if (!e.shiftKey) {
-                          e.preventDefault();
-                          void submitReply(thread.id);
-                        }
+                      onSearch={() => {
+                        picking.current = true;
                       }}
+                      onSelect={() => {
+                        picking.current = false;
+                      }}
+                      onChange={setReplyDraft}
+                      onKeyDown={(e) => enterSends(e, () => void submitReply(thread.id))}
                     />
                     <div className="dashboard-comment-actions">
                       <Button size="small" onClick={() => setReplyTo(null)}>
@@ -398,24 +440,33 @@ export function DashboardCollabCommentsPanel({
               {anchorTerms
                 ? anchorTerms.attach(widgetTitle?.(selectedWidgetId) || anchorTerms.selected)
                 : t('collab_comments_attach_widget', {
-                  widget: widgetTitle?.(selectedWidgetId) || t('collab_comments_selected_widget'),
-                })}
+                    widget: widgetTitle?.(selectedWidgetId) || t('collab_comments_selected_widget'),
+                  })}
             </Checkbox>
           ) : null}
-          <Input.TextArea
+          <MentionInput
+            people={people}
             autoSize={{ minRows: 2, maxRows: 8 }}
             maxLength={MAX_BODY}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             placeholder={t('collab_comments_placeholder')}
-            onPressEnter={(e) => {
-              if (!e.shiftKey) {
-                e.preventDefault();
-                void submit();
-              }
+            onSearch={() => {
+              picking.current = true;
             }}
+            onSelect={() => {
+              picking.current = false;
+            }}
+            onKeyDown={(e) => enterSends(e, () => void submit())}
           />
-          <Button type="primary" icon={<SendOutlined />} block loading={busy === 'new'} disabled={!draft.trim()} onClick={() => void submit()}>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            block
+            loading={busy === 'new'}
+            disabled={!draft.trim()}
+            onClick={() => void submit()}
+          >
             {t('collab_comments_send')}
           </Button>
         </div>

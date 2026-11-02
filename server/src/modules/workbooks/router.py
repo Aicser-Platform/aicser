@@ -180,10 +180,18 @@ async def import_workbook(
         out = await asyncio.to_thread(engine.from_xlsx, data, loc, zone)
     except engine.WorkbookError as exc:
         raise _bad(exc) from exc
-    name = (title or re.sub(r"\.xlsx$", "", file.filename or "", flags=re.I) or "Imported workbook").strip()
+    name = (title or re.sub(r"\.(xlsx|xlsm|xltx|xltm)$", "", file.filename or "", flags=re.I) or "Imported workbook").strip()
     wb = await _create(db, caller, name, out["doc"], locale=loc, tz=zone, ranges=[], reason="import")
     res = _serialize(wb, caller)
     res["neutralized"] = out["neutralized"]
+    # Macros are not imported (nothing runs here); say which there were, so they can be explained or rebuilt.
+    try:
+        from src.modules.workbooks.vba import extract_macros
+
+        res["macros"] = [{"module": m["module"], "kind": m["kind"], "lines": m["source"].count("\n") + 1}
+                         for m in await asyncio.to_thread(extract_macros, data, file.filename or "")]
+    except Exception:  # noqa: BLE001 - the workbook imported; the macro list is extra
+        res["macros"] = []
     return res
 
 

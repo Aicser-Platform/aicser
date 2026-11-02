@@ -19,7 +19,9 @@ import {
   FileTextOutlined,
   BarChartOutlined,
   TableOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
+import { AssetHistoryDrawer } from '@/components/history/AssetHistoryDrawer';
 import { ADD_TO_DASHBOARD_EVENT, TRASH_CHART_EVENT } from './chartDesignerEvents';
 import { useTranslations } from 'next-intl';
 import PublishToFeedModal from '@/components/Feed/PublishToFeedModal';
@@ -29,6 +31,7 @@ import { menuItemWithDescription } from '@/components/Feed/MenuItemWithDescripti
 import { useAuthStore as useAuth } from '@/stores/useAuthStore';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { EmbedDialog } from '@/components/embed/EmbedDialog';
+import { ShareDialog } from '@/components/share/ShareDialog';
 import type { ChartDesignerWidget } from '../stores/useChartDesignerStore';
 import { useChartDesignerStore } from '../stores/useChartDesignerStore';
 import { chartDescription, chartSource } from '../../dashboards/utils/chartAnnotations';
@@ -60,6 +63,7 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
     undefined;
 
   const saveChart = useChartDesignerStore((s) => s.saveChart);
+  const [historyChartId, setHistoryChartId] = useState<string | null>(null);
   const updateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const isSaving = useChartDesignerStore((s) => s.isSaving);
   const duplicateWidget = useChartDesignerStore((s) => s.duplicateWidget);
@@ -72,6 +76,8 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
   const [publishCaptureSelector, setPublishCaptureSelector] = useState<string | undefined>();
   const [preparing, setPreparing] = useState(false);
   const [embedChartId, setEmbedChartId] = useState<string | null>(null);
+  const [shareChartId, setShareChartId] = useState<string | null>(null);
+  const tShare = useTranslations('share_links');
   const [titleDraft, setTitleDraft] = useState('');
 
   useEffect(() => {
@@ -165,20 +171,15 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
     }
   }, [ensureChartId, hasConfiguredData, selectedWidget, t, user?.id]);
 
-  /** A link teammates open in Aicser (signed in, under their own access). */
-  const handleCopyLink = useCallback(async () => {
+  const openShare = useCallback(async () => {
     setPreparing(true);
     try {
       const chartId = await ensureChartId();
-      if (!chartId) return;
-      await navigator.clipboard.writeText(`${window.location.origin}/chart-designer?chart=${encodeURIComponent(chartId)}`);
-      message.success(t('link_copied'));
-    } catch {
-      message.error(tDash('copy_failed'));
+      if (chartId) setShareChartId(chartId);
     } finally {
       setPreparing(false);
     }
-  }, [ensureChartId, t, tDash]);
+  }, [ensureChartId]);
 
   const handleShowEmbed = useCallback(async () => {
     if (!selectedWidget) {
@@ -206,8 +207,8 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
     {
       key: 'link',
       icon: <LinkOutlined />,
-      label: menuItemWithDescription(t('copy_link'), t('copy_link_desc')),
-      onClick: () => void handleCopyLink(),
+      label: menuItemWithDescription(tShare('open'), tShare('open_desc')),
+      onClick: () => void openShare(),
     },
     {
       key: 'dashboard',
@@ -256,6 +257,13 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
       label: t('duplicate_chart'),
       disabled: !selectedWidget,
       onClick: () => selectedWidget && duplicateWidget(selectedWidget.id),
+    },
+    {
+      key: 'history',
+      icon: <HistoryOutlined />,
+      label: t('history'),
+      disabled: !selectedWidget?.chartId,
+      onClick: () => selectedWidget?.chartId && setHistoryChartId(String(selectedWidget.chartId)),
     },
     {
       key: 'trash',
@@ -381,6 +389,17 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
         />
       )}
 
+      <ShareDialog
+        open={Boolean(shareChartId)}
+        onClose={() => setShareChartId(null)}
+        kind="chart"
+        resourceId={shareChartId}
+        title={selectedWidget?.title?.trim() || t('untitled_chart')}
+        onAdvancedEmbed={() => {
+          setEmbedChartId(shareChartId);
+          setShareChartId(null);
+        }}
+      />
       <EmbedDialog
         open={Boolean(embedChartId)}
         onClose={() => setEmbedChartId(null)}
@@ -390,6 +409,8 @@ export function ChartDesignerToolbar({ selectedWidget, view = 'chart', onViewCha
         title={t('publish_dialog_title', { name: title })}
         iframeHeight={400}
       />
+      {/* A restored chart reloads, so every panel shows the version that was put back. */}
+      <AssetHistoryDrawer assetType="chart" assetId={historyChartId} onClose={() => setHistoryChartId(null)} onRestored={() => window.location.reload()} />
     </>
   );
 }

@@ -12,6 +12,7 @@ import {
   CommentOutlined,
   SunOutlined,
   MoonOutlined,
+  BgColorsOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
@@ -30,9 +31,12 @@ import { LocaleFlagIcon } from '@/components/LocaleFlagIcon/LocaleFlagIcon';
 import { getLocaleMeta, LOCALE_OPTIONS } from '@/config/locales';
 import { fetchApi } from '@/utils/api';
 import { useWorkspaceConfig } from '@/hooks/useWorkspaceConfig';
+import { useOrganizationStore } from '@/stores/useOrganizationStore';
+import { useOrganizationMembers } from '@/hooks/useOrganizationMembers';
 import { isSelfHostDeploymentFromEnv } from '@/utils/deploymentMode';
 import { getBuildTimeAiserVersionLabel } from '@/utils/appVersion';
 import { clearLocalStorageOnLogout } from '@/utils/resetWorkspaceScope';
+import './UserProfileDropdown.css';
 
 const isEnterpriseEdition = ['enterprise', 'ee'].includes(
   (process.env.NEXT_PUBLIC_EDITION || '').toLowerCase()
@@ -62,6 +66,20 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEnterpriseEdition });
   const showHostedBilling = isEnterpriseEdition && !isSelfHostDeploymentFromEnv() && !isSelfHost;
   const showUsageInMenu = isEnterpriseEdition;
+  // Which product this is: Aicser Cloud (plans and billing), Enterprise on the customer's own servers
+  // (a license, their own AI), or Community (self-hosted, own AI keys, nothing to buy).
+  const deployment: 'cloud' | 'self_hosted' | 'community' = !isEnterpriseEdition ? 'community' : showHostedBilling ? 'cloud' : 'self_hosted';
+  const organization = useOrganizationStore((st) => st.currentOrganization);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { members } = useOrganizationMembers(organization?.id ? String(organization.id) : null, menuOpen && isEnterpriseEdition);
+  const myId = String(user?.user_id ?? user?.id ?? '');
+  const me = members.find((m) => String(m.user_id) === myId);
+  const myRole = me?.roles?.[0]?.display_name || me?.roles?.[0]?.name || null;
+  const [license, setLicense] = useState<{ customer_id?: string | null; max_users?: number | null; expires_at?: string | null; is_valid?: boolean } | null>(null);
+  useEffect(() => {
+    if (!menuOpen || deployment !== 'self_hosted' || license) return;
+    fetchApi('/api/licensing/status').then(setLicense).catch(() => setLicense(null));
+  }, [menuOpen, deployment, license]);
   const [appVersionLabel, setAppVersionLabel] = useState(getBuildTimeAiserVersionLabel);
 
   useEffect(() => {
@@ -122,11 +140,6 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
     ? [profile.first_name, profile.last_name].filter(Boolean).join(' ')
     : (user?.email?.split('@')[0] || t('user'));
 
-  // Prefer user-scoped metrics when available, fallback to org-level metrics.
-  const aiCredits = usage.ai_credits_user ?? usage.ai_credits;
-  const aiCreditsUsed = aiCredits?.used ?? 0;
-  const aiCreditsLimit = aiCredits?.unlimited ? Infinity : (aiCredits?.limit ?? 30);
-
   // Per-user footprint (fallback to org-level for plans that don't return user-scoped usage)
   const dataSources = usage.my_data_sources_count ?? usage.data_sources_count;
   const dataSourcesUsed = dataSources?.used ?? 0;
@@ -137,6 +150,7 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
   const projectsLimit = projects?.unlimited ? Infinity : (projects?.limit ?? 1);
 
   const handleDropdownVisibleChange = (open: boolean) => {
+    setMenuOpen(open);
     if (open && showUsageInMenu) {
       void refresh();
     }
@@ -182,33 +196,105 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
     void refresh();
   };
 
-  const creditsPercentage = aiCreditsLimit === Infinity ? 0 : (aiCreditsUsed / aiCreditsLimit) * 100;
-  const dataSourcesPercentage =
-    dataSourcesLimit === Infinity || dataSourcesLimit === 0
-      ? 0
-      : (dataSourcesUsed / dataSourcesLimit) * 100;
-  const projectsPercentage =
-    projectsLimit === Infinity || projectsLimit === 0
-      ? 0
-      : (projectsUsed / projectsLimit) * 100;
-  const useTeamStyleUsage = planType === 'team' || planType === 'pro';
-  const showPerUserLabel = planType === 'team';
+
+  // Team plans share one monthly AI pool; Free and Pro have their own.
+  const teamPlan = planType === 'team' || planType === 'enterprise';
+  const pool = (teamPlan ? usage.ai_credits_team_total : undefined) ?? usage.ai_credits;
+  const poolUsed = Number(pool?.used ?? 0);
+  const poolLimit = pool?.unlimited ? Infinity : Number(pool?.limit ?? 0);
+  const ownAiKeys = deployment !== 'cloud' || (!pool?.unlimited && poolLimit === 0);
+  const seatLimit = Number((subscription as { plan?: { limits?: { max_users?: number } } } | null)?.plan?.limits?.max_users ?? 0);
+  const limited = (m?: { unlimited?: boolean; limit?: number }) => Boolean(m && !m.unlimited && (m.limit ?? -1) > 0);
+
+  const statusLine = (() => {
+    if (subLoading || !remaining) return null;
+    if (remaining.kind === 'trial') return { text: t('status_trial', { days: remaining.daysLeft }), urgent: remaining.daysLeft <= 3 };
+    if (remaining.kind === 'renews') return { text: t('status_renews', { date: remainingDate }), urgent: false };
+    // Not renewing: a date is enough until the last month, then the countdown matters.
+    return remaining.daysLeft <= 30
+      ? { text: t('status_ends_in', { days: remaining.daysLeft, date: remainingDate }), urgent: remainingUrgent }
+      : { text: t('status_active_until', { date: remainingDate }), urgent: false };
+  })();
+
+  const meter = (label: string, used: number, limit: number, sub?: string | null) => (
+    <div className="profile-menu-meter">
+      <div className="profile-menu-row">
+        <span>{label}</span>
+        <b>{limit === Infinity ? used.toLocaleString(currentLocale) : t('used_of', { used: used.toLocaleString(currentLocale), limit: limit.toLocaleString(currentLocale) })}</b>
+      </div>
+      {limit !== Infinity && limit > 0 ? (
+        <Progress percent={Math.min(100, (used / limit) * 100)} size="small" showInfo={false}
+          status={used / limit >= 0.9 ? 'exception' : 'normal'} />
+      ) : null}
+      {sub ? <div className="profile-menu-sub">{sub}</div> : null}
+    </div>
+  );
+
+  const planBlock = deployment === 'cloud' ? (
+    <div className="profile-menu-plan">
+      <div className="profile-menu-row">
+        <Badge color={getPlanBadgeColor(planType)} text={<b>{subLoading ? t('loading') : getPlanDisplayName(planType)}</b>} />
+        {statusLine ? <span className={statusLine.urgent ? 'profile-menu-urgent' : 'profile-menu-sub'}>{statusLine.text}</span> : null}
+      </div>
+      {ownAiKeys ? (
+        <div className="profile-menu-row"><span>{t('ai')}</span><b>{t('ai_own_keys')}</b></div>
+      ) : meter(teamPlan ? t('team_ai_credits') : t('ai_credits_month'), poolUsed, poolLimit,
+        teamPlan && usage.ai_credits_user ? t('you_used', { n: Number(usage.ai_credits_user.used ?? 0).toLocaleString(currentLocale) }) : null)}
+      {teamPlan && seatLimit > 0 && members.length > 0 ? meter(t('members'), members.length, seatLimit) : null}
+      {!teamPlan && limited(usage.data_sources_count) ? meter(t('data_sources'), dataSourcesUsed, dataSourcesLimit) : null}
+      {!teamPlan && limited(usage.projects_count) ? meter(t('projects'), projectsUsed, projectsLimit) : null}
+      <div className="profile-menu-actions">
+        {canManageBilling && (planType === 'free' || planType === 'pro' || isTrial) ? (
+          <Button type="primary" size="small" icon={<CrownOutlined />} onClick={(e) => { e.stopPropagation(); setPricingModalVisible(true); }}>
+            {planType === 'free' ? t('upgrade_plan') : t('see_plans')}
+          </Button>
+        ) : null}
+        {planType === 'team' && canManageBilling ? (
+          <Button size="small" onClick={(e) => { e.stopPropagation(); router.push('/settings?tab=team'); }}>{t('add_members')}</Button>
+        ) : null}
+        <Button type="link" size="small" onClick={(e) => { e.stopPropagation(); router.push('/settings?tab=usage'); }}>{t('usage')}</Button>
+        {canViewBilling ? (
+          <Button type="link" size="small" icon={<CreditCardOutlined />} onClick={(e) => { e.stopPropagation(); router.push('/settings?tab=billing-subscription'); }}>
+            {t('billing')}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    <div className="profile-menu-plan">
+      <div className="profile-menu-row">
+        <Badge color={deployment === 'self_hosted' ? 'gold' : 'default'}
+          text={<b>{deployment === 'self_hosted' ? t('enterprise_self_hosted') : t('community_edition')}</b>} />
+      </div>
+      {deployment === 'self_hosted' && license ? (
+        <div className="profile-menu-sub">
+          {license.is_valid === false ? <span className="profile-menu-urgent">{t('license_invalid')}</span> : [
+            license.customer_id ? t('licensed_to', { name: license.customer_id }) : null,
+            license.max_users ? t('license_seats', { n: license.max_users }) : null,
+            license.expires_at ? t('license_until', { date: new Date(license.expires_at).toLocaleDateString(currentLocale) }) : null,
+          ].filter(Boolean).join(' · ')}
+        </div>
+      ) : null}
+      <div className="profile-menu-row"><span>{t('ai')}</span><b>{deployment === 'self_hosted' ? t('ai_org_models') : t('ai_own_keys')}</b></div>
+      {deployment === 'self_hosted' && canViewBilling ? (
+        <div className="profile-menu-actions">
+          <Button type="link" size="small" onClick={(e) => { e.stopPropagation(); router.push('/settings?tab=license'); }}>{t('license')}</Button>
+          <Button type="link" size="small" onClick={(e) => { e.stopPropagation(); router.push('/settings?tab=usage'); }}>{t('usage')}</Button>
+        </div>
+      ) : null}
+    </div>
+  );
 
   const menuItems = [
     {
       key: 'profile',
       icon: <UserOutlined />,
       label: (
-        <div style={{ padding: '8px 0' }}>
-          <Link href="/settings?tab=profile">
-            <div className="font-medium text-gray-900 dark:text-gray-100" style={{ marginBottom: '4px' }}>
-            {displayName}
-            </div>
-          </Link>
-          {/* <div className="text-xs text-gray-500 dark:text-gray-400">
-            {organizationData.name || 'My Organization'}
-          </div> */}
-        </div>
+        <Link href="/settings?tab=profile" className="profile-menu-who">
+          <b>{displayName}</b>
+          {user?.email ? <span>{user.email}</span> : null}
+          {organization?.name ? <span>{[organization.name, myRole].filter(Boolean).join(' · ')}</span> : null}
+        </Link>
       ),
     },
     ...(isEnterpriseEdition && onboardingCompleted === false
@@ -222,166 +308,9 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
           },
         ]
       : []),
-    ...(showUsageInMenu
-      ? [
-          {
-            type: 'divider' as const,
-          },
-          {
-            key: 'plan-info',
-            label: (
-              <div style={{ padding: '12px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: remaining ? '4px' : '10px' }}>
-                  <span className="text-sm text-gray-900 dark:text-gray-100" style={{ fontWeight: 500 }}>
-                    {t('current_plan')}
-                  </span>
-                  <Badge
-                    color={getPlanBadgeColor(planType)}
-                    text={subLoading ? t('loading') : getPlanDisplayName(planType)}
-                    style={{ fontSize: '11px', padding: '2px 8px' }}
-                  />
-                </div>
-                {!subLoading && remaining && (
-                  <div style={{ marginBottom: '10px' }} className="text-xs">
-                    <span
-                      style={{ fontWeight: 600, color: remainingUrgent ? 'var(--ant-color-warning, #fa8c16)' : undefined }}
-                      className={remainingUrgent ? undefined : 'text-gray-900 dark:text-gray-100'}
-                    >
-                      {remaining.daysLeft === 0
-                        ? tBilling('plan_ends_today')
-                        : tBilling('plan_days_left', { count: remaining.daysLeft })}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {' · '}
-                      {remaining.kind === 'trial'
-                        ? tBilling('plan_trial_ends_on', { date: remainingDate })
-                        : remaining.kind === 'renews'
-                          ? tBilling('plan_renews_on', { date: remainingDate })
-                          : tBilling('plan_ends_on', { date: remainingDate })}
-                    </span>
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? t('ai_credits_per_user') : t('ai_credits')}
-                    </span>
-                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                      {aiCreditsLimit === Infinity ? `${aiCreditsUsed} / ∞` : `${aiCreditsUsed} / ${aiCreditsLimit}`}
-                    </span>
-                  </div>
-                  {aiCreditsLimit !== Infinity && (
-                    <Progress
-                      percent={creditsPercentage}
-                      size="small"
-                      strokeColor={creditsPercentage > 80 ? '#ff4d4f' : '#1890ff'}
-                      showInfo={false}
-                    />
-                  )}
-                </div>
-
-                <div style={{ marginBottom: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? t('data_sources_per_user') : t('data_sources')}
-                    </span>
-                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                      {useTeamStyleUsage
-                        ? dataSourcesUsed
-                        : (dataSourcesLimit === Infinity
-                            ? `${dataSourcesUsed} / ∞`
-                            : `${dataSourcesUsed} / ${dataSourcesLimit}`)}
-                    </span>
-                  </div>
-                  {!useTeamStyleUsage && dataSourcesLimit !== Infinity && (
-                    <Progress
-                      percent={dataSourcesPercentage}
-                      size="small"
-                      strokeColor={dataSourcesPercentage > 80 ? '#ff4d4f' : '#52c41a'}
-                      showInfo={false}
-                    />
-                  )}
-                </div>
-
-                <div style={{ marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {showPerUserLabel ? t('projects_per_user') : t('projects')}
-                    </span>
-                    <span className="text-xs text-gray-900 dark:text-gray-100" style={{ fontWeight: 600 }}>
-                      {useTeamStyleUsage
-                        ? projectsUsed
-                        : (projectsLimit === Infinity
-                            ? `${projectsUsed} / ∞`
-                            : `${projectsUsed} / ${projectsLimit}`)}
-                    </span>
-                  </div>
-                  {!useTeamStyleUsage && projectsLimit !== Infinity && (
-                    <Progress
-                      percent={projectsPercentage}
-                      size="small"
-                      strokeColor={projectsPercentage > 80 ? '#ff4d4f' : '#722ed1'}
-                      showInfo={false}
-                    />
-                  )}
-                </div>
-
-                <Button
-                  type="link"
-                  size="small"
-                  block
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push('/settings?tab=usage');
-                  }}
-                  style={{ marginTop: 4, paddingLeft: 0 }}
-                >
-                  {t('view_usage_analytics')}
-                </Button>
-                {showHostedBilling && canManageBilling && (
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<CrownOutlined />}
-                    block
-                    onClick={() => setPricingModalVisible(true)}
-                    style={{
-                      background: 'var(--color-brand-primary, #00c2cb)',
-                      borderColor: 'var(--color-brand-primary, #00c2cb)',
-                    }}
-                  >
-                    {t('upgrade_plan')}
-                  </Button>
-                )}
-                {showHostedBilling && canViewBilling && (
-                  <Button
-                    type="link"
-                    size="small"
-                    block
-                    icon={<CreditCardOutlined />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push('/settings?tab=billing-subscription');
-                    }}
-                    style={{ marginTop: 4, paddingLeft: 0 }}
-                  >
-                    {t('manage_billing')}
-                  </Button>
-                )}
-              </div>
-            ),
-            onClick: () => setPricingModalVisible(true),
-          },
-          {
-            type: 'divider' as const,
-          },
-        ]
-      : [
-          {
-            type: 'divider' as const,
-          },
-        ]),
+    { type: 'divider' as const },
+    { key: 'plan-info', label: planBlock, className: 'profile-menu-plan-item' },
+    { type: 'divider' as const },
     {
       key: 'theme-mode',
       label: (
@@ -397,6 +326,14 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       ),
       onClick: () => handleThemeChange(!isDarkMode),
     },
+    ...(isEnterpriseEdition
+      ? [{
+          key: 'customize-theme',
+          icon: <BgColorsOutlined />,
+          label: t('customize_theme'),
+          onClick: () => window.dispatchEvent(new CustomEvent('open-theme-customizer')),
+        }]
+      : []),
     {
       key: 'language',
       label: (

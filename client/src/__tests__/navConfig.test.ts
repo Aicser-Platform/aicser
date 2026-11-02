@@ -9,6 +9,7 @@ import {
   NAV_ROUTES,
   openKeysForPathname,
   selectedKeyForPathname,
+  essentialSidebarItems,
 } from '@/layouts/Navigation/navConfig';
 import { EE_MOBILE_TABS, enterpriseMoreNavItems } from '@/layouts/Navigation/mobileNavConfig';
 import en from '@/messages/en.json';
@@ -17,12 +18,12 @@ describe('job-first navigation', () => {
   it('puts everyday pages first, then foldable Analyze, Predict & decide and Data sections', () => {
     const items = buildEnterpriseSidebarItems(true);
     const top = items.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
-    expect(top).toEqual(['chat', 'feed', 'dashboards', 'alerts']);
+    expect(top).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
     const sections = items.filter((i) => i.kind === 'section').map((i) => i.kind === 'section' && [i.key, i.children.map((c) => c.key)]);
     expect(sections).toEqual([
       ['sec-analyze', ['chart-designer', 'query-editor', 'sheets', 'notebooks']], // Maps is off by default (NEXT_PUBLIC_FEATURE_MAPS)
       ['sec-predict', ['models', 'ai-decisions']],
-      ['sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog', 'knowledge']],
+      ['sec-data', ['data', 'prepare', 'pipelines', 'semantic-layer', 'catalog']],
     ]);
     // One level of nesting at most: no groups inside sections.
     expect(items.some((i) => i.kind === 'group')).toBe(false);
@@ -55,8 +56,8 @@ describe('job-first navigation', () => {
   it('keeps everyday order and only hides SKU-gated pages', () => {
     const raw = buildEnterpriseSidebarItems(true);
     const top = raw.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
-    expect(top).toEqual(['chat', 'feed', 'dashboards', 'alerts']);
-    const hidden = filterSidebarItems(raw, { hasFeature: (f) => f !== 'alerts' && f !== 'catalog' });
+    expect(top).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
+    const hidden = filterSidebarItems(raw, { hasFeature: (f) => f !== 'alerts' && f !== 'catalog' && f !== 'agent' });
     const hiddenTop = hidden.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
     expect(hiddenTop).toEqual(['chat', 'feed', 'dashboards']);
     const data = hidden.find((i) => i.kind === 'section' && i.key === 'sec-data');
@@ -65,7 +66,6 @@ describe('job-first navigation', () => {
       'prepare',
       'pipelines',
       'semantic-layer',
-      'knowledge',
     ]);
   });
 
@@ -75,9 +75,15 @@ describe('job-first navigation', () => {
     for (const link of flattenNavLinks(buildEnterpriseSidebarItems(true))) expect(reachable.has(link.key)).toBe(true);
   });
 
+  it('people who only view start with the everyday pages', () => {
+    const items = essentialSidebarItems(buildEnterpriseSidebarItems(true));
+    expect(items.every((i) => i.kind !== 'section')).toBe(true);
+    expect(flattenNavLinks(items).map((l) => l.key)).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
+  });
+
   it('mobile More hides SKU-gated pages without changing remaining order', () => {
     const hidden = filterSidebarItems(enterpriseMoreNavItems(), {
-      hasFeature: (f) => f !== 'alerts' && f !== 'catalog',
+      hasFeature: (f) => f !== 'alerts' && f !== 'catalog' && f !== 'agent',
     });
     expect(flattenNavLinks(hidden).map((l) => l.key)).toEqual([
       'chart-designer',
@@ -89,7 +95,6 @@ describe('job-first navigation', () => {
       'prepare',
       'pipelines',
       'semantic-layer',
-      'knowledge',
       'settings',
     ]);
   });

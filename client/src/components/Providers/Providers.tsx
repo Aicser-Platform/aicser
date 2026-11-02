@@ -89,8 +89,9 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <BrandThemeProvider>
+            {/* Outside LocaleProvider: it waits for auth and renders nothing until its messages load. */}
+            <AuthInitializer />
             <LocaleProvider>
-              <AuthInitializer />
               <ChunkLoadRecovery />
               {children}
               <FeaturebaseMessenger />

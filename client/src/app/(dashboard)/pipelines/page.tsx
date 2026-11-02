@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { useTranslations } from 'next-intl';
 import { NodeIndexOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
@@ -8,8 +9,9 @@ import { isEnterpriseEdition } from '@/utils/appPaths';
 
 const isEE = isEnterpriseEdition();
 
-const EEPipelinesPage = dynamic(() => import('@/ee').then((m) => ({ default: m.PipelinesPage })), {
+const EEPipelinesPage = dynamic(() => import('@/ee-lazy/PipelinesPage').then((m) => ({ default: m.PipelinesPage })), {
   ssr: false,
+  loading: PageLoading,
 });
 
 function PipelinesCEFallback() {

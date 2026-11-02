@@ -47,14 +47,14 @@ def test_soft_correct_does_not_invent_far_mismatch():
     assert remaining
 
 
-def test_insight_audit_default_does_not_rewrite():
-    """Finalizer audits only — generation already ran ground_prose_pack."""
+def test_insight_audit_labels_an_unconfirmed_number_without_changing_it():
+    """Finalizer never rewrites a number (generation already ran ground_prose_pack); it only labels it."""
     valid = {"100", "100.0"}
     out = ground_insight_fields(
         {"title": "Spike", "what": "Metric jumped to 250 overnight", "confidence": 0.9},
         valid,
     )
-    assert out["what"] == "Metric jumped to 250 overnight"  # unchanged
+    assert out["what"] == "Metric jumped to 250 (estimate) overnight"
     assert out["verification_tier"] == "T0"
     assert out["data_grounded"] is False
 

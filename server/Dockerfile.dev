@@ -45,14 +45,12 @@ RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 
-COPY requirements.txt ./
-# Match Dockerfile.prod: install CPU torch before requirements.txt so pip does not
-# pull multi-GB CUDA wheels from PyPI during dev builds.
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+COPY requirements.txt requirements-databricks.txt ./
+ARG WITH_DATABRICKS=false
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip setuptools wheel \
-    && pip install --index-url "$TORCH_INDEX_URL" torch==2.14.0 \
-    && pip install -r requirements.txt
+    && pip install -r requirements.txt \
+    && if [ "$WITH_DATABRICKS" = "true" ]; then pip install -r requirements-databricks.txt; fi
 
 # Fail the image build if Telegram deps are missing (avoids uvicorn crash at import time)
 RUN python -c "import telegram.ext; print('python-telegram-bot OK')"

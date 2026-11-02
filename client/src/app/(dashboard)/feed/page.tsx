@@ -597,6 +597,9 @@ const SocialFeedPage: React.FC = () => {
                                 <span className="bg-[var(--ant-color-bg-container)] border border-[var(--ant-color-border)] px-2 py-0.5 rounded text-xs font-semibold">
                                   {visibilityLabel}
                                 </span>
+                                {entry.possiblePersonalData ? (
+                                  <span className="text-[var(--ant-color-warning-text)]">{t('possible_personal_data')}</span>
+                                ) : null}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Button
@@ -764,7 +767,7 @@ const SocialFeedPage: React.FC = () => {
                       showEndFeedAction ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'
                     }`}
                   >
-                    <div className="flex items-center gap-3 w-full max-w-xs text-[11px] text-[var(--ant-color-text-secondary)] font-semibold uppercase tracking-wider">
+                    <div className="flex items-center gap-3 w-full max-w-xs text-[11px] text-[var(--ant-color-text-secondary)] font-semibold tracking-wider">
                       <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />
                       <span>{t('end_of_feed')}</span>
                       <span className="flex-1 h-px bg-[var(--ant-color-border-secondary)]" />

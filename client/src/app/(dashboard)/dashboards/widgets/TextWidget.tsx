@@ -238,19 +238,19 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
         >
           <div className="text-widget-toolbar-group">
             <Tooltip title={t('bold')}>
-              <Button size="small" type="text" icon={<BoldOutlined />} onMouseDown={(e) => applyCommand(e, 'bold')} />
+              <Button size="small" type="text" icon={<BoldOutlined />} aria-label={t('bold')} onMouseDown={(e) => applyCommand(e, 'bold')} />
             </Tooltip>
             <Tooltip title={t('italic')}>
-              <Button size="small" type="text" icon={<ItalicOutlined />} onMouseDown={(e) => applyCommand(e, 'italic')} />
+              <Button size="small" type="text" icon={<ItalicOutlined />} aria-label={t('italic')} onMouseDown={(e) => applyCommand(e, 'italic')} />
             </Tooltip>
             <Tooltip title={t('underline')}>
-              <Button size="small" type="text" icon={<UnderlineOutlined />} onMouseDown={(e) => applyCommand(e, 'underline')} />
+              <Button size="small" type="text" icon={<UnderlineOutlined />} aria-label={t('underline')} onMouseDown={(e) => applyCommand(e, 'underline')} />
             </Tooltip>
             <Tooltip title={t('strike')}>
               <Button
                 size="small"
                 type="text"
-                icon={<StrikethroughOutlined />}
+                icon={<StrikethroughOutlined />} aria-label={t('strike')}
                 onMouseDown={(e) => applyCommand(e, 'strikeThrough')}
               />
             </Tooltip>
@@ -263,7 +263,7 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
               <Button
                 size="small"
                 type="text"
-                icon={<UnorderedListOutlined />}
+                icon={<UnorderedListOutlined />} aria-label={t('bullet_list')}
                 onMouseDown={(e) => applyCommand(e, 'insertUnorderedList')}
               />
             </Tooltip>
@@ -271,7 +271,7 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
               <Button
                 size="small"
                 type="text"
-                icon={<OrderedListOutlined />}
+                icon={<OrderedListOutlined />} aria-label={t('number_list')}
                 onMouseDown={(e) => applyCommand(e, 'insertOrderedList')}
               />
             </Tooltip>
@@ -281,13 +281,13 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
 
           <div className="text-widget-toolbar-group">
             <Tooltip title={t('align_left')}>
-              <Button size="small" type="text" icon={<AlignLeftOutlined />} onMouseDown={(e) => applyCommand(e, 'justifyLeft')} />
+              <Button size="small" type="text" icon={<AlignLeftOutlined />} aria-label={t('align_left')} onMouseDown={(e) => applyCommand(e, 'justifyLeft')} />
             </Tooltip>
             <Tooltip title={t('align_center')}>
               <Button
                 size="small"
                 type="text"
-                icon={<AlignCenterOutlined />}
+                icon={<AlignCenterOutlined />} aria-label={t('align_center')}
                 onMouseDown={(e) => applyCommand(e, 'justifyCenter')}
               />
             </Tooltip>
@@ -295,7 +295,7 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
               <Button
                 size="small"
                 type="text"
-                icon={<AlignRightOutlined />}
+                icon={<AlignRightOutlined />} aria-label={t('align_right')}
                 onMouseDown={(e) => applyCommand(e, 'justifyRight')}
               />
             </Tooltip>

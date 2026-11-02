@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Select, Spin, Empty, message, Typography, Button, Switch, Tooltip, Collapse } from 'antd';
+import { Select, Spin, Empty, message, Typography, Button, Tooltip, Collapse } from 'antd';
 import { useTranslations } from 'next-intl';
 import { ExportOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import './DataModelWorkbenchPanel.css';
@@ -147,7 +147,7 @@ export type DataModelWorkbenchPanelProps = {
   scope?: 'project' | 'single';
   /** Let authors expand the canvas to all sources in the project (semantic layer default). */
   showProjectScopeToggle?: boolean;
-  /** When the project canvas toggle is shown, start with all project sources visible. */
+  /** Ignored (kept for callers): the canvas starts with the focused source; others are attached on demand. */
   defaultProjectCanvas?: boolean;
   onRelationshipSelect?: (rel: DataModelRelationship | null) => void;
   selectedRelationshipId?: string | null;
@@ -179,10 +179,10 @@ export function DataModelWorkbenchPanel({
   onRelationshipsChanged,
 }: DataModelWorkbenchPanelProps) {
   const t = useTranslations('dashboards_page');
-  const [projectCanvas, setProjectCanvas] = useState(
-    scope === 'project' || (showProjectScopeToggle && defaultProjectCanvas),
-  );
   const [canvasSourceIds, setCanvasSourceIds] = useState<string[]>([]);
+  // With the scope control shown, the focused source is always on the canvas and others are
+  // attached to it (remembered per focused source). Every source at once is unreadable past a few.
+  const [attachedIds, setAttachedIds] = useState<string[]>([]);
   const [localSelectedRelId, setLocalSelectedRelId] = useState<string | null>(null);
   const effectiveSelectedRelId = selectedRelationshipId ?? localSelectedRelId;
   const handleRelationshipSelect = useCallback(
@@ -193,7 +193,8 @@ export function DataModelWorkbenchPanel({
     [onRelationshipSelect],
   );
   const effectiveScope: 'project' | 'single' =
-    showProjectScopeToggle ? (projectCanvas ? 'project' : 'single') : scope;
+    showProjectScopeToggle ? (attachedIds.length ? 'project' : 'single') : scope;
+  void defaultProjectCanvas;
   const router = useRouter();
   const queryClient = useQueryClient();
   const { dataSources, isLoading: dsLoading } = useDataSources();
@@ -240,29 +241,59 @@ export function DataModelWorkbenchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primarySourceId, eligibleSources]);
 
+
+  // Attached sources are remembered per focused source, so coming back shows the same canvas.
+  const attachKey = primarySourceId ? `aicser.model.attached.${primarySourceId}` : null;
   useEffect(() => {
-    if (!showProjectScopeToggle) {
-      setProjectCanvas(scope === 'project');
+    if (!showProjectScopeToggle || !attachKey) return;
+    let saved: string[] = [];
+    try {
+      saved = JSON.parse(window.localStorage.getItem(attachKey) || '[]');
+    } catch {
+      saved = [];
     }
-  }, [scope, showProjectScopeToggle]);
+    setAttachedIds(Array.isArray(saved) ? saved.filter((id) => id !== primarySourceId) : []);
+  }, [attachKey, primarySourceId, showProjectScopeToggle]);
+
+  const updateAttached = (ids: string[]) => {
+    const next = ids.filter((id) => id !== primarySourceId);
+    setAttachedIds(next);
+    if (attachKey) {
+      try {
+        window.localStorage.setItem(attachKey, JSON.stringify(next));
+      } catch {
+        // private window or blocked storage: the choice just isn't remembered
+      }
+    }
+  };
 
   useEffect(() => {
-    if (effectiveScope !== 'project') return;
+    if (effectiveScope !== 'project' || showProjectScopeToggle) return;
     setCanvasSourceIds((prev) => {
       const valid = prev.filter((id) => eligibleSources.some((s) => s.id === id));
       if (valid.length > 0) return valid;
       return eligibleSources.map((s) => s.id);
     });
-  }, [effectiveScope, eligibleSources]);
+  }, [effectiveScope, eligibleSources, showProjectScopeToggle]);
 
   const modelSources = useMemo(() => {
     if (effectiveScope === 'single' && primarySourceId) {
       const one = eligibleSources.find((s) => s.id === primarySourceId);
       return one ? [one] : [];
     }
+    if (showProjectScopeToggle) {
+      const ids = [primarySourceId, ...attachedIds].filter(Boolean) as string[];
+      return ids.map((id) => eligibleSources.find((s) => s.id === id)).filter(Boolean) as typeof eligibleSources;
+    }
     const ids = canvasSourceIds.length ? canvasSourceIds : eligibleSources.map((s) => s.id);
     return eligibleSources.filter((s) => ids.includes(s.id));
-  }, [effectiveScope, primarySourceId, eligibleSources, canvasSourceIds]);
+  }, [effectiveScope, primarySourceId, eligibleSources, canvasSourceIds, showProjectScopeToggle, attachedIds]);
+
+  // Same-named connections ("check", "check") are told apart in the picker as on the canvas.
+  const sourceOptions = useMemo(() => {
+    const names = deduplicateNames(eligibleSources.map((source) => source.name));
+    return eligibleSources.map((source, i) => ({ value: source.id, label: names[i] }));
+  }, [eligibleSources]);
 
   const multiSource = modelSources.length > 1;
 
@@ -344,7 +375,8 @@ export function DataModelWorkbenchPanel({
     if (autoDetectAttempted.current.has(primarySourceId)) return;
     if (allTables.length === 0 || allRelationships.length > 0) return;
     autoDetectAttempted.current.add(primarySourceId);
-    autoDetectMutation.mutate(undefined);
+    // Found joins change the counts around this panel (e.g. the "Relationships (n)" tab).
+    autoDetectMutation.mutate(undefined, { onSuccess: () => onRelationshipsChanged?.() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [primarySourceId, isLoading, allTables.length, allRelationships.length, effectiveScope]);
 
@@ -514,7 +546,41 @@ export function DataModelWorkbenchPanel({
       <div style={{ padding: toolbarPadding, borderBottom: variant === 'sidebar' ? '1px solid var(--ant-color-border)' : undefined }}>
         {/* One row: which sources, all of them or not, and the rest in a tooltip or an icon. */}
         <div className="data-model-toolbar">
-          {effectiveScope === 'project' ? (
+          {showProjectScopeToggle ? (
+            <>
+              {/* On a connection's own page the focus is that connection; elsewhere it can be changed. */}
+              {primarySourceIdProp ? null : <Select
+                size="small"
+                showSearch
+                optionFilterProp="label"
+                value={primarySourceId ?? undefined}
+                onChange={(id) => {
+                  setPrimarySourceId(id);
+                  handleRelationshipSelect(null);
+                }}
+                options={sourceOptions}
+                style={{ minWidth: 160, flex: '0 1 220px' }}
+                aria-label={t('modeling_select_sources')}
+              />}
+              <Select
+                mode="multiple"
+                size="small"
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                maxTagCount="responsive"
+                placeholder={t('modeling_attach_sources')}
+                value={attachedIds}
+                onChange={(ids) => {
+                  updateAttached(ids);
+                  handleRelationshipSelect(null);
+                }}
+                options={sourceOptions.filter((o) => o.value !== primarySourceId)}
+                style={{ minWidth: 180, flex: 1 }}
+                aria-label={t('modeling_attach_sources')}
+              />
+            </>
+          ) : effectiveScope === 'project' ? (
             <Select
               mode="multiple"
               size="small"
@@ -530,7 +596,7 @@ export function DataModelWorkbenchPanel({
                   setPrimarySourceId(ids[0]);
                 }
               }}
-              options={eligibleSources.map((source) => ({ value: source.id, label: source.name }))}
+              options={sourceOptions}
               style={{ minWidth: 180, flex: 1 }}
               aria-label={t('modeling_select_sources')}
             />
@@ -542,27 +608,11 @@ export function DataModelWorkbenchPanel({
                 setPrimarySourceId(id);
                 handleRelationshipSelect(null);
               }}
-              options={eligibleSources.map((source) => ({ value: source.id, label: source.name }))}
+              options={sourceOptions}
               style={{ minWidth: 160, flex: 1 }}
               aria-label={t('modeling_select_sources')}
             />
           )}
-          {showProjectScopeToggle ? (
-            <label className="data-model-toolbar__switch">
-              <Switch
-                size="small"
-                checked={projectCanvas}
-                onChange={(on) => {
-                  setProjectCanvas(on);
-                  if (on && canvasSourceIds.length === 0) {
-                    setCanvasSourceIds(eligibleSources.map((s) => s.id));
-                  }
-                }}
-                aria-label={t('modeling_project_canvas_toggle')}
-              />
-              <Text type="secondary">{t('modeling_all_sources')}</Text>
-            </label>
-          ) : null}
           <Tooltip
             title={
               <span>

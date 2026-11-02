@@ -1,5 +1,7 @@
 """Application lifespan — startup checks and shutdown cleanup."""
 import asyncio
+import importlib
+import pkgutil
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -280,7 +282,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # the background per process so the first search after a deploy doesn't wait ~90 s.
             # Import via src.modules (the canonical path): the ee.* path is a *separate* module
             # object behind the CE shim, with its own model cache that search never reads.
-            # AISER_WARM_MODELS=false skips this so the models (~1 GB+ with torch) load only
+            # AISER_WARM_MODELS=false skips this so the models (~600 MB) load only
             # when first used -- for memory-billed hosts where most processes never need them.
             if os.getenv("AISER_WARM_MODELS", "true").strip().lower() in ("0", "false", "no"):
                 logger.info("AISER_WARM_MODELS=false: search/PII models will load on first use")
@@ -301,6 +303,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     app.state.search_warmup_task = asyncio.create_task(_warm_search_models())
                 except Exception as e:
                     logger.warning("Search model warm-up not scheduled: %s", e)
+
+            from src.shared.model_loading import unload_idle_forever
+
+            app.state.model_unloader_task = asyncio.create_task(unload_idle_forever())
 
             # Trial lifecycle jobs (EE) — one container-wide instance; see
             # _try_acquire_singleton_lease's docstring for why this needs a lease.
@@ -340,6 +346,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                     logger.warning("Failed to initialize Telegram bot: %s", e)
             else:
                 logger.info("Telegram bot already owned by another worker process")
+
+        from src.core.loop_watchdog import start_loop_watchdog
+
+        start_loop_watchdog()
+
+        def _warm_ai_client() -> None:
+            # Off the event loop: imported at first use, these froze every request for ~10 s each.
+            try:
+                from src.modules.ai.services.litellm_service import _litellm
+
+                _litellm()
+                import src.modules.ai.services.langgraph_orchestrator  # noqa: F401
+                import src.modules.ai.nodes as nodes
+
+                for found in pkgutil.iter_modules(nodes.__path__, f"{nodes.__name__}."):
+                    importlib.import_module(found.name)  # the graph imports these when first built
+            except Exception as e:
+                logger.debug("AI client not warmed: %s", e)
+
+        app.state.ai_client_warmup = asyncio.create_task(asyncio.to_thread(_warm_ai_client))
 
         logger.info(
             "Startup complete. To seed initial data run: python -m app.scripts.seed"

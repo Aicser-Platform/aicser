@@ -1,0 +1,1 @@
+export { DashboardPlanCard } from '@/ee';

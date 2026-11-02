@@ -505,6 +505,7 @@ export interface ApprovalQueueItem {
   organizationId?: string;
   projectId?: string;
   rejectionReason?: string;
+  possiblePersonalData?: boolean;
 }
 
 export interface ApprovalQueueResponse {

@@ -2,6 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
+import { DocumentLibraries } from '@/components/knowledge/DocumentLibraries';
 import React, { useState, useEffect, useMemo } from 'react';
 import nextDynamic from 'next/dynamic';
 import {
@@ -13,7 +14,6 @@ import {
     Modal,
     message,
     Typography,
-    Divider,
     Tooltip,
     Input,
     Segmented,
@@ -21,6 +21,7 @@ import {
     Alert,
     Progress,
     Drawer,
+    Badge,
 } from 'antd';
 import { AppLoadingIndicator } from '@/components/ui/AppLoadingIndicator';
 import {
@@ -51,6 +52,7 @@ import {
 // InfluxDB/OpenSearch) that used to need a second, separate "Enterprise
 // Data Connectors" modal here -- see that modal's own renderEnterpriseConnectorForm
 // for how it embeds EnterpriseConnectorTab directly instead.
+const SensorConnections = nextDynamic(() => import('@/ee-lazy/SensorConnections').then((m) => ({ default: m.SensorConnections })), { ssr: false });
 const UniversalDataSourceModal = nextDynamic(
     () => import('@/components/data/UniversalDataSourceModal/UniversalDataSourceModal').then((m) => m.default),
     { ssr: false }
@@ -85,20 +87,27 @@ import { semanticLayerStudioHref } from './sources/[id]/_components/tabParam';
 
 const isEEEdition = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
 
+const ConnectModelVisualizeWizard = nextDynamic(
+  () => isEEEdition
+    ? import('@/ee-lazy/ConnectModelVisualizeWizard').then((m) => m.ConnectModelVisualizeWizard)
+    : Promise.resolve(() => null as React.ReactElement | null),
+  { ssr: false },
+);
+
 const { Title, Text } = Typography;
 
 const isSampleDataSource = (ds: { type?: string | null }) =>
     (ds.type || '').toLowerCase() === 'sample_duckdb';
 
-// DataSource.connection_status is only ever 'connected' | 'failed' | 'unknown' | null —
-// there's no 'disconnected'/'error' value in the data. Those are just the
-// user-facing labels for 'unknown' (never connected/tested) and 'failed'
-// (a connection attempt errored out) respectively. Normalizing here keeps
-// the filter's displayed labels intuitive while matching real values.
+// The list endpoint sends connection_status 'active' | 'inactive'; a tested source can also be
+// 'connected' | 'failed'. Anything else hasn't been checked.
 type NormalizedConnectionStatus = 'connected' | 'unknown' | 'failed';
 const normalizeConnectionStatus = (
-    status: DataSource['connection_status'] | undefined,
-): NormalizedConnectionStatus => (status === 'connected' || status === 'failed' ? status : 'unknown');
+    status: DataSource['connection_status'] | string | undefined | null,
+): NormalizedConnectionStatus =>
+    status === 'connected' || status === 'active' ? 'connected' : status === 'failed' ? 'failed' : 'unknown';
+
+const SOURCE_TYPE_KEYS = ['file', 'database', 'warehouse', 'api', 'cube', 'knowledge_base', 'sample_duckdb', 'google_sheets'];
 
 const DataSourcesPage: React.FC = () => {
     const canManageAccess = useCanManageDataAccess();
@@ -112,7 +121,14 @@ const DataSourcesPage: React.FC = () => {
     const [modalVisible, setModalVisible] = useState(false);
     const [selectedDataSource, setSelectedDataSource] = useState<DataSource | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>('all');
+    // Documents (unstructured files in libraries) is one of the kinds here, not a page of its own.
+    const [typeFilter, setTypeFilter] = useState<'all' | DataSource['type']>(
+        searchParams?.get('tab') === 'documents' ? 'knowledge_base' : 'all',
+    );
+    const showDocuments = typeFilter === 'knowledge_base';
+    useEffect(() => {
+        if (searchParams?.get('tab') === 'documents') setTypeFilter('knowledge_base');
+    }, [searchParams]);
     const [pricingModalVisible, setPricingModalVisible] = useState(false);
     const [profileDataSource, setProfileDataSource] = useState<DataSource | null>(null);
     const [profileResult, setProfileResult] = useState<Record<string, unknown> | null>(null);
@@ -257,21 +273,6 @@ const DataSourcesPage: React.FC = () => {
         });
     };
 
-    const getStatusColor = (status: string) => {
-        // Real connection_status values are 'connected' | 'failed' | 'unknown' | null —
-        // this used to switch on 'disconnected'/'error'/'testing', which never
-        // matched real data, so a failed connection silently rendered as a
-        // neutral grey tag instead of red. See normalizeConnectionStatus above.
-        switch (status) {
-            case 'connected':
-                return 'success';
-            case 'failed':
-                return 'error';
-            default:
-                return 'default';
-        }
-    };
-
     const columns = [
         {
             title: t('col_name'),
@@ -319,8 +320,11 @@ const DataSourcesPage: React.FC = () => {
             dataIndex: 'type',
             key: 'type',
             width: 120,
+            // A plain word, not a shouted enum in a tag.
             render: (type: string) => (
-                <Tag bordered className="page-table-tag">{type.toUpperCase()}</Tag>
+                <Text type="secondary">
+                    {SOURCE_TYPE_KEYS.includes(type) ? t(`source_type_${type}` as 'source_type_file') : type}
+                </Text>
             ),
         },
         {
@@ -328,11 +332,16 @@ const DataSourcesPage: React.FC = () => {
             dataIndex: 'connection_status',
             key: 'connection_status',
             width: 130,
-            render: (status: string) => (
-                <Tag bordered color={getStatusColor(status)} className="page-table-tag">
-                    {status ? status.toUpperCase() : t('unknown')}
-                </Tag>
-            ),
+            // Dot + word, so the state doesn't depend on colour alone.
+            render: (status: string) => {
+                const s = normalizeConnectionStatus(status);
+                return (
+                    <Badge
+                        status={s === 'connected' ? 'success' : s === 'failed' ? 'error' : 'default'}
+                        text={s === 'connected' ? t('filter_connected') : s === 'failed' ? t('status_failed') : t('status_not_checked')}
+                    />
+                );
+            },
         },
         {
             title: t('col_rows'),
@@ -368,7 +377,6 @@ const DataSourcesPage: React.FC = () => {
         ...(canManageDataSettings
             ? [
                 {
-                    title: t('col_actions'),
                     key: 'actions',
                     width: canManageAccess ? 240 : 200,
                     align: 'right' as const,
@@ -429,7 +437,8 @@ const DataSourcesPage: React.FC = () => {
     const filteredDataSources = useMemo(() => {
         return dataSources.filter((ds) => {
             const matchesSearch = ds.name.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesType = typeFilter === 'all' || ds.type === typeFilter;
+            // Document libraries are listed under Documents, so "All" shows each item once.
+            const matchesType = typeFilter === 'all' ? ds.type !== 'knowledge_base' : ds.type === typeFilter;
             return matchesSearch && matchesType;
         });
     }, [dataSources, searchTerm, typeFilter]);
@@ -512,9 +521,14 @@ const DataSourcesPage: React.FC = () => {
             permission={Permission.DATA_VIEW}
             loadingFallback={<AppLoadingIndicator variant="inline" slowAfterMs={8000} />}
             fallback={
-                <DashboardPageShell maxWidth={720}>
-                    <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />
-                </DashboardPageShell>
+                // People who may read documents but not connections still get their documents here.
+                hasPermission(Permission.KNOWLEDGE_VIEW) || hasPermission(Permission.KNOWLEDGE_SEARCH) ? (
+                    <DocumentLibraries />
+                ) : (
+                    <DashboardPageShell maxWidth={720}>
+                        <Alert type="warning" showIcon message={t('no_data_permission')} description={t('no_data_permission_desc')} />
+                    </DashboardPageShell>
+                )
             }
         >
         <DashboardPageShell>
@@ -540,7 +554,7 @@ const DataSourcesPage: React.FC = () => {
                             }
                         >
                             <Button
-                                type="primary"
+                                type={showDocuments ? 'default' : 'primary'}
                                 icon={<PlusOutlined />}
                                 onClick={handleAddDataSource}
                                 disabled={!canAddDataSource}
@@ -565,13 +579,16 @@ const DataSourcesPage: React.FC = () => {
                     }
                 />
             ) : null}
-            <Card className="content-card page-section-card">
+            <div className="page-list-surface">
                 {/* One row: find a connection by name or narrow by kind. */}
                 <div className="page-panel-toolbar">
                     <div className="page-panel-toolbar__row">
                         <Segmented
                             value={typeFilter}
-                            onChange={(value) => setTypeFilter(value as typeof typeFilter)}
+                            onChange={(value) => {
+                                setTypeFilter(value as typeof typeFilter);
+                                router.replace(value === 'knowledge_base' ? '/data?tab=documents' : '/data', { scroll: false });
+                            }}
                             options={[
                                 { label: t('filter_all_types'), value: 'all' },
                                 { label: t('filter_databases'), value: 'database' },
@@ -580,17 +597,17 @@ const DataSourcesPage: React.FC = () => {
                                 { label: t('filter_documents'), value: 'knowledge_base' },
                             ]}
                         />
-                        <Input
+                        {showDocuments ? null : <Input
                             className="page-panel-toolbar__search"
                             allowClear
                             prefix={<SearchOutlined />}
                             placeholder={t('search_sources')}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                        />}
                     </div>
                 </div>
-                <Divider className="page-divider" />
+                {showDocuments ? <DocumentLibraries embedded /> : (<>
                 {isEnterpriseEdition && <OtherProjectConnections projectSourceIds={projectSourceIds} />}
                 <div>
                     <Table
@@ -634,9 +651,11 @@ const DataSourcesPage: React.FC = () => {
                         scroll={{ x: 960 }}
                     />
                 </div>
-            </Card>
+                </>)}
+            </div>
 
             {/* Universal Data Source Modal - pass existing source for edit */}
+            <SensorConnections />
             <UniversalDataSourceModal
                 isOpen={modalVisible}
                 onClose={handleModalClose}

@@ -281,6 +281,9 @@ class ChartService:
         return res.scalars().all()
 
     async def update(self, chart: Chart, data: dict) -> Chart:
+        from src.shared.asset_revisions import CHART_FIELDS, keep
+
+        await keep(self.db, "chart", chart.id, {f: getattr(chart, f, None) for f in CHART_FIELDS})
         if any(k in data for k in ("data_source_id", "project_id", "dashboard_id")):
             from src.modules.data.services.project_scope import ensure_source_in_project
 
@@ -314,7 +317,7 @@ class ChartService:
         if hasattr(chart, "is_deleted"):
             chart.is_deleted = True
             if hasattr(chart, "deleted_at"):
-                chart.deleted_at = datetime.now(timezone.utc)
+                chart.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)  # the column has no time zone
             await self.db.flush()
             await self.db.commit()
             return
@@ -333,7 +336,10 @@ class ChartService:
         return chart
 
     async def purge(self, chart: Chart) -> None:
-        """Permanently delete a chart row (and any leftover placements)."""
+        """Permanently delete a chart row (and any leftover placements). Refused under legal hold."""
+        from src.shared.legal_hold import refuse_if_held
+
+        await refuse_if_held(self.db, getattr(chart, "project_id", None))
         chart_id = getattr(chart, "id", None)
         if chart_id is not None:
             await self.db.execute(

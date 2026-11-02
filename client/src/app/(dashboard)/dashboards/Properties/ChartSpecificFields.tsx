@@ -351,11 +351,17 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                 excludeFields = (chartQuery.yMetrics || []).map((m: any) => m.field);
               }
 
+              // A KPI with no field counts rows: say so, instead of an empty "required" field beside a number.
+              const countsRows =
+                chartType === 'stat' &&
+                field.key === 'yMetrics' &&
+                !(chartQuery.yMetrics || []).length &&
+                String(chartQuery.aggregate || '').toLowerCase() === 'count';
               return (
                 <MetricListField
                   key={field.key}
                   label={shelfLabel(field)}
-                  required={field.required}
+                  required={field.required && !countsRows}
                   metrics={chartQuery[field.key] || []}
                   onChange={(val) => onUpdateChartQuery(field.key, val)}
                   onFieldDrop={(droppedField) => onFieldDrop?.(field.key, droppedField)}
@@ -365,7 +371,9 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
                       ? t('select_data_source_first')
                       : isLoading
                         ? t('loading_columns')
-                        : t('add_data_fields_here')
+                        : countsRows
+                          ? t('kpi_counts_rows')
+                          : t('add_data_fields_here')
                   }
                   dropHint={t('drop_number_hint')}
                   isLoading={isLoading}

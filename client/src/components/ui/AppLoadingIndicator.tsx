@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Space, Spin } from 'antd';
 import { useTranslations } from 'next-intl';
+import { TableRowsSkeleton } from './TableRowsSkeleton';
 import type { SpinProps } from 'antd';
 
 export type AppLoadingIndicatorProps = {
@@ -15,7 +16,8 @@ export type AppLoadingIndicatorProps = {
    * minimal = compact, no wrapper box — drop-in for a bare small `<Spin>` inside
    *   buttons, table cells, or inline text
    */
-  variant?: 'full' | 'inline' | 'minimal';
+  /** `page`: the page's shape (title, a line, rows) while a route loads, not a spinner on a blank page. */
+  variant?: 'full' | 'inline' | 'minimal' | 'page';
   className?: string;
   /**
    * full/inline only: after this many ms, add a calm "taking longer than usual" line with
@@ -70,6 +72,20 @@ export function AppLoadingIndicator({
     const id = window.setTimeout(() => setSlow(true), slowAfterMs);
     return () => window.clearTimeout(id);
   }, [slowAfterMs, variant]);
+
+  if (variant === 'page') {
+    return (
+      <div className={['page-wrapper app-loading-page', className].filter(Boolean).join(' ')} role="status" aria-live="polite" aria-busy="true">
+        <span className="sr-only">{tip}</span>
+        <div className="app-loading-page__title" />
+        <div className="app-loading-page__line" />
+        <div className="app-loading-page__body">
+          <TableRowsSkeleton columns={5} rows={7} />
+        </div>
+        {slow ? <SlowLoadingHint /> : null}
+      </div>
+    );
+  }
 
   if (variant === 'minimal') {
     return (
@@ -129,6 +145,11 @@ export function AppLoadingIndicator({
       {slow ? <SlowLoadingHint /> : null}
     </div>
   );
+}
+
+/** The page skeleton: the route's and a lazily loaded page's waits look the same, so nothing flashes between them. */
+export function PageLoading() {
+  return <AppLoadingIndicator variant="page" slowAfterMs={8000} />;
 }
 
 export default AppLoadingIndicator;

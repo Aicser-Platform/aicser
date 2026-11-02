@@ -39,7 +39,7 @@ const dynamicChunkLoading = () => (
 );
 
 const DashboardPlanCard = dynamic(
-  () => import('@/ee').then((m) => m.DashboardPlanCard),
+  () => import('@/ee-lazy/DashboardPlanCard').then((m) => m.DashboardPlanCard),
   { ssr: false, loading: dynamicChunkLoading },
 );
 

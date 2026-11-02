@@ -1,0 +1,1 @@
+export { AgentCapabilitiesTab } from '@/ee';

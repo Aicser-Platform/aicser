@@ -1,0 +1,1 @@
+export { WarehousePage } from '@/ee';

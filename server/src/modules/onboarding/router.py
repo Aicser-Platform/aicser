@@ -272,6 +272,29 @@ def _unauthenticated_onboarding_status():
     }
 
 
+@router.get("/first-hour")
+async def first_hour_progress(
+    current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+    db: AsyncSession = Depends(get_async_session),
+) -> Dict[str, bool]:
+    """What this person has really done so far; the chat welcome offers the next step."""
+    user_id = str(current_user.get("id") or current_user.get("user_id") or current_user.get("sub") or "")
+    checks = {
+        "data": "SELECT EXISTS(SELECT 1 FROM data_sources WHERE user_id::text = :u)",
+        "dashboard": "SELECT EXISTS(SELECT 1 FROM dashboards WHERE created_by::text = :u AND is_deleted IS NOT TRUE)",
+        "alert": "SELECT EXISTS(SELECT 1 FROM alert_rules WHERE created_by::text = :u)",
+    }
+    done: Dict[str, bool] = {}
+    for step, sql in checks.items():
+        try:
+            done[step] = bool((await db.execute(text(sql), {"u": user_id})).scalar())
+        except Exception as exc:  # noqa: BLE001 - Community has no alert_rules table
+            logger.debug("First-hour check %s skipped: %s", step, exc)
+            await db.rollback()
+            done[step] = True
+    return done
+
+
 @router.get("/status")
 async def get_onboarding_status(
     request: Request,

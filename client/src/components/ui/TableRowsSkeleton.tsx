@@ -9,6 +9,8 @@ export interface TableRowsSkeletonProps {
   rows?: number;
   /** Render a header row above the body rows. */
   showHeader?: boolean;
+  /** Cell widths in %, for shapes other than a table (a list row is one wide cell). */
+  widths?: number[];
 }
 
 const DEFAULT_WIDTHS = [22, 15, 30, 12, 20, 16, 24, 14];
@@ -23,8 +25,10 @@ export const TableRowsSkeleton: React.FC<TableRowsSkeletonProps> = ({
   columns = 6,
   rows = 8,
   showHeader = true,
+  widths: cellWidths,
 }) => {
-  const widths = Array.from({ length: Math.max(1, columns) }, (_, i) => DEFAULT_WIDTHS[i % DEFAULT_WIDTHS.length]);
+  const widths =
+    cellWidths ?? Array.from({ length: Math.max(1, columns) }, (_, i) => DEFAULT_WIDTHS[i % DEFAULT_WIDTHS.length]);
 
   return (
     <div className="w-full animate-pulse" aria-hidden="true">

@@ -14,7 +14,7 @@ import {
   Empty,
   Input,
   Modal,
-  Segmented,
+  Select,
   Spin,
   Tooltip,
   message,
@@ -25,16 +25,16 @@ import {
   DeleteOutlined,
   EditOutlined,
   FolderOutlined,
-  HistoryOutlined,
-  InboxOutlined,
   MoreOutlined,
   PlusOutlined,
+  ImportOutlined,
   RobotOutlined,
   SearchOutlined,
   StarFilled,
   StarOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
+import { ImportReportModal } from './ImportReportModal';
 import { useLocale, useTranslations } from 'next-intl';
 import { getChatHref } from '@/utils/appPaths';
 import { useProjectStore } from '@/stores/useProjectStore';
@@ -78,6 +78,7 @@ export function DashboardsSection() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [items, setItems] = useState<DashboardLibraryItem[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
   const locale = useLocale();
   // Names used by more than one dashboard (older repeated AI builds): those rows also show when
   // each was made, so they can be told apart.
@@ -197,50 +198,11 @@ export function DashboardsSection() {
 
   const facetOptions = useMemo(
     () => [
-      {
-        value: 'all',
-        label: (
-          <span className="dashboard-drawer-facet-label" title={t('facet_all')}>
-            {t('facet_all')}
-          </span>
-        ),
-      },
-      {
-        value: 'recent',
-        label: (
-          <span className="dashboard-drawer-facet-label" title={t('facet_recent')} aria-label={t('facet_recent')}>
-            <HistoryOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'favorites',
-        label: (
-          <span
-            className="dashboard-drawer-facet-label"
-            title={t('facet_favorites_label')}
-            aria-label={t('facet_favorites_label')}
-          >
-            <StarOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'unfiled',
-        label: (
-          <span className="dashboard-drawer-facet-label" title={t('facet_unfiled')} aria-label={t('facet_unfiled')}>
-            <InboxOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'trash',
-        label: (
-          <span className="dashboard-drawer-facet-label" title={t('facet_trash')} aria-label={t('facet_trash')}>
-            <DeleteOutlined />
-          </span>
-        ),
-      },
+      { value: 'all', label: t('facet_all') },
+      { value: 'recent', label: t('facet_recent') },
+      { value: 'favorites', label: t('facet_favorites_label') },
+      { value: 'unfiled', label: t('facet_unfiled') },
+      { value: 'trash', label: t('facet_trash') },
     ],
     [t],
   );
@@ -512,7 +474,9 @@ export function DashboardsSection() {
             <Button
               type="text"
               size="small"
-              icon={isStarred ? <StarFilled /> : <StarOutlined />}
+              icon={isStarred ? <StarFilled
+              aria-label={t('star_toggle')}
+/> : <StarOutlined />}
               aria-label={t('star_toggle')}
               onClick={() => {
                 toggleStarDashboard(id);
@@ -550,6 +514,12 @@ export function DashboardsSection() {
             </Button>
           </Link>
         ) : null}
+        {isEnterpriseEdition ? (
+          <Button block type="text" icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+            {t('import_report')}
+          </Button>
+        ) : null}
+        <ImportReportModal open={importOpen} projectId={currentProjectId != null ? String(currentProjectId) : null} onClose={() => setImportOpen(false)} />
       </div>
 
       <div className="dashboard-drawer-toolbar">
@@ -563,13 +533,14 @@ export function DashboardsSection() {
           />
         </div>
 
-        <Segmented
+        <Select
           size="small"
-          block
           className="dashboard-drawer-facets"
+          style={{ width: '100%' }}
           value={facet}
           onChange={(v) => setFacet(v as DashboardLibraryFacet)}
           options={facetOptions}
+          aria-label={t('filter_dashboards')}
         />
 
         {facet !== 'trash' ? (

@@ -41,6 +41,7 @@ from src.core.licensing.router import router as licensing_router
 
 logger = logging.getLogger(__name__)
 
+from src.modules.share_links.router import router as share_links_router
 api_router = APIRouter()
 
 
@@ -62,6 +63,7 @@ api_router.include_router(data_router, prefix="/data", tags=["data"])
 api_router.include_router(onboarding_router, prefix="/api/onboarding", tags=["onboarding"])
 api_router.include_router(queries_router, prefix="/api/queries", tags=["queries"])
 api_router.include_router(feed_router, prefix="/api/feed", tags=["feed"])
+api_router.include_router(share_links_router, prefix="/api/share-links", tags=["share-links"])
 api_router.include_router(charts_router, prefix="/api/dashboards/{dashboard_id}/charts", tags=["charts"])
 api_router.include_router(dashboards_router, prefix="/api/dashboards", tags=["dashboards"])
 api_router.include_router(standalone_chart_router, prefix="/api/chart", tags=["charts"])
@@ -185,6 +187,30 @@ if is_ee_enabled():
         )
     except Exception as _err:
         logger.warning("Alerts router not loaded: %s", _err)
+
+    try:
+        from src.modules.dashboards.revisions_router import router as revisions_router
+        api_router.include_router(revisions_router, prefix="/api/revisions", tags=["revisions"])
+    except Exception as _err:
+        logger.warning("Revisions router not loaded: %s", _err)
+
+    try:
+        from src.modules.plant.router import router as plant_router
+        api_router.include_router(
+            plant_router, prefix="/api/plant", tags=["plant"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Plant router not loaded: %s", _err)
+
+    try:
+        from src.modules.agent.router import router as agent_router
+        api_router.include_router(
+            agent_router, prefix="/api", tags=["agent"],
+            dependencies=[Depends(require_valid_license)],
+        )
+    except Exception as _err:
+        logger.warning("Agent router not loaded: %s", _err)
 
     try:
         from src.modules.decision_os.router import router as decision_os_router

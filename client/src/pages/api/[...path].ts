@@ -17,6 +17,7 @@ const INTERNAL_BACKEND = BACKEND;
 export const config = {
   api: {
     bodyParser: false,
+    responseLimit: false,
   },
 };
 
@@ -472,6 +473,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (setCookieValues.length) {
       res.setHeader('set-cookie', setCookieValues);
       console.log('Proxy: forwarded sanitized set-cookie headers:', setCookieValues);
+    }
+
+    // An event stream goes through as it arrives: waiting for the end delivered a whole Agent task at once.
+    if (upstream.headers.get('content-type')?.includes('text/event-stream') && upstream.body) {
+      res.flushHeaders();
+      const reader = upstream.body.getReader();
+      req.on('close', () => void reader.cancel().catch(() => undefined));
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+      } catch (e) {
+        console.warn('Proxy stream ended early:', String(e));
+      }
+      res.end();
+      return;
     }
 
     const buf = await upstream.arrayBuffer();

@@ -468,7 +468,7 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       ),
     },
     {
-      title: t('col_actions'),
+      align: 'right' as const,
       key: 'actions',
       render: (_: any, record: ApiKey) => (
         <Popconfirm
@@ -519,9 +519,6 @@ export const ApiKeysTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               label: t('ai_providers_tab'),
               children: (
                 <div style={{ paddingTop: 4 }}>
-                  <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>
-                    {t('ai_provider_keys_desc')}
-                  </Text>
                   {/* Provider list — flat rows, no stacked full-width cards */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {providers.map((provider) => (

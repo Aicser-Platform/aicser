@@ -1,0 +1,1 @@
+export { OrganizationSettingsTab } from '@/ee';

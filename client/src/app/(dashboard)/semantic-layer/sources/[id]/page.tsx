@@ -20,7 +20,7 @@ import {
 } from '@/app/(dashboard)/data/sources/[id]/_components/tabParam';
 
 const SemanticStudio = isEnterpriseEdition
-  ? nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), { ssr: false })
+  ? nextDynamic(() => import('@/ee-lazy/SemanticStudio').then((m) => m.SemanticStudio), { ssr: false })
   : null;
 
 const { Text } = Typography;

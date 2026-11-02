@@ -7,6 +7,7 @@ export type SkuId =
   | 'govern'
   | 'operate'
   | 'decide'
+  | 'agent'
   | 'platform'
   | 'channel'
   | 'industry';
@@ -74,6 +75,14 @@ export const SKU_CATALOG: SkuDefinition[] = [
     navKeys: ['ai-decisions'],
   },
   {
+    id: 'agent',
+    name: 'Agent',
+    layer: 'addon',
+    minTier: 'pro',
+    features: ['agent', 'digital_worker'],
+    navKeys: ['agent'],
+  },
+  {
     id: 'platform',
     name: 'Platform',
     layer: 'addon',
@@ -94,7 +103,7 @@ export const SKU_CATALOG: SkuDefinition[] = [
     name: 'Industry packs',
     layer: 'addon',
     minTier: 'team',
-    features: ['industry_packs'],
+    features: ['industry_packs', 'plant'],
     navKeys: [],
   },
 ];
@@ -107,6 +116,7 @@ export const NAV_FEATURE_GATE: Record<string, string> = {
   pipelines: 'lakehouse',
   models: 'ml_models',
   'ai-decisions': 'ai_decisions',
+  agent: 'agent',
 };
 
 export function skuForNavKey(key: string): SkuDefinition | undefined {

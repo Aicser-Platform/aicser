@@ -2,13 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Empty, Select, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
-import { fetchApi } from '@/utils/api';
+import { fetchApi, fetchApiBlob } from '@/utils/api';
 import type { TabComponentProps } from '../page';
 
 const { Text } = Typography;
@@ -100,11 +100,30 @@ export const AIAuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   useEffect(() => {
     onSetAction?.(
-      <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
-        {t('refresh')}
-      </Button>
+      <Space>
+        <Button icon={<DownloadOutlined />} onClick={() => void exportCsv()} disabled={!currentOrganization?.id}>
+          {t('export_csv')}
+        </Button>
+        <Tooltip title={t('refresh')}>
+          <Button icon={<ReloadOutlined />} aria-label={t('refresh')} onClick={() => void load()} loading={loading} />
+        </Tooltip>
+      </Space>
     );
-  }, [loading, onSetAction, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, onSetAction, load, days]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Every AI call in the chosen period, for auditors (prompt and answer as hashes only).
+  async function exportCsv() {
+    if (!currentOrganization?.id) return;
+    const { blob, filename } = await fetchApiBlob(
+      `ai/audit-log/llm-calls/export?organization_id=${encodeURIComponent(String(currentOrganization.id))}&days=${days}`,
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename || 'ai-calls.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   const columns = useMemo(
     () => [

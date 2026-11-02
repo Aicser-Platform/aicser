@@ -227,6 +227,7 @@ export function DashboardPageTabs({
                     size="small"
                     className="!h-5 !min-w-5 !px-0.5 opacity-45 group-hover:opacity-100"
                     icon={<MoreOutlined />}
+                    aria-label={t('page_actions')}
                     onClick={(e) => e.stopPropagation()}
                   />
                 </Dropdown>

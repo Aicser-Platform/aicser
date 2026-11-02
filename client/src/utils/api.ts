@@ -174,7 +174,7 @@ async function exchangeEeTokenForAicserBearer(providerToken: string): Promise<st
  * Extracted so blob-returning callers (e.g. PDF export downloads) don't have
  * to reimplement this auth logic to stay in sync with fetchApi.
  */
-async function buildApiRequest(
+export async function buildApiRequest(
   endpoint: string,
   options: RequestInit,
 ): Promise<{ url: string; headers: Record<string, string> }> {

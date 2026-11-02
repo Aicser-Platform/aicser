@@ -128,7 +128,7 @@ export const workbookService = {
     if (projectId) form.append('project_id', projectId);
     if (locale) form.append('locale', locale);
     if (timezone) form.append('timezone', timezone);
-    return fetchApi<Workbook & { neutralized: number }>(`${base}/import`, { method: 'POST', body: form });
+    return fetchApi<Workbook & { neutralized: number; macros?: { module: string; kind: string; lines: number }[] }>(`${base}/import`, { method: 'POST', body: form });
   },
   exportXlsx: (id: string) => fetchApiBlob(`${base}/${enc(id)}/export.xlsx`),
   syncDataSource: (id: string) =>

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.edition import is_ee_enabled
@@ -275,6 +276,60 @@ async def get_feed_sidebar(
         sort_by=sort_by,
         leaderboard_limit=leaderboard_limit,
     )
+
+
+class PublishingPolicy(BaseModel):
+    public: Literal["off", "approval", "members"] = "approval"
+    expiry_days: Optional[int] = Field(default=None, ge=1, le=3650)
+
+
+async def _org_approver(current_user: Dict[str, Any], db: AsyncSession) -> tuple:
+    """(organization id, user id) for an owner or admin; anyone else is refused."""
+    from src.modules.feed import publish_policy as policy
+    from src.modules.pricing.feature_gate import get_user_organization_id
+
+    service = FeedService(db)
+    payload = _normalize_user_payload(current_user)
+    user_id = service.resolve_user_id(payload)
+    org_id = await get_user_organization_id(str(user_id), db) if user_id else None
+    if not org_id:
+        raise HTTPException(status_code=403, detail="An organization is required.")
+    if str(user_id) not in {str(i) for i in await policy.approvers(db, org_id)}:
+        raise HTTPException(status_code=403, detail="Only organization owners and admins can do this.")
+    return UUID(str(org_id)), user_id
+
+
+@router.get("/publishing/policy")
+async def get_publishing_policy(current_user: Dict[str, Any] = Depends(JWTCookieBearer()), db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    from src.modules.feed import publish_policy as policy
+
+    org_id, _ = await _org_approver(current_user, db)
+    return await policy.get_policy(db, org_id)
+
+
+@router.put("/publishing/policy")
+async def put_publishing_policy(body: PublishingPolicy, current_user: Dict[str, Any] = Depends(JWTCookieBearer()),
+                                db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    from src.modules.feed import publish_policy as policy
+
+    org_id, user_id = await _org_approver(current_user, db)
+    current = await policy.get_policy(db, org_id)
+    saved = await policy.set_policy(db, org_id, {**current, **body.model_dump()})
+    await db.commit()
+    await policy.audit("publishing_policy_changed", user_id=user_id, org_id=org_id, resource_type="organization", resource_id=org_id, metadata=saved)
+    return saved
+
+
+@router.post("/publishing/take-down")
+async def take_down_public(current_user: Dict[str, Any] = Depends(JWTCookieBearer()), db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    org_id, user_id = await _org_approver(current_user, db)
+    return await FeedService(db).take_down_public(org_id, user_id)
+
+
+@router.post("/publishing/take-down/undo")
+async def undo_take_down(current_user: Dict[str, Any] = Depends(JWTCookieBearer()), db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    org_id, user_id = await _org_approver(current_user, db)
+    return await FeedService(db).restore_public(org_id, user_id)
 
 
 @router.get("/approvals/queue", response_model=ApprovalQueueResponse)

@@ -1,0 +1,1 @@
+export { AgentMemoryTab } from '@/ee';

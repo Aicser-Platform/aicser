@@ -337,7 +337,6 @@ export function SavedQueriesSnapshotsPane({
         ),
       },
       {
-        title: t('col_actions'),
         key: 'actions',
         width: 168,
         fixed: 'right',
@@ -405,7 +404,6 @@ export function SavedQueriesSnapshotsPane({
         ),
       },
       {
-        title: t('col_actions'),
         key: 'actions',
         width: 96,
         fixed: 'right',

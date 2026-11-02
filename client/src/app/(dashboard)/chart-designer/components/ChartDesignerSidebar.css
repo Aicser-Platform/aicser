@@ -68,21 +68,22 @@
   flex-shrink: 0;
 }
 
-.library-toolbar .library-facets.ant-segmented {
+/* Which charts the list shows: the dashboards library's control ("All", then icon views). */
+.library-facets.ant-segmented {
   width: 100%;
   padding: 2px;
-  background: var(--ant-color-fill-quaternary, rgba(255, 255, 255, 0.06));
+  background: var(--ant-color-fill-quaternary);
 }
 
-.library-toolbar .library-facets.ant-segmented .ant-segmented-item {
+.library-facets.ant-segmented .ant-segmented-item {
   flex: 1 1 0;
   min-width: 0;
 }
 
-.library-toolbar .library-facets.ant-segmented .ant-segmented-item-label {
+.library-facets.ant-segmented .ant-segmented-item-label {
   min-height: 28px;
   line-height: 28px;
-  padding: 0 2px;
+  padding: 0 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,13 +94,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
   font-size: 12px;
-  line-height: 1;
-}
-
-.library-facet-label .anticon {
-  font-size: 13px;
 }
 
 .library-collection-controls {
@@ -188,7 +183,6 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--studio-text-secondary);
   opacity: 0.72;
   padding: 0 8px;
@@ -280,14 +274,19 @@
   background: transparent;
   color: var(--studio-muted, #8c8c8c);
   cursor: pointer;
-  padding: 0 2px;
-  display: flex;
+  padding: 0;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm, 6px);
   flex-shrink: 0;
 }
 
 .nav-item .fav-btn:hover {
   color: #faad14;
+  background: var(--ant-color-fill-tertiary);
 }
 
 .item-actions {

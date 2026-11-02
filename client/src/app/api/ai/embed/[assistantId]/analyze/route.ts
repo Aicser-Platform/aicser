@@ -74,7 +74,7 @@ export async function POST(request: NextRequest, ctx: Ctx) {
       const tolerantBody = pipeTolerantStream(response.body);
       const streamHeaders: Record<string, string> = {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
       };

@@ -865,6 +865,27 @@ async def publish_dashboard(db: AsyncSession, dashboard_id: UUID, make_public: b
     return {"success": True, "dashboard_id": str(dashboard_id), "is_public": make_public}
 
 
+async def request_public_access(db: AsyncSession, dashboard_id: UUID, current_user: Any) -> dict:
+    """Publish as public without sign-in. It opens now or on approval, per the organization's policy."""
+    from src.modules.authentication.helpers import extract_user_payload
+    from src.modules.feed.schemas import AssetType, FeedVisibility, PublicationStatus, PublishAssetRequest
+    from src.modules.feed.service import FeedService
+
+    dashboard = await DashboardService(db).get_by_id(dashboard_id)
+    if not dashboard:
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    result = await FeedService(db).publish_asset(
+        PublishAssetRequest(asset_type=AssetType.dashboard, asset_id=dashboard_id, title=dashboard.name, description=dashboard.description,
+                            project_id=getattr(dashboard, "project_id", None), visibility=FeedVisibility.public, requires_login=False,
+                            status=PublicationStatus.approved),
+        current_user if isinstance(current_user, dict) else extract_user_payload(current_user),
+    )
+    state = getattr(result.status, "value", result.status)
+    if state == PublicationStatus.approved.value:
+        await publish_dashboard(db, dashboard_id, True)
+    return {"success": True, "dashboard_id": str(dashboard_id), "is_public": state == PublicationStatus.approved.value, "status": state}
+
+
 async def export_dashboard(
     dashboard_id: str,
     export_format: str,

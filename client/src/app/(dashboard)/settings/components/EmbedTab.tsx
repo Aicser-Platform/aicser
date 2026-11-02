@@ -1,3 +1,4 @@
+import { StatusTag, humanizeStatus } from '@/components/ui/StatusTag';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -356,11 +357,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : 'red'}>{status?.toUpperCase()}</Tag>
+        <StatusTag tone={status === 'active' ? 'ok' : 'error'}>{humanizeStatus(status)}</StatusTag>
       ),
     },
     {
-      title: t('col_actions'),
+      align: 'right' as const,
       key: 'actions',
       render: (_: unknown, record: EmbedTokenRecord) => (
         <Space size={0}>
@@ -416,10 +417,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       }
     >
       <div className="flex flex-col gap-5">
-      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        {t('embed_tab_desc')}
-      </Paragraph>
-
       <EmbedDeveloperGuide />
 
       <Card
@@ -456,7 +453,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
           </PermissionGuard>
         }
       >
-        <Paragraph type="secondary">{t('embed_assistants_desc')}</Paragraph>
         <Table
           rowKey="id"
           size="small"
@@ -492,7 +488,7 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
               ),
             },
             {
-              title: t('col_actions'),
+              align: 'right' as const,
               key: 'actions',
               render: (_, row) => (
                 <Button

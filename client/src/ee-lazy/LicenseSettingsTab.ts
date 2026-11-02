@@ -1,0 +1,1 @@
+export { LicenseSettingsTab } from '@/ee';

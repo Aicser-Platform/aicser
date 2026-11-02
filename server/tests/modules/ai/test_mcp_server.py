@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from ee.modules.mcp_server import router as R
-from ee.modules.mcp_server import tools as T
+from ee.modules.ai import governed_tools as T
 
 CALLER = T.Caller(user_id="u1", organization_id="o1")
 

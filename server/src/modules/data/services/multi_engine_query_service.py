@@ -2395,7 +2395,10 @@ class SparkEngine(BaseQueryEngine):
                     logger.info("⚡ SparkEngine: connected via Databricks Connect")
                     return
                 except ImportError:
-                    logger.warning("databricks-connect not installed; falling back to Spark Connect")
+                    logger.warning(
+                        "Databricks Connect is an optional add-on and is not installed (see requirements-databricks.txt); "
+                        "trying Spark Connect"
+                    )
 
             if self._connect_url:
                 # Open-source Spark Connect (Spark 3.4+)

@@ -10,6 +10,7 @@ import {
   Typography,
   message,
   Segmented,
+  Select,
   Button,
   Tooltip,
   Spin,
@@ -27,8 +28,6 @@ import {
   FolderOutlined,
   CopyOutlined,
   LinkOutlined,
-  HistoryOutlined,
-  AppstoreOutlined,
   UndoOutlined,
   BarChartOutlined,
 } from '@ant-design/icons';
@@ -61,6 +60,7 @@ const { Text } = Typography;
 const getChartIcon = (type: string) => getDashboardChartTypeIcon(type);
 
 const PAGE_SIZE = 40;
+const FACETS = ['all', 'recent', 'library', 'on_dashboards', 'favorites', 'trash'] as const;
 
 type ChartDesignerSidebarProps = {
   onAddTemplate?: (template: WidgetTemplate) => void;
@@ -476,59 +476,15 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
     return w?.chartId ? String(w.chartId) : null;
   }, [widgets, selectedWidgetId]);
 
-  const facetOptions = useMemo(
-    () => [
-      {
-        value: 'all',
-        label: (
-          <span className="library-facet-label" title={t('facet_all')}>
-            {t('facet_all')}
-          </span>
-        ),
-      },
-      {
-        value: 'recent',
-        label: (
-          <span className="library-facet-label" title={t('facet_recent')} aria-label={t('facet_recent')}>
-            <HistoryOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'library',
-        label: (
-          <span className="library-facet-label" title={t('facet_library')} aria-label={t('facet_library')}>
-            <AppstoreOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'on_dashboards',
-        label: (
-          <span className="library-facet-label" title={t('facet_used')} aria-label={t('facet_used')}>
-            <DashboardOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'favorites',
-        label: (
-          <span className="library-facet-label" title={t('facet_favorites_label')} aria-label={t('facet_favorites_label')}>
-            <StarOutlined />
-          </span>
-        ),
-      },
-      {
-        value: 'trash',
-        label: (
-          <span className="library-facet-label" title={t('facet_trash')} aria-label={t('facet_trash')}>
-            <DeleteOutlined />
-          </span>
-        ),
-      },
-    ],
-    [t],
-  );
+  // Same control as the dashboards library: "All" in words, the other views as icons named on hover.
+  const facetLabels: Record<(typeof FACETS)[number], string> = {
+    all: t('facet_all'),
+    recent: t('facet_recent'),
+    library: t('facet_library'),
+    on_dashboards: t('facet_used'),
+    favorites: t('facet_favorites_label'),
+    trash: t('facet_trash'),
+  };
 
   if (libraryCollapsed) {
     return (
@@ -553,13 +509,15 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
       </div>
 
       <div className="library-toolbar">
-        <Segmented
+        {/* Labelled, not a row of unexplained icons. */}
+        <Select
           size="small"
-          block
           className="library-facets"
+          style={{ width: '100%' }}
           value={facet}
           onChange={(v) => setFacet(v as ChartLibraryFacet)}
-          options={facetOptions}
+          options={FACETS.map((key) => ({ value: key, label: facetLabels[key] }))}
+          aria-label={t('library_title')}
         />
         {facet === 'trash' ? (
           <div className="library-toolbar-extra" style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -580,7 +538,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
               }
             >
               <Tooltip title={t('add_chart')}>
-                <Button size="small" type="primary" icon={<PlusOutlined />} />
+                <Button size="small" type="primary" icon={<PlusOutlined />} aria-label={t('add_chart')} />
               </Tooltip>
             </Popover>
           </div>
@@ -640,7 +598,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                 }
               >
                 <Tooltip title={t('add_chart')}>
-                  <Button size="small" type="primary" icon={<PlusOutlined />} />
+                  <Button size="small" type="primary" icon={<PlusOutlined />} aria-label={t('add_chart')} />
                 </Tooltip>
               </Popover>
             }
@@ -663,7 +621,7 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
         ) : (
           <div
             className="nav-items-list virtual-list"
-            style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}
+            style={{ height: `${rowVirtualizer.getTotalSize() + (hasMore ? 44 : 0)}px`, position: 'relative' }}
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
               const item = items[virtualRow.index];
@@ -710,6 +668,9 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                   <button
                     type="button"
                     className="fav-btn"
+                    aria-label={item.isFavorite ? t('favorite_remove') : t('favorite_add')}
+                    aria-pressed={Boolean(item.isFavorite)}
+                    title={item.isFavorite ? t('favorite_remove') : t('favorite_add')}
                     onClick={(e) => {
                       e.stopPropagation();
                       void toggleFavorite(item);
@@ -788,19 +749,20 @@ export const ChartDesignerSidebar: React.FC<ChartDesignerSidebarProps> = ({ onAd
                 </div>
               );
             })}
+            {/* Rows are positioned absolutely (virtual list), so this is placed after the last one. */}
+            {hasMore && (
+              <Button
+                size="small"
+                type="link"
+                block
+                loading={loadingMore}
+                onClick={() => void loadPage(false)}
+                style={{ position: 'absolute', left: 0, top: rowVirtualizer.getTotalSize() + 4 }}
+              >
+                {t('load_more')}
+              </Button>
+            )}
           </div>
-        )}
-
-        {hasMore && (
-          <Button
-            size="small"
-            type="link"
-            loading={loadingMore}
-            onClick={() => void loadPage(false)}
-            style={{ marginTop: 8 }}
-          >
-            {t('load_more')}
-          </Button>
         )}
       </div>
 

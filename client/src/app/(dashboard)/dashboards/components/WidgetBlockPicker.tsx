@@ -200,7 +200,7 @@ export function WidgetBlockPicker({
       <div>
         {showFeaturedOnly && filteredFeatured.length > 0 && (
           <>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">{t('blocks_featured')}</div>
+            <div className="text-[10px] font-semibold tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">{t('blocks_featured')}</div>
             <div className="grid grid-cols-4 gap-0.5 px-1.5 pb-1">
               {filteredFeatured.map((item) => (
                 <WidgetBlockTile
@@ -228,7 +228,7 @@ export function WidgetBlockPicker({
         {(showExpanded || normalizedSearch) &&
           filteredSections.map((section) => (
             <div key={section.title} className="mt-1">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
+              <div className="text-[10px] font-semibold tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
                 {sectionLabel(section.title, t)}
               </div>
               <div className="grid grid-cols-4 gap-0.5 px-1.5 pb-1">
@@ -283,7 +283,7 @@ export function WidgetBlockPicker({
 
       {onApplyStoryStarter && !normalizedSearch ? (
         <div className="mb-6 text-left">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mb-2 text-center">
+          <div className="text-[10px] font-semibold tracking-wide text-text-tertiary mb-2 text-center">
             {t('story_starters_label')}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -307,7 +307,7 @@ export function WidgetBlockPicker({
       {/* The short list, until "Show all" — then every block once, by section (not both). */}
       {!showExpanded && !hideBlocks ? (
         <>
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
+          <div className="text-[10px] font-semibold tracking-wide text-text-tertiary mx-2.5 mt-0 mb-1.5 text-center">{t('blocks_featured')}</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {filteredFeatured.map((item) => (
               <WidgetBlockTile
@@ -333,7 +333,7 @@ export function WidgetBlockPicker({
       {showExpanded && !hideBlocks &&
         filteredSections.map((section) => (
           <div key={section.title} className="mt-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
+            <div className="text-[10px] font-semibold tracking-wide text-text-tertiary mx-2.5 mt-2 mb-1.5 text-left">
               {sectionLabel(section.title, t)}
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2 text-left">

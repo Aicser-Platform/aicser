@@ -99,9 +99,9 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
 
   useEffect(() => {
     onSetAction?.(
-      <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
-        {t('refresh')}
-      </Button>
+      <Tooltip title={t('refresh')}>
+        <Button icon={<ReloadOutlined />} aria-label={t('refresh')} onClick={() => void load()} loading={loading} />
+      </Tooltip>
     );
   }, [loading, onSetAction, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -117,42 +117,55 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
     {
       title: t('col_decision'),
       key: 'decision',
-      render: (_, r) => (
-        <span>
-          <Text strong>{KNOWN_SETS.has(r.question_set) ? t(`set_${r.question_set}` as never) : r.question_set}</Text>
-          {r.question_key ? <Text type="secondary"> · {r.question_key}</Text> : null}
-        </span>
-      ),
+      width: 240,
+      fixed: 'left',
+      // Name on one line, technical key under it; long values shorten and show in full on hover.
+      render: (_, r) => {
+        const name = KNOWN_SETS.has(r.question_set) ? t(`set_${r.question_set}` as never) : r.question_set;
+        return (
+          <div style={{ maxWidth: 224 }}>
+            <Text strong ellipsis={{ tooltip: name }} style={{ display: 'block' }}>{name}</Text>
+            {r.question_key ? (
+              <Text type="secondary" ellipsis={{ tooltip: r.question_key }} style={{ display: 'block', fontSize: 12 }}>{r.question_key}</Text>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       title: t('col_mode'),
+      width: 110,
       key: 'mode',
       render: (_, r) => {
         const mode = modeBySet[r.question_set] || 'off';
         return <Tag color={MODE_COLOR[mode]}>{t(`mode_${mode}` as never)}</Tag>;
       },
     },
-    { title: t('col_samples'), dataIndex: 'samples', align: 'right' },
+    { title: t('col_samples'), dataIndex: 'samples', align: 'right', width: 100 },
     {
       title: <Hint label={t('col_confident')} hint={t('col_confident_hint')} />,
+      width: 130,
       dataIndex: 'confident_rate',
       align: 'right',
       render: (v: number) => pct(v),
     },
     {
       title: <Hint label={t('col_agreement')} hint={t('col_agreement_hint')} />,
+      width: 130,
       dataIndex: 'agreement_when_confident',
       align: 'right',
       render: (v: number | null) => pct(v),
     },
     {
       title: t('col_p95'),
+      width: 110,
       dataIndex: 'p95_ms',
       align: 'right',
       render: (v: number | null) => (v == null ? '—' : `${v} ms`),
     },
     {
       title: <Hint label={t('col_calibration')} hint={t('col_calibration_hint')} />,
+      width: 220,
       key: 'calibration',
       align: 'right',
       render: (_, r) => {
@@ -164,12 +177,14 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
     },
     {
       title: t('col_cost'),
+      width: 100,
       dataIndex: 'cost',
       align: 'right',
       render: (v: number) => `$${(v || 0).toFixed(4)}`,
     },
     {
       title: <Hint label={t('col_ready')} hint={t('col_ready_hint')} />,
+      width: 110,
       key: 'ready',
       render: (_, r) =>
         r.ready_for_primary ? <Tag color="green">{t('ready_yes')}</Tag> : <Tag>{t('ready_not_yet')}</Tag>,
@@ -264,7 +279,7 @@ export const AIDecisionLayerTab: React.FC<TabComponentProps> = ({ onSetAction })
           columns={columns}
           dataSource={rows}
           pagination={false}
-          scroll={{ x: 760 }}
+          scroll={{ x: 1190 }}
         />
       )}
     </Card>

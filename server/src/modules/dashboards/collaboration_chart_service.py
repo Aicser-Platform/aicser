@@ -139,7 +139,9 @@ async def persist_widget_update(
 
         async with AsyncSessionLocal() as db:
             await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
-            await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
+            await enforce_publish_owner_edit(
+                db, dash_uuid, {"id": user_id}, permission="dashboard:edit"
+            )
             await enforce_publish_owner_chart_edit(db, chart_uuid, {"id": user_id})
 
             service = DashboardChartService(db)
@@ -177,7 +179,9 @@ async def persist_widget_add(
 
         async with AsyncSessionLocal() as db:
             await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
-            await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
+            await enforce_publish_owner_edit(
+                db, dash_uuid, {"id": user_id}, permission="dashboard:edit"
+            )
 
             service = DashboardChartService(db)
             chart_payload, parsed_layout = normalize_chart_payload(_client_widget_payload(widget, layout))
@@ -213,7 +217,9 @@ async def persist_widget_remove(
 
         async with AsyncSessionLocal() as db:
             await require_permission(user_id, "chart:delete", **(await dashboard_scope(db, dash_uuid)))
-            await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
+            await enforce_publish_owner_edit(
+                db, dash_uuid, {"id": user_id}, permission="dashboard:edit"
+            )
 
             service = DashboardChartService(db)
             chart = await service.get_chart(dash_uuid, chart_uuid)
@@ -250,7 +256,9 @@ async def persist_layout_update(
 
         async with AsyncSessionLocal() as db:
             await require_permission(user_id, "chart:edit", **(await dashboard_scope(db, dash_uuid)))
-            await enforce_publish_owner_edit(db, dash_uuid, {"id": user_id})
+            await enforce_publish_owner_edit(
+                db, dash_uuid, {"id": user_id}, permission="dashboard:edit"
+            )
 
             service = DashboardChartService(db)
             updated_any = False

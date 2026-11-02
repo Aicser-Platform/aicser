@@ -1,10 +1,27 @@
-/* Prepare recipe editor: steps | data | suggestions. Colours come from theme tokens. */
+/* Prepare recipe editor: suggestions | data | applied steps. Colours come from theme tokens. */
 /* The side panels size themselves (SidePanel: 260px, or a 40px rail when folded). */
 .recipe-editor {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   min-height: 560px;
+}
+
+/* Suggestions lead (what to fix), the steps follow the data they produce. */
+.recipe-editor > .recipe-editor__suggest { order: 1; }
+.recipe-editor > .recipe-editor__grid { order: 2; }
+.recipe-editor > .recipe-editor__steps { order: 3; }
+
+/* A long source name stays inside the panel, cut with … (full name on hover). */
+.recipe-editor__step--source {
+  width: 100%;
+}
+
+.recipe-editor__step--source > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 1200px) {

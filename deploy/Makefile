@@ -121,7 +121,10 @@ ee:
 	$(EE) up -d --build
 # Same as `ee` but never builds server+client+worker in parallel (WSL OOM / swap thrash).
 ee-serial:
-	COMPOSE_PARALLEL_LIMIT=1 $(EE) up -d --build
+	# Build one image at a time, then start from the new images. A single `up -d --build` built the
+	# images but sometimes left the containers on the old ones (2026-10-26).
+	COMPOSE_PARALLEL_LIMIT=1 $(EE) build
+	$(EE) up -d
 ee-up:
 	$(EE) up -d
 ee-build-server:
@@ -182,10 +185,21 @@ eval-modes:
 	# Release gate: every chat mode through the live pipeline — answer shape, text hygiene, time budget.
 	# Options: ONLY=Decide,Forecast  SCALE=1.5 (slower hardware)
 	$(EE) exec server python -m ee.modules.ai.evals.run_mode_eval $(if $(ONLY),--only "$(ONLY)") --time-scale $(or $(SCALE),1.0) --json /tmp/mode_eval.json
+eval-router:
+	# Gate A: Auto workflow router (Chat / Analyze / Agent) vs labelled requests and the old keyword rules.
+	$(EE) exec server python -m ee.modules.ai.evals.run_router_eval --min-accuracy $(or $(MIN),0.85) --json /tmp/router_eval.json
+eval-agent:
+	# Gate B: Aicser Agent on real tasks per task pack. Options: ONLY=finance-pack MIN=0.8
+	$(EE) exec server python -m ee.modules.agent.evals.run_agent_eval $(if $(ONLY),--only "$(ONLY)") --min-success $(or $(MIN),0.8) --json /tmp/agent_eval.json
+eval-agent-candidates:
+	# Learning loop: recent failed / not-helpful agent runs as eval-case candidates.
+	$(EE) exec server python -m ee.modules.agent.evals.export_candidates --days $(or $(DAYS),7) --out /tmp/agent_eval_candidates.json
 eval:
-	# Full AI release gate: execution accuracy + every mode.
+	# Full AI release gate: execution accuracy + every mode + workflow routing + agent tasks.
 	$(MAKE) eval-answers
 	$(MAKE) eval-modes
+	$(MAKE) eval-router
+	$(MAKE) eval-agent
 eval-decisions:
 	# Decision-layer golden set (needs DECISION_LAYER_BACKEND credentials).
 	$(EE) exec server python -m ee.modules.ai.evals.run_decision_eval --backend $(or $(BACKEND),jev)
@@ -205,7 +219,7 @@ seed-rbac-dev:
         dev-ee-logs dev-ee-down dev-ee-turbo dev-ce-warehouse dev-ee-warehouse dev-ee-ollama \
         dev-ce-worker dev-ee-worker dev-ce-observability dev-ee-observability \
         ee-serial ee-build-server ee-build-client \
-        eval eval-answers eval-modes eval-decisions migrate-ee \
+        eval eval-answers eval-modes eval-router eval-agent eval-agent-candidates eval-decisions migrate-ee \
         dev-down dev-logs ce ce-down ce-logs ce-restart ce-recreate ce-reset ce-fresh \
         ee ee-down ee-logs ee-ollama ee-client-light ee-restart ee-restart-client \
         ee-recreate ee-reset ee-self-host-build ee-self-host-up \
