@@ -13,6 +13,12 @@ from src.modules.authentication.rbac.guard import require_permission, user_id_fr
 from src.modules.dashboards.permissions import enforce_publish_owner_edit
 from src.modules.charts.permissions import enforce_publish_owner_chart_edit
 from src.modules.dashboards.chart_data_validation import validate_chart_data
+from src.modules.dashboards.chart_data_cache import (
+    build_chart_data_cache_key,
+    chart_data_cache_ttl,
+    get_cached_chart_data,
+    set_cached_chart_data,
+)
 from src.modules.dashboards.operations import (
     merge_runtime_filters,
     apply_drill_context,
@@ -373,8 +379,11 @@ async def _execute_chart_data(
     identity: Optional[QueryIdentity] = None,
     row_cap: Optional[int] = None,
     embed_columns: Optional[set] = None,
+    refresh: bool = False,
 ) -> dict:
-    """embed_columns (anonymous/embed viewers): see refresh_dashboard_charts."""
+    """embed_columns (anonymous/embed viewers): see refresh_dashboard_charts.
+
+    refresh=True skips the per-viewer chart data cache (see chart_data_cache)."""
     narrow_only = embed_columns is not None
     if narrow_only:
         runtime_filters = restrict_to_exposed(runtime_filters, embed_columns)
@@ -407,6 +416,22 @@ async def _execute_chart_data(
             base_query = apply_drill_context(base_query, drill_context, narrow_only=narrow_only)
         exec_chart.chart_query = base_query
 
+    cache_ttl = chart_data_cache_ttl()
+    cache_key = None
+    if cache_ttl > 0 and chart.chart_type != "text":
+        cache_key = build_chart_data_cache_key(
+            dashboard_id=dashboard_id,
+            chart=chart,
+            chart_query=exec_chart.chart_query,
+            identity=identity,
+            row_cap=row_cap,
+            narrow_only=narrow_only,
+        )
+        if not refresh:
+            cached = get_cached_chart_data(cache_key)
+            if cached is not None:
+                return cached
+
     from src.modules.charts.services.v2.chart_service import track_unapplied_filters
 
     unapplied = track_unapplied_filters()
@@ -437,6 +462,8 @@ async def _execute_chart_data(
     if unapplied:
         # Structured so the card can say, translated, which dashboard filter it ignores.
         result["unapplied_filters"] = list(unapplied)
+    if cache_key:
+        set_cached_chart_data(cache_key, result, cache_ttl)
     return result
 
 
@@ -445,6 +472,7 @@ async def execute_chart(
     dashboard_id: UUID,
     chart_id: UUID,
     token: Optional[str] = Query(None),
+    refresh: bool = Query(False),
     db: AsyncSession = Depends(get_async_session),
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
@@ -458,6 +486,7 @@ async def execute_chart(
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
         embed_columns=None if current_user else await embed_filter_columns(db, dashboard),
+        refresh=refresh,
     )
 
 
@@ -467,6 +496,7 @@ async def execute_chart_with_filters(
     chart_id: UUID,
     payload: dict = Body(default_factory=dict),
     token: Optional[str] = Query(None),
+    refresh: bool = Query(False),
     db: AsyncSession = Depends(get_async_session),
     current_user: Optional[dict] = Depends(JWTCookieBearer(auto_error=False)),
 ):
@@ -487,6 +517,7 @@ async def execute_chart_with_filters(
         identity=_dashboard_query_identity(current_user, dashboard, token),
         row_cap=None if current_user else embed_row_cap(),
         embed_columns=None if current_user else await embed_filter_columns(db, dashboard),
+        refresh=refresh,
     )
 
 

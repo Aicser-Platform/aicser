@@ -161,6 +161,8 @@ class Settings(BaseSettings):
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
     REDIS_URL: str = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    # Per-viewer cache of executed dashboard chart data (0 disables). See dashboards/chart_data_cache.py.
+    CHART_DATA_CACHE_TTL_SECONDS: int = int(os.getenv("CHART_DATA_CACHE_TTL_SECONDS", "300") or "0")
 
     # Environment Settings
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")

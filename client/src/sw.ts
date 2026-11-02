@@ -47,19 +47,6 @@ const serwist = new Serwist({
       },
       handler: new NetworkOnly(),
     },
-    // Never cache authenticated API/auth traffic — analytics must stay fresh.
-    {
-      matcher({ request, url }) {
-        if (request.method !== 'GET') return false;
-        const path = url.pathname;
-        return (
-          path.startsWith('/api/') ||
-          path.startsWith('/auth/') ||
-          path.includes('/socket.io')
-        );
-      },
-      handler: new NetworkOnly(),
-    },
     ...defaultCache,
   ],
   fallbacks: {
@@ -72,6 +59,26 @@ const serwist = new Serwist({
       },
     ],
   },
+});
+
+// API/auth/socket traffic bypasses the service worker entirely (registered before
+// Serwist so it wins). Routing it through a NetworkOnly handler doubled every request
+// in the network panel, added a hop on the hot path, and turned slow upstream
+// responses into opaque SW fetch errors instead of the real status.
+function isBypassPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/auth/') ||
+    pathname.includes('/socket.io')
+  );
+}
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin === self.location.origin && isBypassPath(url.pathname)) {
+    // No respondWith → the browser performs the request itself.
+    event.stopImmediatePropagation();
+  }
 });
 
 serwist.addEventListeners();
