@@ -1216,6 +1216,9 @@
     "drill_through_hint": "Click a value to jump to another page and filter it.",
     "drill_through_none": "なし（ドリルダウンのみ）",
     "stat_format": "数値の書式",
+    "stat_format_number": "数値",
+    "stat_format_currency": "通貨",
+    "stat_format_percent": "パーセント",
     "stat_show_trend": "傾向バッジを表示",
     "stat_threshold_warn": "Warning above",
     "stat_threshold_critical": "Critical above",
@@ -7846,7 +7849,7 @@
     "stat_currency_placeholder": "$",
     "stat_layout": "Layout",
     "stat_layout_hint": "Visual arrangement of the KPI card. Accent colors follow the dashboard or widget palette.",
-    "stat_layout_default": "Default (accent rail)",
+    "stat_layout_default": "標準",
     "stat_layout_compact": "Compact",
     "stat_layout_centered": "Centered",
     "stat_layout_split": "Split (value + spark)",
@@ -7881,6 +7884,7 @@
     "table_columns_hint": "Choose which columns appear in the table",
     "kpi_section_number": "数値",
     "kpi_section_look": "表示",
+    "kpi_section_trend": "トレンド",
     "kpi_section_targets": "目標とアラート"
   },
   "query_editor": {

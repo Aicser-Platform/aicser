@@ -550,6 +550,17 @@
   padding: 0;
 }
 
+/* Filled / tinted KPI layouts (executive, tile): the KPI surface is the card. It fills the card edge
+   to edge (also over the Chart Designer's 20px 24px body padding) instead of sitting inside it as a
+   second, smaller card; the card's own radius, border and shadow frame it. */
+.widget-card.stat-filled .widget-card-body {
+  padding: 0 !important;
+}
+.widget-card.stat-filled .studio-stat-surface {
+  border-radius: 0 !important;
+  border: none !important;
+}
+
 .widget-card.widget-type-slicer .widget-content-root {
   padding: 4px 8px 8px;
 }

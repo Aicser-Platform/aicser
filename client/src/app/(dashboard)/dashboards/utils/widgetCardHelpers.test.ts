@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldShowWidgetHeader } from './widgetCardHelpers';
+import { isFilledStatWidget, shouldShowWidgetHeader } from './widgetCardHelpers';
 
 describe('shouldShowWidgetHeader', () => {
   it('hides header for divider widgets', () => {
@@ -38,5 +38,15 @@ describe('shouldShowWidgetHeader', () => {
     expect(
       shouldShowWidgetHeader({ chartType: 'stat', title: 'Overdue Loans', chartOptions: { layout: 'tile' } }, designer),
     ).toBe(false); // the tile layout writes its own title
+  });
+});
+
+describe('isFilledStatWidget', () => {
+  it('is true only for KPI layouts that paint their own surface', () => {
+    expect(isFilledStatWidget({ chartType: 'stat', chartOptions: { layout: 'executive' } })).toBe(true);
+    expect(isFilledStatWidget({ chartType: 'stat', chartOptions: { layout: 'tile' } })).toBe(true);
+    expect(isFilledStatWidget({ chartType: 'stat', chartOptions: { layout: 'default' } })).toBe(false);
+    expect(isFilledStatWidget({ chartType: 'stat' })).toBe(false);
+    expect(isFilledStatWidget({ chartType: 'bar', chartOptions: { layout: 'executive' } })).toBe(false);
   });
 });

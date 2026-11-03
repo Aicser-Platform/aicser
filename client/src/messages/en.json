@@ -1302,6 +1302,9 @@
     "drill_through_hint": "Open another page on click.",
     "drill_through_none": "None — drill-down only",
     "stat_format": "Number format",
+    "stat_format_number": "Number",
+    "stat_format_currency": "Currency",
+    "stat_format_percent": "Percent",
     "stat_show_trend": "Show trend badge",
     "stat_sparkline_type": "Sparkline type",
     "stat_sparkline_line": "Line",
@@ -8261,7 +8264,7 @@
     "stat_currency_placeholder": "$",
     "stat_layout": "Layout",
     "stat_layout_hint": "Visual arrangement of the KPI card. Accent colors follow the dashboard or widget palette.",
-    "stat_layout_default": "Default (accent rail)",
+    "stat_layout_default": "Default",
     "stat_layout_compact": "Compact",
     "stat_layout_centered": "Centered",
     "stat_layout_split": "Split (value + spark)",
@@ -8296,6 +8299,7 @@
     "table_columns_hint": "Choose which columns appear in the table",
     "kpi_section_number": "Number",
     "kpi_section_look": "Look",
+    "kpi_section_trend": "Trend",
     "kpi_section_targets": "Target & alerts"
   },
   "query_editor": {

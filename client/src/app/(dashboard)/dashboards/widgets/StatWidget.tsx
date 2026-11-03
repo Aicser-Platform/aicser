@@ -339,6 +339,27 @@ function kpiValueStyle(px: number, color: string | undefined): React.CSSProperti
   } as React.CSSProperties;
 }
 
+/** One inset for every layout: lines the KPI up with the card title and source line (both 12px). */
+const KPI_PADDING = '12px';
+const KPI_PADDING_DENSE = '6px 12px';
+
+/** The KPI's label, the same in every layout that shows one: up to two lines, wrapping between words. */
+function kpiLabelStyle(px: number, color = 'var(--ant-color-text-secondary)'): React.CSSProperties {
+  return {
+    fontSize: px,
+    fontWeight: 500,
+    lineHeight: 1.3,
+    color,
+    maxWidth: '100%',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    wordBreak: 'normal',
+    overflowWrap: 'normal',
+  };
+}
+
 export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, filterValue, query }) => {
   const t = useTranslations('stat_widget');
 
@@ -553,7 +574,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       <div
         ref={sizeRef}
         {...interactiveProps}
-        className="studio-stat-root studio-stat-executive text-white"
+        className="studio-stat-root studio-stat-surface studio-stat-executive text-white"
         aria-label={ariaLabel}
         style={{
           // The headline number is the one thing a KPI card must never truncate: size it to the
@@ -564,7 +585,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          padding: '14px 16px 12px',
+          padding: KPI_PADDING,
           background: cardColor,
           color: '#ffffff',
           borderRadius: 6,
@@ -574,59 +595,50 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           ...(interactiveProps.style || {}),
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0, flex: '1 1 auto' }}>
-          <div
-            className="studio-stat-executive-icon"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255,255,255,0.16)',
-              color: '#ffffff',
-              flex: '0 0 auto',
-              fontSize: 16,
-            }}
-            aria-hidden
-          >
-            {resolveKpiIcon(config.icon, config.iconName, displayTitle, format)}
-          </div>
-          <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: '1 1 auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <div
-              role="heading"
-              aria-level={2}
-              className={`${valueClass} studio-stat-executive-value text-white`}
+              className="studio-stat-executive-icon"
               style={{
-                margin: 0,
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255,255,255,0.16)',
                 color: '#ffffff',
-                fontSize: Math.round(valuePx * 0.9), // the icon beside it takes some width
-                whiteSpace: 'nowrap',
-                fontWeight: 800,
-                lineHeight: 1.1,
+                flex: '0 0 auto',
+                fontSize: 14,
               }}
+              aria-hidden
             >
-              <span aria-live="polite" title={formattedValue} style={{ color: '#ffffff' }}>{formattedValue}</span>
+              {resolveKpiIcon(config.icon, config.iconName, displayTitle, format)}
             </div>
-            <div
-              className="studio-stat-label studio-stat-executive-label text-white/90"
-              style={{
-                color: 'rgba(255,255,255,0.9)',
-                fontSize: Math.max(13, labelPx),
-                fontWeight: 500,
-                lineHeight: 1.3,
-                whiteSpace: 'normal',
-                overflow: 'visible',
-                // Wrap between words only ("Outstanding", never "Outstand / ing").
-                wordBreak: 'normal',
-                overflowWrap: 'normal',
-                hyphens: 'auto',
-              }}
-              title={titleLabel}
-            >
-              {titleLabel}
-            </div>
+            {titleLabel ? (
+              <div
+                className="studio-stat-label studio-stat-executive-label text-white/90"
+                style={kpiLabelStyle(labelPx, 'rgba(255,255,255,0.9)')}
+                title={titleLabel}
+              >
+                {titleLabel}
+              </div>
+            ) : null}
+          </div>
+          <div
+            role="heading"
+            aria-level={2}
+            className={`${valueClass} studio-stat-executive-value text-white`}
+            style={{
+              margin: 0,
+              color: '#ffffff',
+              fontSize: valuePx,
+              whiteSpace: 'nowrap',
+              fontWeight: 700,
+              lineHeight: 1.1,
+            }}
+          >
+            <span aria-live="polite" title={formattedValue} style={{ color: '#ffffff' }}>{formattedValue}</span>
           </div>
         </div>
 
@@ -685,13 +697,15 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
       <div
         ref={sizeRef}
         {...interactiveProps}
+        className="studio-stat-root studio-stat-surface studio-stat-tile"
         aria-label={ariaLabel}
         style={{
           height: '100%',
+          boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          padding: '14px 16px',
+          padding: KPI_PADDING,
           background: withAlpha(accent, 0.1),
           border: `1px solid ${withAlpha(accent, 0.28)}`,
           borderRadius: 6,
@@ -699,21 +713,11 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           ...(interactiveProps.style || {}),
         }}
       >
-        <Text
-          style={{
-            fontSize: labelPx,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            color: 'var(--ant-color-text-secondary)',
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={titleLabel}
-        >
-          {titleLabel}
-        </Text>
+        {titleLabel ? (
+          <Text className="studio-stat-label" style={kpiLabelStyle(labelPx)} title={titleLabel}>
+            {titleLabel}
+          </Text>
+        ) : null}
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <Title level={2} className={valueClass} style={kpiValueStyle(valuePx, valueColor)}>
             <span aria-live="polite" title={formattedValue}>{formattedValue}</span>
@@ -750,7 +754,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
-          padding: '8px 16px 8px 12px',
+          padding: KPI_PADDING,
           ...(interactiveProps.style || {}),
         }}
       >
@@ -798,7 +802,7 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 10,
-          padding: '4px 12px',
+          padding: KPI_PADDING_DENSE,
           ...(interactiveProps.style || {}),
         }}
       >
@@ -838,33 +842,19 @@ export const StatWidget: React.FC<StatWidgetProps> = ({ data, config, onFilter, 
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        // Value lines up with the card title (12px); no side stripe - it sat on this inner area,
-        // not the card, so it never matched the card's edge or height.
-        padding: isCentered ? '12px 16px' : '8px 16px 8px 12px',
+        // Value lines up with the card title (12px).
+        padding: KPI_PADDING,
         textAlign: isCentered ? 'center' : 'left',
         alignItems: isCentered ? 'center' : 'flex-start',
         gap: 4,
         ...(interactiveProps.style || {}),
       }}
     >
-      {isCentered && (
-        <Text
-          type="secondary"
-          style={{
-            fontSize: labelPx,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            marginBottom: 2,
-            maxWidth: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={titleLabel}
-        >
+      {isCentered && titleLabel ? (
+        <Text className="studio-stat-label" style={kpiLabelStyle(labelPx)} title={titleLabel}>
           {titleLabel}
         </Text>
-      )}
+      ) : null}
 
       <div
         style={{

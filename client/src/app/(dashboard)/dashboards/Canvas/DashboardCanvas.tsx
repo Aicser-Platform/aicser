@@ -39,7 +39,7 @@ import { DashboardWidgetCell } from '../components/DashboardWidgetCell';
 import { LazyWidgetMount } from '../components/LazyWidgetMount';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { getCrossFilterValues } from '../utils/filterOperators';
-import { shouldShowWidgetHeader } from '../utils/widgetCardHelpers';
+import { isFilledStatWidget, shouldShowWidgetHeader } from '../utils/widgetCardHelpers';
 import { DashboardIcon } from '../icons';
 import '../icons/IconPicker.css';
 import { isLayoutSlotWidget } from '../utils/layoutScaffolds';
@@ -1084,7 +1084,7 @@ export default function DashboardCanvas({
                 />
               ) : null}
               <div
-                className={`widget-card ${isSelected ? 'selected' : ''} ${isMultiSelected ? 'multi-selected' : ''} ${isCrossFilterSource ? 'is-cross-filter-source' : ''} ${peerEditingWidgetId === w.id ? 'is-peer-editing' : ''} widget-type-${w.chartType} ${!showHeader ? 'header-hidden' : ''} ${w.chartOptions?.backgroundColor === 'transparent' ? 'is-transparent' : ''} ${isLayoutSlot ? 'is-layout-slot' : ''}`}
+                className={`widget-card ${isSelected ? 'selected' : ''} ${isMultiSelected ? 'multi-selected' : ''} ${isCrossFilterSource ? 'is-cross-filter-source' : ''} ${peerEditingWidgetId === w.id ? 'is-peer-editing' : ''} widget-type-${w.chartType} ${!showHeader ? 'header-hidden' : ''} ${w.chartOptions?.backgroundColor === 'transparent' ? 'is-transparent' : ''} ${isLayoutSlot ? 'is-layout-slot' : ''} ${isFilledStatWidget(w) ? 'stat-filled' : ''}`}
                 data-widget-id={w.id}
                 role="group"
                 aria-label={widgetAriaLabel}

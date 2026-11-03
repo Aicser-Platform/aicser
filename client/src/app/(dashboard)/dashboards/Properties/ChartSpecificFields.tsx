@@ -37,7 +37,6 @@ import type { ConditionalFormattingRule } from './ConditionalFormattingEditor';
 import { TableColumnManager } from './TableColumnManager';
 import type { DashboardFieldDragPayload } from '../utils/dashboardFieldDrag';
 import { StatKpiFields } from './StatKpiFields';
-import { COMPARISON_PERIOD_LABELS } from '../utils/timeIntelligence';
 import { validateYMetrics } from '../utils/metricValidation';
 import { getWidgetPropertyProfile } from './widgetPropertyProfile';
 import { IconPicker } from '../icons';
@@ -632,67 +631,7 @@ export const ChartSpecificFields: React.FC<ChartFieldsProps> = ({
           )}
 
           {chartType === 'stat' && onUpdateChartOption && (
-            <>
-              <SelectField
-                label={t('stat_format')}
-                value={chartOptions?.format || 'number'}
-                onChange={(value) => onUpdateChartOption('format', value)}
-                options={[
-                  { label: 'Number', value: 'number' },
-                  { label: 'Currency', value: 'currency' },
-                  { label: 'Percent', value: 'percent' },
-                ]}
-                showSearch={false}
-              />
-              <CheckboxField
-                label={t('stat_show_trend')}
-                checked={chartOptions?.showTrend !== false}
-                onChange={(checked) => onUpdateChartOption('showTrend', checked)}
-              />
-              <StatKpiFields chartOptions={chartOptions || {}} onUpdate={onUpdateChartOption} />
-              {chartOptions?.showSparkline && (
-                <SelectField
-                  label={t('stat_sparkline_type')}
-                  value={chartOptions?.sparklineType || 'line'}
-                  onChange={(v) => onUpdateChartOption('sparklineType', v)}
-                  options={[
-                    { label: t('stat_sparkline_line'), value: 'line' },
-                    { label: t('stat_sparkline_bar'), value: 'bar' },
-                  ]}
-                  showSearch={false}
-                />
-              )}
-              <SelectField
-                label={t('stat_comparison_period')}
-                hint={t('stat_comparison_period_hint')}
-                value={chartOptions?.comparisonPeriod || 'none'}
-                onChange={(v) => {
-                  const labels: Record<string, string> = {
-                    wow: COMPARISON_PERIOD_LABELS.wow,
-                    mom: COMPARISON_PERIOD_LABELS.mom,
-                    qoq: COMPARISON_PERIOD_LABELS.qoq,
-                    yoy: COMPARISON_PERIOD_LABELS.yoy,
-                    none: '',
-                  };
-                  const legacyPrefixed = Object.values(COMPARISON_PERIOD_LABELS).map((l) => `vs ${l}`);
-                  onUpdateChartOption('comparisonPeriod', v === 'none' ? undefined : v);
-                  const prevLabel = String(chartOptions?.comparisonPeriodLabel || '');
-                  const prevAuto =
-                    Object.values(labels).includes(prevLabel) ||
-                    legacyPrefixed.includes(prevLabel) ||
-                    prevLabel === '';
-                  if (prevAuto) onUpdateChartOption('comparisonPeriodLabel', labels[v] || '');
-                }}
-                options={[
-                  { label: t('stat_comparison_none'), value: 'none' },
-                  { label: t('stat_comparison_wow'), value: 'wow' },
-                  { label: t('stat_comparison_mom'), value: 'mom' },
-                  { label: t('stat_comparison_qoq'), value: 'qoq' },
-                  { label: t('stat_comparison_yoy'), value: 'yoy' },
-                ]}
-                showSearch={false}
-              />
-            </>
+            <StatKpiFields chartOptions={chartOptions || {}} onUpdate={onUpdateChartOption} />
           )}
 
           {chartType === 'gauge' && onUpdateChartOption && (
