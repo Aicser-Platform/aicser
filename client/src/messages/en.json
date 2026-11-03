@@ -10784,6 +10784,8 @@
     "group_admin": "Admin",
     "group_governance": "Governance",
     "group_data_platform": "Data platform",
+    "plugins_label": "Plug-ins",
+    "plugins_desc": "Visuals, connectors, AI skills, and MCP connections",
     "lakehouse_label": "Lakehouse",
     "access-overview_label": "Access overview",
     "access-overview_desc": "Row and column rules across every connection",

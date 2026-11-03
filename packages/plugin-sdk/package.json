@@ -1,0 +1,15 @@
+{
+  "name": "@aicser/plugin-sdk",
+  "version": "1.0.0",
+  "description": "TypeScript interfaces and build helpers for Aicser plug-ins",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts src/bundler.ts --format esm,cjs --dts"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}
+

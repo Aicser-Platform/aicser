@@ -62,6 +62,7 @@ from src.modules.notebooks.models import Notebook
 from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVersion
 from src.modules.prep.models import PrepRecipe, PrepRecipeVersion  # noqa: F401
 from src.modules.semantic_domains.models import SemanticDomain, SemanticDomainSource  # noqa: F401
+from src.modules.plugins.models import PluginEnablement  # noqa: F401
 
 # ── EE models (only when enterprise) ─────────────────────────────────────────
 # NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)

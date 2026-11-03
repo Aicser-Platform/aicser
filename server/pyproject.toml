@@ -131,6 +131,24 @@ sentry-sdk = "^2.68.0"
 
 [tool.poetry.extras]
 checkpoint-postgres = ["langgraph-checkpoint-postgres"]
+ml = ["prophet", "scikit-learn"]
+ai = ["langgraph", "langgraph-checkpoint-postgres"]
+full = ["prophet", "scikit-learn", "langgraph", "langgraph-checkpoint-postgres"]
+
+[project.optional-dependencies]
+ml = [
+    "prophet>=1.1.5",
+    "scikit-learn>=1.3.0",
+]
+ai = [
+    "torch>=2.2.0",
+    "sentence-transformers>=2.3.0",
+    "langgraph>=0.2.0",
+]
+full = [
+    "aicser[ml]",
+    "aicser[ai]",
+]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicser-plugin-example"
+version = "1.0.0"
+description = "Starter template for an Aicser plug-in"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.entry-points."aicser.plugins"]
+example = "aicser_plugin_example:manifest"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aicser_plugin_example*"]
+
+[tool.setuptools.package-data]
+aicser_plugin_example = ["static/*"]
+

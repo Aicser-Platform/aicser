@@ -36,6 +36,7 @@ from src.modules.queries.router import router as queries_router
 from src.modules.translations.router import router as translations_router
 from src.modules.user.router import router as user_router
 from src.modules.debug.router import router as debug_router
+from src.modules.plugins.router import router as plugins_router
 from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
 from src.core.licensing.router import router as licensing_router
 
@@ -79,6 +80,7 @@ api_router.include_router(media_router, prefix="/api/media/feed-thumbnails", tag
 api_router.include_router(debug_router, prefix="/debug", tags=["debug"])
 api_router.include_router(pricing_router)
 api_router.include_router(licensing_router, prefix="/api/licensing", tags=["licensing"])
+api_router.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
 api_router.include_router(translations_router, prefix="/api")
 
 if not is_ee_enabled():

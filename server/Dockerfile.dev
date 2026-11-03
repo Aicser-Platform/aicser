@@ -79,7 +79,13 @@ COPY alembic /app/alembic
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# Copy application code
+# Copy application code and first-party plug-ins
+COPY plugins ./plugins
+RUN for p in ./plugins/*/; do \
+      if [ -f "$p/pyproject.toml" ]; then \
+        pip install --no-deps -e "$p"; \
+      fi; \
+    done
 COPY src ./src
 
 # Generate the sample DuckDB file with this image's pinned duckdb version.

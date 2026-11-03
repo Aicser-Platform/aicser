@@ -34,6 +34,8 @@ export function hasRenderableChartData(data: unknown): boolean {
   if (Array.isArray(d.x) && d.x.length > 0) return true;
   if (Array.isArray(d.y) && d.y.length > 0) return true;
   if (Array.isArray(d.series) && d.series.length > 0) return true;
+  if (Array.isArray(d.rows) && d.rows.length > 0) return true;
+  if (Array.isArray(d.links) && d.links.length > 0) return true;
   // KPI / gauge prefetch from Query Editor Visualize is `{ value: N }`
   if (d.value !== undefined && d.value !== null) return true;
   if (Array.isArray(data) && data.length > 0) return true;

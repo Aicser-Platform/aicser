@@ -42,5 +42,9 @@ export type DashboardChartType = DashboardSwitchableChartType;
 export const isDashboardChartType = isDashboardSwitchableChartType;
 
 export function normalizeDashboardChartType(type: string): DashboardChartType {
-  return isDashboardSwitchableChartType(type) ? type : 'bar';
+  const clean = String(type || '').trim().toLowerCase();
+  if (isDashboardSwitchableChartType(clean)) return clean;
+  // Preserve plug-in visual chart_type slugs instead of coercing them to 'bar'
+  if (/^[a-z0-9_-]+$/.test(clean)) return clean as DashboardChartType;
+  return 'bar';
 }

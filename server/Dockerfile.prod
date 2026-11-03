@@ -52,9 +52,21 @@ COPY requirements.txt .
 # default PyPI wheel bundles ~4 GB of CUDA libraries a CPU server never uses. Set
 # TORCH_INDEX_URL=https://download.pytorch.org/whl/cu130 to build a GPU image instead.
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ARG FLAVOR=full
+ENV AISER_IMAGE_FLAVOR=${FLAVOR}
+COPY plugins/ ./plugins/
 RUN pip install --upgrade pip setuptools wheel \
- && pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch==2.14.0 \
+ && if [ "$FLAVOR" = "full" ]; then \
+      pip install --no-cache-dir --index-url "$TORCH_INDEX_URL" torch==2.14.0; \
+    fi \
  && pip install --no-cache-dir -r requirements.txt \
+ && if [ "$FLAVOR" = "full" ]; then \
+      for p in ./plugins/*/; do \
+        if [ -f "$p/pyproject.toml" ]; then \
+          pip install --no-cache-dir --no-deps "$p"; \
+        fi; \
+      done; \
+    fi \
  && pip install --no-cache-dir 'playwright>=1.40.0' \
  && python -c "import telegram.ext; print('python-telegram-bot OK')" \
  && python -c "import playwright; print('playwright OK')" \

@@ -43,6 +43,7 @@ import {
   BellOutlined,
   DollarOutlined,
   ClusterOutlined,
+  AppstoreAddOutlined,
 } from '@ant-design/icons';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -128,6 +129,10 @@ const AgentBudgetTab = nextDynamic((() => import('@/ee').then((m) => ({ default:
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
+const PluginsSettingsTab = nextDynamic(
+  () => import('@/components/settings/plugins/PluginsSettingsTab').then((m) => ({ default: m.PluginsSettingsTab })),
+  { ssr: false },
+) as React.ComponentType<TabComponentProps>;
 const AuditLogTab = nextDynamic(() => import('./components/AuditLogTab').then((m) => ({ default: m.default })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
@@ -314,6 +319,14 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Data & Integrations',
     items: [
       {
+        key: 'plugins',
+        label: 'Plug-ins',
+        icon: <AppstoreAddOutlined />,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: PluginsSettingsTab,
+        description: 'Visuals, connectors, AI skills, and MCP connections',
+      },
+      {
         key: 'integrations',
         label: 'Integrations',
         icon: <LinkOutlined />,
@@ -486,7 +499,7 @@ const NAV_GROUPS: NavGroup[] = [
  */
 const SETTINGS_SECTIONS: { id: string; label: string; keys: string[] }[] = [
   { id: 'account', label: 'Me', keys: ['profile', 'notifications', 'security'] },
-  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'integrations', 'usage', 'billing-subscription'] },
+  { id: 'workspace', label: 'Workspace', keys: ['general', 'project', 'team', 'plugins', 'integrations', 'usage', 'billing-subscription'] },
   { id: 'data_platform', label: 'Data platform', keys: ['lakehouse'] },
   { id: 'ai', label: 'AI', keys: ['agent-capabilities', 'briefings', 'ai-quality', 'ai-decision-layer', 'agent-budget'] },
   { id: 'governance', label: 'Governance', keys: ['access-overview', 'privacy', 'data-shares', 'audit', 'ai-audit-log', 'ai-residency'] },

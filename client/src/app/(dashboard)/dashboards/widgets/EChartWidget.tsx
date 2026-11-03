@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef } from 'react';
-import * as echarts from 'echarts';
+import { echarts } from '@/components/charts/echartsHost';
+import type { ECharts } from 'echarts';
 import { buildChartOptions } from './ChartOptionsBuilder';
 import { ChartData, ChartConfig, isDark } from './WidgetRendererConfig';
 import { addWatermarkToChart, shouldApplyWatermark } from '@/utils/watermark';
@@ -15,7 +16,7 @@ interface EChartWidgetProps {
   type: string;
   data: ChartData;
   config?: Partial<ChartConfig>;
-  onChartReady?: (chart: echarts.ECharts) => void;
+  onChartReady?: (chart: ECharts) => void;
   crossFilterField?: string;
   runtimeFilters?: RuntimeFilter[];
   minHeight?: number;
@@ -28,7 +29,7 @@ type CoreProps = EChartWidgetProps & {
 
 
 /** Report clicks on axis titles and data points, so they can be edited in place. */
-function reportChartClicks(instance: echarts.ECharts, host: HTMLElement) {
+function reportChartClicks(instance: ECharts, host: HTMLElement) {
   instance.on('click', (params: any) => {
     const widgetId = host.closest('[data-widget-id]')?.getAttribute('data-widget-id');
     const e = params?.event?.event as MouseEvent | undefined;
@@ -74,7 +75,7 @@ function EChartWidgetCore({
   planType,
 }: CoreProps) {
   const chartRef = useRef<HTMLDivElement>(null);
-  const echartsInstance = useRef<echarts.ECharts | null>(null);
+  const echartsInstance = useRef<ECharts | null>(null);
   const onChartReadyRef = useRef(onChartReady);
   onChartReadyRef.current = onChartReady;
   const hasPaintedRef = useRef(false);

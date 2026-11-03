@@ -848,6 +848,102 @@ class MultiEngineQueryService:
                 query, session=session, **kwargs
             )
 
+    async def _check_plugin_connector_gate(
+        self,
+        data_source: Dict[str, Any],
+        identity: QueryAccess = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Enforce soft-disable gate (`Installed ∧ Entitled ∧ Enabled`) for plug-in connectors."""
+        if not isinstance(data_source, dict):
+            return None
+
+        conn_info = (
+            data_source.get("connection_info")
+            or data_source.get("connection_config")
+            or data_source.get("config")
+            or {}
+        )
+        if isinstance(conn_info, str):
+            try:
+                conn_info = json.loads(conn_info)
+            except Exception:
+                conn_info = {}
+
+        db_type = str(
+            data_source.get("db_type")
+            or data_source.get("type")
+            or (conn_info.get("db_type") if isinstance(conn_info, dict) else None)
+            or (conn_info.get("type") if isinstance(conn_info, dict) else None)
+            or ""
+        ).strip().lower()
+
+        from src.modules.plugins.registry import CORE_DB_TYPES, registry
+
+        if not db_type or db_type in CORE_DB_TYPES:
+            return None
+
+        plugin_id = registry.get_plugin_id_for_db_type(db_type)
+        if not plugin_id:
+            if db_type == "snowflake":
+                return {
+                    "success": False,
+                    "error": "The 'snowflake' connector plug-in is not installed on this instance.",
+                    "plugin_disabled": True,
+                    "data": [],
+                    "columns": [],
+                    "row_count": 0,
+                }
+            return None
+
+        from src.modules.plugins import service as plugin_service
+
+        manifest = registry.get_manifest(plugin_id)
+        org_id = (
+            getattr(identity, "organization_id", None)
+            or getattr(identity, "org_id", None)
+            or data_source.get("organization_id")
+        )
+        scope_key = plugin_service.resolve_scope_key(org_id)
+
+        provided_db = data_source.get("__db_session")
+        try:
+            if provided_db is not None:
+                is_active = await plugin_service.is_plugin_active(
+                    provided_db,
+                    scope_key=scope_key,
+                    plugin_id=plugin_id,
+                    organization_id=org_id,
+                )
+            else:
+                from src.db.session import async_session
+
+                async with async_session() as session:
+                    is_active = await plugin_service.is_plugin_active(
+                        session,
+                        scope_key=scope_key,
+                        plugin_id=plugin_id,
+                        organization_id=org_id,
+                    )
+        except Exception as err:
+            logger.warning("Plug-in gate DB check failed for '%s': %s", plugin_id, err)
+            is_active = manifest.default_enabled if manifest else False
+
+        if not is_active:
+            plugin_name = manifest.name if manifest else plugin_id
+            return {
+                "success": False,
+                "error": (
+                    f"The '{plugin_name}' plug-in is not enabled for your organization. "
+                    "Contact your administrator to enable it."
+                ),
+                "plugin_disabled": True,
+                "data": [],
+                "columns": [],
+                "row_count": 0,
+            }
+
+        return None
+
     async def _source_has_column_security(self, data_source_id: str) -> bool:
         """Whether this source has any active grant or column policy.
 
@@ -1062,6 +1158,10 @@ class MultiEngineQueryService:
         rather than by callers, so chat, dashboards, charts and the HTTP handlers
         cannot reach data by a route that skips it.
         """
+        gate_error = await self._check_plugin_connector_gate(data_source, identity)
+        if gate_error is not None:
+            return gate_error
+
         if str(execution_mode or "read").lower() == "write":
             err = check_sql_routine_ddl_safety(query)
             if err:
@@ -2699,7 +2799,7 @@ class DirectSQLEngine(BaseQueryEngine):
             from src.modules.data.services import warehouse_urls
 
             warehouse_kwargs: Dict[str, Any] = {}
-            if db_type in warehouse_urls.URL_TYPES:
+            if db_type in warehouse_urls.get_url_types():
                 try:
                     if not conn_uri:
                         conn_uri = warehouse_urls.build_url(db_type, conn_info)
@@ -2939,7 +3039,7 @@ class DirectSQLArrowExecutor:
 
         from src.modules.data.services import warehouse_urls
 
-        if db_type in warehouse_urls.URL_TYPES:
+        if db_type in warehouse_urls.get_url_types():
             return warehouse_urls.build_url(db_type, conn_info)
 
         if db_type == 'clickhouse':
@@ -3015,7 +3115,7 @@ class DirectSQLArrowExecutor:
         conn_uri = self._connection_uri()
         warehouse_kwargs: Dict[str, Any] = {}
         from src.modules.data.services import warehouse_urls
-        if db_type in warehouse_urls.URL_TYPES:
+        if db_type in warehouse_urls.get_url_types():
             warehouse_kwargs = warehouse_urls.engine_kwargs(db_type, conn_info)
 
         def run_sync() -> List[Dict[str, Any]]:

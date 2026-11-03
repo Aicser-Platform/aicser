@@ -9,13 +9,21 @@ PostgreSQL (row / column security rewrite, read-only gate, statement timeout, po
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, FrozenSet, Mapping, Optional
 from urllib.parse import quote, quote_plus, urlencode
 
-# Engines whose URL is built here when the source has no explicit uri / connection_string.
-URL_TYPES = frozenset({"databricks", "oracle", "trino", "athena", "snowflake", "bigquery", "redshift"})
+from src.modules.plugins.registry import registry
 
-DEFAULT_PORTS = {"oracle": 1521, "trino": 443, "redshift": 5439, "databricks": 443, "athena": 443, "snowflake": 443}
+# Built-in URL engines whose URL is built here when the source has no explicit uri / connection_string.
+# Plug-in connectors (e.g. snowflake) register dynamically via `get_url_types()`.
+URL_TYPES = frozenset({"databricks", "oracle", "trino", "athena", "bigquery", "redshift"})
+
+DEFAULT_PORTS = {"oracle": 1521, "trino": 443, "redshift": 5439, "databricks": 443, "athena": 443}
+
+
+def get_url_types() -> FrozenSet[str]:
+    """Return all URL-based engine types, combining Core warehouse types and Installed plug-in connectors."""
+    return URL_TYPES | frozenset(registry.get_connector_db_types())
 
 
 def _get(cfg: Mapping[str, Any], *keys: str) -> Optional[str]:
@@ -42,6 +50,16 @@ def _query(params: Dict[str, Optional[str]]) -> str:
 def build_url(db_type: str, cfg: Mapping[str, Any]) -> str:
     """The SQLAlchemy URL for this engine. Raises ValueError naming the missing setting."""
     t = (db_type or "").lower()
+
+    if registry.is_plugin_connector(t):
+        try:
+            connector = registry.get_connector(t)
+        except RuntimeError as exc:
+            raise ValueError(f"The connector plug-in for '{t}' failed to load: {exc}") from exc
+        if connector is None or not hasattr(connector, "build_url"):
+            raise ValueError(f"The connector plug-in for '{t}' is not installed.")
+        return connector.build_url(dict(cfg))
+
     host = _get(cfg, "host", "hostname", "server_hostname", "account")
     user = _get(cfg, "username", "user")
     password = _get(cfg, "password")
@@ -85,15 +103,6 @@ def build_url(db_type: str, cfg: Mapping[str, Any]) -> str:
             {"s3_staging_dir": staging, "work_group": _get(cfg, "work_group", "workgroup")}
         )
 
-    if t == "snowflake":
-        if not host or not user:
-            raise ValueError("Snowflake needs an account identifier and a user.")
-        account = host.replace("https://", "").replace(".snowflakecomputing.com", "").rstrip("/")
-        path = f"/{quote(database)}" + (f"/{quote(schema)}" if schema and database else "") if database else ""
-        return f"snowflake://{_auth(user, password)}{account}{path}" + _query(
-            {"warehouse": _get(cfg, "warehouse"), "role": _get(cfg, "role")}
-        )
-
     if t == "bigquery":
         project = _get(cfg, "project_id", "project") or host
         if not project:
@@ -106,12 +115,22 @@ def build_url(db_type: str, cfg: Mapping[str, Any]) -> str:
             raise ValueError("Redshift needs a host and a database.")
         return f"redshift+redshift_connector://{_auth(user, password)}{host}:{port}/{quote(database)}"
 
+    if t == "snowflake":
+        raise ValueError("The connector plug-in for 'snowflake' is not installed.")
+
     raise ValueError(f"No URL builder for {db_type}.")
 
 
 def engine_kwargs(db_type: str, cfg: Mapping[str, Any]) -> Dict[str, Any]:
-    """Settings a URL can't carry: BigQuery's service-account key."""
-    if (db_type or "").lower() == "bigquery":
+    """Settings a URL can't carry: BigQuery's service-account key or plug-in engine kwargs."""
+    t = (db_type or "").lower()
+    if registry.is_plugin_connector(t):
+        connector = registry.get_connector(t)
+        if connector and hasattr(connector, "engine_kwargs"):
+            return connector.engine_kwargs(dict(cfg))
+        return {}
+
+    if t == "bigquery":
         raw = _get(cfg, "credentials_json", "service_account_json")
         if raw:
             try:
@@ -122,7 +141,13 @@ def engine_kwargs(db_type: str, cfg: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def ping_sql(db_type: str) -> str:
-    return "SELECT 1 FROM DUAL" if (db_type or "").lower() == "oracle" else "SELECT 1"
+    t = (db_type or "").lower()
+    if registry.is_plugin_connector(t):
+        connector = registry.get_connector(t)
+        if connector and hasattr(connector, "ping_sql"):
+            return connector.ping_sql()
+        return "SELECT 1"
+    return "SELECT 1 FROM DUAL" if t == "oracle" else "SELECT 1"
 
 
 def sqlglot_dialect(db_type: str) -> Optional[str]:

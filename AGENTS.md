@@ -111,6 +111,7 @@ Canonical map: `server/ee/modules/pricing/sku_catalog.py` and `client/src/consta
 4. **Add-ons must not import add-ons.** An add-on may depend on Kernel plus one core host (Analyze, Ask, or Govern). Shared behavior belongs in Kernel or that host — not a new cross-add-on import.
 5. **New surfaces declare a SKU** (nav key and/or plan feature on the catalog). Do not borrow `knowledge:search` for ontology, semantic, alerts, or catalog — use `ontology:*`, `semantic:*`, `alert:*`, `catalog:*`.
 6. **Lakehouse & governance** — Storage, compute, movement, and govern are **four contracts** (see `server/docs/lakehouse-product.md`). UI hub: `/lakehouse`. Do **not** add duplicate RLS, credentials, or metric SSOT under Pipelines or Lakehouse; deep-link to Data source policies, Semantic layer, Catalog, and Settings audit. Regulated/bank playbook: `server/docs/regulated-enterprise-governance.md`. Doc index: `server/docs/README.md`.
+7. **Plug-ins** — one manifest per Plug-in (`server/plugins/<name>/` for CE, `server/ee/plugins/<name>/` for EE) contributes Visuals, Connectors, AI Skills and MCP Connections; a Plug-in is Active only when `Installed ∧ Entitled ∧ Enabled` for the org (or `"instance"` scope in CE). Plug-ins depend only on the Plug-in SDK and Kernel, never on each other. Terms: [GLOSSARY.md](GLOSSARY.md). Decisions: [docs/adr/0001](docs/adr/0001-one-manifest-all-contributions.md), [0002](docs/adr/0002-runtime-esm-visuals-host-echarts.md), [0003](docs/adr/0003-entry-points-slim-full-images.md).
 
 ---
 
@@ -255,3 +256,19 @@ GET    /docs
 ```
 
 EE-only routes (when enabled): `/ai`, `/chats`, organizations, billing, etc. — see `server/src/core/router.py`.
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked as local markdown files under `.claude/scratch/<feature>/`. See `.claude/docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `.claude/docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `.claude/docs/agents/domain.md`.

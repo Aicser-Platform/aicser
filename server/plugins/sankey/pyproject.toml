@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicser-plugin-sankey"
+version = "1.0.0"
+description = "Sankey Diagram visual plug-in for Aicser"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aicser_plugin_sankey*"]
+
+[tool.setuptools.package-data]
+aicser_plugin_sankey = ["static/*"]
+
+[project.entry-points."aicser.plugins"]
+sankey = "aicser_plugin_sankey:manifest"

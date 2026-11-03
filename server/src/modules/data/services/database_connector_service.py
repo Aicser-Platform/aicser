@@ -46,11 +46,6 @@ except ImportError:
     pymysql = None
 
 try:
-    import snowflake.connector
-except ImportError:
-    snowflake = None
-
-try:
     from google.cloud import bigquery
 except ImportError:
     bigquery = None
@@ -64,10 +59,10 @@ logger = logging.getLogger(__name__)
 
 
 def _url_types():
-    from src.modules.data.services.warehouse_urls import URL_TYPES
+    from src.modules.data.services.warehouse_urls import get_url_types
 
-    # Snowflake / Redshift keep their existing native paths for tests; schema reads use the URL.
-    return URL_TYPES - {"redshift"}
+    # Redshift keeps its existing native path for tests; schema reads use the URL.
+    return get_url_types() - {"redshift"}
 
 
 class DatabaseConnectorService:
@@ -76,8 +71,8 @@ class DatabaseConnectorService:
     def __init__(self):
         self.active_engines = {}  # Cache of active SQLAlchemy engines
         
-        # Database configuration
-        self.database_configs = {
+        # Core / built-in database configuration (plug-in connectors merge dynamically via database_configs)
+        self._base_database_configs = {
             'postgresql': {
                 'driver': 'postgresql+asyncpg',
                 'sync_driver': 'postgresql+psycopg2',
@@ -101,11 +96,6 @@ class DatabaseConnectorService:
             'oracle': {'driver': 'oracledb', 'default_port': 1521, 'connection_string': ''},
             'trino': {'driver': 'trino', 'default_port': 443, 'connection_string': ''},
             'athena': {'driver': 'pyathena', 'default_port': 443, 'connection_string': ''},
-            'snowflake': {
-                'driver': 'snowflake',
-                'default_port': 443,
-                'connection_string': 'snowflake://{username}:{password}@{account}/{database}/{schema}?warehouse={warehouse}',
-            },
             'bigquery': {
                 'driver': 'bigquery',
                 'default_port': None,
@@ -156,11 +146,52 @@ class DatabaseConnectorService:
                 'http_api': True,
             },
         }
+
+    @property
+    def database_configs(self) -> Dict[str, Dict[str, Any]]:
+        from src.modules.plugins.manifest import ConnectorContribution
+        from src.modules.plugins.registry import registry
+
+        merged = dict(self._base_database_configs)
+        for manifest in registry.get_all_manifests():
+            for contrib in manifest.contributions:
+                if isinstance(contrib, ConnectorContribution):
+                    db_t = contrib.db_type.lower()
+                    if db_t not in merged:
+                        merged[db_t] = {
+                            'driver': db_t,
+                            'default_port': contrib.default_port or 443,
+                            'connection_string': '',
+                            'plugin_id': manifest.id,
+                            'label': contrib.label,
+                        }
+        return merged
     
-    async def test_connection(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def test_connection(
+        self,
+        config: Dict[str, Any],
+        db: Optional[Any] = None,
+        organization_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Test database connection using appropriate method for each database type"""
         try:
             db_type = config.get('type', '').lower()
+
+            from src.modules.plugins.registry import registry
+            from src.modules.plugins import service as plugin_service
+
+            plugin_id = registry.get_plugin_id_for_db_type(db_type)
+            if plugin_id and db is not None:
+                scope_key = plugin_service.resolve_scope_key(organization_id)
+                is_active = await plugin_service.is_plugin_active(
+                    db, scope_key=scope_key, plugin_id=plugin_id, organization_id=organization_id
+                )
+                if not is_active:
+                    return {
+                        'success': False,
+                        'error': f"The '{plugin_id}' plug-in is not enabled",
+                        'plugin_disabled': True,
+                    }
             
             if db_type not in self.database_configs:
                 return {
@@ -176,8 +207,8 @@ class DatabaseConnectorService:
             # DuckDB: file-based, test via native library
             if db_type == 'duckdb':
                 return await self._test_duckdb_connection(config)
-            # Warehouses without a native test here: the same URL the queries will use.
-            if db_type in ('databricks', 'oracle', 'trino', 'athena', 'bigquery', 'snowflake'):
+            # Warehouses and plug-in URL connectors: the same URL the queries will use.
+            if db_type in _url_types():
                 import asyncio
                 return await asyncio.to_thread(self._test_url_connection_sync, config)
             # Use direct driver test for other databases
@@ -331,22 +362,6 @@ class DatabaseConnectorService:
                 cursor.execute("SELECT @@VERSION")
                 cursor.fetchone()
                 cursor.close()
-                conn.close()
-                
-            # Snowflake
-            elif db_type == 'snowflake':
-                if not snowflake:
-                    return {'success': False, 'error': 'snowflake-connector-python not installed'}
-                
-                import snowflake.connector
-                conn = snowflake.connector.connect(
-                    account=config.get('account'),
-                    user=username,
-                    password=password,
-                    database=database,
-                    warehouse=config.get('warehouse', 'COMPUTE_WH'),
-                    schema=config.get('schema', 'PUBLIC')
-                )
                 conn.close()
                 
             # BigQuery
@@ -607,15 +622,9 @@ class DatabaseConnectorService:
                 port=config.get('port', db_config['default_port']),
                 database=config.get('database')
             )
-        elif db_type == 'snowflake':
-            return db_config['connection_string'].format(
-                username=config.get('username'),
-                password=config.get('password'),
-                account=config.get('account'),
-                database=config.get('database'),
-                schema=config.get('schema', 'PUBLIC'),
-                warehouse=config.get('warehouse', 'COMPUTE_WH')
-            )
+        elif db_type in _url_types() and db_type != 'bigquery':
+            from src.modules.data.services import warehouse_urls
+            return warehouse_urls.build_url(db_type, config)
         elif db_type == 'bigquery':
             return db_config['connection_string'].format(
                 project_id=config.get('project_id'),

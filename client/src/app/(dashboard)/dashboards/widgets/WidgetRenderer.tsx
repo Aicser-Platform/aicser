@@ -24,6 +24,9 @@ import { enhanceEchartsInteractivity } from './utils/enhanceEchartsInteractivity
 import { getFriendlyWidgetError } from '../utils/widgetErrorDisplay';
 import { DASHBOARD_CHART_TYPES } from '../utils/filterConfigMerge';
 import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
+import { useActivePlugins } from '@/plugins/usePlugins';
+import { DisabledVisualPlaceholder } from '@/plugins/DisabledVisualPlaceholder';
+import { PluginVisual } from '@/plugins/PluginVisual';
 
 const widgetChunkLoading = () => (
   <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -158,6 +161,26 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
   runtimeFilters = [],
 }) => {
   const t = useTranslations('dashboard_viewer');
+  const { data: activePluginsData } = useActivePlugins();
+  const normalizedType = String(type || '').trim().toLowerCase();
+  const disabledLabel = activePluginsData?.disabled_chart_types?.[normalizedType];
+  const activePluginVisual = React.useMemo(
+    () => activePluginsData?.visuals?.find((v) => v.chart_type.toLowerCase() === normalizedType),
+    [activePluginsData?.visuals, normalizedType],
+  );
+
+  if (disabledLabel !== undefined) {
+    return (
+      <div className="widget-content-root">
+        <DisabledVisualPlaceholder
+          chartType={normalizedType}
+          label={disabledLabel}
+          minHeight={minHeight}
+        />
+      </div>
+    );
+  }
+
   /** Canvas slicers/filters stay interactive in view / presentation even when the canvas is read-only. */
   const effectiveReadOnly = (type === 'slicer' || type === 'filter') && onFilter ? false : readOnly;
   const loadingOverlayStyle: React.CSSProperties = {
@@ -228,7 +251,12 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     );
   }
 
-  const isChartType = (DASHBOARD_CHART_TYPES as readonly string[]).includes(type) && type !== 'table' && type !== 'stat' && type !== 'geo';
+  const isChartType =
+    Boolean(activePluginVisual) ||
+    ((DASHBOARD_CHART_TYPES as readonly string[]).includes(type) &&
+      type !== 'table' &&
+      type !== 'stat' &&
+      type !== 'geo');
   const isGeo = type === 'geo';
   const activeOverlayClass = 'widget-loading-overlay';
 
@@ -377,6 +405,8 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
     effectiveData &&
     ((Array.isArray(effectiveData.x) && effectiveData.x.length > 0) ||
       (Array.isArray(effectiveData.y) && effectiveData.y.length > 0) ||
+      (Array.isArray(effectiveData.rows) && effectiveData.rows.length > 0) ||
+      (Array.isArray(effectiveData.links) && effectiveData.links.length > 0) ||
       (Array.isArray(effectiveData.series) &&
         effectiveData.series.length > 0 &&
         effectiveData.series.some((s: any) => Array.isArray(s.data) && s.data.length > 0)) ||
@@ -468,6 +498,20 @@ export const WidgetRenderer: React.FC<WidgetRendererProps> = ({
           data={effectiveData}
           config={config}
           query={query as StatWidgetProps['query']}
+        />
+      );
+    }
+
+    // Plug-in Visual (loaded dynamically at runtime via Visual API v1)
+    if (activePluginVisual && effectiveData) {
+      return (
+        <PluginVisual
+          chartType={normalizedType}
+          bundleUrl={activePluginVisual.bundle_url}
+          data={effectiveData}
+          config={chartConfig}
+          minHeight={minHeight}
+          onChartReady={onChartReady}
         />
       );
     }
