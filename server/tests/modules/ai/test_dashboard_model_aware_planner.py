@@ -180,15 +180,11 @@ def test_model_aware_synthesis_does_not_pad_with_generic_widgets():
         prompt="conversion rate dashboard",
     )
 
-    # synthesize_widget_specs always ships one narrative tile for board
-    # storytelling when the sections carry no text widget of their own (see
-    # its "Always ship at least one narrative tile" comment) - a deliberate,
-    # separate feature from the min_widgets padding this test guards against,
-    # so it's the one legitimate exception to "every widget is real, no
-    # generic filler": it has chart_options.content, not a compiled query.
+    # No section carries a story, so no summary tile yet: the materializer writes it from real
+    # executed values. A paraphrase of the prompt would be filler with no numbers.
     text_specs = [s for s in specs if s.get("chart_type") == "text"]
     data_specs = [s for s in specs if s.get("chart_type") != "text"]
-    assert len(text_specs) == 1
+    assert text_specs == []
     assert len(data_specs) == len(sections)
     assert all((spec.get("chart_query") or {}).get("compiled_semantic_sql") for spec in data_specs)
 

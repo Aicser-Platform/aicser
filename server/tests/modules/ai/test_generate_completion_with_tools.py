@@ -89,7 +89,7 @@ async def test_selects_a_tool(monkeypatch):
     )
 
     assert result["success"] is True
-    assert result["tool_calls"] == [{"name": "run_sql", "arguments": {}}]
+    assert result["tool_calls"] == [{"id": None, "name": "run_sql", "arguments": {}}]
 
 
 @pytest.mark.asyncio

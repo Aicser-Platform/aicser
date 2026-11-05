@@ -7,6 +7,8 @@
  */
 
 .login-page {
+  /* Auth routes don't load globals.css, so the page sets its own font. */
+  font-family: var(--font-sans, var(--ant-font-family, "Noto Sans", system-ui, sans-serif));
   --login-page-bg: var(--ant-color-bg-layout, var(--color-bg-base, #ffffff));
   --login-panel-bg: var(--ant-color-bg-layout, var(--color-bg-base, #ffffff));
   --login-surface-bg: var(--ant-color-bg-container, var(--color-bg-container, #f8f9fa));
@@ -154,6 +156,7 @@ html[data-theme='dark'] .login-page {
   padding: 0.25rem 0;
   min-height: 2.75rem;
   color: var(--login-link);
+  font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
@@ -219,6 +222,16 @@ html[data-theme='dark'] .login-page {
   text-align: center;
   line-height: 1.5;
   word-break: break-word;
+}
+
+.login-branding-section a {
+  color: var(--login-brand-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-branding-section a:hover {
+  color: var(--login-brand-subtext);
 }
 
 .terms-privacy-text a {

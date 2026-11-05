@@ -145,9 +145,9 @@ def test_sample_fallback_only_reachable_from_file_availability_checks():
     from src.modules.charts.services.v2 import chart_service as mod
 
     source = inspect.getsource(mod.ChartService.execute)
-    # Two legitimate call sites remain, each immediately preceded by the
-    # file-availability guard on the same or prior line.
-    assert source.count("_sample_template_fallback_result") == 2
+    # Every call site sits directly under the file-availability guard.
+    guard = 'and not self._sample_duckdb_file_available():\n'
+    assert source.count("return self._sample_template_fallback_result(chart)") == source.count(guard)
     for guarded in (
         'if data_source.type == "sample_duckdb" and not self._sample_duckdb_file_available():\n'
         '                return self._sample_template_fallback_result(chart)',

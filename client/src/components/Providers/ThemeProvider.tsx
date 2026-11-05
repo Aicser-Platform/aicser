@@ -27,6 +27,12 @@ const LIGHT = {
     control: '#8c959f', // input, select, picker and button edges (3:1 against white, WCAG 1.4.11)
 } as const;
 
+// antd's dark algorithm remaps the seed colour (#00c2cb becomes #03a8b0); keep the brand colour as set.
+const darkAlgorithmKeepingBrand: typeof theme.darkAlgorithm = (seed, mapToken) => ({
+    ...theme.darkAlgorithm(seed, mapToken),
+    colorPrimary: seed.colorPrimary,
+});
+
 function readEffectiveDarkFromStorage(): boolean {
     if (typeof window === 'undefined') return false;
     try {
@@ -314,7 +320,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         <ThemeModeContext.Provider value={{ isDarkMode, setIsDarkMode: setDarkModeWithPersistence }}>
             <ConfigProvider
                 theme={{
-                    algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
+                    algorithm: isDarkMode ? darkAlgorithmKeepingBrand : theme.defaultAlgorithm,
                     token: {
                         // Core brand colors - follows the (EE) ThemeCustomizer's brand overrides
                         colorPrimary: primaryColor,

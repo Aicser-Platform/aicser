@@ -59,7 +59,8 @@ def test_golden_pack_bands_match_sql_budget_and_rag_policy():
         assert rag.should_run is q["schema_rag"], q["id"]
         if q["band"] == "simple":
             assert budget.band == "simple", q["id"]
-            assert budget.timeout_s <= WorkflowConfig.SLO_SIMPLE_ANALYZE_S + 10
+            # Not clamped to the feel-instant SLO: that starved own-key models. Still under the enterprise bound.
+            assert budget.timeout_s <= WorkflowConfig.SQL_TIMEOUT_ENTERPRISE
         if q["band"] == "enterprise":
             assert budget.band == "enterprise", q["id"]
-            assert budget.timeout_s <= WorkflowConfig.SLO_ENTERPRISE_SQL_GEN_S + 1e-6
+            assert budget.timeout_s <= WorkflowConfig.SQL_TIMEOUT_ENTERPRISE + 1e-6
