@@ -7138,9 +7138,9 @@
     "plan_free": "ฟรี",
     "plan_pro": "Pro",
     "plan_team": "ทีม",
-    "plan_card_free_features": "30 AI credits/เดือน • 1 โครงการ • 2 แหล่งข้อมูล",
+    "plan_card_free_features": "100 AI credits/เดือน • 1 โครงการ • 2 แหล่งข้อมูล",
     "plan_card_pro_features": "900 AI credits/เดือน • หลายโครงการ • หลายแหล่งข้อมูล",
-    "plan_card_team_features": "5000 AI credits/เดือน • การทำงานร่วมกันเป็นทีม",
+    "plan_card_team_features": "900 AI credits ต่อสมาชิก/เดือน • การทำงานร่วมกันเป็นทีม",
     "default_project_name": "โครงการของฉัน",
     "default_project_name_with_user": "โครงการของ {name}",
     "popular": "ยอดนิยม",
@@ -10303,7 +10303,15 @@
     "field_share_org_help": "ทุกโปรเจกต์ในองค์กรของคุณใช้การตัดสินใจนี้ได้ ปิด: เฉพาะโปรเจกต์นี้",
     "shared_org_tag": "องค์กร"
   },
+  "settings_menu": {
+    "subtitle": "เลือกสิ่งที่แสดงในเมนู การเข้าถึงยังคงเป็นไปตามบทบาทและแผน",
+    "everyone": "ทุกคน",
+    "admins": "ผู้ดูแล",
+    "off": "ปิด",
+    "failed": "บันทึกเมนูไม่ได้"
+  },
   "settings_nav": {
+    "menu_label": "เมนู",
     "title": "การตั้งค่า",
     "group_account": "ฉัน",
     "group_workspace": "พื้นที่ทำงาน",
@@ -12735,6 +12743,8 @@
     "failed": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
   },
   "ai_agents": {
+    "ai_model": "โมเดล AI",
+    "model_default": "ค่าเริ่มต้นขององค์กร",
     "page_title": "ผู้ช่วย",
     "page_subtitle": "ผู้ช่วยที่ทีมของคุณสร้างขึ้นสำหรับงาน แผนก หรือโครงการ",
     "new": "ผู้ช่วยใหม่",

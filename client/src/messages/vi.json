@@ -7867,9 +7867,9 @@
     "plan_free": "Miễn phí",
     "plan_pro": "Pro",
     "plan_team": "Nhóm",
-    "plan_card_free_features": "30 tín dụng AI/tháng • 1 dự án • 2 nguồn dữ liệu",
+    "plan_card_free_features": "100 tín dụng AI/tháng • 1 dự án • 2 nguồn dữ liệu",
     "plan_card_pro_features": "900 tín dụng AI/tháng • Nhiều dự án • Nhiều nguồn dữ liệu",
-    "plan_card_team_features": "5000 tín dụng AI/tháng • Cộng tác nhóm",
+    "plan_card_team_features": "900 tín dụng AI mỗi thành viên/tháng • Cộng tác nhóm",
     "default_project_name": "Dự án của tôi",
     "default_project_name_with_user": "Dự án của {name}",
     "popular": "Phổ biến",
@@ -11120,7 +11120,15 @@
     "field_share_org_help": "Mọi dự án trong tổ chức của bạn đều có thể dùng quyết định này. Tắt: chỉ dự án này.",
     "shared_org_tag": "Tổ chức"
   },
+  "settings_menu": {
+    "subtitle": "Chọn những gì hiển thị trong menu. Quyền truy cập vẫn theo vai trò và gói.",
+    "everyone": "Mọi người",
+    "admins": "Quản trị viên",
+    "off": "Tắt",
+    "failed": "Không thể lưu menu."
+  },
   "settings_nav": {
+    "menu_label": "Menu",
     "title": "Cài đặt",
     "group_account": "Tôi",
     "group_workspace": "Không gian làm việc",
@@ -13644,6 +13652,8 @@
     "failed": "Đã xảy ra lỗi. Vui lòng thử lại."
   },
   "ai_agents": {
+    "ai_model": "Mô hình AI",
+    "model_default": "Mặc định của tổ chức",
     "page_title": "Trợ lý",
     "page_subtitle": "Các trợ lý nhóm của bạn đã xây dựng cho một công việc, phòng ban hoặc dự án.",
     "new": "Trợ lý mới",

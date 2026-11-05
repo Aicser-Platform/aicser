@@ -7139,9 +7139,9 @@
     "plan_free": "免费版",
     "plan_pro": "专业版",
     "plan_team": "团队版",
-    "plan_card_free_features": "每月 30 个 AI 额度 • 1 个项目 • 2 个数据源",
+    "plan_card_free_features": "每月 100 个 AI 额度 • 1 个项目 • 2 个数据源",
     "plan_card_pro_features": "每月 900 个 AI 额度 • 多个项目 • 多个数据源",
-    "plan_card_team_features": "每月 5000 个 AI 额度 • 团队协作",
+    "plan_card_team_features": "每位成员每月 900 个 AI 额度 • 团队协作",
     "default_project_name": "我的项目",
     "default_project_name_with_user": "{name} 的项目",
     "popular": "热门",
@@ -10304,7 +10304,15 @@
     "field_share_org_help": "组织中的所有项目都可以使用此判定。关闭：仅此项目。",
     "shared_org_tag": "组织"
   },
+  "settings_menu": {
+    "subtitle": "选择菜单中显示的内容。访问权限仍取决于角色和套餐。",
+    "everyone": "所有人",
+    "admins": "管理员",
+    "off": "关闭",
+    "failed": "无法保存菜单。"
+  },
   "settings_nav": {
+    "menu_label": "菜单",
     "title": "设置",
     "group_account": "我的",
     "group_workspace": "工作区",
@@ -12758,6 +12766,8 @@
     "failed": "出错了。请重试。"
   },
   "ai_agents": {
+    "ai_model": "AI 模型",
+    "model_default": "组织默认",
     "page_title": "助手",
     "page_subtitle": "您的团队为特定工作、部门或项目构建的助手。",
     "new": "新建助手",

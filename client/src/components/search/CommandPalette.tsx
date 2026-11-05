@@ -8,6 +8,9 @@
  * so it's available from anywhere in the authenticated app.
  */
 
+import { useOrgMenu } from '@/hooks/useOrgMenu';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Permission } from '@/constants/permissions';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Input, Empty, Typography, Tag } from 'antd';
 import {
@@ -45,7 +48,7 @@ import { useTranslations } from 'next-intl';
 import { useQueryClient } from '@tanstack/react-query';
 import { message } from 'antd';
 import { fetchApi } from '@/utils/api';
-import { flattenNavLinks, buildEnterpriseSidebarItems, buildCommunitySidebarItems, NAV_LABEL_KEYS } from '@/layouts/Navigation/navConfig';
+import { flattenNavLinks, buildEnterpriseSidebarItems, buildCommunitySidebarItems, linkAllowed, NAV_LABEL_KEYS } from '@/layouts/Navigation/navConfig';
 import { isEnterpriseEdition as getIsEnterpriseEdition } from '@/utils/appPaths';
 import { isAiFrontendEnabled } from '@/utils/aiAvailability';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
@@ -216,10 +219,12 @@ export const CommandPalette: React.FC = () => {
     [selectProject, queryClient, t]
   );
 
+  const menu = useOrgMenu();
+  const { hasPermission } = usePermissions();
   const items = useMemo<PaletteItem[]>(() => {
     const navItems: PaletteItem[] = flattenNavLinks(
       isEnterpriseEdition ? buildEnterpriseSidebarItems(showAiNav) : buildCommunitySidebarItems()
-    ).map((item) => ({
+    ).filter((item) => linkAllowed(item.key, { menu, isAdmin: hasPermission(Permission.ORG_EDIT) })).map((item) => ({
       id: `nav-${item.key}`,
       group: 'nav' as const,
       label: tNav(item.labelKey),
@@ -252,7 +257,7 @@ export const CommandPalette: React.FC = () => {
       : [];
 
     return [...navItems, ...settingsItems, ...projectItems];
-  }, [showAiNav, tNav, tSettings, router, projects, currentProject?.id, t, handleSelectProject]);
+  }, [showAiNav, tNav, tSettings, router, projects, currentProject?.id, t, handleSelectProject, menu, hasPermission]);
 
   const filteredItems = useMemo(() => {
     const q = query.trim().toLowerCase();

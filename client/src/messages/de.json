@@ -7139,9 +7139,9 @@
     "plan_free": "Kostenlos",
     "plan_pro": "Pro",
     "plan_team": "Team",
-    "plan_card_free_features": "30 KI-Credits/Monat • 1 Projekt • 2 Datenquellen",
+    "plan_card_free_features": "100 KI-Credits/Monat • 1 Projekt • 2 Datenquellen",
     "plan_card_pro_features": "900 KI-Credits/Monat • Mehrere Projekte • Mehrere Datenquellen",
-    "plan_card_team_features": "5000 KI-Credits/Monat • Teamzusammenarbeit",
+    "plan_card_team_features": "900 KI-Credits pro Mitglied/Monat • Teamzusammenarbeit",
     "default_project_name": "Mein Projekt",
     "default_project_name_with_user": "Projekt von {name}",
     "popular": "Beliebt",
@@ -10304,7 +10304,15 @@
     "field_share_org_help": "Alle Projekte Ihrer Organisation können diese Entscheidung nutzen. Aus: nur dieses Projekt.",
     "shared_org_tag": "Organisation"
   },
+  "settings_menu": {
+    "subtitle": "Legen Sie fest, was im Menü erscheint. Der Zugriff richtet sich weiter nach Rollen und Tarif.",
+    "everyone": "Alle",
+    "admins": "Admins",
+    "off": "Aus",
+    "failed": "Das Menü konnte nicht gespeichert werden."
+  },
   "settings_nav": {
+    "menu_label": "Menü",
     "title": "Einstellungen",
     "group_account": "Ich",
     "group_workspace": "Arbeitsbereich",
@@ -12758,6 +12766,8 @@
     "failed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
   },
   "ai_agents": {
+    "ai_model": "KI-Modell",
+    "model_default": "Standard der Organisation",
     "page_title": "Assistenten",
     "page_subtitle": "Assistenten, die Ihr Team für eine Aufgabe, Abteilung oder ein Projekt erstellt hat.",
     "new": "Neuer Assistent",

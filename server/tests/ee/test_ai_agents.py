@@ -165,3 +165,46 @@ async def test_a_light_seat_can_talk_to_the_organizations_agent(monkeypatch):
         await A._enforce_own_key_for_platform_seat("org", "user")  # would refuse a Light seat with no key
     finally:
         current_agent.reset(token)
+
+
+def _ask_request(**over):
+    from types import SimpleNamespace
+
+    base = dict(model="personal-pick", ai_model="personal-pick", temperature=1.4, project_id="my-project", attachments=None,
+                analysis_mode="auto", data_source_id="ask-source", selected_data_source_ids=None, kb_library_ids=None,
+                custom_instructions=None, kb_data_source_id="ask-kb", kb_data_source_ids=["ask-kb"], alert_event_id="e",
+                target_dashboard_id="dash", dashboard_lifecycle_action="refine", target_widget_id="w",
+                surface_context={"page": "dashboards"}, requested_skill="skill")
+    return SimpleNamespace(**{**base, **over})
+
+
+def test_nothing_from_ask_carries_into_an_assistant():
+    from ee.modules.embed.agents import ASK_ONLY_FIELDS, apply_to_request
+
+    request = _ask_request()
+    apply_to_request(request, {"name": "Bot", "abilities": {}, "project_id": "agent-project"})
+    assert request.model is None and request.ai_model is None and request.temperature is None
+    assert request.project_id == "agent-project" and request.data_source_id is None
+    assert all(getattr(request, field) is None for field in ASK_ONLY_FIELDS)
+
+
+def test_an_assistant_uses_its_own_model_and_temperature():
+    from ee.modules.embed.agents import apply_to_request
+
+    request = _ask_request()
+    apply_to_request(request, {"name": "Bot", "abilities": {}, "preferred_model": "chosen", "temperature": 0.2})
+    assert request.model == "chosen" and request.temperature == 0.2
+
+
+def test_a_shared_assistant_cant_use_a_personal_key(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+
+    from ee.modules.embed import agents_router as R
+    from src.modules.ai.services import litellm_service as L
+
+    monkeypatch.setattr(L.LiteLLMService, "get_available_models", lambda self: {"models": [{"id": "org-model"}]})
+    R._check_model("org-model")
+    R._check_model("")
+    with pytest.raises(HTTPException):
+        R._check_model("byok_mine")

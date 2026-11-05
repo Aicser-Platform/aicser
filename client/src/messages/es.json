@@ -7138,9 +7138,9 @@
     "plan_free": "Gratis",
     "plan_pro": "Pro",
     "plan_team": "Equipo",
-    "plan_card_free_features": "30 créditos de IA/mes • 1 proyecto • 2 fuentes de datos",
+    "plan_card_free_features": "100 créditos de IA/mes • 1 proyecto • 2 fuentes de datos",
     "plan_card_pro_features": "900 créditos de IA/mes • Múltiples proyectos • Múltiples fuentes de datos",
-    "plan_card_team_features": "5000 créditos de IA/mes • Colaboración en equipo",
+    "plan_card_team_features": "900 créditos de IA por miembro/mes • Colaboración en equipo",
     "default_project_name": "Mi Proyecto",
     "default_project_name_with_user": "Proyecto de {name}",
     "popular": "Popular",
@@ -10303,7 +10303,15 @@
     "field_share_org_help": "Todos los proyectos de tu organización pueden usar esta decisión. Desactivado: solo este proyecto.",
     "shared_org_tag": "Organización"
   },
+  "settings_menu": {
+    "subtitle": "Elige qué ve la gente en el menú. El acceso sigue dependiendo de los roles y del plan.",
+    "everyone": "Todos",
+    "admins": "Administradores",
+    "off": "Oculto",
+    "failed": "No se pudo guardar el menú."
+  },
   "settings_nav": {
+    "menu_label": "Menú",
     "title": "Ajustes",
     "group_account": "Yo",
     "group_workspace": "Espacio de trabajo",
@@ -12735,6 +12743,8 @@
     "failed": "Algo salió mal. Inténtalo de nuevo."
   },
   "ai_agents": {
+    "ai_model": "Modelo de IA",
+    "model_default": "Predeterminado de la organización",
     "page_title": "Asistentes",
     "page_subtitle": "Asistentes que tu equipo creó para un trabajo, departamento o proyecto.",
     "new": "Nuevo asistente",

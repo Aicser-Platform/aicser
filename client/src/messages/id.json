@@ -7138,9 +7138,9 @@
     "plan_free": "Gratis",
     "plan_pro": "Pro",
     "plan_team": "Tim",
-    "plan_card_free_features": "30 kredit AI/bulan • 1 proyek • 2 sumber data",
+    "plan_card_free_features": "100 kredit AI/bulan • 1 proyek • 2 sumber data",
     "plan_card_pro_features": "900 kredit AI/bulan • Banyak proyek • Banyak sumber data",
-    "plan_card_team_features": "5000 kredit AI/bulan • Kolaborasi tim",
+    "plan_card_team_features": "900 kredit AI per anggota/bulan • Kolaborasi tim",
     "default_project_name": "Proyek Saya",
     "default_project_name_with_user": "Proyek {name}",
     "popular": "Populer",
@@ -10303,7 +10303,15 @@
     "field_share_org_help": "Semua proyek di organisasi Anda dapat menggunakan keputusan ini. Nonaktif: hanya proyek ini.",
     "shared_org_tag": "Organisasi"
   },
+  "settings_menu": {
+    "subtitle": "Pilih yang terlihat di menu. Akses tetap mengikuti peran dan paket.",
+    "everyone": "Semua",
+    "admins": "Admin",
+    "off": "Nonaktif",
+    "failed": "Menu tidak dapat disimpan."
+  },
   "settings_nav": {
+    "menu_label": "Menu",
     "title": "Pengaturan",
     "group_account": "Saya",
     "group_workspace": "Ruang kerja",
@@ -12735,6 +12743,8 @@
     "failed": "Terjadi kesalahan. Silakan coba lagi."
   },
   "ai_agents": {
+    "ai_model": "Model AI",
+    "model_default": "Default organisasi",
     "page_title": "Asisten",
     "page_subtitle": "Asisten yang dibuat tim Anda untuk pekerjaan, departemen, atau proyek.",
     "new": "Asisten baru",

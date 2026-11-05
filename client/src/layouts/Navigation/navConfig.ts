@@ -187,6 +187,9 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
 export type NavAccess = {
   hasFeature?: (feature: string) => boolean;
   hasPermission?: (permission: string) => boolean;
+  /** What the organization chose to show: settings › Menu. */
+  menu?: Record<string, 'everyone' | 'admins' | 'off'>;
+  isAdmin?: boolean;
 };
 
 /** Sidebar key → plan feature that must be on. Everyday Analyze items stay ungated. */
@@ -210,8 +213,10 @@ export const NAV_PERMISSION_GATE: Record<string, string> = {
   catalog: 'catalog:view',
 };
 
-function linkAllowed(key: string, access?: NavAccess): boolean {
+export function linkAllowed(key: string, access?: NavAccess): boolean {
   if (!access) return true;
+  const level = access.menu?.[key];
+  if (level === 'off' || (level === 'admins' && !access.isAdmin)) return false;
   const feature = NAV_FEATURE_GATE[key];
   if (feature && access.hasFeature && !access.hasFeature(feature)) return false;
   const perm = NAV_PERMISSION_GATE[key];

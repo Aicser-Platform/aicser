@@ -7144,9 +7144,9 @@
     "plan_free": "ឥតគិតថ្លៃ",
     "plan_pro": "Pro",
     "plan_team": "ក្រុម",
-    "plan_card_free_features": "30 AI credits/ខែ • 1 គម្រោង • 2 ប្រភពទិន្នន័យ",
+    "plan_card_free_features": "100 AI credits/ខែ • 1 គម្រោង • 2 ប្រភពទិន្នន័យ",
     "plan_card_pro_features": "900 AI credits/ខែ • គម្រោងច្រើន • ប្រភពទិន្នន័យច្រើន",
-    "plan_card_team_features": "5000 AI credits/ខែ • ការសហការក្រុម",
+    "plan_card_team_features": "900 AI credits ក្នុងមួយសមាជិក/ខែ • ការសហការក្រុម",
     "default_project_name": "គម្រោងរបស់ខ្ញុំ",
     "default_project_name_with_user": "គម្រោងរបស់ {name}",
     "popular": "ពេញនិយម",
@@ -10341,7 +10341,15 @@
     "field_share_org_help": "គម្រោងទាំងអស់ក្នុងស្ថាប័នរបស់អ្នកអាចប្រើការសម្រេចនេះ។ បិទ៖ តែគម្រោងនេះប៉ុណ្ណោះ។",
     "shared_org_tag": "ស្ថាប័ន"
   },
+  "settings_menu": {
+    "subtitle": "ជ្រើសរើសអ្វីដែលមនុស្សឃើញក្នុងម៉ឺនុយ។ ការចូលប្រើនៅតែអាស្រ័យលើតួនាទី និងគម្រោង។",
+    "everyone": "គ្រប់គ្នា",
+    "admins": "អ្នកគ្រប់គ្រង",
+    "off": "បិទ",
+    "failed": "មិនអាចរក្សាទុកម៉ឺនុយបានទេ។"
+  },
   "settings_nav": {
+    "menu_label": "ម៉ឺនុយ",
     "title": "ការកំណត់",
     "group_account": "ខ្ញុំ",
     "group_workspace": "កន្លែងធ្វើការ",
@@ -12769,6 +12777,8 @@
     "failed": "មានអ្វីមួយខុសប្រក្រតី។ សូមព្យាយាមម្តងទៀត។"
   },
   "ai_agents": {
+    "ai_model": "ម៉ូដែល AI",
+    "model_default": "លំនាំដើមរបស់ស្ថាប័ន",
     "page_title": "ជំនួយការ",
     "page_subtitle": "ជំនួយការដែលក្រុមរបស់អ្នកបានបង្កើតសម្រាប់ការងារ ផ្នែក ឬគម្រោង។",
     "new": "ជំនួយការថ្មី",

@@ -99,3 +99,24 @@ describe('job-first navigation', () => {
     ]);
   });
 });
+
+describe('organization menu', () => {
+  const items = () => filterSidebarItems(buildEnterpriseSidebarItems(true), {});
+  const keys = (list: ReturnType<typeof items>) => list.flatMap((i) => (i.kind === 'section' ? i.children.map((c) => c.key) : i.kind === 'link' ? [i.key] : []));
+
+  it('hides what is switched off, from everyone', () => {
+    const out = filterSidebarItems(buildEnterpriseSidebarItems(true), { menu: { agents: 'off' }, isAdmin: true });
+    expect(keys(out)).not.toContain('agents');
+  });
+
+  it('shows admin-only items to admins alone', () => {
+    const menu = { alerts: 'admins' } as const;
+    expect(keys(filterSidebarItems(buildEnterpriseSidebarItems(true), { menu, isAdmin: true }))).toContain('alerts');
+    expect(keys(filterSidebarItems(buildEnterpriseSidebarItems(true), { menu, isAdmin: false }))).not.toContain('alerts');
+  });
+
+  it('drops a section once all its items are off', () => {
+    const out = filterSidebarItems(buildEnterpriseSidebarItems(true), { menu: { models: 'off', 'ai-decisions': 'off' } });
+    expect(out.some((i) => i.kind === 'section' && i.key === 'sec-predict')).toBe(false);
+  });
+});

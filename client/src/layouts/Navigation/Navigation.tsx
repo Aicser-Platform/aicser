@@ -1,5 +1,6 @@
 'use client';
 
+import { useOrgMenu } from '@/hooks/useOrgMenu';
 import useClickOutside from '@/hooks/useClickOutside';
 import {
   AlertOutlined, ApartmentOutlined, BulbOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
@@ -144,6 +145,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
 
   const { features, loading: featuresLoading } = useSubscriptionStore();
   const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const menu = useOrgMenu();
   const hasFeature = React.useCallback(
     (feature: string) => {
       if (!isEnterpriseEdition) return true;
@@ -160,8 +162,10 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
       hasPermission: permissionsLoading
         ? undefined
         : (code) => hasPermission(code as Permission),
+      menu,
+      isAdmin: hasPermission(Permission.ORG_EDIT),
     });
-  }, [showAiNav, hasFeature, hasPermission, permissionsLoading]);
+  }, [showAiNav, hasFeature, hasPermission, permissionsLoading, menu]);
 
   const communityItems = React.useMemo<NavItemDef[]>(
     () => buildCommunitySidebarItems(),

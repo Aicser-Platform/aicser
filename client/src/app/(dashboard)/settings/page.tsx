@@ -115,6 +115,7 @@ const SubscriptionTab = nextDynamic(
 const AgentBudgetTab = nextDynamic((() => import('@/ee-lazy/AgentBudgetTab').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
+const MenuTab = nextDynamic(() => import('./components/MenuTab'), { ssr: false });
 const PersonalLicenseTab = nextDynamic((() => import('@/ee-lazy/PersonalLicenseTab').then((m) => ({ default: m.PersonalLicenseTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
@@ -280,6 +281,14 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: OrganizationTab,
         description: 'Logo, name, branding',
+      },
+      {
+        key: 'menu',
+        label: 'Menu',
+        icon: <MenuOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: MenuTab as React.ComponentType<TabComponentProps>,
       },
       {
         key: 'adoption',

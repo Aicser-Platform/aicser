@@ -7139,9 +7139,9 @@
     "plan_free": "無料",
     "plan_pro": "プロ",
     "plan_team": "チーム",
-    "plan_card_free_features": "30 AI クレジット/月 • 1 プロジェクト • 2 データソース",
+    "plan_card_free_features": "100 AI クレジット/月 • 1 プロジェクト • 2 データソース",
     "plan_card_pro_features": "900 AI クレジット/月 • 複数プロジェクト • 複数データソース",
-    "plan_card_team_features": "5000 AI クレジット/月 • チーム・コラボレーション",
+    "plan_card_team_features": "メンバーごとに 900 AI クレジット/月 • チーム・コラボレーション",
     "default_project_name": "マイ・プロジェクト",
     "default_project_name_with_user": "{name} のプロジェクト",
     "popular": "人気",
@@ -10304,7 +10304,15 @@
     "field_share_org_help": "組織内のすべてのプロジェクトがこの判定を利用できます。オフ：このプロジェクトのみ。",
     "shared_org_tag": "組織"
   },
+  "settings_menu": {
+    "subtitle": "メニューに表示する項目を選びます。アクセスは引き続きロールとプランに従います。",
+    "everyone": "全員",
+    "admins": "管理者",
+    "off": "オフ",
+    "failed": "メニューを保存できませんでした。"
+  },
   "settings_nav": {
+    "menu_label": "メニュー",
     "title": "設定",
     "group_account": "自分",
     "group_workspace": "ワークスペース",
@@ -12758,6 +12766,8 @@
     "failed": "問題が発生しました。もう一度お試しください。"
   },
   "ai_agents": {
+    "ai_model": "AI モデル",
+    "model_default": "組織の既定",
     "page_title": "アシスタント",
     "page_subtitle": "チームが特定の業務、部署、プロジェクトのために構築したアシスタント。",
     "new": "新しいアシスタント",

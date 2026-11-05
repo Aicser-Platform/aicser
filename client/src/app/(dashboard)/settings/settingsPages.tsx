@@ -50,6 +50,7 @@ export const SETTINGS_SECTIONS: { id: string; label: string; pages: SettingsPage
     pages: [
       { id: 'organization', label: 'Organization', description: 'Name, branding and license', icon: <BankOutlined />, keys: ['organization', 'license'] },
       { id: 'team', label: 'Team & roles', description: 'Members, invitations and what each role may do', icon: <TeamOutlined />, keys: ['team', 'roles'] },
+      { id: 'menu', label: 'Menu', keys: ['menu'] },
       { id: 'identity', label: 'Directory sync', keys: ['identity'] },
       { id: 'adoption', label: 'Adoption', keys: ['adoption'] },
       { id: 'lakehouse', label: 'Lakehouse', keys: ['lakehouse'] },

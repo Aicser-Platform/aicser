@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { MOVED_TABS, SETTINGS_SECTIONS, groupSettingsPages } from '../settingsPages';
 
 const ALL_SETTINGS = [
-  'access-overview', 'adoption', 'agent-budget', 'agent-capabilities', 'agent-mcp', 'agent-rules', 'agent-skills', 'ai-decision-layer', 'ai-memory', 'ai-quality', 'ai-residency', 'answer-style', 'api-keys', 'audit', 'billing-subscription', 'data-shares', 'ecosystem', 'embed', 'general', 'identity', 'integrations', 'lakehouse', 'license', 'notifications', 'organization', 'personal-license', 'privacy', 'profile', 'project', 'publishing', 'releases', 'roles', 'security', 'team', 'usage',
+  'access-overview', 'adoption', 'menu', 'agent-budget', 'agent-capabilities', 'agent-mcp', 'agent-rules', 'agent-skills', 'ai-decision-layer', 'ai-memory', 'ai-quality', 'ai-residency', 'answer-style', 'api-keys', 'audit', 'billing-subscription', 'data-shares', 'ecosystem', 'embed', 'general', 'identity', 'integrations', 'lakehouse', 'license', 'notifications', 'organization', 'personal-license', 'privacy', 'profile', 'project', 'publishing', 'releases', 'roles', 'security', 'team', 'usage',
 ];
 const item = (key: string) => ({ key, label: key, description: `${key} desc` });
 
 describe('Settings pages', () => {
-  it('holds every setting exactly once, on 20 pages', () => {
+  it('holds every setting exactly once, on 21 pages', () => {
     const listed = SETTINGS_SECTIONS.flatMap((s) => s.pages.flatMap((p) => p.keys));
     expect([...listed].sort()).toEqual([...ALL_SETTINGS].sort());
-    expect(SETTINGS_SECTIONS.flatMap((s) => s.pages)).toHaveLength(20);
+    expect(SETTINGS_SECTIONS.flatMap((s) => s.pages)).toHaveLength(21);
   });
 
   it('shows a page only with the settings this person may open, named after a lone setting', () => {

@@ -7439,9 +7439,9 @@
     "plan_free": "Free",
     "plan_pro": "Pro",
     "plan_team": "Team",
-    "plan_card_free_features": "30 AI credits/month • 1 project • 2 data sources",
+    "plan_card_free_features": "100 AI credits/month • 1 project • 2 data sources",
     "plan_card_pro_features": "900 AI credits/month • Multiple projects • Multiple data sources",
-    "plan_card_team_features": "5000 AI credits/month • Team collaboration",
+    "plan_card_team_features": "900 AI credits per member/month • Team collaboration",
     "default_project_name": "My project",
     "default_project_name_with_user": "{name}'s Project",
     "popular": "Popular",
@@ -11090,7 +11090,15 @@
     "ce_llm_hint": "LLM usage appears in your provider console.",
     "ce_api_keys_link": "API keys & providers"
   },
+  "settings_menu": {
+    "subtitle": "Choose what people see in the menu. Access still follows roles and plan.",
+    "everyone": "Everyone",
+    "admins": "Admins",
+    "off": "Off",
+    "failed": "Couldn't save the menu."
+  },
   "settings_nav": {
+    "menu_label": "Menu",
     "title": "Settings",
     "group_account": "Me",
     "group_workspace": "Workspace",
@@ -16147,6 +16155,8 @@
     "failed": "Something went wrong. Please try again."
   },
   "ai_agents": {
+    "ai_model": "AI model",
+    "model_default": "Organization default",
     "page_title": "Assistants",
     "page_subtitle": "Assistants your team built for a job, department or project.",
     "new": "New assistant",

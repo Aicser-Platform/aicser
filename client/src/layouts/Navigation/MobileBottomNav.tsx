@@ -1,5 +1,6 @@
 'use client';
 
+import { useOrgMenu } from '@/hooks/useOrgMenu';
 import React from 'react';
 import {
   AlertOutlined,
@@ -28,7 +29,7 @@ import {
 import { Drawer } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { filterSidebarItems, selectedKeyForPathname } from './navConfig';
+import { filterSidebarItems, linkAllowed, selectedKeyForPathname } from './navConfig';
 import SidebarNav, { type SidebarNavIconMap } from './SidebarNav';
 import { useAiAvailability } from '@/hooks/useAiAvailability';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -85,14 +86,16 @@ export function MobileBottomNav() {
   const aiAvailability = useAiAvailability(false, isEnterpriseEdition);
   const showAiNav = isEnterpriseEdition && aiAvailability.configured;
 
-  const tabs = isEnterpriseEdition && showAiNav
+  const { hasPermission, loading: permissionsLoading } = usePermissions();
+  const menu = useOrgMenu();
+  const tabs = (isEnterpriseEdition && showAiNav
     ? EE_MOBILE_TABS
     : isEnterpriseEdition
       ? EE_MOBILE_TABS.filter((tab) => tab.key !== 'chat')
-      : CE_MOBILE_TABS;
+      : CE_MOBILE_TABS
+  ).filter((tab) => linkAllowed(tab.key, { menu, isAdmin: hasPermission(Permission.ORG_EDIT) }));
   const moreActive = isMoreNavActive(selectedKey, isEnterpriseEdition, showAiNav);
   const { features, loading: featuresLoading } = useSubscriptionStore();
-  const { hasPermission, loading: permissionsLoading } = usePermissions();
   const hasFeature = React.useCallback(
     (feature: string) => {
       if (!isEnterpriseEdition) return true;
@@ -108,8 +111,10 @@ export function MobileBottomNav() {
     return filterSidebarItems(raw, {
       hasFeature,
       hasPermission: permissionsLoading ? undefined : (code) => hasPermission(code as Permission),
+      menu,
+      isAdmin: hasPermission(Permission.ORG_EDIT),
     });
-  }, [hasFeature, hasPermission, permissionsLoading]);
+  }, [hasFeature, hasPermission, permissionsLoading, menu]);
 
   const navigate = (href: string) => {
     setMoreOpen(false);
