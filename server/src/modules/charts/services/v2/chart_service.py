@@ -281,6 +281,9 @@ class ChartService:
         return res.scalars().all()
 
     async def update(self, chart: Chart, data: dict) -> Chart:
+        from src.shared.asset_revisions import CHART_FIELDS, keep
+
+        await keep(self.db, "chart", chart.id, {f: getattr(chart, f, None) for f in CHART_FIELDS})
         if any(k in data for k in ("data_source_id", "project_id", "dashboard_id")):
             from src.modules.data.services.project_scope import ensure_source_in_project
 
@@ -314,7 +317,7 @@ class ChartService:
         if hasattr(chart, "is_deleted"):
             chart.is_deleted = True
             if hasattr(chart, "deleted_at"):
-                chart.deleted_at = datetime.now(timezone.utc)
+                chart.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)  # the column has no time zone
             await self.db.flush()
             await self.db.commit()
             return
@@ -333,7 +336,10 @@ class ChartService:
         return chart
 
     async def purge(self, chart: Chart) -> None:
-        """Permanently delete a chart row (and any leftover placements)."""
+        """Permanently delete a chart row (and any leftover placements). Refused under legal hold."""
+        from src.shared.legal_hold import refuse_if_held
+
+        await refuse_if_held(self.db, getattr(chart, "project_id", None))
         chart_id = getattr(chart, "id", None)
         if chart_id is not None:
             await self.db.execute(
@@ -2227,6 +2233,12 @@ class ChartService:
         group_field = chart_query.get("groupField")
         sort_by = self._normalize_sort_by(chart_query.get("sortBy"))
         sort_order = self._normalize_sort_order(chart_query.get("sortOrder"))
+        if sort_by == "record_order":
+            # No sort chosen on the chart: keep the order the saved SQL asked for (a "top 10 by
+            # amount" query stays top-first) instead of whatever order GROUP BY returns.
+            inherited = self._saved_sql_sort(saved_sql, x_field, list(y_metrics) + list(y_metrics_secondary))
+            if inherited:
+                sort_by, sort_order = inherited
         sort_by, sort_order = self._time_axis_sort(chart, chart_query, sort_by, sort_order)
         # Default cap for the re-aggregated result. When the chart wasn't given an
         # explicit limit, prefer whatever LIMIT the saved SQL itself specified over
@@ -3216,6 +3228,34 @@ class ChartService:
         if sort_by == "group":
             return f"ORDER BY group_field {direction}"
         return ""
+
+    def _saved_sql_sort(
+        self, sql: str, x_field: Optional[str], y_metrics: List[Any]
+    ) -> Optional[Tuple[str, str]]:
+        """The saved SQL's first ORDER BY key as a chart sort: ("x" | "y_<i>", "asc" | "desc"),
+        when it orders by the chart's x column or one of its metric columns."""
+        try:
+            import sqlglot
+            from sqlglot import exp
+
+            tree = sqlglot.parse_one(sql)
+        except Exception:
+            return None
+        order = tree.args.get("order") if tree is not None else None
+        if not order or not order.expressions:
+            return None
+        first = order.expressions[0]
+        key = first.this
+        name = (key.name if isinstance(key, (exp.Column, exp.Identifier)) else "").lower()
+        if not name:
+            return None
+        direction = "desc" if first.args.get("desc") else "asc"
+        if x_field and name == str(x_field).lower():
+            return "x", direction
+        for i, ym in enumerate(y_metrics):
+            if isinstance(ym, dict) and str(ym.get("field") or "").lower() == name:
+                return f"y_{i}", direction
+        return None
 
     def _normalize_sort_by(self, sort_by: Optional[str]) -> str:
         if sort_by in (None, "", "order", "record_order"):

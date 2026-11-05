@@ -9,6 +9,7 @@ import {
   CameraOutlined,
 } from '@ant-design/icons';
 import { DashboardLibrarySelect } from '@/app/(dashboard)/dashboards/components/DashboardLibrarySelect';
+import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
 import {
   type BindColumn,
   type BindDataMode,
@@ -273,6 +274,8 @@ export function QueryVisualizeModal({
                 onChange={(id) => setDashboardId(id || undefined)}
                 placeholder="Select dashboard"
                 defaultFacet="recent"
+                // A new project has no dashboards yet: start one here instead of a dead end.
+                extraOptions={[{ value: CREATE_NEW_DASHBOARD_ID, label: 'Create new dashboard…' }]}
               />
             </div>
           )}

@@ -316,14 +316,13 @@ export function StudioContextBar({
             </Dropdown>
           )}
 
-          {onClearFilters && !presentationMode && (hasConfiguredFilters || !readOnly) && (
+          {onClearFilters && !presentationMode && activeFilterCount > 0 && (
             <Tooltip title={t('clear_filters')}>
               <Button
                 type="text"
                 size="small"
                 className="icon-only-btn"
                 icon={<ClearOutlined />}
-                disabled={activeFilterCount === 0}
                 onClick={onClearFilters}
                 aria-label={t('clear_filters')}
               />
@@ -331,7 +330,7 @@ export function StudioContextBar({
           )}
 
           <>
-            {!presentationMode && onDashboardColorPaletteChange ? (
+            {!presentationMode && !readOnly && onDashboardColorPaletteChange ? (
               <DashboardStyleMenu
                 currentPalette={dashboardColorPalette}
                 hideLayout={hideLayout}

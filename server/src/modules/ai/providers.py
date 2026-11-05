@@ -17,15 +17,14 @@ _settings_repo = UserSettingRepository()
 
 PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
     # GPT-5.6 (Sol/Terra/Luna tiers) is the current flagship generation as of Jul
-    # 2026; gpt-4.1-mini is kept as a bridge option (still callable, retires Oct 23
-    # 2026) but gpt-4o/gpt-4o-mini were dropped — fully superseded, no firm date
-    # but no upside over gpt-4.1-mini either. Use the custom-model field for any
+    # 2026; gpt-4.1-mini retired Oct 23 2026 and gpt-4o/gpt-4o-mini were dropped as
+    # fully superseded. Use the custom-model field for any
     # of these that a user still specifically needs.
     "openai": [
         {"id": "gpt-5.6-luna", "name": "GPT-5.6 Luna", "tier": "fast", "cost_per_1k_tokens": 0},
+        {"id": "gpt-6-luna", "name": "GPT-6 Luna", "tier": "fast", "cost_per_1k_tokens": 0},
         {"id": "gpt-5.6-terra", "name": "GPT-5.6 Terra", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "gpt-5.6-sol", "name": "GPT-5.6 Sol", "tier": "reasoning", "cost_per_1k_tokens": 0},
-        {"id": "gpt-4.1-mini", "name": "GPT-4.1 Mini (retiring Oct 2026)", "tier": "fast", "cost_per_1k_tokens": 0},
     ],
     "anthropic": [
         {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "tier": "fast", "cost_per_1k_tokens": 0},
@@ -47,7 +46,6 @@ PROVIDER_MODELS: dict[str, list[dict[str, Any]]] = {
         {"id": "azure/gpt-5.6-luna", "name": "Azure GPT-5.6 Luna", "tier": "fast", "cost_per_1k_tokens": 0},
         {"id": "azure/gpt-5.6-terra", "name": "Azure GPT-5.6 Terra", "tier": "standard", "cost_per_1k_tokens": 0},
         {"id": "azure/gpt-5.6-sol", "name": "Azure GPT-5.6 Sol", "tier": "reasoning", "cost_per_1k_tokens": 0},
-        {"id": "azure/gpt-4.1-mini", "name": "Azure GPT-4.1 Mini (retiring Oct 2026)", "tier": "fast", "cost_per_1k_tokens": 0},
     ],
     # DeepSeek's legacy "deepseek-chat"/"deepseek-reasoner" aliases were retired by
     # DeepSeek on 2026-07-24 in favor of explicit V4 model ids — use those directly.

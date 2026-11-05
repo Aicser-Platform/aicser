@@ -92,6 +92,16 @@
   --font-size-2xl: 24px;
   --font-size-3xl: 32px;
 
+  /* Semantic type roles (Apple-style: a few named steps, not ad-hoc sizes). Headings and
+     antd's fontSizeHeading1-5 tokens (ThemeProvider) use the same steps. */
+  --type-title-1: 28px;
+  --type-title-2: 22px;
+  --type-title-3: 18px;
+  --type-headline: 16px;
+  --type-body: 14px;
+  --type-callout: 13px;
+  --type-footnote: 12px;
+
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -127,26 +137,27 @@
 .stat-card,
 .summary-card {
   background: var(--ant-color-bg-container) !important;
-  border: var(--border-thin) solid var(--ant-color-border) !important;
+  border: var(--border-thin) solid var(--ant-color-border-secondary) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
+  /* Flat: groups are separated by a hairline and space. Shadows mean "floats above the page"
+     (menus, popovers, modals); a resting card with a shadow and a hover lift read as clickable
+     when it wasn't. */
+  box-shadow: none !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast) !important;
   overflow: hidden !important;
   margin: 0 !important;
 }
 
-.ant-card:hover,
-.content-card:hover {
-  box-shadow: var(--shadow-md) !important;
+/* Only cards that are clickable answer the pointer. */
+.ant-card-hoverable:hover {
+  box-shadow: var(--shadow-sm) !important;
   border-color: var(--ant-color-border) !important;
 }
 
-.page-section-card.ant-card:hover,
-.stat-card:hover,
-.summary-card:hover {
-  box-shadow: var(--shadow-md) !important;
-  transform: translateY(-2px) !important;
-  border-color: var(--ant-color-primary) !important;
+/* A card inside a card is a sub-group, not a second box: a quiet fill instead of another frame. */
+.ant-card .ant-card:not(.ant-card-hoverable) {
+  background: var(--ant-color-fill-quaternary) !important;
+  border-color: transparent !important;
 }
 
 /* Statistic cards - enhanced styling */
@@ -214,7 +225,7 @@
   background: var(--ant-color-bg-container) !important;
   border: var(--border-thin) solid var(--ant-color-border) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
+  box-shadow: none !important;
   padding: var(--spacing-lg) !important;
   margin: var(--spacing-md) !important;
   transition: all var(--transition-base) !important;
@@ -263,24 +274,29 @@
   font-size: var(--font-size-sm) !important;
 }
 
-.ant-btn.ant-btn-icon-only,
-.ant-btn-text.ant-btn-icon-only,
+/* 28px is the smallest comfortable pointer target (Apple/WCAG 2.5.8 ask for ≥24, 28-32 on
+   desktop); 24px icon buttons were the most common miss in the audit. */
+/* A search box's button and large buttons keep their control height so they line up with the field. */
+.ant-btn.ant-btn-icon-only:not(.ant-input-search-button):not(.ant-btn-lg),
+.ant-btn-text.ant-btn-icon-only:not(.ant-input-search-button):not(.ant-btn-lg),
 .step-rail-action-btn {
   padding: 0 !important;
   min-height: unset !important;
-  height: 24px !important;
-  width: 24px !important;
-  min-width: 24px !important;
+  height: 28px !important;
+  width: 28px !important;
+  min-width: 28px !important;
   box-shadow: none !important;
   border: none !important;
 }
 
-.ant-btn:hover {
-  box-shadow: var(--shadow-sm) !important;
+.ant-btn.ant-btn-icon-only:not(.ant-btn-primary):not(.ant-btn-dangerous):hover:not(:disabled),
+.ant-btn-text.ant-btn-icon-only:hover:not(:disabled) {
+  background: var(--ant-color-fill-tertiary) !important;
 }
 
+.ant-btn:hover,
 .ant-btn:active {
-  box-shadow: var(--shadow-xs) !important;
+  box-shadow: none !important;
 }
 
 .ant-btn-primary {
@@ -341,7 +357,7 @@
   outline: none !important;
   box-shadow: none !important;
   background: transparent !important;
-  border-radius: 4px !important;
+  border-radius: var(--radius-sm) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -359,7 +375,7 @@
 .icon-only-btn.ant-btn:hover:not(:disabled),
 .icon-only-btn.ant-btn.ant-btn-text:hover:not(:disabled),
 .icon-only-btn.ant-btn:focus-visible:not(:disabled) {
-  background: transparent !important;
+  background: var(--ant-color-fill-tertiary) !important;
   border: none !important;
   box-shadow: none !important;
   color: var(--ant-color-text) !important;
@@ -404,7 +420,7 @@
 
 .icon-toolbar .ant-btn.ant-btn-text:hover:not(:disabled),
 .icon-toolbar .ant-btn.ant-btn-default:hover:not(:disabled) {
-  background: transparent !important;
+  background: var(--ant-color-fill-tertiary) !important;
   border: none !important;
   color: var(--ant-color-text) !important;
   transform: none !important;
@@ -729,35 +745,13 @@
 .ant-tag {
   border-radius: var(--radius-sm) !important;
   font-weight: var(--font-weight-medium) !important;
-  border: none !important;
-  font-size: var(--font-size-xs) !important;
-  transition: all var(--transition-fast) !important;
+  border-color: transparent !important;
+  font-size: var(--type-footnote) !important;
+  transition: none !important;
 }
 
-.ant-tag-green {
-  background: rgba(22, 163, 74, 0.1) !important;
-  color: var(--ant-color-success) !important;
-  border: 1px solid rgba(22, 163, 74, 0.2) !important;
-}
-
-.ant-tag-red {
-  background: rgba(220, 38, 38, 0.1) !important;
-  color: var(--ant-color-error) !important;
-  border: 1px solid rgba(220, 38, 38, 0.2) !important;
-}
-
-.ant-tag-blue {
-  background: rgba(37, 99, 235, 0.1) !important;
-  color: var(--ant-color-primary) !important;
-  border: 1px solid rgba(37, 99, 235, 0.2) !important;
-}
-
-.ant-tag-purple,
-.ant-tag-magenta {
-  background: rgba(147, 51, 234, 0.1) !important;
-  color: #a855f7 !important;
-  border: 1px solid rgba(147, 51, 234, 0.2) !important;
-}
+/* Every tag colour uses antd's own preset tint; four colours used to add a frame back and pick
+   their own hues, so a green and an orange tag in the same row looked like different components. */
 
 /* ========================================
    ALERTS & NOTIFICATIONS - CLEAR
@@ -862,38 +856,41 @@
    TYPOGRAPHY - CLEAR HIERARCHY
    ======================================== */
 
-h1, .h1 {
-  font-size: var(--font-size-3xl) !important;
-  font-weight: var(--font-weight-bold) !important;
-  line-height: 1.2 !important;
-  color: var(--ant-color-text) !important;
-  margin-bottom: var(--spacing-lg) !important;
-  letter-spacing: -0.02em !important;
+/* Defaults for plain headings. :where() gives them zero specificity, so anything more specific
+   (antd Title — sized by the same steps through ThemeProvider tokens — KPI values, panel titles)
+   keeps its own size and colour; Typography type="secondary" works on headings again. */
+:where(h1, .h1) {
+  font-size: var(--type-title-1);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.25;
+  color: var(--ant-color-text);
+  margin-bottom: var(--spacing-md);
+  letter-spacing: -0.02em;
 }
 
-h2, .h2 {
-  font-size: var(--font-size-2xl) !important;
-  font-weight: var(--font-weight-semibold) !important;
-  line-height: 1.3 !important;
-  color: var(--ant-color-text) !important;
-  margin-bottom: var(--spacing-md) !important;
-  letter-spacing: -0.01em !important;
+:where(h2, .h2) {
+  font-size: var(--type-title-2);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+  color: var(--ant-color-text);
+  margin-bottom: var(--spacing-md);
+  letter-spacing: -0.01em;
 }
 
-h3, .h3 {
-  font-size: var(--font-size-xl) !important;
-  font-weight: var(--font-weight-semibold) !important;
-  line-height: 1.4 !important;
-  color: var(--ant-color-text) !important;
-  margin-bottom: var(--spacing-md) !important;
+:where(h3, .h3) {
+  font-size: var(--type-title-3);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.4;
+  color: var(--ant-color-text);
+  margin-bottom: var(--spacing-sm);
 }
 
-h4, .h4 {
-  font-size: var(--font-size-base) !important;
-  font-weight: var(--font-weight-semibold) !important;
-  line-height: 1.5 !important;
-  color: var(--ant-color-text) !important;
-  margin-bottom: var(--spacing-sm) !important;
+:where(h4, .h4) {
+  font-size: var(--type-headline);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.5;
+  color: var(--ant-color-text);
+  margin-bottom: var(--spacing-sm);
 }
 
 /* ========================================
@@ -1021,9 +1018,8 @@ h4, .h4 {
 .page-content > .page-wrapper > .page-header,
 .dashboard-content-override .page-content > .page-wrapper > .page-header,
 .page-header {
-  margin-bottom: var(--spacing-2xl) !important;
+  margin-bottom: var(--spacing-lg) !important;
   margin-left: 0 !important;
-  animation: fadeInUp var(--transition-slow) ease-out;
 }
 
 /* A header outside the page shell keeps its own inset from the sidebar. Inside .page-wrapper the
@@ -1041,10 +1037,10 @@ h4, .h4 {
 
 .page-description {
   color: var(--ant-color-text-secondary) !important;
-  font-size: var(--font-size-base) !important;
-  line-height: 1.6 !important;
+  font-size: var(--type-body) !important;
+  line-height: 1.5 !important;
   display: block !important;
-  margin-top: var(--spacing-sm) !important;
+  margin-top: var(--spacing-xs) !important;
 }
 
 .page-divider {
@@ -1058,7 +1054,6 @@ h4, .h4 {
   align-items: center !important;
   margin-bottom: var(--spacing-xl) !important;
   padding: var(--spacing-md) 0 !important;
-  animation: slideInRight var(--transition-slow) ease-out;
 }
 
 .toolbar-left,
@@ -1088,12 +1083,7 @@ h4, .h4 {
   border-radius: var(--radius-lg) !important;
   padding: var(--spacing-lg) !important;
   margin-bottom: var(--spacing-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
-}
-
-.content-section:hover {
-  box-shadow: var(--shadow-md) !important;
+  box-shadow: none !important;
 }
 
 .content-section .content-section {
@@ -1105,16 +1095,11 @@ h4, .h4 {
 
 .page-section {
   background: var(--ant-color-bg-container) !important;
-  border: var(--border-medium) solid var(--ant-color-border) !important;
-  border-radius: var(--radius-xl) !important;
-  padding: var(--spacing-xl) !important;
+  border: var(--border-thin) solid var(--ant-color-border-secondary) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: var(--spacing-lg) !important;
   margin-bottom: var(--spacing-xl) !important;
-  box-shadow: var(--shadow-md) !important;
-  transition: all var(--transition-base) !important;
-}
-
-.page-section:hover {
-  box-shadow: var(--shadow-lg) !important;
+  box-shadow: none !important;
 }
 
 .card-group {
@@ -1184,12 +1169,12 @@ h4, .h4 {
     padding: var(--spacing-md) !important;
   }
 
-  h1, .h1 {
-    font-size: var(--font-size-2xl) !important;
+  :where(h1, .h1) {
+    font-size: var(--type-title-2);
   }
 
-  h2, .h2 {
-    font-size: var(--font-size-xl) !important;
+  :where(h2, .h2) {
+    font-size: var(--type-title-3);
   }
 
   .ant-btn {
@@ -1295,14 +1280,9 @@ textarea[class*="ant-input"] {
   background: var(--ant-color-bg-container) !important;
   border: var(--border-thin) solid var(--ant-color-border) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
+  box-shadow: none !important;
 }
 
-.profile-card:hover {
-  box-shadow: var(--shadow-md) !important;
-  border-color: var(--ant-color-primary) !important;
-}
 
 .profile-card .ant-card-head {
   border-bottom: var(--border-thin) solid var(--ant-color-border) !important;
@@ -1318,26 +1298,22 @@ textarea[class*="ant-input"] {
   background: var(--ant-color-bg-container) !important;
   border: var(--border-thin) solid var(--ant-color-border) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
+  box-shadow: none !important;
   height: 100% !important;
 }
 
-.usage-card:hover {
-  box-shadow: var(--shadow-lg) !important;
-  transform: translateY(-4px) !important;
-  border-color: var(--ant-color-primary) !important;
-}
 
 /* Billing Plan Card */
 .billing-plan-card {
   background: var(--ant-color-bg-container) !important;
   border: var(--border-thin) solid var(--ant-color-border) !important;
   border-radius: var(--radius-lg) !important;
-  box-shadow: var(--shadow-sm) !important;
-  transition: all var(--transition-base) !important;
+  box-shadow: none !important;
 }
 
-.billing-plan-card:hover {
-  box-shadow: var(--shadow-md) !important;
+/* StatusTag (components/ui/StatusTag.tsx): as wide as its words, wherever it sits. */
+.status-tag.ant-tag {
+  align-self: flex-start;
+  width: fit-content;
+  margin-inline-end: 0;
 }

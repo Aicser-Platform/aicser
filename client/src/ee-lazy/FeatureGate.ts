@@ -1,0 +1,1 @@
+export { FeatureGate } from '@/ee';

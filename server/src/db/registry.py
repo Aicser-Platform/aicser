@@ -63,6 +63,8 @@ from src.modules.workbooks.models import Workbook, WorkbookComment, WorkbookVers
 from src.modules.prep.models import PrepRecipe, PrepRecipeVersion  # noqa: F401
 from src.modules.semantic_domains.models import SemanticDomain, SemanticDomainSource  # noqa: F401
 
+from src.modules.notifications.models import PushSubscription  # noqa: F401
+
 # ── EE models (only when enterprise) ─────────────────────────────────────────
 # NOTE: Always import via src.modules.* shim paths (not ee.modules.* directly)
 # so Python's module cache deduplicates across all import sites.
@@ -70,13 +72,16 @@ if is_ee_enabled():
     try:
         from src.modules.master_data.models import MasterEntity  # noqa: F401
         from src.modules.activation.models import ActionDestination, ActionSend  # noqa: F401
+        from src.modules.promotion.models import PromotionRequest  # noqa: F401
         from src.modules.privacy.models import PrivacyRequest  # noqa: F401
         from src.modules.shares.models import DataShare  # noqa: F401
     except ImportError:
         pass
     try:
         from src.modules.billing.models import (
+            OrganizationSeat,
             OrganizationSubscription,
+            PersonalLicense,
             OrganizationUsage,
             PaymentHistory,
             SubscriptionPlan,
@@ -151,12 +156,18 @@ if is_ee_enabled():
         pass
 
     try:
-        from src.modules.warehouse.models import Warehouse, WarehouseQuery
+        from src.modules.warehouse.models import IcebergTableGrant, Warehouse, WarehouseQuery  # noqa: F401
     except ImportError:
         pass
 
     try:
         from src.modules.mlops.models import MLModel, MLModelVersion, MLPredictionLog
+    except ImportError:
+        pass
+
+    try:
+        from src.modules.agent.models import (AgentArtifact, AgentDevice, AgentMemory, AgentOrgPolicy, AgentRun, AgentSchedule,
+                                              AgentSkill, AgentStep, OrgAgent)
     except ImportError:
         pass
 

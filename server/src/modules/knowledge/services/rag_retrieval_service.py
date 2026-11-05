@@ -114,11 +114,12 @@ _cross_encoder_unavailable = False  # sticky after first load failure -- don't r
 
 
 def _load_cross_encoder(model_name: str):
+    from src.shared.model_loading import MODEL_LOAD_LOCK, track
+
+    track("reranker", _cross_encoder_cache)
     model = _cross_encoder_cache.get(model_name)
     if model is not None:
         return model
-    from src.shared.model_loading import MODEL_LOAD_LOCK
-
     with MODEL_LOAD_LOCK:
         return _load_cross_encoder_locked(model_name)
 
@@ -126,12 +127,9 @@ def _load_cross_encoder(model_name: str):
 def _load_cross_encoder_locked(model_name: str):
     model = _cross_encoder_cache.get(model_name)
     if model is None:
-        from sentence_transformers import CrossEncoder
-        try:
-            # Cached weights first (skips the online revision check, ~30 s per process).
-            model = CrossEncoder(model_name, local_files_only=True)
-        except Exception:
-            model = CrossEncoder(model_name)
+        from src.shared.onnx_models import OnnxCrossEncoder
+
+        model = OnnxCrossEncoder(model_name)
         _cross_encoder_cache[model_name] = model
     return model
 
@@ -182,7 +180,7 @@ async def _cross_encoder_rerank(chunks: List[RetrievedChunk], query: str) -> Opt
             ch.score = round(RERANK_CE_WEIGHT * norm + (1 - RERANK_CE_WEIGHT) * ch.score, 4)
         return sorted(chunks, key=lambda c: c.score, reverse=True)
     except ImportError:
-        logger.info("RAG rerank: sentence_transformers CrossEncoder not available, falling back to keyword rerank")
+        logger.info("RAG rerank: onnxruntime not available, falling back to keyword rerank")
         _cross_encoder_unavailable = True
         return None
     except Exception as e:

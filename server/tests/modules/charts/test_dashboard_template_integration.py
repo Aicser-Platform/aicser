@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from jose import jwt as jose_jwt
+import jwt as pyjwt
 from sqlalchemy import text
 
 if os.getenv("RUN_INTEGRATION_TESTS") != "1":
@@ -77,7 +77,7 @@ def _resolve_project_member_context() -> tuple[str, str]:
 
 def _build_bearer_token(user_id: str) -> str:
     # In development mode, JWTCookieBearer accepts unverified claims fallback.
-    return jose_jwt.encode({"sub": user_id, "email": "integration@example.com"}, "dev-secret", algorithm="HS256")
+    return pyjwt.encode({"sub": user_id, "email": "integration@example.com"}, "dev-secret", algorithm="HS256")
 
 
 @pytest.mark.parametrize("template_id,expected_domain", TEMPLATE_CASES)

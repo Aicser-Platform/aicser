@@ -2,10 +2,10 @@
 
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  AlertOutlined, ApartmentOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, SafetyCertificateOutlined,
+  AlertOutlined, ApartmentOutlined, BulbOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
   TableOutlined, SettingOutlined, ThunderboltOutlined, ToolOutlined,
 } from '@ant-design/icons';
-import { Layout } from 'antd';
+import { Button, Layout } from 'antd';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import React from 'react';
 import AicserLogo from '@/components/ui/Logo/AicserLogo';
@@ -22,6 +22,7 @@ import {
   buildEnterpriseSidebarItems,
   buildCommunitySidebarItems,
   defaultFoldedSections,
+  essentialSidebarItems,
   filterSidebarItems,
   type NavItemDef,
 } from './navConfig';
@@ -54,6 +55,8 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   spatial: <EnvironmentOutlined />,
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,
+  agent: <ScheduleOutlined />,
+  agents: <RobotOutlined />,
   data: <DatabaseOutlined />,
   'semantic-layer': <SafetyCertificateOutlined />,
   knowledge: <FileSearchOutlined />,
@@ -64,7 +67,7 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   settings: <SettingOutlined />,
   // Section icons, shown on the collapsed rail.
   'sec-analyze': <FundProjectionScreenOutlined />,
-  'sec-predict': <RobotOutlined />,
+  'sec-predict': <BulbOutlined />,
   'sec-data': <DatabaseOutlined />,
 };
 
@@ -107,6 +110,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
   const ref = React.useRef<HTMLDivElement>(null);
   const sidebarNavRef = React.useRef<SidebarNavHandle>(null);
   const t_common = useTranslations('common');
+  const tNav = useTranslations('nav');
   const brandText = isEnterpriseEdition ? t_common('brand_name') : `${t_common('brand_name')} Community Edition`;
 
   useClickOutside(ref, (event) => {
@@ -174,6 +178,34 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
     [permissionsLoading, hasPermission],
   );
 
+  // People who only view and ask start with the everyday pages; builder and data sections are
+  // one click away. A page in a hidden section (opened from a link) shows everything.
+  const viewsOnly = !permissionsLoading
+    && !(hasPermission(Permission.QUERY_SAVE) || hasPermission(Permission.CHART_EDIT))
+    && !(hasPermission(Permission.DATA_CONNECT) || hasPermission(Permission.ORG_EDIT));
+  const [showAllTools, setShowAllTools] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      setShowAllTools(localStorage.getItem('aicser.nav.allTools') === '1');
+    } catch {
+      // only a convenience
+    }
+  }, []);
+  const toggleAllTools = () => {
+    setShowAllTools((v) => {
+      try {
+        localStorage.setItem('aicser.nav.allTools', v ? '0' : '1');
+      } catch {
+        // only a convenience
+      }
+      return !v;
+    });
+  };
+  const essentialsOnly = isEnterpriseEdition && viewsOnly && !showAllTools && routeOpenGroups.length === 0;
+  const mainItems = isEnterpriseEdition
+    ? (essentialsOnly ? essentialSidebarItems(enterpriseItems) : enterpriseItems)
+    : communityItems;
+
   const isMobile = props.isBreakpoint;
   const isRailMode = props.collapsed && !isMobile;
   const sidebarWidth = isRailMode ? RAIL_WIDTH : EXPANDED_WIDTH;
@@ -198,8 +230,8 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
         background: 'var(--color-bg-navigation-sider, var(--color-bg-navigation))',
         ...(isMobile
           ? {
-            top: 64,
-            height: 'calc(100vh - 64px)',
+            top: 'var(--app-header-height, 48px)',
+            height: 'calc(100vh - var(--app-header-height, 48px))',
             transform: props.collapsed ? 'translateX(-100%)' : 'translateX(0)',
             boxShadow: props.collapsed ? 'none' : '4px 0 24px rgba(0, 0, 0, 0.25)',
           }
@@ -208,7 +240,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
     >
       <div className="flex h-full min-h-0 flex-col">
         <div
-          className={`box-border flex h-[var(--app-header-height,64px)] min-h-[var(--app-header-height,64px)] max-h-[var(--app-header-height,64px)] min-w-0 shrink-0 items-center overflow-hidden border-b border-[var(--ant-color-border)] p-3 ${isRailMode ? 'justify-center' : ''}`}
+          className={`box-border flex h-[var(--app-header-height,52px)] min-h-[var(--app-header-height,52px)] max-h-[var(--app-header-height,52px)] min-w-0 shrink-0 items-center overflow-hidden border-b border-[var(--ant-color-border)] p-3 ${isRailMode ? 'justify-center' : ''}`}
         >
           <AicserLogo size={isRailMode ? 32 : 36} showText={!isRailMode} text={brandText} />
         </div>
@@ -216,7 +248,7 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-0 pb-2 pt-1">
           <SidebarNav
             ref={sidebarNavRef}
-            items={isEnterpriseEdition ? enterpriseItems : communityItems}
+            items={mainItems}
             selectedKey={selectedKey}
             routeOpenGroups={routeOpenGroups}
             railCollapsed={isRailMode}
@@ -227,6 +259,13 @@ const Navigation: React.FC<NavigationProps> = (props: NavigationProps) => {
           />
         </div>
 
+        {isEnterpriseEdition && viewsOnly && !isRailMode ? (
+          <div className="shrink-0 px-3 pb-1">
+            <Button type="link" size="small" onClick={toggleAllTools} style={{ paddingInline: 0 }}>
+              {essentialsOnly ? tNav('show_all_tools') : tNav('show_essentials')}
+            </Button>
+          </div>
+        ) : null}
         <div className="shrink-0 border-t border-[var(--ant-color-border)] px-0 pb-2 pt-1">
           <SidebarNav
             items={settingsItems}

@@ -93,6 +93,9 @@ export enum Permission {
   ALERT_EDIT = 'alert:edit',
   ALERT_DELETE = 'alert:delete',
 
+  PLANT_VIEW = 'plant:view',
+  PLANT_EDIT = 'plant:edit',
+
   CATALOG_VIEW = 'catalog:view',
   CATALOG_EDIT = 'catalog:edit',
   CATALOG_ADMIN = 'catalog:admin',

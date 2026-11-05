@@ -1,5 +1,6 @@
 'use client';
 
+import { readStudioMode } from './utils/studioModeStorage';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -302,21 +303,35 @@ export default function NewDashboardStudio() {
   // Phones open a dashboard to read it (as Power BI / Tableau mobile do): the editor's desktop
   // grid doesn't fit a phone. Once per dashboard, so choosing Edit on a phone still sticks.
   const phoneViewAppliedRef = React.useRef<string | null>(null);
+  // A link's mode (and opening from chat) sets where the dashboard starts, once. Re-applying it on
+  // every mode change undid the Edit button, so dashboards opened from chat could never be edited.
+  const linkModeAppliedRef = React.useRef<string | null>(null);
+  const readingDefaultRef = React.useRef<string | null>(null);
   useEffect(() => {
     if (!activeDashboardId) return;
     const isPhone = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches;
     const phoneDefault = isPhone && phoneViewAppliedRef.current !== activeDashboardId ? 'view' : null;
     if (isPhone) phoneViewAppliedRef.current = activeDashboardId;
+    // Opening a dashboard is for reading it (as in Looker, Power BI and Figma): once its charts are
+    // in, it shows in view mode unless the person chose a mode for it before. Not saved as their
+    // choice, and new dashboards are marked "editing" when created, so building is never interrupted.
+    if (!readStudioMode(activeDashboardId) && widgets.length > 0 && readingDefaultRef.current !== activeDashboardId
+        && !requestedStudioMode && !fromChatMessageId) {
+      readingDefaultRef.current = activeDashboardId;
+      if (studioMode !== 'view') useDashboardStore.setState({ studioMode: 'view', selectedWidgetId: null, isPropertiesCollapsed: true });
+    }
     const requestedMode =
       requestedStudioMode === 'edit' || requestedStudioMode === 'view'
         ? requestedStudioMode
         : fromChatMessageId
           ? 'view'
           : phoneDefault;
-    if (requestedMode && studioMode !== requestedMode) {
-      setStudioMode(requestedMode);
+    const linkKey = `${activeDashboardId}:${requestedMode}`;
+    if (requestedMode && linkModeAppliedRef.current !== linkKey) {
+      linkModeAppliedRef.current = linkKey;
+      if (studioMode !== requestedMode) setStudioMode(requestedMode);
     }
-  }, [activeDashboardId, fromChatMessageId, requestedStudioMode, setStudioMode, studioMode]);
+  }, [activeDashboardId, fromChatMessageId, requestedStudioMode, setStudioMode, studioMode, widgets.length]);
 
   const collabRoomId = useDashboardCollaborationRoom(activeDashboardId, isEditMode);
   const {
@@ -526,8 +541,11 @@ export default function NewDashboardStudio() {
       if (saved) {
         const { section, open } = JSON.parse(saved) as { section: SidebarSection | 'data'; open: boolean };
         if (!open) return null;
-        // The Data tab was removed (Data Modeling opens instead); Charts moved to the Add panel.
-        return section === 'data' ? 'modeling' : (section as string) === 'charts' ? null : section;
+        // Data Modeling (and the old Data tab) fills the page and hides the board: coming back to
+        // Dashboards opens the board with the dashboard list, not last visit's join diagram.
+        // Links that ask for modeling (?studio_section=modeling) still open it.
+        if (section === 'data' || section === 'modeling') return 'dashboards';
+        return (section as string) === 'charts' ? null : section;
       }
     } catch {
       // ignore parse errors
@@ -580,6 +598,8 @@ export default function NewDashboardStudio() {
       setCreatingDashboard(true);
       try {
         await addDashboard(name);
+        // A new dashboard is for building on: show its board, not a full-page panel.
+        setSidebarSection((cur) => (cur === 'modeling' ? 'dashboards' : cur));
         if (layout === 'kpi' || layout === 'executive') {
           await seedDashboardStarterLayout(layout, filterCtx.activePageId);
         }
@@ -1068,6 +1088,7 @@ export default function NewDashboardStudio() {
       if (createdId) {
         setActiveDashboardId(String(createdId));
         await loadDashboardById(String(createdId));
+        setSidebarSection((cur) => (cur === 'modeling' ? 'dashboards' : cur));
       }
 
       const title = response?.dashboard?.title || template.default_dashboard_name || template.name;
@@ -1238,6 +1259,7 @@ export default function NewDashboardStudio() {
             size="large"
             icon={<PlusOutlined />}
             loading={creatingDashboard}
+            data-guide="new-dashboard"
             onClick={() => void handleWizardCreateWithLayout(td('wizard_default_name'), 'blank')}
             style={{ marginTop: '16px' }}
           >

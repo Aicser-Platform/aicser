@@ -30,4 +30,13 @@ describe('shouldShowWidgetHeader', () => {
       shouldShowWidgetHeader({ chartType: 'stat', title: 'Revenue', chartOptions: { layout: 'default' } }),
     ).toBe(true);
   });
+
+  it('in the Chart Designer shows the title only on a KPI, where it is part of the card', () => {
+    const designer = { isDesigner: true };
+    expect(shouldShowWidgetHeader({ chartType: 'bar', title: 'Sales' }, designer)).toBe(false);
+    expect(shouldShowWidgetHeader({ chartType: 'stat', title: 'Overdue Loans' }, designer)).toBe(true);
+    expect(
+      shouldShowWidgetHeader({ chartType: 'stat', title: 'Overdue Loans', chartOptions: { layout: 'tile' } }, designer),
+    ).toBe(false); // the tile layout writes its own title
+  });
 });

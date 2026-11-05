@@ -5,10 +5,11 @@ from typing import Any, Dict, List, Optional, Sequence
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.edition import is_ee_enabled
+from src.modules.feed import publish_policy as policy
 try:
     from src.modules.authentication.rbac.models import Role, UserRole
 except ImportError:
@@ -147,7 +148,7 @@ class FeedServiceActionMixin:
         visibility = _enum_value(post.visibility)
 
         if visibility == "public":
-            role_names = ["org_owner"]
+            role_names = list(policy.APPROVER_ROLES)
             org_id = post.organization_id
             if not org_id:
                 return []
@@ -299,8 +300,14 @@ class FeedServiceActionMixin:
         is_project_editor = "project_editor" in project_roles
 
         if visibility == "public":
-            if not is_org_owner:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Org owner approval required")
+            if not (is_org_owner or is_org_admin):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner or admin approval required")
+            rules = await policy.get_policy(self.db, post.organization_id)
+            allowed, _ = policy.may_review(user_id=user_id, requester_id=post.author_id,
+                                           approver_ids=await policy.approvers(self.db, post.organization_id),
+                                           second_approver=bool(rules.get("second_approver")))
+            if not allowed:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your organization asks another owner or admin to approve your own public work")
             return
 
         if visibility == "organization":
@@ -576,6 +583,36 @@ class FeedServiceActionMixin:
             return await self.db.scalar(select(Chart.title).where(Chart.id == asset_id))
         return None
 
+    async def _public_status(self, user_id: UUID, org_id: Optional[UUID], is_approver: bool, *content: Any) -> tuple:
+        """(status, self_approved, personal) for going public, under the organization's policy."""
+        import asyncio
+
+        settings = await policy.get_policy(self.db, org_id)
+        ids = await policy.approvers(self.db, org_id) if org_id else []
+        personal = await asyncio.to_thread(policy.personal_data_found, *content)
+        decision, self_approved = policy.public_decision(
+            mode=str(settings.get("public")), is_approver=is_approver, has_org=bool(org_id), personal_data=personal,
+            other_approvers=policy.approvers_other_than(ids, user_id), second_approver=bool(settings.get("second_approver")))
+        if decision == "refused":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public sharing is turned off for your organization.")
+        return decision, self_approved, personal
+
+    async def _after_public_status(self, post: FeedPost, status_value: str, user_id: UUID, *, self_approved: bool, personal: bool) -> None:
+        """Expiry, the audit trail and an email to approvers, for anything going public."""
+        from datetime import timedelta
+
+        from src.core.config import settings as app_settings
+
+        rules = await policy.get_policy(self.db, post.organization_id)
+        days = rules.get("expiry_days")
+        post.expires_at = _utcnow() + timedelta(days=int(days)) if days else None
+        await policy.audit("public_self_approved" if self_approved else f"public_{status_value}", user_id=user_id, org_id=post.organization_id,
+                           resource_type=_enum_value(post.asset_type), resource_id=post.id, metadata={"title": post.title, "personal_data": personal})
+        if status_value == PublicationStatus.pending.value:
+            post.preview_metadata = {**(post.preview_metadata or {}), "possible_personal_data": personal}
+            await policy.email_approvers(self.db, await self._get_approver_ids(post), post.title or "Shared insight",
+                                         f"{app_settings.FRONTEND_URL}/feed?view=approvals")
+
     async def _get_or_create_attachment_publication(
         self,
         *,
@@ -797,6 +834,14 @@ class FeedServiceActionMixin:
                 select(Project.organization_id).where(Project.id == project_id)
             )
 
+        # Work outside any project is still its author's organization's to govern: without this,
+        # a project-less dashboard went public past the policy, even with public sharing off.
+        if not organization_id and request.visibility.value == "public":
+            from src.modules.pricing.feature_gate import get_user_organization_id
+
+            found = await get_user_organization_id(str(user_id), self.db)
+            organization_id = UUID(str(found)) if found else None
+
         org_roles = set(
             await self._get_role_names(user_id, organization_id=organization_id)
         ) if organization_id else set()
@@ -859,6 +904,7 @@ class FeedServiceActionMixin:
 
         requested_status = request.status.value
         status_value = requested_status
+        self_approved, personal = False, False
         now = _utcnow()
         approved_at = None
         approved_by = None
@@ -879,10 +925,9 @@ class FeedServiceActionMixin:
             status_value = PublicationStatus.approved.value
         else:
             if visibility_value == "public":
-                if not organization_id or is_org_owner:
-                    status_value = PublicationStatus.approved.value
-                else:
-                    status_value = PublicationStatus.pending.value
+                status_value, self_approved, personal = await self._public_status(
+                    user_id, organization_id, is_org_owner or is_org_admin,
+                    request.title, request.description, request.snapshot_payload)
             elif visibility_value == "organization":
                 status_value = PublicationStatus.approved.value if (not organization_id or is_org_owner or is_org_admin) else PublicationStatus.pending.value
             elif visibility_value == "project":
@@ -1062,6 +1107,8 @@ class FeedServiceActionMixin:
             description=request.description,
             thumbnail_url=request.thumbnail_url,
         )
+        if visibility_value == "public":
+            await self._after_public_status(post, status_value, user_id, self_approved=self_approved, personal=personal)
         if status_value == PublicationStatus.pending.value:
             await self._log_event(
                 actor_id=user_id,
@@ -1150,6 +1197,19 @@ class FeedServiceActionMixin:
             created_by=user_id,
             thumbnail_url=request.thumbnail_url or previous_thumbnail_url,
         )
+        # New content is new content: public work goes back through approval, as it would if published today.
+        if _enum_value(post.visibility) == "public" and _enum_value(post.status) == PublicationStatus.approved.value:
+            org_roles = await self._get_role_names(user_id, organization_id=post.organization_id)
+            decision, self_approved, personal = await self._public_status(
+                user_id, post.organization_id, bool(set(org_roles) & set(policy.APPROVER_ROLES)),
+                post.title, post.description, request.snapshot_payload)
+            if decision == PublicationStatus.pending.value:
+                post.status = PublicationStatus.pending.value
+                post.approved_at, post.approved_by = None, None
+                for approver_id in await self._get_approver_ids(post):
+                    await self._create_notification(recipient_id=approver_id, actor_id=user_id, notification_type="approval", post_id=post.id,
+                                                    metadata={"status": PublicationStatus.pending.value, "visibility": "public"})
+            await self._after_public_status(post, decision, user_id, self_approved=self_approved, personal=personal)
         post.last_activity_at = _utcnow()
         await self.db.commit()
 
@@ -1263,6 +1323,85 @@ class FeedServiceActionMixin:
 
         return response
 
+    async def take_down_public(self, organization_id: UUID, user_id: Optional[UUID]) -> Dict[str, List[str]]:
+        """Everything public in the organization goes private at once. Returns what changed, for Undo."""
+        posts = (await self.db.execute(select(FeedPost).where(
+            FeedPost.organization_id == organization_id, FeedPost.visibility == "public"))).scalars().all()
+        ids = [str(p.id) for p in posts]
+        for post in posts:
+            post.visibility = "private"
+        dashboards = (await self.db.execute(text(
+            "UPDATE dashboards d SET config = jsonb_set(d.config::jsonb, '{is_public}', 'false')::json "
+            "WHERE (d.config::jsonb ->> 'is_public') = 'true' AND (d.project_id IN (SELECT id FROM projects WHERE organization_id = :org) "
+            "OR (d.project_id IS NULL AND d.created_by::text IN (SELECT user_id::text FROM user_roles WHERE organization_id = :org))) RETURNING d.id"
+        ), {"org": str(organization_id)})).all()
+        from src.modules.share_links import service as share_links
+
+        links = await share_links.take_down(self.db, organization_id)
+        rules = await policy.get_policy(self.db, organization_id)
+        await policy.set_policy(self.db, organization_id, {**rules, "last_take_down": {
+            "posts": ids, "dashboards": [str(r[0]) for r in dashboards], "links": links, "at": _utcnow().isoformat()}})
+        await policy.audit("public_take_down", user_id=user_id, org_id=organization_id, resource_type="organization", resource_id=organization_id,
+                           metadata={"posts": len(ids), "dashboards": len(dashboards)})
+        await self.db.commit()
+        return {"posts": ids, "dashboards": [str(r[0]) for r in dashboards], "links": links}
+
+    async def restore_public(self, organization_id: UUID, user_id: Optional[UUID]) -> Dict[str, int]:
+        """Undo the last take-down, and only that: what comes back is what it took down, for a short
+        while. Taking ids from the caller would be a way to make anything public, past approval."""
+        from datetime import datetime, timedelta
+
+        rules = await policy.get_policy(self.db, organization_id)
+        last = rules.pop("last_take_down", None) or {}
+        fresh = last.get("at") and datetime.fromisoformat(last["at"]) > _utcnow() - timedelta(minutes=10)
+        if not fresh:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="There is no recent take-down to undo.")
+        posts, dashboards = list(last.get("posts") or []), list(last.get("dashboards") or [])
+        await policy.set_policy(self.db, organization_id, rules)
+        if posts:
+            await self.db.execute(update(FeedPost).where(FeedPost.organization_id == organization_id, FeedPost.id.in_([UUID(p) for p in posts]))
+                                  .values(visibility="public"))
+        if dashboards:
+            await self.db.execute(text(
+                "UPDATE dashboards d SET config = jsonb_set(d.config::jsonb, '{is_public}', 'true')::json WHERE d.id::text = ANY(:ids) "
+                "AND (d.project_id IN (SELECT id FROM projects WHERE organization_id = :org) "
+                "OR (d.project_id IS NULL AND d.created_by::text IN (SELECT user_id::text FROM user_roles WHERE organization_id = :org)))"
+            ), {"org": str(organization_id), "ids": dashboards})
+        from src.modules.share_links import service as share_links
+
+        await share_links.restore(self.db, organization_id, list(last.get("links") or []))
+        await policy.audit("public_take_down_undone", user_id=user_id, org_id=organization_id, resource_type="organization", resource_id=organization_id)
+        await self.db.commit()
+        return {"posts": len(posts), "dashboards": len(dashboards)}
+
+    async def publishing_housekeeping(self) -> Dict[str, int]:
+        """Cron: public items past their date end; approvals waiting a day get one reminder."""
+        from datetime import timedelta
+
+        from src.core.config import settings as app_settings
+
+        now = _utcnow()
+        due = (await self.db.execute(select(FeedPost).where(
+            FeedPost.visibility == "public", FeedPost.expires_at.isnot(None), FeedPost.expires_at <= now))).scalars().all()
+        for post in due:
+            post.visibility = "private"
+            await policy.audit("public_expired", user_id=None, org_id=post.organization_id, resource_type=_enum_value(post.asset_type), resource_id=post.id)
+            if _enum_value(post.asset_type) == "dashboard" and not post.requires_login:
+                from src.modules.dashboards import operations as dash_ops
+
+                await dash_ops.publish_dashboard(self.db, post.asset_id, False)
+        waiting = (await self.db.execute(select(FeedPost).where(
+            FeedPost.status == PublicationStatus.pending.value, FeedPost.approval_reminded_at.is_(None),
+            FeedPost.updated_at <= now - timedelta(hours=24)))).scalars().all()
+        for post in waiting:
+            post.approval_reminded_at = now
+            await policy.email_approvers(self.db, await self._get_approver_ids(post), post.title or "Shared insight",
+                                         f"{app_settings.FRONTEND_URL}/feed?view=approvals", reminder=True)
+        await self.db.commit()
+        from src.modules.share_links.service import remind_waiting
+
+        return {"expired": len(due), "reminded": len(waiting) + await remind_waiting(self.db)}
+
     async def approve_publication(
         self,
         item_id: UUID,
@@ -1318,6 +1457,14 @@ class FeedServiceActionMixin:
             },
         )
         await self._notify_followers_of_publish(post)
+        if _enum_value(post.visibility) == "public":
+            await policy.audit("public_approved_by_reviewer", user_id=user_id, org_id=post.organization_id,
+                               resource_type=_enum_value(post.asset_type), resource_id=post.id, metadata={"author": str(post.author_id)})
+            # A dashboard asked to be open without sign-in: this approval is what opens it.
+            if _enum_value(post.asset_type) == "dashboard" and not post.requires_login:
+                from src.modules.dashboards import operations as dash_ops
+
+                await dash_ops.publish_dashboard(self.db, post.asset_id, True)
 
         await self.db.commit()
 
@@ -1360,6 +1507,9 @@ class FeedServiceActionMixin:
         post.rejection_reason = reason
         post.last_activity_at = now
 
+        if _enum_value(post.visibility) == "public":
+            await policy.audit("public_rejected", user_id=user_id, org_id=post.organization_id, resource_type=_enum_value(post.asset_type),
+                               resource_id=post.id, metadata={"reason": reason})
         await self._log_event(
             actor_id=user_id,
             event_type="rejected",

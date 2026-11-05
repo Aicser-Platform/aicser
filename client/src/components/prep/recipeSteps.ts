@@ -90,7 +90,6 @@ export const steps = {
     filter_rows: { conditions: columns.map((column) => ({ column, op: 'not_empty' })), match: 'all', action: 'keep' },
   }),
   flattenJson: (column: string, fields: Record<string, string>): PrepStep => ({ flatten_json: { column, fields } }),
-  explode: (column: string): PrepStep => ({ explode: { column } }),
   concat: (columns: string[], into: string, separator: string): PrepStep => ({ concat: { columns, into, separator } }),
   formula: (into: string, expression: string, language: 'excel' | 'sql', replace = false): PrepStep => ({
     formula: { into, expression, language, ...(replace ? { replace: true } : {}) },

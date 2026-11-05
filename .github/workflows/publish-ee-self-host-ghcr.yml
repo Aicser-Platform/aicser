@@ -112,6 +112,8 @@ jobs:
           labels: ${{ steps.server-meta.outputs.labels }}
           build-args: |
             AISER_VERSION=${{ steps.app-version.outputs.version }}
+            LICENSE_REQUIRED=true
+            LICENSE_PUBLIC_KEY_B64=${{ vars.LICENSE_PUBLIC_KEY_B64 }}
           cache-from: type=gha,scope=server-ee
           cache-to: type=gha,mode=max,scope=server-ee
 

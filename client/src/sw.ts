@@ -47,19 +47,6 @@ const serwist = new Serwist({
       },
       handler: new NetworkOnly(),
     },
-    // Never cache authenticated API/auth traffic — analytics must stay fresh.
-    {
-      matcher({ request, url }) {
-        if (request.method !== 'GET') return false;
-        const path = url.pathname;
-        return (
-          path.startsWith('/api/') ||
-          path.startsWith('/auth/') ||
-          path.includes('/socket.io')
-        );
-      },
-      handler: new NetworkOnly(),
-    },
     ...defaultCache,
   ],
   fallbacks: {
@@ -74,4 +61,49 @@ const serwist = new Serwist({
   },
 });
 
+// API/auth/socket traffic bypasses the service worker entirely (registered before
+// Serwist so it wins). Routing it through a NetworkOnly handler doubled every request
+// in the network panel, added a hop on the hot path, and turned slow upstream
+// responses into opaque SW fetch errors instead of the real status.
+function isBypassPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/auth/') ||
+    pathname.includes('/socket.io')
+  );
+}
+
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin === self.location.origin && isBypassPath(url.pathname)) {
+    // No respondWith → the browser performs the request itself.
+    event.stopImmediatePropagation();
+  }
+});
+
 serwist.addEventListeners();
+
+// Push notifications (alerts): show them, and open the right page when tapped.
+self.addEventListener('push', (event) => {
+  const data = (() => {
+    try {
+      return event.data?.json() ?? {};
+    } catch {
+      return {};
+    }
+  })() as { title?: string; body?: string; url?: string };
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Aicser', {
+      body: data.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      data: { url: data.url || '/' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data as { url?: string } | undefined)?.url || '/';
+  event.waitUntil(self.clients.openWindow(url));
+});

@@ -1,0 +1,1 @@
+export { PipelineBuilderPage } from '@/ee';

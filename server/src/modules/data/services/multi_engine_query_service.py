@@ -48,6 +48,7 @@ import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time
 #  Always apply fall back here ??
+from src.shared.sql_guard import lock_duckdb, reaches_outside
 from src.core.edition import is_ee_enabled
 from src.modules.data.services.query_identity import (
     QueryAccess,
@@ -248,6 +249,8 @@ def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Opt
     stripped = (query or "").strip()
     if not stripped:
         return "Read-only mode: empty SQL is not allowed."
+    if reaches_outside(stripped):
+        return "Read-only mode: queries can only use this data source's own tables."
 
     try:
         ast_error = _assert_read_only_select_ast(stripped, dialect=dialect)
@@ -502,6 +505,8 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
     translated_refs: List[str] = []
     fallback_refs: List[str] = []
     unavailable_found: List[str] = []
+    # Table name as written -> the table it runs as, for column qualifiers (loans.amount).
+    redirected: Dict[str, str] = {}
 
     for match in _DUCKDB_TABLE_REF_RE.finditer(query):
         keyword = match.group(1).upper()
@@ -525,11 +530,15 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
             replacements.append((match.start(), match.end(), f'{keyword} "{target}"'))
             translated_refs.append(raw_ref)
         elif bare_name in direct_duckdb_names:
+            target = bare_name
             replacements.append((match.start(), match.end(), f'{keyword} "{bare_name}"'))
             translated_refs.append(raw_ref)
         else:
+            target = "data"
             replacements.append((match.start(), match.end(), f'{keyword} "data"'))
             fallback_refs.append(raw_ref)
+        if bare_name != target.lower():
+            redirected[bare_name] = target
 
     if unavailable_found:
         unavailable = sorted(set(unavailable_found))
@@ -547,6 +556,20 @@ def rewrite_file_duckdb_table_refs(query: str, data_source: Dict[str, Any]) -> T
     rewritten = query
     for start, end, replacement in reversed(replacements):
         rewritten = rewritten[:start] + replacement + rewritten[end:]
+
+    # Columns qualified by the name as written follow the table: SELECT SUM(loans.amount)
+    # FROM loans (how semantic metrics and people write it) runs as "data".amount FROM "data".
+    if redirected:
+        parts = re.split(r"('(?:[^']|'')*')", rewritten)  # odd parts are string literals: left as typed
+        for i in range(0, len(parts), 2):
+            for bare, target in redirected.items():
+                parts[i] = re.sub(
+                    rf'(?<![\w".]){re.escape(bare)}\s*\.(?=\s*["A-Za-z_])|(?<![\w.])"{re.escape(bare)}"\s*\.(?=\s*["A-Za-z_])',
+                    f'"{target}".',
+                    parts[i],
+                    flags=re.IGNORECASE,
+                )
+        rewritten = "".join(parts)
 
     return rewritten, None, translated_refs + fallback_refs
 
@@ -1910,6 +1933,10 @@ class DuckDBEngine(BaseQueryEngine):
             elif data_source["type"] == "database":
                 await self._load_database_data(conn, data_source)
 
+            # The data is in. The shared lakehouse connection needs its files, so the check below guards it.
+            if data_source.get("type") != "lakehouse_iceberg":
+                lock_duckdb(conn)
+
             if not analysis.get("skip_read_only_check"):
                 _safety_error = check_sql_read_only_safety(query)
                 if _safety_error:
@@ -2375,7 +2402,10 @@ class SparkEngine(BaseQueryEngine):
                     logger.info("⚡ SparkEngine: connected via Databricks Connect")
                     return
                 except ImportError:
-                    logger.warning("databricks-connect not installed; falling back to Spark Connect")
+                    logger.warning(
+                        "Databricks Connect is an optional add-on and is not installed (see requirements-databricks.txt); "
+                        "trying Spark Connect"
+                    )
 
             if self._connect_url:
                 # Open-source Spark Connect (Spark 3.4+)
@@ -3087,6 +3117,7 @@ class PandasEngine(BaseQueryEngine):
                 conn = duckdb.connect()
                 try:
                     conn.register("data", df)
+                    lock_duckdb(conn)
                     sql = query
                     if "default.data" in sql or "default .data" in sql:
                         import re as _re

@@ -9,12 +9,10 @@ import {
   CodeOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { ChartAnnotations } from './ChartAnnotations';
 import { ChartAnalytics } from './ChartAnalytics';
 import { ChartTextFields } from './ChartTextFields';
 import { ChartNotesFields } from './ChartNotesFields';
 import { ChartInlineEditor } from './ChartInlineEditor';
-import { chartSource, sourcePatch } from '../utils/chartAnnotations';
 import { useWidgetProperties } from '../hooks/useWidgetProperties';
 import { ChartOptions } from './ChartOptions';
 import { ChartDesignControls } from './ChartDesignControls';
@@ -39,6 +37,8 @@ import { AUTO_TITLE_KEY, deriveAutoTitle, isAutoTitle } from '../utils/widgetAut
 import { buildDashboardChartTypeSwitcherOptions } from './dashboardChartTypeSwitcher';
 import { isEnterpriseEdition } from '@/utils/appPaths';
 import { isSafeChartTypeSwitchTarget } from '@/components/charts/chartTypeCatalog';
+import { runsOwnSql } from '../utils/chartQueryMode';
+import { useProjectStore } from '@/stores/useProjectStore';
 import './PropertiesPanel.css';
 
 interface PropertiesPanelProps {
@@ -108,13 +108,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const desUpdateChartAndFetchData = useChartDesignerStore((s) => s.updateChartAndFetchData);
   const persistChartMeta = isDesigner ? desUpdateChartAndFetchData : dashUpdateChartAndFetchData;
 
-  const sqlBound = Boolean(
-    isSqlBoundWidget ||
-      selectedWidget?.chartQuery?.saved_query_id ||
-      selectedWidget?.chartQuery?.query_snapshot_id ||
-      (typeof selectedWidget?.chartOptions?.sample_sql === 'string' &&
-        selectedWidget.chartOptions.sample_sql.trim()),
-  );
+  // The SQL box shows SQL only when SQL is what runs (same rule as the server).
+  const sqlBound = Boolean(isSqlBoundWidget || (selectedWidget && runsOwnSql(selectedWidget)));
   const [sqlEditorOpen, setSqlEditorOpen] = useState(false);
   /** Types that need a different data shape stay out of the way until asked for. */
   const [showAllChartTypes, setShowAllChartTypes] = useState(false);
@@ -323,7 +318,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           const sqid = selectedWidget?.chartQuery?.saved_query_id;
           if (sqid) {
             const { fetchApi } = await import('@/utils/api');
-            const res = await fetchApi('queries/saved-queries');
+            const { savedQueriesPath } = await import('@/utils/savedQueriesPath');
+            const res = await fetchApi(savedQueriesPath());
             const list =
               (res as { items?: Array<{ id?: string | number; sql?: string }> })?.items || [];
             const found = list.find((q) => String(q.id) === String(sqid));
@@ -411,6 +407,16 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const { dataSource: unlistedSource, error: unlistedSourceError } = useDataSource(
     boundSourceListed ? null : boundSourceId,
   );
+  // "Another project's data" only when the source really belongs to another project: a source can be
+  // missing from this project's list for other reasons (one made without its organization was), and the
+  // panel then called this project's own source foreign while its chart ran normally.
+  const currentProjectId = useProjectStore((s) => s.currentProject?.id);
+  const unlistedProjectId = (unlistedSource as { project_id?: string; projectId?: string } | undefined)?.project_id
+    ?? (unlistedSource as { projectId?: string } | undefined)?.projectId;
+  const sourceFromOtherProject = Boolean(
+    !boundSourceListed && unlistedSource && unlistedProjectId && currentProjectId
+      && String(unlistedProjectId) !== String(currentProjectId),
+  );
   const dataSourceOptions = [
     ...(dataSources || []).map((ds: any) => ({
       value: String(ds.id),
@@ -420,7 +426,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       ? [{
           value: boundSourceId,
           label: unlistedSource?.name
-            ? tDash('data_source_other_project', { name: unlistedSource.name })
+            ? sourceFromOtherProject
+              ? tDash('data_source_other_project', { name: unlistedSource.name })
+              : unlistedSource.name
             : unlistedSourceError
               ? tDash('data_source_unavailable')
               : '…',
@@ -730,9 +738,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               filterOption={(input, opt) =>
                 String(opt?.label ?? '').toLowerCase().includes(input.toLowerCase())
               }
-              status={!boundSourceListed && unlistedSource ? 'error' : undefined}
+              status={sourceFromOtherProject ? 'error' : undefined}
             />
-            {!boundSourceListed && unlistedSource ? (
+            {sourceFromOtherProject ? (
               <Alert
                 type="error"
                 showIcon
@@ -750,8 +758,14 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 block
                 value={sqlBound || sqlEditorOpen ? 'query' : 'table'}
                 options={[
-                  { label: tDash('dataset_table'), value: 'table' },
-                  { label: tDash('dataset_query'), value: 'query' },
+                  {
+                    label: <Tooltip title={tDash('dataset_table_tip')} mouseEnterDelay={0.5}><span>{tDash('dataset_table')}</span></Tooltip>,
+                    value: 'table',
+                  },
+                  {
+                    label: <Tooltip title={tDash('dataset_query_tip')} mouseEnterDelay={0.5}><span>{tDash('dataset_query')}</span></Tooltip>,
+                    value: 'query',
+                  },
                 ]}
                 onChange={setDatasetMode}
               />
@@ -1084,26 +1098,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
               sqlBound={sqlBound}
             />
           ) : null}
-          {/* Annotate last (Datawrapper order): data first, then the words around the chart. */}
-          {!isSlicer && hasWidget ? (
-            <ChartAnnotations
-              subtitle={selectedWidget?.chartOptions?.subtitle}
-              sourceNote={
-                // The raw text, not the trimmed display value: trimming here ate every space typed.
-                typeof selectedWidget?.chartOptions?.sourceNote === 'string'
-                  ? selectedWidget.chartOptions.sourceNote
-                  : chartSource(selectedWidget?.chartOptions)
-              }
-              onChange={(patch) =>
-                updateWidgetRoot(
-                  'chartOptions',
-                  'sourceNote' in patch
-                    ? sourcePatch(selectedWidget?.chartOptions, patch.sourceNote)
-                    : { ...(selectedWidget?.chartOptions || {}), ...patch },
-                )
-              }
-            />
-          ) : null}
+          {/* Description and source are typed on the chart itself (title bar and footnote), where readers
+              see them — one place, not also here. */}
         </>
       )}
     </div>

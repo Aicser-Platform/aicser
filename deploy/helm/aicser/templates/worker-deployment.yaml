@@ -1,0 +1,45 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    {{- include "aicser.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Lets a running job finish its step before the pod goes away.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: {{ .Values.server.image | quote }}
+          command: ["/app/scripts/docker-entrypoint.sh", "python", "-m", "arq", "src.shared.jobs.worker.WorkerSettings"]
+          env:
+            {{- include "aicser.serverEnv" . | nindent 12 }}
+            {{- range $key, $value := .Values.worker.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          envFrom:
+            {{- include "aicser.serverEnvFrom" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "aicser.sharedVolumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "aicser.sharedVolumes" . | nindent 8 }}
+{{- end }}

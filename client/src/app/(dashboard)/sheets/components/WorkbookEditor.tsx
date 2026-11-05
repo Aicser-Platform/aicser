@@ -775,7 +775,7 @@ export function WorkbookEditor({ workbookId }: { workbookId: string }) {
                 }}
               >
                 <Tooltip title={t('share')}>
-                  <Button icon={wb.visibility === 'project' ? <TeamOutlined /> : <LockOutlined />} aria-label={t('share')} />
+                  <Button icon={wb.visibility === 'project' ? <TeamOutlined aria-label={t('share')} /> : <LockOutlined />} aria-label={t('share')} />
                 </Tooltip>
               </Dropdown>
             ) : null}

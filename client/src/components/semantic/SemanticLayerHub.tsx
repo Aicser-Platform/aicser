@@ -1,9 +1,10 @@
 'use client';
 
+import { AgentSetupButton } from '@/components/agent/AgentSetupButton';
 import React, { useMemo, useState } from 'react';
 import nextDynamic from 'next/dynamic';
-import { Button, Checkbox, Empty, Form, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
-import { CalendarOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Dropdown, Empty, Form, Input, Modal, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { CalendarOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchApi } from '@/utils/api';
 import { NodeIndexOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
@@ -32,18 +33,23 @@ import { isLakehouseComputeDataSource } from '@/utils/lakehouseComputeSource';
 import {
   addDomainSource,
   createDomain,
+  deleteDomain,
   domainDiff,
   domainsForSource,
   getCalendar,
   listDomains,
   removeDomainSource,
   setCalendar,
+  updateDomain,
+  type SemanticDomain,
 } from '@/api/semanticDomains';
 import { useFormatUserError } from '@/hooks/useFormatUserError';
 
 const ConnectModelVisualizeWizard = isEnterpriseEdition
-  ? nextDynamic(() => import('@/ee').then((m) => m.ConnectModelVisualizeWizard), { ssr: false })
+  ? nextDynamic(() => import('@/ee-lazy/ConnectModelVisualizeWizard').then((m) => m.ConnectModelVisualizeWizard), { ssr: false })
   : null;
+
+const MachinesPanel = nextDynamic(() => import('@/ee-lazy/MachinesPanel').then((m) => ({ default: m.MachinesPanel })), { ssr: false });
 
 export function SemanticLayerHub() {
   const t = useTranslations('semantic_layer_hub');
@@ -61,6 +67,8 @@ export function SemanticLayerHub() {
   const domains = useMemo(() => domainsQuery.data ?? [], [domainsQuery.data]);
   const [domainFilter, setDomainFilter] = useState<string>('all');
   const [domainModalOpen, setDomainModalOpen] = useState(false);
+  const [editingDomain, setEditingDomain] = useState<SemanticDomain | null>(null);
+  const selectedDomain = domains.find((d) => d.id === domainFilter);
   const [domainForm] = Form.useForm();
   const [calendarForm] = Form.useForm();
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -112,12 +120,65 @@ export function SemanticLayerHub() {
     }
   };
 
+  const openDomainModal = (domain: SemanticDomain | null) => {
+    setEditingDomain(domain);
+    setDomainModalOpen(true);
+  };
+
   const submitDomain = async (values: { name: string; description?: string; is_core?: boolean }) => {
     try {
-      await createDomain(values);
+      if (editingDomain) await updateDomain(editingDomain.id, { ...values, description: values.description ?? '' });
+      else await createDomain(values);
       await qc.invalidateQueries({ queryKey: ['semantic-domains'] });
       setDomainModalOpen(false);
       domainForm.resetFields();
+    } catch (err) {
+      message.error(formatError(err));
+    }
+  };
+
+  /** Undo brings it back with the same sources and stewards (as a new domain). */
+  const restoreDomain = async (domain: SemanticDomain) => {
+    try {
+      const { id } = await createDomain({
+        name: domain.name,
+        description: domain.description ?? undefined,
+        steward_ids: domain.steward_ids,
+      });
+      await Promise.all(domain.source_ids.map((sourceId) => addDomainSource(id, sourceId)));
+      await qc.invalidateQueries({ queryKey: ['semantic-domains'] });
+      setDomainFilter(id);
+    } catch (err) {
+      message.error(formatError(err));
+    }
+  };
+
+  const removeDomain = async (domain: SemanticDomain) => {
+    try {
+      await deleteDomain(domain.id);
+      setDomainFilter('all');
+      await qc.invalidateQueries({ queryKey: ['semantic-domains'] });
+      const key = `domain-deleted-${domain.id}`;
+      message.open({
+        key,
+        type: 'success',
+        duration: 8,
+        content: (
+          <>
+            {t('domain_deleted', { name: domain.name })}{' '}
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                message.destroy(key);
+                void restoreDomain(domain);
+              }}
+            >
+              {t('undo')}
+            </Button>
+          </>
+        ),
+      });
     } catch (err) {
       message.error(formatError(err));
     }
@@ -186,6 +247,7 @@ export function SemanticLayerHub() {
         <Select
           mode="multiple"
           size="small"
+          variant="borderless"
           style={{ width: '100%' }}
           placeholder={t('domain_unassigned')}
           value={domainsForSource(domains, String(row.id)).map((d) => d.id)}
@@ -212,8 +274,8 @@ export function SemanticLayerHub() {
           <Space direction="vertical" size={4}>
             <Tag color={SEMANTIC_READINESS_TAG_COLOR[readiness]}>{t(`readiness_${readiness}`)}</Tag>
             <Space size={[4, 4]} wrap>
-              <Tag>{t('stat_metrics_short', { count: metrics })}</Tag>
-              <Tag>{t('stat_joins_short', { count: joins })}</Tag>
+              {metrics > 0 ? <Tag>{t('stat_metrics_short', { count: metrics })}</Tag> : null}
+              {joins > 0 ? <Tag>{t('stat_joins_short', { count: joins })}</Tag> : null}
               {certified > 0 ? (
                 <Tag icon={<SafetyCertificateOutlined />} color="green">
                   {t('stat_certified_short', { count: certified })}
@@ -225,7 +287,7 @@ export function SemanticLayerHub() {
       },
     },
     {
-      title: t('col_actions'),
+      align: 'right' as const,
       key: 'actions',
       width: 200,
       render: (_, row) => {
@@ -237,7 +299,7 @@ export function SemanticLayerHub() {
         const continueSetup = readiness !== 'ready';
         return (
           <Button
-            type="primary"
+            type="link"
             size="small"
             onClick={() => router.push(semanticLayerStudioHref(row.id, continueSetup ? section : undefined))}
           >
@@ -302,12 +364,37 @@ export function SemanticLayerHub() {
               { value: 'none', label: t('domain_unassigned') },
             ]}
           />
-          <Button size="small" onClick={() => setDomainModalOpen(true)}>
-            {t('new_domain')}
-          </Button>
-          <Button size="small" icon={<CalendarOutlined />} onClick={() => void openCalendar()}>
-            {t('calendar')}
-          </Button>
+          {selectedDomain ? (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [
+                  { key: 'edit', icon: <EditOutlined />, label: t('edit_domain'), onClick: () => openDomainModal(selectedDomain) },
+                  {
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    // The organization calendar and shared dimensions live on Core.
+                    disabled: selectedDomain.is_core,
+                    title: selectedDomain.is_core ? t('domain_core_keep') : undefined,
+                    label: t('delete_domain'),
+                    onClick: () => void removeDomain(selectedDomain),
+                  },
+                ],
+              }}
+            >
+              <Button type="text" icon={<MoreOutlined />} aria-label={t('domain_actions', { name: selectedDomain.name })} />
+            </Dropdown>
+          ) : null}
+          <Space size={8} style={{ marginLeft: 'auto' }}>
+            <MachinesPanel />
+            <Button icon={<CalendarOutlined />} onClick={() => void openCalendar()}>
+              {t('calendar')}
+            </Button>
+            <Button icon={<PlusOutlined />} onClick={() => openDomainModal(null)}>
+              {t('new_domain')}
+            </Button>
+          </Space>
         </div>
         <Table<DataSource>
           rowKey="id"
@@ -327,9 +414,12 @@ export function SemanticLayerHub() {
             emptyText: (
               <Empty description={hasAnySource ? t('empty_ineligible') : t('empty')}>
                 {hasAnySource ? (
-                  <Button type="primary" onClick={() => router.push('/data')}>
-                    {t('view_data_sources')}
-                  </Button>
+                  <Space wrap>
+                    <Button type="primary" onClick={() => router.push('/data')}>
+                      {t('view_data_sources')}
+                    </Button>
+                    <AgentSetupButton prompt={t('agent_model_prompt')} />
+                  </Space>
                 ) : (
                   <Button type="primary" onClick={() => router.push('/data')}>
                     {t('connect_data')}
@@ -342,14 +432,21 @@ export function SemanticLayerHub() {
       </div>
       <Modal
         open={domainModalOpen}
-        title={t('new_domain')}
+        title={editingDomain ? t('edit_domain') : t('new_domain')}
         onCancel={() => setDomainModalOpen(false)}
         onOk={() => domainForm.submit()}
-        okText={t('create_domain')}
+        okText={editingDomain ? t('save_domain') : t('create_domain')}
         destroyOnHidden
       >
         <Paragraph type="secondary">{t('domain_explainer')}</Paragraph>
-        <Form form={domainForm} layout="vertical" onFinish={submitDomain} preserve={false}>
+        <Form
+          key={editingDomain?.id ?? 'new'}
+          form={domainForm}
+          layout="vertical"
+          onFinish={submitDomain}
+          preserve={false}
+          initialValues={editingDomain ? { name: editingDomain.name, description: editingDomain.description, is_core: editingDomain.is_core } : undefined}
+        >
           <Form.Item name="name" label={t('domain_name')} rules={[{ required: true, max: 120 }]}>
             <Input placeholder={t('domain_name_placeholder')} />
           </Form.Item>

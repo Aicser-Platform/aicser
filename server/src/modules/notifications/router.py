@@ -11,11 +11,11 @@ import logging
 from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import get_async_session
-from src.modules.authentication.deps.auth_bearer import JWTCookieBearer
+from src.modules.authentication.deps.auth_bearer import JWTCookieBearer, current_user_payload
 from src.modules.authentication.helpers import extract_user_payload
 from src.modules.notifications.inbox_service import build_inbox
 from src.modules.notifications.preferences import load_notification_prefs_merged
@@ -36,6 +36,44 @@ router = APIRouter()
 
 class MarkViewedResponse(BaseModel):
     ok: bool = True
+
+
+class PushSubscriptionIn(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000)
+    p256dh: str = Field(min_length=10, max_length=200)
+    auth: str = Field(min_length=8, max_length=100)
+
+
+@router.get("/push/key")
+async def push_key():
+    """The public key browsers subscribe with; empty when push isn't set up on this server."""
+    from src.modules.notifications import push
+
+    return {"key": push.public_key()}
+
+
+@router.post("/push/subscribe", status_code=201)
+async def push_subscribe(body: PushSubscriptionIn, payload: dict = Depends(current_user_payload)):
+    from src.modules.notifications import push
+
+    user_id = str((payload or {}).get("id") or (payload or {}).get("sub") or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    from src.shared.outbound import safe_destination
+
+    # The address comes from the browser; the server posts to it, so only public https is taken.
+    if not await safe_destination(body.endpoint, https_only=True):
+        raise HTTPException(status_code=422, detail="That push address isn't allowed.")
+    await push.subscribe(user_id, body.endpoint, body.p256dh, body.auth)
+    return {"subscribed": True}
+
+
+@router.post("/push/unsubscribe")
+async def push_unsubscribe(body: PushSubscriptionIn, payload: dict = Depends(current_user_payload)):
+    from src.modules.notifications import push
+
+    await push.unsubscribe(str((payload or {}).get("id") or (payload or {}).get("sub") or ""), body.endpoint)
+    return {"subscribed": False}
 
 
 @router.get("/inbox", response_model=InboxResponse)

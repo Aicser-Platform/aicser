@@ -1,7 +1,7 @@
 # Next.js 16 + React 19 Upgrade
 
 **Status:** Complete  
-**Versions:** `next@16.2.12`, `react@^19` / `react-dom@^19`, Node `>=20.9` (`Dockerfile*` → `node:20.19-alpine`)  
+**Versions:** `next@16.2.12`, `react@^19` / `react-dom@^19`, Node `>=20.9` (`Dockerfile*` → `node:26.12-alpine`)  
 **Shipped with:** ESLint 9 flat config, `src/proxy.ts`, webpack-pinned scripts (`--webpack`)
 
 ---
@@ -16,7 +16,7 @@
 | Config | Dropped `eslint.ignoreDuringBuilds` + `instrumentationHook`; `turbopack` top-level; `NEXT_DIST_DIR` optional |
 | Ace | `react-ace@^14` for React 19 peers |
 | Lint | React Compiler rules from Next 16 triaged to **warn**; classic `rules-of-hooks` stays **error** |
-| Docker | Client images pinned to `node:20.19-alpine`; prod build uses `next build --webpack` |
+| Docker | Client images pinned to `node:26.12-alpine`; prod build uses `next build --webpack` |
 
 ---
 

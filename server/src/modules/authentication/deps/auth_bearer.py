@@ -7,9 +7,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 import logging
-from jose import jwt as jose_jwt
-from jose.exceptions import JWTError, ExpiredSignatureError
-from jose.utils import base64url_decode
+import jwt
+from jwt.utils import base64url_decode
 import os
 import time
 import requests
@@ -34,7 +33,6 @@ AUTH_FALLBACK_LOG_INTERVAL = 300.0  # seconds
 async def get_current_user(request: Request) -> dict:
     """Resolve CE session JWT from Authorization Bearer or auth_token cookie."""
     from src.modules.authentication.service import decode_access_token
-    from jose import JWTError
 
     token = None
     auth_h = request.headers.get("Authorization") or request.headers.get("authorization") or ""
@@ -55,7 +53,7 @@ async def get_current_user(request: Request) -> dict:
     try:
         payload = decode_access_token(token)
         return payload
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired session. Please log in again.",
@@ -114,7 +112,7 @@ def get_public_key_from_jwks(jwks: Dict, kid: str) -> Optional[str]:
                 )
                 public_key = public_numbers.public_key(default_backend())
                 
-                # Convert to PEM format for jose
+                # Convert to PEM format for PyJWT
                 pem_public_key = public_key.public_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -137,7 +135,7 @@ def _should_try_supabase_jwks(token: str, supabase_url: str) -> bool:
 
         if not is_keycloak_enabled():
             return True
-        claims = jose_jwt.get_unverified_claims(token)
+        claims = jwt.decode(token, options={"verify_signature": False})
         iss = str(claims.get("iss") or "")
         if supabase_url.rstrip("/") in iss:
             return True
@@ -230,7 +228,7 @@ def verify_supabase_token(token: str) -> dict:
         # 2. HS256 when JWT_SECRET is set — Supabase Docker / shared secret tokens — EE only
         if jwt_secret_ok:
             try:
-                claims = jose_jwt.decode(
+                claims = jwt.decode(
                     token,
                     jwt_secret,
                     algorithms=["HS256"],
@@ -239,10 +237,9 @@ def verify_supabase_token(token: str) -> dict:
                         "verify_signature": True,
                         "verify_exp": True,
                         "verify_iat": True,
-                        # python-jose skips the audience check when a token has no "aud" at
-                        # all; Supabase always sets it, so require it — an aud-less token
+                        # Supabase always sets "aud", so require it — an aud-less token
                         # signed with a shared secret (e.g. an Aicser session) must not pass here.
-                        "require_aud": True,
+                        "require": ["aud"],
                     },
                 )
                 if isinstance(claims, dict):
@@ -256,16 +253,15 @@ def verify_supabase_token(token: str) -> dict:
                             "email": claims.get("email"),
                             "email_verified": claims.get("email_verified", False),
                         }
-            except ExpiredSignatureError:
+            except jwt.ExpiredSignatureError:
                 logger.warning("Token has expired (HS256)")
-            except JWTError:
+            except jwt.PyJWTError:
                 pass  # Fall through to JWKS or unverified
 
         # 3. Supabase JWKS (RS256) — EE only, not for Keycloak-issued tokens
         supabase_url = getattr(settings, "SUPABASE_URL", None) or ""
         if ee and supabase_url and _should_try_supabase_jwks(token, supabase_url):
             try:
-                import jwt
                 from jwt import PyJWKClient
 
                 header = jwt.get_unverified_header(token)
@@ -285,10 +281,9 @@ def verify_supabase_token(token: str) -> dict:
                         "verify_signature": True,
                         "verify_exp": True,
                         "verify_iat": True,
-                        # python-jose skips the audience check when a token has no "aud" at
-                        # all; Supabase always sets it, so require it — an aud-less token
+                        # Supabase always sets "aud", so require it — an aud-less token
                         # signed with a shared secret (e.g. an Aicser session) must not pass here.
-                        "require_aud": True,
+                        "require": ["aud"],
                     },
                 )
                 if isinstance(claims, dict):
@@ -317,7 +312,7 @@ def verify_supabase_token(token: str) -> dict:
                 logger.warning(
                     "Using unverified claims (development mode). Set JWT_SECRET from Supabase Dashboard → API → JWT Secret to enable verification."
                 )
-            claims = jose_jwt.get_unverified_claims(token)
+            claims = jwt.decode(token, options={"verify_signature": False})
             if isinstance(claims, dict):
                 user_id = claims.get('sub') or claims.get('id') or claims.get('user_id')
                 if user_id:
@@ -352,7 +347,7 @@ def extract_user_id_from_token(token: str) -> dict:
     # Fallback to unverified claims in development
     try:
         if _unverified_jwt_fallback_allowed():
-            claims = jose_jwt.get_unverified_claims(token)
+            claims = jwt.decode(token, options={"verify_signature": False})
             if isinstance(claims, dict):
                 user_id = claims.get('sub') or claims.get('id') or claims.get('user_id')
                 if user_id:

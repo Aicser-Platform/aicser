@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from jose import JWTError
+from jwt import InvalidTokenError
 
 from ee.modules.embed import chat_auth
 from ee.modules.embed.models import EmbedAssistant
@@ -44,7 +44,20 @@ def _make_assistant(**overrides) -> EmbedAssistant:
         is_deleted=False,
     )
     defaults.update(overrides)
+    defaults.setdefault("published_audience", "public")
+    defaults.setdefault("published_config", {
+        "name": defaults["name"], "library_ids": defaults["library_ids"], "primary_data_source_id": defaults["primary_data_source_id"],
+        "allowed_modes": defaults["allowed_modes"], "abilities": {"documents": True, "data": True},
+    })
     return EmbedAssistant(**defaults)
+
+
+@pytest.fixture(autouse=True)
+def _live_owner(monkeypatch):
+    from ee.modules.embed import agents
+
+    monkeypatch.setattr(agents, "owner_is_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(agents, "facts", AsyncMock(return_value=[]))
 
 
 def _verified_token(org_id, user_id: str = "owner-1") -> dict:
@@ -96,7 +109,7 @@ async def test_blank_visitor_id_header_rejected_400():
 
 @pytest.mark.asyncio
 async def test_invalid_or_expired_or_revoked_token_rejected_401(monkeypatch):
-    monkeypatch.setattr(chat_auth, "verify_embed_token", AsyncMock(side_effect=JWTError("bad token")))
+    monkeypatch.setattr(chat_auth, "verify_embed_token", AsyncMock(side_effect=InvalidTokenError("bad token")))
     request = _fake_request({"Authorization": "Bearer bad", "X-Embed-Visitor-Id": "v1"})
     with pytest.raises(HTTPException) as exc:
         await chat_auth.get_embed_chat_context("assistant-1", request)
@@ -105,12 +118,12 @@ async def test_invalid_or_expired_or_revoked_token_rejected_401(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_wrong_scope_token_rejected_401(monkeypatch):
-    """verify_embed_token(required_scope='chat') itself raises JWTError for a
+    """verify_embed_token(required_scope='chat') itself raises InvalidTokenError for a
     token minted with e.g. only ['dashboard'] scope -- confirm that surfaces
     as a clean 401 here rather than propagating an unhandled exception."""
     monkeypatch.setattr(
         chat_auth, "verify_embed_token",
-        AsyncMock(side_effect=JWTError("Missing required scope: chat")),
+        AsyncMock(side_effect=InvalidTokenError("Missing required scope: chat")),
     )
     request = _fake_request({"Authorization": "Bearer tok", "X-Embed-Visitor-Id": "v1"})
     with pytest.raises(HTTPException) as exc:
@@ -217,3 +230,15 @@ async def test_embed_jwt_auth_mode_is_accepted(monkeypatch):
 
     ctx = await chat_auth.get_embed_chat_context(str(assistant.id), request)
     assert ctx.auth_mode == "embed_jwt"
+
+
+@pytest.mark.asyncio
+async def test_a_website_only_gets_an_approved_public_version(monkeypatch):
+    assistant = _make_assistant(published_audience="organization")
+    org_id = str(assistant.organization_id)
+    monkeypatch.setattr(chat_auth, "verify_embed_token", AsyncMock(return_value=_verified_token(org_id)))
+    monkeypatch.setattr(chat_auth.EmbedAssistantService, "get_assistant", AsyncMock(return_value=assistant))
+    request = _fake_request({"Authorization": "Bearer tok", chat_auth.VISITOR_ID_HEADER: "visitor-1"})
+    with pytest.raises(HTTPException) as refused:
+        await chat_auth.get_embed_chat_context(str(assistant.id), request)
+    assert refused.value.status_code == 403

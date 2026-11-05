@@ -1,0 +1,1 @@
+export { OnboardingBootstrap } from '@/ee';

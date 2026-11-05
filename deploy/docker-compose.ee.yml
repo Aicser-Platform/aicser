@@ -165,11 +165,11 @@ services:
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
-      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-}
       AZURE_OPENAI_GPT41_API_KEY: ${AZURE_OPENAI_GPT41_API_KEY}
       AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT}
       AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION}
-      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-}
       AZURE_API_KEY: ${AZURE_OPENAI_API_KEY}
       AZURE_API_BASE: ${AZURE_OPENAI_ENDPOINT}
       AZURE_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
@@ -247,6 +247,10 @@ services:
       STRIPE_PRICE_PRO_YEARLY: ${STRIPE_PRICE_PRO_YEARLY:-}
       STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       STRIPE_PRICE_TEAM_YEARLY: ${STRIPE_PRICE_TEAM_YEARLY:-}
+      # Aicser Personal (docs/personal-license.md)
+      STRIPE_PRICE_PERSONAL_LICENSE: ${STRIPE_PRICE_PERSONAL_LICENSE:-}
+      STRIPE_PRICE_PERSONAL_RENEWAL: ${STRIPE_PRICE_PERSONAL_RENEWAL:-}
+      LICENSE_ADMIN_TOKEN: ${LICENSE_ADMIN_TOKEN:-}
       CUTLUY_ENABLED: ${CUTLUY_ENABLED:-false}
       CUTLUY_API_KEY: ${CUTLUY_API_KEY:-}
       CUTLUY_WEBHOOK_SECRET: ${CUTLUY_WEBHOOK_SECRET:-}
@@ -361,13 +365,18 @@ services:
         # container's DB pool usage (DB_POOL_SIZE + DB_POOL_MAX_OVERFLOW per
         # worker) -- check Postgres max_connections headroom before going above
         # a handful, or lower DB_POOL_SIZE to compensate.
-        exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers ${SERVER_WORKERS:-1}
+        # Keep idle connections longer than the client's proxy (Node keeps them ~4 s): when the server
+        # closed first (uvicorn's default 5 s), a page's burst of API calls could reuse a closing socket
+        # and fail with "other side closed" (seen as 500s on Settings, 2026-10-28).
+        exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers ${SERVER_WORKERS:-1} --timeout-keep-alive ${SERVER_KEEP_ALIVE_S:-75}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      # A cold start loads the local models first (up to ~3 min). Shorter, and `up` gave up on the
+      # client and worker that wait for the server, leaving the app down after a deploy.
+      start_period: 600s
     restart: unless-stopped
     networks: [default, runner]
 

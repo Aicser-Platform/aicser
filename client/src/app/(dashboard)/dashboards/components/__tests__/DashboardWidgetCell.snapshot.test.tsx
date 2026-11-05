@@ -22,6 +22,18 @@ describe('DashboardWidgetCell with a feed snapshot widget', () => {
     expect(screen.getByTestId('chart')).toBeTruthy();
   });
 
+  it('draws a chat chart that keeps its own saved chart instead of chartData', () => {
+    const widget = {
+      ...snapshotWidget(undefined),
+      chartType: 'bar',
+      chartOptions: { __echartsSnapshot: { series: [{ type: 'bar', data: [1] }] } },
+    } as unknown as WidgetInstance;
+    render(<DashboardWidgetCell widget={widget} runtimeFilters={[]} readOnly />);
+
+    expect(screen.queryByText('widget_error_not_connected_title')).toBeNull();
+    expect(screen.getByTestId('chart')).toBeTruthy();
+  });
+
   it('still says "not connected" when there is no source and no data', () => {
     render(<DashboardWidgetCell widget={snapshotWidget(undefined)} runtimeFilters={[]} readOnly />);
 

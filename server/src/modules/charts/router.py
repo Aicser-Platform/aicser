@@ -264,7 +264,9 @@ SAMPLE_DASHBOARD_TEMPLATES: Dict[str, Dict[str, Any]] = {
                 "chart_type": "stat",
                 "table": "loans",
                 "layout": {"x": 0, "y": 14, "w": 6, "h": 4},
-                "chart_query": {"yMetrics": [{"field": "interest_rate", "aggregation": "avg"}]},
+                "chart_query": {"yMetrics": [{"field": "interest_rate", "aggregation": "avg", "valueFormat": "percent"}]},
+                # interest_rate is stored as a fraction (0.11): shown as a percentage, not multiplied in SQL.
+                "chart_options": {"format": "percent"},
                 "sample_sql": "SELECT ROUND(AVG(interest_rate) * 100, 2) AS value FROM banking.loans",
             },
             {
@@ -272,7 +274,7 @@ SAMPLE_DASHBOARD_TEMPLATES: Dict[str, Dict[str, Any]] = {
                 "chart_type": "stat",
                 "table": "loans",
                 "layout": {"x": 6, "y": 14, "w": 6, "h": 4},
-                "chart_query": {"aggregate": "count"},
+                "chart_query": {"aggregate": "count", "filters": [{"field": "npl_flag", "operator": "=", "value": True}]},
                 "sample_sql": "SELECT COUNT(*) AS value FROM banking.loans WHERE npl_flag = true",
             },
         ],
@@ -456,7 +458,7 @@ SAMPLE_DASHBOARD_TEMPLATES: Dict[str, Dict[str, Any]] = {
                 "chart_type": "stat",
                 "table": "enrollments",
                 "layout": {"x": 6, "y": 14, "w": 6, "h": 4},
-                "chart_query": {"aggregate": "count"},
+                "chart_query": {"aggregate": "count", "filters": [{"field": "status_id", "operator": "=", "value": 1}]},
                 "sample_sql": "SELECT COUNT(*) AS value FROM education.enrollments WHERE status_id = 1",
             },
         ],
@@ -632,7 +634,7 @@ SAMPLE_DASHBOARD_TEMPLATES: Dict[str, Dict[str, Any]] = {
                 "chart_type": "stat",
                 "table": "service_requests",
                 "layout": {"x": 0, "y": 14, "w": 6, "h": 4},
-                "chart_query": {"aggregate": "count"},
+                "chart_query": {"aggregate": "count", "filters": [{"field": "resolved_date", "operator": "is_not_null"}]},
                 "sample_sql": "SELECT COUNT(*) AS value FROM govt_public_services.service_requests WHERE resolved_date IS NOT NULL",
             },
             {
@@ -818,6 +820,21 @@ async def _resolve_project_for_template(user_id: str, requested_project_id: Opti
     return str(projects[0].id)
 
 
+async def _project_organization_id(db: AsyncSession, project_uuid: Any) -> Any:
+    """The organization a project belongs to (None without projects, e.g. Community without them)."""
+    if project_uuid is None:
+        return None
+    from sqlalchemy import text as sa_text
+
+    try:
+        async with db.begin_nested():
+            row = (await db.execute(sa_text("SELECT organization_id FROM projects WHERE id = :id"),
+                                    {"id": project_uuid})).first()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 async def _ensure_sample_domain_data_source(
     db: AsyncSession,
     user_id: str,
@@ -858,6 +875,7 @@ async def _ensure_sample_domain_data_source(
             pass
         return cfg if isinstance(cfg, dict) else {}
 
+    organization_id = await _project_organization_id(db, project_uuid)
     data_source = None
     for candidate in candidates:
         cfg = get_config(candidate.connection_config)
@@ -867,6 +885,10 @@ async def _ensure_sample_domain_data_source(
         ):
             data_source = candidate
             break
+    if data_source is not None and data_source.organization_id is None and organization_id is not None:
+        # Made before sources carried their organization: without one the project's source lists
+        # leave it out and its charts were wrongly flagged as using another project's data.
+        data_source.organization_id = organization_id
 
     if data_source is None:
         import uuid as _uuid
@@ -889,6 +911,7 @@ async def _ensure_sample_domain_data_source(
             description="Sample data source created from dashboard template",
             connection_config={"domain": domain, "table": primary_table},
             project_id=project_uuid,
+            organization_id=organization_id,
             user_id=user_uuid,
             is_active=True,
         )
@@ -2544,17 +2567,19 @@ async def publish_dashboard(dashboard_id: str, make_public: bool = True, current
         if not allowed:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Persist publish flag
+        # One path to public: the feed's policy, approval and audit (see dashboards/operations.py).
+        from uuid import UUID as _UUID
+
+        from src.modules.dashboards import operations as dash_ops
+        from src.modules.dashboards.permissions import enforce_publish_owner_edit
+
         async with async_session() as sdb2:
-            pres = await sdb2.execute(select(Dashboard).where(Dashboard.id == dashboard_id))
-            to_upd = pres.scalar_one_or_none()
-            if not to_upd:
-                raise HTTPException(status_code=404, detail="Dashboard not found")
-            to_upd.is_public = bool(make_public)
-            await sdb2.flush()
-            await sdb2.commit()
-            await sdb2.refresh(to_upd)
-            return {"success": True, "dashboard_id": dashboard_id, "is_public": to_upd.is_public}
+            await enforce_publish_owner_edit(sdb2, _UUID(str(dashboard_id)), user_payload)
+            if make_public:
+                return await dash_ops.request_public_access(sdb2, _UUID(str(dashboard_id)), user_payload)
+            return await dash_ops.publish_dashboard(sdb2, _UUID(str(dashboard_id)), False)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ Failed to publish dashboard {dashboard_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to publish dashboard: {str(e)}")
@@ -2842,20 +2867,27 @@ async def create_dashboard_from_template(
                 chart_query["tableName"] = widget_table
             layout = dict(widget.get("layout") or {})
             layout["page_id"] = default_page_id
+            chart_options = {
+                "showLegend": True,
+                "showDataLabel": False,
+                "showGridline": True,
+                "showAxis": True,
+                **(widget.get("chart_options") or {}),
+                "template_id": template["id"],
+                "template_domain": template["domain"],
+            }
+            # Keep the SQL only when it is what runs: a structured chart runs its fields (so dashboard
+            # filters apply), and showing other SQL beside it once showed a filter that never ran.
+            from src.modules.charts.services.v2.chart_service import has_structured_mapping
+
+            if not has_structured_mapping(widget["chart_type"], chart_query):
+                chart_options["sample_sql"] = widget["sample_sql"]
             chart_payload = {
                 "data_source_id": widget_data_source["id"],
                 "chart_type": widget["chart_type"],
                 "title": widget["name"],
                 "chart_query": chart_query,
-                "chart_options": {
-                    "showLegend": True,
-                    "showDataLabel": False,
-                    "showGridline": True,
-                    "showAxis": True,
-                    "sample_sql": widget["sample_sql"],
-                    "template_id": template["id"],
-                    "template_domain": template["domain"],
-                },
+                "chart_options": chart_options,
                 "dashboard_id": dashboard.id,
                 "project_id": project_uuid,
                 "user_id": chart_user_id,

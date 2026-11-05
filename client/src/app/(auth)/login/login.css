@@ -524,3 +524,6 @@ html[data-theme='dark'] .login-page .auth-mode-tabs .ant-segmented-item-selected
     --login-card-max: 27rem;
   }
 }
+
+.auth-try-link { display: block; margin-top: 12px; text-align: center; font-size: 13px; color: var(--ant-color-text-secondary); }
+.auth-try-link:hover { color: var(--ant-color-primary); }

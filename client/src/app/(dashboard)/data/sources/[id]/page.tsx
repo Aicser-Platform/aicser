@@ -27,7 +27,7 @@ import {
 } from './_components/tabParam';
 
 const SemanticStudio = isEnterpriseEdition
-  ? nextDynamic(() => import('@/ee').then((m) => m.SemanticStudio), { ssr: false })
+  ? nextDynamic(() => import('@/ee-lazy/SemanticStudio').then((m) => m.SemanticStudio), { ssr: false })
   : null;
 
 const { Text, Title } = Typography;

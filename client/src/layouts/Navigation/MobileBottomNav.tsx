@@ -20,6 +20,10 @@ import {
   ReadOutlined,
   TableOutlined,
   ThunderboltOutlined,
+  RobotOutlined,
+  ScheduleOutlined,
+  SafetyCertificateOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import { Drawer } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
@@ -60,9 +64,12 @@ const MORE_ICONS: SidebarNavIconMap = {
   spatial: <EnvironmentOutlined />,
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,
+  agent: <ScheduleOutlined />,
   knowledge: <FileSearchOutlined />,
   warehouse: <ClusterOutlined />,
+  prepare: <ToolOutlined />,
   pipelines: <NodeIndexOutlined />,
+  'semantic-layer': <SafetyCertificateOutlined />,
   catalog: <ApartmentOutlined />,
   settings: <SettingOutlined />,
 };

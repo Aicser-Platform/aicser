@@ -9,6 +9,22 @@ export function getEmbedOrigin(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000';
 }
 
+/**
+ * An embed URL from the server, on the app it was created from. The server builds links on its
+ * FRONTEND_URL; when that names another deployment (staging set to app.aicser.com), the link
+ * opened production, which checked a plan the org doesn't have there. The token only works on
+ * the deployment that signed it, so the link belongs on this one.
+ */
+export function onThisApp(embedUrl: string): string {
+  if (!embedUrl || typeof window === 'undefined') return embedUrl;
+  try {
+    const url = new URL(embedUrl, window.location.origin);
+    return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return embedUrl;
+  }
+}
+
 export function buildIframeSnippet(embedUrl: string, options: IframeSnippetOptions = {}): string {
   const height = options.height ?? 600;
   const heightCss = typeof height === 'number' ? `${height}px` : height;

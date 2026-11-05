@@ -4,6 +4,7 @@ import { SaveOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { SecurityForm } from './forms/SecurityForm';
+import { TwoFactorSetting } from './TwoFactorSetting';
 import type { TabComponentProps } from '../page';
 
 export const SecurityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
@@ -24,7 +25,6 @@ export const SecurityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   useEffect(() => {
     if (securitySettings) {
       form.setFieldsValue({
-        two_factor_enabled: securitySettings.two_factor_enabled || false,
         session_timeout: securitySettings.session_timeout || 60,
         login_notifications: securitySettings.login_notifications !== false,
         suspicious_activity_alerts: securitySettings.suspicious_activity_alerts !== false,
@@ -47,13 +47,7 @@ export const SecurityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
       variant="borderless"
       style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}
     >
-      <Alert
-        message={t('security_alert_title')}
-        description={t('security_alert_desc')}
-        type="info"
-        showIcon
-        style={{ marginBottom: 24 }}
-      />
+      <TwoFactorSetting />
       <SecurityForm form={form} onFinish={handleSubmit} />
     </Card>
   );

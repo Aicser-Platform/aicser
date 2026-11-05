@@ -1,0 +1,1 @@
+export { PrivacyRequestsTab } from '@/ee';

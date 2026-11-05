@@ -1,3 +1,4 @@
+import { StatusTag, humanizeStatus } from '@/components/ui/StatusTag';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -32,13 +33,9 @@ import { EmbedResourcePicker, useEmbedResources } from './embed/EmbedResourcePic
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
-import { useSettingsStore } from '@/stores/useSettingsStore';
-import { useKnowledgeLibraries } from '@/hooks/useKnowledgeLibraries';
 import { EmbedCodePanel } from '@/components/embed/EmbedCodePanel';
-import { EmbedAssistantModal } from './embed/EmbedAssistantModal';
 import { useEmbedCode } from '@/hooks/useEmbedCode';
-import { buildEmbedChatUrl, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
-import type { EmbedAssistantRecord } from '../types';
+import { buildEmbedChatUrl, onThisApp, pickPrimaryEmbedUrl } from '@/utils/embedSnippet';
 import type { TabComponentProps } from '../page';
 
 const { Paragraph } = Typography;
@@ -87,9 +84,9 @@ interface EmbedTokenCreated extends EmbedTokenRecord {
 // requires a full authenticated session (a different JWT secret than embed
 // tokens use), so a token minted with this scope silently does nothing when
 // used. It used to be listed here as "Chat (coming soon)", which read as
-// "chat embedding doesn't exist yet" — misleading, since it does: the Embed
-// Assistants card below this form is the real, working chat-embed path (its
-// own embed_jwt/anonymous token system, unrelated to this one). Rather than
+// "chat embedding doesn't exist yet" — misleading, since it does: the
+// AI Agents page is the real, working chat-embed path (its own
+// embed_jwt/anonymous token system, unrelated to this one). Rather than
 // keep a perpetually-disabled option pointing at a mechanism that was never
 // going to be finished, "chat" is dropped from this checklist entirely so
 // there's one obvious way to embed chat, not two — one broken, one not.
@@ -104,23 +101,13 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   const orgId = useOrganizationStore((s) => s.currentOrganization?.id);
   const [form] = Form.useForm();
   const [editThemeForm] = Form.useForm();
-  const { embedAssistants, embedAssistantsLoading, loadEmbedAssistants } = useSettingsStore();
   const [tokens, setTokens] = useState<EmbedTokenRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [assistantModalOpen, setAssistantModalOpen] = useState(false);
-  const [assistantModalMode, setAssistantModalMode] = useState<'create' | 'edit'>('create');
-  const [editingAssistant, setEditingAssistant] = useState<EmbedAssistantRecord | null>(null);
   const [createdToken, setCreatedToken] = useState<EmbedTokenCreated | null>(null);
   const [editingThemeToken, setEditingThemeToken] = useState<EmbedTokenRecord | null>(null);
   const [savingTheme, setSavingTheme] = useState(false);
-  const [assistantEmbed, setAssistantEmbed] = useState<{
-    name: string;
-    embedUrl: string;
-    token?: string;
-  } | null>(null);
-  const [assistantEmbedLoading, setAssistantEmbedLoading] = useState(false);
   const [selectedEmbedScope, setSelectedEmbedScope] = useState<string>('dashboard');
   const watchedScopes = Form.useWatch('scopes', form) as string[] | undefined;
   const watchedDomains = Form.useWatch('allowed_domains', form) as string | undefined;
@@ -133,7 +120,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
   }, [embedResources.dashboards, embedResources.charts]);
   const { createEmbedCode } = useEmbedCode();
 
-  const { libraries } = useKnowledgeLibraries(orgId);
 
   const loadTokens = useCallback(async () => {
     setLoading(true);
@@ -151,21 +137,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     void loadTokens();
   }, [loadTokens]);
 
-  useEffect(() => {
-    if (orgId) void loadEmbedAssistants(orgId);
-  }, [orgId, loadEmbedAssistants]);
-
-  const openCreateAssistant = () => {
-    setEditingAssistant(null);
-    setAssistantModalMode('create');
-    setAssistantModalOpen(true);
-  };
-
-  const openEditAssistant = (assistant: EmbedAssistantRecord) => {
-    setEditingAssistant(assistant);
-    setAssistantModalMode('edit');
-    setAssistantModalOpen(true);
-  };
 
   const handleCreate = async (values: {
     name: string;
@@ -275,8 +246,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
 
   const createdEmbedUrl = useMemo(() => {
     if (!createdToken?.embed_urls) return '';
-    return (
-      createdToken.embed_urls[selectedEmbedScope] || pickPrimaryEmbedUrl(createdToken.embed_urls)
+    return onThisApp(
+      createdToken.embed_urls[selectedEmbedScope] || pickPrimaryEmbedUrl(createdToken.embed_urls) || '',
     );
   }, [createdToken, selectedEmbedScope]);
 
@@ -294,29 +265,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
     }
   }, [embedScopeOptions]);
 
-  const openAssistantEmbed = async (assistant: EmbedAssistantRecord) => {
-    setAssistantEmbedLoading(true);
-    setAssistantEmbed({ name: assistant.name, embedUrl: '' });
-    try {
-      const result = await createEmbedCode({
-        scope: 'chat',
-        name: `Assistant: ${assistant.name}`,
-        assistantId: assistant.id,
-      });
-      setAssistantEmbed({
-        name: assistant.name,
-        embedUrl: result.embedUrl || buildEmbedChatUrl({ assistantId: assistant.id }),
-        token: result.token,
-      });
-    } catch {
-      setAssistantEmbed({
-        name: assistant.name,
-        embedUrl: buildEmbedChatUrl({ assistantId: assistant.id }),
-      });
-    } finally {
-      setAssistantEmbedLoading(false);
-    }
-  };
 
   const columns = [
     { title: t('name'), dataIndex: 'name', key: 'name' },
@@ -356,11 +304,11 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => (
-        <Tag color={status === 'active' ? 'green' : 'red'}>{status?.toUpperCase()}</Tag>
+        <StatusTag tone={status === 'active' ? 'ok' : 'error'}>{humanizeStatus(status)}</StatusTag>
       ),
     },
     {
-      title: t('col_actions'),
+      align: 'right' as const,
       key: 'actions',
       render: (_: unknown, record: EmbedTokenRecord) => (
         <Space size={0}>
@@ -416,10 +364,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
       }
     >
       <div className="flex flex-col gap-5">
-      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        {t('embed_tab_desc')}
-      </Paragraph>
-
       <EmbedDeveloperGuide />
 
       <Card
@@ -445,78 +389,8 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         />
       </Card>
 
-      <Card
-        size="small"
-        title={t('embed_assistants_title')}
-        extra={
-          <PermissionGuard permission={Permission.EMBED_CREATE}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateAssistant}>
-              {t('embed_create_assistant')}
-            </Button>
-          </PermissionGuard>
-        }
-      >
-        <Paragraph type="secondary">{t('embed_assistants_desc')}</Paragraph>
-        <Table
-          rowKey="id"
-          size="small"
-          loading={embedAssistantsLoading}
-          dataSource={embedAssistants}
-          pagination={false}
-          locale={{ emptyText: t('embed_assistants_empty') }}
-          columns={[
-            { title: t('embed_assistant_name'), dataIndex: 'name', key: 'name' },
-            { title: t('embed_assistant_capabilities'), dataIndex: 'capabilities', key: 'capabilities' },
-            {
-              title: t('embed_assistant_libraries'),
-              dataIndex: 'library_ids',
-              key: 'library_ids',
-              render: (ids: string[] | undefined) =>
-                ids?.length ? (
-                  <Space wrap size={[4, 4]}>
-                    {ids.map((id) => (
-                      <Tag key={id}>{libraries.find((l) => l.id === id)?.name || id.slice(0, 8)}</Tag>
-                    ))}
-                  </Space>
-                ) : (
-                  '—'
-                ),
-            },
-            {
-              title: t('embed_assistant_url'),
-              key: 'url',
-              render: (_, row) => (
-                <Button type="link" size="small" icon={<CodeOutlined />} onClick={() => void openAssistantEmbed(row)}>
-                  {tEmbed('embed_get_code')}
-                </Button>
-              ),
-            },
-            {
-              title: t('col_actions'),
-              key: 'actions',
-              render: (_, row) => (
-                <Button
-                  type="text"
-                  className="icon-only-btn"
-                  icon={<EditOutlined />}
-                  title={t('embed_edit_assistant')}
-                  aria-label={t('embed_edit_assistant')}
-                  onClick={() => openEditAssistant(row)}
-                />
-              ),
-            },
-          ]}
-        />
-      </Card>
+      <Typography.Link href="/agents?view=mine">{t('embed_agents_moved')}</Typography.Link>
       </div>
-
-      <EmbedAssistantModal
-        open={assistantModalOpen}
-        mode={assistantModalMode}
-        organizationId={orgId}
-        assistant={editingAssistant}
-        onClose={() => setAssistantModalOpen(false)}
-      />
 
       <Modal
         title={t('embed_create_token')}
@@ -738,23 +612,6 @@ export const EmbedTab: React.FC<TabComponentProps> = () => {
         ) : null}
       </Modal>
 
-      <Modal
-        title={`${tEmbed('embed_get_code')}: ${assistantEmbed?.name || ''}`}
-        open={!!assistantEmbed}
-        onCancel={() => setAssistantEmbed(null)}
-        width={720}
-        footer={null}
-        destroyOnHidden
-      >
-        <EmbedCodePanel
-          embedUrl={assistantEmbed?.embedUrl || ''}
-          loading={assistantEmbedLoading}
-          token={assistantEmbed?.token}
-          title={assistantEmbed?.name}
-          iframeHeight={420}
-          hint={tEmbed('embed_assistant_hint')}
-        />
-      </Modal>
     </PermissionGuard>
   );
 };

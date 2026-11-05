@@ -239,12 +239,15 @@ async def profile(caller: Caller, req) -> Dict[str, Any]:
         compiled = compile_steps(steps, source_sql="SELECT * FROM src")
         conn.execute(f"CREATE OR REPLACE TEMP VIEW _prepared AS {compiled.sql}")
         prof = profile_object("SELECT * FROM _prepared", connection=conn)
+        info = _sample_info(req, sample, table)
         return {
             "table": table,
-            "profile": prof.model_dump(),
+            # Whether these stats cover every row or the first N, so the UI can say "in a sample".
+            "profile": {**prof.model_dump(), "sampled": info["sampled"]},
+            **info,
             "health": health_score(prof),
             "distributions": insights.distributions(conn, "_prepared"),
-            "findings": insights.suggestions(conn, "_prepared"),
+            "findings": insights.suggestions(conn, "_prepared") + insights.review_items(conn, "_prepared"),
         }
 
     try:

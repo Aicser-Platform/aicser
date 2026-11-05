@@ -148,7 +148,6 @@ export function QueryHistoryPane({
         ),
       },
       {
-        title: t('col_actions'),
         key: 'actions',
         width: 84,
         fixed: 'right',

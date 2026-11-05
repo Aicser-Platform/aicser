@@ -655,7 +655,8 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
         {!isLimitReached && (
           <div style={{ display: 'flex', gap: 4, marginTop: metrics.length > 0 ? 4 : 0, alignItems: 'center' }}>
             <Select
-              style={{ flex: 1 }}
+              // min-width 0: a long placeholder ("Count of rows — add a field…") used to push fx off the panel.
+              style={{ flex: 1, minWidth: 0 }}
               classNames={{ popup: { root: 'properties-panel-dropdown' } }}
               placeholder={isFieldDragOver ? dropHint || 'Drop a number here' : placeholder}
               loading={isLoading}
@@ -679,6 +680,7 @@ export const MetricListField: React.FC<MetricListFieldProps> = ({
                 borderRadius: 4,
                 padding: '2px 8px',
                 whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
               onClick={() => {
                 setEditingComputedIndex(null);

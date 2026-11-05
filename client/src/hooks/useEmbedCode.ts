@@ -8,6 +8,7 @@ import {
   buildEmbedDashboardUrl,
   pickPrimaryEmbedUrl,
   withDashboardView,
+  onThisApp,
 } from '@/utils/embedSnippet';
 
 type EmbedScope = 'dashboard' | 'chart' | 'chat';
@@ -67,7 +68,7 @@ export function useEmbedCode() {
         }),
       });
       const token = created.token;
-      let embedUrl = created.embed_urls?.[options.scope] || pickPrimaryEmbedUrl(created.embed_urls);
+      let embedUrl = onThisApp(created.embed_urls?.[options.scope] || pickPrimaryEmbedUrl(created.embed_urls) || '');
 
       if (!embedUrl) {
         if (options.scope === 'dashboard' && options.resourceId) {

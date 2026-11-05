@@ -265,17 +265,20 @@ export default function ChartDesignerStudio() {
   const selectedWidgetLayout = useMemo(() => {
     if (!selectedWidgetId) return [];
 
+    // A KPI is previewed at its dashboard tile size, centred — stretched over the whole canvas its number
+    // looked lost and nothing like the card people see. Other charts use the full canvas.
+    const isKpi = selectedWidget?.chartType === 'stat';
     return layout
       .filter((l) => l.i === selectedWidgetId)
-      .map((l) => ({
-        ...l,
-        x: 0,
-        y: 0,
-        w: 12,
-        h: DESIGNER_DEFAULT_CHART_HEIGHT,
-        maxH: DESIGNER_DEFAULT_CHART_HEIGHT,
-      }));
-  }, [layout, selectedWidgetId]);
+      .map((l) => {
+        if (isKpi) {
+          const w = Math.min(6, Math.max(3, l.w || 3));
+          const h = Math.min(8, Math.max(3, l.h || 4));
+          return { ...l, x: Math.floor((12 - w) / 2), y: 0, w, h, maxH: DESIGNER_DEFAULT_CHART_HEIGHT };
+        }
+        return { ...l, x: 0, y: 0, w: 12, h: DESIGNER_DEFAULT_CHART_HEIGHT, maxH: DESIGNER_DEFAULT_CHART_HEIGHT };
+      });
+  }, [layout, selectedWidgetId, selectedWidget?.chartType]);
 
   if (isLoading) {
     return (

@@ -85,13 +85,13 @@ class Settings(BaseSettings):
 
     # OpenAI Settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL_ID: str = os.getenv("OPENAI_MODEL_ID", "gpt-4.1-mini")
+    OPENAI_MODEL_ID: str = os.getenv("OPENAI_MODEL_ID", "gpt-6-luna")
 
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1-mini")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "")
 
     # Reasoning-tier model (optional; for complex/ambiguous queries when REASONING_MODEL_* set)
     REASONING_MODEL_DEPLOYMENT_NAME: str = os.getenv("REASONING_MODEL_DEPLOYMENT_NAME", "")
@@ -109,7 +109,6 @@ class Settings(BaseSettings):
     ENABLE_AI_ANALYSIS: bool = os.getenv("ENABLE_AI_ANALYSIS", "true").lower() == "true"
     ENABLE_CUBE_INTEGRATION: bool = os.getenv("ENABLE_CUBE_INTEGRATION", "true").lower() == "true"
     # Enterprise: prompt caching (Azure/OpenAI) — reduces cost/latency for long system prompts; requires model support
-    ENABLE_PROMPT_CACHING: bool = os.getenv("ENABLE_PROMPT_CACHING", "false").lower() == "true"
 
     # Token/context budget (see TOKEN_AND_CONTEXT_BUDGET.md)
     CONVERSATION_HISTORY_LIMIT: int = int(os.getenv("CONVERSATION_HISTORY_LIMIT", "10"))
@@ -161,6 +160,8 @@ class Settings(BaseSettings):
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
     REDIS_URL: str = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+    # Per-viewer cache of executed dashboard chart data (0 disables). See dashboards/chart_data_cache.py.
+    CHART_DATA_CACHE_TTL_SECONDS: int = int(os.getenv("CHART_DATA_CACHE_TTL_SECONDS", "300") or "0")
 
     # Environment Settings
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
@@ -194,6 +195,12 @@ class Settings(BaseSettings):
     # Empty by default — production SaaS never sets this. See src/core/licensing/.
     AISER_EDITION_LICENSE_KEY: str = os.getenv("AISER_EDITION_LICENSE_KEY", "")
     LICENSE_SERVER_URL: str = os.getenv("LICENSE_SERVER_URL", "https://license.aicser.com")
+    # Admin token for issuing Aicser Personal desktop licenses on the license server
+    # (POST /api/v1/admin/licenses, see docs/personal-license.md). Empty: purchases wait as "pending".
+    LICENSE_ADMIN_TOKEN: str = os.getenv("LICENSE_ADMIN_TOKEN", "")
+    # One-time Stripe price for Aicser Personal, and for its 2-year update renewal.
+    STRIPE_PRICE_PERSONAL_LICENSE: str = os.getenv("STRIPE_PRICE_PERSONAL_LICENSE", "")
+    STRIPE_PRICE_PERSONAL_RENEWAL: str = os.getenv("STRIPE_PRICE_PERSONAL_RENEWAL", "")
     # Instance-local grace period for offline tolerance — not the license server's
     # per-license grace_period_days (not exposed by its public API). 3 days was too
     # tight for a genuinely "self-hosted" instance.
@@ -236,6 +243,18 @@ class Settings(BaseSettings):
     STRIPE_PRICE_PRO_YEARLY: str = os.getenv("STRIPE_PRICE_PRO_YEARLY", "")
     STRIPE_PRICE_TEAM_MONTHLY: str = os.getenv("STRIPE_PRICE_TEAM_MONTHLY", "")
     STRIPE_PRICE_TEAM_YEARLY: str = os.getenv("STRIPE_PRICE_TEAM_YEARLY", "")
+    # Per-seat prices (AI seat / Platform seat). When set, checkout bills each seat kind by
+    # quantity and seat changes update the subscription; otherwise the plan price above is used.
+    STRIPE_PRICE_PRO_AI_MONTHLY: str = os.getenv("STRIPE_PRICE_PRO_AI_MONTHLY", "")
+    STRIPE_PRICE_PRO_AI_YEARLY: str = os.getenv("STRIPE_PRICE_PRO_AI_YEARLY", "")
+    STRIPE_PRICE_PRO_PLATFORM_MONTHLY: str = os.getenv("STRIPE_PRICE_PRO_PLATFORM_MONTHLY", "")
+    STRIPE_PRICE_PRO_PLATFORM_YEARLY: str = os.getenv("STRIPE_PRICE_PRO_PLATFORM_YEARLY", "")
+    STRIPE_PRICE_TEAM_AI_MONTHLY: str = os.getenv("STRIPE_PRICE_TEAM_AI_MONTHLY", "")
+    STRIPE_PRICE_TEAM_AI_YEARLY: str = os.getenv("STRIPE_PRICE_TEAM_AI_YEARLY", "")
+    STRIPE_PRICE_TEAM_PLATFORM_MONTHLY: str = os.getenv("STRIPE_PRICE_TEAM_PLATFORM_MONTHLY", "")
+    STRIPE_PRICE_TEAM_PLATFORM_YEARLY: str = os.getenv("STRIPE_PRICE_TEAM_PLATFORM_YEARLY", "")
+    # One-time price for a credit pack (plans.CREDIT_PACK).
+    STRIPE_PRICE_CREDIT_PACK: str = os.getenv("STRIPE_PRICE_CREDIT_PACK", "")
     STRIPE_ENABLED: bool = os.getenv("STRIPE_ENABLED", "false").lower() == "true"
 
     # CutLuy KHQR Settings (Cambodian bank QR payments, one-time USD charges)

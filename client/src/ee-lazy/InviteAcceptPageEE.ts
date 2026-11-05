@@ -1,0 +1,1 @@
+export { InviteAcceptPageEE } from '@/ee';

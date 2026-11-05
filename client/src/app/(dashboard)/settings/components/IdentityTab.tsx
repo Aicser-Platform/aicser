@@ -6,6 +6,7 @@
  * automatically, and map directory groups to organization roles.
  */
 
+import { InfoHint } from '@/components/ui/InfoHint';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, App, Button, Card, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
@@ -150,8 +151,7 @@ export default function IdentityTab(_: TabComponentProps) {
         )}
       </Card>
 
-      <Card size="small" title={t('connect_title')}>
-        <Paragraph type="secondary">{t('connect_desc')}</Paragraph>
+      <Card size="small" title={<>{t('connect_title')}<InfoHint text={t('connect_desc')} /></>}>
         <Space direction="vertical" style={{ width: '100%' }}>
           <Text>
             {t('base_url')}{' '}
@@ -200,8 +200,7 @@ export default function IdentityTab(_: TabComponentProps) {
         />
       </Card>
 
-      <Card size="small" title={t('groups_title')}>
-        <Paragraph type="secondary">{t('groups_desc')}</Paragraph>
+      <Card size="small" title={<>{t('groups_title')}<InfoHint text={t('groups_desc')} /></>}>
         <Table
           size="small"
           rowKey="id"

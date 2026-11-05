@@ -140,7 +140,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=[
         "Authorization", "Content-Type", "X-Requested-With",
-        "Accept", "X-Embed-Token", "X-Request-ID",
+        "Accept", "X-Embed-Token", "X-Request-ID", "X-Organization-Id",
     ],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
@@ -149,6 +149,11 @@ app.add_middleware(ApiRouteRateLimitMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
 if is_ee_enabled():
+    try:
+        from src.modules.sandbox.guard import SandboxGuardMiddleware
+        app.add_middleware(SandboxGuardMiddleware)
+    except Exception as _sandbox_err:
+        logger.warning("Sandbox guard not loaded: %s", _sandbox_err)
     try:
         from src.shared.middleware.audit_logger import AuditLoggingMiddleware
         app.add_middleware(AuditLoggingMiddleware)
@@ -188,6 +193,8 @@ if is_ee_enabled():
         ("src.modules.warehouse.router", "router", "/api", "Warehouse"),
         ("src.modules.master_data.router", "router", "/api", "Master data"),
         ("src.modules.activation.router", "router", "/api", "Actions"),
+        ("src.enterprise.modules.mcp_server.office_router", "router", "/api", "Excel add-in"),
+        ("src.modules.promotion.router", "router", "/api", "Releases"),
         ("src.modules.privacy.router", "router", "/api", "Privacy requests"),
         ("src.modules.shares.router", "router", "/api", "Data shares"),
         ("src.modules.mlops.router", "router", "/api", "Models"),
@@ -301,8 +308,14 @@ from src.shared.health import collect_health_payload  # noqa: E402
 
 @app.get("/health")
 async def health_check():
-    """Liveness check — always returns 200 unless process is dead (use /ready for deps)."""
-    payload, _ = await collect_health_payload()
+    """Liveness check — always returns 200 unless process is dead (use /ready for deps).
+    Answers within a few seconds even when dependency checks are slow (e.g. while a model warms up)."""
+    import asyncio
+
+    try:
+        payload, _ = await asyncio.wait_for(collect_health_payload(), timeout=4)
+    except asyncio.TimeoutError:
+        payload = {"status": "healthy", "checks": "slow"}
     return JSONResponse(content=payload, status_code=200)
 
 

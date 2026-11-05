@@ -4,6 +4,7 @@ import React from 'react';
 import { Modal, Select } from 'antd';
 import { useTranslations } from 'next-intl';
 import { fetchApi } from '@/utils/api';
+import { savedQueriesPath } from '@/utils/savedQueriesPath';
 import { PpLabel } from './PpLabel';
 
 type SavedQuery = {
@@ -30,7 +31,7 @@ export function SavedQueryPicker({ value, onChange, disabled, labelExtra }: Prop
 
   React.useEffect(() => {
     setLoading(true);
-    fetchApi('queries/saved-queries')
+    fetchApi(savedQueriesPath())
       .then((res: { items?: SavedQuery[]; saved_queries?: SavedQuery[] }) => {
         const list = res?.items || res?.saved_queries || (Array.isArray(res) ? res : []);
         setQueries(list as SavedQuery[]);

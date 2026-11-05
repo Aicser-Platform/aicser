@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from jose import JWTError
+import jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,7 @@ from src.modules.embed.schemas import (
 )
 from src.modules.embed import service as embed_service
 from src.modules.pricing.feature_gate import get_user_organization_id, org_entitlement
+from src.modules.feed import publish_policy
 from src.shared.access_control import enforce_permission
 
 logger = logging.getLogger(__name__)
@@ -191,6 +192,7 @@ async def sign_embed(body: EmbedSignRequest, request: Request, db: AsyncSession 
         raise HTTPException(status_code=401, detail="A valid Aicser API key is required.")
     org_id = ident.organization_id or await get_user_organization_id(ident.user_id, db)
     await enforce_permission(ident.user_id, "embed:create", organization_id=org_id)
+    await publish_policy.require_embed_publisher(db, org_id, ident.user_id)
     await _require_embed_analytics_entitlement(org_id, db)
     await _require_resource_access(db, body.resource_id, [body.scope], ident.user_id)
     created = await embed_service.create_embed_token(
@@ -205,6 +207,8 @@ async def sign_embed(body: EmbedSignRequest, request: Request, db: AsyncSession 
         kind="signed",
         download=body.download,
     )
+    await publish_policy.audit("embed_link_created", user_id=ident.user_id, org_id=org_id, resource_type=body.scope,
+                               resource_id=body.resource_id, metadata={"signed": True})
     return {
         "token": created["token"],
         "url": created["embed_urls"].get(body.scope),
@@ -230,6 +234,7 @@ async def create_embed_token(
     # org_id scopes the check to the org this token is actually being minted
     # for, matching the per-org RBAC model the role seed data intends.
     await enforce_permission(user_id, "embed:create", organization_id=org_id)
+    await publish_policy.require_embed_publisher(db, org_id, user_id)
     await _require_embed_analytics_entitlement(org_id, db)
     await _require_resource_access(db, body.resource_id, list(body.scopes), user_id)
     theme = await _enforce_white_label_entitlement(body.theme, org_id, db)
@@ -245,6 +250,8 @@ async def create_embed_token(
             theme=theme.model_dump() if theme else None,
             download=body.download,
         )
+        await publish_policy.audit("embed_link_created", user_id=user_id, org_id=org_id, resource_type="embed",
+                                   resource_id=body.resource_id, metadata={"name": body.name})
         return EmbedTokenCreatedResponse(**created)
     except HTTPException:
         raise
@@ -319,7 +326,7 @@ async def verify_embed_token(
     the plan that granted it."""
     try:
         result = await embed_service.verify_embed_token(token, required_scope=scope, allow_link=True)
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
     org_id = result.get("org_id")
@@ -340,6 +347,7 @@ async def _require_embed_plan(org_id: Optional[str], db: AsyncSession) -> None:
     the next open)."""
     if not org_id:
         return
+    await publish_policy.require_outside_sharing(db, org_id)
     ok, reason = await org_entitlement(org_id, db, "embed_analytics")
     if not ok:
         raise HTTPException(
@@ -380,7 +388,7 @@ async def open_embed_session(body: EmbedSessionRequest, db: AsyncSession = Depen
         )
     except embed_service.EmbedOriginError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         message = str(exc)
         if "expired" in message.lower():
             message = "This embed link has expired."

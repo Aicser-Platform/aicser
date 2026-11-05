@@ -59,12 +59,16 @@ export function deriveAutoTitle(widget: WidgetLike, t: Translate): string | null
   const type = String(widget.chartType || '').toLowerCase();
   if (NO_TITLE_TYPES.has(type)) return null;
   const q = (widget.chartQuery || {}) as Record<string, unknown>;
-  const metrics = Array.isArray(q.yMetrics) ? (q.yMetrics as Array<{ field?: string; aggregation?: string }>) : [];
+  const metrics = Array.isArray(q.yMetrics)
+    ? (q.yMetrics as Array<{ field?: string; aggregation?: string; label?: string }>)
+    : [];
   const first = metrics.find((m) => m && m.field);
   if (!first?.field) return null;
   const aggKey = AGG_KEYS[String(first.aggregation || '').toLowerCase()];
   const field = fieldPhrase(first.field);
-  const metric = aggKey ? t(aggKey, { field }) : field;
+  // A semantic metric's field is its whole calculation (SUM(loans.amount)): name it by the
+  // metric ("total_loan_amount" → "total loan amount") instead.
+  const metric = q.semantic_metric_id && first.label ? fieldPhrase(first.label) : aggKey ? t(aggKey, { field }) : field;
   const x = typeof q.x === 'string' && q.x && type !== 'stat' && type !== 'gauge' ? q.x : null;
   const title = x ? t('auto_title_by', { metric, dimension: fieldPhrase(x) }) : metric;
   return capitalise(title);

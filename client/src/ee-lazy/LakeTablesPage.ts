@@ -1,0 +1,1 @@
+export { LakeTablesPage } from '@/ee';

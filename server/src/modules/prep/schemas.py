@@ -61,12 +61,25 @@ class ColumnMeaning(BaseModel):
     personal: bool = False
 
 
+class CleaningDecision(BaseModel):
+    """What someone decided about one review item: keep the values, exclude the rows, or just note it."""
+
+    action: Literal["keep", "exclude", "note"]
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class CleaningLog(BaseModel):
+    decisions: Dict[str, CleaningDecision] = Field(default_factory=dict, max_length=500)
+    note: Optional[str] = Field(default=None, max_length=5000)
+
+
 class RecipeUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = Field(default=None, max_length=2000)
     table: Optional[str] = Field(default=None, max_length=255)
     steps: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=MAX_STEPS)
     column_meta: Optional[Dict[str, ColumnMeaning]] = Field(default=None, max_length=500)
+    cleaning: Optional[CleaningLog] = None
 
 
 class PublishRequest(BaseModel):

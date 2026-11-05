@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planEmptyWidgetBindings, isEmptyDataWidget, duplicateKpis, planKpiVariety } from '../bindEmptyWidgets';
+import { planEmptyWidgetBindings, isEmptyDataWidget, duplicateKpis, planKpiVariety, kpiCandidates } from '../bindEmptyWidgets';
 
 const cols = [
   { name: 'order_id', type: 'BIGINT' },
@@ -119,5 +119,22 @@ describe('duplicate KPIs', () => {
       { field: 'account_name', aggregation: 'distinct_count' },
     ]);
     expect((plan[0].chartQuery.yMetrics as any)[0]).toEqual({ field: 'account_type', aggregation: 'distinct_count' });
+  });
+});
+
+describe('kpiCandidates', () => {
+  it('leads with money-like totals and averages scores and ages instead of adding them up', () => {
+    const cols = [
+      { name: 'loan_id', type: 'string' },
+      { name: 'age', type: 'integer' },
+      { name: 'credit_score', type: 'number' },
+      { name: 'dependents', type: 'integer' },
+      { name: 'loan_amount_usd', type: 'number' },
+    ];
+    const kpis = kpiCandidates(cols);
+    expect(kpis[0]).toEqual({ field: 'loan_amount_usd', aggregation: 'sum' });
+    expect(kpis).not.toContainEqual({ field: 'age', aggregation: 'sum' });
+    expect(kpis).not.toContainEqual({ field: 'credit_score', aggregation: 'sum' });
+    expect(kpis).toContainEqual({ field: 'credit_score', aggregation: 'avg' });
   });
 });

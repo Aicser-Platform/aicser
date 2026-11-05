@@ -4,7 +4,7 @@ from ee.modules.pricing.sku_catalog import SKU_CATALOG, sku_catalog_payload
 
 def test_sku_catalog_has_core_and_addons():
     ids = {s["id"] for s in SKU_CATALOG}
-    assert {"kernel", "analyze", "ask", "govern", "operate", "decide", "platform", "channel", "industry"} <= ids
+    assert {"kernel", "analyze", "ask", "govern", "operate", "decide", "agent", "platform", "channel", "industry"} <= ids
     payload = sku_catalog_payload()
     assert "Add-ons" in payload["rule"]
 

@@ -38,7 +38,35 @@ export type FormKind =
   | 'append'
   | 'sql'
   | 'predict'
-  | 'ai_answer';
+  | 'ai_answer'
+  | 'window'
+  | 'bin'
+  | 'index'
+  | 'top_n'
+  | 'remove_rows'
+  | 'header_rows'
+  | 'split_rows'
+  | 'expand_rows';
+
+/** Calculations across rows, in the order people reach for them. */
+export const WINDOW_CALCS = ['running_total', 'previous', 'difference', 'percent_of_total', 'rank', 'moving_average',
+  'cumulative_percent', 'next', 'dense_rank', 'row_number'] as const;
+const NEEDS_ORDER = new Set(['running_total', 'moving_average', 'previous', 'next', 'difference', 'cumulative_percent']);
+
+/** Column names from one or more header rows: joined, trimmed, never empty, never repeated. */
+export function headerNames(rows: Record<string, unknown>[], columns: string[], joiner: string): Record<string, string> {
+  const used = new Set<string>();
+  const out: Record<string, string> = {};
+  columns.forEach((c) => {
+    const parts = rows.map((r) => String(r[c] ?? '').trim()).filter(Boolean);
+    let name = parts.join(joiner).trim() || c;
+    const base = name;
+    for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} ${n}`;
+    used.add(name.toLowerCase());
+    out[c] = name;
+  });
+  return out;
+}
 
 /** Which form edits an existing step (others are edited as code). */
 export function formForStep(step: PrepStep): FormKind | null {
@@ -54,7 +82,8 @@ export function formForStep(step: PrepStep): FormKind | null {
     change_case: 'change_case', filter_rows: 'filter_rows', conditional: 'conditional', formula: 'formula',
     concat: 'concat', flatten_json: 'flatten_json', dedupe: 'dedupe', aggregate: 'group', unpivot: 'unpivot',
     validate: 'checks', pivot: 'pivot', join: 'merge', union: 'append', sql: 'sql',
-    predict: 'predict', ai_answer: 'ai_answer',
+    predict: 'predict', ai_answer: 'ai_answer', window: 'window', bin: 'bin', index: 'index', top_n: 'top_n',
+    remove_rows: 'remove_rows', header_rows: 'header_rows', explode: 'expand_rows',
   };
   return map[kind] ?? null;
 }
@@ -141,7 +170,7 @@ function initialValues(kind: FormKind, columns: string[], selected: string[], ex
       return { on: a.on ?? selected[0], using: a.using, agg: a.agg ?? 'sum', groupBy: (a.group_by as string[]) ?? [] };
     case 'merge': {
       const pairs = Object.entries((a.on as Record<string, string>) ?? {});
-      return { asset: a.asset, how: a.how ?? 'left', pairs: pairs.length ? pairs : [[selected[0] ?? '', '']] };
+      return { asset: a.asset, how: a.how ?? 'left', pairs: pairs.length ? pairs : [[selected[0] ?? '', '']], match: a.match ?? 'exact', threshold: a.threshold ?? 0.9 };
     }
     case 'append':
       return { asset: a.asset, all: a.all ?? true };
@@ -149,12 +178,37 @@ function initialValues(kind: FormKind, columns: string[], selected: string[], ex
       return { model_id: a.model_id, into: a.into ?? '' };
     case 'ai_answer':
       return { decision_id: a.decision_id, columns: cols, into: a.into ?? '' };
+    case 'window':
+      return {
+        calc: a.calc ?? 'running_total', column: (a.column as string) ?? selected[0], into: a.into ?? '',
+        partitionBy: (a.partition_by as string[]) ?? [], orderBy: a.order_by, descending: Boolean(a.descending),
+        size: a.size ?? 3, offset: a.offset ?? 1,
+      };
+    case 'bin':
+      return {
+        column: (a.column as string) ?? selected[0], into: a.into ?? `${selected[0] ?? 'value'}_range`, mode: a.mode ?? 'edges',
+        edges: ((a.edges as number[]) ?? []).join(', '), count: a.count ?? 4, labels: ((a.labels as string[]) ?? []).join(', '),
+      };
+    case 'index':
+      return { into: a.into ?? 'row_no', start: a.start ?? 1, partitionBy: (a.partition_by as string[]) ?? [], orderBy: a.order_by, descending: Boolean(a.descending) };
+    case 'top_n':
+      return { n: a.n ?? 3, orderBy: a.order_by ?? selected[0], descending: a.descending ?? true, partitionBy: (a.partition_by as string[]) ?? [] };
+    case 'remove_rows':
+      return { top: a.top ?? 1, bottom: a.bottom ?? 0 };
+    case 'header_rows':
+      return { skip: a.skip ?? 0, rows: a.rows ?? 1, joiner: ' ', names: (a.names as Record<string, string>) ?? null };
+    case 'split_rows':
+      return { column: (a.column as string) ?? selected[0], format: 'auto', delimiter: ',' };
+    case 'expand_rows': {
+      const picked = ((a.columns as string[]) ?? []).length ? (a.columns as string[]) : a.column ? [a.column as string] : selected;
+      return { columns: picked, format: a.json === false ? 'text' : 'json', delimiter: a.delimiter ?? ',' };
+    }
   }
 }
 
 const listOf = (text: string) => text.split(',').map((s) => s.trim()).filter(Boolean);
 
-function buildStep(kind: FormKind, v: Values, columns: string[]): PrepStep | null {
+export function buildStep(kind: FormKind, v: Values, columns: string[]): PrepStep | null {
   switch (kind) {
     case 'rename':
       return v.to && v.to !== v.column ? build.rename(v.column, v.to.trim()) : null;
@@ -236,7 +290,8 @@ function buildStep(kind: FormKind, v: Values, columns: string[]): PrepStep | nul
       return v.on && v.using ? { pivot: { on: v.on, using: v.using, agg: v.agg, ...(v.groupBy?.length ? { group_by: v.groupBy } : {}) } } : null;
     case 'merge': {
       const on = Object.fromEntries((v.pairs as string[][]).filter(([l, r]) => l && r));
-      return v.asset && Object.keys(on).length ? { join: { asset: v.asset, how: v.how, on } } : null;
+      const similar = v.match === 'similar' ? { match: 'similar', threshold: Number(v.threshold) || 0.9 } : {};
+      return v.asset && Object.keys(on).length ? { join: { asset: v.asset, how: v.how, on, ...similar } } : null;
     }
     case 'append':
       return v.asset ? { union: { asset: v.asset, all: v.all } } : null;
@@ -245,6 +300,62 @@ function buildStep(kind: FormKind, v: Values, columns: string[]): PrepStep | nul
     case 'ai_answer':
       return v.decision_id && v.columns?.length
         ? { ai_answer: { decision_id: v.decision_id, columns: v.columns, ...(String(v.into ?? '').trim() ? { into: v.into.trim() } : {}) } }
+        : null;
+    case 'window': {
+      const into = String(v.into ?? '').trim() || `${v.calc}_${v.column ?? 'value'}`;
+      if (v.calc !== 'row_number' && !v.column) return null;
+      if (NEEDS_ORDER.has(v.calc) && !v.orderBy) return null;
+      return {
+        window: {
+          calc: v.calc, ...(v.column ? { column: v.column } : {}), into,
+          ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}), ...(v.orderBy ? { order_by: v.orderBy } : {}),
+          ...(v.descending ? { descending: true } : {}),
+          ...(v.calc === 'moving_average' ? { size: Number(v.size) || 3 } : {}),
+          ...(v.calc === 'previous' || v.calc === 'next' ? { offset: Number(v.offset) || 1 } : {}),
+        },
+      };
+    }
+    case 'bin': {
+      if (!v.column || !String(v.into ?? '').trim()) return null;
+      if (v.mode === 'edges') {
+        const edges = listOf(String(v.edges)).map(Number).filter(Number.isFinite);
+        const labels = listOf(String(v.labels));
+        if (!edges.length) return null;
+        return { bin: { column: v.column, into: v.into.trim(), mode: 'edges', edges, ...(labels.length ? { labels } : {}) } };
+      }
+      return { bin: { column: v.column, into: v.into.trim(), mode: v.mode, count: Number(v.count) || 4 } };
+    }
+    case 'index':
+      return String(v.into ?? '').trim()
+        ? {
+            index: {
+              into: v.into.trim(), start: Number(v.start) || 1, ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}),
+              ...(v.orderBy ? { order_by: v.orderBy, ...(v.descending ? { descending: true } : {}) } : {}),
+            },
+          }
+        : null;
+    case 'top_n':
+      return v.orderBy && Number(v.n) >= 1
+        ? { top_n: { n: Number(v.n), order_by: v.orderBy, descending: Boolean(v.descending), ...(v.partitionBy?.length ? { partition_by: v.partitionBy } : {}) } }
+        : null;
+    case 'remove_rows': {
+      const top = Math.max(0, Number(v.top) || 0);
+      const bottom = Math.max(0, Number(v.bottom) || 0);
+      return top || bottom ? { remove_rows: { ...(top ? { top } : {}), ...(bottom ? { bottom } : {}) } } : null;
+    }
+    case 'header_rows':
+      return v.names && Object.keys(v.names).length
+        ? { header_rows: { skip: Number(v.skip) || 0, rows: Number(v.rows) || 1, names: v.names } }
+        : null;
+    case 'split_rows': {
+      if (!v.column) return null;
+      return v.format === 'json'
+        ? { explode: { columns: [v.column], json: true } }
+        : { explode: { columns: [v.column], json: false, delimiter: v.delimiter || ',' } };
+    }
+    case 'expand_rows':
+      return v.columns?.length
+        ? { explode: { columns: v.columns, ...(v.format === 'text' ? { json: false, delimiter: v.delimiter || ',' } : { json: true }) } }
         : null;
   }
 }
@@ -315,6 +426,20 @@ export function StepForm({
   const [formulaOk, setFormulaOk] = useState(true);
   const set = (patch: Values) => setV((cur) => ({ ...cur, ...patch }));
   const aiChoices = useAiChoices(kind);
+  // Split into rows: look at the column's values to choose a JSON list or a delimiter, so the
+  // common case needs no setting at all.
+  useEffect(() => {
+    if (kind !== 'split_rows' || v.format !== 'auto') return;
+    const values = before.map((r) => String(r[v.column] ?? '').trim()).filter(Boolean).slice(0, 50);
+    if (values.length && values.every((x) => x.startsWith('[') && x.endsWith(']'))) {
+      set({ format: 'json' });
+      return;
+    }
+    const delimiter = [';', '|', ',', '\n'].map((d) => [d, values.filter((x) => x.includes(d)).length] as const)
+      .sort((a, b) => b[1] - a[1])[0];
+    set({ format: 'text', delimiter: delimiter && delimiter[1] ? delimiter[0] : ',' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, v.format, v.column]);
   const step = useMemo(() => buildStep(kind, v, columns), [kind, v, columns]);
   const ready = Boolean(step) && (kind !== 'formula' || formulaOk);
 
@@ -701,6 +826,162 @@ export function StepForm({
               </Space>
             ))}
             <Button size="small" icon={<PlusOutlined />} onClick={() => set({ pairs: [...v.pairs, ['', '']] })}>{t('add_pair')}</Button>
+            <Radio.Group value={v.match} onChange={(e) => set({ match: e.target.value })}>
+              <Radio value="exact">{t('merge_exact')}</Radio>
+              <Radio value="similar">{t('merge_similar')}</Radio>
+            </Radio.Group>
+            {v.match === 'similar' ? (
+              <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                <Space>
+                  <Text>{t('merge_similarity')}</Text>
+                  <InputNumber min={0.5} max={1} step={0.05} value={v.threshold} onChange={(val) => set({ threshold: val ?? 0.9 })} aria-label={t('merge_similarity')} />
+                </Space>
+                <Text type="secondary" style={{ fontSize: 12 }}>{t('merge_similar_hint')}</Text>
+              </Space>
+            ) : null}
+          </Space>
+        );
+      case 'window':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Text strong>{t('field_calculation')}</Text>
+              <Select value={v.calc} onChange={(val) => set({ calc: val })} options={WINDOW_CALCS.map((c) => ({ value: c, label: t(`calc_${c}`) }))} style={{ width: '100%' }} aria-label={t('field_calculation')} />
+            </Space>
+            {v.calc !== 'row_number' ? single('column', t('field_value_column')) : null}
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Text strong>{t('field_order_by')}</Text>
+              <Space.Compact style={{ width: '100%' }}>
+                <Select showSearch allowClear value={v.orderBy} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} status={NEEDS_ORDER.has(v.calc) && !v.orderBy ? 'warning' : undefined} />
+                <Select value={v.descending ? 'desc' : 'asc'} onChange={(val) => set({ descending: val === 'desc' })} options={[{ value: 'asc', label: t('order_asc') }, { value: 'desc', label: t('order_desc') }]} style={{ width: 140 }} aria-label={t('field_direction')} />
+              </Space.Compact>
+            </Space>
+            {multi('partitionBy', t('field_per_group'), 0)}
+            {v.calc === 'moving_average' ? (
+              <Space><Text>{t('field_window_rows')}</Text><InputNumber min={1} max={1000} value={v.size} onChange={(val) => set({ size: val ?? 3 })} aria-label={t('field_window_rows')} /></Space>
+            ) : null}
+            {v.calc === 'previous' || v.calc === 'next' ? (
+              <Space><Text>{t('field_rows_away')}</Text><InputNumber min={1} max={1000} value={v.offset} onChange={(val) => set({ offset: val ?? 1 })} aria-label={t('field_rows_away')} /></Space>
+            ) : null}
+            {text('into', t('field_new_column'), `${v.calc}_${v.column ?? 'value'}`)}
+          </Space>
+        );
+      case 'bin':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {single('column', t('field_number_column'))}
+            <Radio.Group value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
+              <Radio.Button value="edges">{t('bin_edges')}</Radio.Button>
+              <Radio.Button value="equal_width">{t('bin_equal_width')}</Radio.Button>
+              <Radio.Button value="quantiles">{t('bin_quantiles')}</Radio.Button>
+            </Radio.Group>
+            {v.mode === 'edges' ? (
+              <>
+                {text('edges', t('field_boundaries'), '10000, 50000', t('bin_edges_hint'))}
+                {text('labels', t('field_range_labels'), t('bin_labels_placeholder'))}
+              </>
+            ) : (
+              <Space><Text>{t('field_range_count')}</Text><InputNumber min={2} max={100} value={v.count} onChange={(val) => set({ count: val ?? 4 })} aria-label={t('field_range_count')} /></Space>
+            )}
+            {text('into', t('field_new_column'))}
+          </Space>
+        );
+      case 'index':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {text('into', t('field_new_column'))}
+            <Space><Text>{t('field_start_at')}</Text><InputNumber value={v.start} onChange={(val) => set({ start: val ?? 1 })} aria-label={t('field_start_at')} /></Space>
+            {multi('partitionBy', t('field_restart_per_group'), 0)}
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Text strong>{t('field_order_by')}</Text>
+              <Select showSearch allowClear value={v.orderBy} placeholder={t('index_keep_order')} onChange={(val) => set({ orderBy: val })} options={columns.map((c) => ({ value: c, label: c }))} style={{ width: '100%' }} aria-label={t('field_order_by')} />
+            </Space>
+          </Space>
+        );
+      case 'top_n':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Space>
+              <Radio.Group value={v.descending ? 'top' : 'bottom'} onChange={(e) => set({ descending: e.target.value === 'top' })}>
+                <Radio.Button value="top">{t('topn_top')}</Radio.Button>
+                <Radio.Button value="bottom">{t('topn_bottom')}</Radio.Button>
+              </Radio.Group>
+              <InputNumber min={1} max={100000} value={v.n} onChange={(val) => set({ n: val ?? 1 })} aria-label={t('field_how_many')} />
+            </Space>
+            {single('orderBy', t('field_by_column'))}
+            {multi('partitionBy', t('field_per_group'), 0)}
+          </Space>
+        );
+      case 'remove_rows':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Space><Text>{t('field_remove_top')}</Text><InputNumber min={0} max={1000000} value={v.top} onChange={(val) => set({ top: val ?? 0 })} aria-label={t('field_remove_top')} /></Space>
+            <Space><Text>{t('field_remove_bottom')}</Text><InputNumber min={0} max={1000000} value={v.bottom} onChange={(val) => set({ bottom: val ?? 0 })} aria-label={t('field_remove_bottom')} /></Space>
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('remove_rows_hint')}</Text>
+          </Space>
+        );
+      case 'header_rows': {
+        const names = v.names ?? headerNames(before.slice(Number(v.skip) || 0, (Number(v.skip) || 0) + (Number(v.rows) || 1)), columns, v.joiner ?? ' ');
+        const regen = (patch: Values) => {
+          const next = { ...v, ...patch };
+          const skip = Number(next.skip) || 0;
+          set({ ...patch, names: headerNames(before.slice(skip, skip + (Number(next.rows) || 1)), columns, next.joiner ?? ' ') });
+        };
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Space wrap>
+              <Text>{t('field_rows_above')}</Text>
+              <InputNumber min={0} max={100} value={v.skip} onChange={(val) => regen({ skip: val ?? 0 })} aria-label={t('field_rows_above')} />
+              <Text>{t('field_header_rows')}</Text>
+              <InputNumber min={1} max={10} value={v.rows} onChange={(val) => regen({ rows: val ?? 1 })} aria-label={t('field_header_rows')} />
+              {Number(v.rows) > 1 ? (
+                <>
+                  <Text>{t('field_joined_with')}</Text>
+                  <Input value={v.joiner} onChange={(e) => regen({ joiner: e.target.value })} style={{ width: 70 }} aria-label={t('field_joined_with')} />
+                </>
+              ) : null}
+            </Space>
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="from"
+              scroll={{ y: 240 }}
+              dataSource={Object.entries(names).map(([from, to]) => ({ from, to }))}
+              columns={[
+                { title: t('col_before'), dataIndex: 'from' },
+                {
+                  title: t('col_after'),
+                  dataIndex: 'to',
+                  render: (to: string, row: { from: string }) => (
+                    <Input size="small" value={to} onChange={(e) => set({ names: { ...names, [row.from]: e.target.value } })} aria-label={row.from} />
+                  ),
+                },
+              ]}
+            />
+          </Space>
+        );
+      }
+      case 'split_rows':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Radio.Group value={v.format === 'json' ? 'json' : 'text'} onChange={(e) => set({ format: e.target.value })}>
+              <Radio.Button value="text">{t('rows_from_text')}</Radio.Button>
+              <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
+            </Radio.Group>
+            {v.format !== 'json' ? text('delimiter', t('field_delimiter'), ',') : null}
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('split_rows_hint')}</Text>
+          </Space>
+        );
+      case 'expand_rows':
+        return (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {multi('columns', t('field_list_columns'))}
+            <Radio.Group value={v.format} onChange={(e) => set({ format: e.target.value })}>
+              <Radio.Button value="json">{t('rows_from_json')}</Radio.Button>
+              <Radio.Button value="text">{t('rows_from_text')}</Radio.Button>
+            </Radio.Group>
+            {v.format === 'text' ? text('delimiter', t('field_delimiter'), ',') : null}
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('expand_rows_hint')}</Text>
           </Space>
         );
       case 'append':

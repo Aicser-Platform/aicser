@@ -1,0 +1,18 @@
+/* Profile menu: who you are, then your plan (or license) in one calm block. */
+.user-profile-dropdown .ant-dropdown-menu { min-width: 320px; max-width: 360px; }
+
+.profile-menu-who { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; color: inherit; min-width: 0; }
+.profile-menu-who b { font-size: 14px; color: var(--ant-color-text); }
+.profile-menu-who span { font-size: 12px; color: var(--ant-color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The plan block is information, not a menu row: no hover highlight, normal cursor. */
+.user-profile-dropdown .profile-menu-plan-item.ant-dropdown-menu-item { cursor: default; background: transparent !important; padding: 0 !important; }
+.profile-menu-plan { display: flex; flex-direction: column; gap: 10px; padding: 10px 16px 6px; }
+.profile-menu-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--ant-color-text-secondary); }
+.profile-menu-row b { color: var(--ant-color-text); font-weight: 600; }
+.profile-menu-row .ant-badge-status-text { font-size: 13px; }
+.profile-menu-meter .ant-progress { margin: 2px 0 0; }
+.profile-menu-sub { font-size: 12px; color: var(--ant-color-text-tertiary); }
+.profile-menu-urgent { font-size: 12px; font-weight: 600; color: var(--ant-color-warning); }
+.profile-menu-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.profile-menu-actions .ant-btn-link { padding-inline: 0; }

@@ -26,9 +26,7 @@ import { DASHBOARD_CHART_TYPES } from '../utils/filterConfigMerge';
 import { compileDesignToEcharts, normalizeChartDesign } from './chartDesign';
 
 const widgetChunkLoading = () => (
-  <div style={{ minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-    <AppLoadingIndicator variant="minimal" />
-  </div>
+  <div className="animate-pulse" style={{ minHeight: 200, height: '100%', borderRadius: 8, background: 'var(--ant-color-fill-quaternary)' }} />
 );
 
 const GeoMapWidget = dynamic(

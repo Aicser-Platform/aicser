@@ -108,7 +108,7 @@ services:
       AZURE_OPENAI_GPT41_API_KEY: ${AZURE_OPENAI_GPT41_API_KEY:-}
       AZURE_OPENAI_GPT41_ENDPOINT: ${AZURE_OPENAI_GPT41_ENDPOINT:-}
       AZURE_OPENAI_GPT41_API_VERSION: ${AZURE_OPENAI_GPT41_API_VERSION:-}
-      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-gpt-4.1-mini}
+      AZURE_OPENAI_GPT41_DEPLOYMENT_NAME: ${AZURE_OPENAI_GPT41_DEPLOYMENT_NAME:-}
       # Embeddings (src/ee/modules/ai/utils/embedding_service.py). Defaults to
       # local (sentence-transformers, no key needed); set EMBEDDING_PROVIDER to
       # azure | openai | google | gemini | openai_compat to use a hosted/

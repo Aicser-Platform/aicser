@@ -51,7 +51,6 @@
   display: block;
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 8px;
 }
@@ -294,7 +293,6 @@
   font-weight: 600;
   color: var(--ant-color-primary);
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.02em;
 }
 
@@ -981,7 +979,6 @@ body.dashboard-print-mode .sidebar-toggle-btn {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--studio-text-muted, rgba(0, 0, 0, 0.45));
 }
 

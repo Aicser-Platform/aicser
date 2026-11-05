@@ -4,19 +4,29 @@ import type { NextRequest } from 'next/server';
 /** Routes that don't require authentication. */
 const PUBLIC_PATHS = [
   '/login',
+  '/try',
   '/logout',
   '/reset-password',
   '/api/auth/',
+  '/api/sandbox/',
   '/discover',
   '/embed/',
+  // Short share links: the page itself decides who may open one.
+  '/s/',
   '/embedded/',
   '/health',
   '/offline',
   '/invite/accept',
   '/invite/set-password',
+  '/office/manifest.xml',
+  // The taskpane signs in itself: inside Excel on the web there is no session cookie to redirect with.
+  '/office/excel',
   // Collaboration sockets authenticate themselves (token in the handshake).
   '/socket.io',
 ];
+
+/** Where Office hosts an add-in's taskpane. */
+const OFFICE_HOSTS = ['https://*.officeapps.live.com', 'https://*.office.com', 'https://*.office365.com', 'https://*.cloud.microsoft', 'https://*.sharepoint.com'];
 
 /** Static asset prefixes — always allowed. */
 const STATIC_PREFIXES = ['/_next/', '/public/', '/icons/', '/images/', '/favicon', '/sw.js'];
@@ -126,7 +136,22 @@ export function proxy(request: NextRequest) {
     return response;
   }
 
+  if (pathname === '/office/excel') {
+    // Excel on the web shows the add-in's taskpane inside its own page.
+    const response = NextResponse.next();
+    response.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${OFFICE_HOSTS.join(' ')}`);
+    return response;
+  }
+
   if (isPublic(pathname)) return NextResponse.next();
+
+  if (pathname.startsWith('/office/')) {
+    // Excel on the web shows the add-in's taskpane inside its own page.
+    const token = request.cookies.get('auth_token');
+    const response = token ? NextResponse.next() : NextResponse.redirect(new URL(`/login?next=${encodeURIComponent(pathname)}`, request.url));
+    response.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${OFFICE_HOSTS.join(' ')}`);
+    return response;
+  }
 
   const token = request.cookies.get('auth_token');
   if (!token) {

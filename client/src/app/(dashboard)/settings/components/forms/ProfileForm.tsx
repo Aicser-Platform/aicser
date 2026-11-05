@@ -1,19 +1,7 @@
 import React, { useMemo } from 'react';
 import { Form, Input, Select } from 'antd';
 import type { FormInstance } from 'antd';
-import {
-  UserOutlined,
-  MailOutlined,
-  PhoneOutlined,
-  GlobalOutlined,
-  BankOutlined,
-  IdcardOutlined,
-  ApartmentOutlined,
-  TeamOutlined,
-  TrophyOutlined,
-  AimOutlined,
-  ClockCircleOutlined,
-} from '@ant-design/icons';
+import { GlobalOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { ProfileFormValues } from '../../types';
@@ -23,15 +11,38 @@ import { CountryFlagIcon } from '@/components/CountryFlagIcon/CountryFlagIcon';
 const { TextArea } = Input;
 const { Option } = Select;
 
+/** Same choices as onboarding asks (stored values; labels from the shared onboarding strings). */
+const USE_CASES = [
+  ['data_analysis', 'use_case_data_analysis'],
+  ['business_intelligence', 'use_case_business_intelligence'],
+  ['sales_analytics', 'use_case_sales_analytics'],
+  ['marketing_analytics', 'use_case_marketing_analytics'],
+  ['operational_monitoring', 'use_case_operational_monitoring'],
+  ['financial_reporting', 'use_case_financial_reporting'],
+  ['customer_analytics', 'use_case_customer_analytics'],
+  ['just_exploring', 'goal_just_exploring'],
+] as const;
+
 interface ProfileFormProps {
   form: FormInstance<ProfileFormValues>;
   initialValues?: Partial<ProfileFormValues>;
   onFinish: (values: ProfileFormValues) => void;
   disabled?: boolean;
+  /** Company comes from the organization; only someone who can edit it gets the link there. */
+  companyManaged?: boolean;
+  canEditOrganization?: boolean;
 }
 
-export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, onFinish, disabled = false }) => {
+export const ProfileForm: React.FC<ProfileFormProps> = ({
+  form,
+  initialValues,
+  onFinish,
+  disabled = false,
+  companyManaged = false,
+  canEditOrganization = false,
+}) => {
   const t = useTranslations('settings');
+  const tOnb = useTranslations('onboarding');
   // Countries the user can currently pick from, plus (if the stored value predates
   // this dropdown - it used to be a free-text "City, Country" field) the raw legacy
   // value as one extra option, so a switch to a fixed list never makes an existing
@@ -59,10 +70,10 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, o
           label={t('profile_first_name')}
           rules={[{ required: true, message: t('profile_first_name_required') }]}
         >
-          <Input className="w-full" prefix={<UserOutlined />} placeholder={t('profile_first_name')} />
+          <Input className="w-full" placeholder={t('profile_first_name')} />
         </Form.Item>
         <Form.Item name="last_name" label={t('profile_last_name')}>
-          <Input className="w-full" prefix={<UserOutlined />} placeholder={t('profile_last_name')} />
+          <Input className="w-full" placeholder={t('profile_last_name')} />
         </Form.Item>
         <Form.Item
           name="email"
@@ -72,16 +83,25 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, o
             { type: 'email', message: t('profile_email_invalid') },
           ]}
         >
-          <Input className="w-full" prefix={<MailOutlined />} placeholder={t('profile_email_placeholder')} disabled />
+          <Input className="w-full" placeholder={t('profile_email_placeholder')} disabled />
         </Form.Item>
         <Form.Item name="username" label={t('profile_username')}>
-          <Input className="w-full" prefix={<UserOutlined />} placeholder={t('profile_username_placeholder')} />
+          <Input className="w-full" placeholder={t('profile_username_placeholder')} />
         </Form.Item>
         <Form.Item name="phone_number" label={t('profile_phone')}>
-          <Input className="w-full" prefix={<PhoneOutlined />} placeholder={t('profile_phone')} />
+          <Input className="w-full" placeholder={t('profile_phone')} />
         </Form.Item>
-        <Form.Item name="company" label={t('profile_company')}>
-          <Input className="w-full" prefix={<BankOutlined />} placeholder={t('profile_company')} />
+        <Form.Item
+          name="company"
+          label={t('profile_company')}
+          tooltip={companyManaged && !canEditOrganization ? t('profile_company_managed') : undefined}
+          extra={
+            companyManaged && canEditOrganization ? (
+              <Link href="/settings?tab=organization">{t('profile_company_change')}</Link>
+            ) : undefined
+          }
+        >
+          <Input className="w-full" placeholder={t('profile_company')} disabled={companyManaged} />
         </Form.Item>
         <Form.Item name="location" label={t('profile_location')}>
           <Select
@@ -109,13 +129,13 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, o
           </Select>
         </Form.Item>
         <Form.Item name="job_role" label={t('profile_job_role')}>
-          <Input className="w-full" prefix={<IdcardOutlined />} placeholder={t('profile_job_role')} />
+          <Input className="w-full" placeholder={t('profile_job_role')} />
         </Form.Item>
         <Form.Item name="industry" label={t('profile_industry')}>
-          <Input className="w-full" prefix={<ApartmentOutlined />} placeholder={t('profile_industry')} />
+          <Input className="w-full" placeholder={t('profile_industry')} />
         </Form.Item>
         <Form.Item name="company_size" label={t('profile_company_size')}>
-          <Select className="w-full" prefix={<TeamOutlined />} placeholder={t('profile_select_company_size')}>
+          <Select className="w-full" placeholder={t('profile_select_company_size')}>
             <Option value="1-10">1-10</Option>
             <Option value="11-50">11-50</Option>
             <Option value="51-200">51-200</Option>
@@ -124,7 +144,7 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, o
           </Select>
         </Form.Item>
         <Form.Item name="data_experience" label={t('profile_data_experience')}>
-          <Select className="w-full" prefix={<TrophyOutlined />} placeholder={t('profile_select_experience_level')}>
+          <Select className="w-full" placeholder={t('profile_select_experience_level')}>
             <Option value="beginner">{t('profile_experience_beginner')}</Option>
             <Option value="intermediate">{t('profile_experience_intermediate')}</Option>
             <Option value="advanced">{t('profile_experience_advanced')}</Option>
@@ -132,10 +152,17 @@ export const ProfileForm: React.FC<ProfileFormProps> = ({ form, initialValues, o
           </Select>
         </Form.Item>
         <Form.Item name="primary_use_case" label={t('profile_primary_use_case')}>
-          <Input className="w-full" prefix={<AimOutlined />} placeholder={t('profile_primary_use_case')} />
+          <Select
+            className="w-full"
+            allowClear
+            placeholder={t('profile_primary_use_case')}
+            options={[
+              ...USE_CASES.map(([value, key]) => ({ value, label: tOnb(key) })),
+            ]}
+          />
         </Form.Item>
         <Form.Item name="data_frequency" label={t('profile_data_frequency')}>
-          <Select className="w-full" prefix={<ClockCircleOutlined />} placeholder={t('profile_select_frequency')}>
+          <Select className="w-full" placeholder={t('profile_select_frequency')}>
             <Option value="daily">{t('profile_frequency_daily')}</Option>
             <Option value="weekly">{t('profile_frequency_weekly')}</Option>
             <Option value="monthly">{t('profile_frequency_monthly')}</Option>

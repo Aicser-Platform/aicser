@@ -116,7 +116,7 @@ services:
         echo "Running migrations..."
         alembic -c alembic.ini upgrade ce@head
         echo "Starting server..."
-        exec uvicorn src.main:app --host 0.0.0.0 --port 8000
+        exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive ${SERVER_KEEP_ALIVE_S:-75}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s

@@ -222,7 +222,6 @@ function DataSourceLogoImage({
             justifyContent: 'center',
             fontSize: Math.max(10, size * 0.5),
             fontWeight: 'bold',
-            textTransform: 'uppercase',
           }}
         >
           {(integration?.name ?? appType).charAt(0).toUpperCase()}

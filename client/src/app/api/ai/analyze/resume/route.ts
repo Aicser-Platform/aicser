@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       status: response.status,
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
         'X-Accel-Buffering': 'no',
       },

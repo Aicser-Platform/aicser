@@ -16,6 +16,7 @@ try:
             data_rbac_guard,
             legacy_charts_rbac_guard,
             permission_for_method,
+            plant_rbac_guard,
             require_permission,
             schedule_email_rbac_guard,
             semantic_rbac_guard,
@@ -59,4 +60,7 @@ except ImportError:
         return
 
     async def catalog_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
+        return
+
+    async def plant_rbac_guard(request: Request, current_token: Union[str, dict, None] = None) -> None:
         return

@@ -54,27 +54,16 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         async function initLocale() {
-            let currentLocale: string = DEFAULT_LOCALE;
+            // Paint first with the language this browser last used; the account's saved language
+            // only replaces it if it differs.
+            const saved = localStorage.getItem('aiser_locale') || DEFAULT_LOCALE;
+            await loadLocaleData(saved);
             await waitForAuthSettled();
             const { isAuthenticated } = useAuthStore.getState();
-            const hasSession = isAuthenticated || !!getCeBearerToken();
-            try {
-                if (hasSession) {
-                    const data = await fetchApi('users/settings').catch(() => null);
-                    if (data?.settings?.language) {
-                        currentLocale = data.settings.language;
-                    } else {
-                        const saved = localStorage.getItem('aiser_locale');
-                        if (saved) currentLocale = saved;
-                    }
-                } else {
-                    const saved = localStorage.getItem('aiser_locale');
-                    if (saved) currentLocale = saved;
-                }
-            } catch {
-                console.warn('Settings fetch failed, using default locale');
-            }
-            await loadLocaleData(currentLocale);
+            if (!isAuthenticated && !getCeBearerToken()) return;
+            const data = await fetchApi('users/settings').catch(() => null);
+            const language = data?.settings?.language;
+            if (language && language !== saved) await loadLocaleData(language);
         }
         void initLocale();
     }, []);

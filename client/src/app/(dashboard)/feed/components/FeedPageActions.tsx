@@ -60,7 +60,7 @@ const FeedPageActions: React.FC<FeedPageActionsProps> = ({ onDiscover }) => {
       <Tooltip title={t('share_insight')}>
         <Button
           type="primary"
-          icon={<ShareAltOutlined />}
+          icon={<ShareAltOutlined />} aria-label={t('share_insight')}
           onClick={() => router.push('/feed/publish')}
         >
           <span className="hidden sm:inline">{t('share_insight')}</span>
@@ -68,7 +68,7 @@ const FeedPageActions: React.FC<FeedPageActionsProps> = ({ onDiscover }) => {
       </Tooltip>
       <Tooltip title={ee ? t('explore_with_ai') : t('explore_query_editor_cta')}>
         <Button
-          icon={<MessageOutlined />}
+          icon={<MessageOutlined />} aria-label={ee ? t('explore_with_ai') : t('explore_query_editor_cta')}
           onClick={() =>
             router.push(ee ? '/chat' : '/query-editor')
           }

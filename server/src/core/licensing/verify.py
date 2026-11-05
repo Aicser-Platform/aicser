@@ -10,8 +10,31 @@ import jwt
 from src.core.licensing import client
 
 
+# Baked into distributed images at build time (Dockerfile.prod LICENSE_PUBLIC_KEY_B64). Deliberately a
+# fixed path and never an environment variable: whoever chooses the key can sign their own license.
+PUBLIC_KEY_PATH = "/app/license_public_key.pem"
+
+
 class EntitlementTokenError(Exception):
     pass
+
+
+def verify_license_file(token: str, instance_id: str) -> dict:
+    """Check an offline license file. Needs no network, which is the point of it."""
+    try:
+        with open(PUBLIC_KEY_PATH, encoding="utf-8") as handle:
+            public_key = handle.read()
+    except OSError as exc:
+        raise EntitlementTokenError("This image can't verify offline licenses.") from exc
+    try:
+        claims = jwt.decode(token.strip(), public_key, algorithms=["EdDSA"])
+    except jwt.PyJWTError as exc:
+        raise EntitlementTokenError(str(exc)) from exc
+    if claims.get("offline") is not True:
+        raise EntitlementTokenError("This is not an offline license.")
+    if claims.get("instance_id") not in ("*", instance_id):
+        raise EntitlementTokenError("This license file is for another installation.")
+    return claims
 
 
 async def verify_entitlement_token(token: str) -> dict:

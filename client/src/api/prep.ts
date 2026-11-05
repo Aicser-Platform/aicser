@@ -100,6 +100,11 @@ export type ColumnRole = 'amount' | 'count' | 'category' | 'date' | 'id' | 'text
 /** What an output column means, set in Prepare and written onto the table the recipe makes. */
 export type ColumnMeaning = { description?: string | null; role?: ColumnRole | null; personal?: boolean };
 
+/** A decision on an issue no step fixes (Evaluate in the CLEAN panel). */
+export type CleaningDecision = { action: 'keep' | 'exclude' | 'note'; reason?: string | null };
+/** The CLEAN panel's saved state: decisions per issue, and notes on the dataset. */
+export type CleaningLog = { decisions?: Record<string, CleaningDecision>; note?: string | null };
+
 export type Recipe = {
   id: string;
   name: string;
@@ -111,6 +116,7 @@ export type Recipe = {
   version: number;
   output: { mode?: 'view' | 'table'; data_source_id?: string; name?: string; rows?: number; ran_at?: string };
   column_meta?: Record<string, ColumnMeaning>;
+  cleaning?: CleaningLog;
   project_id?: string | null;
   is_owner: boolean;
   created_at?: string | null;
@@ -178,7 +184,7 @@ export const getRecipe = (id: string) => fetchApi<Recipe>(`/api/prep/recipes/${e
 
 export const updateRecipe = (
   id: string,
-  body: Partial<{ name: string; description: string; table: string; steps: PrepStep[]; column_meta: Record<string, ColumnMeaning> }>,
+  body: Partial<{ name: string; description: string; table: string; steps: PrepStep[]; column_meta: Record<string, ColumnMeaning>; cleaning: CleaningLog }>,
 ) => fetchApi<Recipe>(`/api/prep/recipes/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
 
 export const deleteRecipe = (id: string) =>

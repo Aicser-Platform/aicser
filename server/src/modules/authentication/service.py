@@ -8,7 +8,7 @@ import uuid as uuid_module
 from typing import Optional
 from uuid import UUID as PyUUID
 
-from jose import jwt, JWTError
+import jwt
 from passlib.context import CryptContext
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -65,14 +65,17 @@ def create_access_token(user_id: str, email: str) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    """Raise JWTError if invalid, expired, or revoked."""
+    """Raise jwt.PyJWTError if invalid, expired, or revoked."""
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
     # An embed token (src/modules/embed) is never a login, even if the two signing secrets
     # are ever configured to the same value.
     if payload.get("type") == "embed":
-        raise JWTError("Embed tokens can't sign in")
+        raise jwt.InvalidTokenError("Embed tokens can't sign in")
+    # A delegated agent token is scoped to one run (delegated.py), never a session.
+    if payload.get("type") == "delegated":
+        raise jwt.InvalidTokenError("Delegated agent tokens can't sign in")
     if _is_revoked(payload):
-        raise JWTError("Token has been revoked")
+        raise jwt.InvalidTokenError("Token has been revoked")
     return payload
 
 
@@ -120,13 +123,13 @@ def revoke_access_token(token: str) -> None:
             token, settings.SECRET_KEY, algorithms=[ALGORITHM],
             options={"verify_exp": False},
         )
-    except JWTError:
+    except jwt.PyJWTError:
         # SSO tokens (Supabase / Keycloak) are signed by the identity provider. Denylisting
         # only needs their id and expiry; reading them unverified is safe here because this
         # can only ever *remove* access, never grant it.
         try:
-            payload = jwt.get_unverified_claims(token)
-        except JWTError:
+            payload = jwt.decode(token, options={"verify_signature": False})
+        except jwt.PyJWTError:
             return
     jti = payload.get("jti")
     exp = payload.get("exp")
@@ -515,11 +518,15 @@ async def resolve_pending_two_factor_login(
     return user
 
 
-async def get_totp_status(db: AsyncSession, user_id: str) -> bool:
+async def get_totp_status(db: AsyncSession, user_id: str) -> dict:
     user = await get_user_by_id(db, user_id)
     if not user:
         raise ValueError("User not found")
-    return bool(user.totp_enabled)
+    return {
+        "enabled": bool(user.totp_enabled),
+        "has_password": bool(user.hashed_password),
+        "backup_codes_left": len(user.totp_backup_codes or []),
+    }
 
 
 async def start_totp_enrollment(db: AsyncSession, user_id: str) -> dict:
@@ -570,16 +577,23 @@ async def confirm_totp_enrollment(db: AsyncSession, user_id: str, code: str) -> 
     return backup_codes
 
 
-async def disable_totp(db: AsyncSession, user_id: str, password: Optional[str] = None) -> None:
+async def disable_totp(db: AsyncSession, user_id: str, password: Optional[str] = None, code: Optional[str] = None) -> None:
     """Clear TOTP enrollment. Requires the current password when the account has one --
     same re-authentication requirement as change_user_password, for the same reason: an
-    attacker with just a hijacked session shouldn't be able to strip 2FA off the account."""
+    attacker with just a hijacked session shouldn't be able to strip 2FA off the account.
+    Accounts that sign in through a provider have no password here, so they prove it with a code."""
+    from src.modules.authentication import totp_service
+
     user = await get_user_by_id(db, user_id)
     if not user:
         raise ValueError("User not found")
     if user.hashed_password:
         if not password or not verify_password(password, user.hashed_password):
             raise ValueError("Current password is incorrect")
+    elif user.totp_enabled:
+        secret = totp_service.decrypt_secret(user.totp_secret) if user.totp_secret else None
+        if not (secret and code and totp_service.verify_totp_code(secret, code)):
+            raise ValueError("Invalid verification code")
     user.totp_enabled = False
     user.totp_secret = None
     user.totp_backup_codes = None

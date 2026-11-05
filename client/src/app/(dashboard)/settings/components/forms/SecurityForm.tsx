@@ -31,21 +31,6 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
       <Form.Item
         label={
           <Space orientation="vertical" size={0}>
-            <Text strong>{t('security_two_factor_title')}</Text>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {t('security_two_factor_desc')}
-            </Text>
-          </Space>
-        }
-        name="two_factor_enabled"
-        valuePropName="checked"
-      >
-        <Switch />
-      </Form.Item>
-
-      <Form.Item
-        label={
-          <Space orientation="vertical" size={0}>
             <Text strong>{t('security_session_timeout_title')}</Text>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {t('security_session_timeout_desc')}
@@ -54,7 +39,7 @@ export const SecurityForm: React.FC<SecurityFormProps> = ({
         }
         name="session_timeout"
       >
-        <Select placeholder={t('security_session_timeout_placeholder')}>
+        <Select placeholder={t('security_session_timeout_placeholder')} style={{ maxWidth: 320 }}>
           <Option value={15}>{t('security_timeout_15m')}</Option>
           <Option value={30}>{t('security_timeout_30m')}</Option>
           <Option value={60}>{t('security_timeout_1h')}</Option>

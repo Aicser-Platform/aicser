@@ -235,10 +235,17 @@ export function inferChartMapping(
       : undefined;
 
   if (measures.length) {
+    // One axis for several measures only when they are on a similar scale: loans (hundreds)
+    // next to loan amount (millions) draws as invisible bars. With sample rows, keep the
+    // measures within 10x of the largest; the others stay one click away.
+    const peak = (name: string) =>
+      Math.max(0, ...(opts.sampleRows || []).map((r) => Math.abs(Number(r?.[name])) || 0));
+    const top = Math.max(0, ...measures.map((m) => peak(m.name)));
+    const shown = top > 0 && opts.sampleRows?.length ? measures.filter((m) => peak(m.name) * 10 >= top) : measures;
     return {
       x,
       ...(groupField ? { groupField } : {}),
-      yMetrics: measures.slice(0, maxMeasures).map((m) => ({
+      yMetrics: shown.slice(0, maxMeasures).map((m) => ({
         field: m.name,
         aggregation: measureAgg,
       })),

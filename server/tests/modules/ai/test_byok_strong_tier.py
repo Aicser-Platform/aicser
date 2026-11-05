@@ -63,7 +63,8 @@ def test_reasoning_tier_falls_back_to_default_when_no_byok():
     assert svc.get_model_for_tier("reasoning") == "azure_gpt41_mini"
 
 
-def test_dedicated_azure_reasoning_wins_over_byok():
+def test_own_key_wins_over_platform_reasoning_model():
+    """One rule: a person's own key serves every tier when they have one."""
     svc = _service_with(
         {
             "azure_gpt41_mini": _MINI,
@@ -72,14 +73,19 @@ def test_dedicated_azure_reasoning_wins_over_byok():
         },
         default="azure_gpt41_mini",
     )
-    assert svc.get_model_for_tier("reasoning") == "azure_reasoning"
+    assert svc.get_model_for_tier("reasoning") == "byok_google"
 
 
-def test_fast_tier_still_returns_default():
+def test_fast_tier_uses_own_key_too():
     svc = _service_with(
         {"azure_gpt41_mini": _MINI, "byok_google": _BYOK_GEMINI},
         default="azure_gpt41_mini",
     )
+    assert svc.get_model_for_tier("fast") == "byok_google"
+
+
+def test_fast_tier_without_own_key_returns_default():
+    svc = _service_with({"azure_gpt41_mini": _MINI, "azure_reasoning": _AZURE_REASONING}, default="azure_gpt41_mini")
     assert svc.get_model_for_tier("fast") == "azure_gpt41_mini"
 
 

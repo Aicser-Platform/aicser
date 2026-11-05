@@ -146,6 +146,8 @@ interface DataSourceUIState {
   schemaCache: Record<string, SchemaInfo>;
   schemaLoading: boolean;
   select: (id: string | null) => void;
+  /** The selected source no longer exists here; unlike select(null), nobody chose this. */
+  dropSelection: () => void;
   setFilter: (type: string | null) => void;
   setSchemaCache: (id: string, schema: SchemaInfo) => void;
   setSchemaLoading: (loading: boolean) => void;
@@ -166,6 +168,7 @@ export const useDataSourceStore = create<DataSourceUIState>()(
           persistSelectedDataSourceId(id);
           set({ selectedId: id, explicitlyCleared: id === null });
         },
+        dropSelection: () => set({ selectedId: null }),
         setFilter: (type) => set({ filterType: type }),
         setSchemaCache: (id, schema) =>
           set((s) => ({ schemaCache: { ...s.schemaCache, [id]: schema } })),
@@ -191,6 +194,7 @@ export function useDataSources() {
   const explicitlyCleared = useDataSourceStore((state) => state.explicitlyCleared);
   const schemaCache = useDataSourceStore((state) => state.schemaCache);
   const setSelectedId = useDataSourceStore((state) => state.select);
+  const dropSelection = useDataSourceStore((state) => state.dropSelection);
   const setSchemaLoading = useDataSourceStore((state) => state.setSchemaLoading);
   const setSchemaCache = useDataSourceStore((state) => state.setSchemaCache);
   const schemaLoading = useDataSourceStore((state) => state.schemaLoading);
@@ -201,7 +205,7 @@ export function useDataSources() {
     [currentProjectId]
   );
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetched } = useQuery({
     queryKey: dataSourceKeys.list(effectiveProjectId ?? null),
     queryFn: () => api.listDataSources(effectiveProjectId),
     enabled: !isEnterpriseEdition || !!effectiveProjectId,
@@ -216,7 +220,9 @@ export function useDataSources() {
   // and immediately re-selects the first source, making the clear button a no-op across refreshes.
   useEffect(() => {
     if (dataSources.length === 0) {
-      if (selectedId) setSelectedId(null);
+      // Only a loaded, empty list means it is gone, and that is never the person's own choice:
+      // recording it as "cleared" left every later visit with no data source.
+      if (selectedId && isFetched) dropSelection();
       return;
     }
     const storedPref = getStoredDataSourcePreference();
@@ -232,7 +238,7 @@ export function useDataSources() {
     if (preferred?.id) {
       setSelectedId(preferred.id);
     }
-  }, [dataSources, selectedId, explicitlyCleared, setSelectedId]);
+  }, [dataSources, selectedId, explicitlyCleared, setSelectedId, dropSelection, isFetched]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteDataSource(id),

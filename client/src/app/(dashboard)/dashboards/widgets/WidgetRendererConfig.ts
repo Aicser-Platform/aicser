@@ -51,27 +51,32 @@ export const isDark = () => {
 // Categorical sets sized for up to ~20 series (Tableau 20 / ColorBrewer guidance).
 // Brand teal leads "default"; hues stay maximally distinct (not sequential tints).
 export const COLOR_PALETTES = {
+  // Slots 1-8 are validated as a set (dataviz six checks: lightness band, chroma floor, CVD and
+  // normal-vision separation of adjacent pairs) on the light surface; DEFAULT_DARK steps the same
+  // hues for the dark surface. Brand teal leads, deepened from #00c2cb (2.1:1 on white). The old
+  // order put three near-identical teals in the first 16 slots and failed four checks.
   default: [
-    '#00c2cb', // Brand teal
-    '#4e79a7', // Blue
-    '#f28e2b', // Orange
-    '#e15759', // Red
-    '#76b7b2', // Seafoam
-    '#59a14f', // Green
-    '#edc949', // Yellow
-    '#af7aa1', // Purple
-    '#ff9da7', // Pink
+    '#0e9aa7', // Teal (brand)
+    '#eb6834', // Orange
+    '#2a78d6', // Blue
+    '#eda100', // Yellow
+    '#e87ba4', // Magenta
+    '#008300', // Green
+    '#6250d6', // Violet
+    '#e34948', // Red
+    // Past eight series identity gets hard to read; these only keep long series lists distinct.
     '#9c755f', // Brown
-    '#86bcb6', // Light teal
-    '#ffbe7d', // Peach
-    '#8cd17d', // Light green
-    '#b07aa1', // Mauve
-    '#d37295', // Rose
-    '#499894', // Dark teal
+    '#79706e', // Charcoal
     '#a0cbe8', // Sky
     '#d4a6c8', // Lilac
+    '#8cd17d', // Light green
+    '#ffbe7d', // Peach
+    '#499894', // Dark teal
     '#bab0ac', // Gray
-    '#79706e', // Charcoal
+    '#d37295', // Rose
+    '#86bcb6', // Light teal
+    '#b07aa1', // Mauve
+    '#ff9da7', // Pink
   ],
   vibrant: [
     '#00c2cb', '#ff5e5e', '#ffbd39', '#454ade', '#48bb78',
@@ -151,6 +156,9 @@ export const COLOR_PALETTES = {
 /** First / fallback series color — brand teal (not ECharts default blue). */
 export const BRAND_SERIES_FALLBACK = COLOR_PALETTES.default[0];
 
+/** The default palette's first eight slots stepped for the dark surface (validated against #161b22). */
+const DEFAULT_DARK = ['#109fab', '#d95926', '#3987e5', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+
 // Generates a set of distinct colors using golden angle distribution for maximum hue diversity
 export const generateDiversePalette = (count: number): string[] => {
   const colors: string[] = [];
@@ -165,7 +173,9 @@ export const generateDiversePalette = (count: number): string[] => {
 
 /** Get colors from palette name; extends past 20 with golden-angle hues when needed. */
 export const getColorsFromPalette = (paletteName: string, count?: number): string[] => {
-  const palette = COLOR_PALETTES[paletteName as keyof typeof COLOR_PALETTES];
+  const named = COLOR_PALETTES[paletteName as keyof typeof COLOR_PALETTES];
+  const palette =
+    paletteName === 'default' && named && isDark() ? [...DEFAULT_DARK, ...named.slice(DEFAULT_DARK.length)] : named;
 
   if (paletteName === 'diverse' && count) {
     return generateDiversePalette(count);
@@ -185,10 +195,13 @@ export const getColorsFromPalette = (paletteName: string, count?: number): strin
   return palette ? [...palette] : [...COLOR_PALETTES.default];
 };
 
+// Colours nobody chose: ECharts' own defaults, and the first slots of Aicser's previous default
+// palette (baked into charts saved before 2026-10-30). Both are remapped to the current palette.
 const ECHARTS_DEFAULT_PALETTE = new Set(
-  ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0'].map(
-    (c) => c.toLowerCase(),
-  ),
+  [
+    '#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#48b8d0',
+    '#00c2cb', '#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1',
+  ].map((c) => c.toLowerCase()),
 );
 
 function normalizeHexColor(color: unknown): string | null {
@@ -295,7 +308,7 @@ export function categoryColor(
 }
 
 export const CHART_COLORS = {
-  primary: '#00c2cb',
+  primary: COLOR_PALETTES.default[0],
   secondary: [...COLOR_PALETTES.default],
   get text() {
     const dark = isDark();

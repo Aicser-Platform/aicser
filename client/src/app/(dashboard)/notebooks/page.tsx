@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCachedState } from '@/hooks/useCachedState';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -23,7 +24,7 @@ function NotebooksList() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = useProjectStore((s) => s.currentProjectId);
-  const [items, setItems] = useState<NotebookSummary[] | null>(null);
+  const [items, setItems] = useCachedState<NotebookSummary[] | null>(`notebooks:${projectId ?? ''}`, null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');

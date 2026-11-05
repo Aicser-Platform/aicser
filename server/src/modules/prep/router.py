@@ -17,6 +17,7 @@ from src.modules.prep import service
 from src.modules.prep.engine.compiler import compile_steps
 from src.modules.prep.models import PrepRecipe, PrepRecipeVersion
 from src.modules.prep.schemas import (
+    SourceRef,
     DatePatternRequest,
     DetectRequest,
     FailuresRequest,
@@ -62,6 +63,7 @@ def _serialize(recipe: PrepRecipe, caller: Caller) -> Dict[str, Any]:
         "version": recipe.version,
         "output": recipe.output or {},
         "column_meta": recipe.column_meta or {},
+        "cleaning": recipe.cleaning or {},
         "project_id": str(recipe.project_id) if recipe.project_id else None,
         "is_owner": str(recipe.user_id) == caller.user_id,
         "created_at": recipe.created_at.isoformat() if recipe.created_at else None,
@@ -114,6 +116,16 @@ async def profile(req: ProfileRequest, project_id: Optional[str] = Query(default
 async def detect(req: DetectRequest, project_id: Optional[str] = Query(default=None),
                  current_token: Union[str, dict] = Depends(JWTCookieBearer())) -> Dict[str, Any]:
     return await service.detect(caller_from_token(current_token, project_id), req)
+
+
+@router.post("/readiness")
+@rate_limit(requests_per_minute=30, bucket="prep_preview")
+async def readiness(req: SourceRef, project_id: Optional[str] = Query(default=None),
+                    current_token: Union[str, dict] = Depends(JWTCookieBearer())) -> Dict[str, Any]:
+    """After an upload or a new sheet: does it need tidying, and the steps that would do it."""
+    from src.modules.prep.readiness import readiness as check
+
+    return await check(caller_from_token(current_token, project_id), req.data_source_id, req.table)
 
 
 @router.post("/failures")
@@ -215,6 +227,8 @@ async def update_recipe(recipe_id: str, req: RecipeUpdate, current_token: Union[
         recipe.steps = req.steps
     if req.column_meta is not None:
         recipe.column_meta = {k: v.model_dump() for k, v in req.column_meta.items()}
+    if req.cleaning is not None:
+        recipe.cleaning = req.cleaning.model_dump()
     # Any change after publishing is a draft until published again.
     if recipe.status == "published" and (req.steps is not None or req.table is not None):
         recipe.status = "draft"

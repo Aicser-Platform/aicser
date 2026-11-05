@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Space, Spin } from 'antd';
 import { useTranslations } from 'next-intl';
+import { TableRowsSkeleton } from './TableRowsSkeleton';
 import type { SpinProps } from 'antd';
 
 export type AppLoadingIndicatorProps = {
@@ -15,7 +16,8 @@ export type AppLoadingIndicatorProps = {
    * minimal = compact, no wrapper box — drop-in for a bare small `<Spin>` inside
    *   buttons, table cells, or inline text
    */
-  variant?: 'full' | 'inline' | 'minimal';
+  /** `page`: the page's shape (title, a line, rows) while a route loads, not a spinner on a blank page. */
+  variant?: 'full' | 'inline' | 'minimal' | 'page';
   className?: string;
   /**
    * full/inline only: after this many ms, add a calm "taking longer than usual" line with
@@ -40,6 +42,10 @@ function SlowLoadingHint() {
     </div>
   );
 }
+
+/** Logo size per mark, also set inline: the loader can paint before the stylesheet arrives, and
+ * an unstyled <img> showed the logo full size in the top-left corner. */
+const LOGO_PX = { small: 20, default: 30, large: 44 } as const;
 
 const MARK_SIZE_CLASS = {
   small: 'app-loading-indicator__mark--small',
@@ -67,6 +73,20 @@ export function AppLoadingIndicator({
     return () => window.clearTimeout(id);
   }, [slowAfterMs, variant]);
 
+  if (variant === 'page') {
+    return (
+      <div className={['page-wrapper app-loading-page', className].filter(Boolean).join(' ')} role="status" aria-live="polite" aria-busy="true">
+        <span className="sr-only">{tip}</span>
+        <div className="app-loading-page__title" />
+        <div className="app-loading-page__line" />
+        <div className="app-loading-page__body">
+          <TableRowsSkeleton columns={5} rows={7} />
+        </div>
+        {slow ? <SlowLoadingHint /> : null}
+      </div>
+    );
+  }
+
   if (variant === 'minimal') {
     return (
       <span
@@ -83,6 +103,7 @@ export function AppLoadingIndicator({
 
   const resolvedSize = size ?? (variant === 'full' ? 'large' : 'default');
   const markClass = MARK_SIZE_CLASS[resolvedSize as keyof typeof MARK_SIZE_CLASS] ?? MARK_SIZE_CLASS.default;
+  const logoPx = LOGO_PX[resolvedSize as keyof typeof LOGO_PX] ?? LOGO_PX.default;
 
   const rootClass = [
     'app-loading-indicator',
@@ -93,16 +114,42 @@ export function AppLoadingIndicator({
     .join(' ');
 
   return (
-    <div className={rootClass} role="status" aria-live="polite" aria-busy="true">
+    <div
+      className={rootClass}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      // Centred without the stylesheet too (see LOGO_PX).
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...(variant === 'full' ? { position: 'fixed', inset: 0, zIndex: 9999 } : {}),
+      }}
+    >
       <div className={`app-loading-indicator__mark ${markClass}`}>
         <span className="app-loading-indicator__ring" aria-hidden="true" />
         {/* eslint-disable-next-line @next/next/no-img-element -- decorative, must render before hydration/auth resolve */}
-        <img src="/aiser-logo.png" alt="" className="app-loading-indicator__logo" aria-hidden="true" />
+        <img
+          src="/aiser-logo.png"
+          alt=""
+          className="app-loading-indicator__logo"
+          aria-hidden="true"
+          width={logoPx}
+          height={logoPx}
+          style={{ width: logoPx, height: logoPx }}
+        />
       </div>
       {tip ? <div className="app-loading-indicator__tip">{tip}</div> : null}
       {slow ? <SlowLoadingHint /> : null}
     </div>
   );
+}
+
+/** The page skeleton: the route's and a lazily loaded page's waits look the same, so nothing flashes between them. */
+export function PageLoading() {
+  return <AppLoadingIndicator variant="page" slowAfterMs={8000} />;
 }
 
 export default AppLoadingIndicator;

@@ -28,6 +28,14 @@ const isTemporal = (c: ColumnInfo) =>
   TEMPORAL.test(c.type) || /date|(^|_)(month|week|day|time|at)$/i.test(c.name);
 const isMeasure = (c: ColumnInfo) =>
   NUMERIC.test(c.type) && !isKeyLike(c.name) && !isTemporal(c) && !/(^|_)(year|quarter|month|week|day)$/i.test(c.name);
+/** Scores, rates, shares and ages are averaged: a total credit score or total age means nothing. */
+const isAveraged = (c: ColumnInfo) => /(^|_)(score|rate|ratio|pct|percent|percentage|age|margin)(_|$)/i.test(c.name);
+const AMOUNT_LIKE = /(amount|total|revenue|sales|price|cost|balance|income|value|paid|due|principal|fee|qty|quantity|spend)/i;
+/** Measures worth adding up, money-like ones first (loan_amount before dependents). */
+const summable = (columns: ColumnInfo[]) => {
+  const own = columns.filter((c) => isMeasure(c) && !isAveraged(c));
+  return [...own.filter((c) => AMOUNT_LIKE.test(c.name)), ...own.filter((c) => !AMOUNT_LIKE.test(c.name))];
+};
 const isCategory = (c: ColumnInfo) => !NUMERIC.test(c.type) && !isTemporal(c) && !isKeyLike(c.name) && !/^bool/i.test(c.type);
 
 type MetricRef = { field?: string; aggregation?: string };
@@ -41,13 +49,15 @@ const metricSig = (m: MetricRef) => `${m.aggregation ?? ''}:${m.field ?? ''}`.to
  * the dashboard (`taken`) go last.
  */
 export function kpiCandidates(columns: ColumnInfo[], taken: MetricRef[] = []): Array<{ field: string; aggregation: string }> {
-  const measures = columns.filter(isMeasure);
+  const measures = summable(columns);
+  const averaged = columns.filter((c) => isMeasure(c) && isAveraged(c));
   const ownKey = columns.find((c) => isKeyLike(c.name));
   const linkedKeys = columns.filter((c) => isKeyLike(c.name) && c !== ownKey);
   const all: Array<{ field: string; aggregation: string }> = [
     ...measures.map((m) => ({ field: m.name, aggregation: 'sum' })),
     { field: (ownKey ?? columns[0])?.name ?? '*', aggregation: 'count' },
     ...linkedKeys.map((k) => ({ field: k.name, aggregation: 'distinct_count' })),
+    ...averaged.map((m) => ({ field: m.name, aggregation: 'avg' })),
     ...(measures[0] ? [{ field: measures[0].name, aggregation: 'avg' }] : []),
     ...columns.filter(isCategory).map((c) => ({ field: c.name, aggregation: 'distinct_count' })),
   ];
@@ -117,7 +127,7 @@ export function planEmptyWidgetBindings(
     taken?: Array<{ field?: string; aggregation?: string }>;
   } = {},
 ): WidgetBinding[] {
-  const measures = columns.filter(isMeasure);
+  const measures = summable(columns);
   const dates = columns.filter(isTemporal);
   const categories = columns.filter(isCategory);
   const humanize = opts.humanize ?? ((f: string) => f.replace(/_/g, ' '));

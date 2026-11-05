@@ -4,7 +4,7 @@ All auth logic removed, ready for Supabase integration
 """
 
 from typing import Union
-from jose import jwt as jose_jwt
+import jwt
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ def extract_user_payload(token_or_dict: Union[str, dict]) -> dict:
         try:
             # Try to extract unverified claims (for development)
             # In production, this will be replaced with Supabase token verification
-            claims = jose_jwt.get_unverified_claims(token_or_dict)
+            claims = jwt.decode(token_or_dict, options={"verify_signature": False})
             if isinstance(claims, dict):
                 user_id = claims.get('id') or claims.get('user_id') or claims.get('sub')
                 if user_id:

@@ -14,14 +14,14 @@ This file is the canonical project brain for AI coding agents (Cursor, Claude Co
 
 ## Repository layout
 
-| Path | Edition | License |
-| --- | --- | --- |
-| `server/src/` | Community (CE) | AGPL-3.0 |
-| `server/ee/` | Enterprise (EE) | Private submodule |
-| `client/src/` | Community (CE) | AGPL-3.0 |
-| `client/ee/` | Enterprise (EE) | Private submodule |
-| `deploy/` | Docker Compose stacks | — |
-| `packages/` | Shared packages (e.g. embed) | — |
+| Path          | Edition                      | License           |
+| ------------- | ---------------------------- | ----------------- |
+| `server/src/` | Community (CE)               | AGPL-3.0          |
+| `server/ee/`  | Enterprise (EE)              | Private submodule |
+| `client/src/` | Community (CE)               | AGPL-3.0          |
+| `client/ee/`  | Enterprise (EE)              | Private submodule |
+| `deploy/`     | Docker Compose stacks        | —                 |
+| `packages/`   | Shared packages (e.g. embed) | —                 |
 
 The public monorepo ships CE. EE lives in private git submodules and loads at runtime when licensed.
 
@@ -95,11 +95,11 @@ Application code always imports `src.modules.*` — shims redirect to `ee/module
 
 Settings RBAC rows are **not** products. Quote and staff these layers:
 
-| Layer | SKU | What it is |
-| --- | --- | --- |
-| Kernel | (every paid SKU) | Org/project/RBAC, QueryIdentity + RLS, credentials, chart/dashboard objects |
-| Core | Analyze · Ask · Govern | BI work, NL chat, semantic/ontology/catalog/audit/SCIM |
-| Add-on | Operate · Decide · Platform · Channel · Industry | Alerts, Decision OS, lake/pipelines, embed/MCP/Slack/Teams, domain packs |
+| Layer  | SKU                                              | What it is                                                                  |
+| ------ | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| Kernel | (every paid SKU)                                 | Org/project/RBAC, QueryIdentity + RLS, credentials, chart/dashboard objects |
+| Core   | Analyze · Ask · Govern                           | BI work, NL chat, semantic/ontology/catalog/audit/SCIM                      |
+| Add-on | Operate · Decide · Platform · Channel · Industry | Alerts, Decision OS, lake/pipelines, embed/MCP/Slack/Teams, domain packs    |
 
 Canonical map: `server/ee/modules/pricing/sku_catalog.py` and `client/src/constants/skuCatalog.ts`. Sidebar IA stays job-first (Ask, feed, dashboards, alerts, then Analyze / Predict / Data); items hide by SKU feature + permission, they do not get reshuffled.
 
@@ -111,6 +111,7 @@ Canonical map: `server/ee/modules/pricing/sku_catalog.py` and `client/src/consta
 4. **Add-ons must not import add-ons.** An add-on may depend on Kernel plus one core host (Analyze, Ask, or Govern). Shared behavior belongs in Kernel or that host — not a new cross-add-on import.
 5. **New surfaces declare a SKU** (nav key and/or plan feature on the catalog). Do not borrow `knowledge:search` for ontology, semantic, alerts, or catalog — use `ontology:*`, `semantic:*`, `alert:*`, `catalog:*`.
 6. **Lakehouse & governance** — Storage, compute, movement, and govern are **four contracts** (see `server/docs/lakehouse-product.md`). UI hub: `/lakehouse`. Do **not** add duplicate RLS, credentials, or metric SSOT under Pipelines or Lakehouse; deep-link to Data source policies, Semantic layer, Catalog, and Settings audit. Regulated/bank playbook: `server/docs/regulated-enterprise-governance.md`. Doc index: `server/docs/README.md`.
+7. **No AI attribution** — commit messages, pushes, and PR titles/descriptions must not mention Claude or any AI tool: no `Co-Authored-By: Claude …` trailer, no "Generated with Claude Code" line.
 
 ---
 
@@ -146,19 +147,19 @@ if is_ee_enabled():
 
 ## Key domain models
 
-| Entity | Table | Notes |
-| --- | --- | --- |
-| User | `users` | id, user_id, email, role, tenant_id, onboarding_progress |
-| DataSource | `data_sources` | type, db_type, Fernet-encrypted `connection_config`, schema |
-| Chart | `charts` | chart_type, chart_query (SQL), chart_options (JSONB) |
-| Dashboard | `dashboards` | config (JSONB) |
-| DashboardPage | `dashboard_pages` | layout_config, filters |
-| DashboardChart | `dashboard_charts` | layout (JSONB) |
-| Query | `data_queries` | natural_language_query, query_config |
-| QueryPattern | `query_patterns` | nl_query, sql, embedding (pgvector) |
-| KnowledgeDocument | `knowledge_documents` | chunk_count, status |
-| DocumentChunk | `document_chunks` | content, embedding |
-| Notification | `notifications` | type, message, is_read |
+| Entity            | Table                 | Notes                                                       |
+| ----------------- | --------------------- | ----------------------------------------------------------- |
+| User              | `users`               | id, user_id, email, role, tenant_id, onboarding_progress    |
+| DataSource        | `data_sources`        | type, db_type, Fernet-encrypted `connection_config`, schema |
+| Chart             | `charts`              | chart_type, chart_query (SQL), chart_options (JSONB)        |
+| Dashboard         | `dashboards`          | config (JSONB)                                              |
+| DashboardPage     | `dashboard_pages`     | layout_config, filters                                      |
+| DashboardChart    | `dashboard_charts`    | layout (JSONB)                                              |
+| Query             | `data_queries`        | natural_language_query, query_config                        |
+| QueryPattern      | `query_patterns`      | nl_query, sql, embedding (pgvector)                         |
+| KnowledgeDocument | `knowledge_documents` | chunk_count, status                                         |
+| DocumentChunk     | `document_chunks`     | content, embedding                                          |
+| Notification      | `notifications`       | type, message, is_read                                      |
 
 - Credentials: Fernet-encrypt before storing in JSONB; never log decrypted values.
 - EE multi-tenancy: models carry `tenant_id`.

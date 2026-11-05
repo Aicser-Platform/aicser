@@ -1,9 +1,12 @@
+import { raiseIfTwoFactor } from '@/auth/twoFactor';
 import type { AuthActions, SignupResult } from '@/auth/types';
 import { setCeBearerToken, clearCeBearerToken } from '@/auth/ce/bearerToken';
 import { parseAuthResponseError } from '@/auth/parseAuthResponseError';
 import { clearLocalStorageOnLogout } from '@/utils/resetWorkspaceScope';
 
 type AuthJson = {
+  two_factor_required?: boolean;
+  login_token?: string | null;
   detail?: string | { message?: string };
   message?: string;
   error?: string;
@@ -32,6 +35,7 @@ export const ceAuthActions: AuthActions = {
     if (!res.ok) {
       throw new Error(parseAuthResponseError(res.status, data));
     }
+    raiseIfTwoFactor(data);
     if (data.access_token) setCeBearerToken(data.access_token);
   },
 

@@ -94,6 +94,7 @@ import {
 } from '@/app/(dashboard)/dashboards/utils/queryBindBridge';
 import { chartBuilderService } from '@/app/(dashboard)/chart-designer/services/chartBuilderService';
 import { QueryVisualizeModal, type QueryVisualizeModalValues } from '@/components/data/SQLEditor/QueryVisualizeModal';
+import { CREATE_NEW_DASHBOARD_ID } from '@/hooks/useAddChartToDashboard';
 import { RlsAppliedPopoverContent } from '@/components/data/SQLEditor/RlsAppliedPopoverContent';
 
 const IS_EE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '').toLowerCase());
@@ -126,12 +127,12 @@ function jsonSafeRows(rows: Record<string, unknown>[]): Record<string, unknown>[
 
 const EnhancedDataPanel = dynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.EnhancedDataPanel }))) as any,
+  (() => import('@/ee-lazy/EnhancedDataPanel').then((m) => ({ default: m.EnhancedDataPanel }))) as any,
   { ssr: false }
 ) as React.ComponentType<{ onCollapse?: () => void; onTableClick?: (tableName: string, schemaName: string) => void; onColumnClick?: (tableName: string, columnName: string, schemaName: string) => void; compact?: boolean; [key: string]: unknown }>;
 const AnimatedAIAvatar = dynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.AnimatedAIAvatar }))) as any,
+  (() => import('@/ee-lazy/AnimatedAIAvatar').then((m) => ({ default: m.AnimatedAIAvatar }))) as any,
   { ssr: false }
 ) as React.ComponentType<{ size?: number; isSpeaking?: boolean; isThinking?: boolean }>;
 import { DataSourceIcon } from '@/utils/dataSourceIcons';
@@ -1428,6 +1429,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
 
       setVisualizeConfirming(true);
       try {
+        if (values.target === 'dashboard' && values.dashboardId === CREATE_NEW_DASHBOARD_ID) {
+          // "Create new dashboard…": make it, named after the chart, then add the chart to it.
+          const { useDashboardStore } = await import('@/app/(dashboard)/dashboards/stores/useDashboardStore');
+          const createdId = await useDashboardStore.getState().addDashboard(name);
+          values = { ...values, dashboardId: String(createdId) };
+        }
         // Persist under the widget title (unique). Keep tab title unless user named the tab.
         const savedId = await persistSavedQueryForTab({
           name,
@@ -2605,7 +2612,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
           }
 
           setResults(resultData);
-          setExecutionTime(result.execution_time || executionTime);
+          setExecutionTime(executionTime);
           // Update resolved engine state for display
           const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
           setResolvedEngine(resolvedEngineValue);
@@ -2620,7 +2627,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
               data: resultData,
               columns: result.columns || [],
               rowCount: result.row_count || resultData.length,
-              executionTime: result.execution_time || executionTime,
+              executionTime: executionTime,
               query: extractedSQL,
               dataSourceId: dsId,
             });
@@ -2797,7 +2804,8 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         setResultLimitApplied(appendedLimit);
         setRlsApplied(Boolean(result.rls_applied));
         setColumnsOmitted(Array.isArray(result.columns_omitted) ? result.columns_omitted.map(String) : []);
-        setExecutionTime(result.execution_time || executionTime);
+        // Measured here in ms: engines report execution_time in seconds (one in ms), which read as "0.006ms".
+        setExecutionTime(executionTime);
         // Update resolved engine state for display
         const resolvedEngineValue = result.engine || (engineParam as string) || 'auto';
         setResolvedEngine(resolvedEngineValue);
@@ -2818,13 +2826,13 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             data: result.data || [],
             columns: result.columns || [],
             rowCount: result.row_count || (result.data || []).length,
-            executionTime: result.execution_time || executionTime,
+            executionTime: executionTime,
             query: executedSql,
             dataSourceId: dsId,
           });
         }
 
-        const durationMs = result.execution_time || executionTime;
+        const durationMs = executionTime;
         const historyItem = {
           id: Date.now(),
           state: 'success',
@@ -3257,11 +3265,12 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                   </Button>
                 </Tooltip>
               ) : (
-                <Tooltip title={editorLanguage === 'python' ? 'Generate Python' : 'Generate SQL'}>
+                <Tooltip title={editorLanguage === 'python' ? t('generate_python') : t('generate_sql')}>
                   <Button
                     size="small"
                     type="primary"
                     icon={<RocketOutlined />}
+                    aria-label={editorLanguage === 'python' ? t('generate_python') : t('generate_sql')}
                     onClick={handleAIGenerate}
                     disabled={!selectedDataSourceId || !aiAssistantInput.trim()}
                   />
@@ -3541,7 +3550,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                       /* On Compact / Mobile screens: Group actions into a dropdown */
                       <Dropdown menu={{ items: compactMenuItems }} trigger={['click']} placement="bottomRight">
                         <Tooltip title={t('more_actions')}>
-                          <Button type="text" size="small" icon={<MoreOutlined />} className="icon-only-btn" />
+                          <Button type="text" size="small" icon={<MoreOutlined />} aria-label={t('more_actions')} className="icon-only-btn" />
                         </Tooltip>
                       </Dropdown>
                     )}
@@ -3872,7 +3881,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                             <Button
                               type="text"
                               size="small"
-                              icon={<RocketOutlined />}
+                              icon={<RocketOutlined />} aria-label={t('ask_ai_results_tip')}
                               onClick={() => {
                                 const sql = latestEditorContentRef.current || sqlQuery;
                                 const cols = results.length > 0 ? Object.keys(results[0]).join(', ') : '';
@@ -3902,7 +3911,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                           <Button
                             type="text"
                             size="small"
-                            icon={<SaveOutlined />}
+                            icon={<SaveOutlined />} aria-label={t('save_as_snapshot')}
                             onClick={() => {
                               const tab = queryTabs.find((qt) => qt.key === activeQueryKey);
                               setSaveSnapshotName(
@@ -3963,7 +3972,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
                             <Button
                               type="text"
                               size="small"
-                              icon={<MoreOutlined />}
+                              icon={<MoreOutlined />} aria-label={t('more_actions')}
                             />
                           </Tooltip>
                         </Dropdown>
@@ -4546,7 +4555,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
         )}
         <div style={{ display: 'flex', gap: 12, height: 340 }}>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-text-secondary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-text-secondary)', marginBottom: 4, letterSpacing: '0.05em' }}>
               {t('optimize_diff_original')}
             </div>
             <div style={{ flex: 1, border: '1px solid var(--ant-color-border)', borderRadius: 6, overflow: 'hidden' }}>
@@ -4560,7 +4569,7 @@ const MonacoSQLEditor: React.FC<MonacoSQLEditorProps> = ({
             </div>
           </div>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-success)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ant-color-success)', marginBottom: 4, letterSpacing: '0.05em' }}>
               {t('optimize_diff_optimized')}
             </div>
             <div style={{ flex: 1, border: '1px solid var(--ant-color-success-border)', borderRadius: 6, overflow: 'hidden' }}>

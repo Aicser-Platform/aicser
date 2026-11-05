@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
-from jose import JWTError, jwt
+import jwt
 
 from src.core.config import settings
 from src.modules.user.user_setting_repository import UserSettingRepository
@@ -99,13 +99,13 @@ def sign_embed_token(payload: Dict[str, Any]) -> str:
 def decode_embed_token(token: str) -> Dict[str, Any]:
     try:
         payload = jwt.decode(token, _embed_signing_key(), algorithms=[EMBED_ALGORITHM])
-    except JWTError as exc:
-        if "expired" in str(exc).lower():
-            raise
+    except jwt.ExpiredSignatureError:
+        raise
+    except jwt.PyJWTError:
         # Links created before the derived key keep working until they expire or are revoked
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[EMBED_ALGORITHM])
     if payload.get("type") != EMBED_TOKEN_TYPE:
-        raise JWTError("Invalid embed token type")
+        raise jwt.InvalidTokenError("Invalid embed token type")
     return payload
 
 
@@ -287,11 +287,11 @@ async def _active_record(payload: Dict[str, Any]) -> Dict[str, Any]:
     token_id = payload.get("jti")
     user_id = payload.get("sub")
     if not token_id or not user_id:
-        raise JWTError("Invalid embed token payload")
+        raise jwt.InvalidTokenError("Invalid embed token payload")
     records = await _load_records(str(user_id))
     record = next((r for r in records if r.get("id") == token_id), None)
     if not record or record.get("status") != "active":
-        raise JWTError("Embed token revoked or not found")
+        raise jwt.InvalidTokenError("Embed token revoked or not found")
     return record
 
 
@@ -306,11 +306,11 @@ async def verify_embed_token(
     user_id = payload.get("sub")
     record = await _active_record(payload)
     if not allow_link and needs_session(payload):
-        raise JWTError("Open this embed through its page")
+        raise jwt.InvalidTokenError("Open this embed through its page")
 
     scopes = payload.get("scopes") or []
     if required_scope and required_scope not in scopes:
-        raise JWTError(f"Missing required scope: {required_scope}")
+        raise jwt.InvalidTokenError(f"Missing required scope: {required_scope}")
 
     exp = payload.get("exp")
     expires_at = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None
@@ -381,11 +381,11 @@ async def open_embed_session(
     """
     payload = decode_embed_token(token)
     if payload.get("ses"):
-        raise JWTError("Open the embed link, not a session")
+        raise jwt.InvalidTokenError("Open the embed link, not a session")
     record = await _active_record(payload)
     scopes = payload.get("scopes") or []
     if required_scope and required_scope not in scopes:
-        raise JWTError(f"Missing required scope: {required_scope}")
+        raise jwt.InvalidTokenError(f"Missing required scope: {required_scope}")
     allowed = payload.get("allowed_domains") or []
     if allowed:
         own = [settings.FRONTEND_URL] if settings.FRONTEND_URL else []  # Aicser's own previews
@@ -396,7 +396,7 @@ async def open_embed_session(
             raise EmbedOriginError("This embed can't be shown on this site.")
     exp = int(payload.get("exp") or 0)
     if payload.get("once") and not _claim_link(str(payload["jti"]), exp):
-        raise JWTError("This embed link was already opened. Reload the page to get a new one.")
+        raise jwt.InvalidTokenError("This embed link was already opened. Reload the page to get a new one.")
     session_payload = {k: v for k, v in payload.items() if k != "once"}
     session_payload.update({"ses": 1, "sid": str(uuid.uuid4()), "iat": int(_now().timestamp())})
     return {

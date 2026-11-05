@@ -50,6 +50,15 @@ def _schema_tables(schema_info: Any) -> List[dict]:
     return [t for t in (schema_info.get("tables") or []) if isinstance(t, dict) and t.get("name")]
 
 
+def _detection_schema(ds: Any) -> dict:
+    """A source's schema as detection reads it. Uploaded files store one flat column list; that
+    is one table, named after the source as the diagram and its relationships name it."""
+    schema_info = ds.schema if isinstance(getattr(ds, "schema", None), dict) else {}
+    if not schema_info.get("tables") and isinstance(schema_info.get("columns"), list):
+        return {**schema_info, "tables": [{"name": ds.name, "columns": schema_info["columns"]}]}
+    return schema_info
+
+
 def _column_name(col: Any) -> Optional[str]:
     if not isinstance(col, dict):
         return None
@@ -754,8 +763,7 @@ class DataModelService:
             if not ds:
                 counts[sid] = 0
                 continue
-            schema_info = ds.schema if isinstance(ds.schema, dict) else {}
-            within = _detect_relationship_candidates(schema_info)
+            within = _detect_relationship_candidates(_detection_schema(ds))
             added = await self._persist_detected(sid, within, existing_keys=set(before_keys))
             counts[sid] = added
 
@@ -764,7 +772,7 @@ class DataModelService:
         for sid in ordered:
             ds = await self.get_data_source(sid)
             if ds and isinstance(ds.schema, dict):
-                sources_for_cross.append((sid, ds.schema))
+                sources_for_cross.append((sid, _detection_schema(ds)))
         cross_added = 0
         if len(sources_for_cross) > 1:
             cross = _detect_cross_source_candidates(sources_for_cross)

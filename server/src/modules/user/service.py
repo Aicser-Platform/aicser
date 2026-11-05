@@ -10,6 +10,8 @@ from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from src.core.edition import is_ee_enabled
+
 logger = logging.getLogger(__name__)
 
 # Columns that are safe to read/write via the profile endpoint
@@ -49,6 +51,27 @@ class UserService:
     def _to_uuid(user_id: str):
         return uuid.UUID(user_id) if isinstance(user_id, str) else user_id
 
+    async def _organization_name(self, *user_ids) -> Optional[str]:
+        """The organization this person belongs to, if any. Its name is their company: one value,
+        changed by whoever may edit the organization, never from a personal profile."""
+        if not is_ee_enabled():
+            return None
+        try:
+            result = await self.db.execute(
+                text(
+                    "SELECT o.name FROM user_roles ur"
+                    " JOIN organizations o ON o.id = ur.organization_id"
+                    " WHERE ur.user_id = ANY(:ids) AND ur.is_active = true AND NOT COALESCE(o.is_deleted, false)"
+                    " ORDER BY o.created_at ASC LIMIT 1"
+                ),
+                {"ids": list(user_ids)},
+            )
+            return result.scalar()
+        except Exception as exc:  # noqa: BLE001 - a profile still loads without it
+            logger.warning("Could not read the organization for a profile: %s", exc)
+            await self.db.rollback()
+            return None
+
     # ── read ─────────────────────────────────────────────────────────────────
 
     async def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -80,6 +103,10 @@ class UserService:
             if hasattr(val, "isoformat"):
                 val = val.isoformat()
             profile[col] = val
+        organization = await self._organization_name(row.id, row.user_id)
+        profile["company_managed"] = bool(organization)
+        if organization:
+            profile["company"] = organization
         return profile
 
     # ── write ────────────────────────────────────────────────────────────────
@@ -124,6 +151,11 @@ class UserService:
         if not resolved_row:
             return None
         resolved_id = resolved_row.id
+
+        if "company" in allowed and await self._organization_name(resolved_id, u_id):
+            del allowed["company"]
+            if not allowed:
+                return await self.get_profile(user_id)
 
         # Build SET clause dynamically
         set_parts = []

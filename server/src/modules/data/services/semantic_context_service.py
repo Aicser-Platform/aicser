@@ -132,6 +132,11 @@ async def resolve_semantic_chart_query(
                 ds_row = await db.get(DataSource, str(data_source_id))
                 schema_info = (ds_row.schema if ds_row and isinstance(ds_row.schema, dict) else {}) or {}
                 dialect = (ds_row.db_type or ds_row.type or "postgres") if ds_row else "postgres"
+                if ds_row and str(ds_row.type or "").lower() == "file":
+                    from src.enterprise.modules.ai.utils.schema_normalization import file_schema_with_tables
+
+                    schema_info = file_schema_with_tables(schema_info, ds_row.name or "")
+                    dialect = "file"
                 rls_filters = await rls_filters_for_user(user_id, organization_id, str(data_source_id))
                 compiler = SemanticQueryCompiler(
                     metrics=ctx.get("metrics") or [],

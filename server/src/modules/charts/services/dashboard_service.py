@@ -387,9 +387,9 @@ class DashboardService:
             # Resolve user_id for RBAC checking (extract unverified claims from raw token if present)
             try:
                 if isinstance(user_id, str) and "." in user_id:
-                    from jose import jwt as jose_jwt
+                    import jwt as pyjwt
                     try:
-                        _claims = jose_jwt.get_unverified_claims(user_id)
+                        _claims = pyjwt.decode(user_id, options={"verify_signature": False})
                         user_id_for_check = _claims if isinstance(_claims, dict) else user_id
                     except Exception:
                         user_id_for_check = user_id
@@ -584,9 +584,9 @@ class DashboardService:
                         # Resolve using same claim-extraction for raw JWTs
                         try:
                             if isinstance(user_id, str) and "." in user_id:
-                                from jose import jwt as jose_jwt
+                                import jwt as pyjwt
                                 try:
-                                    _claims = jose_jwt.get_unverified_claims(user_id)
+                                    _claims = pyjwt.decode(user_id, options={"verify_signature": False})
                                     ru = await self._resolve_user_uuid(_claims)
                                 except Exception:
                                     ru = await self._resolve_user_uuid(user_id)

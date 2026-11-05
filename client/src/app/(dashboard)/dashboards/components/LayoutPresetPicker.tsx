@@ -39,7 +39,7 @@ export function LayoutPresetPicker({ onSelect, widgets = [] }: Props) {
               <span className="flex items-center gap-1.5 text-[13px] font-semibold text-text">
                 {td(preset.nameKey as 'preset_executive')}
                 {isRecommended && (
-                  <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-brand">
+                  <span className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-brand">
                     <StarFilled className="text-[10px]" /> {t('layout_preset_recommended')}
                   </span>
                 )}

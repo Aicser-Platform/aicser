@@ -5,7 +5,7 @@ import nextDynamic from 'next/dynamic';
 
 const InviteSetPasswordPage = nextDynamic(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (() => import('@/ee').then((m) => ({ default: m.InviteSetPasswordPageEE }))) as any,
+  (() => import('@/ee-lazy/InviteSetPasswordPageEE').then((m) => ({ default: m.InviteSetPasswordPageEE }))) as any,
   { ssr: false },
 ) as React.ComponentType;
 

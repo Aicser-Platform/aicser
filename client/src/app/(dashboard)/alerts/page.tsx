@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { useTranslations } from 'next-intl';
 import { BellOutlined, RocketOutlined } from '@ant-design/icons';
 import { Button, Result } from 'antd';
@@ -11,8 +12,8 @@ import { isEnterpriseEdition } from '@/utils/appPaths';
 const isEE = isEnterpriseEdition();
 
 const EEAlertsPage = dynamic(
-  () => import('@/ee').then((m) => ({ default: m.AlertsPage })),
-  { ssr: false }
+  () => import('@/ee-lazy/AlertsPage').then((m) => ({ default: m.AlertsPage })),
+  { ssr: false, loading: PageLoading }
 );
 
 function AlertsCEFallback() {
