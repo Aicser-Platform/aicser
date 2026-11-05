@@ -150,6 +150,11 @@ app.add_middleware(RateLimitMiddleware)
 
 if is_ee_enabled():
     try:
+        from src.modules.sandbox.guard import SandboxGuardMiddleware
+        app.add_middleware(SandboxGuardMiddleware)
+    except Exception as _sandbox_err:
+        logger.warning("Sandbox guard not loaded: %s", _sandbox_err)
+    try:
         from src.shared.middleware.audit_logger import AuditLoggingMiddleware
         app.add_middleware(AuditLoggingMiddleware)
     except Exception as _audit_err:

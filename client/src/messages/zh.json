@@ -431,8 +431,6 @@
     "confirm_password": "确认密码",
     "welcome_back": "欢迎回来",
     "create_account": "创建您的账户",
-    "sign_up_subtitle": "注册以开始使用 Aicser",
-    "sign_in_subtitle": "登录您的账户以继续",
     "email_placeholder": "you@company.com",
     "email_required": "请输入您的电子邮件！",
     "email_invalid": "请输入有效的电子邮件！",
@@ -559,7 +557,8 @@
     "two_factor_use_app": "使用身份验证器应用",
     "two_factor_back": "返回登录",
     "two_factor_code_label": "验证码",
-    "two_factor_backup_label": "备用码"
+    "two_factor_backup_label": "备用码",
+    "try_without_account": "无需账户，试用 Aicser"
   },
   "bi_dashboard": {
     "title": "商业智能仪表板",
@@ -2069,24 +2068,17 @@
     "resolved_mode_switched": "已切换到{mode}",
     "agent_start_failed": "智能体无法启动此任务。",
     "use_case_analyze_standard": "标准",
-    "first_hour": {
-      "label": "入门",
-      "data": "连接数据",
-      "dashboard": "第一个仪表板",
-      "alert": "第一个提醒",
-      "dashboard_prompt": "查看我的数据，为我创建一个包含最重要几个指标的入门仪表板。",
-      "alert_prompt": "为我最重要的指标建议一个提醒并帮我设置。",
-      "hide": "隐藏"
-    },
     "light_seat_title": "AI 需要密钥或 AI 席位",
     "light_seat_body": "Light 席位使用您自己的 AI 密钥。请添加密钥，或向管理员申请 AI 席位。",
     "light_seat_requested": "已通知管理员。您可以继续工作，或添加自己的密钥。",
     "light_seat_request": "申请 AI 席位",
     "light_seat_requested_short": "已申请",
     "light_seat_own_key": "添加我的密钥",
-    "light_seat_request_failed": "无法发送申请，请重试。"
+    "light_seat_request_failed": "无法发送申请，请重试。",
+    "agent_not_available": "此助手不可用。"
   },
   "chat_page": {
+    "sample_shop_name": "示例商店",
     "dense_daily_hint": "当前按天显示。",
     "dense_daily_weekly_cta": "按周显示",
     "dense_daily_weekly_prompt": "请按周而不是按天展示同样的答案。",
@@ -2949,7 +2941,13 @@
     "trust_badge_t2": "Review figures",
     "trust_badge_t0": "Check numbers",
     "use_case_analyze_standard": "标准",
-    "answer_ready_notice": "你的 Aicser 回答已就绪"
+    "answer_ready_notice": "你的 Aicser 回答已就绪",
+    "composer_agent_placeholder": "给 {name} 发消息…",
+    "voice_listening": "正在聆听。请说出您的问题。",
+    "voice_working": "正在将您的语音转为文字…",
+    "voice_denied": "请在浏览器中允许麦克风权限以使用语音。",
+    "voice_unavailable": "语音输入暂时不可用。请改为输入您的问题。",
+    "voice_empty": "未听清。请靠近麦克风再试一次。"
   },
   "chat_sql_editor": {
     "enter_sql": "请输入 SQL 查询",
@@ -7003,7 +7001,9 @@
     "agent_tasks": "自动化",
     "hint_agent": "任务、计划和已保存的技能",
     "show_all_tools": "显示全部工具",
-    "show_essentials": "仅显示常用项"
+    "show_essentials": "仅显示常用项",
+    "ai_agents": "助手",
+    "hint_agents": "您的团队为特定工作、部门或项目构建的助手"
   },
   "notifications_bell": {
     "activity": "活动",
@@ -7406,6 +7406,13 @@
     "pack_enterprise_note": "为高容量运营设计。"
   },
   "pricing_modal": {
+    "per_year": "/年",
+    "team_total_period_year": "/年（{n} 名成员）",
+    "team_up_to": "最多 {n} 名成员，每人均含 AI。",
+    "team_more_members": "增加成员：含 AI ${ai}/月，或 Light ${light}/月（无 AI 积分）。",
+    "team_more_members_year": "增加成员：含 AI ${ai}/年，或 Light ${light}/年（无 AI 积分）。",
+    "add_ai_year": "添加 Aicser AI（+${extra}/年）",
+    "checkout_covers": "包含 {n} 名含 AI 成员{ai, plural, =0 {} other {，另加 # 名含 AI}}{light, plural, =0 {} other {，另加 # 名 Light}}",
     "custom": "自定义",
     "free": "免费",
     "checkout_failed": "Stripe 结账失败",
@@ -7433,7 +7440,7 @@
     "addons_description": "适用于所有方案的额外 AI 积分。一次回答 1 积分，预测或诊断 2，报告、仪表板或决策简报 5，智能体每一步 1。",
     "credits_amount": "{count} 积分",
     "per_credit": "~ ${value}/积分",
-    "footnote": "登录的查看者算作 Light 成员。公开链接和嵌入无需席位。",
+    "footnote": "已登录的查看者，以及通过 Copilot 或 Gemini 使用 Aicser 的用户，均计为轻量成员。公共链接和嵌入无需席位。",
     "benefit_cancel_anytime": "随时取消，无需说明理由",
     "benefit_paid_unlock": "付费计划解锁所有功能",
     "footer_text": "价格以美元显示。通过 Stripe 安全处理支付。",
@@ -7447,10 +7454,8 @@
     "pack_enterprise_note": "为高流量运营设计。",
     "includes_seats_with_viewer": "Includes {seats} seats · ${perSeat}/additional seat · ${perViewerSeat}/viewer seat",
     "per_member_month": "/成员/月",
-    "per_member_short": "每位成员",
     "with_ai": "含 Aicser AI · 每月 {credits} 积分",
     "without_ai": "不含 AI · 使用自己的模型密钥",
-    "team_members_note": "Light 成员 ${light}：可完整创建和编辑，用自己的密钥使用 AI。{min} 人起。",
     "pack_note": "当月积分用完后使用，有效期 {months} 个月",
     "pay_card": "银行卡",
     "buy_credits": "购买 {count} 积分（${price}）",
@@ -7460,7 +7465,6 @@
     "buy_personal": "以 ${price} 购买",
     "add_ai": "添加 Aicser AI（+${extra}/月）",
     "team_total_period": "/月（{n} 名成员）",
-    "team_per_member": "每位成员 ${price}，含 AI。可随时添加成员。",
     "own_model_keys": "您自己的模型密钥"
   },
   "profile": {
@@ -8369,12 +8373,14 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "所有席位已用完",
+    "team_add_seats": "添加席位",
     "active": "激活",
     "add_data_source": "添加数据源",
     "add_first_data_source": "添加您的第一个数据源",
     "agent_budget": {
-      "title": "AI Budget & Model Preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "AI 预算",
+      "subtitle": "此组织中 AI 的支出限额。",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -8382,7 +8388,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "已保存",
       "save_error": "Failed to save AI budget preferences",
       "reasoning_mode": "推理深度",
       "reasoning_mode_tip": "智能体何时使用更强的推理模型。自适应：规划任务及分析某一步失败原因时；始终：每一步都用（更深入、更慢、消耗更多积分）；经济：始终使用默认模型。",
@@ -9486,7 +9492,8 @@
       "accuracy_shape_monthly": "月度趋势",
       "accuracy_shape_year_total": "年度合计",
       "accuracy_shape_forecast": "预测",
-      "accuracy_shape_diagnose": "变化原因"
+      "accuracy_shape_diagnose": "变化原因",
+      "kpi_latency_slowest": "95% 的答案在 {seconds} 秒内送达。"
     },
     "clear_provider_config": "Clear config",
     "configured_with_models": "{count} models",
@@ -9833,7 +9840,13 @@
     "two_factor_off_title": "关闭两步登录",
     "two_factor_off_password": "请输入密码以确认。",
     "two_factor_off_code": "请输入身份验证器应用中的验证码以确认。",
-    "two_factor_off_done": "两步登录已关闭"
+    "two_factor_off_done": "两步登录已关闭",
+    "publishing_second_label": "需要第二位审批人",
+    "publishing_second_tip": "所有者和管理员也需要另一位所有者或管理员来批准其公共工作。如果您的合规规则需要两人批准，请使用此选项。",
+    "embed_agents_moved": "要嵌入 AI 助手？请在“助手”中构建，发布到“公开”，然后在此处获取代码。",
+    "enterprise_only_custom_roles": "自定义角色随企业版计划提供。",
+    "enterprise_only_second_approver": "第二位审批人随企业版计划提供。",
+    "enterprise_only_audit": "导出、SIEM 和完整历史记录随企业版计划提供。团队版显示最近 90 天。"
   },
   "settings_appearance": {
     "updated_ok": "外观设置更新成功！",
@@ -10094,6 +10107,7 @@
     "checkout_failed": "启动结账失败"
   },
   "user_profile_dropdown": {
+    "join_community": "加入 Aicsertics 社区",
     "user": "用户",
     "unknown": "未知",
     "failed_upgrade_plan": "升级计划失败。请重试。",
@@ -10312,7 +10326,7 @@
     "roles_label": "角色与权限",
     "roles_desc": "谁可以做什么",
     "billing-subscription_label": "账单",
-    "billing-subscription_desc": "套餐、用量、发票",
+    "billing-subscription_desc": "席位、付款和发票",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "AI 数据驻留",
@@ -10333,8 +10347,8 @@
     "agent-capabilities_desc": "选择 AI 可以执行的操作",
     "kpi-definitions_label": "指标定义",
     "kpi-definitions_desc": "教 AI 你的组织如何计算关键数字",
-    "ai-quality_label": "AI 质量",
-    "ai-quality_desc": "回答的准确性和有用程度",
+    "ai-quality_label": "质量与审计",
+    "ai-quality_desc": "答案质量和每次 AI 调用记录",
     "ai-decision-layer_label": "AI decisions",
     "ai-decision-layer_desc": "Row-level AI choices using rules you define (aligned with Predict & decide in the sidebar)",
     "ai-audit-log_label": "AI 审计日志",
@@ -10343,8 +10357,8 @@
     "briefings_desc": "定时 AI 报告",
     "notifications_label": "通知",
     "notifications_desc": "邮件和动态铃铛",
-    "agent-budget_label": "AI 成本中心",
-    "agent-budget_desc": "按项目查看预算和模型花费",
+    "agent-budget_label": "AI 预算",
+    "agent-budget_desc": "AI 支出限额",
     "ai-memory_label": "AI 记忆",
     "ai-memory_desc": "Aicser 为你、你的项目和组织记住的内容",
     "agent-rules_label": "智能体规则",
@@ -10354,9 +10368,9 @@
     "page_team_label": "团队与角色",
     "page_team_desc": "成员、邀请以及每个角色的权限",
     "page_integrations_label": "集成",
-    "page_integrations_desc": "邮件、Slack、Teams、API 密钥和嵌入",
+    "page_integrations_desc": "电子邮件、Slack、Teams、Microsoft 和 Google",
     "page_usage_label": "用量与计费",
-    "page_usage_desc": "用量、套餐、发票和 AI 支出",
+    "page_usage_desc": "用量、席位、付款、发票和 AI 预算",
     "page_ai-rules_label": "规则与模型",
     "page_ai-rules_desc": "AI 可使用的工具、需要审批的内容以及由哪些模型决定",
     "page_ai-oversight_label": "质量与审计",
@@ -10367,7 +10381,16 @@
     "page_organization_desc": "名称、品牌和许可证",
     "search_placeholder": "搜索设置",
     "search_empty": "没有匹配的设置。",
-    "close_nav": "关闭设置菜单"
+    "close_nav": "关闭设置菜单",
+    "usage_desc": "您的计划、已用量和支出去向",
+    "group_project": "项目",
+    "group_organization": "组织",
+    "group_sharing": "连接与共享",
+    "group_billing": "账单",
+    "page_sharing_label": "发布与嵌入",
+    "page_sharing_desc": "哪些内容可以离开组织，以及如何离开",
+    "adoption_label": "采用情况",
+    "adoption_desc": "谁在使用 Aicser，哪些功能未使用"
   },
   "license_tab": {
     "load_failed": "无法加载许可证状态",
@@ -12364,6 +12387,15 @@
     "calc_share": "{total} 中的 {part}（{column}）"
   },
   "billing_seats": {
+    "seats_used": "已使用 {used}/{capacity} 个席位",
+    "add_seats": "添加席位",
+    "extras_ai": "额外 AI 席位",
+    "extras_light": "额外 Light 席位（无 AI 积分）",
+    "extras_confirm": "确认",
+    "extras_saved": "席位已更新",
+    "extras_total_month": "{seats} 个席位，合计每月 ${total}。",
+    "extras_total_year": "{seats} 个席位，合计每年 ${total}。",
+    "extras_due": "现需支付 ${due}。",
     "seats_title": "席位",
     "seats_summary": "{ai} 位 AI 成员（每位 ${aiPrice}/月，900 积分）和 {platform} 位 Light 成员（每位 ${platformPrice}/月，自有密钥）。",
     "member": "成员",
@@ -12397,7 +12429,8 @@
     "seat_per_month": "每月",
     "seat_per_year": "每年",
     "seat_requested": "已申请 AI",
-    "seat_decline": "拒绝"
+    "seat_decline": "拒绝",
+    "payments_not_set_up": "此处尚未设置在线支付。"
   },
   "office": {
     "title": "询问 Aicser",
@@ -12534,6 +12567,310 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "正在等待 {names} 批准。他们已收到通知。",
+    "decline": "拒绝",
+    "own_link_tip": "您的组织要求其他人批准您自己的链接。请咨询 {names}。"
+  },
+  "khqr_payment": {
+    "paid_credits": "支付成功！您的积分已添加。",
+    "paid_personal": "支付成功！您的许可证在“席位与积分”中。"
+  },
+  "guide": {
+    "community": "加入 Aicsertics 社区",
+    "skip": "跳过",
+    "all_set": "全部完成",
+    "hide_list": "隐藏此列表",
+    "nice_work": "做得好",
+    "up_next": "下一步：{item}",
+    "continue": "继续",
+    "working": "正在生成回答",
+    "title": "入门",
+    "open": "入门，已完成 {total} 项中的 {done} 项",
+    "progress": "{total} 项中的 {current} 项",
+    "next": "下一步",
+    "done": "完成",
+    "later": "稍后",
+    "checklist": {
+      "connect": "连接您的数据",
+      "ask": "提出您的第一个问题",
+      "save": "保存您喜欢的图表",
+      "dashboard": "构建仪表盘",
+      "publish": "发布到共享洞察",
+      "invite": "邀请队友",
+      "discuss": "获取团队回复",
+      "alert": "设置提醒"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "打开 Ask",
+        "body": "点击菜单中的 Ask，用简单语言与您的数据对话。"
+      },
+      "ask": {
+        "title": "询问您的数据",
+        "body": "尝试“哪些产品带来的收入最多？”并发送。"
+      },
+      "publish": {
+        "title": "分享您的发现",
+        "body": "打开一个回答或仪表板，然后点击分享，将其发布到 Shared Insights，方便团队讨论。",
+        "here": "点击“分享”将此答案发布到“共享洞察”，以便您的团队讨论。",
+        "here_dashboards": "点击分享，然后选择发布到 Shared Insights，让团队讨论此仪表板。"
+      },
+      "shared_insights": {
+        "title": "共享洞察",
+        "body": "您的团队发布的所有发现，集中在一处。"
+      },
+      "discuss": {
+        "title": "讨论一下",
+        "body": "发布一些内容，然后请队友在此处评论或回应。此步骤在他们完成时结束。"
+      },
+      "connect": {
+        "title": "从示例数据开始",
+        "body": "一键打开一个虚拟商店进行尝试。您可以随时连接自己的数据。"
+      },
+      "connect_data": {
+        "title": "连接一些数据",
+        "body": "点击“+”上传文件、连接数据库或选择示例数据。"
+      },
+      "open_dashboards": {
+        "title": "打开仪表盘",
+        "body": "点击菜单中的“仪表盘”。"
+      },
+      "open_alerts": {
+        "title": "打开提醒",
+        "body": "点击菜单中的“提醒”。"
+      },
+      "save": {
+        "title": "保留此图表",
+        "body": "如果您还没有提问，请提问，然后点击答案下方的图钉。",
+        "here": "点击答案下方的图钉以保留此图表。"
+      },
+      "dashboard": {
+        "title": "构建仪表盘",
+        "body": "点击此处开始。您可以添加已保存的图表。"
+      },
+      "invite": {
+        "title": "邀请队友",
+        "body": "点击此处并输入他们的电子邮件。"
+      },
+      "alert": {
+        "title": "在数字变化时收到通知",
+        "body": "点击此处设置您的第一个提醒。"
+      },
+      "pick_question": {
+        "title": "先生成图表",
+        "body": "选择一个建议的问题并发送。"
+      },
+      "finish_dialog": {
+        "title": "快完成了",
+        "body": "点击此处继续。"
+      },
+      "open_chat_save": {
+        "title": "回到你的回答",
+        "body": "打开 Ask，保留某个回答中的图表。"
+      },
+      "open_chat_publish": {
+        "title": "分享你的发现",
+        "body": "打开 Ask，将回答发布到 Shared Insights。"
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "试用 Aicser",
+    "unavailable": "沙盒目前不可用。",
+    "failed": "出错了。请再试一次。",
+    "email": "工作邮箱",
+    "email_rule": "请输入有效的电子邮件地址。",
+    "company_optional": "公司（可选）",
+    "phone_optional": "电话（可选）",
+    "terms": "我理解此工作区用于示例数据，并在结束后删除。",
+    "start_with_email": "给我发送验证码",
+    "or": "或",
+    "code_label": "输入发送到 {email} 的 6 位验证码",
+    "code_rule": "输入电子邮件中的 6 位数字。",
+    "verify": "打开我的工作区",
+    "ended": "此沙盒已结束。保留它以继续，否则它将被删除。",
+    "add_email": "添加电子邮件以延长使用时间",
+    "keep": "保留此工作区",
+    "keep_title": "保留此工作区",
+    "keep_body": "选择一个密码以开始您的团队试用。您构建的一切都将保留。",
+    "password": "密码",
+    "password_rule": "至少使用 10 个字符。",
+    "keep_confirm": "开始团队试用",
+    "email_title": "添加您的电子邮件",
+    "email_body": "您将获得更多时间、更多积分和两个队友的空间。",
+    "send_code": "发送验证码",
+    "email_added": "电子邮件已添加。您有更多时间和积分。"
+  },
+  "license_notice": {
+    "ended": "您的许可证已到期，因此 Aicser 为只读。没有任何内容被删除。",
+    "view": "查看许可证"
+  },
+  "oauth_consent": {
+    "title": "将 {name} 连接到 Aicser？",
+    "body": "它能以您的身份读取您有权访问的数据和指标。它无法查看您无权查看的任何内容，也无法更改共享工作。",
+    "site": "它将返回到 {host}。",
+    "allow": "连接",
+    "cancel": "取消",
+    "failed": "此连接无法完成。",
+    "unverified": "仅当您从信任的应用启动此操作时才继续。"
+  },
+  "ecosystem": {
+    "title": "Microsoft 和 Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "设置",
+    "download": "下载",
+    "connected_title": "已连接的 AI 应用",
+    "connected_empty": "尚未连接任何 AI 应用。",
+    "disconnect": "断开连接",
+    "last_used": "上次使用时间 {date}",
+    "never_used": "尚未使用",
+    "items": {
+      "microsoft": {
+        "sign_in": "使用 Microsoft Entra 登录",
+        "directory": "从您的目录同步人员",
+        "azure_ai": "使用您的 Azure OpenAI",
+        "teams": "在 Teams 中询问 Aicser",
+        "sharepoint": "搜索 SharePoint 文档",
+        "excel": "Excel 加载项",
+        "copilot": "Microsoft 365 Copilot 中的 Aicser"
+      },
+      "google": {
+        "sign_in": "使用 Google 登录",
+        "gemini_ai": "使用您的 Gemini 密钥",
+        "bigquery": "连接 BigQuery",
+        "sheets": "连接 Google 表格",
+        "gemini_enterprise": "Gemini Enterprise 中的 Aicser"
+      }
+    },
+    "copilot_title": "Microsoft 365 Copilot 中的 Aicser",
+    "copilot_step1": "创建登录详细信息，然后将其作为 OAuth 注册添加到 Teams 开发人员门户。",
+    "copilot_create": "创建登录详细信息",
+    "copilot_secret_once": "立即复制这些信息。密钥仅显示一次。",
+    "copilot_step2": "粘贴 Microsoft 提供的注册 ID，然后下载代理并在 Microsoft 365 管理中心上传。",
+    "copilot_reference": "OAuth 注册 ID",
+    "copilot_download": "下载 Copilot 代理",
+    "gemini_title": "Gemini Enterprise 中的 Aicser",
+    "gemini_body": "使用此地址在 Gemini Enterprise 中添加自定义 MCP 服务器。每个人首次使用 Aicser 时都需要登录。",
+    "copy": "复制",
+    "seat_note": "通过 Copilot 或 Gemini 使用 Aicser 的每个人都需要一个 Aicser 席位。轻量席位即可。",
+    "failed": "出错了。请重试。"
+  },
+  "ai_agents": {
+    "page_title": "助手",
+    "page_subtitle": "您的团队为特定工作、部门或项目构建的助手。",
+    "new": "新建助手",
+    "view_available": "使用",
+    "view_mine": "我构建的",
+    "view_review": "待审批",
+    "view_all": "所有助手",
+    "empty_available": "尚未与您共享任何助手。",
+    "empty_mine": "构建您的第一个助手，或从模板开始。",
+    "empty_review": "没有待您审批的内容。",
+    "start": "开始",
+    "edit": "编辑",
+    "open_chat": "聊天",
+    "blank": "从头开始",
+    "choose_template": "从模板开始",
+    "status_draft": "草稿",
+    "status_pending": "待审批",
+    "status_published": "已发布",
+    "unpublished": "未发布更改",
+    "audience_me": "仅限我",
+    "audience_project": "项目",
+    "audience_organization": "组织",
+    "audience_public": "公开或网站",
+    "audience_hint_me": "仅限您使用。",
+    "audience_hint_project": "项目成员。需项目所有者批准。",
+    "audience_hint_organization": "组织内所有人。需所有者或管理员批准。",
+    "audience_hint_public": "网站上任何人，无需登录。需所有者或管理员批准。操作保持关闭。",
+    "name": "名称",
+    "icon": "图标",
+    "instructions": "指令",
+    "instructions_tip": "它应如何运作。使用它的人不会看到此内容。",
+    "welcome": "欢迎消息",
+    "starters": "起始问题",
+    "starters_placeholder": "添加问题并按 Enter 键",
+    "abilities": "功能",
+    "ability_documents": "从文档中回答",
+    "ability_data": "分析数据",
+    "ability_actions": "执行操作",
+    "ability_actions_tip": "构建图表、仪表板和警报。更改共享工作前会征求同意。",
+    "knowledge": "知识库",
+    "data_sources": "数据源",
+    "advanced": "更多设置",
+    "model": "模型",
+    "model_auto": "默认",
+    "limit": "每月 AI 限制 (美元)",
+    "limit_tip": "达到此金额后，本月将停止回答。留空表示无限制。",
+    "facts": "始终知晓",
+    "facts_tip": "它应知晓的简短事实，例如“我们的财年始于四月”。这些立即生效。",
+    "facts_add": "添加事实",
+    "remove": "移除",
+    "versions": "版本",
+    "version_label": "版本 {version}",
+    "restore": "恢复",
+    "save": "保存草稿",
+    "saved": "已保存",
+    "try": "试用",
+    "publish": "发布",
+    "publish_title": "面向谁？",
+    "publish_note": "给审批人的备注（可选）",
+    "publish_confirm": "发布",
+    "sent_for_approval": "已发送待审批。您将收到通知。",
+    "published": "您的助手已上线。",
+    "waiting_from": "正在等待 {names} 的批准。",
+    "approve": "批准",
+    "decline": "拒绝",
+    "decline_reason": "原因（可选）",
+    "requested_for": "面向：{audience}",
+    "review_changes": "他们将发布的指令",
+    "approved": "已批准。现已上线。",
+    "declined": "已拒绝。",
+    "own_tip": "您的组织会要求其他人批准您自己的助手。",
+    "owner": "所有者",
+    "audience": "受众",
+    "spend": "本月花费",
+    "updated": "已更改",
+    "owner_left": "已暂停：所有者已离开",
+    "transfer": "移交",
+    "delete": "删除",
+    "delete_confirm": "删除此助手？人们将无法使用它。",
+    "embed_hint": "上线后，嵌入代码在“更多设置”下。",
+    "banner_leave": "返回 Ask",
+    "failed": "出错了。请再试一次。",
+    "not_available": "此助手不可用。",
+    "by": "作者：{name}",
+    "uses": "答案来源：{list}",
+    "unavailable_tag": "不可用",
+    "welcome_default": "向 {name} 提问任何它能解答的问题。",
+    "website": "在您的网站上",
+    "get_code": "获取嵌入代码",
+    "icon_tip": "如果没有，此助手将使用您组织的徽标。",
+    "icon_upload": "上传图片",
+    "ability_attachments": "附加文件",
+    "ability_voice": "语音输入",
+    "public_locked": "您的套餐不包含此功能。公共助手需要专业版或更高版本，如果您是演示用户，则需要团队试用版。",
+    "preview_visitor": "以网站访客身份预览",
+    "picker_all": "浏览所有助手",
+    "picker_label": "询问助手",
+    "can_act": "可执行操作"
+  },
+  "answer_style": {
+    "tone": "语气",
+    "tone_professional": "专业",
+    "tone_friendly": "友好",
+    "tone_formal": "正式",
+    "tone_plain": "简洁",
+    "detail": "答案长度",
+    "detail_standard": "标准",
+    "detail_brief": "简短",
+    "detail_thorough": "详细",
+    "guidance": "其他",
+    "guidance_tip": "适用于 Ask、Agent 和您的团队构建的每个助手。例如：“说‘成员’，而不是‘客户’。”",
+    "saved": "已保存",
+    "more": "对于更长的规则，按项目或按个人，请使用 AI 记忆。",
+    "save": "保存"
   }
 }

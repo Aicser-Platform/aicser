@@ -2,7 +2,7 @@
 
 import useClickOutside from '@/hooks/useClickOutside';
 import {
-  AlertOutlined, ApartmentOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
+  AlertOutlined, ApartmentOutlined, BulbOutlined, AppstoreOutlined, AreaChartOutlined, ClusterOutlined, CodeOutlined, DashboardOutlined, DatabaseOutlined, EnvironmentOutlined, ExperimentOutlined, FileSearchOutlined, FundProjectionScreenOutlined, MessageOutlined, NodeIndexOutlined, RobotOutlined, ReadOutlined, ScheduleOutlined, SafetyCertificateOutlined,
   TableOutlined, SettingOutlined, ThunderboltOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import { Button, Layout } from 'antd';
@@ -56,6 +56,7 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   models: <ExperimentOutlined />,
   'ai-decisions': <ThunderboltOutlined />,
   agent: <ScheduleOutlined />,
+  agents: <RobotOutlined />,
   data: <DatabaseOutlined />,
   'semantic-layer': <SafetyCertificateOutlined />,
   knowledge: <FileSearchOutlined />,
@@ -66,7 +67,7 @@ const ENTERPRISE_ICONS: SidebarNavIconMap = {
   settings: <SettingOutlined />,
   // Section icons, shown on the collapsed rail.
   'sec-analyze': <FundProjectionScreenOutlined />,
-  'sec-predict': <RobotOutlined />,
+  'sec-predict': <BulbOutlined />,
   'sec-data': <DatabaseOutlined />,
 };
 

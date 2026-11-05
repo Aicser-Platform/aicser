@@ -69,7 +69,7 @@ async def get_link(kind: str, resource_id: UUID, token: Union[str, dict] = Depen
     user_id = _user_id(token)
     await _may_share(db, kind, str(resource_id), user_id, token)
     link = await S.find(db, kind, str(resource_id))
-    return {"link": S.to_dict(link) if link else None}
+    return {"link": await _with_review(db, link, user_id) if link else None}
 
 
 @router.put("")
@@ -82,7 +82,7 @@ async def save_link(body: LinkBody, token: Union[str, dict] = Depends(JWTCookieB
                         user_id=user_id, title=body.title, access=body.access, live_data=body.live_data,
                         expires_in_days=body.expires_in_days, password=body.password,
                         clear_password=body.clear_password, allowed_domains=body.allowed_domains)
-    return {"link": S.to_dict(link)}
+    return {"link": await _with_review(db, link, user_id)}
 
 
 @router.post("/{link_id}/off")
@@ -122,27 +122,40 @@ async def _approver_org(token: Union[str, dict], db: AsyncSession) -> tuple:
 async def organization_links(token: Union[str, dict] = Depends(JWTCookieBearer()),
                              db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
     """Every link that is on or waiting, for owners and admins (Settings › Publishing)."""
-    org_id, _ = await _approver_org(token, db)
+    org_id, user_id = await _approver_org(token, db)
     rows = (await db.execute(select(ShareLink).where(
         ShareLink.organization_id == UUID(org_id), ShareLink.status != "off",
-    ).order_by(ShareLink.updated_at.desc()).limit(200))).scalars().all()
-    return {"links": [S.to_dict(r) for r in rows]}
+    ).order_by((ShareLink.status == "pending").desc(), ShareLink.updated_at.desc()).limit(200))).scalars().all()
+    return {"links": [await _with_review(db, r, user_id) for r in rows]}
+
+
+async def _with_review(db: AsyncSession, link: ShareLink, user_id: str) -> Dict[str, Any]:
+    return {**S.to_dict(link), "review": await S.review_of(db, link, user_id)}
+
+
+class Decision(BaseModel):
+    note: str = Field(default="", max_length=300)
+
+
+async def _decide(link_id: str, token: Union[str, dict], db: AsyncSession, *, approved: bool, note: str = "") -> Dict[str, Any]:
+    org_id, user_id = await _approver_org(token, db)
+    link = await db.get(ShareLink, UUID(link_id))
+    if link is None or str(link.organization_id) != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
+    await S.decide(db, link, user_id, approved=approved, note=note)
+    return {"link": S.to_dict(link)}
 
 
 @router.post("/{link_id}/approve")
 async def approve(link_id: str, token: Union[str, dict] = Depends(JWTCookieBearer()),
                   db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
-    org_id, user_id = await _approver_org(token, db)
-    link = await db.get(ShareLink, UUID(link_id))
-    if link is None or str(link.organization_id) != org_id or link.status != "pending":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Link not found")
-    if str(link.created_by) == user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Another approver needs to review this link.")
-    await policy.require_outside_sharing(db, org_id)
-    link.status = "active"
-    await db.commit()
-    await policy.audit("share_link_approved", user_id=user_id, org_id=org_id, resource_type=link.kind, resource_id=str(link.resource_id))
-    return {"link": S.to_dict(link)}
+    return await _decide(link_id, token, db, approved=True)
+
+
+@router.post("/{link_id}/decline")
+async def decline(link_id: str, body: Decision, token: Union[str, dict] = Depends(JWTCookieBearer()),
+                  db: AsyncSession = Depends(get_async_session)) -> Dict[str, Any]:
+    return await _decide(link_id, token, db, approved=False, note=body.note)
 
 
 @router.post("/open/{slug}")

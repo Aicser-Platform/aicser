@@ -131,6 +131,11 @@ async def delete_data_source_proxy(
 # ── EE routes (lazy-loaded, only when AISER_EDITION=enterprise) ───────────────
 if is_ee_enabled():
     try:
+        from src.modules.sandbox.router import sandbox_router
+        api_router.include_router(sandbox_router, prefix="/api/sandbox", tags=["sandbox"])
+    except Exception as _err:
+        logger.warning("Sandbox router not loaded: %s", _err)
+    try:
         from src.modules.chats.router import router as chat_module_router
         from src.modules.chats.conversations.router import router as conversation_router
         from src.modules.chats.assets.router import router as assets_router
@@ -426,6 +431,11 @@ if is_ee_enabled():
             mcp_router, prefix="/mcp", tags=["mcp"],
             dependencies=[Depends(require_valid_license)],
         )
+        from src.enterprise.modules.mcp_server.oauth_router import app_router as mcp_oauth_app_router
+        from src.enterprise.modules.mcp_server.oauth_router import router as mcp_oauth_router
+        api_router.include_router(mcp_oauth_router, tags=["mcp"], dependencies=[Depends(require_valid_license)])
+        api_router.include_router(mcp_oauth_app_router, prefix="/api/mcp-oauth", tags=["mcp"],
+                                  dependencies=[Depends(require_valid_license)])
     except Exception as _err:
         logger.warning("MCP server router not loaded: %s", _err)
 
@@ -444,6 +454,9 @@ if is_ee_enabled():
             embed_assistant_router, prefix="/api/embed/assistants", tags=["embed-assistants"],
             dependencies=[Depends(require_valid_license)],
         )
+        from src.enterprise.modules.embed.agents_router import router as ai_agents_router
+        api_router.include_router(ai_agents_router, prefix="/api/agents", tags=["ai-agents"],
+                                  dependencies=[Depends(require_valid_license)])
     except Exception as _err:
         logger.warning("Embed assistants router not loaded: %s", _err)
 

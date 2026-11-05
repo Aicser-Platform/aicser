@@ -1,3 +1,4 @@
+import { GuideLauncher } from '@/components/guide/GuideLauncher';
 import React from 'react';
 import {
   MenuFoldOutlined,
@@ -139,6 +140,10 @@ export const LayoutHeader: React.FC<Props> = ({
   // place a user could see a notification was the separate, feed-specific
   // bell on /discover (DiscoverNotifications), which only covers social
   // events (follow/comment/reaction), not this broader activity inbox.
+  const SandboxBar = React.useMemo(
+    () => dynamic(() => import('@/ee-lazy/SandboxBar').then((m) => asDynamicModule(m.SandboxBar, () => null)), { ssr: false }),
+    [],
+  );
   const ActivityInboxBell = React.useMemo(
     () =>
       dynamic(
@@ -494,6 +499,7 @@ export const LayoutHeader: React.FC<Props> = ({
               />
             </Tooltip>
           )}
+          {isEnterpriseEdition && <SandboxBar />}
           {/* Same as ⌘K / Ctrl K: pages, settings and everything people have named. */}
           <button
             type="button"
@@ -518,6 +524,7 @@ export const LayoutHeader: React.FC<Props> = ({
                 <Button
                   type="text"
                   icon={<PlusOutlined />}
+                  data-guide="connect-data"
                   onClick={onOpenDataSourceModal}
                   className="header-shell-icon-btn icon-only-btn header-shell-icon-btn--primary icon-only-btn--primary"
                   aria-label={highlightConnectData ? t('connect_first_data_source') : t('connect_data_source')}
@@ -525,6 +532,7 @@ export const LayoutHeader: React.FC<Props> = ({
               </Badge>
             </Tooltip>
           )}
+          <GuideLauncher />
           {isEnterpriseEdition && <ActivityInboxBell />}
 
           <UserProfileDropdown showText={false} className="header-profile-trigger" />

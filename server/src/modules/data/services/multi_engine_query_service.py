@@ -48,6 +48,7 @@ import importlib.util
 
 # Spark for big data processing - import lazily inside SparkEngine to avoid heavy startup at import time
 #  Always apply fall back here ??
+from src.shared.sql_guard import lock_duckdb, reaches_outside
 from src.core.edition import is_ee_enabled
 from src.modules.data.services.query_identity import (
     QueryAccess,
@@ -248,6 +249,8 @@ def check_sql_read_only_safety(query: str, dialect: Optional[str] = None) -> Opt
     stripped = (query or "").strip()
     if not stripped:
         return "Read-only mode: empty SQL is not allowed."
+    if reaches_outside(stripped):
+        return "Read-only mode: queries can only use this data source's own tables."
 
     try:
         ast_error = _assert_read_only_select_ast(stripped, dialect=dialect)
@@ -1930,6 +1933,10 @@ class DuckDBEngine(BaseQueryEngine):
             elif data_source["type"] == "database":
                 await self._load_database_data(conn, data_source)
 
+            # The data is in. The shared lakehouse connection needs its files, so the check below guards it.
+            if data_source.get("type") != "lakehouse_iceberg":
+                lock_duckdb(conn)
+
             if not analysis.get("skip_read_only_check"):
                 _safety_error = check_sql_read_only_safety(query)
                 if _safety_error:
@@ -3110,6 +3117,7 @@ class PandasEngine(BaseQueryEngine):
                 conn = duckdb.connect()
                 try:
                     conn.register("data", df)
+                    lock_duckdb(conn)
                     sql = query
                     if "default.data" in sql or "default .data" in sql:
                         import re as _re

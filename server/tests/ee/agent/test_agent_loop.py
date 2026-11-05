@@ -15,6 +15,16 @@ from src.modules.agent import loop as L
 from src.modules.agent import workspace as W
 
 
+
+@pytest.fixture(autouse=True)
+def _no_style_lookups(monkeypatch):
+    """These tests have no database; how the AI sounds is covered in test_answer_style.py."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("ee.modules.agent.loop._reader_role", AsyncMock(return_value=""))
+    monkeypatch.setattr("ee.modules.ai.services.answer_style.tone_line", AsyncMock(return_value=""))
+
+
 class Store:
     def __init__(self):
         self.runs, self.steps, self.arts = {}, {}, {}

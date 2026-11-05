@@ -2,13 +2,14 @@
 
 import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { approveShareLink, organizationShareLinks, turnShareLinkOff, type ShareLink } from '@/services/shareLinks';
+import { approveShareLink, declineShareLink, organizationShareLinks, turnShareLinkOff, type ShareLink } from '@/services/shareLinks';
 import { useTranslations } from 'next-intl';
-import { App, Button, Form, InputNumber, Segmented, Space, Table } from 'antd';
+import { FeatureGate } from '@/ee';
+import { App, Button, Form, InputNumber, Segmented, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { fetchApi } from '@/utils/api';
 
-type Policy = { public: 'off' | 'approval' | 'members'; expiry_days: number | null };
+type Policy = { public: 'off' | 'approval' | 'members'; expiry_days: number | null; second_approver: boolean };
 const post = (body?: unknown) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 
 /** Who may publish outside the organization, for how long, and the off switch. */
@@ -19,7 +20,7 @@ export default function PublishingTab() {
   const policy = useQuery({ queryKey: ['publishing-policy'], queryFn: () => fetchApi<Policy>('/api/feed/publishing/policy') });
 
   const save = async (next: Partial<Policy>) => {
-    const body = { public: policy.data?.public ?? 'approval', expiry_days: policy.data?.expiry_days ?? null, ...next };
+    const body = { public: policy.data?.public ?? 'approval', expiry_days: policy.data?.expiry_days ?? null, second_approver: policy.data?.second_approver ?? false, ...next };
     await fetchApi('/api/feed/publishing/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     void qc.invalidateQueries({ queryKey: ['publishing-policy'] });
     message.success(t('publishing_saved'));
@@ -41,6 +42,14 @@ export default function PublishingTab() {
       <Form.Item label={<>{t('publishing_public_label')}<InfoHint text={t('publishing_public_tip')} /></>}>
         <Segmented value={policy.data?.public ?? 'approval'} onChange={(v) => void save({ public: v as Policy['public'] })}
           options={[{ value: 'off', label: t('publishing_mode_off') }, { value: 'approval', label: t('publishing_mode_approval') }, { value: 'members', label: t('publishing_mode_members') }]} />
+      </Form.Item>
+      <Form.Item label={<>{t('publishing_second_label')}<InfoHint text={t('publishing_second_tip')} /></>}>
+        <FeatureGate
+          feature="compliance"
+          fallback={<Tooltip title={t('enterprise_only_second_approver')}><Switch checked={false} disabled aria-label={t('publishing_second_label')} /></Tooltip>}
+        >
+          <Switch checked={policy.data?.second_approver ?? false} onChange={(v) => void save({ second_approver: v })} aria-label={t('publishing_second_label')} />
+        </FeatureGate>
       </Form.Item>
       <Form.Item label={t('publishing_expiry_label')}>
         <InputNumber key={String(policy.data?.expiry_days)} min={1} max={3650} defaultValue={policy.data?.expiry_days ?? undefined} placeholder={t('publishing_expiry_never')}
@@ -79,7 +88,7 @@ function ShareLinksList() {
       dataSource={links.data}
       columns={[
         { title: t('links_title'), dataIndex: 'title', render: (v: string, r: ShareLink) => <a href={`/s/${r.slug}`} target="_blank" rel="noopener noreferrer">{v || r.slug}</a> },
-        { title: t('who'), dataIndex: 'access', render: (v: string, r: ShareLink) => (r.status === 'pending' ? t('waiting') : t(v === 'public' ? 'who_public' : 'who_organization')) },
+        { title: t('who'), dataIndex: 'access', render: (v: string, r: ShareLink) => (r.status === 'pending' ? <Tag color="gold">{t('waiting')}</Tag> : t(v === 'public' ? 'who_public' : 'who_organization')) },
         { title: t('views_title'), dataIndex: 'view_count', width: 80 },
         {
           title: '',
@@ -87,8 +96,14 @@ function ShareLinksList() {
           align: 'right' as const,
           render: (_: unknown, r: ShareLink) => (
             <Space size={4}>
-              {r.status === 'pending' ? <Button type="link" size="small" onClick={() => void act(approveShareLink(r.id))}>{t('approve')}</Button> : null}
-              <Button type="link" size="small" danger onClick={() => void act(turnShareLinkOff(r.id))}>{t('turn_off')}</Button>
+              {r.status === 'pending' ? (
+                <Tooltip title={r.review?.can_approve ? undefined : t('own_link_tip', { names: r.review?.approvers.join(', ') ?? '' })}>
+                  <Button type="link" size="small" disabled={!r.review?.can_approve} onClick={() => void act(approveShareLink(r.id))}>{t('approve')}</Button>
+                </Tooltip>
+              ) : null}
+              {r.status === 'pending' && r.review?.can_approve
+                ? <Button type="link" size="small" danger onClick={() => void act(declineShareLink(r.id))}>{t('decline')}</Button>
+                : <Button type="link" size="small" danger onClick={() => void act(turnShareLinkOff(r.id))}>{t('turn_off')}</Button>}
             </Space>
           ),
         },

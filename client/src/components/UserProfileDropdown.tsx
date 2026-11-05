@@ -9,6 +9,7 @@ import {
   CreditCardOutlined,
   RocketOutlined,
   CustomerServiceOutlined,
+  TeamOutlined,
   CommentOutlined,
   SunOutlined,
   MoonOutlined,
@@ -24,6 +25,7 @@ import { useProfileStore } from '@/stores/useProfileStore';
 import PricingModal from '@/components/PricingModal';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
+import { COMMUNITY_URL, showCommunity } from '@/constants/community';
 import { useFeaturebaseStore } from '@/stores/useFeaturebaseStore';
 import { useRouter } from 'next/navigation';
 import { useThemeMode } from '@/components/Providers/ThemeModeContext';
@@ -369,6 +371,14 @@ const UserProfileDropdown: React.FC<UserProfileDropdownProps> = ({ className, sh
       label: t('get_help'),
       onClick: () => openHelp(),
     },
+    ...(showCommunity
+      ? [{
+          key: 'community',
+          icon: <TeamOutlined />,
+          label: t('join_community'),
+          onClick: () => window.open(COMMUNITY_URL, '_blank', 'noopener,noreferrer'),
+        }]
+      : []),
     ...(isEnterpriseEdition
       ? [{
           key: 'support',

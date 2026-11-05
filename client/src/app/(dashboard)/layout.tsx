@@ -10,6 +10,7 @@ import { PageLoading } from '@/components/ui/AppLoadingIndicator';
 import { SkipToContentLink } from '@/components/layout/SkipToContentLink';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import GlobalPricingModal from '@/components/GlobalPricingModal';
+import { GuideHost } from '@/components/guide/GuideHost';
 import { UploadReadinessWatcher } from '@/components/prep/UploadReadinessWatcher';
 import '@/app/globals.css';
 
@@ -17,6 +18,10 @@ const isEE = ['enterprise', 'ee'].includes((process.env.NEXT_PUBLIC_EDITION || '
 
 const BillingSuccessHandler = dynamic(
   () => import('@/ee-lazy/BillingSuccessHandler').then((m) => asDynamicModule(m.BillingSuccessHandler, () => null)),
+  { ssr: false, loading: () => null },
+);
+const LicenseNotice = dynamic(
+  () => import('@/ee-lazy/LicenseNotice').then((m) => asDynamicModule(m.LicenseNotice, () => null)),
   { ssr: false, loading: () => null },
 );
 const TrialExpiryBanner = dynamic(
@@ -97,7 +102,8 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = React.memo(({ c
     <ProtectedRoute>
       <SkipToContentLink />
       <SubscriptionInitializer />
-      <CustomLayout banner={<TrialExpiryBanner />}>
+      <CustomLayout banner={<><LicenseNotice /><TrialExpiryBanner /></>}>
+        <GuideHost />
         {children}
       </CustomLayout>
       <BillingSuccessHandler />

@@ -8,7 +8,7 @@ from src.modules.pricing.plans import PLAN_CONFIGS, minimum_plan_for_feature
 
 @pytest.mark.parametrize(
     "feature, plan",
-    [("alerts", "team"), ("lakehouse", "pro"), ("ml_models", "pro"), ("audit_logs", "enterprise"), ("api_access", "free")],
+    [("alerts", "team"), ("lakehouse", "pro"), ("ml_models", "pro"), ("audit_logs", "team"), ("api_access", "free")],
 )
 def test_lowest_plan_that_includes_the_feature(feature, plan):
     assert minimum_plan_for_feature(feature) == plan

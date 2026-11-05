@@ -2,14 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Empty, Select, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { Permission } from '@/hooks/usePermissions';
 import { fetchApi, fetchApiBlob } from '@/utils/api';
-import type { TabComponentProps } from '../page';
 
 const { Text } = Typography;
 
@@ -36,14 +35,13 @@ interface AuditLogRow {
   error_code: string | null;
 }
 
-const DAY_OPTIONS = [1, 7, 30, 90];
 const PAGE_SIZE = 50;
 
-export const AIAuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
+/** Every AI call. Shown under AI quality, which owns the date range. */
+export const AIAuditLogTab: React.FC<{ days: number }> = ({ days }) => {
   const t = useTranslations('settings.ai_audit_log');
   const router = useRouter();
   const { currentOrganization } = useOrganizationStore();
-  const [days, setDays] = useState(7);
   const [outcome, setOutcome] = useState<string | undefined>(undefined);
   const [nodeName, setNodeName] = useState<string | undefined>(undefined);
   const [nodeOptions, setNodeOptions] = useState<string[]>([]);
@@ -98,18 +96,6 @@ export const AIAuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     setPage(1);
   }, [days, outcome, nodeName]);
 
-  useEffect(() => {
-    onSetAction?.(
-      <Space>
-        <Button icon={<DownloadOutlined />} onClick={() => void exportCsv()} disabled={!currentOrganization?.id}>
-          {t('export_csv')}
-        </Button>
-        <Tooltip title={t('refresh')}>
-          <Button icon={<ReloadOutlined />} aria-label={t('refresh')} onClick={() => void load()} loading={loading} />
-        </Tooltip>
-      </Space>
-    );
-  }, [loading, onSetAction, load, days]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Every AI call in the chosen period, for auditors (prompt and answer as hashes only).
   async function exportCsv() {
@@ -220,7 +206,7 @@ export const AIAuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
     <PermissionGuard permission={Permission.AUDIT_VIEW} fallback={<Alert type="warning" message={t('no_permission')} showIcon />}>
       <Card size="small" variant="borderless" style={{ background: 'var(--color-fill-quaternary)', borderRadius: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-          <Text type="secondary">{t('subtitle')}</Text>
+          <Text strong>{t('subtitle')}</Text>
           <Space wrap>
             <Select
               value={outcome}
@@ -241,13 +227,9 @@ export const AIAuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
               style={{ width: 180 }}
               options={nodeOptions.map((n) => ({ value: n, label: n }))}
             />
-            <Select
-              value={days}
-              onChange={setDays}
-              style={{ width: 150 }}
-              aria-label={t('window_label')}
-              options={DAY_OPTIONS.map((d) => ({ value: d, label: t('window_days', { days: d }) }))}
-            />
+            <Button icon={<DownloadOutlined />} onClick={() => void exportCsv()} disabled={!currentOrganization?.id}>
+              {t('export_csv')}
+            </Button>
           </Space>
         </div>
 

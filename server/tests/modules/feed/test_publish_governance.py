@@ -38,18 +38,29 @@ async def test_public_off_refuses_even_an_owner():
 
 
 @pytest.mark.asyncio
-async def test_owner_and_admin_both_approve_but_not_their_own_work():
+async def test_with_a_second_approver_required_nobody_approves_their_own_work():
     author, other = uuid4(), uuid4()
     svc = _svc()
     post = _post(author_id=author)
     svc._get_role_names = AsyncMock(return_value={"org_admin"})
-    with patch.object(policy, "approvers", AsyncMock(return_value=[author, other])):
-        await svc._assert_can_approve_post(other, post)  # an admin may
-        with pytest.raises(HTTPException) as exc:
-            await svc._assert_can_approve_post(author, post)
-    assert exc.value.status_code == 403
-    with patch.object(policy, "approvers", AsyncMock(return_value=[author])):
-        await svc._assert_can_approve_post(author, post)  # the only approver may
+    with patch.object(policy, "get_policy", AsyncMock(return_value={"second_approver": True})):
+        with patch.object(policy, "approvers", AsyncMock(return_value=[author, other])):
+            await svc._assert_can_approve_post(other, post)  # an admin may
+            with pytest.raises(HTTPException) as exc:
+                await svc._assert_can_approve_post(author, post)
+        assert exc.value.status_code == 403
+        with patch.object(policy, "approvers", AsyncMock(return_value=[author])):
+            await svc._assert_can_approve_post(author, post)  # the only approver may
+
+
+@pytest.mark.asyncio
+async def test_by_default_an_owner_or_admin_can_clear_their_own_work():
+    author, other = uuid4(), uuid4()
+    svc = _svc()
+    svc._get_role_names = AsyncMock(return_value={"org_admin"})
+    with patch.object(policy, "get_policy", AsyncMock(return_value={"second_approver": False})), \
+            patch.object(policy, "approvers", AsyncMock(return_value=[author, other])):
+        await svc._assert_can_approve_post(author, _post(author_id=author))
 
 
 @pytest.mark.asyncio
@@ -98,6 +109,7 @@ async def test_expired_public_items_end_and_their_dashboard_closes():
     post = _post(expires_at=datetime.now(timezone.utc) - timedelta(hours=1))
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=[SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [post])),
+                                        SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
                                         SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))])
     from src.modules.dashboards import operations as ops
 

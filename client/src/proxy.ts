@@ -4,9 +4,11 @@ import type { NextRequest } from 'next/server';
 /** Routes that don't require authentication. */
 const PUBLIC_PATHS = [
   '/login',
+  '/try',
   '/logout',
   '/reset-password',
   '/api/auth/',
+  '/api/sandbox/',
   '/discover',
   '/embed/',
   // Short share links: the page itself decides who may open one.

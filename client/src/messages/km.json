@@ -431,8 +431,6 @@
     "confirm_password": "បញ្ជាក់ពាក្យសម្ងាត់",
     "welcome_back": "សូមស្វាគមន៍មកវិញ",
     "create_account": "បង្កើតគណនីរបស់អ្នក",
-    "sign_up_subtitle": "ចុះឈ្មោះដើម្បីចាប់ផ្តើមជាមួយ Aicser",
-    "sign_in_subtitle": "ចូលគណនីរបស់អ្នកដើម្បីបន្ត",
     "email_placeholder": "you@company.com",
     "email_required": "សូមបញ្ចូលអ៊ីមែលរបស់អ្នក!",
     "email_invalid": "សូមបញ្ចូលអ៊ីមែលត្រឹមត្រូវ!",
@@ -559,7 +557,8 @@
     "two_factor_use_app": "ប្រើកម្មវិធីផ្ទៀងផ្ទាត់",
     "two_factor_back": "ត្រឡប់ទៅការចូល",
     "two_factor_code_label": "លេខកូដផ្ទៀងផ្ទាត់",
-    "two_factor_backup_label": "លេខកូដបម្រុង"
+    "two_factor_backup_label": "លេខកូដបម្រុង",
+    "try_without_account": "សាកល្បង Aicser ដោយគ្មានគណនី"
   },
   "bi_dashboard": {
     "title": "ផ្ទាំងគ្រប់គ្រងបញ្ញាអាជីវកម្ម (BI)",
@@ -2069,24 +2068,17 @@
     "resolved_mode_switched": "បានប្ដូរទៅ {mode}",
     "agent_start_failed": "ភ្នាក់ងារមិនអាចចាប់ផ្ដើមភារកិច្ចនេះបានទេ។",
     "use_case_analyze_standard": "ស្តង់ដារ",
-    "first_hour": {
-      "label": "ចាប់ផ្តើម",
-      "data": "ភ្ជាប់ទិន្នន័យ",
-      "dashboard": "ផ្ទាំងគ្រប់គ្រងដំបូង",
-      "alert": "ការជូនដំណឹងដំបូង",
-      "dashboard_prompt": "Look at my data and build me a starter dashboard with the few numbers that matter most.",
-      "alert_prompt": "Suggest one alert on my most important number and set it up for me.",
-      "hide": "លាក់"
-    },
     "light_seat_title": "AI ត្រូវការសោ ឬកៅអី AI",
     "light_seat_body": "កៅអី Light ប្រើសោ AI ផ្ទាល់ខ្លួន។ បន្ថែមសោ ឬស្នើកៅអី AI ពីអ្នកគ្រប់គ្រង។",
     "light_seat_requested": "បានស្នើទៅអ្នកគ្រប់គ្រងរួចហើយ។ អ្នកអាចបន្តធ្វើការ ឬបន្ថែមសោផ្ទាល់ខ្លួន។",
     "light_seat_request": "ស្នើកៅអី AI",
     "light_seat_requested_short": "បានស្នើ",
     "light_seat_own_key": "បន្ថែមសោរបស់ខ្ញុំ",
-    "light_seat_request_failed": "មិនអាចផ្ញើសំណើបានទេ។ សូមព្យាយាមម្តងទៀត។"
+    "light_seat_request_failed": "មិនអាចផ្ញើសំណើបានទេ។ សូមព្យាយាមម្តងទៀត។",
+    "agent_not_available": "ជំនួយការនេះមិនមានសម្រាប់អ្នកទេ។"
   },
   "chat_page": {
+    "sample_shop_name": "ហាងគំរូ",
     "dense_daily_hint": "កំពុងបង្ហាញតាមថ្ងៃ។",
     "dense_daily_weekly_cta": "បង្ហាញតាមសប្ដាហ៍",
     "dense_daily_weekly_prompt": "បង្ហាញចម្លើយដដែលតាមសប្ដាហ៍ ជំនួសឱ្យតាមថ្ងៃ។",
@@ -2949,7 +2941,13 @@
     "trust_badge_t2": "Review figures",
     "trust_badge_t0": "Check numbers",
     "use_case_analyze_standard": "ស្តង់ដារ",
-    "answer_ready_notice": "ចម្លើយ Aicser របស់អ្នករួចរាល់ហើយ"
+    "answer_ready_notice": "ចម្លើយ Aicser របស់អ្នករួចរាល់ហើយ",
+    "composer_agent_placeholder": "ផ្ញើសារទៅ {name}…",
+    "voice_listening": "កំពុងស្ដាប់។ សូមនិយាយសំណួររបស់អ្នក។",
+    "voice_working": "កំពុងបំប្លែងសំឡេងរបស់អ្នកទៅជាអត្ថបទ…",
+    "voice_denied": "អនុញ្ញាតឱ្យប្រើមីក្រូហ្វូននៅក្នុង browser របស់អ្នក ដើម្បីប្រើសំឡេង។",
+    "voice_unavailable": "ការបញ្ចូលសំឡេងមិនអាចប្រើបាននៅពេលនេះទេ។ សូមវាយសំណួររបស់អ្នកជំនួសវិញ។",
+    "voice_empty": "មិនបានចាប់បានទេ។ សូមព្យាយាមម្ដងទៀត ឱ្យជិតមីក្រូហ្វូនបន្តិច។"
   },
   "chat_sql_editor": {
     "enter_sql": "សូមបញ្ចូលសំណួរ SQL",
@@ -7008,7 +7006,9 @@
     "agent_tasks": "ស្វ័យប្រវត្តិកម្ម",
     "hint_agent": "កិច្ចការ កាលវិភាគ និងជំនាញដែលបានរក្សាទុក",
     "show_all_tools": "បង្ហាញឧបករណ៍ទាំងអស់",
-    "show_essentials": "បង្ហាញតែសំខាន់"
+    "show_essentials": "បង្ហាញតែសំខាន់",
+    "ai_agents": "ជំនួយការ",
+    "hint_agents": "ជំនួយការដែលក្រុមរបស់អ្នកបានបង្កើតសម្រាប់ការងារ ផ្នែក ឬគម្រោង"
   },
   "notifications_bell": {
     "activity": "សកម្មភាព",
@@ -7438,9 +7438,18 @@
     "secure_note": "ការបង់ប្រាក់មានសុវត្ថិភាព",
     "cancel": "បោះបង់",
     "continue_to_payment": "បន្តទៅការបង់ប្រាក់",
-    "method_unavailable": "មិនទាន់មាននៅឡើយ"
+    "method_unavailable": "មិនទាន់មាននៅឡើយ",
+    "paid_credits": "ការទូទាត់បានជោគជ័យ! ឥណទានរបស់អ្នកត្រូវបានបន្ថែមហើយ។",
+    "paid_personal": "ការទូទាត់បានជោគជ័យ! អាជ្ញាប័ណ្ណរបស់អ្នកមាននៅក្នុង Seats & credits។"
   },
   "pricing_modal": {
+    "per_year": "/ឆ្នាំ",
+    "team_total_period_year": "/ឆ្នាំ សម្រាប់សមាជិក {n} នាក់",
+    "team_up_to": "រហូតដល់សមាជិក {n} នាក់ ម្នាក់ៗមាន AI។",
+    "team_more_members": "សមាជិកបន្ថែម៖ ${ai}/ខែ មាន AI ឬ ${light}/ខែ Light (គ្មានក្រេឌីត AI)។",
+    "team_more_members_year": "សមាជិកបន្ថែម៖ ${ai}/ឆ្នាំ មាន AI ឬ ${light}/ឆ្នាំ Light (គ្មានក្រេឌីត AI)។",
+    "add_ai_year": "បន្ថែម Aicser AI (+${extra}/ឆ្នាំ)",
+    "checkout_covers": "រួមបញ្ចូលសមាជិក {n} នាក់ មាន AI{ai, plural, =0 {} other {, បូក # នាក់ទៀត មាន AI}}{light, plural, =0 {} other {, បូក # Light}}",
     "custom": "តាមតម្រូវការ",
     "free": "ឥតគិតថ្លៃ",
     "checkout_failed": "ការចាប់ផ្តើមទំព័រទូទាត់ Stripe បានបរាជ័យ",
@@ -7468,7 +7477,7 @@
     "addons_description": "ក្រេឌីត AI បន្ថែមសម្រាប់គម្រោងទាំងអស់។ ចម្លើយមួយ 1 ក្រេឌីត ការព្យាករណ៍ ឬវិនិច្ឆ័យ 2 របាយការណ៍ ផ្ទាំងគ្រប់គ្រង ឬការសម្រេចចិត្ត 5 ជំហានភ្នាក់ងារនីមួយៗ 1។",
     "credits_amount": "{count} ក្រេឌីត",
     "per_credit": "~ ${value}/ក្រេឌីត",
-    "footnote": "អ្នកមើលដែលចូលគណនីរាប់ជាសមាជិក Light។ តំណសាធារណៈ និងការបង្កប់មិនត្រូវការកៅអីទេ។",
+    "footnote": "អ្នកមើលដែលបានចូលគណនី និងអ្នកដែលប្រើ Aicser តាមរយៈ Copilot ឬ Gemini ត្រូវបានរាប់ជាសមាជិក Light។ តំណភ្ជាប់សាធារណៈ និងការបង្កប់មិនត្រូវការកៅអីទេ។",
     "benefit_cancel_anytime": "អាចបោះបង់ពេលណាក៏បាន មិនសួរហេតុផល",
     "benefit_paid_unlock": "បើកមុខងារទាំងអស់លើគម្រោងបង់ប្រាក់",
     "footer_text": "តម្លៃបង្ហាញជា USD។ ការទូទាត់សុវត្ថិភាពតាម Stripe។",
@@ -7482,10 +7491,8 @@
     "pack_enterprise_note": "រចនាសម្រាប់ប្រតិបត្តិការបរិមាណខ្ពស់។",
     "includes_seats_with_viewer": "Includes {seats} seats · ${perSeat}/additional seat · ${perViewerSeat}/viewer seat",
     "per_member_month": "/សមាជិក/ខែ",
-    "per_member_short": "ក្នុងមួយសមាជិក",
     "with_ai": "មាន AI របស់ Aicser · {credits} ក្រេឌីតក្នុងមួយខែ",
     "without_ai": "គ្មាន AI · ប្រើកូនសោម៉ូដែលផ្ទាល់ខ្លួន",
-    "team_members_note": "សមាជិក Light ${light}៖ បង្កើត និងកែបានពេញលេញ ប្រើ AI ដោយកូនសោផ្ទាល់ខ្លួន។ ចាប់ពី {min} នាក់។",
     "pack_note": "ប្រើបន្ទាប់ពីក្រេឌីតប្រចាំខែអស់ មានសុពលភាព {months} ខែ",
     "pay_card": "កាត",
     "buy_credits": "ទិញ {count} ក្រេឌីត (${price})",
@@ -7495,7 +7502,6 @@
     "buy_personal": "ទិញក្នុងតម្លៃ ${price}",
     "add_ai": "បន្ថែម AI របស់ Aicser (+${extra}/ខែ)",
     "team_total_period": "/ខែ សម្រាប់សមាជិក {n} នាក់",
-    "team_per_member": "${price} ក្នុងមួយសមាជិក រួមទាំង AI។ បន្ថែមសមាជិកបានគ្រប់ពេល។",
     "own_model_keys": "កូនសោម៉ូដែលផ្ទាល់ខ្លួន"
   },
   "profile": {
@@ -8404,12 +8410,14 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "កៅអីទាំងអស់កំពុងប្រើ",
+    "team_add_seats": "បន្ថែមកៅអី",
     "active": "សកម្ម",
     "add_data_source": "បន្ថែមប្រភពទិន្នន័យ",
     "add_first_data_source": "បន្ថែមប្រភពទិន្នន័យដំបូងរបស់អ្នក",
     "agent_budget": {
-      "title": "AI Budget & Model Preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "ថវិកា AI",
+      "subtitle": "ដែនកំណត់ចំណាយសម្រាប់ AI នៅក្នុងអង្គការនេះ។",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -8417,7 +8425,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "បានរក្សាទុក",
       "save_error": "Failed to save AI budget preferences",
       "reasoning_mode": "ជម្រៅនៃការវែកញែក",
       "reasoning_mode_tip": "ពេលដែលភ្នាក់ងារប្រើម៉ូដែលវែកញែកខ្លាំងជាង។ សម្របខ្លួន៖ ពេលរៀបចំផែនការ និងពេលរកមូលហេតុដែលជំហានបរាជ័យ។ ជានិច្ច៖ គ្រប់ជំហាន (ជ្រៅជាង យឺតជាង ក្រេឌីតច្រើន)។ សន្សំ៖ ម៉ូដែលលំនាំដើមជានិច្ច។",
@@ -9521,7 +9529,8 @@
       "accuracy_shape_monthly": "និន្នាការប្រចាំខែ",
       "accuracy_shape_year_total": "សរុបប្រចាំឆ្នាំ",
       "accuracy_shape_forecast": "ការព្យាករ",
-      "accuracy_shape_diagnose": "ហេតុអ្វីប្តូរ"
+      "accuracy_shape_diagnose": "ហេតុអ្វីប្តូរ",
+      "kpi_latency_slowest": "95% នៃចម្លើយមកដល់ក្នុងរយៈពេល {seconds} វិនាទី។"
     },
     "clear_provider_config": "Clear config",
     "configured_with_models": "{count} models",
@@ -9868,7 +9877,13 @@
     "two_factor_off_title": "បិទការចូលពីរជំហាន",
     "two_factor_off_password": "បញ្ចូលពាក្យសម្ងាត់ដើម្បីបញ្ជាក់។",
     "two_factor_off_code": "បញ្ចូលលេខកូដពីកម្មវិធីផ្ទៀងផ្ទាត់ដើម្បីបញ្ជាក់។",
-    "two_factor_off_done": "ការចូលពីរជំហានត្រូវបានបិទ"
+    "two_factor_off_done": "ការចូលពីរជំហានត្រូវបានបិទ",
+    "publishing_second_label": "ទាមទារអ្នកអនុម័តទីពីរ",
+    "publishing_second_tip": "ម្ចាស់ និងអ្នកគ្រប់គ្រងក៏ត្រូវការម្ចាស់ ឬអ្នកគ្រប់គ្រងម្នាក់ទៀតដើម្បីអនុម័តការងារសាធារណៈរបស់ពួកគេផងដែរ។ ប្រើនេះប្រសិនបើច្បាប់អនុលោមភាពរបស់អ្នកត្រូវការមនុស្សពីរនាក់។",
+    "embed_agents_moved": "កំពុងបង្កប់ជំនួយការ AI មែនទេ? បង្កើតវានៅក្នុង Assistants បោះពុម្ពវាទៅ Public ហើយយកកូដនៅទីនោះ។",
+    "enterprise_only_custom_roles": "តួនាទីផ្ទាល់ខ្លួនភ្ជាប់មកជាមួយគម្រោង Enterprise។",
+    "enterprise_only_second_approver": "អ្នកអនុម័តទីពីរភ្ជាប់មកជាមួយគម្រោង Enterprise។",
+    "enterprise_only_audit": "ការនាំចេញ, SIEM និងប្រវត្តិពេញលេញភ្ជាប់មកជាមួយគម្រោង Enterprise។ ក្រុមបង្ហាញ 90 ថ្ងៃចុងក្រោយ។"
   },
   "settings_appearance": {
     "updated_ok": "បានធ្វើបច្ចុប្បន្នភាពការកំណត់រូបរាងដោយជោគជ័យ!",
@@ -10129,6 +10144,7 @@
     "checkout_failed": "បរាជ័យក្នុងការចាប់ផ្តើមការទូទាត់"
   },
   "user_profile_dropdown": {
+    "join_community": "ចូលរួមសហគមន៍ Aicsertics",
     "user": "អ្នកប្រើ",
     "unknown": "មិនស្គាល់",
     "failed_upgrade_plan": "ការអាប់ក្រេដគម្រោងបរាជ័យ។ សូមព្យាយាមម្តងទៀត។",
@@ -10347,7 +10363,7 @@
     "roles_label": "តួនាទី និងសិទ្ធិ",
     "roles_desc": "អ្នកណាអាចធ្វើអ្វី",
     "billing-subscription_label": "វិក្កយបត្រ",
-    "billing-subscription_desc": "គម្រោង ការប្រើប្រាស់ វិក្កយបត្រ",
+    "billing-subscription_desc": "កៅអី ការទូទាត់ និងវិក្កយបត្រ",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "ទីតាំងទិន្នន័យ AI",
@@ -10368,8 +10384,8 @@
     "agent-capabilities_desc": "ជ្រើសសកម្មភាពដែល AI អាចធ្វើ",
     "kpi-definitions_label": "និយមន័យសូចនាករ",
     "kpi-definitions_desc": "បង្រៀន AI ពីរបៀបគណនាលេខសំខាន់ៗ",
-    "ai-quality_label": "គុណភាព AI",
-    "ai-quality_desc": "ចម្លើយត្រឹមត្រូវ និងមានប្រយោជន៍ប៉ុណ្ណា",
+    "ai-quality_label": "គុណភាព & ការត្រួតពិនិត្យ",
+    "ai-quality_desc": "របៀបដែលចម្លើយបានដំណើរការ និងរាល់ការហៅ AI",
     "ai-decision-layer_label": "AI decisions",
     "ai-decision-layer_desc": "Row-level AI choices using rules you define (aligned with Predict & decide in the sidebar)",
     "ai-audit-log_label": "កំណត់ហេតុសវនកម្ម AI",
@@ -10378,8 +10394,8 @@
     "briefings_desc": "របាយការណ៍ AI តាមកាលវិភាគ",
     "notifications_label": "ការជូនដំណឹង",
     "notifications_desc": "អ៊ីមែល និងកណ្ដឹងសកម្មភាព",
-    "agent-budget_label": "មជ្ឈមណ្ឌលថ្លៃដើម AI",
-    "agent-budget_desc": "ថវិកា និងចំណាយម៉ូដែលតាមគម្រោង",
+    "agent-budget_label": "ថវិកា AI",
+    "agent-budget_desc": "ដែនកំណត់ចំណាយសម្រាប់ AI",
     "ai-memory_label": "ការចងចាំ AI",
     "ai-memory_desc": "អ្វីដែល Aicser ចងចាំសម្រាប់អ្នក គម្រោង និងស្ថាប័នរបស់អ្នក",
     "agent-rules_label": "ច្បាប់ភ្នាក់ងារ",
@@ -10389,9 +10405,9 @@
     "page_team_label": "ក្រុម និងតួនាទី",
     "page_team_desc": "សមាជិក ការអញ្ជើញ និងអ្វីដែលតួនាទីនីមួយៗអាចធ្វើ",
     "page_integrations_label": "ការរួមបញ្ចូល",
-    "page_integrations_desc": "អ៊ីមែល Slack Teams សោ API និងការបង្កប់",
+    "page_integrations_desc": "អ៊ីមែល, Slack, Teams, Microsoft និង Google",
     "page_usage_label": "ការប្រើប្រាស់ និងវិក្កយបត្រ",
-    "page_usage_desc": "ការប្រើប្រាស់ គម្រោង វិក្កយបត្រ និងការចំណាយ AI",
+    "page_usage_desc": "ការប្រើប្រាស់, កៅអី, ការទូទាត់, វិក្កយបត្រ និងថវិកា AI",
     "page_ai-rules_label": "ច្បាប់ និងម៉ូដែល",
     "page_ai-rules_desc": "ឧបករណ៍ដែល AI អាចប្រើ អ្វីដែលត្រូវការការអនុម័ត និងម៉ូដែលណាដែលសម្រេច",
     "page_ai-oversight_label": "គុណភាព និងសវនកម្ម",
@@ -10402,7 +10418,16 @@
     "page_organization_desc": "ឈ្មោះ ម៉ាក និងអាជ្ញាប័ណ្ណ",
     "search_placeholder": "ស្វែងរកការកំណត់",
     "search_empty": "គ្មានការកំណត់ដែលត្រូវគ្នា។",
-    "close_nav": "បិទម៉ឺនុយការកំណត់"
+    "close_nav": "បិទម៉ឺនុយការកំណត់",
+    "usage_desc": "គម្រោងរបស់អ្នក អ្វីដែលបានប្រើ និងកន្លែងដែលការចំណាយបានទៅ",
+    "group_project": "គម្រោង",
+    "group_organization": "អង្គការ",
+    "group_sharing": "ភ្ជាប់ & ចែករំលែក",
+    "group_billing": "វិក្កយបត្រ",
+    "page_sharing_label": "ការបោះពុម្ព & ការបង្កប់",
+    "page_sharing_desc": "អ្វីដែលអាចចាកចេញពីអង្គការ និងរបៀប",
+    "adoption_label": "ការទទួលយក",
+    "adoption_desc": "អ្នកណាប្រើ Aicser និងអ្វីដែលមិនបានប្រើ"
   },
   "license_tab": {
     "load_failed": "មិនអាចផ្ទុកស្ថានភាពអាជ្ញាប័ណ្ណ",
@@ -12377,6 +12402,15 @@
     "calc_share": "{part} ក្នុងចំណោម {total} ({column})"
   },
   "billing_seats": {
+    "seats_used": "កំពុងប្រើ {used} ក្នុងចំណោម {capacity} កៅអី",
+    "add_seats": "បន្ថែមកៅអី",
+    "extras_ai": "កៅអី AI បន្ថែម",
+    "extras_light": "កៅអី Light បន្ថែម (គ្មានក្រេឌីត AI)",
+    "extras_confirm": "បញ្ជាក់",
+    "extras_saved": "បានធ្វើបច្ចុប្បន្នភាពកៅអី",
+    "extras_total_month": "{seats} កៅអី សរុប ${total} ក្នុងមួយខែ។",
+    "extras_total_year": "{seats} កៅអី សរុប ${total} ក្នុងមួយឆ្នាំ។",
+    "extras_due": "ត្រូវបង់ឥឡូវ ${due}។",
     "seats_title": "កៅអី",
     "seats_summary": "សមាជិក AI {ai} នាក់ (${aiPrice}/ខែ ក្នុងម្នាក់ 900 ក្រេឌីត) និងសមាជិក Light {platform} នាក់ (${platformPrice}/ខែ ក្នុងម្នាក់ កូនសោផ្ទាល់ខ្លួន)។",
     "member": "សមាជិក",
@@ -12410,7 +12444,8 @@
     "seat_per_month": "ក្នុងមួយខែ",
     "seat_per_year": "ក្នុងមួយឆ្នាំ",
     "seat_requested": "បានស្នើ AI",
-    "seat_decline": "បដិសេធ"
+    "seat_decline": "បដិសេធ",
+    "payments_not_set_up": "ការទូទាត់តាមអ៊ីនធឺណិតមិនទាន់ត្រូវបានរៀបចំនៅទីនេះនៅឡើយទេ។"
   },
   "office": {
     "title": "សួរ Aicser",
@@ -12547,6 +12582,306 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "កំពុងរង់ចាំការអនុម័តពី {names}។ ពួកគេត្រូវបានជូនដំណឹងហើយ។",
+    "decline": "បដិសេធ",
+    "own_link_tip": "អង្គការរបស់អ្នកស្នើសុំឱ្យអ្នកផ្សេងអនុម័តតំណភ្ជាប់ផ្ទាល់ខ្លួនរបស់អ្នក។ សួរ {names}។"
+  },
+  "guide": {
+    "community": "ចូលរួមសហគមន៍ Aicsertics",
+    "skip": "រំលង",
+    "all_set": "រួចរាល់ទាំងអស់",
+    "hide_list": "លាក់បញ្ជីនេះ",
+    "nice_work": "ល្អណាស់",
+    "up_next": "បន្ទាប់៖ {item}",
+    "continue": "បន្ត",
+    "working": "កំពុងរៀបចំចម្លើយរបស់អ្នក",
+    "title": "ការចាប់ផ្តើម",
+    "open": "ការចាប់ផ្តើម, បានបញ្ចប់ {done} ក្នុងចំណោម {total}",
+    "progress": "{current} ក្នុងចំណោម {total}",
+    "next": "បន្ទាប់",
+    "done": "រួចរាល់",
+    "later": "ពេលក្រោយ",
+    "checklist": {
+      "connect": "ភ្ជាប់ទិន្នន័យរបស់អ្នក",
+      "ask": "សួរសំណួរដំបូងរបស់អ្នក",
+      "save": "រក្សាទុកតារាងដែលអ្នកចូលចិត្ត",
+      "dashboard": "បង្កើតផ្ទាំងគ្រប់គ្រង",
+      "publish": "បោះពុម្ពទៅ Shared Insights",
+      "invite": "អញ្ជើញមិត្តរួមក្រុម",
+      "discuss": "ទទួលបានការឆ្លើយតបពីក្រុមរបស់អ្នក",
+      "alert": "កំណត់ការជូនដំណឹង"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "បើក Ask",
+        "body": "ចុច Ask នៅក្នុងម៉ឺនុយដើម្បីនិយាយជាមួយទិន្នន័យរបស់អ្នកជាពាក្យធម្មតា។"
+      },
+      "ask": {
+        "title": "សួរអ្វីក៏បានអំពីទិន្នន័យរបស់អ្នក",
+        "body": "សាកល្បង «តើផលិតផលណាខ្លះដែលនាំមកនូវចំណូលច្រើនជាងគេ?» ហើយផ្ញើវា។"
+      },
+      "publish": {
+        "title": "ចែករំលែកអ្វីដែលអ្នកបានរកឃើញ",
+        "body": "បើកចម្លើយ ឬផ្ទាំងគ្រប់គ្រង រួចចុច ចែករំលែក ដើម្បីផ្សព្វផ្សាយទៅ Shared Insights ឱ្យក្រុមរបស់អ្នកពិភាក្សា។",
+        "here": "ចុច Share ដើម្បីបោះពុម្ពចម្លើយនេះទៅ Shared Insights សម្រាប់ក្រុមរបស់អ្នកពិភាក្សា។",
+        "here_dashboards": "ចុច ចែករំលែក រួចផ្សព្វផ្សាយទៅ Shared Insights ឱ្យក្រុមរបស់អ្នកពិភាក្សាអំពីផ្ទាំងគ្រប់គ្រងនេះ។"
+      },
+      "shared_insights": {
+        "title": "Shared Insights",
+        "body": "អ្វីដែលក្រុមរបស់អ្នកបានបោះពុម្ព ទាំងអស់នៅកន្លែងតែមួយ។"
+      },
+      "discuss": {
+        "title": "ពិភាក្សាវា",
+        "body": "បោះពុម្ពអ្វីមួយ រួចស្នើសុំមិត្តរួមក្រុមឱ្យបញ្ចេញមតិ ឬប្រតិកម្មនៅទីនេះ។ ជំហាននេះនឹងបញ្ចប់នៅពេលពួកគេធ្វើ។"
+      },
+      "connect": {
+        "title": "ចាប់ផ្តើមជាមួយទិន្នន័យគំរូ",
+        "body": "ចុចតែម្តងបើកហាងប្រឌិតដើម្បីសាកល្បង។ អ្នកអាចភ្ជាប់ទិន្នន័យផ្ទាល់ខ្លួនរបស់អ្នកបានគ្រប់ពេល។"
+      },
+      "connect_data": {
+        "title": "ភ្ជាប់ទិន្នន័យមួយចំនួន",
+        "body": "ចុច + ដើម្បីផ្ទុកឯកសារ ភ្ជាប់មូលដ្ឋានទិន្នន័យ ឬជ្រើសរើសទិន្នន័យគំរូ។"
+      },
+      "open_dashboards": {
+        "title": "បើកផ្ទាំងគ្រប់គ្រង",
+        "body": "ចុច Dashboards នៅក្នុងម៉ឺនុយ។"
+      },
+      "open_alerts": {
+        "title": "បើកការជូនដំណឹង",
+        "body": "ចុច Alerts នៅក្នុងម៉ឺនុយ។"
+      },
+      "save": {
+        "title": "រក្សាទុកតារាងនេះ",
+        "body": "សួរសំណួរប្រសិនបើអ្នកមិនទាន់បានធ្វើទេ រួចចុចម្ជុលនៅក្រោមចម្លើយ។",
+        "here": "ចុចម្ជុលនៅក្រោមចម្លើយដើម្បីរក្សាទុកតារាងនេះ។"
+      },
+      "dashboard": {
+        "title": "បង្កើតផ្ទាំងគ្រប់គ្រង",
+        "body": "ចុចទីនេះដើម្បីចាប់ផ្តើម។ អ្នកអាចបន្ថែមតារាងដែលអ្នកបានរក្សាទុក។"
+      },
+      "invite": {
+        "title": "អញ្ជើញមិត្តរួមក្រុម",
+        "body": "ចុចទីនេះហើយបញ្ចូលអ៊ីមែលរបស់ពួកគេ។"
+      },
+      "alert": {
+        "title": "ទទួលបានការជូនដំណឹងនៅពេលលេខផ្លាស់ប្តូរ",
+        "body": "ចុចទីនេះដើម្បីកំណត់ការជូនដំណឹងដំបូងរបស់អ្នក។"
+      },
+      "pick_question": {
+        "title": "យកតារាងជាមុនសិន",
+        "body": "ជ្រើសសំណួរដែលបានណែនាំ រួចផ្ញើ។"
+      },
+      "finish_dialog": {
+        "title": "ជិតរួចហើយ",
+        "body": "ចុចទីនេះដើម្បីបន្ត។"
+      },
+      "open_chat_save": {
+        "title": "ត្រឡប់ទៅចម្លើយរបស់អ្នក",
+        "body": "បើក Ask ដើម្បីរក្សាទុកតារាងពីចម្លើយមួយរបស់អ្នក។"
+      },
+      "open_chat_publish": {
+        "title": "ចែករំលែកអ្វីដែលអ្នករកឃើញ",
+        "body": "បើក Ask ដើម្បីផ្សព្វផ្សាយចម្លើយទៅ Shared Insights។"
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "សាកល្បង Aicser",
+    "unavailable": "Sandbox មិនមាននៅពេលនេះទេ។",
+    "failed": "មានអ្វីមួយខុសប្រក្រតី។ សូមព្យាយាមម្តងទៀត។",
+    "email": "អ៊ីមែលការងារ",
+    "email_rule": "បញ្ចូលអាសយដ្ឋានអ៊ីមែលដែលមានសុពលភាព។",
+    "company_optional": "ក្រុមហ៊ុន (ស្រេចចិត្ត)",
+    "phone_optional": "ទូរស័ព្ទ (ស្រេចចិត្ត)",
+    "terms": "ខ្ញុំយល់ថា workspace នេះគឺសម្រាប់ទិន្នន័យគំរូ ហើយនឹងត្រូវបានលុបនៅពេលវាបញ្ចប់។",
+    "start_with_email": "ផ្ញើលេខកូដមកអ៊ីមែលខ្ញុំ",
+    "or": "ឬ",
+    "code_label": "បញ្ចូលលេខកូដ 6 ខ្ទង់ដែលបានផ្ញើទៅ {email}",
+    "code_rule": "បញ្ចូលលេខ 6 ខ្ទង់ពីអ៊ីមែល។",
+    "verify": "បើក workspace របស់ខ្ញុំ",
+    "ended": "Sandbox នេះបានបញ្ចប់ហើយ។ រក្សាទុកវាដើម្បីបន្ត ឬវានឹងត្រូវបានលុប។",
+    "add_email": "បន្ថែមអ៊ីមែលសម្រាប់ពេលវេលាបន្ថែម",
+    "keep": "រក្សាទុក workspace នេះ",
+    "keep_title": "រក្សាទុក workspace នេះ",
+    "keep_body": "ជ្រើសរើសពាក្យសម្ងាត់ដើម្បីចាប់ផ្តើមការសាកល្បងក្រុមរបស់អ្នក។ អ្វីគ្រប់យ៉ាងដែលអ្នកបានបង្កើតនៅតែមាន។",
+    "password": "ពាក្យសម្ងាត់",
+    "password_rule": "ប្រើយ៉ាងហោចណាស់ 10 តួអក្សរ។",
+    "keep_confirm": "ចាប់ផ្តើមការសាកល្បងក្រុម",
+    "email_title": "បន្ថែមអ៊ីមែលរបស់អ្នក",
+    "email_body": "អ្នកនឹងទទួលបានពេលវេលាបន្ថែម ក្រេឌីតបន្ថែម និងកន្លែងសម្រាប់មិត្តរួមក្រុមពីរនាក់។",
+    "send_code": "ផ្ញើលេខកូដ",
+    "email_added": "បានបន្ថែមអ៊ីមែល។ អ្នកមានពេលវេលា និងក្រេឌីតបន្ថែម។"
+  },
+  "license_notice": {
+    "ended": "អាជ្ញាប័ណ្ណរបស់អ្នកបានបញ្ចប់ហើយ ដូច្នេះ Aicser គឺ read-only។ គ្មានអ្វីត្រូវបានលុបទេ។",
+    "view": "មើលអាជ្ញាប័ណ្ណ"
+  },
+  "oauth_consent": {
+    "title": "ភ្ជាប់ {name} ទៅ Aicser?",
+    "body": "វាអាចអានទិន្នន័យ និងម៉ែត្រដែលអ្នកមានសិទ្ធិចូលប្រើប្រាស់ ក្នុងនាមជាអ្នក។ វាមិនអាចមើលឃើញអ្វីដែលអ្នកមិនអាចមើលឃើញនោះទេ ហើយវាមិនអាចផ្លាស់ប្តូរការងារដែលបានចែករំលែកបានទេ។",
+    "site": "វានឹងត្រឡប់ទៅ {host}។",
+    "allow": "ភ្ជាប់",
+    "cancel": "បោះបង់",
+    "failed": "ការតភ្ជាប់នេះមិនអាចបញ្ចប់បានទេ។",
+    "unverified": "បន្តលុះត្រាតែអ្នកបានចាប់ផ្តើមវាពីកម្មវិធីដែលអ្នកទុកចិត្ត។"
+  },
+  "ecosystem": {
+    "title": "Microsoft និង Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "រៀបចំ",
+    "download": "ទាញយក",
+    "connected_title": "កម្មវិធី AI ដែលបានភ្ជាប់",
+    "connected_empty": "មិនទាន់មានកម្មវិធី AI ណាមួយត្រូវបានភ្ជាប់នៅឡើយទេ។",
+    "disconnect": "ផ្តាច់",
+    "last_used": "ប្រើចុងក្រោយ {date}",
+    "never_used": "មិនទាន់បានប្រើនៅឡើយ",
+    "items": {
+      "microsoft": {
+        "sign_in": "ចូលដោយប្រើ Microsoft Entra",
+        "directory": "ធ្វើសមកាលកម្មមនុស្សពីថតរបស់អ្នក",
+        "azure_ai": "ប្រើ Azure OpenAI របស់អ្នក",
+        "teams": "សួរ Aicser ក្នុង Teams",
+        "sharepoint": "ស្វែងរកឯកសារ SharePoint",
+        "excel": "កម្មវិធីបន្ថែម Excel",
+        "copilot": "Aicser ក្នុង Microsoft 365 Copilot"
+      },
+      "google": {
+        "sign_in": "ចូលដោយប្រើ Google",
+        "gemini_ai": "ប្រើសោ Gemini របស់អ្នក",
+        "bigquery": "ភ្ជាប់ BigQuery",
+        "sheets": "ភ្ជាប់ Google Sheets",
+        "gemini_enterprise": "Aicser ក្នុង Gemini Enterprise"
+      }
+    },
+    "copilot_title": "Aicser ក្នុង Microsoft 365 Copilot",
+    "copilot_step1": "បង្កើតព័ត៌មានលម្អិតចូល បន្ទាប់មកបន្ថែមពួកវាជាការចុះឈ្មោះ OAuth នៅក្នុង Teams Developer Portal។",
+    "copilot_create": "បង្កើតព័ត៌មានលម្អិតចូល",
+    "copilot_secret_once": "ចម្លងទាំងនេះឥឡូវនេះ។ សម្ងាត់ត្រូវបានបង្ហាញតែម្តងប៉ុណ្ណោះ។",
+    "copilot_step2": "បិទភ្ជាប់លេខសម្គាល់ចុះឈ្មោះដែល Microsoft ផ្តល់ឱ្យអ្នក បន្ទាប់មកទាញយកភ្នាក់ងារ ហើយផ្ទុកវាឡើងនៅក្នុងមជ្ឈមណ្ឌលគ្រប់គ្រង Microsoft 365។",
+    "copilot_reference": "លេខសម្គាល់ចុះឈ្មោះ OAuth",
+    "copilot_download": "ទាញយកភ្នាក់ងារ Copilot",
+    "gemini_title": "Aicser ក្នុង Gemini Enterprise",
+    "gemini_body": "បន្ថែមម៉ាស៊ីនមេ MCP ផ្ទាល់ខ្លួននៅក្នុង Gemini Enterprise ជាមួយនឹងអាសយដ្ឋាននេះ។ មនុស្សម្នាក់ៗចូលទៅ Aicser ជាលើកដំបូង។",
+    "copy": "ចម្លង",
+    "seat_note": "អ្នកគ្រប់គ្នាដែលប្រើ Aicser តាមរយៈ Copilot ឬ Gemini ត្រូវការកៅអី Aicser។ កៅអី Light គឺគ្រប់គ្រាន់ហើយ។",
+    "failed": "មានអ្វីមួយខុសប្រក្រតី។ សូមព្យាយាមម្តងទៀត។"
+  },
+  "ai_agents": {
+    "page_title": "ជំនួយការ",
+    "page_subtitle": "ជំនួយការដែលក្រុមរបស់អ្នកបានបង្កើតសម្រាប់ការងារ ផ្នែក ឬគម្រោង។",
+    "new": "ជំនួយការថ្មី",
+    "view_available": "ប្រើ",
+    "view_mine": "បង្កើតដោយខ្ញុំ",
+    "view_review": "ត្រូវការការអនុម័ត",
+    "view_all": "ជំនួយការទាំងអស់",
+    "empty_available": "មិនទាន់មានជំនួយការណាមួយត្រូវបានចែករំលែកជាមួយអ្នកនៅឡើយទេ។",
+    "empty_mine": "បង្កើតជំនួយការដំបូងរបស់អ្នក ឬចាប់ផ្តើមពីគំរូ។",
+    "empty_review": "គ្មានអ្វីកំពុងរង់ចាំការអនុម័តរបស់អ្នកទេ។",
+    "start": "ចាប់ផ្តើម",
+    "edit": "កែសម្រួល",
+    "open_chat": "ជជែក",
+    "blank": "ចាប់ផ្តើមពីដំបូង",
+    "choose_template": "ចាប់ផ្តើមពីគំរូ",
+    "status_draft": "សេចក្តីព្រាង",
+    "status_pending": "កំពុងរង់ចាំការអនុម័ត",
+    "status_published": "ផ្សាយផ្ទាល់",
+    "unpublished": "ការផ្លាស់ប្តូរដែលមិនបានបោះពុម្ព",
+    "audience_me": "សម្រាប់តែខ្ញុំ",
+    "audience_project": "គម្រោង",
+    "audience_organization": "ស្ថាប័ន",
+    "audience_public": "សាធារណៈ ឬគេហទំព័រ",
+    "audience_hint_me": "មានតែអ្នកប៉ុណ្ណោះដែលអាចប្រើវាបាន។",
+    "audience_hint_project": "មនុស្សនៅក្នុងគម្រោងរបស់វា។ ម្ចាស់គម្រោងអនុម័ត។",
+    "audience_hint_organization": "អ្នកគ្រប់គ្នានៅក្នុងស្ថាប័នរបស់អ្នក។ ម្ចាស់ ឬអ្នកគ្រប់គ្រងអនុម័ត។",
+    "audience_hint_public": "នរណាម្នាក់នៅលើគេហទំព័ររបស់អ្នក ដោយមិនចាំបាច់ចូល។ ម្ចាស់ ឬអ្នកគ្រប់គ្រងអនុម័ត។ សកម្មភាពនៅតែបិទ។",
+    "name": "ឈ្មោះ",
+    "icon": "រូបតំណាង",
+    "instructions": "ការណែនាំ",
+    "instructions_tip": "របៀបដែលវាគួរមានឥរិយាបថ។ អ្នកប្រើប្រាស់មិនដែលឃើញវាទេ។",
+    "welcome": "សារស្វាគមន៍",
+    "starters": "សំណួរចាប់ផ្តើម",
+    "starters_placeholder": "បន្ថែមសំណួរហើយចុច Enter",
+    "abilities": "អ្វីដែលវាអាចធ្វើបាន",
+    "ability_documents": "ឆ្លើយពីឯកសារ",
+    "ability_data": "វិភាគទិន្នន័យ",
+    "ability_actions": "ធ្វើសកម្មភាព",
+    "ability_actions_tip": "បង្កើតតារាង ផ្ទាំងព័ត៌មាន និងការជូនដំណឹង។ វាសួរមុនពេលផ្លាស់ប្តូរការងាររួមគ្នា។",
+    "knowledge": "បណ្ណាល័យចំណេះដឹង",
+    "data_sources": "ប្រភពទិន្នន័យ",
+    "advanced": "ការកំណត់បន្ថែម",
+    "model": "ម៉ូដែល",
+    "model_auto": "លំនាំដើម",
+    "limit": "ដែនកំណត់ AI ប្រចាំខែ (USD)",
+    "limit_tip": "វានឹងឈប់ឆ្លើយសម្រាប់ខែដែលនៅសល់នៅចំនួននេះ។ ទទេមានន័យថាគ្មានដែនកំណត់។",
+    "facts": "ដឹងជានិច្ច",
+    "facts_tip": "ការពិតខ្លីៗដែលវាគួរដឹងសម្រាប់មនុស្សគ្រប់គ្នា ដូចជា \"ឆ្នាំសារពើពន្ធរបស់យើងចាប់ផ្តើមនៅខែមេសា\"។ ទាំងនេះអនុវត្តភ្លាមៗ។",
+    "facts_add": "បន្ថែមការពិត",
+    "remove": "លុបចេញ",
+    "versions": "កំណែ",
+    "version_label": "កំណែ {version}",
+    "restore": "ស្តារឡើងវិញ",
+    "save": "រក្សាទុកសេចក្តីព្រាង",
+    "saved": "បានរក្សាទុក",
+    "try": "សាកល្បង",
+    "publish": "បោះពុម្ព",
+    "publish_title": "តើនេះសម្រាប់អ្នកណា?",
+    "publish_note": "កំណត់ចំណាំសម្រាប់អ្នកអនុម័ត (ស្រេចចិត្ត)",
+    "publish_confirm": "បោះពុម្ព",
+    "sent_for_approval": "បានផ្ញើសម្រាប់ការអនុម័ត។ អ្នកនឹងត្រូវបានជូនដំណឹង។",
+    "published": "ជំនួយការរបស់អ្នកកំពុងដំណើរការ។",
+    "waiting_from": "កំពុងរង់ចាំការអនុម័តពី {names}។",
+    "approve": "អនុម័ត",
+    "decline": "បដិសេធ",
+    "decline_reason": "មូលហេតុ (ស្រេចចិត្ត)",
+    "requested_for": "សម្រាប់៖ {audience}",
+    "review_changes": "ការណែនាំដែលពួកគេនឹងបោះពុម្ព",
+    "approved": "បានអនុម័ត។ វាកំពុងដំណើរការហើយ។",
+    "declined": "បានបដិសេធ។",
+    "own_tip": "ស្ថាប័នរបស់អ្នកស្នើសុំឱ្យអ្នកផ្សេងអនុម័តជំនួយការផ្ទាល់ខ្លួនរបស់អ្នក។",
+    "owner": "ម្ចាស់",
+    "audience": "ទស្សនិកជន",
+    "spend": "ចំណាយខែនេះ",
+    "updated": "បានផ្លាស់ប្តូរ",
+    "owner_left": "ផ្អាក៖ ម្ចាស់បានចាកចេញ",
+    "transfer": "ប្រគល់",
+    "delete": "លុប",
+    "delete_confirm": "លុបជំនួយការនេះ? មនុស្សនឹងមិនអាចប្រើវាបានទេ។",
+    "embed_hint": "នៅពេលដែលវាដំណើរការ កូដបង្កប់ស្ថិតនៅក្រោមការកំណត់បន្ថែម។",
+    "banner_leave": "ត្រឡប់ទៅ Ask",
+    "failed": "មាន​អ្វី​មួយ​ខុស​ប្រក្រតី។ សូម​ព្យាយាម​ម្ដង​ទៀត។",
+    "not_available": "ជំនួយការ​នេះ​មិន​មាន​សម្រាប់​អ្នក​ទេ។",
+    "by": "ដោយ {name}",
+    "uses": "ចម្លើយ​ពី៖ {list}",
+    "unavailable_tag": "មិន​មាន",
+    "welcome_default": "សួរ {name} អ្វី​ក៏​បាន​ដែល​វា​ត្រូវ​បាន​បង្កើត​ឡើង​សម្រាប់។",
+    "website": "នៅ​លើ​គេហទំព័រ​របស់​អ្នក",
+    "get_code": "យក​កូដ​បង្កប់",
+    "icon_tip": "បើ​គ្មាន​រូប​នេះ ជំនួយការ​នេះ​ប្រើ​រូប​សញ្ញា​របស់​ស្ថាប័ន​អ្នក។",
+    "icon_upload": "ផ្ទុក​រូបភាព​ឡើង",
+    "ability_attachments": "ភ្ជាប់​ឯកសារ",
+    "ability_voice": "បញ្ចូល​សំឡេង",
+    "public_locked": "មិន​មាន​នៅ​ក្នុង​គម្រោង​របស់​អ្នក​ទេ។ ជំនួយការ​សាធារណៈ​ត្រូវ​ការ Pro ឬ​ខ្ពស់​ជាង​នេះ ឬ​ការ​សាកល្បង​ក្រុម​ប្រសិន​បើ​អ្នក​នៅ​លើ​ការ​បង្ហាញ។",
+    "preview_visitor": "មើល​ជា​មុន​ក្នុង​នាម​ជា​អ្នក​ទស្សនា​គេហទំព័រ",
+    "picker_all": "រក​មើល​ជំនួយការ​ទាំងអស់",
+    "picker_label": "សួរ​ជំនួយការ",
+    "can_act": "អាច​ធ្វើ​សកម្មភាព"
+  },
+  "answer_style": {
+    "tone": "សម្លេង",
+    "tone_professional": "វិជ្ជាជីវៈ",
+    "tone_friendly": "រួសរាយ",
+    "tone_formal": "ផ្លូវការ",
+    "tone_plain": "ភាសា​ធម្មតា",
+    "detail": "ប្រវែង​ចម្លើយ",
+    "detail_standard": "ស្តង់ដារ",
+    "detail_brief": "សង្ខេប",
+    "detail_thorough": "ហ្មត់ចត់",
+    "guidance": "អ្វី​ផ្សេង​ទៀត",
+    "guidance_tip": "អនុវត្ត​ចំពោះ Ask, Agent និង​ភ្នាក់ងារ​គ្រប់​រូប​ដែល​ក្រុម​របស់​អ្នក​បង្កើត។ ឧទាហរណ៍៖ \"និយាយ​ថា​សមាជិក មិនមែន​អតិថិជន​ទេ។\"",
+    "saved": "បាន​រក្សា​ទុក",
+    "more": "សម្រាប់​ច្បាប់​វែង​ជាង​នេះ តាម​គម្រោង ឬ​តាម​បុគ្គល សូម​ប្រើ​អង្គ​ចងចាំ AI។",
+    "save": "រក្សា​ទុក"
   }
 }

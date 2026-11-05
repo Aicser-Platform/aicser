@@ -18,7 +18,7 @@ describe('job-first navigation', () => {
   it('puts everyday pages first, then foldable Analyze, Predict & decide and Data sections', () => {
     const items = buildEnterpriseSidebarItems(true);
     const top = items.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
-    expect(top).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
+    expect(top).toEqual(['chat', 'agents', 'feed', 'dashboards', 'alerts', 'agent']);
     const sections = items.filter((i) => i.kind === 'section').map((i) => i.kind === 'section' && [i.key, i.children.map((c) => c.key)]);
     expect(sections).toEqual([
       ['sec-analyze', ['chart-designer', 'query-editor', 'sheets', 'notebooks']], // Maps is off by default (NEXT_PUBLIC_FEATURE_MAPS)
@@ -56,7 +56,7 @@ describe('job-first navigation', () => {
   it('keeps everyday order and only hides SKU-gated pages', () => {
     const raw = buildEnterpriseSidebarItems(true);
     const top = raw.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
-    expect(top).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
+    expect(top).toEqual(['chat', 'agents', 'feed', 'dashboards', 'alerts', 'agent']);
     const hidden = filterSidebarItems(raw, { hasFeature: (f) => f !== 'alerts' && f !== 'catalog' && f !== 'agent' });
     const hiddenTop = hidden.filter((i) => i.kind === 'link').map((i) => i.kind === 'link' && i.key);
     expect(hiddenTop).toEqual(['chat', 'feed', 'dashboards']);
@@ -78,7 +78,7 @@ describe('job-first navigation', () => {
   it('people who only view start with the everyday pages', () => {
     const items = essentialSidebarItems(buildEnterpriseSidebarItems(true));
     expect(items.every((i) => i.kind !== 'section')).toBe(true);
-    expect(flattenNavLinks(items).map((l) => l.key)).toEqual(['chat', 'agent', 'feed', 'dashboards', 'alerts']);
+    expect(flattenNavLinks(items).map((l) => l.key)).toEqual(['chat', 'agents', 'feed', 'dashboards', 'alerts', 'agent']);
   });
 
   it('mobile More hides SKU-gated pages without changing remaining order', () => {

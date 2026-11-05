@@ -43,6 +43,7 @@ const moreLink = (key: string): NavItemDef => ({ kind: 'link', key, labelKey: NA
 /** Everything not on a tab, in the sidebar's order and sections. */
 export function enterpriseMoreNavItems(): NavItemDef[] {
   return [
+    moreLink('agents'),
     moreLink('agent'),
     moreLink('alerts'),
     { kind: 'divider' },

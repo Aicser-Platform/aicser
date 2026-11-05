@@ -160,3 +160,44 @@ async def test_breaker_falls_back_to_local_state_when_redis_errors(monkeypatch):
     assert await breaker.should_allow_request() is True
     await breaker.record_failure("boom")
     assert breaker.state == cb.CircuitState.OPEN
+
+
+async def test_half_open_recovers_when_admitted_requests_never_report(monkeypatch):
+    """Live 2026-11-02: half_open_requests=8 with max 2 refused every call until a manual reset."""
+    from ee.modules.ai.utils import circuit_breaker as cb
+
+    store = {}
+    monkeypatch.setattr(cb, "_get_async_redis", lambda: _FakeAsyncRedis(store))
+    now = 1_000.0
+    monkeypatch.setattr(cb.time, "time", lambda: now)
+    config = cb.CircuitBreakerConfig(failure_threshold=1, success_threshold=1, timeout_seconds=10.0, half_open_max_requests=2)
+    breaker = cb.CircuitBreaker("leak", config)
+
+    await breaker.record_failure("upstream failed")
+    now = 1_011.0
+    assert await breaker.should_allow_request() is True  # probe 1, never reports
+    assert await breaker.should_allow_request() is True  # probe 2, never reports
+    assert await breaker.should_allow_request() is False
+    now = 1_015.0
+    assert await breaker.should_allow_request() is False  # refusals alone must not free a slot early
+
+    now = 1_022.0
+    assert await breaker.should_allow_request() is True  # a new round of probes
+    await breaker.record_success()
+    assert await breaker.should_allow_request() is True
+
+
+async def test_half_open_recovers_without_redis_too(monkeypatch):
+    from ee.modules.ai.utils import circuit_breaker as cb
+
+    monkeypatch.setattr(cb, "_get_async_redis", lambda: None)
+    now = 1_000.0
+    monkeypatch.setattr(cb.time, "time", lambda: now)
+    breaker = cb.CircuitBreaker("leak_local", cb.CircuitBreakerConfig(
+        failure_threshold=1, success_threshold=1, timeout_seconds=10.0, half_open_max_requests=1))
+    await breaker.record_failure("x")
+    now = 1_011.0
+    assert await breaker.should_allow_request() is True
+    assert await breaker.should_allow_request() is False
+    now = 1_022.0
+    assert await breaker.should_allow_request() is True

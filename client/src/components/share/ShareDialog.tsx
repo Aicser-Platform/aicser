@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { fetchApi } from '@/utils/api';
 import {
+  approveShareLink,
   daysLeft,
   getShareLink,
   saveShareLink,
@@ -95,6 +96,11 @@ export function ShareDialog({
     void run(() => saveShareLink(kind, resourceId as string, title, currentSettings(link, who)));
   };
 
+  const approveHere = (id: string) => run(async () => {
+    await approveShareLink(id);
+    return (await getShareLink(kind, resourceId as string)) as ShareLink;
+  });
+
   const copy = async (text: string) => {
     await navigator.clipboard.writeText(text);
     message.success(t('copied'));
@@ -154,7 +160,18 @@ export function ShareDialog({
             />
           </div>
 
-          {pending ? <Alert type="info" showIcon message={t('pending')} /> : null}
+          {pending ? (
+            <Alert
+              type="info"
+              showIcon
+              message={link.review?.approvers?.length
+                ? t('pending_with', { names: link.review.approvers.join(', ') })
+                : t('pending')}
+              action={link.review?.can_approve ? (
+                <Button size="small" type="primary" loading={saving} onClick={() => void approveHere(link.id)}>{t('approve')}</Button>
+              ) : undefined}
+            />
+          ) : null}
 
           {ready ? (
             <>

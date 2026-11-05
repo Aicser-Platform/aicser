@@ -192,7 +192,7 @@ async def sign_embed(body: EmbedSignRequest, request: Request, db: AsyncSession 
         raise HTTPException(status_code=401, detail="A valid Aicser API key is required.")
     org_id = ident.organization_id or await get_user_organization_id(ident.user_id, db)
     await enforce_permission(ident.user_id, "embed:create", organization_id=org_id)
-    await publish_policy.require_outside_sharing(db, org_id)
+    await publish_policy.require_embed_publisher(db, org_id, ident.user_id)
     await _require_embed_analytics_entitlement(org_id, db)
     await _require_resource_access(db, body.resource_id, [body.scope], ident.user_id)
     created = await embed_service.create_embed_token(
@@ -234,7 +234,7 @@ async def create_embed_token(
     # org_id scopes the check to the org this token is actually being minted
     # for, matching the per-org RBAC model the role seed data intends.
     await enforce_permission(user_id, "embed:create", organization_id=org_id)
-    await publish_policy.require_outside_sharing(db, org_id)
+    await publish_policy.require_embed_publisher(db, org_id, user_id)
     await _require_embed_analytics_entitlement(org_id, db)
     await _require_resource_access(db, body.resource_id, list(body.scopes), user_id)
     theme = await _enforce_white_label_entitlement(body.theme, org_id, db)

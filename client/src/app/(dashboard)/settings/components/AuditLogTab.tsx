@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useOrganizationStore } from '@/stores/useOrganizationStore';
 import { PermissionGuard } from '@/components/PermissionGuard';
+import { FeatureGate } from '@/ee';
 import { Permission } from '@/hooks/usePermissions';
 import { fetchApi, fetchApiBlob, handleUpgradeRequiredError } from '@/utils/api';
 import type { TabComponentProps } from '../page';
@@ -174,14 +175,23 @@ export const AuditLogTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   useEffect(() => {
     onSetAction?.(
       <Space>
-        <PermissionGuard permission={Permission.ORG_EDIT} fallback={null}>
-          <Button icon={<SafetyCertificateOutlined />} onClick={() => setComplianceOpen(true)}>
-            {t('compliance_button')}
+        <FeatureGate
+          feature="compliance"
+          fallback={
+            <Tooltip title={t('enterprise_only_audit')}>
+              <Button icon={<DownloadOutlined />} disabled>{t('export_csv')}</Button>
+            </Tooltip>
+          }
+        >
+          <PermissionGuard permission={Permission.ORG_EDIT} fallback={null}>
+            <Button icon={<SafetyCertificateOutlined />} onClick={() => setComplianceOpen(true)}>
+              {t('compliance_button')}
+            </Button>
+          </PermissionGuard>
+          <Button icon={<DownloadOutlined />} onClick={() => void handleExport()} loading={exporting}>
+            {t('export_csv')}
           </Button>
-        </PermissionGuard>
-        <Button icon={<DownloadOutlined />} onClick={() => void handleExport()} loading={exporting}>
-          {t('export_csv')}
-        </Button>
+        </FeatureGate>
         <Tooltip title={t('refresh')}>
           <Button icon={<ReloadOutlined />} aria-label={t('refresh')} onClick={() => void fetchAuditLogs()} loading={loading} />
         </Tooltip>

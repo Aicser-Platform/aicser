@@ -25,5 +25,6 @@ class ShareLink(BaseModel):
     last_viewed_at = Column(DateTime(timezone=True), nullable=True)
     snapshot = Column(JSONB, nullable=True)
     snapshot_at = Column(DateTime(timezone=True), nullable=True)
+    reminded_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (UniqueConstraint("kind", "resource_id", name="uq_share_link_resource"), {"extend_existing": True})

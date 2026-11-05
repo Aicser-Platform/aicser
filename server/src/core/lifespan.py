@@ -313,6 +313,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             if _try_acquire_singleton_lease("trial_jobs"):
                 try:
                     from src.shared.tasks.trial_jobs import revert_expired_trials, notify_expiring_trials
+                    from src.modules.sandbox.service import run_forever as sandbox_clean_up
+                    asyncio.create_task(sandbox_clean_up())
                     asyncio.create_task(revert_expired_trials())
                     asyncio.create_task(notify_expiring_trials())
                     asyncio.create_task(_singleton_lease_heartbeat("trial_jobs"))

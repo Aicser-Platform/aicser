@@ -21,6 +21,7 @@ export const ROUTE_OPEN_KEYS: Record<string, string[]> = {
 export const NAV_ROUTES: Record<string, string> = {
   chat: '/chat',
   agent: '/agent',
+  agents: '/agents',
   dashboards: '/dashboards',
   feed: '/feed',
   'chart-designer': '/chart-designer',
@@ -49,6 +50,7 @@ export const NAV_ROUTES: Record<string, string> = {
 export const NAV_LABEL_KEYS: Record<string, string> = {
   chat: 'ai_engine',
   agent: 'agent_tasks',
+  agents: 'ai_agents',
   feed: 'feed',
   dashboards: 'dashboard_studio',
   'chart-designer': 'chart_designer',
@@ -97,6 +99,7 @@ export const NAV_PARENT_GROUP: Record<string, string> = {
 export const NAV_HINT_KEYS: Record<string, string> = {
   chat: 'hint_ask',
   agent: 'hint_agent',
+  agents: 'hint_agents',
   feed: 'hint_feed',
   dashboards: 'hint_dashboards',
   'chart-designer': 'hint_chart_library',
@@ -166,10 +169,12 @@ export function buildEnterpriseSidebarItems(showAiNav: boolean): NavItemDef[] {
   // then what builders use — analysis tools, predictions and decisions — and the data itself.
   // Builder sections fold by default for people who only consume (see defaultFoldedSections).
   return [
-    ...(showAiNav ? [top('chat'), top('agent')] : []),
+    ...(showAiNav ? [top('chat'), top('agents')] : []),
     top('feed'),
     top('dashboards'),
+    // What runs by itself, together: being told when numbers move, and work done on a schedule.
     top('alerts'),
+    ...(showAiNav ? [top('agent')] : []),
     section('sec-analyze', analyzeTools()),
     ...(showAiNav ? [section('sec-predict', ['models', 'ai-decisions'])] : [section('sec-predict', ['models'])]),
     // Connect → prepare → move → model → find. Lakehouse storage and compute are admin
@@ -187,6 +192,7 @@ export type NavAccess = {
 /** Sidebar key → plan feature that must be on. Everyday Analyze items stay ungated. */
 export const NAV_FEATURE_GATE: Record<string, string> = {
   agent: 'agent',
+  agents: 'agent',
   alerts: 'alerts',
   catalog: 'catalog',
   warehouse: 'lakehouse',
@@ -197,6 +203,9 @@ export const NAV_FEATURE_GATE: Record<string, string> = {
 
 /** Sidebar key → RBAC code. Applied only after permissions have loaded. */
 export const NAV_PERMISSION_GATE: Record<string, string> = {
+  // Viewers talk to agents shared with them; Ask and Automations need their own rights.
+  chat: 'ai:use',
+  agent: 'agent:use',
   alerts: 'alert:view',
   catalog: 'catalog:view',
 };
@@ -281,6 +290,7 @@ export function openKeysForPathname(pathname: string | null): string[] {
 export function selectedKeyForPathname(pathname: string | null, search?: string | null): string {
   if (!pathname) return '';
   if (pathname === '/chat' || pathname === '/ai-search' || pathname === '/ai-analytics') return 'chat';
+  if (pathname === '/agents' || pathname.startsWith('/agents/')) return 'agents';
   if (pathname === '/agent' || pathname.startsWith('/agent/')) return 'agent';
   if (pathname === '/data') return 'data';
   if (pathname === '/knowledge') return 'data';

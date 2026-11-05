@@ -340,11 +340,37 @@ _FEED_NOTIFICATION_COPY = {
 }
 
 
+def _share_link_copy(actor: str, metadata: dict) -> tuple[str, str]:
+    title = metadata.get("title") or "A shared link"
+    state = metadata.get("state")
+    if state == "approved":
+        return "Link approved", f"{actor} approved {title}. It's live now."
+    if state == "declined":
+        note = metadata.get("note")
+        return "Link declined", f"{actor} declined {title}: {note}" if note else f"{actor} declined {title}."
+    return "Approval needed", f"{actor} wants to share {title} outside the organization."
+
+
+def _ai_agent_copy(actor: str, metadata: dict) -> tuple[str, str]:
+    title = metadata.get("title") or "An agent"
+    state = metadata.get("state")
+    if state == "approved":
+        return "Agent approved", f"{actor} approved {title}. It's live now."
+    if state == "declined":
+        note = metadata.get("note")
+        return "Agent declined", f"{actor} declined {title}: {note}" if note else f"{actor} declined {title}."
+    return "Approval needed", f"{actor} wants to publish the agent {title}."
+
+
 def _feed_approval_copy(actor: str, metadata: Optional[dict]) -> tuple[str, str]:
     """Approval is the one feed-notification type whose meaning depends on
     metadata.status (pending/approved/rejected), not just its type string —
     see service_actions.py's three _create_notification(type="approval", ...)
     call sites (submit-for-review, approve, reject)."""
+    if (metadata or {}).get("kind") == "share_link":
+        return _share_link_copy(actor, metadata or {})
+    if (metadata or {}).get("kind") == "ai_agent":
+        return _ai_agent_copy(actor, metadata or {})
     status = str((metadata or {}).get("status") or "").lower()
     if status == "approved":
         return "Feed · Approved", "Your post was approved and published."
@@ -375,6 +401,9 @@ async def feed_notifications(db: AsyncSession, user_payload: Optional[dict]) -> 
     for n in result.items:
         actor_name = (n.actor.name if n.actor else None) or "Someone"
         href = f"/feed/{n.postId}" if n.postId else "/feed"
+        is_link = (n.metadata or {}).get("kind") in ("share_link", "ai_agent")
+        if is_link:
+            href = (n.metadata or {}).get("href") or href
         if n.type == "approval":
             title, message = _feed_approval_copy(actor_name, n.metadata)
         else:
@@ -390,7 +419,7 @@ async def feed_notifications(db: AsyncSession, user_payload: Optional[dict]) -> 
                 severity="info",
                 created_at=n.createdAt,
                 href=href,
-                actions=[NotificationAction(label="Open in Feed", href=href)],
+                actions=[NotificationAction(label="Review" if is_link else "Open in Feed", href=href)],
             )
         )
     return items

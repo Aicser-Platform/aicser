@@ -1518,6 +1518,12 @@ async def create_data_source(
             organization_id = current_token.get("organization_id") or current_token.get(
                 "org_id"
             )
+        if is_ee_enabled():
+            from src.modules.sandbox.limits import source_refusal
+
+            refusal = await source_refusal(user_id, str(ds_type))
+            if refusal:
+                raise HTTPException(status_code=403, detail=refusal)
         if ds_type == "sample_duckdb":
             # Bundled, pre-seeded sample dataset: no external credentials or real system
             # access, so it doesn't need the owner-tier (org:delete) gate a real connection
@@ -1717,6 +1723,14 @@ async def upload_file(
         if file_size == 0:
             os.unlink(tmp_upload_path)
             raise HTTPException(status_code=400, detail="File is empty")
+        if is_ee_enabled() and isinstance(current_token, dict):
+            from src.modules.sandbox.limits import upload_refusal
+
+            refusal = await upload_refusal(
+                str(current_token.get("id") or current_token.get("user_id") or current_token.get("sub") or ""), file_size, file_extension)
+            if refusal:
+                os.unlink(tmp_upload_path)
+                raise HTTPException(status_code=413, detail=refusal)
 
         # Prepare options for the service
         options = {

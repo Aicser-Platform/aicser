@@ -103,7 +103,7 @@ async def _resolve_request_organization_id(request: Request, user_id: str) -> Op
     if explicit_id:
         return explicit_id
     try:
-        from ee.modules.ai.services.user_byok_models import _resolve_user_organization_id
+        from src.modules.ai.services.user_byok_models import _resolve_user_organization_id
 
         return await _resolve_user_organization_id(user_id, None)
     except Exception:

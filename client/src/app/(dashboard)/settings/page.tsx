@@ -98,15 +98,24 @@ const LakehouseSettingsTab = nextDynamic(
     }))) as any,
   { ssr: false },
 ) as React.ComponentType<TabComponentProps>;
-const SubscriptionTab = nextDynamic(
-  (() => import('@/ee-lazy/SubscriptionSettingsTab').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
-  { ssr: false }
-) as React.ComponentType<TabComponentProps>;
 const UsageAnalyticsTab = nextDynamic(
   (() => import('@/ee-lazy/UsageAnalyticsSettingsTab').then((m) => ({ default: m.UsageAnalyticsSettingsTab }))) as any,
   { ssr: false }
 ) as React.ComponentType<TabComponentProps>;
 const LicenseTab = nextDynamic((() => import('@/ee-lazy/LicenseSettingsTab').then((m) => ({ default: m.LicenseSettingsTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const AdoptionSettingsTab = nextDynamic((() => import('@/ee-lazy/AdoptionTab').then((m) => ({ default: m.AdoptionTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const SubscriptionTab = nextDynamic(
+  (() => import('@/ee-lazy/SubscriptionSettingsTab').then((m) => ({ default: m.SubscriptionSettingsTab }))) as any,
+  { ssr: false }
+) as React.ComponentType<TabComponentProps>;
+const AgentBudgetTab = nextDynamic((() => import('@/ee-lazy/AgentBudgetTab').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
+  ssr: false,
+}) as React.ComponentType<TabComponentProps>;
+const PersonalLicenseTab = nextDynamic((() => import('@/ee-lazy/PersonalLicenseTab').then((m) => ({ default: m.PersonalLicenseTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const RolesTab = nextDynamic((() => import('@/ee-lazy/RolesTab').then((m) => ({ default: m.RolesTab }))) as any, {
@@ -118,8 +127,13 @@ const AgentSkillsTab = nextDynamic((() => import('@/ee-lazy/AgentSkillsTab').the
 const ReleasesTab = nextDynamic((() => import('@/ee-lazy/ReleasesPanel').then((m) => ({ default: m.ReleasesPanel }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AdoptionSettingsTab = nextDynamic((() => import('@/ee-lazy/AdoptionTab').then((m) => ({ default: m.AdoptionTab }))) as any, {
+const AnswerStyleTab = nextDynamic((() => import('@/ee-lazy/AnswerStyleTab').then((m) => ({ default: m.AnswerStyleTab }))) as any, {
   ssr: false,
+  loading: () => <SettingsTabLoading />,
+}) as React.ComponentType<TabComponentProps>;
+const EcosystemTab = nextDynamic((() => import('@/ee-lazy/EcosystemTab').then((m) => ({ default: m.EcosystemTab }))) as any, {
+  ssr: false,
+  loading: () => <SettingsTabLoading />,
 }) as React.ComponentType<TabComponentProps>;
 const PublishingTab = nextDynamic(() => import('./components/PublishingTab'), { ssr: false, loading: () => <SettingsTabLoading /> });
 const AgentMcpTab = nextDynamic((() => import('@/ee-lazy/AgentMcpTab').then((m) => ({ default: m.AgentMcpTab }))) as any, {
@@ -144,9 +158,6 @@ const AgentMemoryTab = nextDynamic((() => import('@/ee-lazy/AgentMemoryTab').the
 const AgentRulesTab = nextDynamic((() => import('@/ee-lazy/AgentRulesTab').then((m) => ({ default: m.AgentRulesTab }))) as any, {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
-const AgentBudgetTab = nextDynamic((() => import('@/ee-lazy/AgentBudgetTab').then((m) => ({ default: m.AgentBudgetTab }))) as any, {
-  ssr: false,
-}) as React.ComponentType<TabComponentProps>;
 const EmbedTab = nextDynamic(() => import('./components/EmbedTab').then((m) => ({ default: m.EmbedTab })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
@@ -163,9 +174,6 @@ const IdentityTab = nextDynamic(() => import('./components/IdentityTab').then((m
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const AIResidencyTab = nextDynamic(() => import('./components/AIResidencyTab').then((m) => ({ default: m.default })), {
-  ssr: false,
-}) as React.ComponentType<TabComponentProps>;
-const AIAuditLogTab = nextDynamic(() => import('./components/AIAuditLogTab').then((m) => ({ default: m.default })), {
   ssr: false,
 }) as React.ComponentType<TabComponentProps>;
 const FeatureGate = nextDynamic((() => import('@/ee-lazy/FeatureGate').then((m) => ({ default: m.FeatureGate }))) as any, {
@@ -274,6 +282,15 @@ const NAV_GROUPS: NavGroup[] = [
         description: 'Logo, name, branding',
       },
       {
+        key: 'adoption',
+        label: 'Adoption',
+        icon: <LineChartOutlined />,
+        eeOnly: true,
+        requiredPermission: Permission.AUDIT_VIEW,
+        component: AdoptionSettingsTab,
+        description: 'Who uses Aicser and what goes unused',
+      },
+      {
         key: 'team',
         label: 'Team',
         icon: <TeamOutlined />,
@@ -295,28 +312,30 @@ const NAV_GROUPS: NavGroup[] = [
         key: 'usage',
         label: 'Usage',
         icon: <LineChartOutlined />,
-        requiredPermission: Permission.ORG_VIEW,
+        // Community has no billing roles: its usage page is everyone's.
+        requiredPermission: isEE ? [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING] : undefined,
         component: isEE ? UsageAnalyticsTab : CommunityUsageTab,
         description: 'Your footprint and AI activity',
-      },
-      {
-        key: 'adoption',
-        label: 'Adoption',
-        icon: <RiseOutlined />,
-        eeOnly: true,
-        requiredPermission: Permission.AUDIT_VIEW,
-        component: AdoptionSettingsTab,
-        description: 'Who uses Aicser, what they open, and content that needs attention',
       },
       {
         key: 'billing-subscription',
         label: 'Billing',
         icon: <CreditCardOutlined />,
         eeOnly: true,
-        // Admins can view; changing the plan or paying stays with org:manage_billing (owner).
+        // Owners and admins can both change the plan and pay (org:manage_billing).
         requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
         component: SubscriptionTab,
-        description: 'Plan, payment, invoices (Aicser Cloud)',
+        description: 'Seats, payment and invoices',
+      },
+      {
+        key: 'agent-budget',
+        label: 'AI budget',
+        icon: <CreditCardOutlined />,
+        eeOnly: true,
+        requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
+        requiredFeature: 'ai_cost_center',
+        component: AgentBudgetTab,
+        description: 'Spending limits for AI',
       },
       {
         key: 'identity',
@@ -327,7 +346,7 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: Permission.ORG_MANAGE_USERS,
         component: IdentityTab,
         description: 'Users and groups from your identity provider (SCIM)',
-        requiredFeature: 'govern',
+        requiredFeature: 'sso_saml',
       },
       {
         key: 'ai-residency',
@@ -337,7 +356,7 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: AIResidencyTab,
         description: 'Where your prompts and data may be processed',
-        requiredFeature: 'govern',
+        requiredFeature: 'ai_residency',
       },
       {
         key: 'license',
@@ -361,6 +380,15 @@ const NAV_GROUPS: NavGroup[] = [
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         component: IntegrationTab,
         description: 'Email delivery, Slack, Teams, lake storage, and more',
+      },
+      {
+        key: 'ecosystem',
+        label: 'Microsoft and Google',
+        icon: <LinkOutlined />,
+        eeOnly: true,
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: EcosystemTab,
+        description: 'Sign-in, AI, Copilot and Gemini, in one place',
       },
       {
         key: 'lakehouse',
@@ -392,6 +420,7 @@ const NAV_GROUPS: NavGroup[] = [
         eeOnly: true,
         component: EmbedTab,
         description: 'Embed charts in your apps',
+        requiredPermission: Permission.EMBED_CREATE,
         requiredFeature: 'embed_analytics',
       },
       {
@@ -505,14 +534,21 @@ const NAV_GROUPS: NavGroup[] = [
         requiredFeature: 'agent_configuration',
       },
       {
-        key: 'ai-audit-log',
-        label: 'AI Audit Log',
-        icon: <FileSearchOutlined />,
+        key: 'answer-style',
+        label: 'Answer style',
+        icon: <SafetyOutlined />,
         eeOnly: true,
-        component: AIAuditLogTab,
-        description: 'Every LLM call — who, when, which model, cost, outcome',
-        requiredPermission: Permission.AUDIT_VIEW,
-        requiredFeature: 'audit_logs',
+        requiredPermission: ADMIN_SETTINGS_PERMISSION,
+        component: AnswerStyleTab,
+        description: 'How Ask and your agents sound',
+      },
+      {
+        key: 'personal-license',
+        label: 'Aicser Personal',
+        icon: <SafetyCertificateOutlined />,
+        eeOnly: true,
+        component: PersonalLicenseTab,
+        description: 'Your own desktop license',
       },
       {
         key: 'ai-memory',
@@ -531,16 +567,6 @@ const NAV_GROUPS: NavGroup[] = [
         description: 'Which actions need approval, devices, retention and on-device models',
         requiredPermission: ADMIN_SETTINGS_PERMISSION,
         requiredFeature: 'agent',
-      },
-      {
-        key: 'agent-budget',
-        label: 'AI cost center',
-        icon: <DollarOutlined />,
-        eeOnly: true,
-        component: AgentBudgetTab,
-        description: 'Budgets and model spend by project',
-        requiredPermission: [Permission.ORG_VIEW_BILLING, Permission.ORG_MANAGE_BILLING],
-        requiredFeature: 'ai_cost_center',
       },
     ],
   },
@@ -598,7 +624,9 @@ const SettingsPage: React.FC = () => {
   const { isSelfHost } = useWorkspaceConfig({ enabled: isEE });
   const isSelfHostMode = isSelfHostDeploymentFromEnv() || isSelfHost;
   const showHostedBilling = isEE && !isSelfHostMode;
-  const { planType, init: initSubscription } = useSubscriptionStore();
+  const { planType, subscription, init: initSubscription } = useSubscriptionStore();
+  // A sandbox isn't "free" here, even though it counts as free everywhere else.
+  const planSlug = (subscription as { plan?: { slug?: string } } | null)?.plan?.slug ?? planType;
   const [pricingModalVisible, setPricingModalVisible] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [pageAction, setPageAction] = useState<React.ReactNode>(null);
@@ -613,6 +641,9 @@ const SettingsPage: React.FC = () => {
       .filter(
         (item) =>
           (item.key !== 'billing-subscription' || showHostedBilling) &&
+          // A license for one person's desktop: no use to a company on Team or Enterprise.
+          (item.key !== 'personal-license' || (showHostedBilling && (planSlug === 'free' || planSlug === 'pro'))) &&
+          (item.key !== 'license' || isSelfHostMode) && // Cloud has a subscription, not a license
           (!item.eeOnly || isEE) &&
           hasRequiredPermission(item, hasPermission, hasAnyPermission)
       )
@@ -621,7 +652,7 @@ const SettingsPage: React.FC = () => {
         label: tr(`${item.key}_label`, item.label),
         description: item.description ? tr(`${item.key}_desc`, item.description) : item.description,
       }));
-  }, [hasPermission, hasAnyPermission, showHostedBilling, tNav]);
+  }, [hasPermission, hasAnyPermission, showHostedBilling, isSelfHostMode, planSlug, tNav]);
   // The sidebar lists pages; a page holding several settings shows them as tabs.
   const visiblePageGroups = useMemo(
     () => groupSettingsPages(visibleItems, (key, fallback) => (tNav.has(key as any) ? tNav(key as any) : fallback)),

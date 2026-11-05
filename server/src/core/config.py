@@ -85,13 +85,13 @@ class Settings(BaseSettings):
 
     # OpenAI Settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL_ID: str = os.getenv("OPENAI_MODEL_ID", "gpt-4.1-mini")
+    OPENAI_MODEL_ID: str = os.getenv("OPENAI_MODEL_ID", "gpt-6-luna")
 
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1-mini")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "")
 
     # Reasoning-tier model (optional; for complex/ambiguous queries when REASONING_MODEL_* set)
     REASONING_MODEL_DEPLOYMENT_NAME: str = os.getenv("REASONING_MODEL_DEPLOYMENT_NAME", "")

@@ -431,8 +431,6 @@
     "confirm_password": "Konfirmasi Kata Sandi",
     "welcome_back": "Selamat Datang Kembali",
     "create_account": "Buat Akun Anda",
-    "sign_up_subtitle": "Daftar untuk mulai menggunakan Aicser",
-    "sign_in_subtitle": "Masuk ke akun Anda untuk melanjutkan",
     "email_placeholder": "kamu@perusahaan.com",
     "email_required": "Silakan masukkan email Anda!",
     "email_invalid": "Silakan masukkan email yang valid!",
@@ -559,7 +557,8 @@
     "two_factor_use_app": "Gunakan aplikasi autentikator",
     "two_factor_back": "Kembali ke halaman masuk",
     "two_factor_code_label": "Kode autentikator",
-    "two_factor_backup_label": "Kode cadangan"
+    "two_factor_backup_label": "Kode cadangan",
+    "try_without_account": "Coba Aicser tanpa akun"
   },
   "bi_dashboard": {
     "title": "Dasbor Intelijen Bisnis",
@@ -2069,24 +2068,17 @@
     "resolved_mode_switched": "Beralih ke {mode}",
     "agent_start_failed": "Agen tidak dapat memulai tugas ini.",
     "use_case_analyze_standard": "Standar",
-    "first_hour": {
-      "label": "Memulai",
-      "data": "Hubungkan data",
-      "dashboard": "Dasbor pertama",
-      "alert": "Peringatan pertama",
-      "dashboard_prompt": "Lihat data saya dan buatkan dasbor awal dengan beberapa angka yang paling penting.",
-      "alert_prompt": "Sarankan satu peringatan untuk angka terpenting saya dan atur untuk saya.",
-      "hide": "Sembunyikan"
-    },
     "light_seat_title": "AI memerlukan kunci atau kursi AI",
     "light_seat_body": "Kursi Light Anda memakai kunci AI sendiri. Tambahkan satu, atau minta kursi AI ke admin.",
     "light_seat_requested": "Admin Anda sudah diminta. Anda bisa terus bekerja atau menambahkan kunci sendiri.",
     "light_seat_request": "Minta kursi AI",
     "light_seat_requested_short": "Diminta",
     "light_seat_own_key": "Tambah kunci saya",
-    "light_seat_request_failed": "Permintaan gagal dikirim. Coba lagi."
+    "light_seat_request_failed": "Permintaan gagal dikirim. Coba lagi.",
+    "agent_not_available": "Asisten ini tidak tersedia untuk Anda."
   },
   "chat_page": {
+    "sample_shop_name": "Toko contoh",
     "dense_daily_hint": "Menampilkan titik harian.",
     "dense_daily_weekly_cta": "Tampilkan per minggu",
     "dense_daily_weekly_prompt": "Tampilkan jawaban yang sama per minggu, bukan per hari.",
@@ -2949,7 +2941,13 @@
     "trust_badge_t2": "Review figures",
     "trust_badge_t0": "Check numbers",
     "use_case_analyze_standard": "Standar",
-    "answer_ready_notice": "Jawaban Aicser Anda sudah siap"
+    "answer_ready_notice": "Jawaban Aicser Anda sudah siap",
+    "composer_agent_placeholder": "Kirim pesan ke {name}...",
+    "voice_listening": "Mendengarkan. Ucapkan pertanyaan Anda.",
+    "voice_working": "Mengubah suara Anda menjadi teks...",
+    "voice_denied": "Izinkan mikrofon di browser Anda untuk menggunakan suara.",
+    "voice_unavailable": "Input suara tidak tersedia saat ini. Ketik pertanyaan Anda saja.",
+    "voice_empty": "Tidak terdengar. Coba lagi sedikit lebih dekat ke mikrofon."
   },
   "chat_sql_editor": {
     "enter_sql": "Silakan masukkan query SQL",
@@ -7002,7 +7000,9 @@
     "agent_tasks": "Otomasi",
     "hint_agent": "Tugas, jadwal, dan keahlian tersimpan",
     "show_all_tools": "Tampilkan semua alat",
-    "show_essentials": "Tampilkan yang penting saja"
+    "show_essentials": "Tampilkan yang penting saja",
+    "ai_agents": "Asisten AI",
+    "hint_agents": "Asisten yang tim Anda buat untuk pekerjaan, departemen, atau proyek"
   },
   "notifications_bell": {
     "activity": "Aktivitas",
@@ -7405,6 +7405,13 @@
     "pack_enterprise_note": "Dirancang untuk operasi volume tinggi."
   },
   "pricing_modal": {
+    "per_year": "/tahun",
+    "team_total_period_year": "/tahun untuk {n} anggota",
+    "team_up_to": "Hingga {n} anggota, masing-masing dengan AI.",
+    "team_more_members": "Anggota tambahan: ${ai}/bulan dengan AI, atau ${light}/bulan Light (tanpa kredit AI).",
+    "team_more_members_year": "Anggota tambahan: ${ai}/tahun dengan AI, atau ${light}/tahun Light (tanpa kredit AI).",
+    "add_ai_year": "Tambah Aicser AI (+${extra}/tahun)",
+    "checkout_covers": "Mencakup {n} anggota dengan AI{ai, plural, =0 {} other {, ditambah # dengan AI}}{light, plural, =0 {} other {, ditambah # Light}}",
     "custom": "Kustom",
     "free": "Gratis",
     "checkout_failed": "Checkout Stripe gagal",
@@ -7432,7 +7439,7 @@
     "addons_description": "Kredit AI tambahan untuk semua paket. Satu jawaban 1 kredit, prakiraan atau diagnosis 2, laporan, dasbor, atau keputusan 5, tiap langkah agen 1.",
     "credits_amount": "{count} kredit",
     "per_credit": "~ ${value}/kredit",
-    "footnote": "Pemirsa yang masuk dihitung sebagai anggota Light. Tautan publik dan sematan tidak perlu kursi.",
+    "footnote": "Penonton yang masuk, dan orang yang menggunakan Aicser melalui Copilot atau Gemini, dihitung sebagai anggota Ringan. Tautan publik dan sematan tidak memerlukan kursi.",
     "benefit_cancel_anytime": "Batalkan kapan saja, tanpa pertanyaan",
     "benefit_paid_unlock": "Semua fitur terbuka pada paket berbayar",
     "footer_text": "Harga ditampilkan dalam USD. Pemrosesan pembayaran aman melalui Stripe.",
@@ -7446,10 +7453,8 @@
     "pack_enterprise_note": "Dirancang untuk operasi volume tinggi.",
     "includes_seats_with_viewer": "Includes {seats} seats · ${perSeat}/additional seat · ${perViewerSeat}/viewer seat",
     "per_member_month": "/anggota/bulan",
-    "per_member_short": "per anggota",
     "with_ai": "Dengan AI Aicser · {credits} kredit per bulan",
     "without_ai": "Tanpa AI · pakai kunci model sendiri",
-    "team_members_note": "Anggota Light ${light}: membuat dan mengedit penuh, AI dengan kunci sendiri. Mulai {min} anggota.",
     "pack_note": "Dipakai setelah kredit bulanan; berlaku {months} bulan",
     "pay_card": "Kartu",
     "buy_credits": "Beli {count} kredit (${price})",
@@ -7459,7 +7464,6 @@
     "buy_personal": "Beli seharga ${price}",
     "add_ai": "Tambah Aicser AI (+${extra}/bulan)",
     "team_total_period": "/bulan untuk {n} anggota",
-    "team_per_member": "${price} per anggota, termasuk AI. Tambah anggota kapan saja.",
     "own_model_keys": "Kunci model Anda sendiri"
   },
   "profile": {
@@ -8368,12 +8372,14 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "Semua kursi terpakai",
+    "team_add_seats": "Tambah kursi",
     "active": "Aktif",
     "add_data_source": "Tambah Sumber Data",
     "add_first_data_source": "Tambahkan Sumber Data Pertama Anda",
     "agent_budget": {
-      "title": "AI Budget & Model Preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "Anggaran AI",
+      "subtitle": "Batas pengeluaran untuk AI di organisasi ini.",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -8381,7 +8387,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "Tersimpan",
       "save_error": "Failed to save AI budget preferences",
       "reasoning_mode": "Kedalaman penalaran",
       "reasoning_mode_tip": "Kapan agen memakai model penalaran yang lebih kuat. Adaptif: untuk merencanakan dan memahami mengapa langkah gagal; Selalu: di setiap langkah (lebih dalam, lebih lambat, lebih banyak kredit); Hemat: selalu model bawaan.",
@@ -9485,7 +9491,8 @@
       "accuracy_shape_monthly": "Tren bulanan",
       "accuracy_shape_year_total": "Total tahunan",
       "accuracy_shape_forecast": "Perkiraan",
-      "accuracy_shape_diagnose": "Mengapa berubah"
+      "accuracy_shape_diagnose": "Mengapa berubah",
+      "kpi_latency_slowest": "95% jawaban tiba dalam {seconds} detik."
     },
     "clear_provider_config": "Clear config",
     "configured_with_models": "{count} models",
@@ -9832,7 +9839,13 @@
     "two_factor_off_title": "Nonaktifkan masuk dua langkah",
     "two_factor_off_password": "Masukkan kata sandi untuk mengonfirmasi.",
     "two_factor_off_code": "Masukkan kode dari aplikasi autentikator untuk mengonfirmasi.",
-    "two_factor_off_done": "Masuk dua langkah dinonaktifkan"
+    "two_factor_off_done": "Masuk dua langkah dinonaktifkan",
+    "publishing_second_label": "Wajibkan persetujuan kedua",
+    "publishing_second_tip": "Pemilik dan admin juga memerlukan pemilik atau admin lain untuk menyetujui pekerjaan publik mereka. Gunakan ini jika aturan kepatuhan Anda memerlukan dua orang.",
+    "embed_agents_moved": "Menyematkan asisten AI? Buat di Asisten, publikasikan ke Publik, dan dapatkan kodenya di sana.",
+    "enterprise_only_custom_roles": "Peran khusus tersedia dengan paket Enterprise.",
+    "enterprise_only_second_approver": "Persetujuan kedua tersedia dengan paket Enterprise.",
+    "enterprise_only_audit": "Ekspor, SIEM, dan riwayat lengkap tersedia dengan paket Enterprise. Tim menampilkan 90 hari terakhir."
   },
   "settings_appearance": {
     "updated_ok": "Pengaturan tampilan berhasil diperbarui!",
@@ -10093,6 +10106,7 @@
     "checkout_failed": "Gagal memulai checkout"
   },
   "user_profile_dropdown": {
+    "join_community": "Gabung komunitas Aicsertics",
     "user": "Pengguna",
     "unknown": "Tidak Diketahui",
     "failed_upgrade_plan": "Gagal meningkatkan rencana. Silakan coba lagi.",
@@ -10311,7 +10325,7 @@
     "roles_label": "Peran & akses",
     "roles_desc": "Siapa boleh melakukan apa",
     "billing-subscription_label": "Tagihan",
-    "billing-subscription_desc": "Paket, pemakaian, faktur",
+    "billing-subscription_desc": "Kursi, pembayaran, dan faktur",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "Lokasi data AI",
@@ -10332,8 +10346,8 @@
     "agent-capabilities_desc": "Pilih tindakan yang boleh dilakukan AI",
     "kpi-definitions_label": "Definisi metrik",
     "kpi-definitions_desc": "Ajari AI cara organisasi Anda menghitung angka utama",
-    "ai-quality_label": "Kualitas AI",
-    "ai-quality_desc": "Seberapa akurat dan membantu jawabannya",
+    "ai-quality_label": "Kualitas & audit",
+    "ai-quality_desc": "Bagaimana jawaban telah diberikan, dan setiap panggilan AI",
     "ai-decision-layer_label": "AI decisions",
     "ai-decision-layer_desc": "Row-level AI choices using rules you define (aligned with Predict & decide in the sidebar)",
     "ai-audit-log_label": "Log audit AI",
@@ -10342,8 +10356,8 @@
     "briefings_desc": "Laporan AI terjadwal",
     "notifications_label": "Notifikasi",
     "notifications_desc": "Email dan lonceng Aktivitas",
-    "agent-budget_label": "Pusat biaya AI",
-    "agent-budget_desc": "Anggaran dan belanja model per proyek",
+    "agent-budget_label": "Anggaran AI",
+    "agent-budget_desc": "Batas pengeluaran untuk AI",
     "ai-memory_label": "Memori AI",
     "ai-memory_desc": "Yang diingat Aicser untuk Anda, proyek, dan organisasi Anda",
     "agent-rules_label": "Aturan agen",
@@ -10353,9 +10367,9 @@
     "page_team_label": "Tim & peran",
     "page_team_desc": "Anggota, undangan, dan izin tiap peran",
     "page_integrations_label": "Integrasi",
-    "page_integrations_desc": "Email, Slack, Teams, kunci API, dan sematan",
+    "page_integrations_desc": "Email, Slack, Teams, Microsoft, dan Google",
     "page_usage_label": "Penggunaan & tagihan",
-    "page_usage_desc": "Penggunaan, paket, tagihan, dan biaya AI",
+    "page_usage_desc": "Penggunaan, kursi, pembayaran, faktur, dan anggaran AI",
     "page_ai-rules_label": "Aturan & model",
     "page_ai-rules_desc": "Alat yang boleh dipakai AI, yang perlu persetujuan, dan model yang memutuskan",
     "page_ai-oversight_label": "Kualitas & audit",
@@ -10366,7 +10380,16 @@
     "page_organization_desc": "Nama, merek, dan lisensi",
     "search_placeholder": "Cari pengaturan",
     "search_empty": "Tidak ada pengaturan yang cocok.",
-    "close_nav": "Tutup menu pengaturan"
+    "close_nav": "Tutup menu pengaturan",
+    "usage_desc": "Paket Anda, apa yang telah digunakan, dan ke mana pengeluaran itu pergi",
+    "group_project": "Proyek",
+    "group_organization": "Organisasi",
+    "group_sharing": "Hubungkan & bagikan",
+    "group_billing": "Penagihan",
+    "page_sharing_label": "Publikasi & penyematan",
+    "page_sharing_desc": "Apa yang boleh keluar dari organisasi, dan bagaimana caranya",
+    "adoption_label": "Adopsi",
+    "adoption_desc": "Siapa yang menggunakan Aicser dan apa yang tidak digunakan"
   },
   "license_tab": {
     "load_failed": "Status lisensi tidak dapat dimuat",
@@ -12341,6 +12364,15 @@
     "calc_share": "{part} dari {total} ({column})"
   },
   "billing_seats": {
+    "seats_used": "{used} dari {capacity} kursi terpakai",
+    "add_seats": "Tambah kursi",
+    "extras_ai": "Kursi AI tambahan",
+    "extras_light": "Kursi Light tambahan (tanpa kredit AI)",
+    "extras_confirm": "Konfirmasi",
+    "extras_saved": "Kursi diperbarui",
+    "extras_total_month": "{seats} kursi, total ${total} per bulan.",
+    "extras_total_year": "{seats} kursi, total ${total} per tahun.",
+    "extras_due": "${due} dibayar sekarang.",
     "seats_title": "Kursi",
     "seats_summary": "{ai} anggota AI (${aiPrice}/bulan masing-masing, 900 kredit) dan {platform} anggota Light (${platformPrice}/bulan masing-masing, kunci sendiri).",
     "member": "Anggota",
@@ -12374,7 +12406,8 @@
     "seat_per_month": "per bulan",
     "seat_per_year": "per tahun",
     "seat_requested": "Meminta AI",
-    "seat_decline": "Tolak"
+    "seat_decline": "Tolak",
+    "payments_not_set_up": "Pembayaran online belum diatur di sini."
   },
   "office": {
     "title": "Tanya Aicser",
@@ -12511,6 +12544,310 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "Menunggu persetujuan dari {names}. Mereka telah diberitahu.",
+    "decline": "Tolak",
+    "own_link_tip": "Organisasi Anda meminta orang lain untuk menyetujui tautan Anda sendiri. Tanyakan {names}."
+  },
+  "khqr_payment": {
+    "paid_credits": "Pembayaran berhasil! Kredit Anda telah ditambahkan.",
+    "paid_personal": "Pembayaran berhasil! Lisensi Anda ada di Kursi & kredit."
+  },
+  "guide": {
+    "community": "Gabung komunitas Aicsertics",
+    "skip": "Lewati",
+    "all_set": "Semua selesai",
+    "hide_list": "Sembunyikan daftar ini",
+    "nice_work": "Kerja bagus",
+    "up_next": "Berikutnya: {item}",
+    "continue": "Lanjutkan",
+    "working": "Sedang menyiapkan jawaban Anda",
+    "title": "Memulai",
+    "open": "Memulai, {done} dari {total} selesai",
+    "progress": "{current} dari {total}",
+    "next": "Berikutnya",
+    "done": "Selesai",
+    "later": "Nanti",
+    "checklist": {
+      "connect": "Hubungkan data Anda",
+      "ask": "Ajukan pertanyaan pertama Anda",
+      "save": "Simpan bagan yang Anda suka",
+      "dashboard": "Buat dasbor",
+      "publish": "Publikasikan ke Wawasan Bersama",
+      "invite": "Undang rekan tim",
+      "discuss": "Dapatkan balasan dari tim Anda",
+      "alert": "Atur peringatan"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "Buka Ask",
+        "body": "Klik Ask di menu untuk berbicara dengan data Anda dalam kata-kata sederhana."
+      },
+      "ask": {
+        "title": "Tanyakan apa pun tentang data Anda",
+        "body": "Coba \"Produk mana yang menghasilkan pendapatan terbanyak?\" lalu kirim."
+      },
+      "publish": {
+        "title": "Bagikan hasil temuan Anda",
+        "body": "Buka jawaban atau dasbor, lalu klik Bagikan untuk memublikasikannya ke Shared Insights agar tim Anda bisa berdiskusi.",
+        "here": "Klik Bagikan untuk memublikasikan jawaban ini ke Shared Insights agar tim Anda dapat mendiskusikannya.",
+        "here_dashboards": "Klik Bagikan, lalu Publikasikan ke Shared Insights, agar tim Anda bisa membahas dasbor ini."
+      },
+      "shared_insights": {
+        "title": "Shared Insights",
+        "body": "Temuan yang dipublikasikan tim Anda, semuanya di satu tempat."
+      },
+      "discuss": {
+        "title": "Diskusikan",
+        "body": "Publikasikan sesuatu, lalu minta rekan tim untuk berkomentar atau bereaksi di sini. Langkah ini selesai saat mereka melakukannya."
+      },
+      "connect": {
+        "title": "Mulai dengan contoh data",
+        "body": "Satu klik akan membuka toko fiktif untuk dicoba. Anda dapat menghubungkan data Anda sendiri kapan saja."
+      },
+      "connect_data": {
+        "title": "Hubungkan beberapa data",
+        "body": "Klik + untuk mengunggah file, menghubungkan database, atau memilih contoh data."
+      },
+      "open_dashboards": {
+        "title": "Buka Dasbor",
+        "body": "Klik Dasbor di menu."
+      },
+      "open_alerts": {
+        "title": "Buka Peringatan",
+        "body": "Klik Peringatan di menu."
+      },
+      "save": {
+        "title": "Simpan bagan ini",
+        "body": "Ajukan pertanyaan jika Anda belum melakukannya, lalu klik pin di bawah jawaban.",
+        "here": "Klik pin di bawah jawaban untuk menyimpan bagan ini."
+      },
+      "dashboard": {
+        "title": "Buat dasbor",
+        "body": "Klik di sini untuk memulai. Anda dapat menambahkan bagan yang Anda simpan."
+      },
+      "invite": {
+        "title": "Undang rekan tim",
+        "body": "Klik di sini dan masukkan email mereka."
+      },
+      "alert": {
+        "title": "Dapatkan pemberitahuan saat angka bergerak",
+        "body": "Klik di sini untuk mengatur peringatan pertama Anda."
+      },
+      "pick_question": {
+        "title": "Dapatkan bagan dulu",
+        "body": "Pilih pertanyaan yang disarankan lalu kirim."
+      },
+      "finish_dialog": {
+        "title": "Hampir selesai",
+        "body": "Klik di sini untuk melanjutkan."
+      },
+      "open_chat_save": {
+        "title": "Kembali ke jawaban Anda",
+        "body": "Buka Ask untuk menyimpan bagan dari salah satu jawaban Anda."
+      },
+      "open_chat_publish": {
+        "title": "Bagikan temuan Anda",
+        "body": "Buka Ask untuk memublikasikan jawaban ke Shared Insights."
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "Coba Aicser",
+    "unavailable": "Kotak pasir tidak tersedia saat ini.",
+    "failed": "Terjadi kesalahan. Silakan coba lagi.",
+    "email": "Email kantor",
+    "email_rule": "Masukkan alamat email yang valid.",
+    "company_optional": "Perusahaan (opsional)",
+    "phone_optional": "Telepon (opsional)",
+    "terms": "Saya memahami ruang kerja ini untuk contoh data dan akan dihapus saat berakhir.",
+    "start_with_email": "Kirim kode ke email saya",
+    "or": "atau",
+    "code_label": "Masukkan 6 digit kode yang dikirim ke {email}",
+    "code_rule": "Masukkan 6 digit dari email.",
+    "verify": "Buka ruang kerja saya",
+    "ended": "Kotak pasir ini telah berakhir. Pertahankan untuk melanjutkan, atau akan dihapus.",
+    "add_email": "Tambahkan email untuk waktu lebih banyak",
+    "keep": "Pertahankan ruang kerja ini",
+    "keep_title": "Pertahankan ruang kerja ini",
+    "keep_body": "Pilih kata sandi untuk memulai uji coba Tim Anda. Semua yang Anda buat tetap ada.",
+    "password": "Kata sandi",
+    "password_rule": "Gunakan setidaknya 10 karakter.",
+    "keep_confirm": "Mulai uji coba Tim",
+    "email_title": "Tambahkan email Anda",
+    "email_body": "Anda akan mendapatkan lebih banyak waktu, lebih banyak kredit, dan ruang untuk dua rekan tim.",
+    "send_code": "Kirim kode",
+    "email_added": "Email ditambahkan. Anda memiliki lebih banyak waktu dan kredit."
+  },
+  "license_notice": {
+    "ended": "Lisensi Anda telah berakhir, jadi Aicser hanya-baca. Tidak ada yang dihapus.",
+    "view": "Lihat lisensi"
+  },
+  "oauth_consent": {
+    "title": "Hubungkan {name} ke Aicser?",
+    "body": "Ini dapat membaca data dan metrik yang dapat Anda akses, seperti Anda. Ini tidak dapat melihat apa pun yang tidak dapat Anda lihat, dan tidak dapat mengubah pekerjaan yang dibagikan.",
+    "site": "Ini akan kembali ke {host}.",
+    "allow": "Hubungkan",
+    "cancel": "Batal",
+    "failed": "Koneksi ini tidak dapat diselesaikan.",
+    "unverified": "Lanjutkan hanya jika Anda memulai ini dari aplikasi yang Anda percaya."
+  },
+  "ecosystem": {
+    "title": "Microsoft dan Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "Siapkan",
+    "download": "Unduh",
+    "connected_title": "Aplikasi AI yang terhubung",
+    "connected_empty": "Belum ada aplikasi AI yang terhubung.",
+    "disconnect": "Putuskan",
+    "last_used": "Terakhir digunakan {date}",
+    "never_used": "Belum digunakan",
+    "items": {
+      "microsoft": {
+        "sign_in": "Masuk dengan Microsoft Entra",
+        "directory": "Sinkronkan orang dari direktori Anda",
+        "azure_ai": "Gunakan Azure OpenAI Anda",
+        "teams": "Tanya Aicser di Teams",
+        "sharepoint": "Cari dokumen SharePoint",
+        "excel": "Add-in Excel",
+        "copilot": "Aicser di Microsoft 365 Copilot"
+      },
+      "google": {
+        "sign_in": "Masuk dengan Google",
+        "gemini_ai": "Gunakan kunci Gemini Anda",
+        "bigquery": "Hubungkan BigQuery",
+        "sheets": "Hubungkan Google Sheets",
+        "gemini_enterprise": "Aicser di Gemini Enterprise"
+      }
+    },
+    "copilot_title": "Aicser di Microsoft 365 Copilot",
+    "copilot_step1": "Buat detail masuk, lalu tambahkan sebagai pendaftaran OAuth di Portal Pengembang Teams.",
+    "copilot_create": "Buat detail masuk",
+    "copilot_secret_once": "Salin ini sekarang. Rahasia hanya ditampilkan sekali.",
+    "copilot_step2": "Tempel ID pendaftaran yang diberikan Microsoft kepada Anda, lalu unduh agen dan unggah di pusat admin Microsoft 365.",
+    "copilot_reference": "ID pendaftaran OAuth",
+    "copilot_download": "Unduh agen Copilot",
+    "gemini_title": "Aicser di Gemini Enterprise",
+    "gemini_body": "Tambahkan server MCP kustom di Gemini Enterprise dengan alamat ini. Setiap orang masuk ke Aicser pertama kali.",
+    "copy": "Salin",
+    "seat_note": "Setiap orang yang menggunakan Aicser melalui Copilot atau Gemini memerlukan kursi Aicser. Kursi Light sudah cukup.",
+    "failed": "Terjadi kesalahan. Silakan coba lagi."
+  },
+  "ai_agents": {
+    "page_title": "Asisten",
+    "page_subtitle": "Asisten yang dibuat tim Anda untuk pekerjaan, departemen, atau proyek.",
+    "new": "Asisten baru",
+    "view_available": "Gunakan",
+    "view_mine": "Dibuat oleh saya",
+    "view_review": "Perlu persetujuan",
+    "view_all": "Semua asisten",
+    "empty_available": "Belum ada asisten yang dibagikan kepada Anda.",
+    "empty_mine": "Buat asisten pertama Anda, atau mulai dari template.",
+    "empty_review": "Tidak ada yang menunggu persetujuan Anda.",
+    "start": "Mulai",
+    "edit": "Edit",
+    "open_chat": "Obrolan",
+    "blank": "Mulai dari awal",
+    "choose_template": "Mulai dari template",
+    "status_draft": "Draf",
+    "status_pending": "Menunggu persetujuan",
+    "status_published": "Aktif",
+    "unpublished": "Perubahan belum dipublikasikan",
+    "audience_me": "Hanya saya",
+    "audience_project": "Proyek",
+    "audience_organization": "Organisasi",
+    "audience_public": "Publik atau situs web",
+    "audience_hint_me": "Hanya Anda yang bisa menggunakannya.",
+    "audience_hint_project": "Orang-orang di proyeknya. Pemilik proyek menyetujui.",
+    "audience_hint_organization": "Semua orang di organisasi Anda. Pemilik atau admin menyetujui.",
+    "audience_hint_public": "Siapa pun di situs web Anda, tanpa masuk. Pemilik atau admin menyetujui. Tindakan tetap nonaktif.",
+    "name": "Nama",
+    "icon": "Ikon",
+    "instructions": "Instruksi",
+    "instructions_tip": "Cara kerjanya. Pengguna tidak akan melihat ini.",
+    "welcome": "Pesan selamat datang",
+    "starters": "Pertanyaan pembuka",
+    "starters_placeholder": "Tambahkan pertanyaan dan tekan Enter",
+    "abilities": "Kemampuan",
+    "ability_documents": "Jawab dari dokumen",
+    "ability_data": "Analisis data",
+    "ability_actions": "Ambil tindakan",
+    "ability_actions_tip": "Buat bagan, dasbor, dan peringatan. Ini akan meminta konfirmasi sebelum mengubah pekerjaan bersama.",
+    "knowledge": "Pustaka pengetahuan",
+    "data_sources": "Sumber data",
+    "advanced": "Pengaturan lainnya",
+    "model": "Model",
+    "model_auto": "Default",
+    "limit": "Batas AI bulanan (USD)",
+    "limit_tip": "Ini akan berhenti menjawab untuk sisa bulan ini setelah mencapai jumlah ini. Kosong berarti tanpa batas.",
+    "facts": "Selalu tahu",
+    "facts_tip": "Fakta singkat yang harus diketahui semua orang, seperti \"Tahun fiskal kami dimulai pada bulan April\". Ini berlaku sekaligus.",
+    "facts_add": "Tambahkan fakta",
+    "remove": "Hapus",
+    "versions": "Versi",
+    "version_label": "Versi {version}",
+    "restore": "Pulihkan",
+    "save": "Simpan draf",
+    "saved": "Tersimpan",
+    "try": "Coba",
+    "publish": "Publikasikan",
+    "publish_title": "Untuk siapa ini?",
+    "publish_note": "Catatan untuk pemberi persetujuan (opsional)",
+    "publish_confirm": "Publikasikan",
+    "sent_for_approval": "Terkirim untuk persetujuan. Anda akan diberi tahu.",
+    "published": "Asisten Anda sudah aktif.",
+    "waiting_from": "Menunggu persetujuan dari {names}.",
+    "approve": "Setujui",
+    "decline": "Tolak",
+    "decline_reason": "Alasan (opsional)",
+    "requested_for": "Untuk: {audience}",
+    "review_changes": "Instruksi yang akan mereka publikasikan",
+    "approved": "Disetujui. Sekarang sudah aktif.",
+    "declined": "Ditolak.",
+    "own_tip": "Organisasi Anda meminta orang lain untuk menyetujui asisten Anda sendiri.",
+    "owner": "Pemilik",
+    "audience": "Audiens",
+    "spend": "Dihabiskan bulan ini",
+    "updated": "Diubah",
+    "owner_left": "Dijeda: pemilik pergi",
+    "transfer": "Serahkan",
+    "delete": "Hapus",
+    "delete_confirm": "Hapus asisten ini? Orang tidak akan bisa menggunakannya.",
+    "embed_hint": "Setelah aktif, kode sematan ada di bawah Pengaturan lainnya.",
+    "banner_leave": "Kembali ke Ask",
+    "failed": "Terjadi kesalahan. Silakan coba lagi.",
+    "not_available": "Asisten ini tidak tersedia untuk Anda.",
+    "by": "oleh {name}",
+    "uses": "Jawaban dari: {list}",
+    "unavailable_tag": "Tidak tersedia",
+    "welcome_default": "Tanyakan apa pun kepada {name} sesuai fungsinya.",
+    "website": "Di situs web Anda",
+    "get_code": "Dapatkan kode sematan",
+    "icon_tip": "Tanpa ini, asisten akan menggunakan logo organisasi Anda.",
+    "icon_upload": "Unggah gambar",
+    "ability_attachments": "Lampirkan file",
+    "ability_voice": "Input suara",
+    "public_locked": "Tidak ada di paket Anda. Asisten publik memerlukan paket Pro atau lebih tinggi, atau uji coba Tim jika Anda menggunakan demo.",
+    "preview_visitor": "Pratinjau sebagai pengunjung situs web",
+    "picker_all": "Jelajahi semua asisten",
+    "picker_label": "Tanyakan pada asisten",
+    "can_act": "Dapat mengambil tindakan"
+  },
+  "answer_style": {
+    "tone": "Nada",
+    "tone_professional": "Profesional",
+    "tone_friendly": "Ramah",
+    "tone_formal": "Formal",
+    "tone_plain": "Bahasa lugas",
+    "detail": "Panjang jawaban",
+    "detail_standard": "Standar",
+    "detail_brief": "Singkat",
+    "detail_thorough": "Menyeluruh",
+    "guidance": "Hal lain",
+    "guidance_tip": "Berlaku untuk Ask, Agen, dan setiap agen yang dibuat tim Anda. Contoh: \"Sebut anggota, bukan pelanggan.\"",
+    "saved": "Tersimpan",
+    "more": "Untuk aturan yang lebih panjang, per proyek atau per orang, gunakan memori AI.",
+    "save": "Simpan"
   }
 }

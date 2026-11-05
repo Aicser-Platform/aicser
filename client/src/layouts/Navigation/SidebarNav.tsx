@@ -73,6 +73,7 @@ function linkItem(child: { key: string; labelKey: string; href?: string }, icons
   return {
     key: child.key,
     icon: icons[child.key],
+    'data-guide': `nav-${child.key}`,
     onMouseEnter: child.href ? () => preloadRoute(child.href as string) : undefined,
     label: railCollapsed ? (
       <Tooltip title={hintKey ? `${label} — ${t(hintKey)}` : label} placement="right" mouseEnterDelay={0.35}>

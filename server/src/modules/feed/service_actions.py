@@ -302,10 +302,12 @@ class FeedServiceActionMixin:
         if visibility == "public":
             if not (is_org_owner or is_org_admin):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner or admin approval required")
-            # Someone else looks at public work whenever there is someone else.
-            others = policy.approvers_other_than(await policy.approvers(self.db, post.organization_id), user_id)
-            if post.author_id == user_id and others:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Another owner or admin must approve your own public work")
+            rules = await policy.get_policy(self.db, post.organization_id)
+            allowed, _ = policy.may_review(user_id=user_id, requester_id=post.author_id,
+                                           approver_ids=await policy.approvers(self.db, post.organization_id),
+                                           second_approver=bool(rules.get("second_approver")))
+            if not allowed:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your organization asks another owner or admin to approve your own public work")
             return
 
         if visibility == "organization":
@@ -590,7 +592,7 @@ class FeedServiceActionMixin:
         personal = await asyncio.to_thread(policy.personal_data_found, *content)
         decision, self_approved = policy.public_decision(
             mode=str(settings.get("public")), is_approver=is_approver, has_org=bool(org_id), personal_data=personal,
-            other_approvers=policy.approvers_other_than(ids, user_id))
+            other_approvers=policy.approvers_other_than(ids, user_id), second_approver=bool(settings.get("second_approver")))
         if decision == "refused":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public sharing is turned off for your organization.")
         return decision, self_approved, personal
@@ -1396,7 +1398,9 @@ class FeedServiceActionMixin:
             await policy.email_approvers(self.db, await self._get_approver_ids(post), post.title or "Shared insight",
                                          f"{app_settings.FRONTEND_URL}/feed?view=approvals", reminder=True)
         await self.db.commit()
-        return {"expired": len(due), "reminded": len(waiting)}
+        from src.modules.share_links.service import remind_waiting
+
+        return {"expired": len(due), "reminded": len(waiting) + await remind_waiting(self.db)}
 
     async def approve_publication(
         self,

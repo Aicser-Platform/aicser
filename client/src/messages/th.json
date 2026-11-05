@@ -431,8 +431,6 @@
     "confirm_password": "ยืนยันรหัสผ่าน",
     "welcome_back": "ยินดีต้อนรับกลับมา",
     "create_account": "สร้างบัญชีของคุณ",
-    "sign_up_subtitle": "ลงทะเบียนเพื่อเริ่มต้นใช้งาน Aicser",
-    "sign_in_subtitle": "เข้าสู่ระบบเพื่อดำเนินการต่อ",
     "email_placeholder": "คุณ@บริษัท.com",
     "email_required": "กรุณากรอกอีเมลของคุณ!",
     "email_invalid": "กรุณากรอกอีเมลที่ถูกต้อง!",
@@ -559,7 +557,8 @@
     "two_factor_use_app": "ใช้แอปยืนยันตัวตน",
     "two_factor_back": "กลับไปหน้าลงชื่อเข้าใช้",
     "two_factor_code_label": "รหัสยืนยันตัวตน",
-    "two_factor_backup_label": "รหัสสำรอง"
+    "two_factor_backup_label": "รหัสสำรอง",
+    "try_without_account": "ลองใช้ Aicser โดยไม่ต้องมีบัญชี"
   },
   "bi_dashboard": {
     "title": "แดชบอร์ดความชาญฉลาดทางธุรกิจ",
@@ -2069,24 +2068,17 @@
     "resolved_mode_switched": "เปลี่ยนเป็น {mode} แล้ว",
     "agent_start_failed": "เอเจนต์เริ่มงานนี้ไม่ได้",
     "use_case_analyze_standard": "มาตรฐาน",
-    "first_hour": {
-      "label": "เริ่มต้นใช้งาน",
-      "data": "เชื่อมต่อข้อมูล",
-      "dashboard": "แดชบอร์ดแรก",
-      "alert": "การแจ้งเตือนแรก",
-      "dashboard_prompt": "ดูข้อมูลของฉันและสร้างแดชบอร์ดเริ่มต้นด้วยตัวเลขสำคัญไม่กี่ตัว",
-      "alert_prompt": "แนะนำการแจ้งเตือนหนึ่งรายการสำหรับตัวเลขที่สำคัญที่สุดและตั้งค่าให้ฉัน",
-      "hide": "ซ่อน"
-    },
     "light_seat_title": "AI ต้องใช้คีย์หรือที่นั่ง AI",
     "light_seat_body": "ที่นั่ง Light ใช้คีย์ AI ของคุณเอง เพิ่มคีย์หรือขอที่นั่ง AI จากผู้ดูแล",
     "light_seat_requested": "แจ้งผู้ดูแลแล้ว คุณทำงานต่อหรือเพิ่มคีย์ของคุณเองได้",
     "light_seat_request": "ขอที่นั่ง AI",
     "light_seat_requested_short": "ส่งคำขอแล้ว",
     "light_seat_own_key": "เพิ่มคีย์ของฉัน",
-    "light_seat_request_failed": "ส่งคำขอไม่สำเร็จ โปรดลองอีกครั้ง"
+    "light_seat_request_failed": "ส่งคำขอไม่สำเร็จ โปรดลองอีกครั้ง",
+    "agent_not_available": "ผู้ช่วยนี้ไม่พร้อมใช้งานสำหรับคุณ"
   },
   "chat_page": {
+    "sample_shop_name": "ร้านค้าตัวอย่าง",
     "dense_daily_hint": "กำลังแสดงรายวัน",
     "dense_daily_weekly_cta": "แสดงรายสัปดาห์",
     "dense_daily_weekly_prompt": "แสดงคำตอบเดิมแบบรายสัปดาห์แทนรายวัน",
@@ -2949,7 +2941,13 @@
     "trust_badge_t2": "Review figures",
     "trust_badge_t0": "Check numbers",
     "use_case_analyze_standard": "มาตรฐาน",
-    "answer_ready_notice": "คำตอบจาก Aicser พร้อมแล้ว"
+    "answer_ready_notice": "คำตอบจาก Aicser พร้อมแล้ว",
+    "composer_agent_placeholder": "ส่งข้อความถึง {name}…",
+    "voice_listening": "กำลังฟัง พูดคำถามของคุณ",
+    "voice_working": "กำลังแปลงเสียงเป็นข้อความ…",
+    "voice_denied": "อนุญาตให้ใช้ไมโครโฟนในเบราว์เซอร์ของคุณเพื่อใช้เสียง",
+    "voice_unavailable": "การป้อนข้อมูลด้วยเสียงไม่พร้อมใช้งานในขณะนี้ โปรดพิมพ์คำถามของคุณแทน",
+    "voice_empty": "ไม่ได้ยิน โปรดลองอีกครั้งใกล้ไมโครโฟนมากขึ้น"
   },
   "chat_sql_editor": {
     "enter_sql": "กรุณาใส่คำสั่ง SQL",
@@ -7002,7 +7000,9 @@
     "agent_tasks": "ระบบอัตโนมัติ",
     "hint_agent": "งาน กำหนดการ และทักษะที่บันทึกไว้",
     "show_all_tools": "แสดงเครื่องมือทั้งหมด",
-    "show_essentials": "แสดงเฉพาะที่จำเป็น"
+    "show_essentials": "แสดงเฉพาะที่จำเป็น",
+    "ai_agents": "ผู้ช่วย AI",
+    "hint_agents": "ผู้ช่วยที่ทีมของคุณสร้างขึ้นสำหรับงาน แผนก หรือโครงการ"
   },
   "notifications_bell": {
     "activity": "กิจกรรม",
@@ -7405,6 +7405,13 @@
     "pack_enterprise_note": "ออกแบบมาสำหรับการดำเนินงานปริมาณสูง"
   },
   "pricing_modal": {
+    "per_year": "/ปี",
+    "team_total_period_year": "/ปี สำหรับสมาชิก {n} คน",
+    "team_up_to": "สูงสุด {n} คน ทุกคนมี AI",
+    "team_more_members": "สมาชิกเพิ่ม: ${ai}/เดือนพร้อม AI หรือ ${light}/เดือนแบบ Light (ไม่มีเครดิต AI)",
+    "team_more_members_year": "สมาชิกเพิ่ม: ${ai}/ปีพร้อม AI หรือ ${light}/ปีแบบ Light (ไม่มีเครดิต AI)",
+    "add_ai_year": "เพิ่ม Aicser AI (+${extra}/ปี)",
+    "checkout_covers": "ครอบคลุมสมาชิก {n} คนพร้อม AI{ai, plural, =0 {} other {, และอีก # คนพร้อม AI}}{light, plural, =0 {} other {, และ Light # คน}}",
     "custom": "กำหนดเอง",
     "free": "ฟรี",
     "checkout_failed": "การชำระเงินผ่าน Stripe ล้มเหลว",
@@ -7432,7 +7439,7 @@
     "addons_description": "เครดิต AI เพิ่มสำหรับทุกแพ็กเกจ คำตอบหนึ่งครั้ง 1 เครดิต การพยากรณ์หรือวินิจฉัย 2 รายงาน แดชบอร์ด หรือการตัดสินใจ 5 แต่ละขั้นของเอเจนต์ 1",
     "credits_amount": "{count} เครดิต",
     "per_credit": "~ ${value}/เครดิต",
-    "footnote": "ผู้ชมที่ลงชื่อเข้าใช้นับเป็นสมาชิก Light ลิงก์สาธารณะและการฝังไม่ต้องใช้ที่นั่ง",
+    "footnote": "ผู้เข้าชมที่ลงชื่อเข้าใช้ และผู้ที่ใช้ Aicser ผ่าน Copilot หรือ Gemini จะนับเป็นสมาชิก Light ลิงก์สาธารณะและการฝังไม่จำเป็นต้องมีที่นั่ง",
     "benefit_cancel_anytime": "ยกเลิกได้ทุกเมื่อโดยไม่ต้องแจ้งเหตุผล",
     "benefit_paid_unlock": "ปลดล็อกทุกฟีเจอร์ในแผนที่ชำระเงิน",
     "footer_text": "ราคาที่แสดงเป็นสกุลเงิน USD การชำระเงินปลอดภัยผ่าน Stripe",
@@ -7446,10 +7453,8 @@
     "pack_enterprise_note": "ออกแบบมาสำหรับการดำเนินงานปริมาณสูง",
     "includes_seats_with_viewer": "Includes {seats} seats · ${perSeat}/additional seat · ${perViewerSeat}/viewer seat",
     "per_member_month": "/สมาชิก/เดือน",
-    "per_member_short": "ต่อสมาชิก",
     "with_ai": "พร้อม AI ของ Aicser · {credits} เครดิตต่อเดือน",
     "without_ai": "ไม่มี AI · ใช้คีย์โมเดลของตนเอง",
-    "team_members_note": "สมาชิก Light ${light}: สร้างและแก้ไขได้เต็มที่ ใช้ AI ด้วยคีย์ของตนเอง เริ่มที่ {min} คน",
     "pack_note": "ใช้หลังเครดิตประจำเดือนหมด อายุ {months} เดือน",
     "pay_card": "บัตร",
     "buy_credits": "ซื้อ {count} เครดิต (${price})",
@@ -7459,7 +7464,6 @@
     "buy_personal": "ซื้อในราคา ${price}",
     "add_ai": "เพิ่ม Aicser AI (+${extra}/เดือน)",
     "team_total_period": "/เดือน สำหรับ {n} คน",
-    "team_per_member": "${price} ต่อคน รวม AI เพิ่มสมาชิกได้ทุกเมื่อ",
     "own_model_keys": "คีย์โมเดลของคุณเอง"
   },
   "profile": {
@@ -8368,12 +8372,14 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "ที่นั่งเต็มแล้ว",
+    "team_add_seats": "เพิ่มที่นั่ง",
     "active": "ใช้งานอยู่",
     "add_data_source": "เพิ่มแหล่งข้อมูล",
     "add_first_data_source": "เพิ่มแหล่งข้อมูลแรกของคุณ",
     "agent_budget": {
-      "title": "AI Budget & Model Preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "งบประมาณ AI",
+      "subtitle": "วงเงินการใช้จ่ายสำหรับ AI ในองค์กรนี้",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -8381,7 +8387,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "บันทึกแล้ว",
       "save_error": "Failed to save AI budget preferences",
       "reasoning_mode": "ความลึกของการให้เหตุผล",
       "reasoning_mode_tip": "เอเจนต์จะใช้โมเดลการให้เหตุผลที่แรงกว่าเมื่อใด แบบปรับตัว: ตอนวางแผนและตอนหาสาเหตุที่ขั้นตอนล้มเหลว; ทุกครั้ง: ทุกขั้นตอน (ลึกกว่า ช้ากว่า ใช้เครดิตมากกว่า); ประหยัด: ใช้โมเดลเริ่มต้นตลอด",
@@ -9485,7 +9491,8 @@
       "accuracy_shape_monthly": "แนวโน้มรายเดือน",
       "accuracy_shape_year_total": "ยอดรวมรายปี",
       "accuracy_shape_forecast": "การพยากรณ์",
-      "accuracy_shape_diagnose": "ทำไมถึงเปลี่ยน"
+      "accuracy_shape_diagnose": "ทำไมถึงเปลี่ยน",
+      "kpi_latency_slowest": "95% ของคำตอบมาถึงภายใน {seconds} วินาที"
     },
     "clear_provider_config": "Clear config",
     "configured_with_models": "{count} models",
@@ -9832,7 +9839,13 @@
     "two_factor_off_title": "ปิดการลงชื่อเข้าใช้สองขั้นตอน",
     "two_factor_off_password": "ป้อนรหัสผ่านเพื่อยืนยัน",
     "two_factor_off_code": "ป้อนรหัสจากแอปยืนยันตัวตนเพื่อยืนยัน",
-    "two_factor_off_done": "ปิดการลงชื่อเข้าใช้สองขั้นตอนแล้ว"
+    "two_factor_off_done": "ปิดการลงชื่อเข้าใช้สองขั้นตอนแล้ว",
+    "publishing_second_label": "ต้องมีผู้อนุมัติคนที่สอง",
+    "publishing_second_tip": "เจ้าของและผู้ดูแลระบบยังต้องมีเจ้าของหรือผู้ดูแลระบบคนอื่นอนุมัติงานสาธารณะของตน ใช้สิ่งนี้หากกฎการปฏิบัติตามข้อกำหนดของคุณต้องการสองคน",
+    "embed_agents_moved": "กำลังฝังผู้ช่วย AI ใช่หรือไม่? สร้างใน Assistants, เผยแพร่ไปยัง Public และรับโค้ดที่นั่น",
+    "enterprise_only_custom_roles": "บทบาทที่กำหนดเองมาพร้อมกับแผน Enterprise",
+    "enterprise_only_second_approver": "ผู้อนุมัติคนที่สองมาพร้อมกับแผน Enterprise",
+    "enterprise_only_audit": "การส่งออก, SIEM และประวัติทั้งหมดมาพร้อมกับแผน Enterprise ทีมแสดง 90 วันล่าสุด"
   },
   "settings_appearance": {
     "updated_ok": "อัปเดตการตั้งค่าการแสดงผลสำเร็จ!",
@@ -10093,6 +10106,7 @@
     "checkout_failed": "ไม่สามารถเริ่มต้นการชำระเงินได้"
   },
   "user_profile_dropdown": {
+    "join_community": "เข้าร่วมชุมชน Aicsertics",
     "user": "ผู้ใช้",
     "unknown": "ไม่ทราบ",
     "failed_upgrade_plan": "ไม่สามารถอัปเกรดแผนได้ กรุณาลองใหม่อีกครั้ง",
@@ -10311,7 +10325,7 @@
     "roles_label": "บทบาทและสิทธิ์",
     "roles_desc": "ใครทำอะไรได้บ้าง",
     "billing-subscription_label": "การเรียกเก็บเงิน",
-    "billing-subscription_desc": "แพ็กเกจ การใช้งาน ใบแจ้งหนี้",
+    "billing-subscription_desc": "ที่นั่ง, การชำระเงิน และใบแจ้งหนี้",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "ที่ตั้งข้อมูล AI",
@@ -10332,8 +10346,8 @@
     "agent-capabilities_desc": "เลือกสิ่งที่ AI ทำได้",
     "kpi-definitions_label": "นิยามตัวชี้วัด",
     "kpi-definitions_desc": "สอน AI ว่าองค์กรคำนวณตัวเลขสำคัญอย่างไร",
-    "ai-quality_label": "คุณภาพ AI",
-    "ai-quality_desc": "คำตอบแม่นยำและมีประโยชน์เพียงใด",
+    "ai-quality_label": "คุณภาพและการตรวจสอบ",
+    "ai-quality_desc": "คุณภาพของคำตอบ และการเรียกใช้ AI ทุกครั้ง",
     "ai-decision-layer_label": "AI decisions",
     "ai-decision-layer_desc": "Row-level AI choices using rules you define (aligned with Predict & decide in the sidebar)",
     "ai-audit-log_label": "บันทึกการตรวจสอบ AI",
@@ -10342,8 +10356,8 @@
     "briefings_desc": "รายงาน AI ตามกำหนดเวลา",
     "notifications_label": "การแจ้งเตือน",
     "notifications_desc": "อีเมลและกระดิ่งกิจกรรม",
-    "agent-budget_label": "ศูนย์ต้นทุน AI",
-    "agent-budget_desc": "งบประมาณและค่าใช้จ่ายโมเดลตามโปรเจกต์",
+    "agent-budget_label": "งบประมาณ AI",
+    "agent-budget_desc": "วงเงินการใช้จ่ายสำหรับ AI",
     "ai-memory_label": "ความจำของ AI",
     "ai-memory_desc": "สิ่งที่ Aicser จำไว้สำหรับคุณ โปรเจกต์ และองค์กรของคุณ",
     "agent-rules_label": "กฎของเอเจนต์",
@@ -10353,9 +10367,9 @@
     "page_team_label": "ทีมและบทบาท",
     "page_team_desc": "สมาชิก คำเชิญ และสิ่งที่แต่ละบทบาททำได้",
     "page_integrations_label": "การผสานรวม",
-    "page_integrations_desc": "อีเมล Slack Teams คีย์ API และการฝัง",
+    "page_integrations_desc": "อีเมล, Slack, Teams, Microsoft และ Google",
     "page_usage_label": "การใช้งานและการเรียกเก็บเงิน",
-    "page_usage_desc": "การใช้งาน แพ็กเกจ ใบแจ้งหนี้ และค่าใช้จ่าย AI",
+    "page_usage_desc": "การใช้งาน, ที่นั่ง, การชำระเงิน, ใบแจ้งหนี้ และงบประมาณ AI",
     "page_ai-rules_label": "กฎและโมเดล",
     "page_ai-rules_desc": "เครื่องมือที่ AI ใช้ได้ สิ่งที่ต้องอนุมัติ และโมเดลที่ใช้ตัดสินใจ",
     "page_ai-oversight_label": "คุณภาพและการตรวจสอบ",
@@ -10366,7 +10380,16 @@
     "page_organization_desc": "ชื่อ แบรนด์ และใบอนุญาต",
     "search_placeholder": "ค้นหาการตั้งค่า",
     "search_empty": "ไม่พบการตั้งค่าที่ตรงกัน",
-    "close_nav": "ปิดเมนูการตั้งค่า"
+    "close_nav": "ปิดเมนูการตั้งค่า",
+    "usage_desc": "แผนของคุณ สิ่งที่ใช้ไป และการใช้จ่ายไปที่ใด",
+    "group_project": "โครงการ",
+    "group_organization": "องค์กร",
+    "group_sharing": "เชื่อมต่อและแชร์",
+    "group_billing": "การเรียกเก็บเงิน",
+    "page_sharing_label": "การเผยแพร่และการฝัง",
+    "page_sharing_desc": "สิ่งที่อาจออกจากองค์กร และวิธีการ",
+    "adoption_label": "การนำไปใช้",
+    "adoption_desc": "ใครใช้ Aicser และอะไรที่ไม่ได้ใช้"
   },
   "license_tab": {
     "load_failed": "โหลดสถานะไลเซนส์ไม่ได้",
@@ -12341,6 +12364,15 @@
     "calc_share": "{part} จาก {total} ({column})"
   },
   "billing_seats": {
+    "seats_used": "ใช้แล้ว {used} จาก {capacity} ที่นั่ง",
+    "add_seats": "เพิ่มที่นั่ง",
+    "extras_ai": "ที่นั่ง AI เพิ่มเติม",
+    "extras_light": "ที่นั่ง Light เพิ่มเติม (ไม่มีเครดิต AI)",
+    "extras_confirm": "ยืนยัน",
+    "extras_saved": "อัปเดตที่นั่งแล้ว",
+    "extras_total_month": "{seats} ที่นั่ง รวม ${total} ต่อเดือน",
+    "extras_total_year": "{seats} ที่นั่ง รวม ${total} ต่อปี",
+    "extras_due": "ชำระตอนนี้ ${due}",
     "seats_title": "ที่นั่ง",
     "seats_summary": "สมาชิก AI {ai} คน (${aiPrice}/เดือนต่อคน 900 เครดิต) และสมาชิก Light {platform} คน (${platformPrice}/เดือนต่อคน ใช้คีย์ของตนเอง)",
     "member": "สมาชิก",
@@ -12374,7 +12406,8 @@
     "seat_per_month": "ต่อเดือน",
     "seat_per_year": "ต่อปี",
     "seat_requested": "ขอ AI",
-    "seat_decline": "ปฏิเสธ"
+    "seat_decline": "ปฏิเสธ",
+    "payments_not_set_up": "ยังไม่ได้ตั้งค่าการชำระเงินออนไลน์ที่นี่"
   },
   "office": {
     "title": "ถาม Aicser",
@@ -12511,6 +12544,310 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "กำลังรอการอนุมัติจาก {names} พวกเขาได้รับแจ้งแล้ว",
+    "decline": "ปฏิเสธ",
+    "own_link_tip": "องค์กรของคุณขอให้ผู้อื่นอนุมัติลิงก์ของคุณเอง ถาม {names}"
+  },
+  "khqr_payment": {
+    "paid_credits": "ชำระเงินสำเร็จ! เครดิตของคุณถูกเพิ่มแล้ว",
+    "paid_personal": "ชำระเงินสำเร็จ! ใบอนุญาตของคุณอยู่ในส่วน Seats & credits"
+  },
+  "guide": {
+    "community": "เข้าร่วมชุมชน Aicsertics",
+    "skip": "ข้าม",
+    "all_set": "เรียบร้อยแล้ว",
+    "hide_list": "ซ่อนรายการนี้",
+    "nice_work": "เยี่ยมมาก",
+    "up_next": "ถัดไป: {item}",
+    "continue": "ดำเนินการต่อ",
+    "working": "กำลังเตรียมคำตอบของคุณ",
+    "title": "เริ่มต้นใช้งาน",
+    "open": "เริ่มต้นใช้งาน, ทำไปแล้ว {done} จาก {total}",
+    "progress": "{current} จาก {total}",
+    "next": "ถัดไป",
+    "done": "เสร็จสิ้น",
+    "later": "ภายหลัง",
+    "checklist": {
+      "connect": "เชื่อมต่อข้อมูลของคุณ",
+      "ask": "ถามคำถามแรกของคุณ",
+      "save": "บันทึกแผนภูมิที่คุณชอบ",
+      "dashboard": "สร้างแดชบอร์ด",
+      "publish": "เผยแพร่ไปยัง Shared Insights",
+      "invite": "เชิญเพื่อนร่วมทีม",
+      "discuss": "รับการตอบกลับจากทีมของคุณ",
+      "alert": "ตั้งค่าการแจ้งเตือน"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "เปิด Ask",
+        "body": "คลิก Ask ในเมนูเพื่อพูดคุยกับข้อมูลของคุณด้วยคำพูดธรรมดา"
+      },
+      "ask": {
+        "title": "ถามข้อมูลของคุณ",
+        "body": "ลองพิมพ์ว่า \"สินค้าไหนทำรายได้สูงสุด?\" แล้วกดส่ง"
+      },
+      "publish": {
+        "title": "แชร์สิ่งที่คุณพบ",
+        "body": "เปิดคำตอบหรือแดชบอร์ด แล้วคลิกแชร์เพื่อเผยแพร่ไปยัง Shared Insights ให้ทีมของคุณพูดคุยกันได้",
+        "here": "คลิก แชร์ เพื่อเผยแพร่คำตอบนี้ไปยัง Shared Insights ให้ทีมของคุณพูดคุยกันได้",
+        "here_dashboards": "คลิกแชร์ แล้วเลือกเผยแพร่ไปยัง Shared Insights เพื่อให้ทีมของคุณพูดคุยเกี่ยวกับแดชบอร์ดนี้"
+      },
+      "shared_insights": {
+        "title": "Shared Insights",
+        "body": "สิ่งที่ทีมของคุณเผยแพร่ ทั้งหมดในที่เดียว"
+      },
+      "discuss": {
+        "title": "พูดคุยกัน",
+        "body": "เผยแพร่บางอย่าง แล้วชวนเพื่อนร่วมทีมมาคอมเมนต์หรือแสดงความรู้สึก ขั้นตอนนี้จะเสร็จสิ้นเมื่อพวกเขาทำ"
+      },
+      "connect": {
+        "title": "เริ่มต้นด้วยข้อมูลตัวอย่าง",
+        "body": "คลิกเดียวเปิดร้านค้าจำลองให้ลอง คุณสามารถเชื่อมต่อข้อมูลของคุณเองได้ตลอดเวลา"
+      },
+      "connect_data": {
+        "title": "เชื่อมต่อข้อมูล",
+        "body": "คลิก + เพื่ออัปโหลดไฟล์, เชื่อมต่อฐานข้อมูล หรือเลือกข้อมูลตัวอย่าง"
+      },
+      "open_dashboards": {
+        "title": "เปิดแดชบอร์ด",
+        "body": "คลิก แดชบอร์ด ในเมนู"
+      },
+      "open_alerts": {
+        "title": "เปิดการแจ้งเตือน",
+        "body": "คลิก การแจ้งเตือน ในเมนู"
+      },
+      "save": {
+        "title": "เก็บแผนภูมินี้ไว้",
+        "body": "ถามคำถามถ้ายังไม่ได้ทำ แล้วคลิกหมุดใต้คำตอบ",
+        "here": "คลิกหมุดใต้คำตอบเพื่อเก็บแผนภูมินี้ไว้"
+      },
+      "dashboard": {
+        "title": "สร้างแดชบอร์ด",
+        "body": "คลิกที่นี่เพื่อเริ่มต้น คุณสามารถเพิ่มแผนภูมิที่คุณบันทึกไว้ได้"
+      },
+      "invite": {
+        "title": "เชิญเพื่อนร่วมทีม",
+        "body": "คลิกที่นี่แล้วกรอกอีเมลของพวกเขา"
+      },
+      "alert": {
+        "title": "รับการแจ้งเตือนเมื่อตัวเลขเปลี่ยน",
+        "body": "คลิกที่นี่เพื่อตั้งค่าการแจ้งเตือนแรกของคุณ"
+      },
+      "pick_question": {
+        "title": "สร้างแผนภูมิก่อน",
+        "body": "เลือกคำถามที่แนะนำแล้วส่ง"
+      },
+      "finish_dialog": {
+        "title": "ใกล้เสร็จแล้ว",
+        "body": "คลิกที่นี่เพื่อดำเนินการต่อ"
+      },
+      "open_chat_save": {
+        "title": "กลับไปที่คำตอบของคุณ",
+        "body": "เปิด Ask เพื่อเก็บแผนภูมิจากคำตอบของคุณ"
+      },
+      "open_chat_publish": {
+        "title": "แชร์สิ่งที่คุณพบ",
+        "body": "เปิด Ask เพื่อเผยแพร่คำตอบไปยัง Shared Insights"
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "ลองใช้ Aicser",
+    "unavailable": "Sandbox ไม่พร้อมใช้งานในขณะนี้",
+    "failed": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง",
+    "email": "อีเมลที่ทำงาน",
+    "email_rule": "กรุณากรอกที่อยู่อีเมลที่ถูกต้อง",
+    "company_optional": "บริษัท (ไม่บังคับ)",
+    "phone_optional": "โทรศัพท์ (ไม่บังคับ)",
+    "terms": "ฉันเข้าใจว่าพื้นที่ทำงานนี้สำหรับข้อมูลตัวอย่างและจะถูกลบเมื่อสิ้นสุด",
+    "start_with_email": "ส่งรหัสทางอีเมล",
+    "or": "หรือ",
+    "code_label": "ป้อนรหัส 6 หลักที่ส่งไปที่ {email}",
+    "code_rule": "ป้อนรหัส 6 หลักจากอีเมล",
+    "verify": "เปิดพื้นที่ทำงานของฉัน",
+    "ended": "Sandbox นี้สิ้นสุดแล้ว เก็บไว้เพื่อใช้งานต่อ หรือจะถูกลบ",
+    "add_email": "เพิ่มอีเมลเพื่อเพิ่มเวลา",
+    "keep": "เก็บพื้นที่ทำงานนี้",
+    "keep_title": "เก็บพื้นที่ทำงานนี้",
+    "keep_body": "เลือกรหัสผ่านเพื่อเริ่มทดลองใช้ Team ทุกสิ่งที่คุณสร้างไว้จะยังคงอยู่",
+    "password": "รหัสผ่าน",
+    "password_rule": "ใช้อักขระอย่างน้อย 10 ตัว",
+    "keep_confirm": "เริ่มทดลองใช้ Team",
+    "email_title": "เพิ่มอีเมลของคุณ",
+    "email_body": "คุณจะได้รับเวลาเพิ่มขึ้น, เครดิตเพิ่มขึ้น และพื้นที่สำหรับเพื่อนร่วมทีมสองคน",
+    "send_code": "ส่งรหัส",
+    "email_added": "เพิ่มอีเมลแล้ว คุณมีเวลาและเครดิตเพิ่มขึ้น"
+  },
+  "license_notice": {
+    "ended": "ใบอนุญาตของคุณหมดอายุแล้ว Aicser จึงเป็นแบบอ่านอย่างเดียว ไม่มีอะไรถูกลบ",
+    "view": "ดูใบอนุญาต"
+  },
+  "oauth_consent": {
+    "title": "เชื่อมต่อ {name} กับ Aicser หรือไม่?",
+    "body": "สามารถอ่านข้อมูลและเมตริกที่คุณเข้าถึงได้ ในฐานะคุณ ไม่สามารถเห็นสิ่งที่คุณไม่สามารถเห็นได้ และไม่สามารถเปลี่ยนแปลงงานที่แชร์ได้",
+    "site": "จะกลับไปที่ {host}",
+    "allow": "เชื่อมต่อ",
+    "cancel": "ยกเลิก",
+    "failed": "การเชื่อมต่อนี้ไม่สามารถทำได้",
+    "unverified": "ดำเนินการต่อเฉพาะในกรณีที่คุณเริ่มจากแอปที่คุณเชื่อถือ"
+  },
+  "ecosystem": {
+    "title": "Microsoft และ Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "ตั้งค่า",
+    "download": "ดาวน์โหลด",
+    "connected_title": "แอป AI ที่เชื่อมต่อแล้ว",
+    "connected_empty": "ยังไม่มีแอป AI เชื่อมต่อ",
+    "disconnect": "ยกเลิกการเชื่อมต่อ",
+    "last_used": "ใช้งานล่าสุดเมื่อ {date}",
+    "never_used": "ยังไม่เคยใช้งาน",
+    "items": {
+      "microsoft": {
+        "sign_in": "ลงชื่อเข้าใช้ด้วย Microsoft Entra",
+        "directory": "ซิงค์ผู้คนจากไดเรกทอรีของคุณ",
+        "azure_ai": "ใช้ Azure OpenAI ของคุณ",
+        "teams": "ถาม Aicser ใน Teams",
+        "sharepoint": "ค้นหาเอกสาร SharePoint",
+        "excel": "ส่วนเสริม Excel",
+        "copilot": "Aicser ใน Microsoft 365 Copilot"
+      },
+      "google": {
+        "sign_in": "ลงชื่อเข้าใช้ด้วย Google",
+        "gemini_ai": "ใช้คีย์ Gemini ของคุณ",
+        "bigquery": "เชื่อมต่อ BigQuery",
+        "sheets": "เชื่อมต่อ Google Sheets",
+        "gemini_enterprise": "Aicser ใน Gemini Enterprise"
+      }
+    },
+    "copilot_title": "Aicser ใน Microsoft 365 Copilot",
+    "copilot_step1": "สร้างรายละเอียดการลงชื่อเข้าใช้ จากนั้นเพิ่มเป็น OAuth registration ใน Teams Developer Portal",
+    "copilot_create": "สร้างรายละเอียดการลงชื่อเข้าใช้",
+    "copilot_secret_once": "คัดลอกตอนนี้ ความลับจะแสดงเพียงครั้งเดียว",
+    "copilot_step2": "วาง ID การลงทะเบียนที่ Microsoft ให้มา จากนั้นดาวน์โหลดเอเจนต์และอัปโหลดในศูนย์การดูแลระบบ Microsoft 365",
+    "copilot_reference": "OAuth registration ID",
+    "copilot_download": "ดาวน์โหลด Copilot agent",
+    "gemini_title": "Aicser ใน Gemini Enterprise",
+    "gemini_body": "เพิ่มเซิร์ฟเวอร์ MCP ที่กำหนดเองใน Gemini Enterprise ด้วยที่อยู่นี้ แต่ละคนจะลงชื่อเข้าใช้ Aicser เป็นครั้งแรก",
+    "copy": "คัดลอก",
+    "seat_note": "ทุกคนที่ใช้ Aicser ผ่าน Copilot หรือ Gemini ต้องมีที่นั่ง Aicser ที่นั่ง Light ก็เพียงพอแล้ว",
+    "failed": "เกิดข้อผิดพลาด โปรดลองอีกครั้ง"
+  },
+  "ai_agents": {
+    "page_title": "ผู้ช่วย",
+    "page_subtitle": "ผู้ช่วยที่ทีมของคุณสร้างขึ้นสำหรับงาน แผนก หรือโครงการ",
+    "new": "ผู้ช่วยใหม่",
+    "view_available": "ใช้งาน",
+    "view_mine": "สร้างโดยฉัน",
+    "view_review": "ต้องการการอนุมัติ",
+    "view_all": "ผู้ช่วยทั้งหมด",
+    "empty_available": "ยังไม่มีผู้ช่วยที่แชร์กับคุณ",
+    "empty_mine": "สร้างผู้ช่วยคนแรกของคุณ หรือเริ่มต้นจากเทมเพลต",
+    "empty_review": "ไม่มีอะไรกำลังรอการอนุมัติจากคุณ",
+    "start": "เริ่มต้น",
+    "edit": "แก้ไข",
+    "open_chat": "แชท",
+    "blank": "เริ่มต้นจากศูนย์",
+    "choose_template": "เริ่มต้นจากเทมเพลต",
+    "status_draft": "ฉบับร่าง",
+    "status_pending": "รอการอนุมัติ",
+    "status_published": "เผยแพร่แล้ว",
+    "unpublished": "การเปลี่ยนแปลงที่ยังไม่เผยแพร่",
+    "audience_me": "เฉพาะฉัน",
+    "audience_project": "โปรเจกต์",
+    "audience_organization": "องค์กร",
+    "audience_public": "สาธารณะหรือเว็บไซต์",
+    "audience_hint_me": "คุณเท่านั้นที่ใช้ได้",
+    "audience_hint_project": "ผู้คนในโปรเจกต์นั้น เจ้าของโปรเจกต์เป็นผู้อนุมัติ",
+    "audience_hint_organization": "ทุกคนในองค์กรของคุณ เจ้าของหรือผู้ดูแลระบบเป็นผู้อนุมัติ",
+    "audience_hint_public": "ทุกคนบนเว็บไซต์ของคุณ โดยไม่ต้องลงชื่อเข้าใช้ เจ้าของหรือผู้ดูแลระบบเป็นผู้อนุมัติ การดำเนินการจะปิดอยู่",
+    "name": "ชื่อ",
+    "icon": "ไอคอน",
+    "instructions": "คำแนะนำ",
+    "instructions_tip": "วิธีการทำงาน ผู้ใช้จะไม่เห็นสิ่งนี้",
+    "welcome": "ข้อความต้อนรับ",
+    "starters": "คำถามเริ่มต้น",
+    "starters_placeholder": "เพิ่มคำถามแล้วกด Enter",
+    "abilities": "ความสามารถ",
+    "ability_documents": "ตอบจากเอกสาร",
+    "ability_data": "วิเคราะห์ข้อมูล",
+    "ability_actions": "ดำเนินการ",
+    "ability_actions_tip": "สร้างแผนภูมิ แดชบอร์ด และการแจ้งเตือน ระบบจะถามก่อนเปลี่ยนงานที่แชร์",
+    "knowledge": "คลังความรู้",
+    "data_sources": "แหล่งข้อมูล",
+    "advanced": "การตั้งค่าเพิ่มเติม",
+    "model": "โมเดล",
+    "model_auto": "ค่าเริ่มต้น",
+    "limit": "วงเงิน AI รายเดือน (USD)",
+    "limit_tip": "ระบบจะหยุดตอบสำหรับเดือนที่เหลือเมื่อถึงจำนวนนี้ หากเว้นว่างไว้หมายถึงไม่จำกัด",
+    "facts": "สิ่งที่รู้เสมอ",
+    "facts_tip": "ข้อเท็จจริงสั้นๆ ที่ควรรู้สำหรับทุกคน เช่น \"ปีงบประมาณของเราเริ่มต้นในเดือนเมษายน\" สิ่งเหล่านี้มีผลทันที",
+    "facts_add": "เพิ่มข้อเท็จจริง",
+    "remove": "ลบ",
+    "versions": "เวอร์ชัน",
+    "version_label": "เวอร์ชัน {version}",
+    "restore": "กู้คืน",
+    "save": "บันทึกฉบับร่าง",
+    "saved": "บันทึกแล้ว",
+    "try": "ลองใช้",
+    "publish": "เผยแพร่",
+    "publish_title": "สำหรับใคร?",
+    "publish_note": "บันทึกสำหรับผู้อนุมัติ (ไม่บังคับ)",
+    "publish_confirm": "เผยแพร่",
+    "sent_for_approval": "ส่งเพื่อขออนุมัติแล้ว คุณจะได้รับการแจ้งเตือน",
+    "published": "ผู้ช่วยของคุณพร้อมใช้งานแล้ว",
+    "waiting_from": "กำลังรอการอนุมัติจาก {names}",
+    "approve": "อนุมัติ",
+    "decline": "ปฏิเสธ",
+    "decline_reason": "เหตุผล (ไม่บังคับ)",
+    "requested_for": "สำหรับ: {audience}",
+    "review_changes": "คำแนะนำที่พวกเขาจะเผยแพร่",
+    "approved": "อนุมัติแล้ว พร้อมใช้งานแล้ว",
+    "declined": "ปฏิเสธแล้ว",
+    "own_tip": "องค์กรของคุณขอให้ผู้อื่นอนุมัติผู้ช่วยของคุณเอง",
+    "owner": "เจ้าของ",
+    "audience": "กลุ่มเป้าหมาย",
+    "spend": "ใช้ไปแล้วในเดือนนี้",
+    "updated": "เปลี่ยนแปลง",
+    "owner_left": "หยุดชั่วคราว: เจ้าของออก",
+    "transfer": "โอนสิทธิ์",
+    "delete": "ลบ",
+    "delete_confirm": "ลบผู้ช่วยนี้หรือไม่? ผู้คนจะไม่สามารถใช้งานได้",
+    "embed_hint": "เมื่อพร้อมใช้งานแล้ว โค้ดฝังจะอยู่ภายใต้การตั้งค่าเพิ่มเติม",
+    "banner_leave": "กลับไปที่ Ask",
+    "failed": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง",
+    "not_available": "ผู้ช่วยนี้ไม่พร้อมใช้งานสำหรับคุณ",
+    "by": "โดย {name}",
+    "uses": "คำตอบจาก: {list}",
+    "unavailable_tag": "ไม่พร้อมใช้งาน",
+    "welcome_default": "ถาม {name} ได้ทุกเรื่องที่สร้างมาเพื่อตอบ",
+    "website": "บนเว็บไซต์ของคุณ",
+    "get_code": "รับโค้ดสำหรับฝัง",
+    "icon_tip": "หากไม่มี ผู้ช่วยนี้จะใช้โลโก้ขององค์กรคุณ",
+    "icon_upload": "อัปโหลดรูปภาพ",
+    "ability_attachments": "แนบไฟล์",
+    "ability_voice": "ป้อนข้อมูลด้วยเสียง",
+    "public_locked": "ไม่อยู่ในแผนของคุณ ผู้ช่วยสาธารณะต้องใช้แผน Pro หรือสูงกว่า หรือทดลองใช้ Team หากคุณกำลังใช้เวอร์ชันสาธิต",
+    "preview_visitor": "ดูตัวอย่างในฐานะผู้เยี่ยมชมเว็บไซต์",
+    "picker_all": "เรียกดูผู้ช่วยทั้งหมด",
+    "picker_label": "ถามผู้ช่วย",
+    "can_act": "สามารถดำเนินการได้"
+  },
+  "answer_style": {
+    "tone": "น้ำเสียง",
+    "tone_professional": "เป็นทางการ",
+    "tone_friendly": "เป็นกันเอง",
+    "tone_formal": "ทางการ",
+    "tone_plain": "ภาษาง่ายๆ",
+    "detail": "ความยาวคำตอบ",
+    "detail_standard": "มาตรฐาน",
+    "detail_brief": "สั้นๆ",
+    "detail_thorough": "ละเอียด",
+    "guidance": "อื่นๆ",
+    "guidance_tip": "ใช้กับ Ask, Agent และทุก Agent ที่ทีมของคุณสร้างขึ้น เช่น: \"ให้ใช้คำว่า 'สมาชิก' แทน 'ลูกค้า'\"",
+    "saved": "บันทึกแล้ว",
+    "more": "สำหรับกฎที่ยาวขึ้น ต่อโปรเจกต์ หรือต่อบุคคล ให้ใช้หน่วยความจำ AI",
+    "save": "บันทึก"
   }
 }

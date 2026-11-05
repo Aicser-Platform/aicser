@@ -120,12 +120,12 @@ async def activate(
     )
 
 
-async def validate(*, license_id: str, instance_id: str) -> ActivationResult:
+async def validate(*, license_id: str, instance_id: str, usage: dict | None = None) -> ActivationResult:
     """POST /api/v1/public/validate — re-validation for an already-activated instance."""
-    body = await _post(
-        "/api/v1/public/validate",
-        {"license_id": license_id, "instance_id": instance_id},
-    )
+    payload: dict = {"license_id": license_id, "instance_id": instance_id}
+    if usage:
+        payload["usage"] = usage
+    body = await _post("/api/v1/public/validate", payload)
     return ActivationResult(
         entitlement_token=body["entitlement_token"],
         expires_at=datetime.fromisoformat(body["expires_at"]),

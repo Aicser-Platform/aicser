@@ -13,6 +13,7 @@ import {
   OrderedListOutlined,
   FontColorsOutlined,
 } from '@ant-design/icons';
+import { textWidgetHtml } from '../utils/textWidgetContent';
 import './TextWidget.css';
 
 /** Compact toolbar group separator (CSS only — no Ant Divider “|” chrome). */
@@ -84,7 +85,7 @@ export const TextWidget: React.FC<TextWidgetProps> = ({
   useEffect(() => {
     if (!isEditing && editorRef.current) {
       editorRef.current.innerHTML =
-        content ||
+        textWidgetHtml(content) ||
         (readOnly ? '' : `<p class="text-widget-placeholder">${t('click_add_text')}</p>`);
     }
   }, [content, isEditing, readOnly, t]);

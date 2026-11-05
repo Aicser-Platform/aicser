@@ -431,8 +431,6 @@
     "confirm_password": "Passwort bestätigen",
     "welcome_back": "Willkommen zurück",
     "create_account": "Ihr Konto erstellen",
-    "sign_up_subtitle": "Registrieren Sie sich, um mit Aicser zu beginnen",
-    "sign_in_subtitle": "Melden Sie sich bei Ihrem Konto an, um fortzufahren",
     "email_placeholder": "du@unternehmen.com",
     "email_required": "Bitte geben Sie Ihre E-Mail ein!",
     "email_invalid": "Bitte geben Sie eine gültige E-Mail ein!",
@@ -559,7 +557,8 @@
     "two_factor_use_app": "Authenticator-App verwenden",
     "two_factor_back": "Zurück zur Anmeldung",
     "two_factor_code_label": "Authenticator-Code",
-    "two_factor_backup_label": "Backup-Code"
+    "two_factor_backup_label": "Backup-Code",
+    "try_without_account": "Aicser ohne Konto testen"
   },
   "bi_dashboard": {
     "title": "Business Intelligence Dashboard",
@@ -2069,24 +2068,17 @@
     "resolved_mode_switched": "Zu {mode} gewechselt",
     "agent_start_failed": "Der Agent konnte diese Aufgabe nicht starten.",
     "use_case_analyze_standard": "Standard",
-    "first_hour": {
-      "label": "Erste Schritte",
-      "data": "Daten verbinden",
-      "dashboard": "Erstes Dashboard",
-      "alert": "Erster Alarm",
-      "dashboard_prompt": "Sieh dir meine Daten an und erstelle ein Start-Dashboard mit den wichtigsten Kennzahlen.",
-      "alert_prompt": "Schlage einen Alarm für meine wichtigste Kennzahl vor und richte ihn ein.",
-      "hide": "Ausblenden"
-    },
     "light_seat_title": "KI braucht einen Schlüssel oder KI-Platz",
     "light_seat_body": "Ihr Light-Platz nutzt Ihren eigenen KI-Schlüssel. Fügen Sie einen hinzu oder bitten Sie Ihren Admin um einen KI-Platz.",
     "light_seat_requested": "Ihr Admin wurde gefragt. Sie können weiterarbeiten oder einen eigenen Schlüssel hinzufügen.",
     "light_seat_request": "KI-Platz anfragen",
     "light_seat_requested_short": "Angefragt",
     "light_seat_own_key": "Eigenen Schlüssel hinzufügen",
-    "light_seat_request_failed": "Anfrage konnte nicht gesendet werden. Bitte erneut versuchen."
+    "light_seat_request_failed": "Anfrage konnte nicht gesendet werden. Bitte erneut versuchen.",
+    "agent_not_available": "Dieser Assistent ist für Sie nicht verfügbar."
   },
   "chat_page": {
+    "sample_shop_name": "Beispielshop",
     "dense_daily_hint": "Tägliche Werte werden angezeigt.",
     "dense_daily_weekly_cta": "Nach Woche anzeigen",
     "dense_daily_weekly_prompt": "Zeige dieselbe Antwort nach Woche statt nach Tag.",
@@ -2949,7 +2941,13 @@
     "trust_badge_t2": "Review figures",
     "trust_badge_t0": "Check numbers",
     "use_case_analyze_standard": "Standard",
-    "answer_ready_notice": "Ihre Aicser-Antwort ist fertig"
+    "answer_ready_notice": "Ihre Aicser-Antwort ist fertig",
+    "composer_agent_placeholder": "Nachricht an {name}…",
+    "voice_listening": "Hören zu. Sprechen Sie Ihre Frage.",
+    "voice_working": "Sprache in Text umwandeln…",
+    "voice_denied": "Erlauben Sie dem Mikrofon in Ihrem Browser, Sprache zu verwenden.",
+    "voice_unavailable": "Spracheingabe ist derzeit nicht verfügbar. Geben Sie stattdessen Ihre Frage ein.",
+    "voice_empty": "Nicht verstanden. Versuchen Sie es noch einmal, etwas näher am Mikrofon."
   },
   "chat_sql_editor": {
     "enter_sql": "Bitte geben Sie eine SQL-Abfrage ein",
@@ -7003,7 +7001,9 @@
     "agent_tasks": "Automatisierungen",
     "hint_agent": "Aufgaben, Zeitpläne und gespeicherte Skills",
     "show_all_tools": "Alle Werkzeuge anzeigen",
-    "show_essentials": "Nur das Wichtigste"
+    "show_essentials": "Nur das Wichtigste",
+    "ai_agents": "Assistenten",
+    "hint_agents": "Assistenten, die Ihr Team für eine Aufgabe, Abteilung oder ein Projekt erstellt hat"
   },
   "notifications_bell": {
     "activity": "Aktivität",
@@ -7406,6 +7406,13 @@
     "pack_enterprise_note": "Entwickelt für Hochvolumen-Betrieb."
   },
   "pricing_modal": {
+    "per_year": "/Jahr",
+    "team_total_period_year": "/Jahr für {n} Mitglieder",
+    "team_up_to": "Bis zu {n} Mitglieder, jeweils mit KI.",
+    "team_more_members": "Weitere Mitglieder: ${ai}/Monat mit KI oder ${light}/Monat Light (ohne KI-Credits).",
+    "team_more_members_year": "Weitere Mitglieder: ${ai}/Jahr mit KI oder ${light}/Jahr Light (ohne KI-Credits).",
+    "add_ai_year": "Aicser AI hinzufügen (+${extra}/Jahr)",
+    "checkout_covers": "Umfasst {n} Mitglieder mit KI{ai, plural, =0 {} other {, plus # weitere mit KI}}{light, plural, =0 {} other {, plus # Light}}",
     "custom": "Individuell",
     "free": "Kostenlos",
     "checkout_failed": "Stripe-Checkout fehlgeschlagen",
@@ -7433,7 +7440,7 @@
     "addons_description": "Zusätzliche KI-Credits für jeden Plan. Eine Antwort kostet 1 Credit, eine Prognose oder Diagnose 2, ein Bericht, Dashboard oder Entscheidungsbrief 5, jeder Agentenschritt 1.",
     "credits_amount": "{count} Credits",
     "per_credit": "~ ${value}/Credit",
-    "footnote": "Angemeldete Betrachter sind Light-Mitglieder. Öffentliche Links und Einbettungen brauchen keinen Platz.",
+    "footnote": "Angemeldete Betrachter und Personen, die Aicser über Copilot oder Gemini nutzen, zählen als Light-Mitglieder. Öffentliche Links und Einbettungen benötigen keinen Platz.",
     "benefit_cancel_anytime": "Jederzeit kündbar, ohne Fragen",
     "benefit_paid_unlock": "Alle Funktionen in kostenpflichtigen Plänen freigeschaltet",
     "footer_text": "Preise in USD angezeigt. Sichere Zahlungsabwicklung über Stripe.",
@@ -7447,10 +7454,8 @@
     "pack_enterprise_note": "Entwickelt für Hochvolumen-Betrieb.",
     "includes_seats_with_viewer": "Includes {seats} seats · ${perSeat}/additional seat · ${perViewerSeat}/viewer seat",
     "per_member_month": "/Mitglied/Monat",
-    "per_member_short": "pro Mitglied",
     "with_ai": "Mit Aicser-KI · {credits} Credits pro Monat",
     "without_ai": "Ohne KI · mit eigenen Modellschlüsseln",
-    "team_members_note": "Light-Mitglieder {light} $: voll erstellen und bearbeiten, KI mit eigenen Schlüsseln. Ab {min} Mitgliedern.",
     "pack_note": "Nach den Monats-Credits verwendet; {months} Monate gültig",
     "pay_card": "Karte",
     "buy_credits": "{count} Credits kaufen ({price} $)",
@@ -7460,7 +7465,6 @@
     "buy_personal": "Für {price} $ kaufen",
     "add_ai": "Aicser-KI hinzufügen (+{extra} $/Monat)",
     "team_total_period": "/Monat für {n} Mitglieder",
-    "team_per_member": "{price} $ pro Mitglied, KI inklusive. Mitglieder jederzeit hinzufügen.",
     "own_model_keys": "Eigene Modell-Schlüssel"
   },
   "profile": {
@@ -8369,12 +8373,14 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "Alle Plätze sind belegt",
+    "team_add_seats": "Plätze hinzufügen",
     "active": "Aktiv",
     "add_data_source": "Datenquelle hinzufügen",
     "add_first_data_source": "Erste Datenquelle hinzufügen",
     "agent_budget": {
-      "title": "AI Budget & Model Preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "KI-Budget",
+      "subtitle": "Ausgabenlimits für KI in dieser Organisation.",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -8382,7 +8388,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "Gespeichert",
       "save_error": "Failed to save AI budget preferences",
       "reasoning_mode": "Denktiefe",
       "reasoning_mode_tip": "Wann der Agent das stärkere Denkmodell nutzt. Adaptiv: zum Planen und um zu klären, warum ein Schritt scheiterte; Immer: bei jedem Schritt (gründlicher, langsamer, mehr Credits); Sparsam: immer das Standardmodell.",
@@ -9486,7 +9492,8 @@
       "accuracy_shape_monthly": "Monatliche Verläufe",
       "accuracy_shape_year_total": "Jahressummen",
       "accuracy_shape_forecast": "Prognosen",
-      "accuracy_shape_diagnose": "Warum hat es sich geändert"
+      "accuracy_shape_diagnose": "Warum hat es sich geändert",
+      "kpi_latency_slowest": "95 % der Antworten kommen innerhalb von {seconds} Sekunden an."
     },
     "clear_provider_config": "Clear config",
     "configured_with_models": "{count} models",
@@ -9833,7 +9840,13 @@
     "two_factor_off_title": "Zweistufige Anmeldung ausschalten",
     "two_factor_off_password": "Geben Sie zur Bestätigung Ihr Passwort ein.",
     "two_factor_off_code": "Geben Sie zur Bestätigung einen Code aus Ihrer Authenticator-App ein.",
-    "two_factor_off_done": "Zweistufige Anmeldung ist aus"
+    "two_factor_off_done": "Zweistufige Anmeldung ist aus",
+    "publishing_second_label": "Zweiten Genehmiger anfordern",
+    "publishing_second_tip": "Eigentümer und Administratoren benötigen auch einen weiteren Eigentümer oder Administrator, um ihre öffentliche Arbeit zu genehmigen. Verwenden Sie dies, wenn Ihre Compliance-Regeln zwei Personen erfordern.",
+    "embed_agents_moved": "Einen KI-Assistenten einbetten? Erstellen Sie ihn in „Assistenten“, veröffentlichen Sie ihn unter „Öffentlich“ und holen Sie sich dort den Code.",
+    "enterprise_only_custom_roles": "Benutzerdefinierte Rollen sind im Enterprise-Plan enthalten.",
+    "enterprise_only_second_approver": "Ein zweiter Genehmiger ist im Enterprise-Plan enthalten.",
+    "enterprise_only_audit": "Export, SIEM und vollständige Historie sind im Enterprise-Plan enthalten. Team zeigt die letzten 90 Tage."
   },
   "settings_appearance": {
     "updated_ok": "Erscheinungsbild-Einstellungen erfolgreich aktualisiert!",
@@ -10094,6 +10107,7 @@
     "checkout_failed": "Checkout konnte nicht gestartet werden"
   },
   "user_profile_dropdown": {
+    "join_community": "Der Aicsertics-Community beitreten",
     "user": "Benutzer",
     "unknown": "Unbekannt",
     "failed_upgrade_plan": "Upgrade des Plans fehlgeschlagen. Bitte versuchen Sie es erneut.",
@@ -10312,7 +10326,7 @@
     "roles_label": "Rollen & Zugriff",
     "roles_desc": "Wer was darf",
     "billing-subscription_label": "Abrechnung",
-    "billing-subscription_desc": "Tarif, Nutzung, Rechnungen",
+    "billing-subscription_desc": "Plätze, Zahlung und Rechnungen",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "KI-Datenstandort",
@@ -10333,8 +10347,8 @@
     "agent-capabilities_desc": "Welche Aktionen die KI ausführen darf",
     "kpi-definitions_label": "Kennzahl-Definitionen",
     "kpi-definitions_desc": "Der KI beibringen, wie deine Organisation wichtige Zahlen berechnet",
-    "ai-quality_label": "KI-Qualität",
-    "ai-quality_desc": "Wie genau und hilfreich die Antworten waren",
+    "ai-quality_label": "Qualität & Audit",
+    "ai-quality_desc": "Wie die Antworten waren und jeder KI-Aufruf",
     "ai-decision-layer_label": "AI decisions",
     "ai-decision-layer_desc": "Row-level AI choices using rules you define (aligned with Predict & decide in the sidebar)",
     "ai-audit-log_label": "KI-Audit-Protokoll",
@@ -10343,8 +10357,8 @@
     "briefings_desc": "Geplante KI-Berichte",
     "notifications_label": "Benachrichtigungen",
     "notifications_desc": "E-Mail und die Aktivitätsglocke",
-    "agent-budget_label": "KI-Kostenstelle",
-    "agent-budget_desc": "Budgets und Modellkosten nach Projekt",
+    "agent-budget_label": "KI-Budget",
+    "agent-budget_desc": "Ausgabenlimits für KI",
     "ai-memory_label": "KI-Gedächtnis",
     "ai-memory_desc": "Was Aicser für Sie, Ihr Projekt und Ihre Organisation behält",
     "agent-rules_label": "Agent-Regeln",
@@ -10354,9 +10368,9 @@
     "page_team_label": "Team & Rollen",
     "page_team_desc": "Mitglieder, Einladungen und was jede Rolle darf",
     "page_integrations_label": "Integrationen",
-    "page_integrations_desc": "E-Mail, Slack, Teams, API-Schlüssel und Einbettung",
+    "page_integrations_desc": "E-Mail, Slack, Teams, Microsoft und Google",
     "page_usage_label": "Nutzung & Abrechnung",
-    "page_usage_desc": "Nutzung, Tarif, Rechnungen und KI-Ausgaben",
+    "page_usage_desc": "Nutzung, Plätze, Zahlung, Rechnungen und KI-Budget",
     "page_ai-rules_label": "Regeln & Modelle",
     "page_ai-rules_desc": "Welche Werkzeuge die KI nutzen darf, was eine Freigabe braucht und welche Modelle entscheiden",
     "page_ai-oversight_label": "Qualität & Audit",
@@ -10367,7 +10381,16 @@
     "page_organization_desc": "Name, Branding und Lizenz",
     "search_placeholder": "Einstellungen durchsuchen",
     "search_empty": "Keine passende Einstellung.",
-    "close_nav": "Einstellungsmenü schließen"
+    "close_nav": "Einstellungsmenü schließen",
+    "usage_desc": "Ihr Plan, was verwendet wurde und wohin die Ausgaben gingen",
+    "group_project": "Projekt",
+    "group_organization": "Organisation",
+    "group_sharing": "Verbinden & Teilen",
+    "group_billing": "Abrechnung",
+    "page_sharing_label": "Veröffentlichen & Einbetten",
+    "page_sharing_desc": "Was die Organisation verlassen darf und wie",
+    "adoption_label": "Adoption",
+    "adoption_desc": "Wer Aicser nutzt und was ungenutzt bleibt"
   },
   "license_tab": {
     "load_failed": "Lizenzstatus konnte nicht geladen werden",
@@ -12364,6 +12387,15 @@
     "calc_share": "{part} von {total} ({column})"
   },
   "billing_seats": {
+    "seats_used": "{used} von {capacity} Plätzen belegt",
+    "add_seats": "Plätze hinzufügen",
+    "extras_ai": "Zusätzliche KI-Plätze",
+    "extras_light": "Zusätzliche Light-Plätze (ohne KI-Credits)",
+    "extras_confirm": "Bestätigen",
+    "extras_saved": "Plätze aktualisiert",
+    "extras_total_month": "{seats} Plätze, insgesamt ${total} pro Monat.",
+    "extras_total_year": "{seats} Plätze, insgesamt ${total} pro Jahr.",
+    "extras_due": "${due} jetzt fällig.",
     "seats_title": "Plätze",
     "seats_summary": "{ai} KI-Mitglieder (je {aiPrice} $/Monat, 900 Credits) und {platform} Light-Mitglieder (je {platformPrice} $/Monat, eigene Schlüssel).",
     "member": "Mitglied",
@@ -12397,7 +12429,8 @@
     "seat_per_month": "pro Monat",
     "seat_per_year": "pro Jahr",
     "seat_requested": "KI angefragt",
-    "seat_decline": "Ablehnen"
+    "seat_decline": "Ablehnen",
+    "payments_not_set_up": "Online-Zahlung ist hier noch nicht eingerichtet."
   },
   "office": {
     "title": "Aicser fragen",
@@ -12534,6 +12567,310 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "Warten auf Genehmigung von {names}. Sie wurden benachrichtigt.",
+    "decline": "Ablehnen",
+    "own_link_tip": "Ihre Organisation bittet jemand anderen, Ihre eigenen Links zu genehmigen. Fragen Sie {names}."
+  },
+  "khqr_payment": {
+    "paid_credits": "Zahlung erfolgreich! Ihre Credits wurden hinzugefügt.",
+    "paid_personal": "Zahlung erfolgreich! Ihre Lizenz finden Sie unter „Plätze & Credits“."
+  },
+  "guide": {
+    "community": "Der Aicsertics-Community beitreten",
+    "skip": "Überspringen",
+    "all_set": "Alles erledigt",
+    "hide_list": "Liste ausblenden",
+    "nice_work": "Gut gemacht",
+    "up_next": "Als Nächstes: {item}",
+    "continue": "Weiter",
+    "working": "Ihre Antwort wird erstellt",
+    "title": "Erste Schritte",
+    "open": "Erste Schritte, {done} von {total} erledigt",
+    "progress": "{current} von {total}",
+    "next": "Weiter",
+    "done": "Fertig",
+    "later": "Später",
+    "checklist": {
+      "connect": "Ihre Daten verbinden",
+      "ask": "Ihre erste Frage stellen",
+      "save": "Ein Diagramm speichern, das Ihnen gefällt",
+      "dashboard": "Ein Dashboard erstellen",
+      "publish": "In „Geteilte Einblicke“ veröffentlichen",
+      "invite": "Einen Teamkollegen einladen",
+      "discuss": "Eine Antwort von Ihrem Team erhalten",
+      "alert": "Einen Alarm einstellen"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "Ask öffnen",
+        "body": "Klicken Sie im Menü auf „Ask“, um in einfachen Worten mit Ihren Daten zu sprechen."
+      },
+      "ask": {
+        "title": "Alles über Ihre Daten erfragen",
+        "body": "Versuchen Sie „Welche Produkte erzielen den höchsten Umsatz?“ und senden Sie es ab."
+      },
+      "publish": {
+        "title": "Teilen Sie Ihre Erkenntnisse",
+        "body": "Öffnen Sie eine Antwort oder ein Dashboard und klicken Sie auf Teilen, um es in Shared Insights zu veröffentlichen, damit Ihr Team darüber sprechen kann.",
+        "here": "Klicken Sie auf „Teilen“, um diese Antwort in „Geteilte Einblicke“ zu veröffentlichen, damit Ihr Team sie diskutieren kann.",
+        "here_dashboards": "Klicken Sie auf Teilen und dann auf In Shared Insights veröffentlichen, damit Ihr Team über dieses Dashboard sprechen kann."
+      },
+      "shared_insights": {
+        "title": "Geteilte Einblicke",
+        "body": "Erkenntnisse, die Ihr Team veröffentlicht hat, alles an einem Ort."
+      },
+      "discuss": {
+        "title": "Besprechen Sie es",
+        "body": "Veröffentlichen Sie etwas und bitten Sie dann einen Teamkollegen, hier zu kommentieren oder zu reagieren. Dieser Schritt ist beendet, wenn sie dies tun."
+      },
+      "connect": {
+        "title": "Mit Beispieldaten starten",
+        "body": "Ein Klick öffnet einen fiktiven Shop zum Ausprobieren. Sie können jederzeit Ihre eigenen Daten verbinden."
+      },
+      "connect_data": {
+        "title": "Daten verbinden",
+        "body": "Klicken Sie auf +, um eine Datei hochzuladen, eine Datenbank zu verbinden oder Beispieldaten auszuwählen."
+      },
+      "open_dashboards": {
+        "title": "Dashboards öffnen",
+        "body": "Klicken Sie im Menü auf „Dashboards“."
+      },
+      "open_alerts": {
+        "title": "Benachrichtigungen öffnen",
+        "body": "Klicken Sie im Menü auf „Benachrichtigungen“."
+      },
+      "save": {
+        "title": "Dieses Diagramm behalten",
+        "body": "Stellen Sie eine Frage, falls noch nicht geschehen, und klicken Sie dann auf die Stecknadel unter der Antwort.",
+        "here": "Klicken Sie auf die Stecknadel unter der Antwort, um dieses Diagramm zu behalten."
+      },
+      "dashboard": {
+        "title": "Ein Dashboard erstellen",
+        "body": "Klicken Sie hier, um eines zu starten. Sie können die gespeicherten Diagramme hinzufügen."
+      },
+      "invite": {
+        "title": "Einen Teamkollegen einladen",
+        "body": "Klicken Sie hier und geben Sie deren E-Mail-Adresse ein."
+      },
+      "alert": {
+        "title": "Benachrichtigt werden, wenn sich Zahlen ändern",
+        "body": "Klicken Sie hier, um Ihre erste Benachrichtigung einzurichten."
+      },
+      "pick_question": {
+        "title": "Erst ein Diagramm erstellen",
+        "body": "Wählen Sie eine vorgeschlagene Frage und senden Sie sie ab."
+      },
+      "finish_dialog": {
+        "title": "Fast geschafft",
+        "body": "Klicken Sie hier, um fortzufahren."
+      },
+      "open_chat_save": {
+        "title": "Zurück zu Ihrer Antwort",
+        "body": "Öffnen Sie Ask, um ein Diagramm aus einer Antwort zu behalten."
+      },
+      "open_chat_publish": {
+        "title": "Teilen Sie Ihre Erkenntnisse",
+        "body": "Öffnen Sie Ask, um eine Antwort in Shared Insights zu veröffentlichen."
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "Aicser ausprobieren",
+    "unavailable": "Die Sandbox ist derzeit nicht verfügbar.",
+    "failed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+    "email": "Geschäfts-E-Mail",
+    "email_rule": "Geben Sie eine gültige E-Mail-Adresse ein.",
+    "company_optional": "Unternehmen (optional)",
+    "phone_optional": "Telefon (optional)",
+    "terms": "Ich verstehe, dass dieser Arbeitsbereich für Beispieldaten ist und gelöscht wird, wenn er endet.",
+    "start_with_email": "Senden Sie mir einen Code per E-Mail",
+    "or": "oder",
+    "code_label": "Geben Sie den 6-stelligen Code ein, der an {email} gesendet wurde",
+    "code_rule": "Geben Sie die 6 Ziffern aus der E-Mail ein.",
+    "verify": "Meinen Arbeitsbereich öffnen",
+    "ended": "Diese Sandbox ist abgelaufen. Behalten Sie sie, um fortzufahren, oder sie wird gelöscht.",
+    "add_email": "E-Mail hinzufügen für mehr Zeit",
+    "keep": "Diesen Arbeitsbereich behalten",
+    "keep_title": "Diesen Arbeitsbereich behalten",
+    "keep_body": "Wählen Sie ein Passwort, um Ihre Team-Testversion zu starten. Alles, was Sie erstellt haben, bleibt erhalten.",
+    "password": "Passwort",
+    "password_rule": "Verwenden Sie mindestens 10 Zeichen.",
+    "keep_confirm": "Team-Testversion starten",
+    "email_title": "Ihre E-Mail-Adresse hinzufügen",
+    "email_body": "Sie erhalten mehr Zeit, mehr Credits und Platz für zwei Teamkollegen.",
+    "send_code": "Code senden",
+    "email_added": "E-Mail hinzugefügt. Sie haben mehr Zeit und Credits."
+  },
+  "license_notice": {
+    "ended": "Ihre Lizenz ist abgelaufen, daher ist Aicser schreibgeschützt. Nichts wurde gelöscht.",
+    "view": "Lizenz anzeigen"
+  },
+  "oauth_consent": {
+    "title": "{name} mit Aicser verbinden?",
+    "body": "Es kann auf Daten und Metriken zugreifen, auf die Sie Zugriff haben. Es kann nichts sehen, was Sie nicht sehen können, und es kann keine geteilte Arbeit ändern.",
+    "site": "Es kehrt zu {host} zurück.",
+    "allow": "Verbinden",
+    "cancel": "Abbrechen",
+    "failed": "Diese Verbindung kann nicht hergestellt werden.",
+    "unverified": "Fahren Sie nur fort, wenn Sie dies von einer vertrauenswürdigen App aus gestartet haben."
+  },
+  "ecosystem": {
+    "title": "Microsoft und Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "Einrichten",
+    "download": "Herunterladen",
+    "connected_title": "Verbundene KI-Apps",
+    "connected_empty": "Es sind noch keine KI-Apps verbunden.",
+    "disconnect": "Trennen",
+    "last_used": "Zuletzt verwendet {date}",
+    "never_used": "Noch nicht verwendet",
+    "items": {
+      "microsoft": {
+        "sign_in": "Mit Microsoft Entra anmelden",
+        "directory": "Personen aus Ihrem Verzeichnis synchronisieren",
+        "azure_ai": "Ihr Azure OpenAI nutzen",
+        "teams": "Aicser in Teams fragen",
+        "sharepoint": "SharePoint-Dokumente durchsuchen",
+        "excel": "Excel-Add-In",
+        "copilot": "Aicser in Microsoft 365 Copilot"
+      },
+      "google": {
+        "sign_in": "Mit Google anmelden",
+        "gemini_ai": "Ihren Gemini-Schlüssel verwenden",
+        "bigquery": "BigQuery verbinden",
+        "sheets": "Google Sheets verbinden",
+        "gemini_enterprise": "Aicser in Gemini Enterprise"
+      }
+    },
+    "copilot_title": "Aicser in Microsoft 365 Copilot",
+    "copilot_step1": "Erstellen Sie die Anmeldedaten und fügen Sie sie dann als OAuth-Registrierung im Teams Developer Portal hinzu.",
+    "copilot_create": "Anmeldedaten erstellen",
+    "copilot_secret_once": "Jetzt kopieren. Das Geheimnis wird nur einmal angezeigt.",
+    "copilot_step2": "Fügen Sie die von Microsoft bereitgestellte Registrierungs-ID ein, laden Sie dann den Agent herunter und laden Sie ihn im Microsoft 365 Admin Center hoch.",
+    "copilot_reference": "OAuth-Registrierungs-ID",
+    "copilot_download": "Copilot-Agent herunterladen",
+    "gemini_title": "Aicser in Gemini Enterprise",
+    "gemini_body": "Fügen Sie einen benutzerdefinierten MCP-Server in Gemini Enterprise mit dieser Adresse hinzu. Jede Person meldet sich beim ersten Mal bei Aicser an.",
+    "copy": "Kopieren",
+    "seat_note": "Jeder, der Aicser über Copilot oder Gemini nutzt, benötigt einen Aicser-Platz. Ein Light-Platz ist ausreichend.",
+    "failed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
+  },
+  "ai_agents": {
+    "page_title": "Assistenten",
+    "page_subtitle": "Assistenten, die Ihr Team für eine Aufgabe, Abteilung oder ein Projekt erstellt hat.",
+    "new": "Neuer Assistent",
+    "view_available": "Verwenden",
+    "view_mine": "Von mir erstellt",
+    "view_review": "Genehmigung erforderlich",
+    "view_all": "Alle Assistenten",
+    "empty_available": "Es sind noch keine Assistenten mit Ihnen geteilt.",
+    "empty_mine": "Erstellen Sie Ihren ersten Assistenten oder beginnen Sie mit einer Vorlage.",
+    "empty_review": "Nichts wartet auf Ihre Genehmigung.",
+    "start": "Starten",
+    "edit": "Bearbeiten",
+    "open_chat": "Chat",
+    "blank": "Von Grund auf neu starten",
+    "choose_template": "Aus einer Vorlage starten",
+    "status_draft": "Entwurf",
+    "status_pending": "Wartet auf Genehmigung",
+    "status_published": "Live",
+    "unpublished": "Unveröffentlichte Änderungen",
+    "audience_me": "Nur ich",
+    "audience_project": "Projekt",
+    "audience_organization": "Organisation",
+    "audience_public": "Öffentlich oder Website",
+    "audience_hint_me": "Nur Sie können es nutzen.",
+    "audience_hint_project": "Personen im Projekt. Ein Projektinhaber genehmigt.",
+    "audience_hint_organization": "Jeder in Ihrer Organisation. Ein Inhaber oder Administrator genehmigt.",
+    "audience_hint_public": "Jeder auf Ihrer Website, ohne Anmeldung. Ein Inhaber oder Administrator genehmigt. Aktionen bleiben deaktiviert.",
+    "name": "Name",
+    "icon": "Symbol",
+    "instructions": "Anweisungen",
+    "instructions_tip": "Wie es sich verhalten soll. Personen, die es nutzen, sehen dies nie.",
+    "welcome": "Willkommensnachricht",
+    "starters": "Starterfragen",
+    "starters_placeholder": "Frage hinzufügen und Enter drücken",
+    "abilities": "Was es kann",
+    "ability_documents": "Aus Dokumenten antworten",
+    "ability_data": "Daten analysieren",
+    "ability_actions": "Aktionen ausführen",
+    "ability_actions_tip": "Diagramme, Dashboards und Warnungen erstellen. Es fragt, bevor es geteilte Arbeit ändert.",
+    "knowledge": "Wissensbibliotheken",
+    "data_sources": "Datenquellen",
+    "advanced": "Weitere Einstellungen",
+    "model": "Modell",
+    "model_auto": "Standard",
+    "limit": "Monatliches KI-Limit (USD)",
+    "limit_tip": "Es stoppt die Beantwortung für den Rest des Monats bei diesem Betrag. Leer bedeutet kein Limit.",
+    "facts": "Weiß immer",
+    "facts_tip": "Kurze Fakten, die es für jeden wissen sollte, z.B. „Unser Geschäftsjahr beginnt im April“. Diese gelten sofort.",
+    "facts_add": "Fakt hinzufügen",
+    "remove": "Entfernen",
+    "versions": "Versionen",
+    "version_label": "Version {version}",
+    "restore": "Wiederherstellen",
+    "save": "Entwurf speichern",
+    "saved": "Gespeichert",
+    "try": "Ausprobieren",
+    "publish": "Veröffentlichen",
+    "publish_title": "Für wen ist das?",
+    "publish_note": "Hinweis für den Genehmiger (optional)",
+    "publish_confirm": "Veröffentlichen",
+    "sent_for_approval": "Zur Genehmigung gesendet. Sie werden benachrichtigt.",
+    "published": "Ihr Assistent ist live.",
+    "waiting_from": "Warten auf Genehmigung von {names}.",
+    "approve": "Genehmigen",
+    "decline": "Ablehnen",
+    "decline_reason": "Grund (optional)",
+    "requested_for": "Für: {audience}",
+    "review_changes": "Anweisungen, die sie veröffentlichen würden",
+    "approved": "Genehmigt. Es ist jetzt live.",
+    "declined": "Abgelehnt.",
+    "own_tip": "Ihre Organisation bittet jemand anderen, Ihren eigenen Assistenten zu genehmigen.",
+    "owner": "Inhaber",
+    "audience": "Zielgruppe",
+    "spend": "Diesen Monat ausgegeben",
+    "updated": "Geändert",
+    "owner_left": "Pausiert: Inhaber hat verlassen",
+    "transfer": "Übergeben",
+    "delete": "Löschen",
+    "delete_confirm": "Diesen Assistenten löschen? Personen können ihn nicht mehr verwenden.",
+    "embed_hint": "Sobald es live ist, finden Sie den Einbettungscode unter Weitere Einstellungen.",
+    "banner_leave": "Zurück zu Ask",
+    "failed": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+    "not_available": "Dieser Assistent ist für Sie nicht verfügbar.",
+    "by": "von {name}",
+    "uses": "Antworten von: {list}",
+    "unavailable_tag": "Nicht verfügbar",
+    "welcome_default": "Fragen Sie {name} alles, wofür es entwickelt wurde.",
+    "website": "Auf Ihrer Website",
+    "get_code": "Einbettungscode abrufen",
+    "icon_tip": "Ohne ein eigenes Symbol verwendet dieser Assistent das Logo Ihrer Organisation.",
+    "icon_upload": "Bild hochladen",
+    "ability_attachments": "Dateien anhängen",
+    "ability_voice": "Spracheingabe",
+    "public_locked": "Nicht in Ihrem Plan enthalten. Ein öffentlicher Assistent erfordert Pro oder höher, oder eine Team-Testversion, wenn Sie die Demo nutzen.",
+    "preview_visitor": "Vorschau als Website-Besucher",
+    "picker_all": "Alle Assistenten durchsuchen",
+    "picker_label": "Einen Assistenten fragen",
+    "can_act": "Kann Aktionen ausführen"
+  },
+  "answer_style": {
+    "tone": "Ton",
+    "tone_professional": "Professionell",
+    "tone_friendly": "Freundlich",
+    "tone_formal": "Formell",
+    "tone_plain": "Einfache Sprache",
+    "detail": "Antwortlänge",
+    "detail_standard": "Standard",
+    "detail_brief": "Kurz",
+    "detail_thorough": "Ausführlich",
+    "guidance": "Sonstiges",
+    "guidance_tip": "Gilt für Ask, den Agent und jeden Agenten, den Ihr Team erstellt. Zum Beispiel: „Sagen Sie Mitglieder, nicht Kunden.“",
+    "saved": "Gespeichert",
+    "more": "Für längere Regeln, pro Projekt oder pro Person, verwenden Sie den KI-Speicher.",
+    "save": "Speichern"
   }
 }

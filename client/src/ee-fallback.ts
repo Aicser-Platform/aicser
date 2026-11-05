@@ -37,6 +37,8 @@ export interface StreamingAccumulator {
 // ── Component stubs ──────────────────────────────────────────────────────────
 export const BillingSuccessHandler   = (): null => null;
 export const TrialExpiryBanner       = (): null => null;
+export const SandboxBar              = (): null => null;
+export const LicenseNotice           = (): null => null;
 export const ProjectSelectorModal    = (_props: ProjectSelectorModalProps): null => null;
 export const PricingModalEE          = (): null => null;
 export const AnimatedAIAvatar        = (): null => null;
@@ -53,6 +55,7 @@ export const TeamSettingsTab         = (): null => null;
 export const IntegrationSettingsTab  = (): null => null;
 export const OutboundEmailSettingsTab = (): null => null;
 export const SubscriptionSettingsTab = (): null => null;
+export const PersonalLicenseTab = (): null => null;
 export const UsageAnalyticsSettingsTab = (): null => null;
 export const LicenseSettingsTab      = (): null => null;
 export const RolesTab                = (): null => null;
@@ -85,6 +88,10 @@ export const ProjectsPage            = (): null => null;
 export const DataPlatformPage        = (): null => null;
 export const PipelinesPage           = (): null => null;
 export const AgentMcpTab             = (): null => null;
+export const EcosystemTab            = (): null => null;
+export const AiAgentsPage            = (): null => null;
+export const AnswerStyleTab          = (): null => null;
+export const AiAgentBuilderPage      = (): null => null;
 export const SensorConnections       = (): null => null;
 export const MachinesPanel           = (): null => null;
 export const MachineHealthList       = (): null => null;

@@ -2,18 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { MOVED_TABS, SETTINGS_SECTIONS, groupSettingsPages } from '../settingsPages';
 
 const ALL_SETTINGS = [
-  'profile', 'general', 'notifications', 'security', 'ai-memory', 'project', 'team', 'roles', 'integrations',
-  'api-keys', 'embed', 'usage', 'adoption', 'releases', 'billing-subscription', 'agent-budget', 'agent-capabilities', 'agent-skills', 'agent-mcp', 'publishing', 'agent-rules',
-  'ai-decision-layer', 'ai-quality', 'ai-audit-log', 'access-overview', 'privacy', 'ai-residency', 'data-shares',
-  'audit', 'organization', 'license', 'identity', 'lakehouse',
+  'access-overview', 'adoption', 'agent-budget', 'agent-capabilities', 'agent-mcp', 'agent-rules', 'agent-skills', 'ai-decision-layer', 'ai-memory', 'ai-quality', 'ai-residency', 'answer-style', 'api-keys', 'audit', 'billing-subscription', 'data-shares', 'ecosystem', 'embed', 'general', 'identity', 'integrations', 'lakehouse', 'license', 'notifications', 'organization', 'personal-license', 'privacy', 'profile', 'project', 'publishing', 'releases', 'roles', 'security', 'team', 'usage',
 ];
 const item = (key: string) => ({ key, label: key, description: `${key} desc` });
 
 describe('Settings pages', () => {
-  it('holds every setting exactly once, on 16 pages', () => {
+  it('holds every setting exactly once, on 20 pages', () => {
     const listed = SETTINGS_SECTIONS.flatMap((s) => s.pages.flatMap((p) => p.keys));
     expect([...listed].sort()).toEqual([...ALL_SETTINGS].sort());
-    expect(SETTINGS_SECTIONS.flatMap((s) => s.pages)).toHaveLength(16);
+    expect(SETTINGS_SECTIONS.flatMap((s) => s.pages)).toHaveLength(20);
   });
 
   it('shows a page only with the settings this person may open, named after a lone setting', () => {
@@ -23,12 +20,12 @@ describe('Settings pages', () => {
     expect(pages[0].label).toBe('profile'); // only Profile is visible: the page takes its name
     expect(pages[1].label).toBe('Team & roles');
     expect(pages[1].items.map((i) => i.key)).toEqual(['team', 'roles']);
-    expect(groups.map((g) => g.id)).toEqual(['account', 'workspace']);
+    expect(groups.map((g) => g.id)).toEqual(['account', 'organization', 'billing']);
   });
 
-  it('keeps an unplaced setting visible under Workspace', () => {
+  it('keeps an unplaced setting visible under Project', () => {
     const groups = groupSettingsPages([item('something-new')]);
-    expect(groups[0].id).toBe('workspace');
+    expect(groups[0].id).toBe('project');
     expect(groups[0].pages[0].items[0].key).toBe('something-new');
   });
 

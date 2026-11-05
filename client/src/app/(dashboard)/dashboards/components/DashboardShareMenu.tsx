@@ -214,7 +214,7 @@ export function DashboardShareMenu({
     <>
       <Dropdown menu={{ items }} trigger={['click']}>
         <Tooltip title={t('share_tooltip')}>
-          <Button icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
+          <Button data-guide="publish-insight" icon={<ShareAltOutlined />} disabled={!dashboardId} loading={exportBusy}>
             {t('share')}
           </Button>
         </Tooltip>

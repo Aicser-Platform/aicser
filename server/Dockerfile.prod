@@ -89,6 +89,10 @@ ARG ODBC18_DEB_ARM64=https://packages.microsoft.com/debian/12/prod/pool/main/m/m
 # behavior is already license-gated via is_ee_enabled() regardless; this
 # just stops the source from shipping in the CE image at all.
 ARG EDITION=enterprise
+# Images we hand to customers: a license is always required, and offline license files are checked
+# against this public key. Both stay in the image so the customer's environment can't change them.
+ARG LICENSE_REQUIRED=false
+ARG LICENSE_PUBLIC_KEY_B64=
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -189,6 +193,9 @@ USER root
 # Remove Python cache
 RUN find . -name "__pycache__" -type d -exec rm -rf {} + || true
 RUN chmod +x /app/scripts/railway-start.sh /app/scripts/railway-worker-start.sh /app/scripts/docker-entrypoint.sh 2>/dev/null || chmod +x /app/scripts/*.sh
+
+RUN if [ "$LICENSE_REQUIRED" = "true" ]; then touch /app/.license-required; fi \
+    && if [ -n "$LICENSE_PUBLIC_KEY_B64" ]; then echo "$LICENSE_PUBLIC_KEY_B64" | base64 -d > /app/license_public_key.pem; fi
 
 EXPOSE 8000
 

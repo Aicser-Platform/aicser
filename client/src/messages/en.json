@@ -434,8 +434,6 @@
     "confirm_password": "Confirm password",
     "welcome_back": "Welcome back",
     "create_account": "Create your account",
-    "sign_up_subtitle": "Free account. Sample data is ready, so you can ask a question before connecting your own.",
-    "sign_in_subtitle": "Sign in to continue to your workspace",
     "email_placeholder": "you@company.com",
     "email_required": "Please input your email!",
     "email_invalid": "Please enter a valid email!",
@@ -562,7 +560,8 @@
     "two_factor_use_app": "Use your authenticator app",
     "two_factor_back": "Back to sign in",
     "two_factor_code_label": "Authenticator code",
-    "two_factor_backup_label": "Backup code"
+    "two_factor_backup_label": "Backup code",
+    "try_without_account": "Try Aicser without an account"
   },
   "bi_dashboard": {
     "title": "Business intelligence dashboard",
@@ -2096,24 +2095,17 @@
     "resolved_mode_switched": "Switched to {mode}",
     "agent_start_failed": "Agent couldn't start this task.",
     "use_case_analyze_standard": "Standard",
-    "first_hour": {
-      "label": "Getting started",
-      "data": "Connect data",
-      "dashboard": "First dashboard",
-      "alert": "First alert",
-      "dashboard_prompt": "Look at my data and build me a starter dashboard with the few numbers that matter most.",
-      "alert_prompt": "Suggest one alert on my most important number and set it up for me.",
-      "hide": "Hide"
-    },
     "light_seat_title": "AI needs a key or an AI seat",
     "light_seat_body": "Your Light seat uses your own AI key. Add one, or ask your admin for an AI seat.",
     "light_seat_requested": "Your admin has been asked. You can keep working in the meantime, or add your own key.",
     "light_seat_request": "Request AI seat",
     "light_seat_requested_short": "Requested",
     "light_seat_own_key": "Add my own key",
-    "light_seat_request_failed": "Couldn't send the request. Please try again."
+    "light_seat_request_failed": "Couldn't send the request. Please try again.",
+    "agent_not_available": "This assistant isn't available to you."
   },
   "chat_page": {
+    "sample_shop_name": "Sample shop",
     "dense_daily_hint": "Showing daily points.",
     "dense_daily_weekly_cta": "Show by week",
     "dense_daily_weekly_prompt": "Show the same answer by week instead of by day.",
@@ -2978,7 +2970,13 @@
     "menu_svg": "SVG (vector)",
     "report_open_new_tab": "Open in new tab",
     "use_case_analyze_standard": "Standard",
-    "answer_ready_notice": "Your Aicser answer is ready"
+    "answer_ready_notice": "Your Aicser answer is ready",
+    "composer_agent_placeholder": "Message {name}…",
+    "voice_listening": "Listening. Speak your question.",
+    "voice_working": "Turning your voice into text…",
+    "voice_denied": "Allow the microphone in your browser to use voice.",
+    "voice_unavailable": "Voice input isn't available right now. Type your question instead.",
+    "voice_empty": "Didn't catch that. Try again a little closer to the microphone."
   },
   "chat_sql_editor": {
     "enter_sql": "Please enter a SQL query",
@@ -7240,7 +7238,9 @@
     "agent_tasks": "Automations",
     "hint_agent": "Tasks Aicser works on, schedules and saved skills",
     "show_all_tools": "Show all tools",
-    "show_essentials": "Show essentials only"
+    "show_essentials": "Show essentials only",
+    "ai_agents": "Assistants",
+    "hint_agents": "Assistants your team built for a job, department or project"
   },
   "semantic_layer_hub": {
     "title": "Semantic models",
@@ -7816,9 +7816,18 @@
     "secure_note": "Secure checkout",
     "cancel": "Cancel",
     "continue_to_payment": "Continue to payment",
-    "method_unavailable": "Not available yet"
+    "method_unavailable": "Not available yet",
+    "paid_credits": "Payment successful! Your credits have been added.",
+    "paid_personal": "Payment successful! Your license is in Seats & credits."
   },
   "pricing_modal": {
+    "per_year": "/year",
+    "team_total_period_year": "/year for {n} members",
+    "team_up_to": "Up to {n} members, each with AI.",
+    "team_more_members": "More members: ${ai}/month with AI, or ${light}/month Light (no AI credits).",
+    "team_more_members_year": "More members: ${ai}/year with AI, or ${light}/year Light (no AI credits).",
+    "add_ai_year": "Add Aicser AI (+${extra}/year)",
+    "checkout_covers": "Covers {n} members with AI{ai, plural, =0 {} one {, plus # more with AI} other {, plus # more with AI}}{light, plural, =0 {} other {, plus # Light}}",
     "custom": "Custom",
     "free": "Free",
     "checkout_failed": "Stripe checkout failed",
@@ -7850,7 +7859,7 @@
     "footnote": "Signed-in viewers count as Light members. Public links and embeds need no seat.",
     "benefit_cancel_anytime": "Cancel anytime, no questions asked",
     "benefit_paid_unlock": "All features unlocked on paid plans",
-    "footer_text": "Prices shown in USD. Secure payment processing via Stripe.",
+    "footer_text": "Prices shown in USD. Secure payment processing.",
     "pack_starter_label": "Starter boost",
     "pack_starter_note": "Perfect for pilots and proofs of concept.",
     "pack_growth_label": "Growth pack",
@@ -7860,10 +7869,8 @@
     "pack_enterprise_label": "Enterprise surge",
     "pack_enterprise_note": "Designed for high-volume operations.",
     "per_member_month": "/member/month",
-    "per_member_short": "per member",
     "with_ai": "With Aicser AI · {credits} credits a month",
     "without_ai": "Without AI · use your own model keys",
-    "team_members_note": "Light members ${light}: Editor access, AI with their own keys.",
     "pack_note": "Used after the month's credits; valid {months} months",
     "pay_card": "Card",
     "buy_credits": "Buy {count} credits (${price})",
@@ -7873,7 +7880,6 @@
     "buy_personal": "Buy for ${price}",
     "add_ai": "Add Aicser AI (+${extra}/month)",
     "team_total_period": "/month for {n} members",
-    "team_per_member": "${price} per member, AI included. Add members any time.",
     "own_model_keys": "Your own model keys"
   },
   "profile": {
@@ -9036,13 +9042,15 @@
     "collapse": "Collapse"
   },
   "settings": {
+    "team_seats_full": "All seats are in use",
+    "team_add_seats": "Add seats",
     "active": "Active",
     "add_data_source": "Connect data",
     "add_first_data_source": "Add your first data source",
     "add_model": "Add",
     "agent_budget": {
-      "title": "AI budget & model preferences",
-      "subtitle": "Set spending limits and default model preferences for AI usage in this organization.",
+      "title": "AI budget",
+      "subtitle": "Spending limits for AI in this organization.",
       "org_required": "Select an organization to configure AI budget settings.",
       "default_model": "Default model",
       "default_model_placeholder": "Select a default model",
@@ -9050,7 +9058,7 @@
       "hard_limit": "Hard limit (USD)",
       "alert_threshold": "Alert threshold (%)",
       "save": "Save",
-      "save_success": "AI budget preferences saved",
+      "save_success": "Saved",
       "save_error": "Failed to save AI budget preferences",
       "cost_title": "Spend this month",
       "cost_subtitle": "Model spend from the AI cost center for the last 30 days.",
@@ -9302,7 +9310,8 @@
       "accuracy_shape_monthly": "Monthly trends",
       "accuracy_shape_year_total": "Yearly totals",
       "accuracy_shape_forecast": "Forecasts",
-      "accuracy_shape_diagnose": "Why did it change"
+      "accuracy_shape_diagnose": "Why did it change",
+      "kpi_latency_slowest": "95% of answers arrive within {seconds} seconds."
     },
     "all_status": "All status",
     "anthropic_workspace_id": "Workspace ID",
@@ -10563,7 +10572,13 @@
     "two_factor_off_title": "Turn off two-step sign-in",
     "two_factor_off_password": "Enter your password to confirm.",
     "two_factor_off_code": "Enter a code from your authenticator app to confirm.",
-    "two_factor_off_done": "Two-step sign-in is off"
+    "two_factor_off_done": "Two-step sign-in is off",
+    "publishing_second_label": "Require a second approver",
+    "publishing_second_tip": "Owners and admins also need another owner or admin to approve their public work. Use this if your compliance rules need two people.",
+    "embed_agents_moved": "Embedding an AI assistant? Build it in Assistants, publish it to Public, and get the code there.",
+    "enterprise_only_custom_roles": "Custom roles come with the Enterprise plan.",
+    "enterprise_only_second_approver": "A second approver comes with the Enterprise plan.",
+    "enterprise_only_audit": "Export, SIEM and full history come with the Enterprise plan. Team shows the last 90 days."
   },
   "settings_appearance": {
     "updated_ok": "Appearance settings updated successfully!",
@@ -10824,6 +10839,7 @@
     "checkout_failed": "Failed to initiate checkout"
   },
   "user_profile_dropdown": {
+    "join_community": "Join the Aicsertics community",
     "user": "User",
     "unknown": "Unknown",
     "failed_upgrade_plan": "Failed to upgrade plan. Please try again.",
@@ -11102,9 +11118,9 @@
     "roles_label": "Roles & access",
     "roles_desc": "Who can do what",
     "usage_label": "Usage",
-    "usage_desc": "Your footprint, AI activity, and limits",
+    "usage_desc": "Your plan, what has been used, and where the spend went",
     "billing-subscription_label": "Billing",
-    "billing-subscription_desc": "Plan, payment, and invoices (Aicser Cloud)",
+    "billing-subscription_desc": "Seats, payment and invoices",
     "identity_label": "Directory sync",
     "identity_desc": "Users and groups from your identity provider (SCIM)",
     "ai-residency_label": "AI data residency",
@@ -11125,16 +11141,16 @@
     "agent-capabilities_desc": "Choose which actions the AI may take",
     "kpi-definitions_label": "Metric definitions",
     "kpi-definitions_desc": "Teach the AI how your organization calculates key numbers",
-    "ai-quality_label": "AI quality",
-    "ai-quality_desc": "How accurate and helpful answers have been",
+    "ai-quality_label": "Quality & audit",
+    "ai-quality_desc": "How answers have been, and every AI call",
     "ai-decision-layer_label": "AI routing",
     "ai-decision-layer_desc": "Which steps the assistant decides with your own fast model, and whether each is ready",
     "ai-audit-log_label": "AI audit log",
     "ai-audit-log_desc": "Every AI request: who, when, which model, cost",
     "briefings_label": "Briefings",
     "briefings_desc": "Scheduled AI reports",
-    "agent-budget_label": "AI cost center",
-    "agent-budget_desc": "Budgets and model spend by project",
+    "agent-budget_label": "AI budget",
+    "agent-budget_desc": "Spending limits for AI",
     "notifications_label": "Notifications",
     "notifications_desc": "Email and the Activity bell",
     "ai-memory_label": "AI memory",
@@ -11146,9 +11162,9 @@
     "page_team_label": "Team & roles",
     "page_team_desc": "Members, invitations and what each role may do",
     "page_integrations_label": "Integrations",
-    "page_integrations_desc": "Email, Slack, Teams, API keys and embedding",
+    "page_integrations_desc": "Email, Slack, Teams, Microsoft and Google",
     "page_usage_label": "Usage & billing",
-    "page_usage_desc": "Usage, plan, invoices and AI spend",
+    "page_usage_desc": "Usage, seats, payment, invoices and AI budget",
     "page_ai-rules_label": "Rules & models",
     "page_ai-rules_desc": "Which tools AI may use, what needs approval, and which models decide",
     "page_ai-oversight_label": "Quality & audit",
@@ -11159,7 +11175,15 @@
     "page_organization_desc": "Name, branding and license",
     "search_placeholder": "Search settings",
     "search_empty": "No setting matches.",
-    "close_nav": "Close settings menu"
+    "close_nav": "Close settings menu",
+    "group_project": "Project",
+    "group_organization": "Organization",
+    "group_sharing": "Connect & share",
+    "group_billing": "Billing",
+    "page_sharing_label": "Publishing & embedding",
+    "page_sharing_desc": "What may leave the organization, and how",
+    "adoption_label": "Adoption",
+    "adoption_desc": "Who uses Aicser and what goes unused"
   },
   "license_tab": {
     "load_failed": "Couldn't load the license status",
@@ -15656,6 +15680,15 @@
     "calc_share": "{part} out of {total} ({column})"
   },
   "billing_seats": {
+    "seats_used": "{used} of {capacity} seats in use",
+    "add_seats": "Add seats",
+    "extras_ai": "Extra AI seats",
+    "extras_light": "Extra Light seats (no AI credits)",
+    "extras_confirm": "Confirm",
+    "extras_saved": "Seats updated",
+    "extras_total_month": "{seats} seats, ${total} a month in total.",
+    "extras_total_year": "{seats} seats, ${total} a year in total.",
+    "extras_due": "${due} due now.",
     "seats_title": "Seats",
     "seats_summary": "{ai} members (${aiPrice}/month each, 900 credits) and {platform} Light members (${platformPrice}/month each, own model keys).",
     "member": "Member",
@@ -15689,7 +15722,8 @@
     "seat_per_month": "a month",
     "seat_per_year": "a year",
     "seat_requested": "Asked for AI",
-    "seat_decline": "Decline"
+    "seat_decline": "Decline",
+    "payments_not_set_up": "Online payment isn't set up here yet."
   },
   "plant": {
     "subtitle": "Organize signals into sites, lines and machines. Health and alerts follow from here.",
@@ -15923,6 +15957,309 @@
     "links_title": "Shared links",
     "views_title": "Views",
     "waiting": "Waiting for approval",
-    "approve": "Approve"
+    "approve": "Approve",
+    "pending_with": "Waiting for approval from {names}. They have been notified.",
+    "decline": "Decline",
+    "own_link_tip": "Your organization asks someone else to approve your own links. Ask {names}."
+  },
+  "guide": {
+    "community": "Join the Aicsertics community",
+    "skip": "Skip",
+    "all_set": "You're all set",
+    "hide_list": "Hide this list",
+    "nice_work": "Nice work",
+    "up_next": "Up next: {item}",
+    "continue": "Continue",
+    "working": "Working on your answer",
+    "title": "Getting started",
+    "open": "Getting started, {done} of {total} done",
+    "progress": "{current} of {total}",
+    "next": "Next",
+    "done": "Done",
+    "later": "Later",
+    "checklist": {
+      "connect": "Connect your data",
+      "ask": "Ask your first question",
+      "save": "Save a chart you like",
+      "dashboard": "Build a dashboard",
+      "publish": "Publish to Shared Insights",
+      "invite": "Invite a teammate",
+      "discuss": "Get a reply from your team",
+      "alert": "Set an alert"
+    },
+    "steps": {
+      "open_chat": {
+        "title": "Open Ask",
+        "body": "Click Ask in the menu to talk to your data in plain words."
+      },
+      "ask": {
+        "title": "Ask anything about your data",
+        "body": "Try \"Which products bring in the most revenue?\" and send it."
+      },
+      "publish": {
+        "title": "Share what you found",
+        "body": "Open an answer or a dashboard, then click Share to publish it to Shared Insights so your team can discuss it.",
+        "here": "Click Share to publish this answer to Shared Insights so your team can discuss it.",
+        "here_dashboards": "Click Share, then Publish to Shared Insights, so your team can discuss this dashboard."
+      },
+      "shared_insights": {
+        "title": "Shared Insights",
+        "body": "Findings your team published, all in one place."
+      },
+      "discuss": {
+        "title": "Talk it through",
+        "body": "Publish something, then ask a teammate to comment or react here. This step finishes when they do."
+      },
+      "connect": {
+        "title": "Start with sample data",
+        "body": "One click opens a made-up shop to try. You can connect your own data any time."
+      },
+      "connect_data": {
+        "title": "Connect some data",
+        "body": "Click + to upload a file, connect a database, or pick sample data."
+      },
+      "open_dashboards": {
+        "title": "Open Dashboards",
+        "body": "Click Dashboards in the menu."
+      },
+      "open_alerts": {
+        "title": "Open Alerts",
+        "body": "Click Alerts in the menu."
+      },
+      "save": {
+        "title": "Keep this chart",
+        "body": "Ask a question if you haven't yet, then click the pin under the answer.",
+        "here": "Click the pin under the answer to keep this chart."
+      },
+      "dashboard": {
+        "title": "Build a dashboard",
+        "body": "Click here to start one. You can add the charts you saved."
+      },
+      "invite": {
+        "title": "Invite a teammate",
+        "body": "Click here and enter their email."
+      },
+      "alert": {
+        "title": "Get told when numbers move",
+        "body": "Click here to set your first alert."
+      },
+      "pick_question": {
+        "title": "Get a chart first",
+        "body": "Pick a suggested question and send it."
+      },
+      "finish_dialog": {
+        "title": "Almost there",
+        "body": "Click here to continue."
+      },
+      "open_chat_save": {
+        "title": "Back to your answer",
+        "body": "Open Ask to keep a chart from one of your answers."
+      },
+      "open_chat_publish": {
+        "title": "Share what you found",
+        "body": "Open Ask to publish an answer to Shared Insights."
+      }
+    }
+  },
+  "sandbox": {
+    "try_title": "Try Aicser",
+    "unavailable": "The sandbox isn't available right now.",
+    "failed": "Something went wrong. Please try again.",
+    "email": "Work email",
+    "email_rule": "Enter a valid email address.",
+    "company_optional": "Company (optional)",
+    "phone_optional": "Phone (optional)",
+    "terms": "I understand this workspace is for sample data and is deleted when it ends.",
+    "start_with_email": "Email me a code",
+    "or": "or",
+    "start_as_guest": "Try as a guest for {days, plural, one {# day} other {# days}}",
+    "code_label": "Enter the 6-digit code sent to {email}",
+    "code_rule": "Enter the 6 digits from the email.",
+    "verify": "Open my workspace",
+    "status": "Sandbox: {hours, plural, one {# hour} other {# hours}} and {credits, plural, one {# credit} other {# credits}} left",
+    "ended": "This sandbox has ended. Keep it to carry on, or it will be deleted.",
+    "add_email": "Add email for more time",
+    "keep": "Keep this workspace",
+    "keep_title": "Keep this workspace",
+    "keep_body": "Choose a password to start your Team trial. Everything you built stays.",
+    "password": "Password",
+    "password_rule": "Use at least 10 characters.",
+    "keep_confirm": "Start Team trial",
+    "email_title": "Add your email",
+    "email_body": "You'll get more time, more credits and room for two teammates.",
+    "send_code": "Send code",
+    "email_added": "Email added. You have more time and credits."
+  },
+  "license_notice": {
+    "ending": "Your license ends in {days, plural, =0 {less than a day} one {# day} other {# days}}. Aicser then becomes read-only.",
+    "ended": "Your license has ended, so Aicser is read-only. Nothing has been deleted.",
+    "view": "View license"
+  },
+  "oauth_consent": {
+    "title": "Connect {name} to Aicser?",
+    "body": "It can read data and metrics you have access to, as you. It can't see anything you can't, and it can't change shared work.",
+    "site": "It will return to {host}.",
+    "allow": "Connect",
+    "cancel": "Cancel",
+    "failed": "This connection can't be completed.",
+    "unverified": "Only continue if you started this from an app you trust."
+  },
+  "ecosystem": {
+    "title": "Microsoft and Google",
+    "pack_microsoft": "Microsoft",
+    "pack_google": "Google",
+    "set_up": "Set up",
+    "download": "Download",
+    "connected_title": "Connected AI apps",
+    "connected_empty": "No AI apps are connected yet.",
+    "disconnect": "Disconnect",
+    "last_used": "Last used {date}",
+    "never_used": "Not used yet",
+    "items": {
+      "microsoft": {
+        "sign_in": "Sign in with Microsoft Entra",
+        "directory": "Sync people from your directory",
+        "azure_ai": "Use your Azure OpenAI",
+        "teams": "Ask Aicser in Teams",
+        "sharepoint": "Search SharePoint documents",
+        "excel": "Excel add-in",
+        "copilot": "Aicser in Microsoft 365 Copilot"
+      },
+      "google": {
+        "sign_in": "Sign in with Google",
+        "gemini_ai": "Use your Gemini key",
+        "bigquery": "Connect BigQuery",
+        "sheets": "Connect Google Sheets",
+        "gemini_enterprise": "Aicser in Gemini Enterprise"
+      }
+    },
+    "copilot_title": "Aicser in Microsoft 365 Copilot",
+    "copilot_step1": "Create the sign-in details, then add them as an OAuth registration in the Teams Developer Portal.",
+    "copilot_create": "Create sign-in details",
+    "copilot_secret_once": "Copy these now. The secret is shown only once.",
+    "copilot_step2": "Paste the registration ID Microsoft gives you, then download the agent and upload it in the Microsoft 365 admin center.",
+    "copilot_reference": "OAuth registration ID",
+    "copilot_download": "Download Copilot agent",
+    "gemini_title": "Aicser in Gemini Enterprise",
+    "gemini_body": "Add a custom MCP server in Gemini Enterprise with this address. Each person signs in to Aicser the first time.",
+    "copy": "Copy",
+    "seat_note": "Everyone who uses Aicser through Copilot or Gemini needs an Aicser seat. A Light seat is enough.",
+    "failed": "Something went wrong. Please try again."
+  },
+  "ai_agents": {
+    "page_title": "Assistants",
+    "page_subtitle": "Assistants your team built for a job, department or project.",
+    "new": "New assistant",
+    "view_available": "Use",
+    "view_mine": "Built by me",
+    "view_review": "Needs approval",
+    "view_all": "All assistants",
+    "empty_available": "No assistants are shared with you yet.",
+    "empty_mine": "Build your first assistant, or start from a template.",
+    "empty_review": "Nothing is waiting for your approval.",
+    "start": "Start",
+    "edit": "Edit",
+    "open_chat": "Chat",
+    "blank": "Start from scratch",
+    "choose_template": "Start from a template",
+    "status_draft": "Draft",
+    "status_pending": "Waiting for approval",
+    "status_published": "Live",
+    "unpublished": "Unpublished changes",
+    "audience_me": "Just me",
+    "audience_project": "Project",
+    "audience_organization": "Organization",
+    "audience_public": "Public or website",
+    "audience_hint_me": "Only you can use it.",
+    "audience_hint_project": "People in its project. A project owner approves.",
+    "audience_hint_organization": "Everyone in your organization. An owner or admin approves.",
+    "audience_hint_public": "Anyone on your website, with no sign-in. An owner or admin approves. Actions stay off.",
+    "name": "Name",
+    "icon": "Icon",
+    "instructions": "Instructions",
+    "instructions_tip": "How it should behave. People using it never see this.",
+    "welcome": "Welcome message",
+    "starters": "Starter questions",
+    "starters_placeholder": "Add a question and press Enter",
+    "abilities": "What it can do",
+    "ability_documents": "Answer from documents",
+    "ability_data": "Analyze data",
+    "ability_actions": "Take actions",
+    "ability_actions_tip": "Build charts, dashboards and alerts. It asks before changing shared work.",
+    "knowledge": "Knowledge libraries",
+    "data_sources": "Data sources",
+    "advanced": "More settings",
+    "model": "Model",
+    "model_auto": "Default",
+    "limit": "Monthly AI limit (USD)",
+    "limit_tip": "It stops answering for the rest of the month at this amount. Empty means no limit.",
+    "facts": "Always knows",
+    "facts_tip": "Short facts it should know for everyone, such as \"Our fiscal year starts in April\". These apply at once.",
+    "facts_add": "Add a fact",
+    "remove": "Remove",
+    "versions": "Versions",
+    "version_label": "Version {version}",
+    "restore": "Restore",
+    "save": "Save draft",
+    "saved": "Saved",
+    "try": "Try it",
+    "publish": "Publish",
+    "publish_title": "Who is this for?",
+    "publish_note": "Note for the approver (optional)",
+    "publish_confirm": "Publish",
+    "sent_for_approval": "Sent for approval. You'll be notified.",
+    "published": "Your assistant is live.",
+    "waiting_from": "Waiting for approval from {names}.",
+    "approve": "Approve",
+    "decline": "Decline",
+    "decline_reason": "Reason (optional)",
+    "requested_for": "For: {audience}",
+    "review_changes": "Instructions they'd publish",
+    "approved": "Approved. It's live now.",
+    "declined": "Declined.",
+    "own_tip": "Your organization asks someone else to approve your own assistant.",
+    "owner": "Owner",
+    "audience": "Audience",
+    "spend": "Spent this month",
+    "updated": "Changed",
+    "owner_left": "Paused: owner left",
+    "transfer": "Hand over",
+    "delete": "Delete",
+    "delete_confirm": "Delete this assistant? People won't be able to use it.",
+    "embed_hint": "Once it's live, the embed code is under More settings.",
+    "banner_leave": "Back to Ask",
+    "failed": "Something went wrong. Please try again.",
+    "not_available": "This assistant isn't available to you.",
+    "by": "by {name}",
+    "uses": "Answers from: {list}",
+    "unavailable_tag": "Not available",
+    "welcome_default": "Ask {name} anything it was built for.",
+    "website": "On your website",
+    "get_code": "Get embed code",
+    "icon_tip": "Without one, this assistant uses your organization's logo.",
+    "icon_upload": "Upload image",
+    "ability_attachments": "Attach files",
+    "ability_voice": "Voice input",
+    "public_locked": "Not on your plan. A public assistant needs Pro or higher, or a Team trial if you're on the demo.",
+    "preview_visitor": "Preview as a website visitor",
+    "picker_all": "Browse all assistants",
+    "picker_label": "Ask an assistant",
+    "can_act": "Can take actions"
+  },
+  "answer_style": {
+    "tone": "Tone",
+    "tone_professional": "Professional",
+    "tone_friendly": "Friendly",
+    "tone_formal": "Formal",
+    "tone_plain": "Plain language",
+    "detail": "Answer length",
+    "detail_standard": "Standard",
+    "detail_brief": "Brief",
+    "detail_thorough": "Thorough",
+    "guidance": "Anything else",
+    "guidance_tip": "Applies to Ask, the Agent and every agent your team builds. For example: \"Say members, not customers.\"",
+    "saved": "Saved",
+    "more": "For longer rules, per project or per person, use AI memory.",
+    "save": "Save"
   }
 }

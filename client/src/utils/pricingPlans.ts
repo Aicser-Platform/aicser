@@ -14,7 +14,7 @@ export interface PricingPlan {
   /** Price per Light member: the full platform without Aicser's AI (own model keys work). */
   price_light_monthly?: number;
   price_light_yearly?: number;
-  /** Team: minimum members billed (missing members count as Light). */
+  /** Team: members its price covers, each with AI. */
   min_seats?: number;
   /** Shown per member rather than per plan. */
   per_member?: boolean;
@@ -99,8 +99,8 @@ export const pricingPlans: PricingPlan[] = [
     features: [
       '1 member, 1 project, 2 data sources',
       'Charts and dashboards (with watermark)',
-      'Ask, Forecast and Dashboard modes',
-      'Use your own AI model keys',
+      'Ask, Forecast and Standard AI modes',
+      'Own AI model keys with limits',
       'Community support',
     ],
     watermark: true,
@@ -120,11 +120,11 @@ export const pricingPlans: PricingPlan[] = [
     ],
     features: [
       'For one person',
-      'Unlimited projects and data sources, no watermark',
-      'Every AI mode and Aicser Agent',
-      'Pipelines, warehouse, notebooks and sheets',
-      'Branded embeds and public links (10,000 views / month)',
-      'Exports to PDF, Word, PowerPoint and Excel',
+      'Multiple projects and data sources, no watermark',
+      'Every AI mode, Aicser Agent and Aicser MCP',
+      'Pipelines, lakehouse, notebooks and sheets',
+      'Embeds and public links (10,000 views / month)',
+      'Exports to High Quality PNG, PDF, Word, PowerPoint and Excel',
       'Priority support',
     ],
     watermark: false,
@@ -141,16 +141,16 @@ export const pricingPlans: PricingPlan[] = [
     per_member: true,
     min_seats: 5,
     stats: [
-      { label: 'AI Credits', value: '900 / AI member / month, shared' },
+      { label: 'AI Credits', value: '900 / member / month' },
       { label: 'Storage', value: '500 GB' },
       { label: 'Data History', value: '1 year' },
     ],
     features: [
-      'Everything in Pro, from 5 members',
-      'Collaboration, comments and roles',
+      'Everything in Pro, up to 5 members',
+      'Collaboration, discussion and role access management',
       'Alerts, scheduled reports and scheduled agents',
-      'Governance, catalog and audit',
-      'CRM connectors, Slack and Teams',
+      'Governance, PII, Row & Column-level security, catalog and basic audit log',
+      'Connectors, Slack and MS Teams',
       'Embeds and public links (100,000 views / month)',
       'Dedicated support',
     ],

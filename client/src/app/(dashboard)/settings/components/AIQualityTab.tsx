@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Col, Empty, Row, Select, Spin, Statistic, Tooltip, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Select, Spin, Statistic, Tooltip, Typography } from 'antd';
 import { ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslations } from 'next-intl';
 import type { EChartsOption } from 'echarts';
@@ -11,7 +11,7 @@ import { Permission } from '@/hooks/usePermissions';
 import { fetchApi } from '@/utils/api';
 import { MiniEChart } from '@/app/(dashboard)/feed/components/MiniEChart';
 import type { TabComponentProps } from '../page';
-import { AnswerAccuracyCard } from './AnswerAccuracyCard';
+import { AIAuditLogTab } from './AIAuditLogTab';
 
 const { Text } = Typography;
 
@@ -45,9 +45,9 @@ const DAY_OPTIONS = [7, 30, 90];
 
 const pct = (v: number | null): string => (v == null ? '—' : `${Math.round(v * 100)}%`);
 
-/** Statistic title + an info tooltip explaining what the metric actually
- * measures — these are backend-computed signals (grounding score, goal
- * verification) with no obvious meaning from the label alone. */
+const seconds = (ms: number) => Math.round(ms / 100) / 10;
+
+/** Statistic title + an info tooltip explaining what the metric actually measures. */
 const TitleWithHint: React.FC<{ label: string; hint: string }> = ({ label, hint }) => (
   <span>
     {label}{' '}
@@ -61,6 +61,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
   const t = useTranslations('settings.ai_quality');
   const { currentOrganization } = useOrganizationStore();
   const [days, setDays] = useState(30);
+  const [reloads, setReloads] = useState(0);
   const [summary, setSummary] = useState<QualitySummary | null>(null);
   const [points, setPoints] = useState<QualityPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,7 +95,7 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
 
   useEffect(() => {
     onSetAction?.(
-      <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+      <Button icon={<ReloadOutlined />} onClick={() => { setReloads((n) => n + 1); void load(); }} loading={loading}>
         {t('refresh')}
       </Button>
     );
@@ -114,13 +115,6 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           type: 'line',
           smooth: true,
           data: points.map((p) => p.avg_grounding_score),
-          connectNulls: true,
-        },
-        {
-          name: t('chart_goal_verification'),
-          type: 'line',
-          smooth: true,
-          data: points.map((p) => p.goal_verification_pass_rate),
           connectNulls: true,
         },
         {
@@ -158,74 +152,31 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           <Empty description={t('empty')} />
         ) : (
           <>
-            <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic title={<TitleWithHint label={t('kpi_turns')} hint={t('kpi_turns_hint')} />} value={summary.total_turns} />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_grounding')} hint={t('kpi_grounding_hint')} />}
-                    value={pct(summary.avg_grounding_score)}
-                    valueStyle={
-                      summary.avg_grounding_score != null && summary.avg_grounding_score < 0.6
-                        ? { color: 'var(--ant-color-warning)' }
-                        : undefined
-                    }
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_goal_verification')} hint={t('kpi_goal_verification_hint')} />}
-                    value={pct(summary.goal_verification_pass_rate)}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_thumbs_up')} hint={t('kpi_thumbs_up_hint')} />}
-                    value={pct(summary.thumbs_up_rate)}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_error_rate')} hint={t('kpi_error_rate_hint')} />}
-                    value={pct(summary.error_rate)}
-                    valueStyle={summary.error_rate > 0.05 ? { color: 'var(--ant-color-error)' } : undefined}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_latency')} hint={t('kpi_latency_hint')} />}
-                    value={summary.avg_latency_ms != null ? Math.round(summary.avg_latency_ms / 1000) : '—'}
-                    suffix={summary.avg_latency_ms != null ? 's' : undefined}
-                  />
-                </Card>
-              </Col>
-              <Col xs={12} sm={8} md={3}>
-                <Card size="small">
-                  <Statistic
-                    title={<TitleWithHint label={t('kpi_p95_latency')} hint={t('kpi_p95_latency_hint')} />}
-                    value={summary.p95_latency_ms != null ? Math.round(summary.p95_latency_ms / 1000) : '—'}
-                    suffix={summary.p95_latency_ms != null ? 's' : undefined}
-                    valueStyle={
-                      summary.p95_latency_ms != null && summary.avg_latency_ms != null && summary.p95_latency_ms > summary.avg_latency_ms * 2
-                        ? { color: 'var(--ant-color-warning)' }
-                        : undefined
-                    }
-                  />
-                </Card>
-              </Col>
-            </Row>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 20 }}>
+              <Statistic title={<TitleWithHint label={t('kpi_turns')} hint={t('kpi_turns_hint')} />} value={summary.total_turns} />
+              {summary.avg_grounding_score != null ? (
+                <Statistic
+                  title={<TitleWithHint label={t('kpi_grounding')} hint={t('kpi_grounding_hint')} />}
+                  value={pct(summary.avg_grounding_score)}
+                  valueStyle={summary.avg_grounding_score < 0.6 ? { color: 'var(--ant-color-warning)' } : undefined}
+                />
+              ) : null}
+              {summary.thumbs_up_rate != null ? (
+                <Statistic title={<TitleWithHint label={t('kpi_thumbs_up')} hint={t('kpi_thumbs_up_hint')} />} value={pct(summary.thumbs_up_rate)} />
+              ) : null}
+              <Statistic
+                title={<TitleWithHint label={t('kpi_error_rate')} hint={t('kpi_error_rate_hint')} />}
+                value={pct(summary.error_rate)}
+                valueStyle={summary.error_rate > 0.05 ? { color: 'var(--ant-color-error)' } : undefined}
+              />
+              {summary.avg_latency_ms != null ? (
+                <Statistic
+                  title={<TitleWithHint label={t('kpi_latency')} hint={t('kpi_latency_slowest', { seconds: seconds(summary.p95_latency_ms ?? summary.avg_latency_ms) })} />}
+                  value={seconds(summary.avg_latency_ms)}
+                  suffix="s"
+                />
+              ) : null}
+            </div>
 
             {points.length > 1 ? (
               <Card size="small" title={t('chart_title')}>
@@ -235,8 +186,9 @@ export const AIQualityTab: React.FC<TabComponentProps> = ({ onSetAction }) => {
           </>
         )}
       </Card>
-      {/* Measured accuracy on the golden set, independent of recent traffic. */}
-      <AnswerAccuracyCard />
+      <div style={{ marginTop: 24 }}>
+        <AIAuditLogTab key={reloads} days={days} />
+      </div>
     </PermissionGuard>
   );
 };

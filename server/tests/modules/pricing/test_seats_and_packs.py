@@ -10,7 +10,7 @@ from ee.modules.pricing import credit_packs as CP
 from ee.modules.pricing import platform_usage as PU
 from ee.modules.pricing.plans import (
     AI_CREDITS_PER_AI_SEAT, CREDIT_PACK, FREE_AI_CREDITS, PLAN_CONFIGS, PLATFORM_QUOTAS_PER_SEAT, SEAT_PRICES,
-    billable_seats, credits_for, seat_mix_amount,
+    billable_seats, billed_seats, credits_for, plan_quote, seat_capacity, seat_mix_amount,
 )
 
 
@@ -33,11 +33,54 @@ def test_pro_is_one_member_with_ai_on_or_off():
     assert seat_mix_amount("pro", "yearly", 1, 0) == 180.0
 
 
-def test_team_bills_at_least_five_members_padding_with_light():
+def test_team_is_one_price_for_up_to_five_members():
     assert PLAN_CONFIGS["team"]["min_seats"] == 5
-    assert billable_seats("team", 3, 0) == {"ai": 3, "platform": 2}
-    assert seat_mix_amount("team", "monthly", 3, 0) == 3 * 18 + 2 * 6
-    assert seat_mix_amount("team", "monthly", 6, 4) == 6 * 18 + 4 * 6
+    for ai, light in ((1, 0), (3, 0), (5, 0), (3, 2), (0, 5)):
+        assert seat_mix_amount("team", "monthly", ai, light) == 90.0
+        assert seat_mix_amount("team", "yearly", ai, light) == 900.0
+    assert billable_seats("team", 3, 0) == {"ai": 5, "platform": 0}
+
+
+def test_team_adds_members_past_five_as_ai_or_light():
+    assert seat_mix_amount("team", "monthly", 7, 0) == 90 + 2 * 18
+    assert seat_mix_amount("team", "monthly", 5, 3) == 90 + 3 * 6
+    assert seat_mix_amount("team", "monthly", 6, 4) == 90 + 18 + 4 * 6
+    # Light members fill the spare places first: 2 AI + 6 Light is five places and three more.
+    assert seat_mix_amount("team", "monthly", 2, 6) == 90 + 3 * 6
+    assert seat_mix_amount("team", "yearly", 5, 3) == 900 + 3 * 60
+
+
+def test_moving_a_member_inside_teams_five_costs_nothing():
+    assert seat_mix_amount("team", "monthly", 3, 2) == seat_mix_amount("team", "monthly", 4, 1)
+
+
+def test_bought_seats_are_paid_for_filled_or_not():
+    assert billed_seats("team", 2, 0, 2, 3) == {"ai": 7, "platform": 3}
+    assert seat_mix_amount("team", "monthly", 2, 0, 2, 3) == 90 + 2 * 18 + 3 * 6
+    assert seat_mix_amount("team", "yearly", 2, 0, 1, 0) == 900 + 180
+    assert seat_capacity("team", 2, 3) == 10
+    # Members past what was bought still count; nothing is free.
+    assert billed_seats("team", 9, 0, 1, 0) == {"ai": 9, "platform": 0}
+
+
+def test_only_team_buys_seats():
+    assert billed_seats("pro", 1, 0, 3, 3) == {"ai": 1, "platform": 0}
+    assert seat_capacity("pro", 3, 3) == 0
+
+
+def test_quote_says_what_the_total_covers():
+    assert plan_quote("team", "yearly", 2, 0) == {
+        "amount": 900.0, "included_members": 5, "extra_ai": 0, "extra_light": 0}
+    assert plan_quote("team", "monthly", 7, 1) == {
+        "amount": 132.0, "included_members": 5, "extra_ai": 2, "extra_light": 1}
+    assert plan_quote("enterprise", "monthly", 5, 0) is None
+
+
+def test_sandbox_plans_include_no_paid_seats():
+    from src.modules.pricing.plans import SANDBOX_PLANS
+
+    for plan in SANDBOX_PLANS:
+        assert not PLAN_CONFIGS[plan].get("included_ai_seats")
 
 
 @pytest.mark.parametrize("mode,credits", [
@@ -92,10 +135,30 @@ async def test_credit_pool_is_900_per_ai_member(monkeypatch):
     import ee.modules.pricing.seats as seats
 
     async def counts(org):
-        return {"ai": 3, "platform": 4}
+        return mix
 
+    async def paying(org):
+        return is_paying
+
+    mix = {"ai": 3, "platform": 4}
+    is_paying = True
     monkeypatch.setattr(seats, "seat_counts", counts)
-    assert await U._seat_based_credit_limit("o", "team", {"ai_credits_limit": 900}) == 2700
+    monkeypatch.setattr(U, "_paying", paying)
+
+    async def bought(org):
+        return {"ai": 0, "platform": 0}
+
+    monkeypatch.setattr(seats, "seat_extras", bought)
+    # Team pays for five AI places, filled or not.
+    assert await U._seat_based_credit_limit("o", "team", {"ai_credits_limit": 900}) == 4500
+    mix = {"ai": 7, "platform": 0}
+    assert await U._seat_based_credit_limit("o", "team", {"ai_credits_limit": 900}) == 6300
+    mix = {"ai": 0, "platform": 1}
+    assert await U._seat_based_credit_limit("o", "pro", {"ai_credits_limit": 900}) == 0
+    # A free trial gets credits for the people there, not for five empty seats.
+    is_paying = False
+    mix = {"ai": 1, "platform": 0}
+    assert await U._seat_based_credit_limit("o", "team", {"ai_credits_limit": 900}) == 900
     assert await U._seat_based_credit_limit("o", "free", {"ai_credits_limit": 100}) == 100
 
 

@@ -190,6 +190,7 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
     welcome_message?: string;
     conversation_starters?: string[];
     icon_emoji?: string;
+    icon_url?: string | null;
     color?: string;
     hide_aicser_branding?: boolean;
   } | null>(null);
@@ -578,7 +579,9 @@ function EmbedChatView({ session }: { session: EmbedSessionState }) {
       style={{ background: accent }}
       aria-hidden
     >
-      {assistantConfig?.icon_emoji || <Bot className={size === 'lg' ? 'h-6 w-6' : 'h-4 w-4'} />}
+      {assistantConfig?.icon_url
+        ? <img src={assistantConfig.icon_url} alt="" className={size === 'lg' ? 'h-6 w-6 rounded-full' : 'h-4 w-4 rounded-full'} />
+        : <Bot className={size === 'lg' ? 'h-6 w-6' : 'h-4 w-4'} />}
     </span>
   );
   const starters = (assistantConfig?.conversation_starters || []).slice(0, 6);

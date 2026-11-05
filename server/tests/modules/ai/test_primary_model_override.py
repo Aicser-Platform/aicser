@@ -65,7 +65,7 @@ def test_primary_override_wins_over_azure_without_deleting_azure_config(monkeypa
     service = LiteLLMService()
 
     assert service.default_model == "primary_override"
-    assert "azure_gpt41_mini" in service.available_models  # still registered, just not default
+    assert "azure_gpt41_mini" not in service.available_models  # GPT-4.1 Mini is retired
 
 
 def test_no_primary_override_falls_back_to_existing_azure_openai_chain(monkeypatch):

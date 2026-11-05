@@ -281,6 +281,7 @@ async def get_feed_sidebar(
 class PublishingPolicy(BaseModel):
     public: Literal["off", "approval", "members"] = "approval"
     expiry_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    second_approver: bool = False
 
 
 async def _org_approver(current_user: Dict[str, Any], db: AsyncSession) -> tuple:
@@ -314,6 +315,12 @@ async def put_publishing_policy(body: PublishingPolicy, current_user: Dict[str, 
 
     org_id, user_id = await _org_approver(current_user, db)
     current = await policy.get_policy(db, org_id)
+    if body.second_approver and not current.get("second_approver"):
+        from src.modules.pricing.feature_gate import org_entitlement
+
+        allowed, reason = await org_entitlement(str(org_id), db, "compliance")
+        if not allowed:
+            raise HTTPException(status_code=402, detail={"message": reason, "feature": "compliance", "upgrade_required": True})
     saved = await policy.set_policy(db, org_id, {**current, **body.model_dump()})
     await db.commit()
     await policy.audit("publishing_policy_changed", user_id=user_id, org_id=org_id, resource_type="organization", resource_id=org_id, metadata=saved)

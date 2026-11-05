@@ -1259,6 +1259,7 @@ export default function NewDashboardStudio() {
             size="large"
             icon={<PlusOutlined />}
             loading={creatingDashboard}
+            data-guide="new-dashboard"
             onClick={() => void handleWizardCreateWithLayout(td('wizard_default_name'), 'blank')}
             style={{ marginTop: '16px' }}
           >

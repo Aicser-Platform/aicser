@@ -3,10 +3,16 @@
 The organization chooses (organizations.settings["publishing"]):
 - public: "off" (nobody), "approval" (the default) or "members" (publish directly).
 - expiry_days: public items end after this many days (empty keeps them up).
+- second_approver: owners and admins need someone else's approval too (off by default).
 
-Owners and admins are equal approvers. Nobody approves their own public work while another approver
-exists; an organization with only one approver can publish, and the audit log says it was self-approved.
-Possibly personal data always goes to a person first.
+Owners and admins are equal approvers, and they are the ones the organization trusts with this, so
+their own work goes out directly and the audit log records that it was self-approved. An organization
+that needs four eyes turns on second_approver: then nobody approves their own work while another
+approver exists. An organization with one approver can always publish, or it could never publish.
+Everyone else goes to an approver; possibly personal data always goes to a person first.
+
+may_review is the one rule for who can act on a waiting item. The screens ask it before showing a
+button and the server asks it again before acting, so the two can't disagree.
 """
 
 from __future__ import annotations
@@ -23,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 MODES = ("off", "approval", "members")
-DEFAULT_POLICY: Dict[str, Any] = {"public": "approval", "expiry_days": None}
+DEFAULT_POLICY: Dict[str, Any] = {"public": "approval", "expiry_days": None, "second_approver": False}
 APPROVER_ROLES = ("org_owner", "org_admin")
 
 
@@ -64,6 +70,18 @@ async def require_outside_sharing(db: AsyncSession, org_id: Optional[Any]) -> No
         raise HTTPException(status_code=403, detail={"message": OUTSIDE_SHARING_OFF, "code": "outside_sharing_off"})
 
 
+async def require_embed_publisher(db: AsyncSession, org_id: Optional[Any], user_id: Any) -> None:
+    """An embed token puts work on a website with no review step of its own, so under "approval" only
+    those who could approve it may make one. Everyone else has Share, which asks for approval."""
+    await require_outside_sharing(db, org_id)
+    if not org_id or (await get_policy(db, org_id)).get("public") != "approval":
+        return
+    if str(user_id) not in {str(i) for i in await approvers(db, org_id)}:
+        raise HTTPException(status_code=403, detail={
+            "message": "Your organization asks an owner or admin to approve public sharing. Use Share to request it.",
+            "code": "embed_needs_approval"})
+
+
 def personal_data_found(*texts: Any) -> bool:
     """Whether text about to leave the organization looks personal (False when clean or the check is unavailable)."""
     joined = "\n".join(str(t) for t in texts if t)[:20_000]
@@ -78,18 +96,28 @@ def personal_data_found(*texts: Any) -> bool:
         return False
 
 
-def public_decision(*, mode: str, is_approver: bool, other_approvers: int, has_org: bool, personal_data: bool) -> Tuple[str, bool]:
+def public_decision(*, mode: str, is_approver: bool, other_approvers: int, has_org: bool, personal_data: bool,
+                    second_approver: bool = False) -> Tuple[str, bool]:
     """("approved" | "pending" | "refused", self_approved) for putting something in public."""
     if not has_org:
         return "approved", False
     if mode == "off":
         return "refused", False
     if is_approver:
-        # Separation of duties: another approver looks at it, when there is one.
-        return ("pending", False) if other_approvers else ("approved", True)
+        return ("pending", False) if second_approver and other_approvers else ("approved", True)
     if personal_data or mode != "members":
         return "pending", False
     return "approved", False
+
+
+def may_review(*, user_id: Any, requester_id: Any, approver_ids: List[Any], second_approver: bool) -> Tuple[bool, Optional[str]]:
+    """(allowed, why not) for approving or declining a waiting item."""
+    if str(user_id) not in {str(i) for i in approver_ids}:
+        return False, "not_approver"
+    own = str(user_id) == str(requester_id)
+    if own and second_approver and approvers_other_than(approver_ids, user_id):
+        return False, "own_work"
+    return True, None
 
 
 async def audit(event: str, *, user_id: Any, org_id: Any, resource_type: str, resource_id: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -108,8 +136,9 @@ async def email_approvers(db: AsyncSession, approver_ids: List[UUID], title: str
     from src.shared.transactional_email import send_transactional_email
 
     try:
-        rows = (await db.execute(text("SELECT email FROM users WHERE id = ANY(:ids) AND email IS NOT NULL"),
-                                 {"ids": [str(i) for i in approver_ids]})).all()
+        rows = (await db.execute(text(
+            "SELECT email FROM users WHERE (id = ANY(CAST(:ids AS uuid[])) OR user_id = ANY(CAST(:ids AS uuid[]))) AND email IS NOT NULL"
+        ), {"ids": [str(i) for i in approver_ids]})).all()
         subject = f"{'Reminder: ' if reminder else ''}Approval needed: {title}"
         await send_transactional_email([r[0] for r in rows], subject, f"{title} is waiting for your approval before it can be published.\n\n{url}")
     except Exception as exc:  # noqa: BLE001 - the in-app request still stands
@@ -132,3 +161,33 @@ async def approvers(db: AsyncSession, org_id: Any) -> List[UUID]:
 
 def approvers_other_than(ids: List[Any], user_id: Any) -> int:
     return len([i for i in ids if str(i) != str(user_id)])
+
+
+async def approver_names(db: AsyncSession, approver_ids: List[Any], *, leave_out: Any = None) -> List[str]:
+    """Who can act, so a person waiting knows who to ask."""
+    ids = [str(i) for i in approver_ids if str(i) != str(leave_out)]
+    if not ids:
+        return []
+    rows = (await db.execute(text("""
+        SELECT COALESCE(NULLIF(trim(concat(first_name, ' ', last_name)), ''), username, email) FROM users
+        WHERE id = ANY(CAST(:ids AS uuid[])) OR user_id = ANY(CAST(:ids AS uuid[]))
+    """), {"ids": ids})).all()
+    return sorted({r[0] for r in rows if r[0]})
+
+
+async def notify_people(db: AsyncSession, user_ids: List[Any], *, actor_id: Any, metadata: Dict[str, Any]) -> None:
+    """An in-app notice in the bell. Sign-in ids and users.id both occur, so they are resolved here.
+    Caller commits; a missing notice must never undo the decision it reports."""
+    try:
+        ids = [str(i) for i in user_ids if i and str(i) != str(actor_id)]
+        if not ids:
+            return
+        actor = (await db.execute(text(
+            "SELECT id FROM users WHERE id = CAST(:a AS uuid) OR user_id = CAST(:a AS uuid) LIMIT 1"), {"a": str(actor_id)})).scalar()
+        await db.execute(text("""
+            INSERT INTO feed_notifications (recipient_id, actor_id, type, metadata, is_read)
+            SELECT id, :actor, 'approval', CAST(:meta AS jsonb), false FROM users
+            WHERE id = ANY(CAST(:ids AS uuid[])) OR user_id = ANY(CAST(:ids AS uuid[]))
+        """), {"actor": actor, "meta": json.dumps(metadata), "ids": ids})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Approval notice not written: %s", exc)

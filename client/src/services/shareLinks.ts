@@ -18,6 +18,8 @@ export type ShareLink = {
   view_count: number;
   last_viewed_at?: string | null;
   snapshot_at?: string | null;
+  /** While waiting: whether this person can act, and who can. */
+  review?: { can_approve: boolean; blocked_reason: 'own_work' | 'not_approver' | null; approvers: string[] } | null;
 };
 
 export type ShareLinkSettings = {
@@ -49,6 +51,8 @@ export const turnShareLinkOn = (id: string) =>
   fetchApi<{ link: ShareLink }>(`${ROOT}/${id}/on`, json('POST', {})).then((r) => r.link);
 
 export const approveShareLink = (id: string) => fetchApi(`${ROOT}/${id}/approve`, json('POST', {}));
+
+export const declineShareLink = (id: string, note = '') => fetchApi(`${ROOT}/${id}/decline`, json('POST', { note }));
 
 export const organizationShareLinks = () =>
   fetchApi<{ links: ShareLink[] }>(`${ROOT}/organization`).then((r) => r.links);

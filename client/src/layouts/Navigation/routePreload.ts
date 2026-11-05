@@ -5,6 +5,7 @@
 const LOADERS: Record<string, () => Promise<unknown>> = {
   '/chat': () => import('../../ee/chat-page'),
   '/agent': () => import('@/ee-lazy/AgentPage'),
+  '/agents': () => import('@/ee-lazy/AiAgentsPage'),
   '/alerts': () => import('@/ee-lazy/AlertsPage'),
   '/catalog': () => import('@/ee-lazy/CatalogPage'),
   '/pipelines': () => import('@/ee-lazy/PipelinesPage'),

@@ -62,6 +62,13 @@ interface ForgotPasswordValues {
 export default function LoginPage() {
   const t = useTranslations('auth');
   const searchParams = useSearchParams();
+  const [sandboxOn, setSandboxOn] = useState(false);
+  useEffect(() => {
+    fetch('/api/sandbox/config')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => setSandboxOn(Boolean(c?.enabled)))
+      .catch(() => undefined);
+  }, []);
   const initialSignUp =
     searchParams?.get('signup') === '1' ||
     searchParams?.get('mode') === 'signup' ||
@@ -285,9 +292,6 @@ export default function LoginPage() {
                 { label: t('sign_up'), value: 'signup' },
               ]}
             />
-
-            <p className="form-subtitle">{isSignUp ? t('sign_up_subtitle') : t('sign_in_subtitle')}</p>
-
             {signupMessage ? (
               <Alert
                 type="success"
@@ -462,6 +466,8 @@ export default function LoginPage() {
                 ) : null}
               </>
             ) : null}
+
+            {sandboxOn ? <Link href="/try" className="auth-try-link">{t('try_without_account')}</Link> : null}
 
             <p className="terms-privacy-text">
               {t('terms_agree')}{' '}
