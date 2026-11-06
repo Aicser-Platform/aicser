@@ -3,6 +3,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Divider, Form, Input, Spin, Typography } from 'antd';
 import { useTranslations } from 'next-intl';
+import { clearIntentionalLogout } from '@/auth/logoutBarrier';
+import { clearCeBearerToken } from '@/auth/ce/bearerToken';
+import { resetWorkspaceScope } from '@/utils/resetWorkspaceScope';
 
 interface SandboxConfig {
   enabled: boolean;
@@ -65,7 +68,14 @@ export default function TryPage() {
     }
   };
 
-  const open = () => window.location.assign('/chat');
+  // The sandbox cookie is a fresh sign-in: drop what an earlier session left in this tab (the
+  // sign-out flag, an old bearer, its workspace), as login does, or /chat sends the guest to /login.
+  const open = () => {
+    clearIntentionalLogout();
+    clearCeBearerToken();
+    resetWorkspaceScope();
+    window.location.assign('/chat');
+  };
 
   const start = (withEmail: boolean) => run(async () => {
     const values = form.getFieldsValue();
