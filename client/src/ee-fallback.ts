@@ -38,6 +38,7 @@ export interface StreamingAccumulator {
 export const BillingSuccessHandler   = (): null => null;
 export const TrialExpiryBanner       = (): null => null;
 export const SandboxBar              = (): null => null;
+export const ReportEmbedPage         = (): null => null;
 export const LicenseNotice           = (): null => null;
 export const ProjectSelectorModal    = (_props: ProjectSelectorModalProps): null => null;
 export const PricingModalEE          = (): null => null;
